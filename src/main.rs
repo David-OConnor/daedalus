@@ -10,6 +10,14 @@ use pdbtbx::PDB;
 
 use crate::{pdb::load_pdb, render::render};
 
+#[derive(Debug, Clone, Default)]
+pub enum ComputationDevice {
+    #[default]
+    Cpu,
+    #[cfg(feature = "cuda")]
+    Gpu(Arc<CudaDevice>),
+}
+
 #[derive(Clone, Copy, PartialEq)]
 pub enum AtomType {
     Carbon,

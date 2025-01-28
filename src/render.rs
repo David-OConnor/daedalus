@@ -110,7 +110,7 @@ pub fn render(state: State) {
 
     let input_settings = InputSettings {
         initial_controls: ControlScheme::FreeCamera,
-        move_sens: 6.0,
+        move_sens: 10.0,
         ..Default::default()
     };
     let ui_settings = UiSettings {
