@@ -27,30 +27,55 @@ fn int_field(val: &mut usize, label: &str, redraw_bodies: &mut bool, ui: &mut Ui
     }
 }
 
+/// Handles keyboard and mouse input not associated with a widget.
+pub fn handle_input(state: &mut State, ui: &mut Ui, scene: &mut Scene, engine_updates: &mut EngineUpdates) {
+    let mut reset_window_title = false; // This setup avoids borrow errors.
+
+    ui.ctx().input(|ip| {
+        // Check for file drop
+        if let Some(dropped_files) = ip.raw.dropped_files.first() {
+            if let Some(path) = &dropped_files.path {
+                let pdb = load_pdb(&path).unwrap();
+                let molecule = Molecule::from_pdb(&pdb);
+                // todo: This loading code is DRY. make a fn
+                state.pdb = Some(pdb);
+                state.molecule = Some(molecule);
+
+                draw_molecule(&mut scene.entities, &state.molecule.as_ref().unwrap());
+                engine_updates.entities = true;
+            }
+        }
+    });
+}
+
 /// This function draws the (immediate-mode) GUI.
 /// [UI items](https://docs.rs/egui/latest/egui/struct.Ui.html)
 pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> EngineUpdates {
     let mut engine_updates = EngineUpdates::default();
 
     TopBottomPanel::top("0").show(ctx, |ui| {
-        if ui.button("Open").clicked() {
-            state.ui.load_dialog.pick_file();
-        }
+        handle_input(state, ui, scene, &mut engine_updates);
 
-        state.ui.load_dialog.update(ctx);
+        // if ui.button("Open").clicked() {
+        //     state.ui.load_dialog.pick_file();
+        // }
 
-        if let Some(path) = state.ui.load_dialog.take_picked() {
-            // let pdb = load_pdb(&path).unwrap();
-            // let molecule = Molecule::from_pdb(&pdb);
-            //
-            // state.pdb = Some(pdb);
-            // state.molecule = Some(molecule);
-            //
-            // draw_molecule(&mut scene.entities, &state.molecule.as_ref().unwrap());
-            //
-            // engine_updates.entities = true;
-        }
+        // state.ui.load_dialog.update(ctx);
+
     });
 
+    if let Some(path) = state.ui.load_dialog.take_picked() {
+        let pdb = load_pdb(&path).unwrap();
+        let molecule = Molecule::from_pdb(&pdb);
+
+        state.pdb = Some(pdb);
+        state.molecule = Some(molecule);
+
+        draw_molecule(&mut scene.entities, &state.molecule.as_ref().unwrap());
+
+        engine_updates.entities = true;
+    }
+
+    state.ui.load_dialog.update(ctx);
     engine_updates
 }

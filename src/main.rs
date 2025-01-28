@@ -4,6 +4,7 @@ mod ui;
 
 use std::{path::PathBuf, str::FromStr};
 use std::any::Any;
+use std::path::Path;
 use std::sync::Arc;
 use egui_file_dialog::{FileDialog, FileDialogConfig};
 use graphics::Entity;
@@ -72,18 +73,17 @@ impl Default for StateUi {
                 "PDB/CIF",
                 Arc::new(|p| {
                     let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
-                    ext == "pdb"
-                        || ext == "cif"
+                    ext == "pdb" || ext == "cif"
                 }),
-            )
-            .add_file_filter(
-                "PDB",
-                Arc::new(|p| p.extension().unwrap_or_default().to_ascii_lowercase() == "pdb"),
-            )
-            .add_file_filter(
-                "CIF",
-                Arc::new(|p| p.extension().unwrap_or_default().to_ascii_lowercase() == "cif"),
             );
+            // .add_file_filter(
+            //     "PDB",
+            //     Arc::new(|p| p.extension().unwrap_or_default().to_ascii_lowercase() == "pdb"),
+            // )
+            // .add_file_filter(
+            //     "CIF",
+            //     Arc::new(|p| p.extension().unwrap_or_default().to_ascii_lowercase() == "cif"),
+            // );
 
         let load_dialog = FileDialog::with_config(cfg)
             .default_file_filter("PDB/CIF")
