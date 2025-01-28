@@ -34,15 +34,19 @@ pub fn handle_input(state: &mut State, ui: &mut Ui, scene: &mut Scene, engine_up
     ui.ctx().input(|ip| {
         // Check for file drop
         if let Some(dropped_files) = ip.raw.dropped_files.first() {
+            println!("Drop 0");
+            return;
             if let Some(path) = &dropped_files.path {
-                let pdb = load_pdb(&path).unwrap();
-                let molecule = Molecule::from_pdb(&pdb);
                 // todo: This loading code is DRY. make a fn
-                state.pdb = Some(pdb);
-                state.molecule = Some(molecule);
+                println!("Drop a");
+                state.pdb = Some(load_pdb(&path).unwrap());
+                println!("Drop b");
+                state.molecule = Some(Molecule::from_pdb(&state.pdb.as_ref().unwrap()));
 
+                println!("Drop C");
                 draw_molecule(&mut scene.entities, &state.molecule.as_ref().unwrap());
                 engine_updates.entities = true;
+                println!("Drop D");
             }
         }
     });
@@ -56,9 +60,9 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
     TopBottomPanel::top("0").show(ctx, |ui| {
         handle_input(state, ui, scene, &mut engine_updates);
 
-        // if ui.button("Open").clicked() {
+        if ui.button("Open").clicked() {
         //     state.ui.load_dialog.pick_file();
-        // }
+        }
 
         // state.ui.load_dialog.update(ctx);
 

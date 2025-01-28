@@ -105,13 +105,8 @@ struct State {
 fn main() {
     let mut state = State::default();
 
-    // let pdb = load_pdb(&PathBuf::from_str("1yyf.pdb").unwrap()).unwrap();
-    let pdb = load_pdb(&PathBuf::from_str("1ubq.cif").unwrap()).unwrap();
-    let molecule = Molecule::from_pdb(&pdb);
-
-    state.pdb = Some(pdb);
-    state.molecule = Some(molecule);
-
+    // state.pdb = Some(load_pdb(&PathBuf::from_str("1yyf.pdb").unwrap()).unwrap());
+    // state.molecule = Some(Molecule::from_pdb(&state.pdb.as_ref().unwrap()));
 
     render(state);
 }

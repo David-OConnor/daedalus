@@ -4,15 +4,17 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-graphics = { path = "../../graphics" }
+#graphics = { path = "../../graphics" }
+graphics = "^0.3.1"
 egui = "^0.30.0"
 egui-file-dialog = "^0.8.0" #  For file dialogs.
 
-#lin_alg = "^1.0.4"
-lin_alg = { path = "../../lin_alg" }
+lin_alg = "^1.0.4"
+#lin_alg = { path = "../../lin_alg" }
 
 # todo: Use https://github.com/bempp/kifmm when ready. Adapt for Windows.
-barnes_hut = { path = "../../barnes_hut", features = ["encode"]}
+barnes_hut = { version = "^1.0.5"}  # enc temp rem
+#barnes_hut = { path = "../../barnes_hut", features = ["encode"]}
 #kifmm = { git = "https://github.com/bempp/kifmm/" }
 #kifmm = { version = "^2.0.0" }
 
