@@ -4,6 +4,8 @@ mod ui;
 
 use std::{path::PathBuf, str::FromStr};
 use std::any::Any;
+use std::sync::Arc;
+use egui_file_dialog::{FileDialog, FileDialogConfig};
 use graphics::Entity;
 use lin_alg::f64::Vec3;
 use pdbtbx::PDB;
@@ -56,11 +58,48 @@ impl Molecule {
     }
 }
 
+struct StateUi {
+    load_dialog: FileDialog,
+}
 
+impl Default for StateUi {
+    fn default() -> Self {
+        let cfg = FileDialogConfig {
+            ..Default::default()
+        }
+            .add_file_filter(
+                // Note: We experience glitches if this name is too long. (Window extends horizontally)
+                "PDB/CIF",
+                Arc::new(|p| {
+                    let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
+                    ext == "pdb"
+                        || ext == "cif"
+                }),
+            )
+            .add_file_filter(
+                "PDB",
+                Arc::new(|p| p.extension().unwrap_or_default().to_ascii_lowercase() == "pdb"),
+            )
+            .add_file_filter(
+                "CIF",
+                Arc::new(|p| p.extension().unwrap_or_default().to_ascii_lowercase() == "cif"),
+            );
+
+        let load_dialog = FileDialog::with_config(cfg)
+            .default_file_filter("PDB/CIF")
+            .id("0");
+
+        Self {
+            load_dialog
+        }
+    }
+}
 
 #[derive(Default)]
 struct State {
-    pub molecule: Option<Molecule>
+    ui: StateUi,
+    pub pdb: Option<PDB>,
+    pub molecule: Option<Molecule>,
 }
 
 fn main() {
@@ -68,8 +107,9 @@ fn main() {
 
     // let pdb = load_pdb(&PathBuf::from_str("1yyf.pdb").unwrap()).unwrap();
     let pdb = load_pdb(&PathBuf::from_str("1ubq.cif").unwrap()).unwrap();
-
     let molecule = Molecule::from_pdb(&pdb);
+
+    state.pdb = Some(pdb);
     state.molecule = Some(molecule);
 
 

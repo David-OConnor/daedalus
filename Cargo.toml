@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 graphics = { path = "../../graphics" }
 egui = "^0.30.0"
+egui-file-dialog = "^0.8.0" #  For file dialogs.
 
 #lin_alg = "^1.0.4"
 lin_alg = { path = "../../lin_alg" }
