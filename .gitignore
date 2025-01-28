@@ -1,0 +1,15 @@
+/target
+Cargo.lock
+
+# IDE
+*.iws
+
+# CUDA
+*.exe
+*.exp
+*.lib
+*.ptx
+
+# Molecular formats
+*.pdb
+*.cif

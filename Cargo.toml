@@ -1,0 +1,36 @@
+[package]
+name = "mol_dock"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+graphics = { path = "../../graphics" }
+egui = "^0.30.0"
+
+#lin_alg = "^1.0.4"
+lin_alg = { path = "../../lin_alg" }
+
+# todo: Use https://github.com/bempp/kifmm when ready. Adapt for Windows.
+barnes_hut = { path = "../../barnes_hut", features = ["encode"]}
+#kifmm = { git = "https://github.com/bempp/kifmm/" }
+#kifmm = { version = "^2.0.0" }
+
+# For loading and saving config
+bincode = "^2.0.0-rc.3"
+
+rayon = "^1.10.0"  # Parallel execution on CPU using thread pools.
+
+# Keep this cuda version in sync with what you have installed on the system.
+cudarc = { version = "^0.13.3", optional=true, features=["cuda-12060"] }
+
+# For reading PDB and mmCIF files
+pdbtbx = "^0.12.0"
+
+[build-dependencies]
+cuda_setup = { version = "0.1.0", optional = true }
+
+
+# We feature-gate the CUDA dependency, so this program can be run on computers that don't have a
+# suitable graphics chip.
+[features]
+cuda = ["cudarc", "cuda_setup"]
