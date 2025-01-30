@@ -2,10 +2,13 @@ mod pdb;
 mod render;
 mod ui;
 
-use std::{path::PathBuf, str::FromStr};
-use std::any::Any;
-use std::path::Path;
-use std::sync::Arc;
+use std::{
+    any::Any,
+    path::{Path, PathBuf},
+    str::FromStr,
+    sync::Arc,
+};
+
 use egui_file_dialog::{FileDialog, FileDialogConfig};
 use graphics::Entity;
 use lin_alg::f64::Vec3;
@@ -51,7 +54,7 @@ impl Molecule {
         for atom in pdb.atoms() {
             atoms.push(Atom {
                 posit: Vec3::new(atom.x(), atom.y(), atom.z()),
-                atom_type: atom.name().to_owned()
+                atom_type: atom.name().to_owned(),
             })
         }
 
@@ -68,30 +71,28 @@ impl Default for StateUi {
         let cfg = FileDialogConfig {
             ..Default::default()
         }
-            .add_file_filter(
-                // Note: We experience glitches if this name is too long. (Window extends horizontally)
-                "PDB/CIF",
-                Arc::new(|p| {
-                    let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
-                    ext == "pdb" || ext == "cif"
-                }),
-            );
-            // .add_file_filter(
-            //     "PDB",
-            //     Arc::new(|p| p.extension().unwrap_or_default().to_ascii_lowercase() == "pdb"),
-            // )
-            // .add_file_filter(
-            //     "CIF",
-            //     Arc::new(|p| p.extension().unwrap_or_default().to_ascii_lowercase() == "cif"),
-            // );
+        .add_file_filter(
+            // Note: We experience glitches if this name is too long. (Window extends horizontally)
+            "PDB/CIF",
+            Arc::new(|p| {
+                let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
+                ext == "pdb" || ext == "cif"
+            }),
+        )
+        .add_file_filter(
+            "PDB",
+            Arc::new(|p| p.extension().unwrap_or_default().to_ascii_lowercase() == "pdb"),
+        )
+        .add_file_filter(
+            "CIF",
+            Arc::new(|p| p.extension().unwrap_or_default().to_ascii_lowercase() == "cif"),
+        );
 
         let load_dialog = FileDialog::with_config(cfg)
             .default_file_filter("PDB/CIF")
-            .id("0");
+            .id("fd1");
 
-        Self {
-            load_dialog
-        }
+        Self { load_dialog }
     }
 }
 
@@ -105,8 +106,13 @@ struct State {
 fn main() {
     let mut state = State::default();
 
-    // state.pdb = Some(load_pdb(&PathBuf::from_str("1yyf.pdb").unwrap()).unwrap());
-    // state.molecule = Some(Molecule::from_pdb(&state.pdb.as_ref().unwrap()));
+    let pdb = load_pdb(&PathBuf::from_str("7m7f.pdb").unwrap());
+    if let Ok(p) = pdb {
+        state.pdb = Some(p);
+        state.molecule = Some(Molecule::from_pdb(state.pdb.as_ref().unwrap()));
+    } else {
+        eprintln!("Error loading PDB file at init.");
+    }
 
     render(state);
 }

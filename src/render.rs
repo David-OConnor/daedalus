@@ -2,10 +2,13 @@
 
 use std::f32::consts::TAU;
 
-use graphics::{Camera, ControlScheme, DeviceEvent, EngineUpdates, InputSettings, LightType, Lighting, Mesh, PointLight, Scene, UiLayout, UiSettings, Entity};
+use graphics::{
+    Camera, ControlScheme, DeviceEvent, EngineUpdates, Entity, InputSettings, LightType, Lighting,
+    Mesh, PointLight, Scene, UiLayout, UiSettings,
+};
 use lin_alg::f32::{Quaternion, Vec3};
 
-use crate::{ui::ui_handler, State, Molecule};
+use crate::{ui::ui_handler, Molecule, State};
 
 type Color = (f32, f32, f32);
 
@@ -26,21 +29,23 @@ pub const MESH_ARROW: usize = 2;
 
 pub const SHELL_OPACITY: f32 = 0.01;
 
-
 pub fn draw_molecule(entities: &mut Vec<Entity>, molecule: &Molecule) {
     *entities = Vec::with_capacity(molecule.atoms.len());
 
     for atom in &molecule.atoms {
         entities.push(Entity::new(
             MESH_SPHERE,
-            Vec3::new(atom.posit.x as f32, atom.posit.y as f32, atom.posit.z as f32),
+            Vec3::new(
+                atom.posit.x as f32,
+                atom.posit.y as f32,
+                atom.posit.z as f32,
+            ),
             Quaternion::new_identity(),
             0.5,
             BODY_COLOR,
             BODY_SHINYNESS,
         ));
     }
-
 }
 
 fn event_handler(
