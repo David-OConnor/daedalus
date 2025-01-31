@@ -19,7 +19,6 @@ const BACKGROUND_COLOR: Color = (0., 0., 0.);
 
 const RENDER_DIST: f32 = 1_000.;
 
-pub const BODY_COLOR: Color = (1.0, 0.4, 0.4);
 pub const BODY_SHINYNESS: f32 = 2.;
 
 // Keep this in sync with mesh init.
@@ -42,7 +41,7 @@ pub fn draw_molecule(entities: &mut Vec<Entity>, molecule: &Molecule) {
             ),
             Quaternion::new_identity(),
             0.5,
-            BODY_COLOR,
+            atom.element.color(),
             BODY_SHINYNESS,
         ));
     }
