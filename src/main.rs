@@ -78,16 +78,16 @@ impl Default for StateUi {
                 let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
                 ext == "pdb" || ext == "cif"
             }),
-        )
-        .add_file_filter(
-            "PDB",
-            Arc::new(|p| p.extension().unwrap_or_default().to_ascii_lowercase() == "pdb"),
-        )
-        .add_file_filter(
-            "CIF",
-            Arc::new(|p| p.extension().unwrap_or_default().to_ascii_lowercase() == "cif"),
         );
-
+        // .add_file_filter(
+        //     "PDB",
+        //     Arc::new(|p| p.extension().unwrap_or_default().to_ascii_lowercase() == "pdb"),
+        // )
+        // .add_file_filter(
+        //     "CIF",
+        //     Arc::new(|p| p.extension().unwrap_or_default().to_ascii_lowercase() == "cif"),
+        // );
+        //
         let load_dialog = FileDialog::with_config(cfg)
             .default_file_filter("PDB/CIF")
             .id("fd1");
@@ -106,7 +106,7 @@ struct State {
 fn main() {
     let mut state = State::default();
 
-    let pdb = load_pdb(&PathBuf::from_str("7m7f.pdb").unwrap());
+    let pdb = load_pdb(&PathBuf::from_str("1kmk.pdb").unwrap());
     if let Ok(p) = pdb {
         state.pdb = Some(p);
         state.molecule = Some(Molecule::from_pdb(state.pdb.as_ref().unwrap()));

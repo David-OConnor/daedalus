@@ -1,4 +1,7 @@
-use std::{path::PathBuf, str::FromStr};
+use std::{
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 
 use egui::{Color32, ComboBox, Context, RichText, Slider, TopBottomPanel, Ui};
 use egui_file_dialog::FileDialog;
@@ -8,6 +11,26 @@ use crate::{pdb::load_pdb, render::draw_molecule, Molecule, State};
 
 pub const ROW_SPACING: f32 = 10.;
 pub const COL_SPACING: f32 = 30.;
+
+fn load_file(
+    path: &Path,
+    state: &mut State,
+    scene: &mut Scene,
+    engine_updates: &mut EngineUpdates,
+) {
+    let pdb = load_pdb(&path);
+
+    if let Ok(p) = pdb {
+        state.pdb = Some(p);
+        state.molecule = Some(Molecule::from_pdb(state.pdb.as_ref().unwrap()));
+
+        draw_molecule(&mut scene.entities, &state.molecule.as_ref().unwrap());
+
+        engine_updates.entities = true;
+    } else {
+        eprintln!("Error loading PDB file");
+    }
+}
 
 fn int_field(val: &mut usize, label: &str, redraw_bodies: &mut bool, ui: &mut Ui) {
     ui.label(label);
@@ -39,12 +62,7 @@ pub fn handle_input(
         // Check for file drop
         if let Some(dropped_files) = ip.raw.dropped_files.first() {
             if let Some(path) = &dropped_files.path {
-                // todo: This loading code is DRY. make a fn
-                state.pdb = Some(load_pdb(&path).unwrap());
-                state.molecule = Some(Molecule::from_pdb(&state.pdb.as_ref().unwrap()));
-
-                draw_molecule(&mut scene.entities, &state.molecule.as_ref().unwrap());
-                engine_updates.entities = true;
+                load_file(&path, state, scene, engine_updates)
             }
         }
     });
@@ -55,7 +73,6 @@ pub fn handle_input(
 pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> EngineUpdates {
     let mut engine_updates = EngineUpdates::default();
     TopBottomPanel::top("0").show(ctx, |ui| {
-        // todo: Not working; any drag+drop freezes the program.
         handle_input(state, ui, scene, &mut engine_updates);
 
         if ui.button("Open").clicked() {
@@ -65,19 +82,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         state.ui.load_dialog.update(ctx);
     });
 
-    if let Some(path) = state.ui.load_dialog.take_picked() {
-        let pdb = load_pdb(&path);
-
-        if let Ok(p) = pdb {
-            state.pdb = Some(p);
-            state.molecule = Some(Molecule::from_pdb(state.pdb.as_ref().unwrap()));
-
-            draw_molecule(&mut scene.entities, &state.molecule.as_ref().unwrap());
-
-            engine_updates.entities = true;
-        } else {
-            eprintln!("Error loading PDB file");
-        }
+    if let Some(path) = &state.ui.load_dialog.take_picked() {
+        load_file(path, state, scene, &mut engine_updates);
     }
 
     state.ui.load_dialog.update(ctx);

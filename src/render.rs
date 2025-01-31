@@ -67,16 +67,6 @@ pub fn render(state: State) {
     let mut entities = Vec::new();
     if let Some(mol) = &state.molecule {
         draw_molecule(&mut entities, mol);
-    } else {
-        // todo: Our engine crashes if we don't have any entities.
-        entities.push(Entity::new(
-            MESH_SPHERE,
-            Vec3::new_zero(),
-            Quaternion::new_identity(),
-            0.5,
-            BODY_COLOR,
-            BODY_SHINYNESS,
-        ));
     }
 
     let scene = Scene {
