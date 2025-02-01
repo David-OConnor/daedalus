@@ -13,3 +13,4 @@ Cargo.lock
 # Molecular formats
 *.pdb
 *.cif
+*.bcif

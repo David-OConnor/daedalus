@@ -6,9 +6,9 @@ use graphics::{
     Camera, ControlScheme, DeviceEvent, EngineUpdates, Entity, InputSettings, LightType, Lighting,
     Mesh, PointLight, Scene, UiLayout, UiSettings,
 };
-use lin_alg::f32::{Quaternion, Vec3};
+use lin_alg::f32::{Quaternion, Vec3, FORWARD, UP};
 
-use crate::{ui::ui_handler, Molecule, State};
+use crate::{ui::ui_handler, util::vec3_to_f32, Molecule, State};
 
 type Color = (f32, f32, f32);
 
@@ -16,17 +16,29 @@ const WINDOW_TITLE: &str = "Molecular docking";
 const WINDOW_SIZE_X: f32 = 1_600.;
 const WINDOW_SIZE_Y: f32 = 1_000.;
 const BACKGROUND_COLOR: Color = (0., 0., 0.);
-
 const RENDER_DIST: f32 = 1_000.;
 
+pub const ATOM_SHINYNESS: f32 = 2.;
 pub const BODY_SHINYNESS: f32 = 2.;
 
 // Keep this in sync with mesh init.
 pub const MESH_SPHERE: usize = 0;
 pub const MESH_CUBE: usize = 1;
 pub const MESH_ARROW: usize = 2;
+pub const MESH_BOND: usize = 3;
+
+// todo: By bond type etc
+const BOND_COLOR: Color = (0.2, 0.2, 0.2);
 
 pub const SHELL_OPACITY: f32 = 0.01;
+
+#[derive(Clone, Copy, Debug, Default)]
+pub enum MoleculeView {
+    #[default]
+    BallAndStick,
+    SpaceFilling,
+    Cartoon,
+}
 
 pub fn draw_molecule(entities: &mut Vec<Entity>, molecule: &Molecule) {
     *entities = Vec::with_capacity(molecule.atoms.len());
@@ -34,14 +46,29 @@ pub fn draw_molecule(entities: &mut Vec<Entity>, molecule: &Molecule) {
     for atom in &molecule.atoms {
         entities.push(Entity::new(
             MESH_SPHERE,
-            Vec3::new(
-                atom.posit.x as f32,
-                atom.posit.y as f32,
-                atom.posit.z as f32,
-            ),
+            vec3_to_f32(atom.posit),
             Quaternion::new_identity(),
             0.5,
             atom.element.color(),
+            ATOM_SHINYNESS,
+        ));
+    }
+
+    // for (atom0, atom1, bond) in &molecule.bonds {
+    for bond in &molecule.bonds {
+        // let center = (atom0.posit + atom1.posit) / 2.;
+        let center = (bond.posit_0 + bond.posit_1) / 2.;
+
+        let diff = vec3_to_f32(bond.posit_0 - bond.posit_1);
+        // todo: FWD?
+        let orientation = Quaternion::from_unit_vecs(FORWARD, diff.to_normalized());
+
+        entities.push(Entity::new(
+            MESH_BOND,
+            vec3_to_f32(center),
+            orientation,
+            1. * diff.magnitude(),
+            BOND_COLOR,
             BODY_SHINYNESS,
         ));
     }
@@ -73,6 +100,7 @@ pub fn render(state: State) {
             Mesh::new_sphere(1., 12, 12),
             Mesh::new_box(1., 1., 1.),
             Mesh::new_arrow(1., 0.05, 8),
+            Mesh::new_cylinder(1., 0.05, 6),
         ],
         entities,
         camera: Camera {
