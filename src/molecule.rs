@@ -22,9 +22,9 @@ impl Molecule {
             println!("Res: {:?}", res);
         }
 
-        for conf in pdb.conformers() {
-            println!("Conf: {:?}", conf);
-        }
+        // for conf in pdb.conformers() {
+        // println!("Conf: {:?}", conf);
+        // }
 
         // for atom in pdb.atoms() {
         // for atom in pdb.par_atoms() {

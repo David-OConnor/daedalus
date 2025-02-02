@@ -1,10 +1,14 @@
 use std::path::Path;
 
-use egui::{Context, TopBottomPanel, Ui};
+use egui::{ComboBox, Context, TopBottomPanel, Ui};
 use graphics::{EngineUpdates, Scene};
-use lin_alg::f32::{Mat4, Vec3};
 
-use crate::{molecule::Molecule, pdb::load_pdb, render::draw_molecule, State};
+use crate::{
+    molecule::Molecule,
+    pdb::load_pdb,
+    render::{draw_molecule, MoleculeView},
+    State,
+};
 
 pub const ROW_SPACING: f32 = 10.;
 pub const COL_SPACING: f32 = 30.;
@@ -76,11 +80,40 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
     TopBottomPanel::top("0").show(ctx, |ui| {
         handle_input(state, ui, scene, &mut engine_updates);
 
-        if ui.button("Open").clicked() {
-            state.ui.load_dialog.pick_file();
-        }
+        ui.horizontal(|ui| {
+            if ui.button("Open").clicked() {
+                state.ui.load_dialog.pick_file();
+            }
 
-        state.ui.load_dialog.update(ctx);
+            state.ui.load_dialog.update(ctx);
+
+            ui.label("View:");
+            let prev_view = state.ui.mol_view;
+            ComboBox::from_id_salt(0)
+                .width(80.)
+                .selected_text(state.ui.mol_view.to_string())
+                .show_ui(ui, |ui| {
+                    for view in &[
+                        MoleculeView::Sticks,
+                        MoleculeView::Ribbon,
+                        MoleculeView::Spheres,
+                        MoleculeView::Cartoon,
+                        MoleculeView::Surface,
+                        MoleculeView::Mesh,
+                        MoleculeView::Dots,
+                    ] {
+                        ui.selectable_value(&mut state.ui.mol_view, *view, view.to_string());
+                    }
+                });
+
+            if state.ui.mol_view != prev_view {
+                if let Some(mol) = &state.molecule {
+                    draw_molecule(&mut scene.entities, mol, state.ui.mol_view);
+                    engine_updates.entities = true;
+                }
+            }
+        });
+        ui.add_space(ROW_SPACING / 2.);
     });
 
     if let Some(path) = &state.ui.load_dialog.take_picked() {
@@ -89,13 +122,4 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
     state.ui.load_dialog.update(ctx);
     engine_updates
-}
-
-// todo: Move this to the Graphics lib, the UI page, the Render page, etc
-/// Find a vector that passes through all 3d points in render space, at a given 2d screen location.
-/// z_limits determines the ends of the result.
-pub fn screen_to_render(screen_pos: (f32, f32), z_limits: (f32, f32), proj: Mat4, ui: &Ui) -> Vec3 {
-    let proj_in = proj.inverse();
-
-    Vec3::new_zero()
 }

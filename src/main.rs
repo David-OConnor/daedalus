@@ -1,7 +1,10 @@
+extern crate core;
+
 mod bond_inference;
 mod molecule;
 mod pdb;
 mod render;
+mod save_load;
 mod ui;
 mod util;
 mod vibrations;
@@ -130,6 +133,8 @@ impl Atom {
 struct StateUi {
     load_dialog: FileDialog,
     mol_view: MoleculeView,
+    /// Mouse cursor
+    cursor_pos: Option<(f32, f32)>,
 }
 
 impl Default for StateUi {
@@ -161,6 +166,7 @@ impl Default for StateUi {
         Self {
             load_dialog,
             mol_view: Default::default(),
+            cursor_pos: None,
             // mol_view: MoleculeView::Tubes
         }
     }

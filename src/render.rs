@@ -1,10 +1,10 @@
 //! This module integraties this application with the graphics engine.
 
-use std::f32::consts::TAU;
+use std::{f32::consts::TAU, fmt};
 
 use graphics::{
-    Camera, ControlScheme, DeviceEvent, EngineUpdates, Entity, InputSettings, LightType, Lighting,
-    Mesh, PointLight, Scene, UiLayout, UiSettings,
+    screen_to_render, Camera, ControlScheme, DeviceEvent, ElementState, EngineUpdates, Entity,
+    InputSettings, LightType, Lighting, Mesh, PointLight, Scene, UiLayout, UiSettings,
 };
 use lin_alg::f32::{Quaternion, Vec3, FORWARD};
 
@@ -35,24 +35,42 @@ pub const SHELL_OPACITY: f32 = 0.01;
 #[derive(Clone, Copy, PartialEq, Debug, Default)]
 pub enum MoleculeView {
     #[default]
-    BallAndStick,
-    SpaceFilling,
+    Sticks,
+    Ribbon,
+    Spheres,
     Cartoon,
-    Tubes, // todo: What is this really called?
+    Surface,
+    Mesh,
+    Dots,
 }
 
+impl fmt::Display for MoleculeView {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let val = match self {
+            Self::Ribbon => "Ribbon",
+            Self::Sticks => "Sticks",
+            Self::Spheres => "Spheres",
+            Self::Cartoon => "Cartoon",
+            Self::Surface => "Surface",
+            Self::Mesh => "Mesh",
+            Self::Dots => "Dots",
+        };
+
+        write!(f, "{val}")
+    }
+}
 /// Refreshes entities with the model passed.
 pub fn draw_molecule(entities: &mut Vec<Entity>, molecule: &Molecule, view: MoleculeView) {
-    // *entities = Vec::with_capacity(molecule.atoms.len());
-    *entities = Vec::new();
+    // todo: Update this capacity A/R as you flesh out your renders.
+    *entities = Vec::with_capacity(molecule.bonds.len());
 
-    if view == MoleculeView::BallAndStick {
+    if [MoleculeView::Spheres].contains(&view) {
         for atom in &molecule.atoms {
             entities.push(Entity::new(
                 MESH_SPHERE,
                 vec3_to_f32(atom.posit),
                 Quaternion::new_identity(),
-                0.3,
+                0.6,
                 atom.element.color(),
                 ATOM_SHINYNESS,
             ));
@@ -79,12 +97,30 @@ pub fn draw_molecule(entities: &mut Vec<Entity>, molecule: &Molecule, view: Mole
 }
 
 fn event_handler(
-    _state: &mut State,
-    _event: DeviceEvent,
-    _scene: &mut Scene,
+    state_: &mut State,
+    event: DeviceEvent,
+    scene: &mut Scene,
     _dt: f32,
 ) -> EngineUpdates {
-    EngineUpdates::default()
+    match event {
+        DeviceEvent::Button { button, state } => {
+            if button == 1 {
+                // Right click
+                match state {
+                    ElementState::Pressed => {
+                        if let Some(cursor) = state_.ui.cursor_pos {
+                            let selected_ray = screen_to_render(cursor, &scene.camera);
+
+                            println!("Sel ray: {:?}", selected_ray);
+                        }
+                    }
+                    ElementState::Released => (),
+                }
+            }
+        }
+        _ => (),
+    }
+    EngineUpdates::default() // todo: A/R.
 }
 
 /// This runs each frame. Currently, no updates.
