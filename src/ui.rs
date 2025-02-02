@@ -1,13 +1,10 @@
-use std::{
-    path::{Path, PathBuf},
-    str::FromStr,
-};
+use std::path::Path;
 
-use egui::{Color32, ComboBox, Context, RichText, Slider, TopBottomPanel, Ui};
-use egui_file_dialog::FileDialog;
-use graphics::{EngineUpdates, Entity, Scene};
+use egui::{Context, TopBottomPanel, Ui};
+use graphics::{EngineUpdates, Scene};
+use lin_alg::f32::{Mat4, Vec3};
 
-use crate::{pdb::load_pdb, render::draw_molecule, Molecule, State};
+use crate::{molecule::Molecule, pdb::load_pdb, render::draw_molecule, State};
 
 pub const ROW_SPACING: f32 = 10.;
 pub const COL_SPACING: f32 = 30.;
@@ -24,7 +21,11 @@ fn load_file(
         state.pdb = Some(p);
         state.molecule = Some(Molecule::from_pdb(state.pdb.as_ref().unwrap()));
 
-        draw_molecule(&mut scene.entities, &state.molecule.as_ref().unwrap());
+        draw_molecule(
+            &mut scene.entities,
+            &state.molecule.as_ref().unwrap(),
+            state.ui.mol_view,
+        );
 
         engine_updates.entities = true;
     } else {
@@ -88,4 +89,13 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
     state.ui.load_dialog.update(ctx);
     engine_updates
+}
+
+// todo: Move this to the Graphics lib, the UI page, the Render page, etc
+/// Find a vector that passes through all 3d points in render space, at a given 2d screen location.
+/// z_limits determines the ends of the result.
+pub fn screen_to_render(screen_pos: (f32, f32), z_limits: (f32, f32), proj: Mat4, ui: &Ui) -> Vec3 {
+    let proj_in = proj.inverse();
+
+    Vec3::new_zero()
 }

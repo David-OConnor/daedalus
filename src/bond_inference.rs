@@ -6,9 +6,12 @@
 //! https://itp.uni-frankfurt.de/~engel/amino.html
 //! These lengths are in angstrom.
 
-use rayon::iter::ParallelIterator;
+use std::collections::HashMap;
 
-use crate::{Atom, Bond, BondType};
+use crate::{
+    molecule::{Bond, BondType},
+    Atom,
+};
 
 // Peptide
 // Double bond len of C' to N.
@@ -29,48 +32,92 @@ const LEN_OH_OC: f64 = 2.8;
 // Bonds to H. Mostly ~1
 const LEN_N_H: f64 = 1.00;
 const LEN_C_H: f64 = 1.10;
-const LEN_O_H: f64 = 1.0; // In water molecules. What is it in proteins?
+const LEN_O_H: f64 = 1.0;
 
 // If interatomic distance is within this distance of one of our known bond lenghts, consider it to be a bond.
-const BOND_LEN_THRESH: f64 = 0.02; // todo: Adjust A/R based on performance.
+const BOND_LEN_THRESH: f64 = 0.04; // todo: Adjust A/R based on performance.
+const GRID_SIZE: f64 = 3.0; // Slightly larger than the largest bond threshold
 
-/// Infer bonds from atoms. Slow: O(n^2).
+/// Infer bonds from atom distances. Uses spacial partitioning for efficiency.
+/// We Check pairs only within nearby bins
 pub fn create_bonds(atoms: &[Atom]) -> Vec<Bond> {
+    let lens_covalent = vec![
+        LEN_CP_N,
+        LEN_N_CALPHA,
+        LEN_CALPHA_CP,
+        LEN_C_C,
+        LEN_C_N,
+        LEN_C_O,
+        LEN_N_H,
+        LEN_C_H,
+        LEN_O_H,
+    ];
+
+    let lens_hydrogen = vec![LEN_OH_OH, LEN_NH_OC, LEN_OH_OC];
+
     // todo: Paralllize?
     let mut result = Vec::new();
 
-    for atom_0 in atoms {
-        for atom_1 in atoms {
-            let dist = (atom_0.posit - atom_1.posit).magnitude();
+    // We use spacial partitioning, so as not to copmare every pair of atoms.
+    let mut grid: HashMap<(i32, i32, i32), Vec<usize>> = HashMap::new();
 
-            // todo: Other bond types
-            for bond_len in [
-                LEN_CP_N,
-                LEN_N_CALPHA,
-                LEN_CALPHA_CP,
-                LEN_C_C,
-                LEN_C_N,
-                LEN_C_O,
-                LEN_N_H,
-                LEN_C_H,
-                LEN_O_H,
-            ] {
-                if (dist - bond_len).abs() < BOND_LEN_THRESH {
-                    result.push(Bond {
-                        bond_type: BondType::Covalent,
-                        posit_0: atom_0.posit,
-                        posit_1: atom_1.posit,
-                    });
-                }
-            }
+    for (i, atom) in atoms.iter().enumerate() {
+        let grid_pos = (
+            (atom.posit.x / GRID_SIZE).floor() as i32,
+            (atom.posit.y / GRID_SIZE).floor() as i32,
+            (atom.posit.z / GRID_SIZE).floor() as i32,
+        );
+        grid.entry(grid_pos).or_default().push(i);
+    }
 
-            for bond_len in [LEN_OH_OH, LEN_NH_OC, LEN_OH_OC] {
-                if (dist - bond_len).abs() < BOND_LEN_THRESH {
-                    result.push(Bond {
-                        bond_type: BondType::Hydrogen,
-                        posit_0: atom_0.posit,
-                        posit_1: atom_1.posit,
-                    });
+    let neighbor_offsets = [
+        (0, 0, 0),
+        (1, 0, 0),
+        (-1, 0, 0),
+        (0, 1, 0),
+        (0, -1, 0),
+        (0, 0, 1),
+        (0, 0, -1),
+        (1, 1, 0),
+        (-1, -1, 0),
+        (1, 0, 1),
+        (-1, 0, -1),
+        (0, 1, 1),
+        (0, -1, -1),
+        (1, 1, 1),
+        (-1, -1, -1),
+    ];
+
+    for (&cell, atom_indices) in &grid {
+        for offset in &neighbor_offsets {
+            let neighbor_cell = (cell.0 + offset.0, cell.1 + offset.1, cell.2 + offset.2);
+            if let Some(neighbor_indices) = grid.get(&neighbor_cell) {
+                for &i in atom_indices {
+                    for &j in neighbor_indices {
+                        if i >= j {
+                            continue;
+                        }
+
+                        let atom_0 = &atoms[i];
+                        let atom_1 = &atoms[j];
+                        let dist = (atom_0.posit - atom_1.posit).magnitude();
+
+                        for (lens, bond_type) in [
+                            (&lens_covalent, BondType::Covalent),
+                            (&lens_hydrogen, BondType::Hydrogen),
+                        ] {
+                            for &bond_len in lens {
+                                if (dist - bond_len).abs() < BOND_LEN_THRESH {
+                                    result.push(Bond {
+                                        bond_type,
+                                        posit_0: atom_0.posit,
+                                        posit_1: atom_1.posit,
+                                    });
+                                    break;
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

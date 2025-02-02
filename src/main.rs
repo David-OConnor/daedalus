@@ -1,25 +1,21 @@
 mod bond_inference;
+mod molecule;
 mod pdb;
 mod render;
 mod ui;
 mod util;
+mod vibrations;
 
-use std::{
-    any::Any,
-    io,
-    io::ErrorKind,
-    path::{Path, PathBuf},
-    str::FromStr,
-    sync::Arc,
-};
+use std::{any::Any, io, io::ErrorKind, path::PathBuf, str::FromStr, sync::Arc};
 
 use egui_file_dialog::{FileDialog, FileDialogConfig};
 use lin_alg::f64::Vec3;
+use molecule::{AaRole, Molecule};
+use na_seq::AminoAcid;
 use pdbtbx::{self, PDB};
 use rayon::iter::ParallelIterator;
 
 use crate::{
-    bond_inference::create_bonds,
     pdb::load_pdb,
     render::{render, MoleculeView},
 };
@@ -112,8 +108,10 @@ impl Element {
 
 #[derive(Debug)]
 pub struct Atom {
-    pub posit: Vec3, // todo: f32 or f64?
+    pub posit: Vec3,
     pub element: Element,
+    pub role: Option<AaRole>,
+    pub amino_acid: Option<AminoAcid>,
 }
 
 impl Atom {
@@ -121,62 +119,11 @@ impl Atom {
         Self {
             posit: Vec3::new(pdb.x(), pdb.y(), pdb.z()),
             element: Element::from_pdb(pdb.element()),
+            // amino_acid: AminoAcid::from_pdb(pdb.r)
+            // todo
+            role: None,
+            amino_acid: None,
         }
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub enum BondType {
-    // C+P from pdbtbx for now
-    Covalent,
-    Disulfide,
-    Hydrogen,
-    MetalCoordination,
-    MisMatchedBasePairs,
-    SaltBridge,
-    CovalentModificationResidue,
-    CovalentModificationNucleotideBase,
-    CovalentModificationNucleotideSugar,
-    CovalentModificationNucleotidePhosphate,
-}
-
-#[derive(Debug)]
-pub struct Bond {
-    pub bond_type: BondType,
-    // todo: Refs to Atom etc A/R.
-    pub posit_0: Vec3,
-    pub posit_1: Vec3,
-}
-
-#[derive(Debug)]
-// todo: This, or a PDB-specific format?
-pub struct Molecule {
-    pub atoms: Vec<Atom>,
-    /// todo: For now, as returned by pdbtbx. Adjust A/R. (Refs to atoms etc)
-    // pub bonds: Vec<(Atom, Atom, pdb::Bond)>,
-    pub bonds: Vec<Bond>,
-}
-
-impl Molecule {
-    pub fn from_pdb(pdb: &PDB) -> Self {
-        // todo: Maybe return the PDB type here, and store that. Also have a way to
-        // todo get molecules from it
-
-        // for atom in pdb.atoms() {
-        // for atom in pdb.par_atoms() {
-        let atoms: Vec<Atom> = pdb.par_atoms().map(|atom| Atom::from_pdb(atom)).collect();
-
-        // let mut bonds = Vec::new();
-        // /// todo: Adjust etc so you're not adding so many new atoms to state.
-        // for (a0, a1, bond) in pdb.bonds() {
-        //     bonds.push((Atom::from_pdb(a0), Atom::from_pdb(a1), bond));
-        // }
-
-        let bonds = create_bonds(&atoms);
-
-        // todo: Chains
-
-        Molecule { atoms, bonds }
     }
 }
 
@@ -214,6 +161,7 @@ impl Default for StateUi {
         Self {
             load_dialog,
             mol_view: Default::default(),
+            // mol_view: MoleculeView::Tubes
         }
     }
 }

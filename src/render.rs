@@ -6,9 +6,9 @@ use graphics::{
     Camera, ControlScheme, DeviceEvent, EngineUpdates, Entity, InputSettings, LightType, Lighting,
     Mesh, PointLight, Scene, UiLayout, UiSettings,
 };
-use lin_alg::f32::{Quaternion, Vec3, FORWARD, UP};
+use lin_alg::f32::{Quaternion, Vec3, FORWARD};
 
-use crate::{ui::ui_handler, util::vec3_to_f32, Molecule, State};
+use crate::{molecule::Molecule, ui::ui_handler, util::vec3_to_f32, State};
 
 type Color = (f32, f32, f32);
 
@@ -32,26 +32,31 @@ const BOND_COLOR: Color = (0.2, 0.2, 0.2);
 
 pub const SHELL_OPACITY: f32 = 0.01;
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, PartialEq, Debug, Default)]
 pub enum MoleculeView {
     #[default]
     BallAndStick,
     SpaceFilling,
     Cartoon,
+    Tubes, // todo: What is this really called?
 }
 
-pub fn draw_molecule(entities: &mut Vec<Entity>, molecule: &Molecule) {
-    *entities = Vec::with_capacity(molecule.atoms.len());
+/// Refreshes entities with the model passed.
+pub fn draw_molecule(entities: &mut Vec<Entity>, molecule: &Molecule, view: MoleculeView) {
+    // *entities = Vec::with_capacity(molecule.atoms.len());
+    *entities = Vec::new();
 
-    for atom in &molecule.atoms {
-        entities.push(Entity::new(
-            MESH_SPHERE,
-            vec3_to_f32(atom.posit),
-            Quaternion::new_identity(),
-            0.5,
-            atom.element.color(),
-            ATOM_SHINYNESS,
-        ));
+    if view == MoleculeView::BallAndStick {
+        for atom in &molecule.atoms {
+            entities.push(Entity::new(
+                MESH_SPHERE,
+                vec3_to_f32(atom.posit),
+                Quaternion::new_identity(),
+                0.3,
+                atom.element.color(),
+                ATOM_SHINYNESS,
+            ));
+        }
     }
 
     // for (atom0, atom1, bond) in &molecule.bonds {
@@ -60,7 +65,6 @@ pub fn draw_molecule(entities: &mut Vec<Entity>, molecule: &Molecule) {
         let center = (bond.posit_0 + bond.posit_1) / 2.;
 
         let diff = vec3_to_f32(bond.posit_0 - bond.posit_1);
-        // todo: FWD?
         let orientation = Quaternion::from_unit_vecs(FORWARD, diff.to_normalized());
 
         entities.push(Entity::new(
@@ -92,7 +96,7 @@ fn render_handler(_state: &mut State, _scene: &mut Scene, _dt: f32) -> EngineUpd
 pub fn render(state: State) {
     let mut entities = Vec::new();
     if let Some(mol) = &state.molecule {
-        draw_molecule(&mut entities, mol);
+        draw_molecule(&mut entities, mol, state.ui.mol_view);
     }
 
     let scene = Scene {
