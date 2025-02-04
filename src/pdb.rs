@@ -1,6 +1,20 @@
 use std::{io, io::ErrorKind, path::Path};
-
+use std::io::BufReader;
 use pdbtbx::{Format, ReadOptions, StrictnessLevel, PDB};
+
+
+/// From a string of a CIF or PDB text file.
+pub fn read_pdb(pdb_text: &str) -> io::Result<PDB> {
+    let reader = BufReader::new(pdb_text.as_bytes());
+
+    let (pdb, _errors) = ReadOptions::default()
+        .set_level(StrictnessLevel::Loose)
+        .set_format(Format::Mmcif) // Must be set explicitly if  using read_raw.
+        .read_raw(reader)
+        .map_err(|e| io::Error::new(ErrorKind::InvalidData, "Problem reading PDB text"))?;
+
+    Ok(pdb)
+}
 
 pub fn load_pdb(path: &Path) -> io::Result<PDB> {
     let (pdb, _errors) = ReadOptions::default()

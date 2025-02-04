@@ -38,7 +38,7 @@ pub fn points_along_ray(ray: (Vec3F32, Vec3F32), atoms: &[Atom], dist_thresh: f3
 pub fn find_selected_atom(sel: &[usize], atoms: &[Atom], ray: &(Vec3F32, Vec3F32)) -> Option<usize> {
     if !sel.is_empty() {
         // todo: Also consider togglign between ones under the cursor near the front,
-        // todo and ... (what?)
+        // todo and picking the one closest to the ray.
 
         let mut near_i = 0;
         let mut near_dist = 99999.;

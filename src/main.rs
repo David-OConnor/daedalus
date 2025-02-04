@@ -8,6 +8,9 @@ mod save_load;
 mod ui;
 mod util;
 mod vibrations;
+mod download_pdb;
+mod drug_like;
+mod amino_acid_coords;
 
 use std::{any::Any, io, io::ErrorKind, path::PathBuf, str::FromStr, sync::Arc};
 
@@ -54,6 +57,9 @@ pub enum Element {
     Magnesium,
     Iodine,
     Chlorine,
+    Tungsten,
+    Tellurium,
+    Selenium,
     Other,
 }
 
@@ -82,7 +88,14 @@ impl Element {
                 pdbtbx::Element::Mg => Self::Magnesium,
                 pdbtbx::Element::I => Self::Iodine,
                 pdbtbx::Element::Cl => Self::Chlorine,
-                _ => Self::Other,
+                pdbtbx::Element::W => Self::Tungsten,
+                pdbtbx::Element::Te => Self::Tellurium,
+                pdbtbx::Element::Se => Self::Selenium,
+
+                _ => {
+                    eprintln!("Unknown element: {e:?}");
+                    Self::Other
+                },
             }
         } else {
             // todo?
@@ -103,6 +116,7 @@ impl Element {
             "CU" => Ok(Self::Copper),
             "CA" => Ok(Self::Calcium),
             "K" => Ok(Self::Potassium),
+            // todo: Fill in if you need, or remove this fn.
 
             _ => Err(io::Error::new(
                 ErrorKind::InvalidData,
@@ -135,6 +149,9 @@ impl Element {
             Self::Magnesium => (0.541, 1., 0.),
             Self::Iodine => (0.580, 0., 0.580),
             Self::Chlorine => (0.121, 0.941, 0.121),
+            Self::Tungsten => (0.129, 0.580, 0.840),
+            Self::Tellurium => (0.831, 0.478, 0.),
+            Self::Selenium => (1.0, 0.631, 0.),
             Self::Other => (5., 5., 5.),
         }
     }
@@ -145,6 +162,7 @@ struct StateUi {
     mol_view: MoleculeView,
     /// Mouse cursor
     cursor_pos: Option<(f32, f32)>,
+    pub rcsb_input: String,
 }
 
 impl Default for StateUi {
@@ -177,7 +195,7 @@ impl Default for StateUi {
             load_dialog,
             mol_view: Default::default(),
             cursor_pos: None,
-            // mol_view: MoleculeView::Tubes
+            rcsb_input: String::new(),
         }
     }
 }
@@ -204,26 +222,6 @@ fn main() {
     } else {
         eprintln!("Error loading PDB file at init.");
     }
-
-    // todo: Temp for projections
-    state.molecule = Some(Molecule {
-        atoms: vec![
-            Atom {
-                posit: Vec3::new(0., 0., 0.),
-                element: Element::Carbon,
-                role: None,
-                amino_acid: None,
-            },
-            Atom {
-                posit: Vec3::new(10., 0., 0.),
-                element: Element::Nitrogen,
-                role: None,
-                amino_acid: None,
-            },
-        ],
-        bonds: Vec::new(),
-        chains: Vec::new(),
-    });
 
     render(state);
 }

@@ -171,7 +171,7 @@ fn event_dev_handler(
                             let selected_ray = scene.screen_to_render(cursor);
 
                             if let Some(mol) = &state_.molecule {
-                                let atoms_sel = points_along_ray(selected_ray, &mol.atoms, 1.0);
+                                let atoms_sel = points_along_ray(selected_ray, &mol.atoms, 0.6);
 
                                 state_.atom_selected =
                                     find_selected_atom(&atoms_sel, &mol.atoms, &selected_ray);

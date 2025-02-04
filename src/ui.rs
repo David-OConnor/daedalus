@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use egui::{ComboBox, Context, TopBottomPanel, Ui};
+use egui::{ComboBox, Context, TextEdit, TopBottomPanel, Ui};
 use graphics::{EngineUpdates, Scene};
 
 use crate::{
@@ -9,6 +9,7 @@ use crate::{
     render::{draw_molecule, MoleculeView},
     State,
 };
+use crate::download_pdb::load_rcsb;
 
 pub const ROW_SPACING: f32 = 10.;
 pub const COL_SPACING: f32 = 30.;
@@ -94,6 +95,36 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             if ui.button("Open").clicked() {
                 state.ui.load_dialog.pick_file();
             }
+
+            ui.add_space(COL_SPACING);
+            ui.label("RCSB ident:");
+            ui.add(
+                TextEdit::singleline(&mut state.ui.rcsb_input)
+                    .desired_width(60.),
+            );
+
+            if ui.button("Load RCSB").clicked() {
+                match load_rcsb(&state.ui.rcsb_input) {
+                    Ok(pdb) => {
+                        state.pdb = Some(pdb);
+                        state.molecule = Some(Molecule::from_pdb(state.pdb.as_ref().unwrap()));
+
+                        draw_molecule(
+                            &mut scene.entities,
+                            &state.molecule.as_ref().unwrap(),
+                            state.ui.mol_view,
+                            state.atom_selected,
+                        );
+
+                        engine_updates.entities = true;
+                    }
+                    Err(_e) => {
+                        eprintln!("Error loading PDB file");
+                    }
+                }
+            }
+
+            ui.add_space(COL_SPACING);
 
             state.ui.load_dialog.update(ctx);
 
