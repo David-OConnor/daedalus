@@ -13,12 +13,12 @@ use std::{any::Any, io, io::ErrorKind, path::PathBuf, str::FromStr, sync::Arc};
 
 use egui_file_dialog::{FileDialog, FileDialogConfig};
 use lin_alg::f64::Vec3;
-use molecule::{AaRole, Molecule};
-use na_seq::AminoAcid;
+use molecule::Molecule;
 use pdbtbx::{self, PDB};
 use rayon::iter::ParallelIterator;
 
 use crate::{
+    molecule::Atom,
     pdb::load_pdb,
     render::{render, MoleculeView},
 };
@@ -44,6 +44,16 @@ pub enum Element {
     Copper,
     Calcium,
     Potassium,
+    Aluminum,
+    Lead,
+    Gold,
+    Silver,
+    Mercury,
+    Tin,
+    Zinc,
+    Magnesium,
+    Iodine,
+    Chlorine,
     Other,
 }
 
@@ -62,6 +72,16 @@ impl Element {
                 pdbtbx::Element::Cu => Self::Copper,
                 pdbtbx::Element::Ca => Self::Calcium,
                 pdbtbx::Element::K => Self::Potassium,
+                pdbtbx::Element::Al => Self::Aluminum,
+                pdbtbx::Element::Pb => Self::Lead,
+                pdbtbx::Element::Au => Self::Gold,
+                pdbtbx::Element::Ag => Self::Silver,
+                pdbtbx::Element::Hg => Self::Mercury,
+                pdbtbx::Element::Sn => Self::Tin,
+                pdbtbx::Element::Zn => Self::Zinc,
+                pdbtbx::Element::Mg => Self::Magnesium,
+                pdbtbx::Element::I => Self::Iodine,
+                pdbtbx::Element::Cl => Self::Chlorine,
                 _ => Self::Other,
             }
         } else {
@@ -83,6 +103,7 @@ impl Element {
             "CU" => Ok(Self::Copper),
             "CA" => Ok(Self::Calcium),
             "K" => Ok(Self::Potassium),
+
             _ => Err(io::Error::new(
                 ErrorKind::InvalidData,
                 "Invalid atom letter",
@@ -104,28 +125,17 @@ impl Element {
             Self::Copper => (0.784, 0.502, 0.2),
             Self::Calcium => (0.239, 1.0, 0.),
             Self::Potassium => (0.561, 0.251, 0.831),
+            Self::Aluminum => (0.749, 0.651, 0.651),
+            Self::Lead => (0.341, 0.349, 0.380),
+            Self::Gold => (1., 0.820, 0.137),
+            Self::Silver => (0.753, 0.753, 0.753),
+            Self::Mercury => (0.722, 0.722, 0.816),
+            Self::Tin => (0.4, 0.502, 0.502),
+            Self::Zinc => (0.490, 0.502, 0.690),
+            Self::Magnesium => (0.541, 1., 0.),
+            Self::Iodine => (0.580, 0., 0.580),
+            Self::Chlorine => (0.121, 0.941, 0.121),
             Self::Other => (5., 5., 5.),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct Atom {
-    pub posit: Vec3,
-    pub element: Element,
-    pub role: Option<AaRole>,
-    pub amino_acid: Option<AminoAcid>,
-}
-
-impl Atom {
-    pub fn from_pdb(pdb: &pdbtbx::Atom) -> Self {
-        Self {
-            posit: Vec3::new(pdb.x(), pdb.y(), pdb.z()),
-            element: Element::from_pdb(pdb.element()),
-            // amino_acid: AminoAcid::from_pdb(pdb.r)
-            // todo
-            role: None,
-            amino_acid: None,
         }
     }
 }
@@ -177,10 +187,15 @@ struct State {
     pub ui: StateUi,
     pub pdb: Option<PDB>,
     pub molecule: Option<Molecule>,
+    /// Index
+    /// todo: This is likely a temporary implementation
+    pub atom_selected: Option<usize>,
 }
 
 fn main() {
     let mut state = State::default();
+
+    state.atom_selected = Some(0);
 
     let pdb = load_pdb(&PathBuf::from_str("1kmk.pdb").unwrap());
     if let Ok(p) = pdb {
@@ -189,6 +204,26 @@ fn main() {
     } else {
         eprintln!("Error loading PDB file at init.");
     }
+
+    // todo: Temp for projections
+    state.molecule = Some(Molecule {
+        atoms: vec![
+            Atom {
+                posit: Vec3::new(0., 0., 0.),
+                element: Element::Carbon,
+                role: None,
+                amino_acid: None,
+            },
+            Atom {
+                posit: Vec3::new(10., 0., 0.),
+                element: Element::Nitrogen,
+                role: None,
+                amino_acid: None,
+            },
+        ],
+        bonds: Vec::new(),
+        chains: Vec::new(),
+    });
 
     render(state);
 }

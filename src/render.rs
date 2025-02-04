@@ -3,12 +3,17 @@
 use std::{f32::consts::TAU, fmt};
 
 use graphics::{
-    screen_to_render, Camera, ControlScheme, DeviceEvent, ElementState, EngineUpdates, Entity,
+    event::WindowEvent, Camera, ControlScheme, DeviceEvent, ElementState, EngineUpdates, Entity,
     InputSettings, LightType, Lighting, Mesh, PointLight, Scene, UiLayout, UiSettings,
 };
-use lin_alg::f32::{Quaternion, Vec3, FORWARD};
+use lin_alg::f32::{Quaternion, Vec3, FORWARD, UP};
 
-use crate::{molecule::Molecule, ui::ui_handler, util::vec3_to_f32, State};
+use crate::{
+    molecule::{BondCount, Molecule},
+    ui::ui_handler,
+    util::{find_selected_atom, points_along_ray, vec3_to_f32},
+    State,
+};
 
 type Color = (f32, f32, f32);
 
@@ -30,13 +35,15 @@ pub const MESH_BOND: usize = 3;
 // todo: By bond type etc
 const BOND_COLOR: Color = (0.2, 0.2, 0.2);
 
+pub const COLOR_SELECTED: Color = (1., 1., 1.);
+
 pub const SHELL_OPACITY: f32 = 0.01;
 
 #[derive(Clone, Copy, PartialEq, Debug, Default)]
 pub enum MoleculeView {
-    #[default]
     Sticks,
     Ribbon,
+    #[default]
     Spheres,
     Cartoon,
     Surface,
@@ -60,48 +67,100 @@ impl fmt::Display for MoleculeView {
     }
 }
 /// Refreshes entities with the model passed.
-pub fn draw_molecule(entities: &mut Vec<Entity>, molecule: &Molecule, view: MoleculeView) {
+pub fn draw_molecule(
+    entities: &mut Vec<Entity>,
+    molecule: &Molecule,
+    view: MoleculeView,
+    selected: Option<usize>,
+) {
     // todo: Update this capacity A/R as you flesh out your renders.
-    *entities = Vec::with_capacity(molecule.bonds.len());
+    // *entities = Vec::with_capacity(molecule.bonds.len());
+    *entities = Vec::new();
 
     if [MoleculeView::Spheres].contains(&view) {
-        for atom in &molecule.atoms {
+        for (i, atom) in molecule.atoms.iter().enumerate() {
+            let mut color = atom.element.color();
+            if let Some(hl) = selected {
+                if hl == i {
+                    color = COLOR_SELECTED
+                }
+            }
+
             entities.push(Entity::new(
                 MESH_SPHERE,
                 vec3_to_f32(atom.posit),
                 Quaternion::new_identity(),
-                0.6,
-                atom.element.color(),
+                // 1.5,
+                0.4, // todo: temp testing highlight
+                color,
                 ATOM_SHINYNESS,
             ));
         }
     }
 
+    let rot_ortho = Quaternion::from_unit_vecs(UP, FORWARD);
+
     // for (atom0, atom1, bond) in &molecule.bonds {
     for bond in &molecule.bonds {
+        if view == MoleculeView::Ribbon && !bond.is_backbone {
+            continue;
+        }
+
         // let center = (atom0.posit + atom1.posit) / 2.;
         let center = (bond.posit_0 + bond.posit_1) / 2.;
 
         let diff = vec3_to_f32(bond.posit_0 - bond.posit_1);
-        let orientation = Quaternion::from_unit_vecs(FORWARD, diff.to_normalized());
+        let diff_unit = diff.to_normalized();
+        let orientation = Quaternion::from_unit_vecs(FORWARD, diff_unit);
 
-        entities.push(Entity::new(
-            MESH_BOND,
-            vec3_to_f32(center),
-            orientation,
-            1. * diff.magnitude(),
-            BOND_COLOR,
-            BODY_SHINYNESS,
-        ));
+        match bond.bond_count {
+            BondCount::Double => {
+                // Draw two offset bond cylinders.
+                // todo: QC this using quat logic. Seems to be working though.
+                let rotator = rot_ortho * orientation;
+
+                let offset_a = rotator.rotate_vec(Vec3::new(0.2, 0., 0.));
+                let offset_b = rotator.rotate_vec(Vec3::new(-0.2, 0., 0.));
+
+                entities.push(Entity::new(
+                    MESH_BOND,
+                    vec3_to_f32(center) + offset_a,
+                    orientation,
+                    1. * diff.magnitude(),
+                    BOND_COLOR,
+                    BODY_SHINYNESS,
+                ));
+
+                entities.push(Entity::new(
+                    MESH_BOND,
+                    vec3_to_f32(center) + offset_b,
+                    orientation,
+                    1. * diff.magnitude(),
+                    BOND_COLOR,
+                    BODY_SHINYNESS,
+                ));
+            }
+            _ => {
+                entities.push(Entity::new(
+                    MESH_BOND,
+                    vec3_to_f32(center),
+                    orientation,
+                    1. * diff.magnitude(),
+                    BOND_COLOR,
+                    BODY_SHINYNESS,
+                ));
+            }
+        }
     }
 }
 
-fn event_handler(
+fn event_dev_handler(
     state_: &mut State,
     event: DeviceEvent,
     scene: &mut Scene,
     _dt: f32,
 ) -> EngineUpdates {
+    let mut updates = EngineUpdates::default();
     match event {
         DeviceEvent::Button { button, state } => {
             if button == 1 {
@@ -109,14 +168,46 @@ fn event_handler(
                 match state {
                     ElementState::Pressed => {
                         if let Some(cursor) = state_.ui.cursor_pos {
-                            let selected_ray = screen_to_render(cursor, &scene.camera);
+                            let selected_ray = scene.screen_to_render(cursor);
 
-                            println!("Sel ray: {:?}", selected_ray);
+                            if let Some(mol) = &state_.molecule {
+                                let atoms_sel = points_along_ray(selected_ray, &mol.atoms, 1.0);
+
+                                state_.atom_selected =
+                                    find_selected_atom(&atoms_sel, &mol.atoms, &selected_ray);
+
+                                draw_molecule(
+                                    &mut scene.entities,
+                                    mol,
+                                    state_.ui.mol_view,
+                                    state_.atom_selected,
+                                );
+                                updates.entities = true;
+                            }
                         }
                     }
                     ElementState::Released => (),
                 }
             }
+        }
+        _ => (),
+    }
+    updates
+}
+
+fn event_win_handler(
+    state: &mut State,
+    event: WindowEvent,
+    _scene: &mut Scene,
+    _dt: f32,
+) -> EngineUpdates {
+    match event {
+        WindowEvent::CursorMoved {
+            device_id,
+            position,
+        } => {
+            // println!("Cursor: {:?}", position);
+            state.ui.cursor_pos = Some((position.x as f32, position.y as f32))
         }
         _ => (),
     }
@@ -132,8 +223,10 @@ fn render_handler(_state: &mut State, _scene: &mut Scene, _dt: f32) -> EngineUpd
 pub fn render(state: State) {
     let mut entities = Vec::new();
     if let Some(mol) = &state.molecule {
-        draw_molecule(&mut entities, mol, state.ui.mol_view);
+        draw_molecule(&mut entities, mol, state.ui.mol_view, state.atom_selected);
     }
+
+    let white = [1., 1., 1., 1.];
 
     let scene = Scene {
         meshes: vec![
@@ -153,26 +246,26 @@ pub fn render(state: State) {
             ..Default::default()
         },
         lighting: Lighting {
-            ambient_color: [-1., 1., 1., 0.5],
-            ambient_intensity: 0.05,
+            ambient_color: white,
+            ambient_intensity: 0.01,
             point_lights: vec![
                 // Light from above
                 PointLight {
                     type_: LightType::Omnidirectional,
                     position: Vec3::new(20., 20., 500.),
-                    diffuse_color: [0.3, 0.4, 0.4, 1.],
-                    specular_color: [0.3, 0.4, 0.4, 1.],
-                    diffuse_intensity: 5_000.,
-                    specular_intensity: 8_000.,
+                    diffuse_color: white,
+                    specular_color: white,
+                    diffuse_intensity: 4_000.,
+                    specular_intensity: 10_000.,
                 },
                 // Light from below
                 PointLight {
                     type_: LightType::Omnidirectional,
-                    position: Vec3::new(-20., 20., -500.),
-                    diffuse_color: [0.3, 0.4, 0.4, 1.],
-                    specular_color: [0.3, 0.4, 0.4, 1.],
-                    diffuse_intensity: 5_000.,
-                    specular_intensity: 8_000.,
+                    position: Vec3::new(20., 20., -500.),
+                    diffuse_color: white,
+                    specular_color: white,
+                    diffuse_intensity: 4_000.,
+                    specular_intensity: 10_000.,
                 },
             ],
         },
@@ -199,7 +292,8 @@ pub fn render(state: State) {
         input_settings,
         ui_settings,
         render_handler,
-        event_handler,
+        event_dev_handler,
+        event_win_handler,
         ui_handler,
     );
 }

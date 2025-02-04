@@ -29,6 +29,7 @@ fn load_file(
             &mut scene.entities,
             &state.molecule.as_ref().unwrap(),
             state.ui.mol_view,
+            state.atom_selected,
         );
 
         engine_updates.entities = true;
@@ -73,6 +74,15 @@ pub fn handle_input(
     });
 }
 
+/// Display text of the selected atom
+fn selected_data(mol: &Molecule, selected: usize, ui: &mut Ui) {
+    let atom = &mol.atoms[selected];
+    ui.label(format!(
+        "El: {:?}, AA: {:?}, Role: {:?}",
+        atom.element, atom.amino_acid, atom.role
+    ));
+}
+
 /// This function draws the (immediate-mode) GUI.
 /// [UI items](https://docs.rs/egui/latest/egui/struct.Ui.html)
 pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> EngineUpdates {
@@ -108,8 +118,21 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
             if state.ui.mol_view != prev_view {
                 if let Some(mol) = &state.molecule {
-                    draw_molecule(&mut scene.entities, mol, state.ui.mol_view);
+                    draw_molecule(
+                        &mut scene.entities,
+                        mol,
+                        state.ui.mol_view,
+                        state.atom_selected,
+                    );
                     engine_updates.entities = true;
+                }
+            }
+
+            ui.add_space(COL_SPACING);
+
+            if let Some(mol) = &state.molecule {
+                if let Some(sel) = state.atom_selected {
+                    selected_data(mol, sel, ui);
                 }
             }
         });

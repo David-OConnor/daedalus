@@ -8,10 +8,7 @@
 
 use std::collections::HashMap;
 
-use crate::{
-    molecule::{Bond, BondType},
-    Atom,
-};
+use crate::molecule::{Atom, Bond, BondCount, BondType};
 
 // Peptide
 // Double bond len of C' to N.
@@ -23,6 +20,9 @@ const LEN_CALPHA_CP: f64 = 1.53;
 const LEN_C_C: f64 = 1.54;
 const LEN_C_N: f64 = 1.48;
 const LEN_C_O: f64 = 1.43;
+
+// todo: Found this elsewhere. Likely conflict with C_O above?
+const LEN_C_O_DOUBLE: f64 = 1.23;
 
 // Hydrogen
 const LEN_OH_OH: f64 = 2.8;
@@ -36,6 +36,7 @@ const LEN_O_H: f64 = 1.0;
 
 // If interatomic distance is within this distance of one of our known bond lenghts, consider it to be a bond.
 const BOND_LEN_THRESH: f64 = 0.04; // todo: Adjust A/R based on performance.
+const BOND_LEN_THRESH_FINE: f64 = 0.01; // todo: Adjust A/R based on performance.
 const GRID_SIZE: f64 = 3.0; // Slightly larger than the largest bond threshold
 
 /// Infer bonds from atom distances. Uses spacial partitioning for efficiency.
@@ -51,6 +52,7 @@ pub fn create_bonds(atoms: &[Atom]) -> Vec<Bond> {
         LEN_N_H,
         LEN_C_H,
         LEN_O_H,
+        LEN_C_O_DOUBLE,
     ];
 
     let lens_hydrogen = vec![LEN_OH_OH, LEN_NH_OC, LEN_OH_OC];
@@ -108,10 +110,20 @@ pub fn create_bonds(atoms: &[Atom]) -> Vec<Bond> {
                         ] {
                             for &bond_len in lens {
                                 if (dist - bond_len).abs() < BOND_LEN_THRESH {
+                                    // let bond_count = if (dist - LEN_C_O_DOUBLE).abs() < BOND_LEN_THRESH_FINE {
+                                    let bond_count =
+                                        if (dist - LEN_C_O_DOUBLE).abs() < BOND_LEN_THRESH {
+                                            BondCount::Double
+                                        } else {
+                                            BondCount::Single
+                                        };
+
                                     result.push(Bond {
                                         bond_type,
+                                        bond_count,
                                         posit_0: atom_0.posit,
                                         posit_1: atom_1.posit,
+                                        is_backbone: atom_0.is_backbone() && atom_1.is_backbone(),
                                     });
                                     break;
                                 }
