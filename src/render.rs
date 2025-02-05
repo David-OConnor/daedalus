@@ -9,10 +9,10 @@ use graphics::{
 use lin_alg::f32::{Quaternion, Vec3, FORWARD, UP};
 
 use crate::{
-    molecule::{BondCount, Molecule},
+    molecule::{aa_color, BondCount, Molecule},
     ui::ui_handler,
     util::{find_selected_atom, points_along_ray, vec3_to_f32},
-    State,
+    AtomColorCode, State,
 };
 
 type Color = (f32, f32, f32);
@@ -71,6 +71,7 @@ pub fn draw_molecule(
     entities: &mut Vec<Entity>,
     molecule: &Molecule,
     view: MoleculeView,
+    color_code: AtomColorCode,
     selected: Option<usize>,
 ) {
     // todo: Update this capacity A/R as you flesh out your renders.
@@ -79,12 +80,30 @@ pub fn draw_molecule(
 
     if [MoleculeView::Spheres].contains(&view) {
         for (i, atom) in molecule.atoms.iter().enumerate() {
-            let mut color = atom.element.color();
-            if let Some(hl) = selected {
-                if hl == i {
-                    color = COLOR_SELECTED
+            let color = match color_code {
+                AtomColorCode::Atom => {
+                    let mut c = atom.element.color();
+                    if let Some(hl) = selected {
+                        if hl == i {
+                            c = COLOR_SELECTED
+                        }
+                    }
+                    c
                 }
-            }
+                AtomColorCode::Residue => {
+                    let mut c = atom.element.color();
+                    // todo: Handle highlighting for residue.
+
+                    for res in &molecule.residues {
+                        if res.atoms.contains(&i) {
+                            if let Some(aa) = res.aa {
+                                c = aa_color(aa);
+                            }
+                        }
+                    }
+                    c
+                }
+            };
 
             entities.push(Entity::new(
                 MESH_SPHERE,
@@ -180,6 +199,7 @@ fn event_dev_handler(
                                     &mut scene.entities,
                                     mol,
                                     state_.ui.mol_view,
+                                    state_.ui.atom_color_code,
                                     state_.atom_selected,
                                 );
                                 updates.entities = true;
@@ -223,7 +243,13 @@ fn render_handler(_state: &mut State, _scene: &mut Scene, _dt: f32) -> EngineUpd
 pub fn render(state: State) {
     let mut entities = Vec::new();
     if let Some(mol) = &state.molecule {
-        draw_molecule(&mut entities, mol, state.ui.mol_view, state.atom_selected);
+        draw_molecule(
+            &mut entities,
+            mol,
+            state.ui.mol_view,
+            state.ui.atom_color_code,
+            state.atom_selected,
+        );
     }
 
     let white = [1., 1., 1., 1.];

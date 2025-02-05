@@ -1,7 +1,10 @@
-use std::{io, io::ErrorKind, path::Path};
-use std::io::BufReader;
-use pdbtbx::{Format, ReadOptions, StrictnessLevel, PDB};
+use std::{
+    io,
+    io::{BufReader, ErrorKind},
+    path::Path,
+};
 
+use pdbtbx::{Format, ReadOptions, StrictnessLevel, PDB};
 
 /// From a string of a CIF or PDB text file.
 pub fn read_pdb(pdb_text: &str) -> io::Result<PDB> {

@@ -1,6 +1,7 @@
 //! This module contains coordinates for Amino Acids
 
 use na_seq::AminoAcid;
+
 use crate::molecule::Atom;
 
 /// Atom coords are relative.
@@ -9,42 +10,18 @@ pub fn atoms(aa: &AminoAcid) -> Vec<Atom> {
     let mut result = Vec::new();
 
     match aa {
-        AminoAcid::Arg => {
-
-        }
-        AminoAcid::His => {
-
-        }
-        AminoAcid::Lys => {
-
-        }
-        AminoAcid::Asp => {
-
-        }
-        AminoAcid::Glu => {
-
-        }
-        AminoAcid::Ser => {
-
-        }
-        AminoAcid::Thr => {
-
-        }
-        AminoAcid::Thr => {
-
-        }
-        AminoAcid::Asn => {
-
-        }
-        AminoAcid::Gln => {
-
-        }
-        AminoAcid::Cys => {
-
-        }
-        AminoAcid::Sec => {
-
-        }
+        AminoAcid::Arg => {}
+        AminoAcid::His => {}
+        AminoAcid::Lys => {}
+        AminoAcid::Asp => {}
+        AminoAcid::Glu => {}
+        AminoAcid::Ser => {}
+        AminoAcid::Thr => {}
+        AminoAcid::Thr => {}
+        AminoAcid::Asn => {}
+        AminoAcid::Gln => {}
+        AminoAcid::Cys => {}
+        AminoAcid::Sec => {}
 
         // Gly,
         // Pro,
@@ -56,9 +33,8 @@ pub fn atoms(aa: &AminoAcid) -> Vec<Atom> {
         // Phe,
         // Tyr,
         // Trp,
-        _ => ()
+        _ => (),
     }
-
 
     result
 }

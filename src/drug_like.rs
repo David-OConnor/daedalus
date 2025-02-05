@@ -5,7 +5,4 @@
 //!
 use crate::molecule::Ligand;
 
-pub fn score(ligand: &Ligand) {
-
-}
-
+pub fn score(ligand: &Ligand) {}

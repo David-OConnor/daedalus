@@ -35,7 +35,11 @@ pub fn points_along_ray(ray: (Vec3F32, Vec3F32), atoms: &[Atom], dist_thresh: f3
 }
 
 /// From under the cursor; pick the one near the ray, closest to the camera.
-pub fn find_selected_atom(sel: &[usize], atoms: &[Atom], ray: &(Vec3F32, Vec3F32)) -> Option<usize> {
+pub fn find_selected_atom(
+    sel: &[usize],
+    atoms: &[Atom],
+    ray: &(Vec3F32, Vec3F32),
+) -> Option<usize> {
     if !sel.is_empty() {
         // todo: Also consider togglign between ones under the cursor near the front,
         // todo and picking the one closest to the ray.

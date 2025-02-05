@@ -4,12 +4,12 @@ use egui::{ComboBox, Context, TextEdit, TopBottomPanel, Ui};
 use graphics::{EngineUpdates, Scene};
 
 use crate::{
+    download_pdb::load_rcsb,
     molecule::Molecule,
     pdb::load_pdb,
     render::{draw_molecule, MoleculeView},
-    State,
+    AtomColorCode, State,
 };
-use crate::download_pdb::load_rcsb;
 
 pub const ROW_SPACING: f32 = 10.;
 pub const COL_SPACING: f32 = 30.;
@@ -17,7 +17,7 @@ pub const COL_SPACING: f32 = 30.;
 fn load_file(
     path: &Path,
     state: &mut State,
-    scene: &mut Scene,
+    redraw: &mut bool,
     engine_updates: &mut EngineUpdates,
 ) {
     let pdb = load_pdb(&path);
@@ -26,13 +26,7 @@ fn load_file(
         state.pdb = Some(p);
         state.molecule = Some(Molecule::from_pdb(state.pdb.as_ref().unwrap()));
 
-        draw_molecule(
-            &mut scene.entities,
-            &state.molecule.as_ref().unwrap(),
-            state.ui.mol_view,
-            state.atom_selected,
-        );
-
+        *redraw = true;
         engine_updates.entities = true;
     } else {
         eprintln!("Error loading PDB file");
@@ -60,7 +54,7 @@ fn int_field(val: &mut usize, label: &str, redraw_bodies: &mut bool, ui: &mut Ui
 pub fn handle_input(
     state: &mut State,
     ui: &mut Ui,
-    scene: &mut Scene,
+    redraw: &mut bool,
     engine_updates: &mut EngineUpdates,
 ) {
     let mut reset_window_title = false; // This setup avoids borrow errors.
@@ -69,7 +63,7 @@ pub fn handle_input(
         // Check for file drop
         if let Some(dropped_files) = ip.raw.dropped_files.first() {
             if let Some(path) = &dropped_files.path {
-                load_file(&path, state, scene, engine_updates)
+                load_file(&path, state, redraw, engine_updates)
             }
         }
     });
@@ -88,8 +82,10 @@ fn selected_data(mol: &Molecule, selected: usize, ui: &mut Ui) {
 /// [UI items](https://docs.rs/egui/latest/egui/struct.Ui.html)
 pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> EngineUpdates {
     let mut engine_updates = EngineUpdates::default();
+    let mut redraw = false;
+
     TopBottomPanel::top("0").show(ctx, |ui| {
-        handle_input(state, ui, scene, &mut engine_updates);
+        handle_input(state, ui, &mut redraw, &mut engine_updates);
 
         ui.horizontal(|ui| {
             if ui.button("Open").clicked() {
@@ -98,10 +94,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
             ui.add_space(COL_SPACING);
             ui.label("RCSB ident:");
-            ui.add(
-                TextEdit::singleline(&mut state.ui.rcsb_input)
-                    .desired_width(60.),
-            );
+            ui.add(TextEdit::singleline(&mut state.ui.rcsb_input).desired_width(60.));
 
             if ui.button("Load RCSB").clicked() {
                 match load_rcsb(&state.ui.rcsb_input) {
@@ -109,14 +102,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                         state.pdb = Some(pdb);
                         state.molecule = Some(Molecule::from_pdb(state.pdb.as_ref().unwrap()));
 
-                        draw_molecule(
-                            &mut scene.entities,
-                            &state.molecule.as_ref().unwrap(),
-                            state.ui.mol_view,
-                            state.atom_selected,
-                        );
-
-                        engine_updates.entities = true;
+                        redraw = true;
                     }
                     Err(_e) => {
                         eprintln!("Error loading PDB file");
@@ -148,15 +134,25 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 });
 
             if state.ui.mol_view != prev_view {
-                if let Some(mol) = &state.molecule {
-                    draw_molecule(
-                        &mut scene.entities,
-                        mol,
-                        state.ui.mol_view,
-                        state.atom_selected,
-                    );
-                    engine_updates.entities = true;
-                }
+                redraw = true;
+            }
+
+            ui.add_space(COL_SPACING);
+
+            // todo: DRY with view.
+            ui.label("Color code:");
+            let prev_view = state.ui.atom_color_code;
+            ComboBox::from_id_salt(1)
+                .width(80.)
+                .selected_text(state.ui.atom_color_code.to_string())
+                .show_ui(ui, |ui| {
+                    for view in &[AtomColorCode::Atom, AtomColorCode::Residue] {
+                        ui.selectable_value(&mut state.ui.atom_color_code, *view, view.to_string());
+                    }
+                });
+
+            if state.ui.atom_color_code != prev_view {
+                redraw = true;
             }
 
             ui.add_space(COL_SPACING);
@@ -171,7 +167,20 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
     });
 
     if let Some(path) = &state.ui.load_dialog.take_picked() {
-        load_file(path, state, scene, &mut engine_updates);
+        load_file(path, state, &mut redraw, &mut engine_updates);
+    }
+
+    if redraw {
+        if let Some(molecule) = &state.molecule {
+            draw_molecule(
+                &mut scene.entities,
+                molecule,
+                state.ui.mol_view,
+                state.ui.atom_color_code,
+                state.atom_selected,
+            );
+            engine_updates.entities = true;
+        }
     }
 
     state.ui.load_dialog.update(ctx);

@@ -1,12 +1,11 @@
 //! Allows downloading PDB files from the [RCSB Protein Data Bank](https://www.rcsb.org/)
 
-use std::io;
-use std::time::Duration;
-use pdbtbx::PDB;
+use std::{io, time::Duration};
 
+use pdbtbx::PDB;
 use ureq::{self, Agent};
-use crate::molecule::Molecule;
-use crate::pdb::read_pdb;
+
+use crate::{molecule::Molecule, pdb::read_pdb};
 
 const PDB_BASE_URL: &str = "https://www.rcsb.org/structure";
 // const PDB_3D_VIEW_URL: &str = "https://www.rcsb.org/3d-view";
@@ -32,9 +31,11 @@ impl From<io::Error> for ReqError {
     }
 }
 
-
 fn cif_url(ident: &str) -> String {
-    format!("https://files.rcsb.org/download/{}.cif", ident.to_uppercase())
+    format!(
+        "https://files.rcsb.org/download/{}.cif",
+        ident.to_uppercase()
+    )
 }
 
 pub fn load_rcsb(ident: &str) -> Result<PDB, ReqError> {
@@ -45,11 +46,11 @@ pub fn load_rcsb(ident: &str) -> Result<PDB, ReqError> {
     let agent: Agent = config.into();
 
     let resp = agent
-        .get( cif_url(ident))
+        .get(cif_url(ident))
         .call()?
         .body_mut()
         .read_to_string()?;
 
     // todo: Don't unwrap.
-    read_pdb(&resp).map_err(|e| ReqError{})
+    read_pdb(&resp).map_err(|e| ReqError {})
 }

@@ -1,6 +1,9 @@
 extern crate core;
 
+mod amino_acid_coords;
 mod bond_inference;
+mod download_pdb;
+mod drug_like;
 mod molecule;
 mod pdb;
 mod render;
@@ -8,9 +11,6 @@ mod save_load;
 mod ui;
 mod util;
 mod vibrations;
-mod download_pdb;
-mod drug_like;
-mod amino_acid_coords;
 
 use std::{any::Any, io, io::ErrorKind, path::PathBuf, str::FromStr, sync::Arc};
 
@@ -95,7 +95,7 @@ impl Element {
                 _ => {
                     eprintln!("Unknown element: {e:?}");
                     Self::Other
-                },
+                }
             }
         } else {
             // todo?
@@ -117,7 +117,6 @@ impl Element {
             "CA" => Ok(Self::Calcium),
             "K" => Ok(Self::Potassium),
             // todo: Fill in if you need, or remove this fn.
-
             _ => Err(io::Error::new(
                 ErrorKind::InvalidData,
                 "Invalid atom letter",
@@ -157,12 +156,30 @@ impl Element {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Debug, Default)]
+pub enum AtomColorCode {
+    Atom,
+    #[default]
+    Residue,
+}
+
+impl AtomColorCode {
+    pub fn to_string(&self) -> String {
+        match self {
+            Self::Atom => "Atom",
+            Self::Residue => "Residue",
+        }
+        .to_owned()
+    }
+}
+
 struct StateUi {
     load_dialog: FileDialog,
     mol_view: MoleculeView,
     /// Mouse cursor
     cursor_pos: Option<(f32, f32)>,
     pub rcsb_input: String,
+    atom_color_code: AtomColorCode,
 }
 
 impl Default for StateUi {
@@ -196,6 +213,7 @@ impl Default for StateUi {
             mol_view: Default::default(),
             cursor_pos: None,
             rcsb_input: String::new(),
+            atom_color_code: Default::default(),
         }
     }
 }
