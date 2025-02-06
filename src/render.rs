@@ -4,24 +4,25 @@ use std::{f32::consts::TAU, fmt};
 
 use graphics::{
     event::WindowEvent, Camera, ControlScheme, DeviceEvent, ElementState, EngineUpdates, Entity,
-    InputSettings, LightType, Lighting, Mesh, PointLight, Scene, UiLayout, UiSettings,
+    InputSettings, LightType, Lighting, Mesh, PointLight, Scene, UiLayout, UiSettings, FWD_VEC,
+    RIGHT_VEC, UP_VEC,
 };
-use lin_alg::f32::{Quaternion, Vec3, FORWARD, UP};
+use lin_alg::f32::{Quaternion, Vec3};
 
 use crate::{
     molecule::{aa_color, BondCount, Molecule},
     ui::ui_handler,
-    util::{find_selected_atom, points_along_ray, vec3_to_f32},
-    AtomColorCode, Selection, State, StateUi,
+    util::{find_selected_atom, mol_center_size, points_along_ray, vec3_to_f32},
+    Selection, State, StateUi, ViewSelLevel,
 };
 
 type Color = (f32, f32, f32);
 
-const WINDOW_TITLE: &str = "Molecular docking";
+const WINDOW_TITLE: &str = "Bio Chem View";
 const WINDOW_SIZE_X: f32 = 1_600.;
 const WINDOW_SIZE_Y: f32 = 1_000.;
 const BACKGROUND_COLOR: Color = (0., 0., 0.);
-const RENDER_DIST: f32 = 1_000.;
+pub const RENDER_DIST: f32 = 1_000.;
 
 pub const ATOM_SHINYNESS: f32 = 2.;
 pub const BODY_SHINYNESS: f32 = 2.;
@@ -29,24 +30,29 @@ pub const BODY_SHINYNESS: f32 = 2.;
 // Keep this in sync with mesh init.
 pub const MESH_SPHERE: usize = 0;
 pub const MESH_CUBE: usize = 1;
-pub const MESH_ARROW: usize = 2;
-pub const MESH_BOND: usize = 3;
+pub const MESH_BOND: usize = 2;
+pub const MESH_SURFACE: usize = 3; // Van Der Waals surface.
 
 // todo: By bond type etc
 const BOND_COLOR: Color = (0.2, 0.2, 0.2);
+const BOND_RADIUS: f32 = 0.10;
 
 pub const COLOR_SELECTED: Color = (1., 0., 0.);
 
 pub const SHELL_OPACITY: f32 = 0.01;
+
+// From the farthest molecule.
+pub const CAM_INIT_OFFSET: f32 = 10.;
+pub const OUTSIDE_LIGHTING_OFFSET: f32 = 400.;
 
 #[derive(Clone, Copy, PartialEq, Debug, Default)]
 pub enum MoleculeView {
     Sticks,
     Ribbon,
     #[default]
-    Spheres,
+    BallAndStick,
     /// i.e. Van der Waals radius, or CPK.
-    SpaceFilling,
+    Spheres,
     Cartoon,
     Surface,
     Mesh,
@@ -58,37 +64,80 @@ impl fmt::Display for MoleculeView {
         let val = match self {
             Self::Ribbon => "Ribbon",
             Self::Sticks => "Sticks",
-            Self::Spheres => "Spheres",
-            Self::SpaceFilling => "Space-filling (CPK)",
+            Self::BallAndStick => "Ball and stick",
             Self::Cartoon => "Cartoon",
-            Self::Surface => "Surface",
-            Self::Mesh => "Mesh",
-            Self::Dots => "Dots",
+            Self::Spheres => "Spheres (Van der Waals)",
+            Self::Surface => "Surface (Van der Waals)",
+            Self::Mesh => "Mesh (Van der Waals)",
+            Self::Dots => "Dots (Van der Waals)",
         };
 
         write!(f, "{val}")
     }
 }
+
+/// Set lighting based on the center and size of the molecule.
+fn set_lighting(center: Vec3, size: f32) -> Lighting {
+    let white = [1., 1., 1., 1.];
+
+    Lighting {
+        ambient_color: white,
+        ambient_intensity: 0.12,
+        point_lights: vec![
+            // Light in the middle
+            // PointLight {
+            //     type_: LightType::Omnidirectional,
+            //     position: center,
+            //     diffuse_color: white,
+            //     specular_color: white,
+            //     diffuse_intensity: 5.,
+            //     specular_intensity: 50.,
+            // },
+
+            // // Light from the right
+            // PointLight {
+            //     type_: LightType::Omnidirectional,
+            //     position: center + Vec3::new(0., 0., size + OUTSIDE_LIGHTING_OFFSET),
+            //     diffuse_color: white,
+            //     specular_color: white,
+            //     diffuse_intensity: 4_000.,
+            //     specular_intensity: 16_000.,
+            // },
+            // Light from above
+            PointLight {
+                type_: LightType::Omnidirectional,
+                position: center + Vec3::new(100., size + OUTSIDE_LIGHTING_OFFSET, 0.),
+                diffuse_color: white,
+                specular_color: white,
+                diffuse_intensity: 10_000.,
+                specular_intensity: 20_000.,
+            },
+        ],
+    }
+}
+
 /// Refreshes entities with the model passed.
 /// Sensitive to various view configuration parameters.
 pub fn draw_molecule(
-    entities: &mut Vec<Entity>,
+    scene: &mut Scene,
+    ui: &mut StateUi,
     molecule: &Molecule,
-    ui: &StateUi,
     selected: Selection,
+    update_cam_lighting: bool,
 ) {
     // todo: Update this capacity A/R as you flesh out your renders.
     // *entities = Vec::with_capacity(molecule.bonds.len());
-    *entities = Vec::new();
+    scene.entities = Vec::new();
 
     // Draw atoms.
-    if [MoleculeView::Spheres, MoleculeView::SpaceFilling].contains(&ui.mol_view) {
+    if [MoleculeView::BallAndStick, MoleculeView::Spheres].contains(&ui.mol_view) {
         for (i, atom) in molecule.atoms.iter().enumerate() {
             if ui.show_nearby_only {
                 match selected {
                     Selection::Atom(sel) => {
                         let atom_sel = &molecule.atoms[sel];
-                        if (atom.posit - atom_sel.posit).magnitude() as f32 > ui.nearby_dist_thresh
+                        if (atom.posit - atom_sel.posit).magnitude() as f32
+                            > ui.nearby_dist_thresh as f32
                         {
                             continue;
                         }
@@ -99,7 +148,7 @@ pub fn draw_molecule(
                         if !res_sel.atoms.is_empty() {
                             let atom_sel = &molecule.atoms[res_sel.atoms[0]];
                             if (atom.posit - atom_sel.posit).magnitude() as f32
-                                > ui.nearby_dist_thresh
+                                > ui.nearby_dist_thresh as f32
                             {
                                 continue;
                             }
@@ -109,9 +158,9 @@ pub fn draw_molecule(
                 }
             }
 
-            let mut color = match ui.atom_color_code {
-                AtomColorCode::Atom => atom.element.color(),
-                AtomColorCode::Residue => {
+            let mut color = match ui.view_sel_level {
+                ViewSelLevel::Atom => atom.element.color(),
+                ViewSelLevel::Residue => {
                     let mut c = atom.element.color();
 
                     if let Some(aa) = atom.amino_acid {
@@ -145,11 +194,11 @@ pub fn draw_molecule(
             }
 
             let radius = match ui.mol_view {
-                MoleculeView::SpaceFilling => atom.element.vdw_radius(),
+                MoleculeView::Spheres => atom.element.vdw_radius(),
                 _ => 0.3,
             };
 
-            entities.push(Entity::new(
+            scene.entities.push(Entity::new(
                 MESH_SPHERE,
                 vec3_to_f32(atom.posit),
                 Quaternion::new_identity(),
@@ -160,11 +209,14 @@ pub fn draw_molecule(
         }
     }
 
-    let rot_ortho = Quaternion::from_unit_vecs(UP, FORWARD);
+    let rot_ortho = Quaternion::from_unit_vecs(FWD_VEC, UP_VEC);
 
     // Draw bonds.
-    if ![MoleculeView::SpaceFilling].contains(&ui.mol_view) {
+    if ![MoleculeView::Spheres].contains(&ui.mol_view) {
         for bond in &molecule.bonds {
+            let atom_0 = &molecule.atoms[bond.atom_0];
+            let atom_1 = &molecule.atoms[bond.atom_1];
+
             if ui.mol_view == MoleculeView::Ribbon && !bond.is_backbone {
                 continue;
             }
@@ -174,8 +226,8 @@ pub fn draw_molecule(
                 match selected {
                     Selection::Atom(sel) => {
                         let atom_sel = &molecule.atoms[sel];
-                        if (bond.posit_0 - atom_sel.posit).magnitude() as f32
-                            > ui.nearby_dist_thresh
+                        if (atom_0.posit - atom_sel.posit).magnitude() as f32
+                            > ui.nearby_dist_thresh as f32
                         {
                             continue;
                         }
@@ -185,8 +237,8 @@ pub fn draw_molecule(
                         // todo: Something more robust than the first atom?
                         if !res_sel.atoms.is_empty() {
                             let atom_sel = &molecule.atoms[res_sel.atoms[0]];
-                            if (bond.posit_0 - atom_sel.posit).magnitude() as f32
-                                > ui.nearby_dist_thresh
+                            if (atom_0.posit - atom_sel.posit).magnitude() as f32
+                                > ui.nearby_dist_thresh as f32
                             {
                                 continue;
                             }
@@ -197,11 +249,20 @@ pub fn draw_molecule(
             }
 
             // let center = (atom0.posit + atom1.posit) / 2.;
-            let center = (bond.posit_0 + bond.posit_1) / 2.;
+            let center = (atom_0.posit + atom_1.posit) / 2.;
 
-            let diff = vec3_to_f32(bond.posit_0 - bond.posit_1);
+            let diff = vec3_to_f32(atom_0.posit - atom_1.posit);
             let diff_unit = diff.to_normalized();
-            let orientation = Quaternion::from_unit_vecs(FORWARD, diff_unit);
+            let orientation = Quaternion::from_unit_vecs(UP_VEC, diff_unit);
+
+            let scale = Some(Vec3::new(1., diff.magnitude(), 1.));
+
+            let color = if [MoleculeView::Sticks].contains(&ui.mol_view) {
+                // todo: A/R between teh two bonds. May need two bond elements.
+                atom_0.element.color()
+            } else {
+                BOND_COLOR
+            };
 
             match bond.bond_count {
                 BondCount::Double => {
@@ -212,36 +273,63 @@ pub fn draw_molecule(
                     let offset_a = rotator.rotate_vec(Vec3::new(0.2, 0., 0.));
                     let offset_b = rotator.rotate_vec(Vec3::new(-0.2, 0., 0.));
 
-                    entities.push(Entity::new(
+                    let mut entity_0 = Entity::new(
                         MESH_BOND,
                         vec3_to_f32(center) + offset_a,
                         orientation,
-                        1. * diff.magnitude(),
-                        BOND_COLOR,
+                        1.,
+                        color,
                         BODY_SHINYNESS,
-                    ));
+                    );
 
-                    entities.push(Entity::new(
+                    let mut entity_1 = Entity::new(
                         MESH_BOND,
                         vec3_to_f32(center) + offset_b,
                         orientation,
-                        1. * diff.magnitude(),
-                        BOND_COLOR,
+                        1.,
+                        color,
                         BODY_SHINYNESS,
-                    ));
+                    );
+
+                    entity_0.scale_partial = scale;
+                    entity_1.scale_partial = scale;
+
+                    scene.entities.push(entity_0);
+                    scene.entities.push(entity_1);
                 }
                 _ => {
-                    entities.push(Entity::new(
+                    let mut entity = Entity::new(
                         MESH_BOND,
                         vec3_to_f32(center),
                         orientation,
-                        1. * diff.magnitude(),
-                        BOND_COLOR,
+                        1.,
+                        color,
                         BODY_SHINYNESS,
-                    ));
+                    );
+
+                    entity.scale_partial = scale;
+                    scene.entities.push(entity);
                 }
             }
         }
+    }
+
+    if update_cam_lighting {
+        let (center, size) = mol_center_size(&molecule.atoms);
+        ui.mol_center = center;
+        ui.mol_size = size;
+
+        scene.camera.position = Vec3::new(
+            ui.mol_center.x,
+            ui.mol_center.y,
+            ui.mol_center.z - (ui.mol_size + CAM_INIT_OFFSET),
+        );
+        scene.camera.orientation = Quaternion::from_axis_angle(RIGHT_VEC, 0.);
+        scene.camera.far = RENDER_DIST;
+        scene.camera.update_proj_mat();
+
+        // Update lighting based on the new molecule center and dims.
+        scene.lighting = set_lighting(ui.mol_center, ui.mol_size);
     }
 }
 
@@ -264,15 +352,15 @@ fn event_dev_handler(
                             if let Some(mol) = &state_.molecule {
                                 let atoms_sel = points_along_ray(selected_ray, &mol.atoms, 0.6);
 
-                                state_.selection =
-                                    find_selected_atom(&atoms_sel, &mol.atoms, &selected_ray);
-
-                                draw_molecule(
-                                    &mut scene.entities,
-                                    mol,
-                                    &state_.ui,
-                                    state_.selection,
+                                state_.selection = find_selected_atom(
+                                    &atoms_sel,
+                                    &mol.atoms,
+                                    &selected_ray,
+                                    state_.ui.view_sel_level,
                                 );
+
+                                // todo:This is overkill. Just change the color of the one[s] in question, and set update.entities = true.
+                                draw_molecule(scene, &mut state_.ui, mol, state_.selection, false);
                                 updates.entities = true;
                             }
                         }
@@ -296,7 +384,10 @@ fn event_win_handler(
         WindowEvent::CursorMoved {
             device_id: _,
             position,
-        } => state.ui.cursor_pos = Some((position.x as f32, position.y as f32)),
+        } => {
+            // state.ui.cursor_pos = Some((position.x as f32, position.y as f32 + state.ui.ui_height))
+            state.ui.cursor_pos = Some((position.x as f32, position.y as f32))
+        }
         _ => (),
     }
     EngineUpdates::default() // todo: A/R.
@@ -308,55 +399,28 @@ fn render_handler(_state: &mut State, _scene: &mut Scene, _dt: f32) -> EngineUpd
 }
 
 /// Entry point to our render and event loop.
-pub fn render(state: State) {
-    let mut entities = Vec::new();
-    if let Some(mol) = &state.molecule {
-        draw_molecule(&mut entities, mol, &state.ui, state.selection);
-    }
-
+pub fn render(mut state: State) {
     let white = [1., 1., 1., 1.];
 
-    let scene = Scene {
+    let mut scene = Scene {
         meshes: vec![
             Mesh::new_sphere(1., 12, 12),
             Mesh::new_box(1., 1., 1.),
-            Mesh::new_arrow(1., 0.05, 8),
-            Mesh::new_cylinder(1., 0.05, 6),
+            Mesh::new_cylinder(1., BOND_RADIUS, 6),
+            Mesh::new_box(1., 1., 1.), // todo: Temp. For VDW surface.
         ],
-        entities,
+        entities: Vec::new(),
         camera: Camera {
             fov_y: TAU / 8.,
             position: Vec3::new(0., 0., -60.),
             far: RENDER_DIST,
             near: 0.2, // todo: Adjust A/R
             // orientation: Quaternion::from_axis_angle(Vec3::new(1., 0., 0.), TAU / 16.),
-            orientation: Quaternion::from_axis_angle(Vec3::new(1., 0., 0.), 0.),
+            orientation: Quaternion::from_axis_angle(RIGHT_VEC, 0.),
             ..Default::default()
         },
-        lighting: Lighting {
-            ambient_color: white,
-            ambient_intensity: 0.01,
-            point_lights: vec![
-                // Light from above
-                PointLight {
-                    type_: LightType::Omnidirectional,
-                    position: Vec3::new(20., 20., 500.),
-                    diffuse_color: white,
-                    specular_color: white,
-                    diffuse_intensity: 4_000.,
-                    specular_intensity: 10_000.,
-                },
-                // Light from below
-                PointLight {
-                    type_: LightType::Omnidirectional,
-                    position: Vec3::new(20., 20., -500.),
-                    diffuse_color: white,
-                    specular_color: white,
-                    diffuse_intensity: 4_000.,
-                    specular_intensity: 10_000.,
-                },
-            ],
-        },
+        // Lighting is set when drawing molecules; placeholder here.
+        lighting: Default::default(),
         background_color: BACKGROUND_COLOR,
         window_size: (WINDOW_SIZE_X, WINDOW_SIZE_Y),
         window_title: WINDOW_TITLE.to_owned(),
@@ -372,7 +436,9 @@ pub fn render(state: State) {
         icon_path: Some("./resources/icon.png".to_owned()),
     };
 
-    // todo: Initialize entities here.
+    if let Some(mol) = &state.molecule {
+        draw_molecule(&mut scene, &mut state.ui, mol, state.selection, true);
+    }
 
     graphics::run(
         state,

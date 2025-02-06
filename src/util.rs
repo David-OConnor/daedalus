@@ -1,6 +1,6 @@
 use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 
-use crate::{molecule::Atom, Selection};
+use crate::{molecule::Atom, Selection, ViewSelLevel};
 
 pub fn vec3_to_f32(v: Vec3) -> Vec3F32 {
     Vec3F32::new(v.x as f32, v.y as f32, v.z as f32)
@@ -35,7 +35,12 @@ pub fn points_along_ray(ray: (Vec3F32, Vec3F32), atoms: &[Atom], dist_thresh: f3
 }
 
 /// From under the cursor; pick the one near the ray, closest to the camera.
-pub fn find_selected_atom(sel: &[usize], atoms: &[Atom], ray: &(Vec3F32, Vec3F32)) -> Selection {
+pub fn find_selected_atom(
+    sel: &[usize],
+    atoms: &[Atom],
+    ray: &(Vec3F32, Vec3F32),
+    sel_level: ViewSelLevel,
+) -> Selection {
     if !sel.is_empty() {
         // todo: Also consider togglign between ones under the cursor near the front,
         // todo and picking the one closest to the ray.
@@ -52,10 +57,35 @@ pub fn find_selected_atom(sel: &[usize], atoms: &[Atom], ray: &(Vec3F32, Vec3F32
             }
         }
 
-        // todo: Handle residue selection.
+        match sel_level {
+            ViewSelLevel::Atom => {}
+            ViewSelLevel::Residue => {}
+        }
 
         Selection::Atom(near_i)
     } else {
         Selection::None
     }
+}
+
+pub fn mol_center_size(atoms: &[Atom]) -> (Vec3F32, f32) {
+    let mut sum = Vec3::new_zero();
+    let mut max_dim = 0.;
+
+    for atom in atoms {
+        sum += atom.posit;
+
+        // Cheaper than calculating magnitude.
+        if atom.posit.x.abs() > max_dim {
+            max_dim = atom.posit.x.abs();
+        }
+        if atom.posit.y.abs() > max_dim {
+            max_dim = atom.posit.y.abs();
+        }
+        if atom.posit.z.abs() > max_dim {
+            max_dim = atom.posit.z.abs();
+        }
+    }
+
+    (vec3_to_f32(sum) / atoms.len() as f32, max_dim as f32)
 }

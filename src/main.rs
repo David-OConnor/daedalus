@@ -15,15 +15,14 @@ mod vibrations;
 use std::{any::Any, io, io::ErrorKind, path::PathBuf, str::FromStr, sync::Arc};
 
 use egui_file_dialog::{FileDialog, FileDialogConfig};
-use lin_alg::f64::Vec3;
+use lin_alg::f32::Vec3;
 use molecule::Molecule;
 use pdbtbx::{self, PDB};
 use rayon::iter::ParallelIterator;
 
 use crate::{
-    molecule::Atom,
     pdb::load_pdb,
-    render::{render, MoleculeView},
+    render::{render, MoleculeView, RENDER_DIST},
 };
 
 #[derive(Debug, Clone, Default)]
@@ -190,13 +189,13 @@ impl Element {
 }
 
 #[derive(Clone, Copy, PartialEq, Debug, Default)]
-pub enum AtomColorCode {
+pub enum ViewSelLevel {
     Atom,
     #[default]
     Residue,
 }
 
-impl AtomColorCode {
+impl ViewSelLevel {
     pub fn to_string(&self) -> String {
         match self {
             Self::Atom => "Atom",
@@ -212,11 +211,18 @@ struct StateUi {
     /// Mouse cursor
     cursor_pos: Option<(f32, f32)>,
     rcsb_input: String,
-    atom_color_code: AtomColorCode,
+    view_sel_level: ViewSelLevel,
     /// Experimental.
     show_nearby_only: bool,
-    /// Angstrom.
-    nearby_dist_thresh: f32,
+    /// Angstrom. For selections.
+    nearby_dist_thresh: u16,
+    /// Center and size are used for setting the camera.
+    view_depth: u16, // angstrom
+    mol_center: Vec3,
+    mol_size: f32, // Dimension-agnostic
+    /// We use this for offsetting our cursor selection.
+    /// todo: Not working correctly; remove A/R
+    ui_height: f32, // set automatically.
 }
 
 impl Default for StateUi {
@@ -250,9 +256,13 @@ impl Default for StateUi {
             mol_view: Default::default(),
             cursor_pos: None,
             rcsb_input: String::new(),
-            atom_color_code: Default::default(),
+            view_sel_level: Default::default(),
             show_nearby_only: Default::default(),
-            nearby_dist_thresh: 10.,
+            nearby_dist_thresh: 10,
+            view_depth: RENDER_DIST as u16,
+            mol_center: Vec3::new_zero(),
+            mol_size: 80.,
+            ui_height: 0.,
         }
     }
 }
@@ -277,7 +287,7 @@ struct State {
 fn main() {
     let mut state = State::default();
 
-    let pdb = load_pdb(&PathBuf::from_str("1kmk.pdb").unwrap());
+    let pdb = load_pdb(&PathBuf::from_str("1htm.cif").unwrap());
     if let Ok(p) = pdb {
         state.pdb = Some(p);
         state.molecule = Some(Molecule::from_pdb(state.pdb.as_ref().unwrap()));

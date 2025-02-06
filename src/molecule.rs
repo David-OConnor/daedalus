@@ -15,8 +15,6 @@ pub struct Chain {}
 pub struct Molecule {
     pub ident: String,
     pub atoms: Vec<Atom>,
-    /// todo: For now, as returned by pdbtbx. Adjust A/R. (Refs to atoms etc)
-    // pub bonds: Vec<(Atom, Atom, pdb::Bond)>,
     pub bonds: Vec<Bond>,
     pub chains: Vec<Chain>,
     pub residues: Vec<Residue>,
@@ -111,15 +109,15 @@ pub enum BondCount {
     Single,
     Double,
     Triple,
+    SingleDoubleHybrid,
 }
 
 #[derive(Debug)]
 pub struct Bond {
     pub bond_type: BondType,
     pub bond_count: BondCount,
-    // todo: Refs to Atom etc A/R.
-    pub posit_0: Vec3,
-    pub posit_1: Vec3,
+    pub atom_0: usize, // Index
+    pub atom_1: usize, // Index
     pub is_backbone: bool,
 }
 
@@ -182,11 +180,11 @@ impl Atom {
 /// Can't find a PyMol equiv. Experimenting
 pub fn aa_color(aa: AminoAcid) -> (f32, f32, f32) {
     match aa {
-        AminoAcid::Arg => (0.9, 0.9, 0.9),
+        AminoAcid::Arg => (0.7, 0.2, 0.9),
         AminoAcid::His => (0.2, 1., 0.2),
         AminoAcid::Lys => (1., 0.3, 0.3),
         AminoAcid::Asp => (0.2, 0.2, 1.0),
-        AminoAcid::Glu => (0.701, 1.0, 1.0),
+        AminoAcid::Glu => (0.701, 0.7, 0.2),
         AminoAcid::Ser => (0.9, 0.775, 0.25),
         AminoAcid::Thr => (1.0, 0.502, 0.),
         AminoAcid::Asn => (0.878, 0.4, 0.2),
@@ -197,7 +195,7 @@ pub fn aa_color(aa: AminoAcid) -> (f32, f32, f32) {
         AminoAcid::Pro => (0.341, 0.349, 0.380),
         AminoAcid::Ala => (1., 0.820, 0.137),
         AminoAcid::Val => (0.753, 0.753, 0.753),
-        AminoAcid::Ile => (0.722, 0.722, 0.816),
+        AminoAcid::Ile => (0.322, 0.722, 0.916),
         AminoAcid::Leu => (0.4, 0.502, 0.502),
         AminoAcid::Met => (0.490, 0.502, 0.690),
         AminoAcid::Phe => (0.580, 0., 0.580),
