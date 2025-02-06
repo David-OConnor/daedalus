@@ -24,6 +24,8 @@ const LEN_C_O: f64 = 1.43;
 // todo: Found this elsewhere. Likely conflict with C_O above?
 const LEN_C_O_DOUBLE: f64 = 1.23;
 
+// todo: MOre sidechain bonds, like carbon-carbon.
+
 // Hydrogen
 const LEN_OH_OH: f64 = 2.8;
 const LEN_NH_OC: f64 = 2.9;
@@ -35,7 +37,7 @@ const LEN_C_H: f64 = 1.10;
 const LEN_O_H: f64 = 1.0;
 
 // If interatomic distance is within this distance of one of our known bond lenghts, consider it to be a bond.
-const BOND_LEN_THRESH: f64 = 0.04; // todo: Adjust A/R based on performance.
+const BOND_LEN_THRESH: f64 = 0.05; // todo: Adjust A/R based on performance.
 const BOND_LEN_THRESH_FINE: f64 = 0.01; // todo: Adjust A/R based on performance.
 const GRID_SIZE: f64 = 3.0; // Slightly larger than the largest bond threshold
 

@@ -154,6 +154,39 @@ impl Element {
             Self::Other => (5., 5., 5.),
         }
     }
+
+    /// Van-der-wals radius, in angstrom.
+    pub fn vdw_radius(&self) -> f32 {
+        match self {
+            Self::Hydrogen => 1.20,
+            Self::Carbon => 1.70,
+            Self::Nitrogen => 1.55,
+            Self::Oxygen => 1.52,
+            Self::Fluorine => 1.47,
+            Self::Sulfur => 1.80,
+            Self::Phosphorus => 1.80,
+            Self::Iron => 2.00, // Many references list ~1.56–1.63; 2.00 is a common PyMOL default.
+            Self::Copper => 1.40,
+            Self::Calcium => 2.31,
+            Self::Potassium => 2.75,
+            Self::Aluminum => 2.00,
+            Self::Lead => 2.02,
+            Self::Gold => 1.66,
+            Self::Silver => 1.72,
+            Self::Mercury => 1.55,
+            Self::Tin => 2.17,
+            Self::Zinc => 1.39,
+            Self::Magnesium => 1.73,
+            Self::Iodine => 1.98,
+            Self::Chlorine => 1.75,
+            Self::Tungsten => 2.10,
+            Self::Tellurium => 2.06,
+            Self::Selenium => 1.90,
+
+            // Fallback for elements not explicitly listed
+            Self::Other => 2.00,
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Debug, Default)]
@@ -178,8 +211,12 @@ struct StateUi {
     mol_view: MoleculeView,
     /// Mouse cursor
     cursor_pos: Option<(f32, f32)>,
-    pub rcsb_input: String,
+    rcsb_input: String,
     atom_color_code: AtomColorCode,
+    /// Experimental.
+    show_nearby_only: bool,
+    /// Angstrom.
+    nearby_dist_thresh: f32,
 }
 
 impl Default for StateUi {
@@ -214,8 +251,18 @@ impl Default for StateUi {
             cursor_pos: None,
             rcsb_input: String::new(),
             atom_color_code: Default::default(),
+            show_nearby_only: Default::default(),
+            nearby_dist_thresh: 10.,
         }
     }
+}
+
+#[derive(Clone, Copy, PartialEq, Debug, Default)]
+pub enum Selection {
+    #[default]
+    None,
+    Atom(usize),
+    Residue(usize),
 }
 
 #[derive(Default)]
@@ -224,14 +271,11 @@ struct State {
     pub pdb: Option<PDB>,
     pub molecule: Option<Molecule>,
     /// Index
-    /// todo: This is likely a temporary implementation
-    pub atom_selected: Option<usize>,
+    pub selection: Selection,
 }
 
 fn main() {
     let mut state = State::default();
-
-    state.atom_selected = Some(0);
 
     let pdb = load_pdb(&PathBuf::from_str("1kmk.pdb").unwrap());
     if let Ok(p) = pdb {

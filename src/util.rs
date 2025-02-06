@@ -1,6 +1,6 @@
 use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 
-use crate::molecule::Atom;
+use crate::{molecule::Atom, Selection};
 
 pub fn vec3_to_f32(v: Vec3) -> Vec3F32 {
     Vec3F32::new(v.x as f32, v.y as f32, v.z as f32)
@@ -35,11 +35,7 @@ pub fn points_along_ray(ray: (Vec3F32, Vec3F32), atoms: &[Atom], dist_thresh: f3
 }
 
 /// From under the cursor; pick the one near the ray, closest to the camera.
-pub fn find_selected_atom(
-    sel: &[usize],
-    atoms: &[Atom],
-    ray: &(Vec3F32, Vec3F32),
-) -> Option<usize> {
+pub fn find_selected_atom(sel: &[usize], atoms: &[Atom], ray: &(Vec3F32, Vec3F32)) -> Selection {
     if !sel.is_empty() {
         // todo: Also consider togglign between ones under the cursor near the front,
         // todo and picking the one closest to the ray.
@@ -55,8 +51,11 @@ pub fn find_selected_atom(
                 near_dist = dist;
             }
         }
-        Some(near_i)
+
+        // todo: Handle residue selection.
+
+        Selection::Atom(near_i)
     } else {
-        None
+        Selection::None
     }
 }

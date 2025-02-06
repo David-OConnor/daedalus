@@ -13,6 +13,7 @@ pub struct Chain {}
 #[derive(Debug)]
 // todo: This, or a PDB-specific format?
 pub struct Molecule {
+    pub ident: String,
     pub atoms: Vec<Atom>,
     /// todo: For now, as returned by pdbtbx. Adjust A/R. (Refs to atoms etc)
     // pub bonds: Vec<(Atom, Atom, pdb::Bond)>,
@@ -28,19 +29,11 @@ impl Molecule {
 
         let atoms_pdb: Vec<&pdbtbx::Atom> = pdb.par_atoms().collect();
 
-        // for atom in &atoms_pdb {
-        //     println!("Atom: {:?}", atom);
-        // }
-
         let res_pdb: Vec<&pdbtbx::Residue> = pdb.residues().collect();
 
         let mut residues = Vec::new();
 
         for res_pdb in &res_pdb {
-            // println!("\nRes: {res_pdb:?}");
-            // println!("\nConfs:");
-            // for conf in res_pdb.conformers() {
-
             let aa = AminoAcid::from_str(res_pdb.name().unwrap_or_default()).ok();
             let mut res_us = Residue {
                 aa,
@@ -60,10 +53,6 @@ impl Molecule {
             residues.push(res_us);
             // }
         }
-
-        // for conf in pdb.conformers() {
-        // println!("Conf: {:?}", conf);
-        // }
 
         // for atom in pdb.atoms() {
         // for atom in pdb.par_atoms() {
@@ -85,9 +74,8 @@ impl Molecule {
             // println!("Chain: {chain:?}");
         }
 
-        println!("Residues: {:?}", residues);
-
         Molecule {
+            ident: pdb.identifier.clone().unwrap_or_default(),
             atoms,
             bonds,
             chains,

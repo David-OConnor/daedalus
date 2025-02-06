@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use egui::{ComboBox, Context, TextEdit, TopBottomPanel, Ui};
+use egui::{Color32, ComboBox, Context, RichText, TextEdit, TopBottomPanel, Ui, ViewportCommand};
 use graphics::{EngineUpdates, Scene};
 
 use crate::{
@@ -8,11 +8,17 @@ use crate::{
     molecule::Molecule,
     pdb::load_pdb,
     render::{draw_molecule, MoleculeView},
-    AtomColorCode, State,
+    AtomColorCode, Selection, State,
 };
 
 pub const ROW_SPACING: f32 = 10.;
 pub const COL_SPACING: f32 = 30.;
+
+/// Update the tilebar to reflect the current molecule
+fn set_window_title(title: &str, ui: &mut Ui) {
+    // todo: Not working. Maybe need a new way when using WGPU.
+    // ui.ctx().send_viewport_cmd(ViewportCommand::Title(title.to_string()));
+}
 
 fn load_file(
     path: &Path,
@@ -33,19 +39,19 @@ fn load_file(
     }
 }
 
-fn int_field(val: &mut usize, label: &str, redraw_bodies: &mut bool, ui: &mut Ui) {
+fn int_field(val: &mut usize, label: &str, redraw: &mut bool, ui: &mut Ui) {
     ui.label(label);
     let mut val_str = val.to_string();
     if ui
         .add_sized(
             [60., Ui::available_height(ui)],
-            egui::TextEdit::singleline(&mut val_str),
+            TextEdit::singleline(&mut val_str),
         )
         .changed()
     {
         if let Ok(v) = val_str.parse::<usize>() {
             *val = v;
-            *redraw_bodies = true;
+            *redraw = true;
         }
     }
 }
@@ -57,8 +63,6 @@ pub fn handle_input(
     redraw: &mut bool,
     engine_updates: &mut EngineUpdates,
 ) {
-    let mut reset_window_title = false; // This setup avoids borrow errors.
-
     ui.ctx().input(|ip| {
         // Check for file drop
         if let Some(dropped_files) = ip.raw.dropped_files.first() {
@@ -70,12 +74,28 @@ pub fn handle_input(
 }
 
 /// Display text of the selected atom
-fn selected_data(mol: &Molecule, selected: usize, ui: &mut Ui) {
-    let atom = &mol.atoms[selected];
-    ui.label(format!(
-        "El: {:?}, AA: {:?}, Role: {:?}",
-        atom.element, atom.amino_acid, atom.role
-    ));
+fn selected_data(mol: &Molecule, selection: Selection, ui: &mut Ui) {
+    match selection {
+        Selection::Atom(sel) => {
+            let atom = &mol.atoms[sel];
+            ui.label(format!(
+                "El: {:?}, AA: {:?}, Role: {:?}",
+                atom.element, atom.amino_acid, atom.role
+            ));
+        }
+        Selection::Residue(sel) => {
+            let res = &mol.residues[sel];
+            let name = if let Some(aa) = res.aa {
+                aa.to_string()
+            } else {
+                "-".to_owned() // todo temp
+            };
+
+            // todo: Sequesnce number etc.
+            ui.label(format!("Res: {:?}", name,));
+        }
+        Selection::None => (),
+    }
 }
 
 /// This function draws the (immediate-mode) GUI.
@@ -83,11 +103,18 @@ fn selected_data(mol: &Molecule, selected: usize, ui: &mut Ui) {
 pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> EngineUpdates {
     let mut engine_updates = EngineUpdates::default();
     let mut redraw = false;
+    // let mut reset_window_title = false; // This setup avoids borrow errors.
 
     TopBottomPanel::top("0").show(ctx, |ui| {
         handle_input(state, ui, &mut redraw, &mut engine_updates);
 
         ui.horizontal(|ui| {
+            if let Some(mol) = &state.molecule {
+                ui.heading(RichText::new(mol.ident.clone()).color(Color32::GOLD));
+            }
+
+            ui.add_space(COL_SPACING);
+
             if ui.button("Open").clicked() {
                 state.ui.load_dialog.pick_file();
             }
@@ -124,6 +151,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                         MoleculeView::Sticks,
                         MoleculeView::Ribbon,
                         MoleculeView::Spheres,
+                        MoleculeView::SpaceFilling,
                         MoleculeView::Cartoon,
                         MoleculeView::Surface,
                         MoleculeView::Mesh,
@@ -157,31 +185,41 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
             ui.add_space(COL_SPACING);
 
+            ui.label("Filter nearby:");
+            if ui.checkbox(&mut state.ui.show_nearby_only, "").changed() {
+                redraw = true;
+            }
+
+            ui.add_space(COL_SPACING);
+            let mut dist_int = state.ui.nearby_dist_thresh as usize;
+            let dist_int_prev = dist_int;
+            int_field(&mut dist_int, "Filter thresh:", &mut redraw, ui);
+
+            if dist_int != dist_int_prev {
+                state.ui.nearby_dist_thresh = dist_int as f32;
+            }
+
+            ui.add_space(COL_SPACING);
+
             if let Some(mol) = &state.molecule {
-                if let Some(sel) = state.atom_selected {
-                    selected_data(mol, sel, ui);
-                }
+                selected_data(mol, state.selection, ui);
             }
         });
         ui.add_space(ROW_SPACING / 2.);
-    });
 
-    if let Some(path) = &state.ui.load_dialog.take_picked() {
-        load_file(path, state, &mut redraw, &mut engine_updates);
-    }
-
-    if redraw {
-        if let Some(molecule) = &state.molecule {
-            draw_molecule(
-                &mut scene.entities,
-                molecule,
-                state.ui.mol_view,
-                state.ui.atom_color_code,
-                state.atom_selected,
-            );
-            engine_updates.entities = true;
+        if let Some(path) = &state.ui.load_dialog.take_picked() {
+            load_file(path, state, &mut redraw, &mut engine_updates);
         }
-    }
+
+        if redraw {
+            if let Some(molecule) = &state.molecule {
+                draw_molecule(&mut scene.entities, molecule, &state.ui, state.selection);
+
+                set_window_title(&molecule.ident, ui);
+                engine_updates.entities = true;
+            }
+        }
+    });
 
     state.ui.load_dialog.update(ctx);
     engine_updates

@@ -12,7 +12,7 @@ use crate::{
     molecule::{aa_color, BondCount, Molecule},
     ui::ui_handler,
     util::{find_selected_atom, points_along_ray, vec3_to_f32},
-    AtomColorCode, State,
+    AtomColorCode, Selection, State, StateUi,
 };
 
 type Color = (f32, f32, f32);
@@ -35,7 +35,7 @@ pub const MESH_BOND: usize = 3;
 // todo: By bond type etc
 const BOND_COLOR: Color = (0.2, 0.2, 0.2);
 
-pub const COLOR_SELECTED: Color = (1., 1., 1.);
+pub const COLOR_SELECTED: Color = (1., 0., 0.);
 
 pub const SHELL_OPACITY: f32 = 0.01;
 
@@ -45,6 +45,8 @@ pub enum MoleculeView {
     Ribbon,
     #[default]
     Spheres,
+    /// i.e. Van der Waals radius, or CPK.
+    SpaceFilling,
     Cartoon,
     Surface,
     Mesh,
@@ -57,6 +59,7 @@ impl fmt::Display for MoleculeView {
             Self::Ribbon => "Ribbon",
             Self::Sticks => "Sticks",
             Self::Spheres => "Spheres",
+            Self::SpaceFilling => "Space-filling (CPK)",
             Self::Cartoon => "Cartoon",
             Self::Surface => "Surface",
             Self::Mesh => "Mesh",
@@ -67,50 +70,90 @@ impl fmt::Display for MoleculeView {
     }
 }
 /// Refreshes entities with the model passed.
+/// Sensitive to various view configuration parameters.
 pub fn draw_molecule(
     entities: &mut Vec<Entity>,
     molecule: &Molecule,
-    view: MoleculeView,
-    color_code: AtomColorCode,
-    selected: Option<usize>,
+    ui: &StateUi,
+    selected: Selection,
 ) {
     // todo: Update this capacity A/R as you flesh out your renders.
     // *entities = Vec::with_capacity(molecule.bonds.len());
     *entities = Vec::new();
 
-    if [MoleculeView::Spheres].contains(&view) {
+    // Draw atoms.
+    if [MoleculeView::Spheres, MoleculeView::SpaceFilling].contains(&ui.mol_view) {
         for (i, atom) in molecule.atoms.iter().enumerate() {
-            let color = match color_code {
-                AtomColorCode::Atom => {
-                    let mut c = atom.element.color();
-                    if let Some(hl) = selected {
-                        if hl == i {
-                            c = COLOR_SELECTED
+            if ui.show_nearby_only {
+                match selected {
+                    Selection::Atom(sel) => {
+                        let atom_sel = &molecule.atoms[sel];
+                        if (atom.posit - atom_sel.posit).magnitude() as f32 > ui.nearby_dist_thresh
+                        {
+                            continue;
                         }
                     }
-                    c
-                }
-                AtomColorCode::Residue => {
-                    let mut c = atom.element.color();
-                    // todo: Handle highlighting for residue.
-
-                    for res in &molecule.residues {
-                        if res.atoms.contains(&i) {
-                            if let Some(aa) = res.aa {
-                                c = aa_color(aa);
+                    Selection::Residue(sel) => {
+                        let res_sel = &molecule.residues[sel];
+                        // todo: Something more robust than the first atom?
+                        if !res_sel.atoms.is_empty() {
+                            let atom_sel = &molecule.atoms[res_sel.atoms[0]];
+                            if (atom.posit - atom_sel.posit).magnitude() as f32
+                                > ui.nearby_dist_thresh
+                            {
+                                continue;
                             }
                         }
                     }
+                    Selection::None => (),
+                }
+            }
+
+            let mut color = match ui.atom_color_code {
+                AtomColorCode::Atom => atom.element.color(),
+                AtomColorCode::Residue => {
+                    let mut c = atom.element.color();
+
+                    if let Some(aa) = atom.amino_acid {
+                        c = aa_color(aa);
+                    }
+                    // Below is currently equivalent:
+
+                    // for res in &molecule.residues {
+                    //     if res.atoms.contains(&i) {
+                    //         if let Some(aa) = res.aa {
+                    //             c = aa_color(aa);
+                    //         }
+                    //     }
+                    // }
                     c
                 }
+            };
+
+            // If selected, the selected color overrides the element or residue color.
+            match selected {
+                Selection::Atom(sel) => {
+                    if sel == i {
+                        color = COLOR_SELECTED
+                    }
+                }
+                Selection::Residue(sel) => {
+                    // let mut res_atoms = Vec::new();
+                    for res in &molecule.residues {}
+                }
+                Selection::None => (),
+            }
+
+            let radius = match ui.mol_view {
+                MoleculeView::SpaceFilling => atom.element.vdw_radius(),
+                _ => 0.3,
             };
 
             entities.push(Entity::new(
                 MESH_SPHERE,
                 vec3_to_f32(atom.posit),
                 Quaternion::new_identity(),
-                // 1.5,
-                0.4, // todo: temp testing highlight
+                radius,
                 color,
                 ATOM_SHINYNESS,
             ));
@@ -119,55 +162,84 @@ pub fn draw_molecule(
 
     let rot_ortho = Quaternion::from_unit_vecs(UP, FORWARD);
 
-    // for (atom0, atom1, bond) in &molecule.bonds {
-    for bond in &molecule.bonds {
-        if view == MoleculeView::Ribbon && !bond.is_backbone {
-            continue;
-        }
-
-        // let center = (atom0.posit + atom1.posit) / 2.;
-        let center = (bond.posit_0 + bond.posit_1) / 2.;
-
-        let diff = vec3_to_f32(bond.posit_0 - bond.posit_1);
-        let diff_unit = diff.to_normalized();
-        let orientation = Quaternion::from_unit_vecs(FORWARD, diff_unit);
-
-        match bond.bond_count {
-            BondCount::Double => {
-                // Draw two offset bond cylinders.
-                // todo: QC this using quat logic. Seems to be working though.
-                let rotator = rot_ortho * orientation;
-
-                let offset_a = rotator.rotate_vec(Vec3::new(0.2, 0., 0.));
-                let offset_b = rotator.rotate_vec(Vec3::new(-0.2, 0., 0.));
-
-                entities.push(Entity::new(
-                    MESH_BOND,
-                    vec3_to_f32(center) + offset_a,
-                    orientation,
-                    1. * diff.magnitude(),
-                    BOND_COLOR,
-                    BODY_SHINYNESS,
-                ));
-
-                entities.push(Entity::new(
-                    MESH_BOND,
-                    vec3_to_f32(center) + offset_b,
-                    orientation,
-                    1. * diff.magnitude(),
-                    BOND_COLOR,
-                    BODY_SHINYNESS,
-                ));
+    // Draw bonds.
+    if ![MoleculeView::SpaceFilling].contains(&ui.mol_view) {
+        for bond in &molecule.bonds {
+            if ui.mol_view == MoleculeView::Ribbon && !bond.is_backbone {
+                continue;
             }
-            _ => {
-                entities.push(Entity::new(
-                    MESH_BOND,
-                    vec3_to_f32(center),
-                    orientation,
-                    1. * diff.magnitude(),
-                    BOND_COLOR,
-                    BODY_SHINYNESS,
-                ));
+
+            // todo: DRY with the atom selection distance filter above.
+            if ui.show_nearby_only {
+                match selected {
+                    Selection::Atom(sel) => {
+                        let atom_sel = &molecule.atoms[sel];
+                        if (bond.posit_0 - atom_sel.posit).magnitude() as f32
+                            > ui.nearby_dist_thresh
+                        {
+                            continue;
+                        }
+                    }
+                    Selection::Residue(sel) => {
+                        let res_sel = &molecule.residues[sel];
+                        // todo: Something more robust than the first atom?
+                        if !res_sel.atoms.is_empty() {
+                            let atom_sel = &molecule.atoms[res_sel.atoms[0]];
+                            if (bond.posit_0 - atom_sel.posit).magnitude() as f32
+                                > ui.nearby_dist_thresh
+                            {
+                                continue;
+                            }
+                        }
+                    }
+                    Selection::None => (),
+                }
+            }
+
+            // let center = (atom0.posit + atom1.posit) / 2.;
+            let center = (bond.posit_0 + bond.posit_1) / 2.;
+
+            let diff = vec3_to_f32(bond.posit_0 - bond.posit_1);
+            let diff_unit = diff.to_normalized();
+            let orientation = Quaternion::from_unit_vecs(FORWARD, diff_unit);
+
+            match bond.bond_count {
+                BondCount::Double => {
+                    // Draw two offset bond cylinders.
+                    // todo: QC this using quat logic. Seems to be working though.
+                    let rotator = rot_ortho * orientation;
+
+                    let offset_a = rotator.rotate_vec(Vec3::new(0.2, 0., 0.));
+                    let offset_b = rotator.rotate_vec(Vec3::new(-0.2, 0., 0.));
+
+                    entities.push(Entity::new(
+                        MESH_BOND,
+                        vec3_to_f32(center) + offset_a,
+                        orientation,
+                        1. * diff.magnitude(),
+                        BOND_COLOR,
+                        BODY_SHINYNESS,
+                    ));
+
+                    entities.push(Entity::new(
+                        MESH_BOND,
+                        vec3_to_f32(center) + offset_b,
+                        orientation,
+                        1. * diff.magnitude(),
+                        BOND_COLOR,
+                        BODY_SHINYNESS,
+                    ));
+                }
+                _ => {
+                    entities.push(Entity::new(
+                        MESH_BOND,
+                        vec3_to_f32(center),
+                        orientation,
+                        1. * diff.magnitude(),
+                        BOND_COLOR,
+                        BODY_SHINYNESS,
+                    ));
+                }
             }
         }
     }
@@ -192,15 +264,14 @@ fn event_dev_handler(
                             if let Some(mol) = &state_.molecule {
                                 let atoms_sel = points_along_ray(selected_ray, &mol.atoms, 0.6);
 
-                                state_.atom_selected =
+                                state_.selection =
                                     find_selected_atom(&atoms_sel, &mol.atoms, &selected_ray);
 
                                 draw_molecule(
                                     &mut scene.entities,
                                     mol,
-                                    state_.ui.mol_view,
-                                    state_.ui.atom_color_code,
-                                    state_.atom_selected,
+                                    &state_.ui,
+                                    state_.selection,
                                 );
                                 updates.entities = true;
                             }
@@ -223,12 +294,9 @@ fn event_win_handler(
 ) -> EngineUpdates {
     match event {
         WindowEvent::CursorMoved {
-            device_id,
+            device_id: _,
             position,
-        } => {
-            // println!("Cursor: {:?}", position);
-            state.ui.cursor_pos = Some((position.x as f32, position.y as f32))
-        }
+        } => state.ui.cursor_pos = Some((position.x as f32, position.y as f32)),
         _ => (),
     }
     EngineUpdates::default() // todo: A/R.
@@ -243,13 +311,7 @@ fn render_handler(_state: &mut State, _scene: &mut Scene, _dt: f32) -> EngineUpd
 pub fn render(state: State) {
     let mut entities = Vec::new();
     if let Some(mol) = &state.molecule {
-        draw_molecule(
-            &mut entities,
-            mol,
-            state.ui.mol_view,
-            state.ui.atom_color_code,
-            state.atom_selected,
-        );
+        draw_molecule(&mut entities, mol, &state.ui, state.selection);
     }
 
     let white = [1., 1., 1., 1.];
