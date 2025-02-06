@@ -36,6 +36,7 @@ pub const MESH_SURFACE: usize = 3; // Van Der Waals surface.
 // todo: By bond type etc
 const BOND_COLOR: Color = (0.2, 0.2, 0.2);
 const BOND_RADIUS: f32 = 0.10;
+const BOND_RADIUS_DOUBLE: f32 = 0.07;
 
 pub const COLOR_SELECTED: Color = (1., 0., 0.);
 
@@ -256,6 +257,7 @@ pub fn draw_molecule(
             let orientation = Quaternion::from_unit_vecs(UP_VEC, diff_unit);
 
             let scale = Some(Vec3::new(1., diff.magnitude(), 1.));
+            let scale_multibond = Some(Vec3::new(0.7, diff.magnitude(), 0.7));
 
             let color = if [MoleculeView::Sticks].contains(&ui.mol_view) {
                 // todo: A/R between teh two bonds. May need two bond elements.
@@ -264,10 +266,10 @@ pub fn draw_molecule(
                 BOND_COLOR
             };
 
+            // todo: Lots of DRY!
             match bond.bond_count {
-                BondCount::Double => {
+                BondCount::SingleDoubleHybrid => {
                     // Draw two offset bond cylinders.
-                    // todo: QC this using quat logic. Seems to be working though.
                     let rotator = rot_ortho * orientation;
 
                     let offset_a = rotator.rotate_vec(Vec3::new(0.2, 0., 0.));
@@ -292,10 +294,83 @@ pub fn draw_molecule(
                     );
 
                     entity_0.scale_partial = scale;
-                    entity_1.scale_partial = scale;
+                    entity_1.scale_partial = scale_multibond;
 
                     scene.entities.push(entity_0);
                     scene.entities.push(entity_1);
+                }
+                BondCount::Double => {
+                    // Draw two offset bond cylinders.
+                    let rotator = rot_ortho * orientation;
+
+                    let offset_a = rotator.rotate_vec(Vec3::new(0.2, 0., 0.));
+                    let offset_b = rotator.rotate_vec(Vec3::new(-0.2, 0., 0.));
+
+                    let mut entity_0 = Entity::new(
+                        MESH_BOND,
+                        vec3_to_f32(center) + offset_a,
+                        orientation,
+                        1.,
+                        color,
+                        BODY_SHINYNESS,
+                    );
+
+                    let mut entity_1 = Entity::new(
+                        MESH_BOND,
+                        vec3_to_f32(center) + offset_b,
+                        orientation,
+                        1.,
+                        color,
+                        BODY_SHINYNESS,
+                    );
+
+                    entity_0.scale_partial = scale_multibond;
+                    entity_1.scale_partial = scale_multibond;
+
+                    scene.entities.push(entity_0);
+                    scene.entities.push(entity_1);
+                }
+                BondCount::Triple => {
+                    // Draw two offset bond cylinders.
+                    let rotator = rot_ortho * orientation;
+
+                    let offset_a = rotator.rotate_vec(Vec3::new(0.2, 0., 0.));
+                    let offset_b = rotator.rotate_vec(Vec3::new(-0.2, 0., 0.));
+
+                    let mut entity_0 = Entity::new(
+                        MESH_BOND,
+                        vec3_to_f32(center),
+                        orientation,
+                        1.,
+                        color,
+                        BODY_SHINYNESS,
+                    );
+
+                    let mut entity_1 = Entity::new(
+                        MESH_BOND,
+                        vec3_to_f32(center) + offset_a,
+                        orientation,
+                        1.,
+                        color,
+                        BODY_SHINYNESS,
+                    );
+
+                    let mut entity_2 = Entity::new(
+                        MESH_BOND,
+                        vec3_to_f32(center) + offset_b,
+                        orientation,
+                        1.,
+                        color,
+                        BODY_SHINYNESS,
+                    );
+
+                    entity_0.scale_partial = scale_multibond;
+                    entity_1.scale_partial = scale_multibond;
+                    entity_2.scale_partial = scale_multibond;
+
+                    scene.entities.push(entity_0);
+                    scene.entities.push(entity_1);
+                    scene.entities.push(entity_2);
                 }
                 _ => {
                     let mut entity = Entity::new(

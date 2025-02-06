@@ -18,6 +18,7 @@ use crate::{
     Element,
     Element::{Carbon, Hydrogen, Nitrogen, Oxygen},
 };
+use crate::Element::Sulfur;
 
 struct BondSpecs {
     len: f64,
@@ -75,6 +76,7 @@ const BOND_LEN_THRESH: f64 = 0.03; // todo: Adjust A/R based on performance.
                                    // const BOND_LEN_THRESH_FINE: f64 = 0.01; // todo: Adjust A/R based on performance.
 const GRID_SIZE: f64 = 3.0; // Slightly larger than the largest bond threshold
 
+#[rustfmt::skip]
 fn get_specs() -> Vec<BondSpecs> {
     vec![
         // --------------------
@@ -84,19 +86,25 @@ fn get_specs() -> Vec<BondSpecs> {
         // C–C single bond
         // The most frequently encountered bond length for saturated, sp³-hybridized carbons (e.g., in alkanes).
         BondSpecs::new(1.54, (Carbon, Carbon), Single, Covalent),
+
         // Cα–C′: ~1.50 - 1.52 Å
         BondSpecs::new(1.51, (Carbon, Carbon), Single, Covalent),
+
         // C–C sp²–sp³ single bond, e.g. connecting Phe's ring to the rest of the atom.
         BondSpecs::new(1.50, (Carbon, Carbon), SingleDoubleHybrid, Covalent),
+
         // C-C phenyl (aromatic) ring bond, or benzene ring.
         // Found in alkynes, where carbons are sp-hybridized (linear). ~1.38-1.40 Å
         BondSpecs::new(1.39, (Carbon, Carbon), SingleDoubleHybrid, Covalent),
+
         // C=C double bond
         // Common in alkenes (sp²-hybridized). Range: ~1.33–1.34 Å
         BondSpecs::new(1.33, (Carbon, Carbon), Double, Covalent),
+
         // C≡C triple bond
         // Found in alkynes, where carbons are sp-hybridized (linear). ~1.20 Å
         BondSpecs::new(1.20, (Carbon, Carbon), Triple, Covalent),
+
         // --------------------
         // Carbon–Nitrogen Bonds
         // --------------------
@@ -104,9 +112,14 @@ fn get_specs() -> Vec<BondSpecs> {
         // C–N single bond
         // Typical for amines or alkyl–amine bonds. ~1.45-1.47 Å
         BondSpecs::new(1.46, (Carbon, Nitrogen), Single, Covalent),
+
+        // C-N (amide). Partial double-bond character due to resonance in the amide.
+        BondSpecs::new(1.33, (Carbon, Nitrogen), SingleDoubleHybrid, Covalent),
+
         // C=N double bond
         // Typical for imines (Schiff bases). ~1.28 Å
         BondSpecs::new(1.28, (Carbon, Nitrogen), Double, Covalent),
+
         // C≡N triple bond
         // Typical of nitriles (–C≡N). ~1.16 Å
         BondSpecs::new(1.16, (Carbon, Nitrogen), Triple, Covalent),
@@ -121,22 +134,38 @@ fn get_specs() -> Vec<BondSpecs> {
         // C–O single bond
         // Found in alcohols, ethers (sp³–O). ~1.43 Å
         BondSpecs::new(1.43, (Carbon, Oxygen), Single, Covalent),
+
         // C(phenyl)–O. Phenolic C–O bond often shorter than a typical aliphatic C–O. 1.36-1.38 Å
         BondSpecs::new(1.37, (Carbon, Oxygen), Single, Covalent),
+
         // C′–O (in –COO⁻). 1.25-1.27 Å
         BondSpecs::new(1.26, (Carbon, Oxygen), Single, Covalent),
+
         // C=O double bond
         // Typical for carbonyl groups (aldehydes, ketones, carboxylic acids, amides). ~1.21–1.23 Å
         BondSpecs::new(1.22, (Carbon, Oxygen), Double, Covalent),
+
         // --------------------
         // Carbon–Hydrogen Bonds
         // --------------------
         // todo: Expand this section.
+
         BondSpecs::new(1.09, (Carbon, Hydrogen), Single, Covalent),
+
         // 1.01–1.02 Å
         BondSpecs::new(1.01, (Nitrogen, Hydrogen), Single, Covalent),
+
         // 0.96 – 0.98 Å
         BondSpecs::new(1.01, (Oxygen, Hydrogen), Single, Covalent),
+
+
+        // Non-protein-backbond bond lengths.
+
+        // 1.34 - 1.35. Example: Cys.
+        BondSpecs::new(1.34, (Sulfur, Hydrogen), Single, Covalent),
+
+        // 1.81 - 1.82. Example: Cys.
+        BondSpecs::new(1.81, (Sulfur, Carbon), Single, Covalent),
     ]
 }
 
