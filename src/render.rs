@@ -2,6 +2,7 @@
 
 use std::{f32::consts::TAU, fmt};
 
+use bincode::{Decode, Encode};
 use graphics::{
     event::WindowEvent, Camera, ControlScheme, DeviceEvent, ElementState, EngineUpdates, Entity,
     InputSettings, LightType, Lighting, Mesh, PointLight, Scene, UiLayout, UiSettings, FWD_VEC,
@@ -13,7 +14,7 @@ use crate::{
     molecule::{aa_color, BondCount, Molecule},
     ui::ui_handler,
     util::{find_selected_atom, mol_center_size, points_along_ray, vec3_to_f32},
-    Selection, State, StateUi, ViewSelLevel,
+    Selection, State, StateUi, StateVolatile, ViewSelLevel,
 };
 
 type Color = (f32, f32, f32);
@@ -46,7 +47,7 @@ pub const SHELL_OPACITY: f32 = 0.01;
 pub const CAM_INIT_OFFSET: f32 = 10.;
 pub const OUTSIDE_LIGHTING_OFFSET: f32 = 400.;
 
-#[derive(Clone, Copy, PartialEq, Debug, Default)]
+#[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]
 pub enum MoleculeView {
     Sticks,
     Ribbon,
@@ -121,7 +122,8 @@ fn set_lighting(center: Vec3, size: f32) -> Lighting {
 /// Sensitive to various view configuration parameters.
 pub fn draw_molecule(
     scene: &mut Scene,
-    ui: &mut StateUi,
+    ui: &StateUi,
+    volatile: &mut StateVolatile,
     molecule: &Molecule,
     selected: Selection,
     update_cam_lighting: bool,
@@ -361,20 +363,20 @@ pub fn draw_molecule(
 
     if update_cam_lighting {
         let (center, size) = mol_center_size(&molecule.atoms);
-        ui.mol_center = center;
-        ui.mol_size = size;
+        volatile.mol_center = center;
+        volatile.mol_size = size;
 
         scene.camera.position = Vec3::new(
-            ui.mol_center.x,
-            ui.mol_center.y,
-            ui.mol_center.z - (ui.mol_size + CAM_INIT_OFFSET),
+            volatile.mol_center.x,
+            volatile.mol_center.y,
+            volatile.mol_center.z - (volatile.mol_size + CAM_INIT_OFFSET),
         );
         scene.camera.orientation = Quaternion::from_axis_angle(RIGHT_VEC, 0.);
         scene.camera.far = RENDER_DIST;
         scene.camera.update_proj_mat();
 
         // Update lighting based on the new molecule center and dims.
-        scene.lighting = set_lighting(ui.mol_center, ui.mol_size);
+        scene.lighting = set_lighting(volatile.mol_center, volatile.mol_size);
     }
 }
 
@@ -406,7 +408,14 @@ fn event_dev_handler(
                                 );
 
                                 // todo:This is overkill. Just change the color of the one[s] in question, and set update.entities = true.
-                                draw_molecule(scene, &mut state_.ui, mol, state_.selection, false);
+                                draw_molecule(
+                                    scene,
+                                    &state_.ui,
+                                    &mut state_.volatile,
+                                    mol,
+                                    state_.selection,
+                                    false,
+                                );
                                 updates.entities = true;
                             }
                         }
@@ -484,7 +493,14 @@ pub fn render(mut state: State) {
     };
 
     if let Some(mol) = &state.molecule {
-        draw_molecule(&mut scene, &mut state.ui, mol, state.selection, true);
+        draw_molecule(
+            &mut scene,
+            &state.ui,
+            &mut state.volatile,
+            mol,
+            state.selection,
+            true,
+        );
     }
 
     graphics::run(

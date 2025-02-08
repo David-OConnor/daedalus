@@ -13,7 +13,16 @@ mod ui;
 mod util;
 mod vibrations;
 
-use std::{any::Any, io, io::ErrorKind, path::PathBuf, str::FromStr, sync::Arc};
+use std::{
+    any::Any,
+    collections::HashMap,
+    fs::File,
+    io,
+    io::{ErrorKind, Read},
+    path::{Path, PathBuf},
+    str::FromStr,
+    sync::Arc,
+};
 
 use bincode::{Decode, Encode};
 use egui_file_dialog::{FileDialog, FileDialogConfig};
@@ -26,7 +35,11 @@ use rayon::iter::ParallelIterator;
 use crate::{
     pdb::load_pdb,
     render::{render, MoleculeView, RENDER_DIST},
+    ui::VIEW_DEPTH_MAX,
+    util::{load, save},
 };
+
+pub const DEFAULT_PREFS_FILE: &str = "bcv_prefs.bcv";
 
 #[derive(Debug, Clone, Default)]
 pub enum ComputationDevice {
@@ -191,7 +204,7 @@ impl Element {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Debug, Default)]
+#[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]
 pub enum ViewSelLevel {
     Atom,
     #[default]
@@ -208,29 +221,18 @@ impl ViewSelLevel {
     }
 }
 
-struct StateUi {
+/// Temprary, and generated state.
+struct StateVolatile {
     load_dialog: FileDialog,
-    mol_view: MoleculeView,
-    /// Mouse cursor
-    cursor_pos: Option<(f32, f32)>,
-    rcsb_input: String,
-    cam_snapshot_name: String,
-    view_sel_level: ViewSelLevel,
-    /// Experimental.
-    show_nearby_only: bool,
-    /// Angstrom. For selections.
-    nearby_dist_thresh: u16,
-    /// Center and size are used for setting the camera.
-    view_depth: u16, // angstrom
-    mol_center: Vec3,
-    mol_size: f32, // Dimension-agnostic
     /// We use this for offsetting our cursor selection.
     /// todo: Not working correctly; remove A/R
     ui_height: f32, // set automatically.
-    cam_snapshot: Option<usize>,
+    /// Center and size are used for setting the camera. Dependent on the molecule atom positions.
+    mol_center: Vec3,
+    mol_size: f32, // Dimension-agnostic
 }
 
-impl Default for StateUi {
+impl Default for StateVolatile {
     fn default() -> Self {
         let cfg = FileDialogConfig {
             ..Default::default()
@@ -258,23 +260,32 @@ impl Default for StateUi {
 
         Self {
             load_dialog,
-            mol_view: Default::default(),
-            cursor_pos: None,
-            rcsb_input: String::new(),
-            cam_snapshot_name: String::new(),
-            view_sel_level: Default::default(),
-            show_nearby_only: Default::default(),
-            nearby_dist_thresh: 10,
-            view_depth: RENDER_DIST as u16,
             mol_center: Vec3::new_zero(),
             mol_size: 80.,
             ui_height: 0.,
-            cam_snapshot: Default::default(),
         }
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Debug, Default)]
+/// Ui text fields and similar.
+#[derive(Default)]
+struct StateUi {
+    mol_view: MoleculeView,
+    view_sel_level: ViewSelLevel,
+    /// Mouse cursor
+    cursor_pos: Option<(f32, f32)>,
+    rcsb_input: String,
+    cam_snapshot_name: String,
+    residue_search: String,
+    /// Experimental.
+    show_nearby_only: bool,
+    /// Angstrom. For selections.
+    nearby_dist_thresh: u16,
+    view_depth: u16, // angstrom
+    cam_snapshot: Option<usize>,
+}
+
+#[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]
 pub enum Selection {
     #[default]
     None,
@@ -282,7 +293,7 @@ pub enum Selection {
     Residue(usize),
 }
 
-#[derive(Encode, Decode)]
+#[derive(Clone, Encode, Decode)]
 pub struct CamSnapshot {
     // We don't use camera directly so we don't have to store the projection matrix, and so we can impl
     // Encode/Decode
@@ -312,20 +323,97 @@ impl CamSnapshot {
 #[derive(Default)]
 struct State {
     pub ui: StateUi,
+    pub volatile: StateVolatile,
     pub pdb: Option<PDB>,
     pub molecule: Option<Molecule>,
     /// Index
     pub selection: Selection,
     pub cam_snapshots: Vec<CamSnapshot>,
+    // This allows us to keep in-memory data for other molecules.
+    pub to_save: HashMap<String, StateToSave>,
+}
+
+impl State {
+    /// Update when prefs change, periodically etc.
+    pub fn update_prefs(&mut self) {
+        if let Some(mol) = &self.molecule {
+            let data = StateToSave {
+                selection: self.selection,
+                cam_snapshots: self.cam_snapshots.clone(),
+                mol_view: self.ui.mol_view,
+                view_sel_level: self.ui.view_sel_level,
+                show_nearby_only: self.ui.show_nearby_only,
+                nearby_dist_thresh: self.ui.nearby_dist_thresh,
+            };
+
+            self.to_save.entry(mol.ident.clone()).or_insert(data);
+
+            if let Err(e) = save(&PathBuf::from(DEFAULT_PREFS_FILE), &self.to_save) {
+                eprintln!("Error saving state: {e:?}");
+            }
+        }
+    }
+
+    /// Run this when prefs, or a new molecule are loaded.
+    pub fn update_from_prefs(&mut self) {
+        if let Some(mol) = &self.molecule {
+            if self.to_save.contains_key(&mol.ident) {
+                let data = &self.to_save[&mol.ident];
+
+                self.selection = data.selection;
+                self.cam_snapshots = data.cam_snapshots.clone();
+                self.ui.mol_view = data.mol_view;
+                self.ui.view_sel_level = data.view_sel_level;
+                self.ui.show_nearby_only = data.show_nearby_only;
+                self.ui.nearby_dist_thresh = data.nearby_dist_thresh;
+            }
+        }
+    }
+
+    pub fn load_prefs(&mut self) {
+        match load(&PathBuf::from(DEFAULT_PREFS_FILE)) {
+            Ok(p) => self.to_save = p,
+            Err(e) => eprintln!("Error loading preferences on init: {e:?}"),
+        }
+
+        self.update_from_prefs();
+    }
+}
+
+#[derive(Encode, Decode)]
+pub struct StateToSave {
+    selection: Selection,
+    cam_snapshots: Vec<CamSnapshot>,
+    mol_view: MoleculeView,
+    view_sel_level: ViewSelLevel,
+    show_nearby_only: bool,
+    nearby_dist_thresh: u16,
+}
+
+impl StateToSave {
+    pub fn from_state(state: &State) -> Self {
+        Self {
+            selection: state.selection.clone(),
+            cam_snapshots: state.cam_snapshots.clone(),
+            mol_view: state.ui.mol_view,
+            view_sel_level: state.ui.view_sel_level,
+            show_nearby_only: state.ui.show_nearby_only,
+            nearby_dist_thresh: state.ui.nearby_dist_thresh,
+        }
+    }
 }
 
 fn main() {
     let mut state = State::default();
+    state.ui.view_depth = VIEW_DEPTH_MAX;
+
+    state.load_prefs();
 
     let pdb = load_pdb(&PathBuf::from_str("1htm.cif").unwrap());
     if let Ok(p) = pdb {
         state.pdb = Some(p);
         state.molecule = Some(Molecule::from_pdb(state.pdb.as_ref().unwrap()));
+        state.update_from_prefs();
     } else {
         eprintln!("Error loading PDB file at init.");
     }

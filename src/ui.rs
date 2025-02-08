@@ -1,4 +1,7 @@
-use std::{f32::consts::TAU, path::Path};
+use std::{
+    f32::consts::TAU,
+    path::{Path, PathBuf},
+};
 
 use egui::{
     Color32, ComboBox, Context, RichText, ScrollArea, Slider, TextEdit, TopBottomPanel, Ui,
@@ -13,15 +16,15 @@ use crate::{
     molecule::Molecule,
     pdb::load_pdb,
     render::{draw_molecule, MoleculeView, CAM_INIT_OFFSET, RENDER_DIST},
-    util::cam_look_at,
-    CamSnapshot, Selection, State, StateUi, ViewSelLevel,
+    util::{cam_look_at, save, select_from_search},
+    CamSnapshot, Selection, State, StateUi, StateVolatile, ViewSelLevel, DEFAULT_PREFS_FILE,
 };
 
 pub const ROW_SPACING: f32 = 10.;
 pub const COL_SPACING: f32 = 30.;
 
 const VIEW_DEPTH_MIN: u16 = 10;
-const VIEW_DEPTH_MAX: u16 = 200;
+pub const VIEW_DEPTH_MAX: u16 = 200;
 
 const NEARBY_THRESH_MIN: u16 = 5;
 const NEARBY_THRESH_MAX: u16 = 60;
@@ -47,6 +50,7 @@ fn load_file(
     if let Ok(p) = pdb {
         state.pdb = Some(p);
         state.molecule = Some(Molecule::from_pdb(state.pdb.as_ref().unwrap()));
+        state.update_from_prefs();
 
         *redraw = true;
         *reset_cam = true;
@@ -153,6 +157,7 @@ fn cam_snapshots(
 fn cam_controls(
     cam: &mut Camera,
     state_ui: &mut StateUi,
+    volatile: &StateVolatile,
     engine_updates: &mut EngineUpdates,
     ui: &mut Ui,
 ) {
@@ -168,9 +173,9 @@ fn cam_controls(
 
         if ui.button("Front").clicked() {
             cam.position = Vec3::new(
-                state_ui.mol_center.x,
-                state_ui.mol_center.y,
-                state_ui.mol_center.z - (state_ui.mol_size + CAM_INIT_OFFSET),
+                volatile.mol_center.x,
+                volatile.mol_center.y,
+                volatile.mol_center.z - (volatile.mol_size + CAM_INIT_OFFSET),
             );
             cam.orientation = Quaternion::new_identity();
 
@@ -179,9 +184,9 @@ fn cam_controls(
 
         if ui.button("Top").clicked() {
             cam.position = Vec3::new(
-                state_ui.mol_center.x,
-                state_ui.mol_center.y + (state_ui.mol_size + CAM_INIT_OFFSET),
-                state_ui.mol_center.z,
+                volatile.mol_center.x,
+                volatile.mol_center.y + (volatile.mol_size + CAM_INIT_OFFSET),
+                volatile.mol_center.z,
             );
             cam.orientation = Quaternion::from_axis_angle(RIGHT_VEC, TAU / 4.);
 
@@ -190,9 +195,9 @@ fn cam_controls(
 
         if ui.button("Left").clicked() {
             cam.position = Vec3::new(
-                state_ui.mol_center.x - (state_ui.mol_size + CAM_INIT_OFFSET),
-                state_ui.mol_center.y,
-                state_ui.mol_center.z,
+                volatile.mol_center.x - (volatile.mol_size + CAM_INIT_OFFSET),
+                volatile.mol_center.y,
+                volatile.mol_center.z,
             );
             cam.orientation = Quaternion::from_axis_angle(UP_VEC, TAU / 4.);
 
@@ -353,7 +358,12 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             ui.add_space(COL_SPACING);
 
             if ui.button("Open").clicked() {
-                state.ui.load_dialog.pick_file();
+                state.volatile.load_dialog.pick_file();
+            }
+
+            if ui.button("Save prefs").clicked() {
+                // todo temp. handle automatically
+                state.update_prefs();
             }
 
             ui.add_space(COL_SPACING);
@@ -365,6 +375,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     Ok(pdb) => {
                         state.pdb = Some(pdb);
                         state.molecule = Some(Molecule::from_pdb(state.pdb.as_ref().unwrap()));
+                        state.update_from_prefs();
 
                         redraw = true;
                         reset_cam = true;
@@ -377,7 +388,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
             ui.add_space(COL_SPACING);
 
-            state.ui.load_dialog.update(ctx);
+            state.volatile.load_dialog.update(ctx);
 
             ui.label("View:");
             let prev_view = state.ui.mol_view;
@@ -446,14 +457,16 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             ui.add_space(COL_SPACING);
 
             if let Some(mol) = &state.molecule {
-                selected_data(mol, state.selection, ui);
+                if state.selection != Selection::None {
+                    selected_data(mol, state.selection, ui);
 
-                if ui.button("Move cam").clicked() {
-                    let atom_sel = mol.get_sel_atom(state.selection);
+                    if ui.button("Move cam to").clicked() {
+                        let atom_sel = mol.get_sel_atom(state.selection);
 
-                    if let Some(atom) = atom_sel {
-                        cam_look_at(&mut scene.camera, atom.posit);
-                        engine_updates.camera = true;
+                        if let Some(atom) = atom_sel {
+                            cam_look_at(&mut scene.camera, atom.posit);
+                            engine_updates.camera = true;
+                        }
                     }
                 }
             }
@@ -462,7 +475,13 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         ui.add_space(ROW_SPACING);
 
         ui.horizontal(|ui| {
-            cam_controls(&mut scene.camera, &mut state.ui, &mut engine_updates, ui);
+            cam_controls(
+                &mut scene.camera,
+                &mut state.ui,
+                &state.volatile,
+                &mut engine_updates,
+                ui,
+            );
             ui.add_space(COL_SPACING * 2.);
             cam_snapshots(&mut scene.camera, state, &mut engine_updates, ui);
         });
@@ -476,9 +495,24 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             ui,
         );
 
+        ui.horizontal(|ui| {
+            let sel_prev = state.selection;
+            ui.label("Find residue:");
+            if ui
+                .add(TextEdit::singleline(&mut state.ui.residue_search).desired_width(60.))
+                .changed()
+            {
+                select_from_search(state);
+            }
+
+            if sel_prev != state.selection {
+                redraw = true;
+            }
+        });
+
         ui.add_space(ROW_SPACING / 2.);
 
-        if let Some(path) = &state.ui.load_dialog.take_picked() {
+        if let Some(path) = &state.volatile.load_dialog.take_picked() {
             load_file(
                 path,
                 state,
@@ -490,7 +524,14 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         if redraw {
             if let Some(molecule) = &state.molecule {
-                draw_molecule(scene, &mut state.ui, molecule, state.selection, reset_cam);
+                draw_molecule(
+                    scene,
+                    &state.ui,
+                    &mut state.volatile,
+                    molecule,
+                    state.selection,
+                    reset_cam,
+                );
 
                 set_window_title(&molecule.ident, ui);
                 engine_updates.entities = true;
@@ -498,11 +539,11 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         }
     });
 
-    if state.ui.ui_height < f32::EPSILON {
+    if state.volatile.ui_height < f32::EPSILON {
         println!("Setting height: {:?}", ctx.used_size().y);
-        state.ui.ui_height = ctx.used_size().y;
+        state.volatile.ui_height = ctx.used_size().y;
     }
 
-    state.ui.load_dialog.update(ctx);
+    state.volatile.load_dialog.update(ctx);
     engine_updates
 }

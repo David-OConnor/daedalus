@@ -1,12 +1,21 @@
+use std::{
+    fs::File,
+    io,
+    io::{ErrorKind, Read, Write},
+    path::Path,
+};
+
+use bincode::{Decode, Encode};
 use graphics::{Camera, FWD_VEC, UP_VEC};
 use lin_alg::{
     f32::{Quaternion, Vec3 as Vec3F32},
     f64::Vec3,
 };
+use na_seq::AaIdent;
 
 use crate::{
     molecule::{Atom, Residue},
-    Selection, ViewSelLevel,
+    Selection, State, ViewSelLevel,
 };
 
 const MOVE_TO_TARGET_DIST: f32 = 15.;
@@ -120,4 +129,51 @@ pub fn cam_look_at(cam: &mut Camera, target: Vec3) {
     // Slide along the patah between cam and target until close to it.
     let move_dist = dist - MOVE_TO_TARGET_DIST;
     cam.position += dir * move_dist;
+}
+
+pub fn select_from_search(state: &mut State) {
+    let query = &state.ui.residue_search.to_lowercase();
+
+    if let Some(mol) = &state.molecule {
+        for (i, res) in mol.residues.iter().enumerate() {
+            if query.contains(&i.to_string()) {
+                state.selection = Selection::Residue(i);
+            }
+            if let Some(aa) = res.aa {
+                if query.contains(&aa.to_str(AaIdent::ThreeLetters).to_lowercase()) {
+                    state.selection = Selection::Residue(i);
+                }
+            }
+        }
+    }
+}
+
+// todo: Heavily conserved among programs. Lib.
+/// Save to file, using Bincode. We currently use this for preference files.
+pub fn save<T: Encode>(path: &Path, data: &T) -> io::Result<()> {
+    let config = bincode::config::standard();
+
+    let encoded: Vec<u8> = bincode::encode_to_vec(data, config).unwrap();
+
+    let mut file = File::create(path)?;
+    file.write_all(&encoded)?;
+    Ok(())
+}
+
+// todo: Heavily conserved among programs. Lib.
+/// Load from file, using Bincode. We currently use this for preference files.
+pub fn load<T: Decode>(path: &Path) -> io::Result<T> {
+    let config = bincode::config::standard();
+
+    let mut file = File::open(path)?;
+    let mut buffer = Vec::new();
+    file.read_to_end(&mut buffer)?;
+    let (decoded, _len) = match bincode::decode_from_slice(&buffer, config) {
+        Ok(v) => v,
+        Err(_) => {
+            eprintln!("Error loading from file. Did the format change?");
+            return Err(io::Error::new(ErrorKind::Other, "error loading"));
+        }
+    };
+    Ok(decoded)
 }
