@@ -10,7 +10,7 @@ egui = "^0.31.0"
 egui-file-dialog = "^0.9.0" #  For file dialogs.
 
 #lin_alg = "^1.0.4"
-lin_alg = { path = "../lin_alg" }
+lin_alg = { path = "../lin_alg", features = ["encode"] }
 
 # todo: Use https://github.com/bempp/kifmm when ready. Adapt for Windows.
 #barnes_hut = { version = "^1.0.5"}  # enc temp rem

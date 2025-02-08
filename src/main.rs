@@ -2,6 +2,7 @@ extern crate core;
 
 mod amino_acid_coords;
 mod bond_inference;
+mod cartoon_mesh;
 mod download_pdb;
 mod drug_like;
 mod molecule;
@@ -14,8 +15,10 @@ mod vibrations;
 
 use std::{any::Any, io, io::ErrorKind, path::PathBuf, str::FromStr, sync::Arc};
 
+use bincode::{Decode, Encode};
 use egui_file_dialog::{FileDialog, FileDialogConfig};
-use lin_alg::f32::Vec3;
+use graphics::Camera;
+use lin_alg::f32::{Quaternion, Vec3};
 use molecule::Molecule;
 use pdbtbx::{self, PDB};
 use rayon::iter::ParallelIterator;
@@ -211,6 +214,7 @@ struct StateUi {
     /// Mouse cursor
     cursor_pos: Option<(f32, f32)>,
     rcsb_input: String,
+    cam_snapshot_name: String,
     view_sel_level: ViewSelLevel,
     /// Experimental.
     show_nearby_only: bool,
@@ -223,6 +227,7 @@ struct StateUi {
     /// We use this for offsetting our cursor selection.
     /// todo: Not working correctly; remove A/R
     ui_height: f32, // set automatically.
+    cam_snapshot: Option<usize>,
 }
 
 impl Default for StateUi {
@@ -256,6 +261,7 @@ impl Default for StateUi {
             mol_view: Default::default(),
             cursor_pos: None,
             rcsb_input: String::new(),
+            cam_snapshot_name: String::new(),
             view_sel_level: Default::default(),
             show_nearby_only: Default::default(),
             nearby_dist_thresh: 10,
@@ -263,6 +269,7 @@ impl Default for StateUi {
             mol_center: Vec3::new_zero(),
             mol_size: 80.,
             ui_height: 0.,
+            cam_snapshot: Default::default(),
         }
     }
 }
@@ -275,6 +282,33 @@ pub enum Selection {
     Residue(usize),
 }
 
+#[derive(Encode, Decode)]
+pub struct CamSnapshot {
+    // We don't use camera directly so we don't have to store the projection matrix, and so we can impl
+    // Encode/Decode
+    pub position: Vec3,
+    pub orientation: Quaternion,
+    pub far: f32,
+    pub name: Option<String>,
+}
+
+impl CamSnapshot {
+    pub fn from_cam(cam: &Camera, name: &str) -> Self {
+        let name = if name.is_empty() {
+            None
+        } else {
+            Some(name.to_owned())
+        };
+
+        Self {
+            position: cam.position,
+            orientation: cam.orientation,
+            far: cam.far,
+            name,
+        }
+    }
+}
+
 #[derive(Default)]
 struct State {
     pub ui: StateUi,
@@ -282,6 +316,7 @@ struct State {
     pub molecule: Option<Molecule>,
     /// Index
     pub selection: Selection,
+    pub cam_snapshots: Vec<CamSnapshot>,
 }
 
 fn main() {

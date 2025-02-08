@@ -16,9 +16,8 @@ use crate::{
         BondType::{self, *},
     },
     Element,
-    Element::{Carbon, Hydrogen, Nitrogen, Oxygen},
+    Element::{Carbon, Hydrogen, Nitrogen, Oxygen, Sulfur},
 };
-use crate::Element::Sulfur;
 
 struct BondSpecs {
     len: f64,
@@ -42,38 +41,9 @@ impl BondSpecs {
         }
     }
 }
-//
-// // Peptide
-// // Double bond len of C' to N.
-// const LEN_CP_N: f64 = 1.33;
-// const LEN_N_CALPHA: f64 = 1.46;
-// const LEN_CALPHA_CP: f64 = 1.53;
-
-// // Single bond
-// const LEN_C_C: f64 = 1.54;
-// const LEN_C_N: f64 = 1.48;
-// const LEN_C_O: f64 = 1.43;
-//
-// // todo: Found this elsewhere. Likely conflict with C_O above?
-// const LEN_C_C_DOUBLE: f64 = 1.33; // 1.33 - 1.34
-// const LEN_C_O_DOUBLE: f64 = 1.23;
-
-// todo: MOre sidechain bonds, like carbon-carbon.
-
-// No: These cause incorrect bonds.
-// Hydrogen
-// const LEN_OH_OH: f64 = 2.8;
-// const LEN_NH_OC: f64 = 2.9;
-// const LEN_OH_OC: f64 = 2.8;
-
-// Bonds to H. Mostly ~1
-// const LEN_N_H: f64 = 1.00;
-// const LEN_C_H: f64 = 1.10;
-// const LEN_O_H: f64 = 1.0;
 
 // If interatomic distance is within this distance of one of our known bond lenghts, consider it to be a bond.
 const BOND_LEN_THRESH: f64 = 0.03; // todo: Adjust A/R based on performance.
-                                   // const BOND_LEN_THRESH_FINE: f64 = 0.01; // todo: Adjust A/R based on performance.
 const GRID_SIZE: f64 = 3.0; // Slightly larger than the largest bond threshold
 
 #[rustfmt::skip]
@@ -94,8 +64,11 @@ fn get_specs() -> Vec<BondSpecs> {
         BondSpecs::new(1.50, (Carbon, Carbon), SingleDoubleHybrid, Covalent),
 
         // C-C phenyl (aromatic) ring bond, or benzene ring.
-        // Found in alkynes, where carbons are sp-hybridized (linear). ~1.38-1.40 Å
+        // Found in alkynes, where carbons are sp-hybridized (linear). ~1.37-1.40 Å
         BondSpecs::new(1.39, (Carbon, Carbon), SingleDoubleHybrid, Covalent),
+
+        // C-C Seems to be required for one fo the Trp rings?
+        BondSpecs::new(1.36, (Carbon, Carbon), SingleDoubleHybrid, Covalent),
 
         // C=C double bond
         // Common in alkenes (sp²-hybridized). Range: ~1.33–1.34 Å
@@ -112,6 +85,12 @@ fn get_specs() -> Vec<BondSpecs> {
         // C–N single bond
         // Typical for amines or alkyl–amine bonds. ~1.45-1.47 Å
         BondSpecs::new(1.46, (Carbon, Nitrogen), Single, Covalent),
+
+        // todo: TS His.
+        // BondSpecs::new(1.44, (Carbon, Nitrogen), SingleDoubleHybrid, Covalent),
+
+        // C-N Indole N in 5-member aromatic ring, e.g. Trp. 1.36-1.39
+        BondSpecs::new(1.37, (Carbon, Nitrogen), SingleDoubleHybrid, Covalent),
 
         // C-N (amide). Partial double-bond character due to resonance in the amide.
         BondSpecs::new(1.33, (Carbon, Nitrogen), SingleDoubleHybrid, Covalent),
@@ -177,9 +156,9 @@ fn eval_lens(bonds: &mut Vec<Bond>, atoms: &[Atom], i: usize, j: usize, specs: &
     let dist = (atom_0.posit - atom_1.posit).magnitude();
 
     for spec in specs {
-        if !((atom_0.element == spec.elements.0 && atom_1.element == spec.elements.1)
-            || (atom_0.element == spec.elements.1 && atom_1.element == spec.elements.0))
-        {
+        // This directionality ensures only one bond per atom pair. Otherwise, we'd add two identical
+        // ones with swapped atom positions.
+        if !(atom_0.element == spec.elements.0 && atom_1.element == spec.elements.1) {
             continue;
         }
 

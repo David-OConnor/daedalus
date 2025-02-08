@@ -1,17 +1,20 @@
 use std::{f32::consts::TAU, path::Path};
 
 use egui::{
-    Color32, ComboBox, Context, RichText, Slider, TextEdit, TopBottomPanel, Ui, ViewportCommand,
+    Color32, ComboBox, Context, RichText, ScrollArea, Slider, TextEdit, TopBottomPanel, Ui,
+    ViewportCommand,
 };
 use graphics::{Camera, EngineUpdates, Scene, FWD_VEC, RIGHT_VEC, UP_VEC};
 use lin_alg::f32::{Quaternion, Vec3};
+use na_seq::AaIdent;
 
 use crate::{
     download_pdb::load_rcsb,
     molecule::Molecule,
     pdb::load_pdb,
     render::{draw_molecule, MoleculeView, CAM_INIT_OFFSET, RENDER_DIST},
-    Selection, State, StateUi, ViewSelLevel,
+    util::cam_look_at,
+    CamSnapshot, Selection, State, StateUi, ViewSelLevel,
 };
 
 pub const ROW_SPACING: f32 = 10.;
@@ -87,6 +90,64 @@ pub fn handle_input(
             }
         }
     });
+}
+
+fn get_snap_name(snap: Option<usize>, snaps: &[CamSnapshot]) -> String {
+    match snap {
+        Some(i) => {
+            let snap = &snaps[i];
+            match &snap.name {
+                Some(name) => name.to_owned(),
+                None => i.to_string(),
+            }
+        }
+        None => "None".to_owned(),
+    }
+}
+
+fn cam_snapshots(
+    cam: &mut Camera,
+    state: &mut State,
+    engine_updates: &mut EngineUpdates,
+    ui: &mut Ui,
+) {
+    ui.heading("Views:");
+    ui.label("Label:");
+    ui.add(TextEdit::singleline(&mut state.ui.cam_snapshot_name).desired_width(80.));
+    if ui.button("Save").clicked() {
+        state
+            .cam_snapshots
+            .push(CamSnapshot::from_cam(cam, &state.ui.cam_snapshot_name));
+        state.ui.cam_snapshot_name = String::new();
+    }
+
+    let prev_snap = state.ui.cam_snapshot;
+    let snap_name = get_snap_name(prev_snap, &state.cam_snapshots);
+
+    ComboBox::from_id_salt(2)
+        .width(80.)
+        .selected_text(snap_name)
+        .show_ui(ui, |ui| {
+            for (i, snap) in state.cam_snapshots.iter().enumerate() {
+                ui.selectable_value(
+                    &mut state.ui.cam_snapshot,
+                    Some(i),
+                    get_snap_name(Some(i), &state.cam_snapshots),
+                );
+            }
+        });
+
+    if state.ui.cam_snapshot != prev_snap {
+        if let Some(snap_i) = state.ui.cam_snapshot {
+            let snap = &state.cam_snapshots[snap_i];
+            cam.position = snap.position;
+            cam.orientation = snap.orientation;
+            cam.far = snap.far;
+
+            cam.update_proj_mat(); // In case `far` etc changed.
+            engine_updates.camera = true;
+        }
+    }
 }
 
 fn cam_controls(
@@ -223,16 +284,51 @@ fn selected_data(mol: &Molecule, selection: Selection, ui: &mut Ui) {
         Selection::Residue(sel) => {
             let res = &mol.residues[sel];
             let name = if let Some(aa) = res.aa {
-                aa.to_string()
+                aa.to_str(AaIdent::ThreeLetters)
             } else {
                 "-".to_owned() // todo temp
             };
 
             // todo: Sequesnce number etc.
-            ui.label(format!("Res: {:?}", name,));
+            ui.label(format!("Res: {name}"));
         }
         Selection::None => (),
     }
+}
+
+fn residue_selector(
+    state: &mut State,
+    cam: &mut Camera,
+    redraw: &mut bool,
+    engine_updates: &mut EngineUpdates,
+    ui: &mut Ui,
+) {
+    ui.horizontal(|ui| {
+        if let Some(mol) = &state.molecule {
+            ScrollArea::vertical().max_height(120.).show(ui, |ui| {
+                for (i, res) in mol.residues.iter().enumerate() {
+                    let name = if let Some(aa) = &res.aa {
+                        aa.to_str(AaIdent::OneLetter)
+                    } else {
+                        "-".to_owned()
+                    };
+                    if ui.button(format!("{i}: {name}")).clicked() {
+                        state.ui.view_sel_level = ViewSelLevel::Residue;
+                        state.selection = Selection::Residue(i);
+
+                        let res = &mol.residues[i];
+                        if !res.atoms.is_empty() {
+                            let atom = &mol.atoms[res.atoms[0]];
+                            cam_look_at(cam, atom.posit);
+                            engine_updates.camera = true;
+                        }
+
+                        *redraw = true;
+                    }
+                }
+            });
+        }
+    });
 }
 
 /// This function draws the (immediate-mode) GUI.
@@ -356,7 +452,20 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         ui.add_space(ROW_SPACING);
 
-        cam_controls(&mut scene.camera, &mut state.ui, &mut engine_updates, ui);
+        ui.horizontal(|ui| {
+            cam_controls(&mut scene.camera, &mut state.ui, &mut engine_updates, ui);
+            ui.add_space(COL_SPACING * 2.);
+            cam_snapshots(&mut scene.camera, state, &mut engine_updates, ui);
+        });
+
+        ui.add_space(ROW_SPACING);
+        residue_selector(
+            state,
+            &mut scene.camera,
+            &mut redraw,
+            &mut engine_updates,
+            ui,
+        );
 
         ui.add_space(ROW_SPACING / 2.);
 

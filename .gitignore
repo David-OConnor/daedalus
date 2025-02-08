@@ -15,3 +15,7 @@ Cargo.lock
 *.cif
 *.bcif
 *.gz
+
+
+# temp?
+sphere.obj

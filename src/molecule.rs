@@ -136,7 +136,6 @@ pub struct Atom {
     pub element: Element,
     pub role: Option<AaRole>,
     pub amino_acid: Option<AminoAcid>, // todo: Duplicate with storing atom IDs with residues.
-                                       // pub is_backbone: bool,
 }
 
 impl Atom {

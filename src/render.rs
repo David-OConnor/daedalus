@@ -182,14 +182,15 @@ pub fn draw_molecule(
 
             // If selected, the selected color overrides the element or residue color.
             match selected {
-                Selection::Atom(sel) => {
-                    if sel == i {
-                        color = COLOR_SELECTED
+                Selection::Atom(sel_i) => {
+                    if sel_i == i {
+                        color = COLOR_SELECTED;
                     }
                 }
-                Selection::Residue(sel) => {
-                    // let mut res_atoms = Vec::new();
-                    for res in &molecule.residues {}
+                Selection::Residue(sel_i) => {
+                    if molecule.residues[sel_i].atoms.contains(&i) {
+                        color = COLOR_SELECTED;
+                    }
                 }
                 Selection::None => (),
             }
@@ -293,8 +294,9 @@ pub fn draw_molecule(
                         BODY_SHINYNESS,
                     );
 
-                    entity_0.scale_partial = scale;
-                    entity_1.scale_partial = scale_multibond;
+                    entity_0.scale_partial = scale_multibond;
+                    // Show only half len on one of the bonds as a visual differentiator.
+                    entity_1.scale_partial = Some(Vec3::new(0.7, diff.magnitude() * 0.3, 0.7));
 
                     scene.entities.push(entity_0);
                     scene.entities.push(entity_1);
@@ -430,6 +432,7 @@ fn event_dev_handler(
                                 state_.selection = find_selected_atom(
                                     &atoms_sel,
                                     &mol.atoms,
+                                    &mol.residues,
                                     &selected_ray,
                                     state_.ui.view_sel_level,
                                 );
@@ -479,7 +482,8 @@ pub fn render(mut state: State) {
 
     let mut scene = Scene {
         meshes: vec![
-            Mesh::new_sphere(1., 12, 12),
+            Mesh::new_sphere(1., 16, 16),
+            // Mesh::from_obj_file("sphere.obj"),
             Mesh::new_box(1., 1., 1.),
             Mesh::new_cylinder(1., BOND_RADIUS, 6),
             Mesh::new_box(1., 1., 1.), // todo: Temp. For VDW surface.

@@ -1,6 +1,15 @@
-use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
+use graphics::{Camera, FWD_VEC, UP_VEC};
+use lin_alg::{
+    f32::{Quaternion, Vec3 as Vec3F32},
+    f64::Vec3,
+};
 
-use crate::{molecule::Atom, Selection, ViewSelLevel};
+use crate::{
+    molecule::{Atom, Residue},
+    Selection, ViewSelLevel,
+};
+
+const MOVE_TO_TARGET_DIST: f32 = 10.;
 
 pub fn vec3_to_f32(v: Vec3) -> Vec3F32 {
     Vec3F32::new(v.x as f32, v.y as f32, v.z as f32)
@@ -38,6 +47,7 @@ pub fn points_along_ray(ray: (Vec3F32, Vec3F32), atoms: &[Atom], dist_thresh: f3
 pub fn find_selected_atom(
     sel: &[usize],
     atoms: &[Atom],
+    ress: &[Residue],
     ray: &(Vec3F32, Vec3F32),
     sel_level: ViewSelLevel,
 ) -> Selection {
@@ -58,11 +68,16 @@ pub fn find_selected_atom(
         }
 
         match sel_level {
-            ViewSelLevel::Atom => {}
-            ViewSelLevel::Residue => {}
+            ViewSelLevel::Atom => Selection::Atom(near_i),
+            ViewSelLevel::Residue => {
+                for (i_res, res) in ress.iter().enumerate() {
+                    if res.atoms.contains(&near_i) {
+                        return Selection::Residue(i_res);
+                    }
+                }
+                Selection::None // Selected atom is not in a residue.
+            }
         }
-
-        Selection::Atom(near_i)
     } else {
         Selection::None
     }
@@ -88,4 +103,22 @@ pub fn mol_center_size(atoms: &[Atom]) -> (Vec3F32, f32) {
     }
 
     (vec3_to_f32(sum) / atoms.len() as f32, max_dim as f32)
+}
+
+/// Move the camera to look at a point of interest. Takes the starting location into account.
+/// todo: Smooth interpolated zoom.
+pub fn cam_look_at(cam: &mut Camera, target: Vec3) {
+    let diff = vec3_to_f32(target) - cam.position;
+    let dir = diff.to_normalized();
+    let dist = diff.magnitude();
+
+    // Rotate the camera to look at the target.
+    let cam_looking_at = cam.orientation.rotate_vec(FWD_VEC);
+    let rotator = Quaternion::from_unit_vecs(cam_looking_at, dir);
+
+    cam.orientation = rotator * cam.orientation;
+
+    // Slide along the patah between cam and target until close to it.
+    let move_dist = dist - MOVE_TO_TARGET_DIST;
+    cam.position += dir * move_dist;
 }
