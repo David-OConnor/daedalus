@@ -447,6 +447,15 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
             if let Some(mol) = &state.molecule {
                 selected_data(mol, state.selection, ui);
+
+                if ui.button("Move cam").clicked() {
+                    let atom_sel = mol.get_sel_atom(state.selection);
+
+                    if let Some(atom) = atom_sel {
+                        cam_look_at(&mut scene.camera, atom.posit);
+                        engine_updates.camera = true;
+                    }
+                }
             }
         });
 

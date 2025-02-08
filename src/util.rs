@@ -9,14 +9,13 @@ use crate::{
     Selection, ViewSelLevel,
 };
 
-const MOVE_TO_TARGET_DIST: f32 = 10.;
+const MOVE_TO_TARGET_DIST: f32 = 15.;
 
 pub fn vec3_to_f32(v: Vec3) -> Vec3F32 {
     Vec3F32::new(v.x as f32, v.y as f32, v.z as f32)
 }
 
 /// Used for cursor selection.
-// pub fn points_along_ray(ray: (Vec3F32, Vec3F32), atoms: &[Atom], dist_thresh: f32) -> Vec<&Atom> {
 pub fn points_along_ray(ray: (Vec3F32, Vec3F32), atoms: &[Atom], dist_thresh: f32) -> Vec<usize> {
     let mut result = Vec::new();
 

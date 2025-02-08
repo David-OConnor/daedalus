@@ -5,7 +5,7 @@ use na_seq::AminoAcid;
 use pdbtbx::PDB;
 use rayon::prelude::*;
 
-use crate::{bond_inference::create_bonds, Element};
+use crate::{bond_inference::create_bonds, Element, Selection};
 
 #[derive(Debug)]
 pub struct Chain {}
@@ -78,6 +78,28 @@ impl Molecule {
             bonds,
             chains,
             residues,
+        }
+    }
+
+    /// If residue, get an arbitrary atom. (todo: Get c alpha always).
+    pub fn get_sel_atom(&self, sel: Selection) -> Option<&Atom> {
+        match sel {
+            Selection::Atom(i) => {
+                if i < self.atoms.len() {
+                    Some(&self.atoms[i])
+                } else {
+                    None
+                }
+            }
+            Selection::Residue(i) => {
+                let res = &self.residues[i];
+                if !res.atoms.is_empty() {
+                    Some(&self.atoms[res.atoms[0]])
+                } else {
+                    None
+                }
+            }
+            Selection::None => None,
         }
     }
 }

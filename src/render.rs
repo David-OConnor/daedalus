@@ -134,28 +134,14 @@ pub fn draw_molecule(
     if [MoleculeView::BallAndStick, MoleculeView::Spheres].contains(&ui.mol_view) {
         for (i, atom) in molecule.atoms.iter().enumerate() {
             if ui.show_nearby_only {
-                match selected {
-                    Selection::Atom(sel) => {
-                        let atom_sel = &molecule.atoms[sel];
-                        if (atom.posit - atom_sel.posit).magnitude() as f32
-                            > ui.nearby_dist_thresh as f32
+                if ui.show_nearby_only {
+                    let atom_sel = molecule.get_sel_atom(selected);
+                    if let Some(a) = atom_sel {
+                        if (atom.posit - a.posit).magnitude() as f32 > ui.nearby_dist_thresh as f32
                         {
                             continue;
                         }
                     }
-                    Selection::Residue(sel) => {
-                        let res_sel = &molecule.residues[sel];
-                        // todo: Something more robust than the first atom?
-                        if !res_sel.atoms.is_empty() {
-                            let atom_sel = &molecule.atoms[res_sel.atoms[0]];
-                            if (atom.posit - atom_sel.posit).magnitude() as f32
-                                > ui.nearby_dist_thresh as f32
-                            {
-                                continue;
-                            }
-                        }
-                    }
-                    Selection::None => (),
                 }
             }
 
@@ -223,30 +209,12 @@ pub fn draw_molecule(
                 continue;
             }
 
-            // todo: DRY with the atom selection distance filter above.
             if ui.show_nearby_only {
-                match selected {
-                    Selection::Atom(sel) => {
-                        let atom_sel = &molecule.atoms[sel];
-                        if (atom_0.posit - atom_sel.posit).magnitude() as f32
-                            > ui.nearby_dist_thresh as f32
-                        {
-                            continue;
-                        }
+                let atom_sel = molecule.get_sel_atom(selected);
+                if let Some(a) = atom_sel {
+                    if (atom_0.posit - a.posit).magnitude() as f32 > ui.nearby_dist_thresh as f32 {
+                        continue;
                     }
-                    Selection::Residue(sel) => {
-                        let res_sel = &molecule.residues[sel];
-                        // todo: Something more robust than the first atom?
-                        if !res_sel.atoms.is_empty() {
-                            let atom_sel = &molecule.atoms[res_sel.atoms[0]];
-                            if (atom_0.posit - atom_sel.posit).magnitude() as f32
-                                > ui.nearby_dist_thresh as f32
-                            {
-                                continue;
-                            }
-                        }
-                    }
-                    Selection::None => (),
                 }
             }
 
