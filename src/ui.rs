@@ -1,12 +1,7 @@
-use std::{
-    f32::consts::TAU,
-    path::{Path, PathBuf},
-    time::Instant,
-};
+use std::{f32::consts::TAU, path::Path, time::Instant};
 
 use egui::{
     Color32, ComboBox, Context, RichText, ScrollArea, Slider, TextEdit, TopBottomPanel, Ui,
-    ViewportCommand,
 };
 use graphics::{Camera, EngineUpdates, Scene, FWD_VEC, RIGHT_VEC, UP_VEC};
 use lin_alg::f32::{Quaternion, Vec3};
@@ -18,9 +13,8 @@ use crate::{
     pdb::load_pdb,
     render::{draw_molecule, MoleculeView, CAM_INIT_OFFSET, RENDER_DIST},
     util::{cam_look_at, cycle_res_selected, select_from_search},
-    CamSnapshot, Selection, State, StateUi, StateVolatile, ViewSelLevel, DEFAULT_PREFS_FILE,
+    CamSnapshot, Selection, State, StateUi, StateVolatile, ViewSelLevel,
 };
-
 pub const ROW_SPACING: f32 = 10.;
 pub const COL_SPACING: f32 = 30.;
 
@@ -133,7 +127,7 @@ fn cam_snapshots(
         .width(80.)
         .selected_text(snap_name)
         .show_ui(ui, |ui| {
-            for (i, snap) in state.cam_snapshots.iter().enumerate() {
+            for (i, _snap) in state.cam_snapshots.iter().enumerate() {
                 ui.selectable_value(
                     &mut state.ui.cam_snapshot,
                     Some(i),
@@ -347,13 +341,7 @@ fn selected_data(mol: &Molecule, selection: Selection, ui: &mut Ui) {
     }
 }
 
-fn residue_selector(
-    state: &mut State,
-    cam: &mut Camera,
-    redraw: &mut bool,
-    engine_updates: &mut EngineUpdates,
-    ui: &mut Ui,
-) {
+fn residue_selector(state: &mut State, cam: &mut Camera, redraw: &mut bool, ui: &mut Ui) {
     ui.horizontal(|ui| {
         if let Some(mol) = &state.molecule {
             ScrollArea::vertical().max_height(120.).show(ui, |ui| {
@@ -408,11 +396,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
             if ui.button("Open").clicked() {
                 state.volatile.load_dialog.pick_file();
-            }
-
-            if ui.button("Save prefs").clicked() {
-                // todo temp. handle automatically
-                state.update_prefs();
             }
 
             ui.add_space(COL_SPACING);
@@ -536,13 +519,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         });
 
         ui.add_space(ROW_SPACING);
-        residue_selector(
-            state,
-            &mut scene.camera,
-            &mut redraw,
-            &mut engine_updates,
-            ui,
-        );
+        residue_selector(state, &mut scene.camera, &mut redraw, ui);
 
         ui.horizontal(|ui| {
             let sel_prev = state.selection;
@@ -596,19 +573,13 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         }
 
         if redraw {
-            if let Some(molecule) = &state.molecule {
-                draw_molecule(
-                    scene,
-                    &state.ui,
-                    &mut state.volatile,
-                    molecule,
-                    state.selection,
-                    reset_cam,
-                );
+            draw_molecule(state, scene, reset_cam);
 
-                set_window_title(&molecule.ident, scene);
-                engine_updates.entities = true;
+            if let Some(mol) = &state.molecule {
+                set_window_title(&mol.ident, scene);
             }
+
+            engine_updates.entities = true;
         }
     });
 

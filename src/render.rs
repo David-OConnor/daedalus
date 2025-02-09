@@ -128,24 +128,25 @@ fn set_lighting(center: Vec3, size: f32) -> Lighting {
 
 /// Refreshes entities with the model passed.
 /// Sensitive to various view configuration parameters.
-pub fn draw_molecule(
-    scene: &mut Scene,
-    ui: &StateUi,
-    volatile: &mut StateVolatile,
-    molecule: &Molecule,
-    selected: Selection,
-    update_cam_lighting: bool,
-) {
+pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: bool) {
+    if state.molecule.is_none() {
+        return;
+    }
+    let molecule = state.molecule.as_ref().unwrap();
+
     // todo: Update this capacity A/R as you flesh out your renders.
     // *entities = Vec::with_capacity(molecule.bonds.len());
     scene.entities = Vec::new();
+
+    let ui = &state.ui;
+    let volatile = &mut state.volatile;
 
     // Draw atoms.
     if [MoleculeView::BallAndStick, MoleculeView::Spheres].contains(&ui.mol_view) {
         for (i, atom) in molecule.atoms.iter().enumerate() {
             if ui.show_nearby_only {
                 if ui.show_nearby_only {
-                    let atom_sel = molecule.get_sel_atom(selected);
+                    let atom_sel = molecule.get_sel_atom(state.selection);
                     if let Some(a) = atom_sel {
                         if (atom.posit - a.posit).magnitude() as f32 > ui.nearby_dist_thresh as f32
                         {
@@ -177,7 +178,7 @@ pub fn draw_molecule(
             };
 
             // If selected, the selected color overrides the element or residue color.
-            match selected {
+            match state.selection {
                 Selection::Atom(sel_i) => {
                     if sel_i == i {
                         color = COLOR_SELECTED;
@@ -220,7 +221,7 @@ pub fn draw_molecule(
             }
 
             if ui.show_nearby_only {
-                let atom_sel = molecule.get_sel_atom(selected);
+                let atom_sel = molecule.get_sel_atom(state.selection);
                 if let Some(a) = atom_sel {
                     if (atom_0.posit - a.posit).magnitude() as f32 > ui.nearby_dist_thresh as f32 {
                         continue;
@@ -385,6 +386,9 @@ pub fn draw_molecule(
         // Update lighting based on the new molecule center and dims.
         scene.lighting = set_lighting(volatile.mol_center, volatile.mol_size);
     }
+
+    // todo: Evaluate if this is a sufficiently-robust place to save prefs.
+    state.update_save_prefs();
 }
 
 fn event_dev_handler(
@@ -481,18 +485,9 @@ fn event_dev_handler(
     }
 
     if redraw {
-        if let Some(mol) = &state_.molecule {
-            // todo:This is overkill for certain keys. Just change the color of the one[s] in question, and set update.entities = true.
-            draw_molecule(
-                scene,
-                &state_.ui,
-                &mut state_.volatile,
-                mol,
-                state_.selection,
-                false,
-            );
-            updates.entities = true;
-        }
+        // todo:This is overkill for certain keys. Just change the color of the one[s] in question, and set update.entities = true.
+        draw_molecule(state_, scene, false);
+        updates.entities = true;
     }
 
     updates
@@ -561,16 +556,7 @@ pub fn render(mut state: State) {
         icon_path: Some("./resources/icon.png".to_owned()),
     };
 
-    if let Some(mol) = &state.molecule {
-        draw_molecule(
-            &mut scene,
-            &state.ui,
-            &mut state.volatile,
-            mol,
-            state.selection,
-            true,
-        );
-    }
+    draw_molecule(&mut state, &mut scene, true);
 
     graphics::run(
         state,

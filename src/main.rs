@@ -8,6 +8,7 @@ mod drug_like;
 mod input;
 mod molecule;
 mod pdb;
+mod prefs;
 mod render;
 mod save_load;
 mod ui;
@@ -15,12 +16,10 @@ mod util;
 mod vibrations;
 
 use std::{
-    any::Any,
     collections::HashMap,
-    fs::File,
     io,
     io::{ErrorKind, Read},
-    path::{Path, PathBuf},
+    path::PathBuf,
     str::FromStr,
     sync::Arc,
 };
@@ -28,21 +27,21 @@ use std::{
 use bincode::{Decode, Encode};
 use egui_file_dialog::{FileDialog, FileDialogConfig};
 use graphics::{
-    app_utils::{load, save},
     Camera,
 };
 use lin_alg::f32::{Quaternion, Vec3};
 use molecule::Molecule;
 use pdbtbx::{self, PDB};
+use prefs::{StateToSave};
 use rayon::iter::ParallelIterator;
 
 use crate::{
     pdb::load_pdb,
-    render::{render, MoleculeView, RENDER_DIST},
+    render::{render, MoleculeView},
     ui::VIEW_DEPTH_MAX,
 };
 
-pub const DEFAULT_PREFS_FILE: &str = "bcv_prefs.bcv";
+// pub const PREFS_SAVE_INTERVAL: f32 = 30.; // Seconds
 
 #[derive(Debug, Clone, Default)]
 pub enum ComputationDevice {
@@ -334,76 +333,6 @@ struct State {
     pub cam_snapshots: Vec<CamSnapshot>,
     // This allows us to keep in-memory data for other molecules.
     pub to_save: HashMap<String, StateToSave>,
-}
-
-impl State {
-    /// Update when prefs change, periodically etc.
-    pub fn update_prefs(&mut self) {
-        if let Some(mol) = &self.molecule {
-            let data = StateToSave {
-                selection: self.selection,
-                cam_snapshots: self.cam_snapshots.clone(),
-                mol_view: self.ui.mol_view,
-                view_sel_level: self.ui.view_sel_level,
-                show_nearby_only: self.ui.show_nearby_only,
-                nearby_dist_thresh: self.ui.nearby_dist_thresh,
-            };
-
-            self.to_save.insert(mol.ident.clone(), data);
-
-            if let Err(e) = save(&PathBuf::from(DEFAULT_PREFS_FILE), &self.to_save) {
-                eprintln!("Error saving state: {e:?}");
-            }
-        }
-    }
-
-    /// Run this when prefs, or a new molecule are loaded.
-    pub fn update_from_prefs(&mut self) {
-        if let Some(mol) = &self.molecule {
-            if self.to_save.contains_key(&mol.ident) {
-                let data = &self.to_save[&mol.ident];
-
-                self.selection = data.selection;
-                self.cam_snapshots = data.cam_snapshots.clone();
-                self.ui.mol_view = data.mol_view;
-                self.ui.view_sel_level = data.view_sel_level;
-                self.ui.show_nearby_only = data.show_nearby_only;
-                self.ui.nearby_dist_thresh = data.nearby_dist_thresh;
-            }
-        }
-    }
-
-    pub fn load_prefs(&mut self) {
-        match load(&PathBuf::from(DEFAULT_PREFS_FILE)) {
-            Ok(p) => self.to_save = p,
-            Err(e) => eprintln!("Error loading preferences on init: {e:?}"),
-        }
-
-        self.update_from_prefs();
-    }
-}
-
-#[derive(Debug, Encode, Decode)]
-pub struct StateToSave {
-    selection: Selection,
-    cam_snapshots: Vec<CamSnapshot>,
-    mol_view: MoleculeView,
-    view_sel_level: ViewSelLevel,
-    show_nearby_only: bool,
-    nearby_dist_thresh: u16,
-}
-
-impl StateToSave {
-    pub fn from_state(state: &State) -> Self {
-        Self {
-            selection: state.selection.clone(),
-            cam_snapshots: state.cam_snapshots.clone(),
-            mol_view: state.ui.mol_view,
-            view_sel_level: state.ui.view_sel_level,
-            show_nearby_only: state.ui.show_nearby_only,
-            nearby_dist_thresh: state.ui.nearby_dist_thresh,
-        }
-    }
 }
 
 fn main() {

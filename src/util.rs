@@ -1,12 +1,4 @@
-use std::{
-    fs::File,
-    io,
-    io::{ErrorKind, Read, Write},
-    path::Path,
-};
-
-use bincode::{Decode, Encode};
-use graphics::{Camera, FWD_VEC, UP_VEC};
+use graphics::{Camera, FWD_VEC};
 use lin_alg::{
     f32::{Quaternion, Vec3 as Vec3F32},
     f64::Vec3,
@@ -14,7 +6,7 @@ use lin_alg::{
 use na_seq::AaIdent;
 
 use crate::{
-    molecule::{Atom, Molecule, Residue},
+    molecule::{Atom, Residue},
     Selection, State, ViewSelLevel,
 };
 

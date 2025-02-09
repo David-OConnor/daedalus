@@ -2,6 +2,8 @@
 
 For viewing and performing minor edits on moleculars; espsecially proteins and nucleic acids.
 
+Conceptually similar to [PyMol](https://www.pymol.org/). Much less functionality. Much faster. Intuitive, flexible camera controls.
+
 ## Functionality
 
 - Viewing proteins and other molecules' 3D structure
