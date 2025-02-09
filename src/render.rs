@@ -4,16 +4,22 @@ use std::{f32::consts::TAU, fmt};
 
 use bincode::{Decode, Encode};
 use graphics::{
-    event::WindowEvent, Camera, ControlScheme, DeviceEvent, ElementState, EngineUpdates, Entity,
-    InputSettings, LightType, Lighting, Mesh, PointLight, Scene, UiLayout, UiSettings, FWD_VEC,
-    RIGHT_VEC, UP_VEC,
+    event::{RawKeyEvent, WindowEvent},
+    winit::keyboard::{KeyCode, PhysicalKey},
+    Camera, ControlScheme, DeviceEvent, ElementState, EngineUpdates, Entity, InputSettings,
+    LightType, Lighting, Mesh, PointLight, Scene, UiLayout, UiSettings, FWD_VEC, RIGHT_VEC, UP_VEC,
 };
-use lin_alg::f32::{Quaternion, Vec3};
+use lin_alg::{
+    f32::{Quaternion, Vec3},
+    map_linear,
+};
 
 use crate::{
     molecule::{aa_color, BondCount, Molecule},
     ui::ui_handler,
-    util::{find_selected_atom, mol_center_size, points_along_ray, vec3_to_f32},
+    util::{
+        cycle_res_selected, find_selected_atom, mol_center_size, points_along_ray, vec3_to_f32,
+    },
     Selection, State, StateUi, StateVolatile, ViewSelLevel,
 };
 
@@ -220,7 +226,6 @@ pub fn draw_molecule(
                 }
             }
 
-            // let center = (atom0.posit + atom1.posit) / 2.;
             let center = (atom_0.posit + atom_1.posit) / 2.;
 
             let diff = vec3_to_f32(atom_0.posit - atom_1.posit);
@@ -387,17 +392,32 @@ fn event_dev_handler(
     _dt: f32,
 ) -> EngineUpdates {
     let mut updates = EngineUpdates::default();
+
+    let mut redraw = false;
+
     match event {
         DeviceEvent::Button { button, state } => {
             if button == 1 {
                 // Right click
                 match state {
                     ElementState::Pressed => {
-                        if let Some(cursor) = state_.ui.cursor_pos {
+                        if let Some(mut cursor) = state_.ui.cursor_pos {
+                            // Due to a quirk of some combination of our graphics engine and the egui
+                            // integration lib in it, we need this vertical offset for the UI; otherwise,
+                            // the higher up we click, the more the projected ray will be below the one
+                            // indicated by the cursor. (Rays will only be accurate if clicked at the bottom of the screen).
+                            // todo: It may be worth addressing upstream.
+                            cursor.1 -= map_linear(
+                                cursor.1,
+                                (scene.window_size.1, state_.volatile.ui_height),
+                                (0., state_.volatile.ui_height),
+                            );
+
                             let selected_ray = scene.screen_to_render(cursor);
 
                             if let Some(mol) = &state_.molecule {
-                                let atoms_sel = points_along_ray(selected_ray, &mol.atoms, 0.6);
+                                // let atoms_sel = points_along_ray(selected_ray, &mol.atoms, 0.6);
+                                let atoms_sel = points_along_ray(selected_ray, &mol.atoms, 0.2);
 
                                 state_.selection = find_selected_atom(
                                     &atoms_sel,
@@ -407,16 +427,32 @@ fn event_dev_handler(
                                     state_.ui.view_sel_level,
                                 );
 
-                                // todo:This is overkill. Just change the color of the one[s] in question, and set update.entities = true.
-                                draw_molecule(
-                                    scene,
-                                    &state_.ui,
-                                    &mut state_.volatile,
-                                    mol,
-                                    state_.selection,
-                                    false,
-                                );
+                                // todo: Debug code to draw teh ray on screen, so we can see why the selection is off.
+                                {
+                                    let center = (selected_ray.0 + selected_ray.1) / 2.;
+
+                                    let diff = selected_ray.0 - selected_ray.1;
+                                    let diff_unit = diff.to_normalized();
+                                    let orientation = Quaternion::from_unit_vecs(UP_VEC, diff_unit);
+
+                                    let scale = Some(Vec3::new(0.3, diff.magnitude(), 0.3));
+
+                                    let mut ent = Entity::new(
+                                        MESH_BOND,
+                                        center,
+                                        orientation,
+                                        1.,
+                                        (1., 0., 1.),
+                                        BODY_SHINYNESS,
+                                    );
+                                    ent.scale_partial = scale;
+
+                                    scene.entities.push(ent);
+                                }
                                 updates.entities = true;
+
+                                // todo: Put back
+                                // redraw = true;
                             }
                         }
                     }
@@ -424,8 +460,38 @@ fn event_dev_handler(
                 }
             }
         }
+        DeviceEvent::Key(key) => match key.state {
+            ElementState::Pressed => match key.physical_key {
+                PhysicalKey::Code(KeyCode::ArrowLeft) => {
+                    cycle_res_selected(state_, true);
+                    redraw = true;
+                }
+                PhysicalKey::Code(KeyCode::ArrowRight) => {
+                    cycle_res_selected(state_, false);
+                    redraw = true;
+                }
+                _ => (),
+            },
+            ElementState::Released => (),
+        },
         _ => (),
     }
+
+    if redraw {
+        if let Some(mol) = &state_.molecule {
+            // todo:This is overkill for certain keys. Just change the color of the one[s] in question, and set update.entities = true.
+            draw_molecule(
+                scene,
+                &state_.ui,
+                &mut state_.volatile,
+                mol,
+                state_.selection,
+                false,
+            );
+            updates.entities = true;
+        }
+    }
+
     updates
 }
 

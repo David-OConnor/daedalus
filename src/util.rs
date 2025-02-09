@@ -14,7 +14,7 @@ use lin_alg::{
 use na_seq::AaIdent;
 
 use crate::{
-    molecule::{Atom, Residue},
+    molecule::{Atom, Molecule, Residue},
     Selection, State, ViewSelLevel,
 };
 
@@ -148,32 +148,26 @@ pub fn select_from_search(state: &mut State) {
     }
 }
 
-// todo: Heavily conserved among programs. Lib.
-/// Save to file, using Bincode. We currently use this for preference files.
-pub fn save<T: Encode>(path: &Path, data: &T) -> io::Result<()> {
-    let config = bincode::config::standard();
-
-    let encoded: Vec<u8> = bincode::encode_to_vec(data, config).unwrap();
-
-    let mut file = File::create(path)?;
-    file.write_all(&encoded)?;
-    Ok(())
-}
-
-// todo: Heavily conserved among programs. Lib.
-/// Load from file, using Bincode. We currently use this for preference files.
-pub fn load<T: Decode>(path: &Path) -> io::Result<T> {
-    let config = bincode::config::standard();
-
-    let mut file = File::open(path)?;
-    let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer)?;
-    let (decoded, _len) = match bincode::decode_from_slice(&buffer, config) {
-        Ok(v) => v,
-        Err(_) => {
-            eprintln!("Error loading from file. Did the format change?");
-            return Err(io::Error::new(ErrorKind::Other, "error loading"));
+pub fn cycle_res_selected(state: &mut State, reverse: bool) {
+    if let Some(mol) = &state.molecule {
+        state.ui.view_sel_level = ViewSelLevel::Residue;
+        match state.selection {
+            Selection::Residue(res_i) => {
+                if reverse {
+                    if res_i != 0 {
+                        state.selection = Selection::Residue(res_i - 1);
+                    }
+                } else {
+                    if res_i != mol.residues.len() - 1 {
+                        state.selection = Selection::Residue(res_i + 1);
+                    }
+                }
+            }
+            _ => {
+                if !mol.residues.is_empty() {
+                    state.selection = Selection::Residue(0);
+                }
+            }
         }
-    };
-    Ok(decoded)
+    }
 }

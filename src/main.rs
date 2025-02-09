@@ -5,6 +5,7 @@ mod bond_inference;
 mod cartoon_mesh;
 mod download_pdb;
 mod drug_like;
+mod input;
 mod molecule;
 mod pdb;
 mod render;
@@ -26,7 +27,10 @@ use std::{
 
 use bincode::{Decode, Encode};
 use egui_file_dialog::{FileDialog, FileDialogConfig};
-use graphics::Camera;
+use graphics::{
+    app_utils::{load, save},
+    Camera,
+};
 use lin_alg::f32::{Quaternion, Vec3};
 use molecule::Molecule;
 use pdbtbx::{self, PDB};
@@ -36,7 +40,6 @@ use crate::{
     pdb::load_pdb,
     render::{render, MoleculeView, RENDER_DIST},
     ui::VIEW_DEPTH_MAX,
-    util::{load, save},
 };
 
 pub const DEFAULT_PREFS_FILE: &str = "bcv_prefs.bcv";
@@ -225,8 +228,7 @@ impl ViewSelLevel {
 struct StateVolatile {
     load_dialog: FileDialog,
     /// We use this for offsetting our cursor selection.
-    /// todo: Not working correctly; remove A/R
-    ui_height: f32, // set automatically.
+    ui_height: f32,
     /// Center and size are used for setting the camera. Dependent on the molecule atom positions.
     mol_center: Vec3,
     mol_size: f32, // Dimension-agnostic
@@ -283,6 +285,7 @@ struct StateUi {
     nearby_dist_thresh: u16,
     view_depth: u16, // angstrom
     cam_snapshot: Option<usize>,
+    dt: f32, // seconds.
 }
 
 #[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]
@@ -293,7 +296,7 @@ pub enum Selection {
     Residue(usize),
 }
 
-#[derive(Clone, Encode, Decode)]
+#[derive(Clone, Debug, Encode, Decode)]
 pub struct CamSnapshot {
     // We don't use camera directly so we don't have to store the projection matrix, and so we can impl
     // Encode/Decode
@@ -346,7 +349,7 @@ impl State {
                 nearby_dist_thresh: self.ui.nearby_dist_thresh,
             };
 
-            self.to_save.entry(mol.ident.clone()).or_insert(data);
+            self.to_save.insert(mol.ident.clone(), data);
 
             if let Err(e) = save(&PathBuf::from(DEFAULT_PREFS_FILE), &self.to_save) {
                 eprintln!("Error saving state: {e:?}");
@@ -380,7 +383,7 @@ impl State {
     }
 }
 
-#[derive(Encode, Decode)]
+#[derive(Debug, Encode, Decode)]
 pub struct StateToSave {
     selection: Selection,
     cam_snapshots: Vec<CamSnapshot>,

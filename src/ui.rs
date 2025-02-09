@@ -1,6 +1,7 @@
 use std::{
     f32::consts::TAU,
     path::{Path, PathBuf},
+    time::Instant,
 };
 
 use egui::{
@@ -16,7 +17,7 @@ use crate::{
     molecule::Molecule,
     pdb::load_pdb,
     render::{draw_molecule, MoleculeView, CAM_INIT_OFFSET, RENDER_DIST},
-    util::{cam_look_at, save, select_from_search},
+    util::{cam_look_at, cycle_res_selected, select_from_search},
     CamSnapshot, Selection, State, StateUi, StateVolatile, ViewSelLevel, DEFAULT_PREFS_FILE,
 };
 
@@ -29,12 +30,12 @@ pub const VIEW_DEPTH_MAX: u16 = 200;
 const NEARBY_THRESH_MIN: u16 = 5;
 const NEARBY_THRESH_MAX: u16 = 60;
 
-const CAM_BUTTON_POS_STEP: f32 = 5.;
-const CAM_BUTTON_ROT_STEP: f32 = TAU / 24.;
+const CAM_BUTTON_POS_STEP: f32 = 20.;
+const CAM_BUTTON_ROT_STEP: f32 = TAU / 4.;
 
 /// Update the tilebar to reflect the current molecule
-fn set_window_title(title: &str, ui: &mut Ui) {
-    // todo: Not working. Maybe need a new way when using WGPU.
+fn set_window_title(title: &str, scene: &mut Scene) {
+    scene.window_title = title.to_owned();
     // ui.ctx().send_viewport_cmd(ViewportCommand::Title(title.to_string()));
 }
 
@@ -230,34 +231,76 @@ fn cam_controls(
         let mut movement_vec = None;
         let mut rotation = None;
 
+        // todo: for UI adccessbility
+        // if key_up_is_down {
+        //     up_button.highlight();
+        // }
         // Movement (Alternative to keyboard)
-        if ui.button("⬅").on_hover_text("Hotkey: A").clicked() {
-            movement_vec = Some(Vec3::new(-CAM_BUTTON_POS_STEP, 0., 0.));
+        if ui
+            .button("⬅")
+            .on_hover_text("Hotkey: A")
+            .is_pointer_button_down_on()
+        {
+            movement_vec = Some(Vec3::new(-CAM_BUTTON_POS_STEP * state_ui.dt, 0., 0.));
         }
-        if ui.button("➡").on_hover_text("Hotkey: D").clicked() {
-            movement_vec = Some(Vec3::new(CAM_BUTTON_POS_STEP, 0., 0.));
+        if ui
+            .button("➡")
+            .on_hover_text("Hotkey: D")
+            .is_pointer_button_down_on()
+        {
+            movement_vec = Some(Vec3::new(CAM_BUTTON_POS_STEP * state_ui.dt, 0., 0.));
         }
-        if ui.button("⬇").on_hover_text("Hotkey: C").clicked() {
-            movement_vec = Some(Vec3::new(0., -CAM_BUTTON_POS_STEP, 0.));
+        if ui
+            .button("⬇")
+            .on_hover_text("Hotkey: C")
+            .is_pointer_button_down_on()
+        {
+            movement_vec = Some(Vec3::new(0., -CAM_BUTTON_POS_STEP * state_ui.dt, 0.));
         }
-        if ui.button("⬆").on_hover_text("Hotkey: Space").clicked() {
-            movement_vec = Some(Vec3::new(0., CAM_BUTTON_POS_STEP, 0.));
+        if ui
+            .button("⬆")
+            .on_hover_text("Hotkey: Space")
+            .is_pointer_button_down_on()
+        {
+            movement_vec = Some(Vec3::new(0., CAM_BUTTON_POS_STEP * state_ui.dt, 0.));
         }
-        if ui.button("⬋").on_hover_text("Hotkey: S").clicked() {
-            movement_vec = Some(Vec3::new(0., 0., -CAM_BUTTON_POS_STEP));
+        if ui
+            .button("⬋")
+            .on_hover_text("Hotkey: S")
+            .is_pointer_button_down_on()
+        {
+            movement_vec = Some(Vec3::new(0., 0., -CAM_BUTTON_POS_STEP * state_ui.dt));
         }
-        if ui.button("⬈").on_hover_text("Hotkey: W").clicked() {
-            movement_vec = Some(Vec3::new(0., 0., CAM_BUTTON_POS_STEP));
+        if ui
+            .button("⬈")
+            .on_hover_text("Hotkey: W")
+            .is_pointer_button_down_on()
+        {
+            movement_vec = Some(Vec3::new(0., 0., CAM_BUTTON_POS_STEP * state_ui.dt));
         }
 
         // Rotation (Alternative to keyboard)
-        if ui.button("⟲").on_hover_text("Hotkey: Q").clicked() {
+        if ui
+            .button("⟲")
+            .on_hover_text("Hotkey: Q")
+            .is_pointer_button_down_on()
+        {
             let fwd = cam.orientation.rotate_vec(FWD_VEC);
-            rotation = Some(Quaternion::from_axis_angle(fwd, CAM_BUTTON_ROT_STEP));
+            rotation = Some(Quaternion::from_axis_angle(
+                fwd,
+                CAM_BUTTON_ROT_STEP * state_ui.dt,
+            ));
         }
-        if ui.button("⟳").on_hover_text("Hotkey: R").clicked() {
+        if ui
+            .button("⟳")
+            .on_hover_text("Hotkey: R")
+            .is_pointer_button_down_on()
+        {
             let fwd = cam.orientation.rotate_vec(FWD_VEC);
-            rotation = Some(Quaternion::from_axis_angle(fwd, -CAM_BUTTON_ROT_STEP));
+            rotation = Some(Quaternion::from_axis_angle(
+                fwd,
+                -CAM_BUTTON_ROT_STEP * state_ui.dt,
+            ));
         }
 
         if let Some(m) = movement_vec {
@@ -281,13 +324,16 @@ fn selected_data(mol: &Molecule, selection: Selection, ui: &mut Ui) {
     match selection {
         Selection::Atom(sel) => {
             let atom = &mol.atoms[sel];
-            ui.label(format!(
-                "El: {:?}, AA: {:?}, Role: {:?}",
-                atom.element, atom.amino_acid, atom.role
-            ));
+            ui.label(
+                RichText::new(format!(
+                    "El: {:?}, AA: {:?}, Role: {:?}",
+                    atom.element, atom.amino_acid, atom.role
+                ))
+                .color(Color32::GOLD),
+            );
         }
-        Selection::Residue(sel) => {
-            let res = &mol.residues[sel];
+        Selection::Residue(sel_i) => {
+            let res = &mol.residues[sel_i];
             let name = if let Some(aa) = res.aa {
                 aa.to_str(AaIdent::ThreeLetters)
             } else {
@@ -295,7 +341,7 @@ fn selected_data(mol: &Molecule, selection: Selection, ui: &mut Ui) {
             };
 
             // todo: Sequesnce number etc.
-            ui.label(format!("Res: {name}"));
+            ui.label(RichText::new(format!("Res: {sel_i}: {name}")).color(Color32::GOLD));
         }
         Selection::None => (),
     }
@@ -321,12 +367,12 @@ fn residue_selector(
                         state.ui.view_sel_level = ViewSelLevel::Residue;
                         state.selection = Selection::Residue(i);
 
-                        let res = &mol.residues[i];
-                        if !res.atoms.is_empty() {
-                            let atom = &mol.atoms[res.atoms[0]];
-                            cam_look_at(cam, atom.posit);
-                            engine_updates.camera = true;
-                        }
+                        // let res = &mol.residues[i];
+                        // if !res.atoms.is_empty() {
+                        //     let atom = &mol.atoms[res.atoms[0]];
+                        //     cam_look_at(cam, atom.posit);
+                        //     engine_updates.camera = true;
+                        // }
 
                         *redraw = true;
                     }
@@ -340,10 +386,13 @@ fn residue_selector(
 /// [UI items](https://docs.rs/egui/latest/egui/struct.Ui.html)
 pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> EngineUpdates {
     let mut engine_updates = EngineUpdates::default();
+
+    // return  engine_updates;
     let mut redraw = false;
     let mut reset_cam = false;
 
-    // let mut reset_window_title = false; // This setup avoids borrow errors.
+    // For getting DT for certain buttons when held. Does not seem to be the same as the 3D render DT.
+    let start = Instant::now();
 
     TopBottomPanel::top("0").show(ctx, |ui| {
         ui.spacing_mut().slider_width = 120.;
@@ -508,6 +557,30 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             if sel_prev != state.selection {
                 redraw = true;
             }
+
+            // todo: for UI adccessbility
+            // if key_up_is_down {
+            //     up_button.highlight();
+            // }
+            if state.molecule.is_some() {
+                if ui
+                    .button("Prev AA")
+                    .on_hover_text("Hotkey: Left arrow")
+                    .clicked()
+                {
+                    cycle_res_selected(state, true);
+                    redraw = true;
+                }
+                // todo: DRY
+                if ui
+                    .button("Next AA")
+                    .on_hover_text("Hotkey: Right arrow")
+                    .clicked()
+                {
+                    cycle_res_selected(state, false);
+                    redraw = true;
+                }
+            }
         });
 
         ui.add_space(ROW_SPACING / 2.);
@@ -533,7 +606,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     reset_cam,
                 );
 
-                set_window_title(&molecule.ident, ui);
+                set_window_title(&molecule.ident, scene);
                 engine_updates.entities = true;
             }
         }
@@ -545,5 +618,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
     }
 
     state.volatile.load_dialog.update(ctx);
+
+    state.ui.dt = start.elapsed().as_secs_f32();
+
     engine_updates
 }

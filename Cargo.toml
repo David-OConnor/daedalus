@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-graphics = { path = "../graphics" }
-#graphics = "^0.3.1"
+graphics = { path = "../graphics", features = ["app_utils"] }
+#graphics = { verison = "^0.3.1", features = ["app_utils"] }
 egui = "^0.31.0"
 egui-file-dialog = "^0.9.0" #  For file dialogs.
 
