@@ -40,6 +40,8 @@ pub const MESH_CUBE: usize = 1;
 pub const MESH_BOND: usize = 2;
 pub const MESH_SURFACE: usize = 3; // Van Der Waals surface.
 
+const SELECTION_DIST_THRESH: f32 = 0.7;
+
 // todo: By bond type etc
 const BOND_COLOR: Color = (0.2, 0.2, 0.2);
 const BOND_RADIUS: f32 = 0.10;
@@ -416,8 +418,11 @@ fn event_dev_handler(
                             let selected_ray = scene.screen_to_render(cursor);
 
                             if let Some(mol) = &state_.molecule {
-                                // let atoms_sel = points_along_ray(selected_ray, &mol.atoms, 0.6);
-                                let atoms_sel = points_along_ray(selected_ray, &mol.atoms, 0.2);
+                                let atoms_sel = points_along_ray(
+                                    selected_ray,
+                                    &mol.atoms,
+                                    SELECTION_DIST_THRESH,
+                                );
 
                                 state_.selection = find_selected_atom(
                                     &atoms_sel,
@@ -428,30 +433,28 @@ fn event_dev_handler(
                                 );
 
                                 // todo: Debug code to draw teh ray on screen, so we can see why the selection is off.
-                                {
-                                    let center = (selected_ray.0 + selected_ray.1) / 2.;
-
-                                    let diff = selected_ray.0 - selected_ray.1;
-                                    let diff_unit = diff.to_normalized();
-                                    let orientation = Quaternion::from_unit_vecs(UP_VEC, diff_unit);
-
-                                    let scale = Some(Vec3::new(0.3, diff.magnitude(), 0.3));
-
-                                    let mut ent = Entity::new(
-                                        MESH_BOND,
-                                        center,
-                                        orientation,
-                                        1.,
-                                        (1., 0., 1.),
-                                        BODY_SHINYNESS,
-                                    );
-                                    ent.scale_partial = scale;
-
-                                    scene.entities.push(ent);
-                                }
-                                updates.entities = true;
-
-                                // todo: Put back
+                                // {
+                                //     let center = (selected_ray.0 + selected_ray.1) / 2.;
+                                //
+                                //     let diff = selected_ray.0 - selected_ray.1;
+                                //     let diff_unit = diff.to_normalized();
+                                //     let orientation = Quaternion::from_unit_vecs(UP_VEC, diff_unit);
+                                //
+                                //     let scale = Some(Vec3::new(0.3, diff.magnitude(), 0.3));
+                                //
+                                //     let mut ent = Entity::new(
+                                //         MESH_BOND,
+                                //         center,
+                                //         orientation,
+                                //         1.,
+                                //         (1., 0., 1.),
+                                //         BODY_SHINYNESS,
+                                //     );
+                                //     ent.scale_partial = scale;
+                                //
+                                //     scene.entities.push(ent);
+                                // updates.entities = true;
+                                // }
                                 redraw = true;
                             }
                         }

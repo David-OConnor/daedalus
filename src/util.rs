@@ -30,7 +30,8 @@ pub fn points_along_ray(ray: (Vec3F32, Vec3F32), atoms: &[Atom], dist_thresh: f3
 
     // todo: Address this fn n ext in your selection fix quest.
 
-    let ray_dir = ray.1.to_normalized();
+    // let ray_dir = ray.1.to_normalized();
+    let ray_dir = (ray.1 - ray.0).to_normalized();
 
     for (i, atom) in atoms.iter().enumerate() {
         let atom_pos = vec3_to_f32(atom.posit);
