@@ -28,16 +28,17 @@ pub fn vec3_to_f32(v: Vec3) -> Vec3F32 {
 pub fn points_along_ray(ray: (Vec3F32, Vec3F32), atoms: &[Atom], dist_thresh: f32) -> Vec<usize> {
     let mut result = Vec::new();
 
-    let (ray_origin, ray_dir) = ray;
-    let ray_dir = ray_dir.to_normalized(); // Ensure the ray direction is a unit vector
+    // todo: Address this fn n ext in your selection fix quest.
+
+    let ray_dir = ray.1.to_normalized();
 
     for (i, atom) in atoms.iter().enumerate() {
         let atom_pos = vec3_to_f32(atom.posit);
 
         // Compute the closest point on the ray to the atom position
-        let to_atom = atom_pos - ray_origin;
+        let to_atom = atom_pos - ray.0;
         let t = to_atom.dot(ray_dir);
-        let closest_point = ray_origin + ray_dir * t;
+        let closest_point = ray.0 + ray_dir * t;
 
         // Compute the perpendicular distance to the ray
         let dist_to_ray = (atom_pos - closest_point).magnitude();

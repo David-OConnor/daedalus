@@ -452,7 +452,7 @@ fn event_dev_handler(
                                 updates.entities = true;
 
                                 // todo: Put back
-                                // redraw = true;
+                                redraw = true;
                             }
                         }
                     }
