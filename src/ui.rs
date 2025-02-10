@@ -351,7 +351,7 @@ fn residue_selector(state: &mut State, cam: &mut Camera, redraw: &mut bool, ui: 
                     } else {
                         "-".to_owned()
                     };
-                    if ui.button(format!("{i}: {name}")).clicked() {
+                    if ui.button(format!("{}: {name}", res.serial_number)).clicked() {
                         state.ui.view_sel_level = ViewSelLevel::Residue;
                         state.selection = Selection::Residue(i);
 

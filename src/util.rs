@@ -130,7 +130,7 @@ pub fn select_from_search(state: &mut State) {
 
     if let Some(mol) = &state.molecule {
         for (i, res) in mol.residues.iter().enumerate() {
-            if query.contains(&i.to_string()) {
+            if query.contains(&res.serial_number.to_string()) {
                 state.selection = Selection::Residue(i);
             }
             if let Some(aa) = res.aa {

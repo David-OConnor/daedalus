@@ -34,6 +34,7 @@ impl Molecule {
         for res_pdb in &res_pdb {
             let aa = AminoAcid::from_str(res_pdb.name().unwrap_or_default()).ok();
             let mut res_us = Residue {
+                serial_number: res_pdb.serial_number(),
                 aa,
                 atoms: Vec::new(),
             };
@@ -146,14 +147,23 @@ pub struct Bond {
 pub struct Ligand {}
 
 #[derive(Debug)]
+pub enum ResidueType {
+    AminoAcid(AminoAcid),
+    Other(String)
+}
+
+#[derive(Debug)]
 pub struct Residue {
+    /// We currently use serial number of display, search etc, and arra index to select.
     // todo: Residue type that includes water etc in addition to AAs. Enum that wraps AminoAcid, for example.
+    pub serial_number: isize, // pdbtbx uses isize. Negative allowed?
     pub aa: Option<AminoAcid>,
     pub atoms: Vec<usize>, // Atom index
 }
 
 #[derive(Debug)]
 pub struct Atom {
+    // todo: Serial number?
     pub posit: Vec3,
     pub element: Element,
     pub role: Option<AaRole>,
