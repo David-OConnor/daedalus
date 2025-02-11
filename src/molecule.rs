@@ -1,5 +1,4 @@
 /// Contains data structures and related code for molecules, atoms, residues, chains, etc.
-
 use std::str::FromStr;
 
 use lin_alg::f64::Vec3;
@@ -8,7 +7,6 @@ use pdbtbx::PDB;
 use rayon::prelude::*;
 
 use crate::{bond_inference::create_bonds, Element, Selection};
-
 
 #[derive(Debug)]
 // todo: This, or a PDB-specific format?
@@ -62,7 +60,7 @@ impl Molecule {
                 atoms: Vec::new(),
                 // todo: COme back to residues if you see them in the PDB structure.
                 // residues: Vec::new(),
-                visible: true
+                visible: true,
             };
 
             for atom_c in chain_pdb.atoms() {
@@ -90,7 +88,6 @@ impl Molecule {
         // }
 
         let bonds = create_bonds(&atoms);
-
 
         Molecule {
             ident: pdb.identifier.clone().unwrap_or_default(),
@@ -181,7 +178,7 @@ pub struct Chain {
 #[derive(Debug)]
 pub enum ResidueType {
     AminoAcid(AminoAcid),
-    Other(String)
+    Other(String),
 }
 
 #[derive(Debug)]

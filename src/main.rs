@@ -26,13 +26,11 @@ use std::{
 
 use bincode::{Decode, Encode};
 use egui_file_dialog::{FileDialog, FileDialogConfig};
-use graphics::{
-    Camera,
-};
+use graphics::Camera;
 use lin_alg::f32::{Quaternion, Vec3};
 use molecule::Molecule;
 use pdbtbx::{self, PDB};
-use prefs::{StateToSave};
+use prefs::StateToSave;
 use rayon::iter::ParallelIterator;
 
 use crate::{

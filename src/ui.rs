@@ -345,48 +345,54 @@ fn residue_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
     ui.horizontal(|ui| {
         if let Some(mol) = &state.molecule {
             // ScrollArea::vertical().max_height(120.).show(ui, |ui| {
-                for (i, res) in mol.residues.iter().enumerate() {
-                    let name = if let Some(aa) = &res.aa {
-                        aa.to_str(AaIdent::OneLetter)
-                    } else {
-                        "-".to_owned()
-                    };
-                    if ui.button(format!("{}: {name}", res.serial_number)).clicked() {
-                        state.ui.view_sel_level = ViewSelLevel::Residue;
-                        state.selection = Selection::Residue(i);
+            for (i, res) in mol.residues.iter().enumerate() {
+                let name = if let Some(aa) = &res.aa {
+                    aa.to_str(AaIdent::OneLetter)
+                } else {
+                    "-".to_owned()
+                };
+                if ui
+                    .button(format!("{}: {name}", res.serial_number))
+                    .clicked()
+                {
+                    state.ui.view_sel_level = ViewSelLevel::Residue;
+                    state.selection = Selection::Residue(i);
 
-                        // let res = &mol.residues[i];
-                        // if !res.atoms.is_empty() {
-                        //     let atom = &mol.atoms[res.atoms[0]];
-                        //     cam_look_at(cam, atom.posit);
-                        //     engine_updates.camera = true;
-                        // }
+                    // let res = &mol.residues[i];
+                    // if !res.atoms.is_empty() {
+                    //     let atom = &mol.atoms[res.atoms[0]];
+                    //     cam_look_at(cam, atom.posit);
+                    //     engine_updates.camera = true;
+                    // }
 
-                        *redraw = true;
-                    }
+                    *redraw = true;
                 }
+            }
             // });
         }
     });
 }
 
 /// Toggles chain visibility
-fn chain_vis_selector(state: &mut State,  redraw: &mut bool, ui: &mut Ui) {
+fn chain_vis_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
     // todo: For now, DRY with res selec
     ui.horizontal(|ui| {
         ui.label("Chain visibility:");
         if let Some(mol) = &mut state.molecule {
-                for chain in &mut mol.chains {
-                    let color = if chain.visible {
-                        Color32::LIGHT_BLUE
-                    } else {
-                        Color32::GRAY
-                    };
-                    if ui.button(RichText::new(chain.id.clone()).color(color)).clicked() {
-                        chain.visible = !chain.visible;
-                        *redraw = true;
-                    }
+            for chain in &mut mol.chains {
+                let color = if chain.visible {
+                    Color32::LIGHT_BLUE
+                } else {
+                    Color32::GRAY
+                };
+                if ui
+                    .button(RichText::new(chain.id.clone()).color(color))
+                    .clicked()
+                {
+                    chain.visible = !chain.visible;
+                    *redraw = true;
                 }
+            }
         }
     });
 }

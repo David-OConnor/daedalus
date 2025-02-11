@@ -15,7 +15,7 @@ use lin_alg::{
 };
 
 use crate::{
-    molecule::{aa_color, BondCount, Molecule},
+    molecule::{aa_color, BondCount, Chain, Molecule},
     ui::ui_handler,
     util::{
         cycle_res_selected, find_selected_atom, mol_center_size, points_along_ray, vec3_to_f32,
@@ -132,7 +132,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
     if state.molecule.is_none() {
         return;
     }
-    let molecule = state.molecule.as_ref().unwrap();
+    let mol = state.molecule.as_ref().unwrap();
 
     // todo: Update this capacity A/R as you flesh out your renders.
     // *entities = Vec::with_capacity(molecule.bonds.len());
@@ -141,12 +141,25 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
     let ui = &state.ui;
     let volatile = &mut state.volatile;
 
+    let chains_invis: Vec<&Chain> = mol.chains.iter().filter(|c| !c.visible).collect();
+
     // Draw atoms.
     if [MoleculeView::BallAndStick, MoleculeView::Spheres].contains(&ui.mol_view) {
-        for (i, atom) in molecule.atoms.iter().enumerate() {
+        for (i, atom) in mol.atoms.iter().enumerate() {
+            let mut chain_not_sel = false;
+            for chain in &chains_invis {
+                if chain.atoms.contains(&i) {
+                    chain_not_sel = true;
+                    break;
+                }
+            }
+            if chain_not_sel {
+                continue;
+            }
+
             if ui.show_nearby_only {
                 if ui.show_nearby_only {
-                    let atom_sel = molecule.get_sel_atom(state.selection);
+                    let atom_sel = mol.get_sel_atom(state.selection);
                     if let Some(a) = atom_sel {
                         if (atom.posit - a.posit).magnitude() as f32 > ui.nearby_dist_thresh as f32
                         {
@@ -185,7 +198,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                     }
                 }
                 Selection::Residue(sel_i) => {
-                    if molecule.residues[sel_i].atoms.contains(&i) {
+                    if mol.residues[sel_i].atoms.contains(&i) {
                         color = COLOR_SELECTED;
                     }
                 }
@@ -212,16 +225,16 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
 
     // Draw bonds.
     if ![MoleculeView::Spheres].contains(&ui.mol_view) {
-        for bond in &molecule.bonds {
-            let atom_0 = &molecule.atoms[bond.atom_0];
-            let atom_1 = &molecule.atoms[bond.atom_1];
+        for bond in &mol.bonds {
+            let atom_0 = &mol.atoms[bond.atom_0];
+            let atom_1 = &mol.atoms[bond.atom_1];
 
             if ui.mol_view == MoleculeView::Ribbon && !bond.is_backbone {
                 continue;
             }
 
             if ui.show_nearby_only {
-                let atom_sel = molecule.get_sel_atom(state.selection);
+                let atom_sel = mol.get_sel_atom(state.selection);
                 if let Some(a) = atom_sel {
                     if (atom_0.posit - a.posit).magnitude() as f32 > ui.nearby_dist_thresh as f32 {
                         continue;
@@ -370,7 +383,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
     }
 
     if update_cam_lighting {
-        let (center, size) = mol_center_size(&molecule.atoms);
+        let (center, size) = mol_center_size(&mol.atoms);
         volatile.mol_center = center;
         volatile.mol_size = size;
 
