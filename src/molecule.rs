@@ -1,3 +1,5 @@
+/// Contains data structures and related code for molecules, atoms, residues, chains, etc.
+
 use std::str::FromStr;
 
 use lin_alg::f64::Vec3;
@@ -7,8 +9,6 @@ use rayon::prelude::*;
 
 use crate::{bond_inference::create_bonds, Element, Selection};
 
-#[derive(Debug)]
-pub struct Chain {}
 
 #[derive(Debug)]
 // todo: This, or a PDB-specific format?
@@ -29,7 +29,7 @@ impl Molecule {
 
         let res_pdb: Vec<&pdbtbx::Residue> = pdb.residues().collect();
 
-        let mut residues = Vec::new();
+        let mut residues = Vec::with_capacity(res_pdb.len());
 
         for res_pdb in &res_pdb {
             let aa = AminoAcid::from_str(res_pdb.name().unwrap_or_default()).ok();
@@ -40,11 +40,11 @@ impl Molecule {
             };
 
             for atom_c in res_pdb.atoms() {
-                let atom_main = atoms_pdb
+                let atom_pdb = atoms_pdb
                     .iter()
                     .enumerate()
                     .find(|(i, a)| a.serial_number() == atom_c.serial_number());
-                if let Some((i, _atom)) = atom_main {
+                if let Some((i, _atom)) = atom_pdb {
                     res_us.atoms.push(i);
                 }
             }
@@ -53,25 +53,44 @@ impl Molecule {
             // }
         }
 
-        // for atom in pdb.atoms() {
-        // for atom in pdb.par_atoms() {
+        let mut chains = Vec::with_capacity(pdb.chain_count());
+        for chain_pdb in pdb.chains() {
+            // println!("Chain: {chain_pdb:?}");
+
+            let mut chain = Chain {
+                id: chain_pdb.id().to_owned(),
+                atoms: Vec::new(),
+                // todo: COme back to residues if you see them in the PDB structure.
+                // residues: Vec::new(),
+                visible: true
+            };
+
+            for atom_c in chain_pdb.atoms() {
+                let atom_pdb = atoms_pdb
+                    .iter()
+                    .enumerate()
+                    .find(|(i, a)| a.serial_number() == atom_c.serial_number());
+                if let Some((i, _atom)) = atom_pdb {
+                    chain.atoms.push(i);
+                }
+            }
+
+            chains.push(chain);
+        }
+
         let atoms: Vec<Atom> = atoms_pdb
             .into_iter()
             .map(|atom| Atom::from_pdb(atom, &res_pdb))
             .collect();
 
+        // todo: We use our own bond inference, since most PDBs seem to lack bond information.
         // let mut bonds = Vec::new();
-        // /// todo: Adjust etc so you're not adding so many new atoms to state.
         // for (a0, a1, bond) in pdb.bonds() {
         //     bonds.push((Atom::from_pdb(a0), Atom::from_pdb(a1), bond));
         // }
 
         let bonds = create_bonds(&atoms);
 
-        let chains = Vec::with_capacity(pdb.chain_count());
-        for chain in pdb.chains() {
-            // println!("Chain: {chain:?}");
-        }
 
         Molecule {
             ident: pdb.identifier.clone().unwrap_or_default(),
@@ -139,12 +158,25 @@ pub enum BondCount {
 pub struct Bond {
     pub bond_type: BondType,
     pub bond_count: BondCount,
-    pub atom_0: usize, // Index
-    pub atom_1: usize, // Index
+    /// Index
+    pub atom_0: usize,
+    /// Index
+    pub atom_1: usize,
     pub is_backbone: bool,
 }
 
 pub struct Ligand {}
+
+#[derive(Debug)]
+pub struct Chain {
+    pub id: String,
+    // todo: Do we want both residues and atoms stored here? It's an overconstraint.
+    // pub residues: Vec<usize>,
+    /// Indexes
+    pub atoms: Vec<usize>,
+    // todo: Perhaps vis would make more sense in a separate UI-related place.
+    pub visible: bool,
+}
 
 #[derive(Debug)]
 pub enum ResidueType {

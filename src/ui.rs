@@ -341,10 +341,10 @@ fn selected_data(mol: &Molecule, selection: Selection, ui: &mut Ui) {
     }
 }
 
-fn residue_selector(state: &mut State, cam: &mut Camera, redraw: &mut bool, ui: &mut Ui) {
+fn residue_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
     ui.horizontal(|ui| {
         if let Some(mol) = &state.molecule {
-            ScrollArea::vertical().max_height(120.).show(ui, |ui| {
+            // ScrollArea::vertical().max_height(120.).show(ui, |ui| {
                 for (i, res) in mol.residues.iter().enumerate() {
                     let name = if let Some(aa) = &res.aa {
                         aa.to_str(AaIdent::OneLetter)
@@ -365,7 +365,69 @@ fn residue_selector(state: &mut State, cam: &mut Camera, redraw: &mut bool, ui: 
                         *redraw = true;
                     }
                 }
-            });
+            // });
+        }
+    });
+}
+
+/// Toggles chain visibility
+fn chain_vis_selector(state: &mut State,  redraw: &mut bool, ui: &mut Ui) {
+    // todo: For now, DRY with res selec
+    ui.horizontal(|ui| {
+        ui.label("Chain visibility:");
+        if let Some(mol) = &mut state.molecule {
+                for chain in &mut mol.chains {
+                    let color = if chain.visible {
+                        Color32::LIGHT_BLUE
+                    } else {
+                        Color32::GRAY
+                    };
+                    if ui.button(RichText::new(chain.id.clone()).color(color)).clicked() {
+                        chain.visible = !chain.visible;
+                        *redraw = true;
+                    }
+                }
+        }
+    });
+}
+
+fn residue_search(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
+    ui.horizontal(|ui| {
+        let sel_prev = state.selection;
+        ui.label("Find residue:");
+        if ui
+            .add(TextEdit::singleline(&mut state.ui.residue_search).desired_width(60.))
+            .changed()
+        {
+            select_from_search(state);
+        }
+
+        if sel_prev != state.selection {
+            *redraw = true;
+        }
+
+        // todo: for UI adccessbility
+        // if key_up_is_down {
+        //     up_button.highlight();
+        // }
+        if state.molecule.is_some() {
+            if ui
+                .button("Prev AA")
+                .on_hover_text("Hotkey: Left arrow")
+                .clicked()
+            {
+                cycle_res_selected(state, true);
+                *redraw = true;
+            }
+            // todo: DRY
+            if ui
+                .button("Next AA")
+                .on_hover_text("Hotkey: Right arrow")
+                .clicked()
+            {
+                cycle_res_selected(state, false);
+                *redraw = true;
+            }
         }
     });
 }
@@ -519,46 +581,13 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         });
 
         ui.add_space(ROW_SPACING);
-        residue_selector(state, &mut scene.camera, &mut redraw, ui);
+        residue_selector(state, &mut redraw, ui);
 
-        ui.horizontal(|ui| {
-            let sel_prev = state.selection;
-            ui.label("Find residue:");
-            if ui
-                .add(TextEdit::singleline(&mut state.ui.residue_search).desired_width(60.))
-                .changed()
-            {
-                select_from_search(state);
-            }
+        residue_search(state, &mut redraw, ui);
 
-            if sel_prev != state.selection {
-                redraw = true;
-            }
+        chain_vis_selector(state, &mut redraw, ui);
 
-            // todo: for UI adccessbility
-            // if key_up_is_down {
-            //     up_button.highlight();
-            // }
-            if state.molecule.is_some() {
-                if ui
-                    .button("Prev AA")
-                    .on_hover_text("Hotkey: Left arrow")
-                    .clicked()
-                {
-                    cycle_res_selected(state, true);
-                    redraw = true;
-                }
-                // todo: DRY
-                if ui
-                    .button("Next AA")
-                    .on_hover_text("Hotkey: Right arrow")
-                    .clicked()
-                {
-                    cycle_res_selected(state, false);
-                    redraw = true;
-                }
-            }
-        });
+        // todo: Allow switching between chains and secondary-structure features here.
 
         ui.add_space(ROW_SPACING / 2.);
 
@@ -583,6 +612,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         }
     });
 
+    // todo: You must set the UI height when performing actions that change it! Or selection will be wonky.
     if state.volatile.ui_height < f32::EPSILON {
         println!("Setting height: {:?}", ctx.used_size().y);
         state.volatile.ui_height = ctx.used_size().y;
