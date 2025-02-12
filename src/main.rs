@@ -283,6 +283,8 @@ struct StateUi {
     view_depth: u16, // angstrom
     cam_snapshot: Option<usize>,
     dt: f32, // seconds.
+    // For selecting residues from the GUI.
+    chain_to_pick_res: Option<usize>,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]
@@ -326,7 +328,7 @@ struct State {
     pub volatile: StateVolatile,
     pub pdb: Option<PDB>,
     pub molecule: Option<Molecule>,
-    /// Index
+    // todo: Should selection-related go in StateUi?
     pub selection: Selection,
     pub cam_snapshots: Vec<CamSnapshot>,
     // This allows us to keep in-memory data for other molecules.
@@ -339,7 +341,7 @@ fn main() {
 
     state.load_prefs();
 
-    let pdb = load_pdb(&PathBuf::from_str("1htm.cif").unwrap());
+    let pdb = load_pdb(&PathBuf::from_str("4hhb.cif").unwrap());
     if let Ok(p) = pdb {
         state.pdb = Some(p);
         state.molecule = Some(Molecule::from_pdb(state.pdb.as_ref().unwrap()));

@@ -320,8 +320,9 @@ fn selected_data(mol: &Molecule, selection: Selection, ui: &mut Ui) {
             let atom = &mol.atoms[sel];
             ui.label(
                 RichText::new(format!(
-                    "El: {:?}, AA: {:?}, Role: {:?}",
-                    atom.element, atom.amino_acid, atom.role
+                    // todo: Coorsd are temp
+                    "{}, {} El: {:?}, AA: {:?}, Role: {:?}",
+                    atom.posit, atom.serial_number, atom.element, atom.amino_acid, atom.role
                 ))
                 .color(Color32::GOLD),
             );
@@ -335,7 +336,7 @@ fn selected_data(mol: &Molecule, selection: Selection, ui: &mut Ui) {
             };
 
             // todo: Sequesnce number etc.
-            ui.label(RichText::new(format!("Res: {sel_i}: {name}")).color(Color32::GOLD));
+            ui.label(RichText::new(format!("Res: {}: {name}", res.serial_number)).color(Color32::GOLD));
         }
         Selection::None => (),
     }
@@ -344,37 +345,45 @@ fn selected_data(mol: &Molecule, selection: Selection, ui: &mut Ui) {
 fn residue_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
     ui.horizontal(|ui| {
         if let Some(mol) = &state.molecule {
-            // ScrollArea::vertical().max_height(120.).show(ui, |ui| {
-            for (i, res) in mol.residues.iter().enumerate() {
-                let name = if let Some(aa) = &res.aa {
-                    aa.to_str(AaIdent::OneLetter)
-                } else {
-                    "-".to_owned()
-                };
-                if ui
-                    .button(format!("{}: {name}", res.serial_number))
-                    .clicked()
-                {
-                    state.ui.view_sel_level = ViewSelLevel::Residue;
-                    state.selection = Selection::Residue(i);
+            if let Some(chain_i) = state.ui.chain_to_pick_res {
+                let chain = &mol.chains[chain_i];
 
-                    // let res = &mol.residues[i];
-                    // if !res.atoms.is_empty() {
-                    //     let atom = &mol.atoms[res.atoms[0]];
-                    //     cam_look_at(cam, atom.posit);
-                    //     engine_updates.camera = true;
-                    // }
+                for (i, res) in mol.residues.iter().enumerate() {
+                    // Only let the user select residue from the selected chain. This should keep
+                    // it more organized, and keep UI space used down.
 
-                    *redraw = true;
+                    if !chain.residues.contains(&i) {
+                        continue
+                    }
+                    let name = if let Some(aa) = &res.aa {
+                        aa.to_str(AaIdent::OneLetter)
+                    } else {
+                        "-".to_owned()
+                    };
+                    if ui
+                        .button(format!("{}: {name}", res.serial_number))
+                        .clicked()
+                    {
+                        state.ui.view_sel_level = ViewSelLevel::Residue;
+                        state.selection = Selection::Residue(i);
+
+                        // let res = &mol.residues[i];
+                        // if !res.atoms.is_empty() {
+                        //     let atom = &mol.atoms[res.atoms[0]];
+                        //     cam_look_at(cam, atom.posit);
+                        //     engine_updates.camera = true;
+                        // }
+
+                        *redraw = true;
+                    }
                 }
             }
-            // });
         }
     });
 }
 
 /// Toggles chain visibility
-fn chain_vis_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
+fn chain_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
     // todo: For now, DRY with res selec
     ui.horizontal(|ui| {
         ui.label("Chain visibility:");
@@ -393,7 +402,29 @@ fn chain_vis_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
                     *redraw = true;
                 }
             }
+
+
+            ui.add_space(COL_SPACING);
+
+            ui.label("Select residues from:");
+
+            for (i, chain) in mol.chains.iter().enumerate() {
+                let mut color = Color32::GRAY;
+                if let Some(i_sel) = state.ui.chain_to_pick_res {
+                    if i == i_sel {
+                        color = Color32::LIGHT_BLUE
+                    }
+                }
+                if ui
+                    .button(RichText::new(chain.id.clone()).color(color))
+                    .clicked()
+                {
+                    state.ui.chain_to_pick_res = Some(i);
+                }
+            }
+
         }
+
     });
 }
 
@@ -587,11 +618,12 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         });
 
         ui.add_space(ROW_SPACING);
+
+        chain_selector(state, &mut redraw, ui);
+
         residue_selector(state, &mut redraw, ui);
 
         residue_search(state, &mut redraw, ui);
-
-        chain_vis_selector(state, &mut redraw, ui);
 
         // todo: Allow switching between chains and secondary-structure features here.
 
@@ -620,7 +652,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
     // todo: You must set the UI height when performing actions that change it! Or selection will be wonky.
     if state.volatile.ui_height < f32::EPSILON {
-        println!("Setting height: {:?}", ctx.used_size().y);
         state.volatile.ui_height = ctx.used_size().y;
     }
 

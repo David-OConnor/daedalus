@@ -43,8 +43,8 @@ impl BondSpecs {
 }
 
 // If interatomic distance is within this distance of one of our known bond lenghts, consider it to be a bond.
-const BOND_LEN_THRESH: f64 = 0.03; // todo: Adjust A/R based on performance.
-const GRID_SIZE: f64 = 3.0; // Slightly larger than the largest bond threshold
+const BOND_LEN_THRESH: f64 = 0.04; // todo: Adjust A/R based on performance.
+const GRID_SIZE: f64 = 1.6; // Slightly larger than the largest bond distancen + thresh.
 
 #[rustfmt::skip]
 fn get_specs() -> Vec<BondSpecs> {
@@ -84,10 +84,8 @@ fn get_specs() -> Vec<BondSpecs> {
 
         // C–N single bond
         // Typical for amines or alkyl–amine bonds. ~1.45-1.47 Å
+        // Also covers Amide Nitrogen to C-alpha bond in protein backbones.
         BondSpecs::new(1.46, (Carbon, Nitrogen), Single, Covalent),
-
-        // todo: TS His.
-        // BondSpecs::new(1.44, (Carbon, Nitrogen), SingleDoubleHybrid, Covalent),
 
         // C-N Indole N in 5-member aromatic ring, e.g. Trp. 1.36-1.39
         BondSpecs::new(1.37, (Carbon, Nitrogen), SingleDoubleHybrid, Covalent),
@@ -182,24 +180,19 @@ pub fn create_bonds(atoms: &[Atom]) -> Vec<Bond> {
 
     let mut result = Vec::new();
 
-    // let lens_covalent = vec![
-    //     LEN_CP_N,
-    //     LEN_N_CALPHA,
-    //     LEN_CALPHA_CP,
-    //     LEN_C_C,
-    //     LEN_C_N,
-    //     LEN_C_O,
-    //     LEN_N_H,
-    //     LEN_C_H,
-    //     LEN_O_H,
-    //     LEN_C_C_DOUBLE,
-    //     LEN_C_O_DOUBLE,
-    // ];
-    //
-    // // let lens_hydrogen = vec![LEN_OH_OH, LEN_NH_OC, LEN_OH_OC];
-    // let lens_hydrogen = Vec::new();
-    //
     let specs = get_specs();
+
+    // for (i, atom) in atoms.iter().enumerate() {
+    //     for (j, atom) in atoms.iter().enumerate() {
+    //         if i == j {
+    //             continue
+    //         }
+    //         eval_lens(&mut result, atoms, i, j, &specs);
+    //     }
+    // }
+
+    // todo: Something with your cell code is broken! Get it working. For now, we're skipping it.
+    // return result;
 
     // We use spacial partitioning, so as not to copmare every pair of atoms.
     let mut grid: HashMap<(i32, i32, i32), Vec<usize>> = HashMap::new();
@@ -213,35 +206,20 @@ pub fn create_bonds(atoms: &[Atom]) -> Vec<Bond> {
         grid.entry(grid_pos).or_default().push(i);
     }
 
-    let neighbor_offsets = [
-        (0, 0, 0),
-        (1, 0, 0),
-        (-1, 0, 0),
-        (0, 1, 0),
-        (0, -1, 0),
-        (0, 0, 1),
-        (0, 0, -1),
-        (1, 1, 0),
-        (-1, -1, 0),
-        (1, 0, 1),
-        (-1, 0, -1),
-        (0, 1, 1),
-        (0, -1, -1),
-        (1, 1, 1),
-        (-1, -1, -1),
-    ];
-
     for (&cell, atom_indices) in &grid {
-        for offset in &neighbor_offsets {
-            let neighbor_cell = (cell.0 + offset.0, cell.1 + offset.1, cell.2 + offset.2);
-            if let Some(neighbor_indices) = grid.get(&neighbor_cell) {
-                for &i in atom_indices {
-                    for &j in neighbor_indices {
-                        if i >= j {
-                            continue;
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                for dz in -1..=1 {
+                    let neighbor_cell = (cell.0 + dx, cell.1 + dy, cell.2 + dz);
+                    if let Some(neighbor_indices) = grid.get(&neighbor_cell) {
+                        for &i in atom_indices {
+                            for &j in neighbor_indices {
+                                if i >= j {  // or i < j, depending on how you skip duplicates
+                                    continue;
+                                }
+                                eval_lens(&mut result, atoms, i, j, &specs);
+                            }
                         }
-
-                        eval_lens(&mut result, atoms, i, j, &specs);
                     }
                 }
             }

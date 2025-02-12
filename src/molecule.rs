@@ -27,29 +27,12 @@ impl Molecule {
 
         let res_pdb: Vec<&pdbtbx::Residue> = pdb.residues().collect();
 
-        let mut residues = Vec::with_capacity(res_pdb.len());
+        let mut residues: Vec<Residue> = pdb.residues()
+            .into_iter()
+            .map(|res| Residue::from_pdb(res, &atoms_pdb))
+            .collect();
 
-        for res_pdb in &res_pdb {
-            let aa = AminoAcid::from_str(res_pdb.name().unwrap_or_default()).ok();
-            let mut res_us = Residue {
-                serial_number: res_pdb.serial_number(),
-                aa,
-                atoms: Vec::new(),
-            };
-
-            for atom_c in res_pdb.atoms() {
-                let atom_pdb = atoms_pdb
-                    .iter()
-                    .enumerate()
-                    .find(|(i, a)| a.serial_number() == atom_c.serial_number());
-                if let Some((i, _atom)) = atom_pdb {
-                    res_us.atoms.push(i);
-                }
-            }
-
-            residues.push(res_us);
-            // }
-        }
+        residues.sort_by_key(|r| r.serial_number);
 
         let mut chains = Vec::with_capacity(pdb.chain_count());
         for chain_pdb in pdb.chains() {
@@ -58,8 +41,7 @@ impl Molecule {
             let mut chain = Chain {
                 id: chain_pdb.id().to_owned(),
                 atoms: Vec::new(),
-                // todo: COme back to residues if you see them in the PDB structure.
-                // residues: Vec::new(),
+                residues: Vec::new(),
                 visible: true,
             };
 
@@ -70,6 +52,18 @@ impl Molecule {
                     .find(|(i, a)| a.serial_number() == atom_c.serial_number());
                 if let Some((i, _atom)) = atom_pdb {
                     chain.atoms.push(i);
+                }
+            }
+
+            // Using our residues due to the sort; need this as long as we select etc based on index.
+            // todo: Consider selecting based on SN!
+            for res_c in chain_pdb.residues() {
+                let res = residues
+                    .iter()
+                    .enumerate()
+                    .find(|(i, r)| r.serial_number == res_c.serial_number());
+                if let Some((i, _res)) = res {
+                    chain.residues.push(i);
                 }
             }
 
@@ -168,7 +162,7 @@ pub struct Ligand {}
 pub struct Chain {
     pub id: String,
     // todo: Do we want both residues and atoms stored here? It's an overconstraint.
-    // pub residues: Vec<usize>,
+    pub residues: Vec<usize>,
     /// Indexes
     pub atoms: Vec<usize>,
     // todo: Perhaps vis would make more sense in a separate UI-related place.
@@ -190,9 +184,32 @@ pub struct Residue {
     pub atoms: Vec<usize>, // Atom index
 }
 
+impl Residue {
+    pub fn from_pdb(res_pdb: &pdbtbx::Residue, atoms_pdb: &[&pdbtbx::Atom]) -> Self {
+        let aa = AminoAcid::from_str(res_pdb.name().unwrap_or_default()).ok();
+        let mut res = Residue {
+            serial_number: res_pdb.serial_number(),
+            aa,
+            atoms: Vec::new(),
+        };
+
+        for atom_c in res_pdb.atoms() {
+            let atom_pdb = atoms_pdb
+                .iter()
+                .enumerate()
+                .find(|(i, a)| a.serial_number() == atom_c.serial_number());
+            if let Some((i, _atom)) = atom_pdb {
+                res.atoms.push(i);
+            }
+        }
+
+        res
+    }
+}
+
 #[derive(Debug)]
 pub struct Atom {
-    // todo: Serial number?
+    pub serial_number: usize,
     pub posit: Vec3,
     pub element: Element,
     pub role: Option<AaRole>,
@@ -200,7 +217,7 @@ pub struct Atom {
 }
 
 impl Atom {
-    pub fn from_pdb(pdb: &pdbtbx::Atom, residues: &[&pdbtbx::Residue]) -> Self {
+    pub fn from_pdb(atom_pdb: &pdbtbx::Atom, residues: &[&pdbtbx::Residue]) -> Self {
         let mut amino_acid = None;
         // println!("Data: {:?}", pdb.type_id());
 
@@ -208,7 +225,7 @@ impl Atom {
             let res_atoms: Vec<&pdbtbx::Atom> = res.atoms().collect();
 
             for atom in &res_atoms {
-                if atom.serial_number() == pdb.serial_number() {
+                if atom.serial_number() == atom_pdb.serial_number() {
                     let aa = AminoAcid::from_str(res.name().unwrap_or_default());
 
                     if let Ok(a) = aa {
@@ -219,8 +236,9 @@ impl Atom {
         }
 
         Self {
-            posit: Vec3::new(pdb.x(), pdb.y(), pdb.z()),
-            element: Element::from_pdb(pdb.element()),
+            serial_number: atom_pdb.serial_number(),
+            posit: Vec3::new(atom_pdb.x(), atom_pdb.y(), atom_pdb.z()),
+            element: Element::from_pdb(atom_pdb.element()),
             // amino_acid: AminoAcid::from_pdb(pdb.r)
             // todo
             role: None,

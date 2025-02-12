@@ -242,6 +242,17 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                 }
             }
 
+            let mut chain_not_sel = false;
+            for chain in &chains_invis {
+                if chain.atoms.contains(&bond.atom_0) {
+                    chain_not_sel = true;
+                    break;
+                }
+            }
+            if chain_not_sel {
+                continue;
+            }
+
             let center = (atom_0.posit + atom_1.posit) / 2.;
 
             let diff = vec3_to_f32(atom_0.posit - atom_1.posit);
