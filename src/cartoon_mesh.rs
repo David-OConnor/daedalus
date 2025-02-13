@@ -10,7 +10,7 @@ use lin_alg::f64::Vec3;
 use na_seq::AminoAcid;
 
 use crate::{
-    molecule::{AaRole, Atom, Residue},
+    molecule::{AaRole, Atom, Residue, ResidueType},
     util::vec3_to_f32,
 };
 
@@ -56,7 +56,7 @@ fn gather_alpha_positions(atoms: &[Atom], residues: &[Residue]) -> Vec<Vec3> {
 fn get_secondary_structure_of_residue(res: &Residue) -> SecondaryStructure {
     // Simple placeholder: a real implementation would parse from
     // your PDB data or run a calculation.
-    if let Some(aa) = res.aa {
+    if let ResidueType::AminoAcid(aa) = res.res_type {
         match aa {
             // Maybe just random examples
             AminoAcid::Ala => SecondaryStructure::Helix,

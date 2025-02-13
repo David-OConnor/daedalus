@@ -27,7 +27,8 @@ impl Molecule {
 
         let res_pdb: Vec<&pdbtbx::Residue> = pdb.residues().collect();
 
-        let mut residues: Vec<Residue> = pdb.residues()
+        let mut residues: Vec<Residue> = pdb
+            .residues()
             .into_iter()
             .map(|res| Residue::from_pdb(res, &atoms_pdb))
             .collect();
@@ -40,8 +41,8 @@ impl Molecule {
 
             let mut chain = Chain {
                 id: chain_pdb.id().to_owned(),
-                atoms: Vec::new(),
-                residues: Vec::new(),
+                atoms: Vec::with_capacity(chain_pdb.atom_count()),
+                residues: Vec::with_capacity(chain_pdb.residue_count()),
                 visible: true,
             };
 
@@ -55,17 +56,38 @@ impl Molecule {
                 }
             }
 
-            // Using our residues due to the sort; need this as long as we select etc based on index.
-            // todo: Consider selecting based on SN!
+            // We don't have a way to, using serial numbers alone, using PDBTBX, find which residues are associated with
+            // which chain. This method is a bit more indirect, using both serial number, and atom indexes.
             for res_c in chain_pdb.residues() {
-                let res = residues
-                    .iter()
-                    .enumerate()
-                    .find(|(i, r)| r.serial_number == res_c.serial_number());
-                if let Some((i, _res)) = res {
-                    chain.residues.push(i);
+                for (i, res) in residues.iter().enumerate() {
+                    if res.serial_number == res_c.serial_number() {
+                        let atom_sns_chain: Vec<usize> =
+                            res_c.atoms().map(|a| a.serial_number()).collect();
+                        // let atom_sns_res: Vec<usize> = res.atoms.iter().map(|a| a.serial_number).collect();
+                        let mut atom_sns_res = Vec::with_capacity(res.atoms.len());
+                        for atom_i in &res.atoms {
+                            atom_sns_res.push(atoms_pdb[*atom_i].serial_number());
+                        }
+
+                        // println!("Atoms 1: {:?}", atom_sns_chain);
+                        // println!("Atoms 2: {:?}\n", atom_sns_res);
+
+                        if atom_sns_chain == atom_sns_res {
+                            chain.residues.push(i);
+                        }
+                    }
                 }
+
+                // let res = residues
+                //     .iter()
+                //     .enumerate()
+                //     .find(|(i, r)| r.serial_number == res_c.serial_number() && r.atoms );
+                // if let Some((i, _res)) = res {
+                //     chain.residues.push(i);
+                // }
             }
+
+            // println!("Chain: {}, {:?}", chain.id, chain.residues);
 
             chains.push(chain);
         }
@@ -177,19 +199,23 @@ pub enum ResidueType {
 
 #[derive(Debug)]
 pub struct Residue {
-    /// We currently use serial number of display, search etc, and arra index to select.
-    // todo: Residue type that includes water etc in addition to AAs. Enum that wraps AminoAcid, for example.
+    /// We use serial number of display, search etc, and array index to select. Residue serial number is not
+    /// unique in the molecule; only in the chain.
     pub serial_number: isize, // pdbtbx uses isize. Negative allowed?
-    pub aa: Option<AminoAcid>,
+    pub res_type: ResidueType,
     pub atoms: Vec<usize>, // Atom index
 }
 
 impl Residue {
     pub fn from_pdb(res_pdb: &pdbtbx::Residue, atoms_pdb: &[&pdbtbx::Atom]) -> Self {
-        let aa = AminoAcid::from_str(res_pdb.name().unwrap_or_default()).ok();
+        let res_type = match AminoAcid::from_str(res_pdb.name().unwrap_or_default()) {
+            Ok(aa) => ResidueType::AminoAcid(aa),
+            Err(_) => ResidueType::Other(res_pdb.name().unwrap_or_default().to_owned()),
+        };
+
         let mut res = Residue {
             serial_number: res_pdb.serial_number(),
-            aa,
+            res_type,
             atoms: Vec::new(),
         };
 

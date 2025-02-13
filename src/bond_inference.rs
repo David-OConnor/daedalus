@@ -214,7 +214,7 @@ pub fn create_bonds(atoms: &[Atom]) -> Vec<Bond> {
                     if let Some(neighbor_indices) = grid.get(&neighbor_cell) {
                         for &i in atom_indices {
                             for &j in neighbor_indices {
-                                if i >= j {  // or i < j, depending on how you skip duplicates
+                                if i == j {
                                     continue;
                                 }
                                 eval_lens(&mut result, atoms, i, j, &specs);

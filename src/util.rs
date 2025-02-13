@@ -6,7 +6,7 @@ use lin_alg::{
 use na_seq::AaIdent;
 
 use crate::{
-    molecule::{Atom, Residue},
+    molecule::{Atom, Residue, ResidueType},
     Selection, State, ViewSelLevel,
 };
 
@@ -133,9 +133,16 @@ pub fn select_from_search(state: &mut State) {
             if query.contains(&res.serial_number.to_string()) {
                 state.selection = Selection::Residue(i);
             }
-            if let Some(aa) = res.aa {
-                if query.contains(&aa.to_str(AaIdent::ThreeLetters).to_lowercase()) {
-                    state.selection = Selection::Residue(i);
+            match &res.res_type {
+                ResidueType::AminoAcid(aa) => {
+                    if query.contains(&aa.to_str(AaIdent::ThreeLetters).to_lowercase()) {
+                        state.selection = Selection::Residue(i);
+                    }
+                }
+                ResidueType::Other(name) => {
+                    if query.contains(&name.to_lowercase()) {
+                        state.selection = Selection::Residue(i);
+                    }
                 }
             }
         }

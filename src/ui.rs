@@ -9,12 +9,13 @@ use na_seq::AaIdent;
 
 use crate::{
     download_pdb::load_rcsb,
-    molecule::Molecule,
+    molecule::{Molecule, ResidueType},
     pdb::load_pdb,
     render::{draw_molecule, MoleculeView, CAM_INIT_OFFSET, RENDER_DIST},
     util::{cam_look_at, cycle_res_selected, select_from_search},
     CamSnapshot, Selection, State, StateUi, StateVolatile, ViewSelLevel,
 };
+
 pub const ROW_SPACING: f32 = 10.;
 pub const COL_SPACING: f32 = 30.;
 
@@ -329,14 +330,15 @@ fn selected_data(mol: &Molecule, selection: Selection, ui: &mut Ui) {
         }
         Selection::Residue(sel_i) => {
             let res = &mol.residues[sel_i];
-            let name = if let Some(aa) = res.aa {
-                aa.to_str(AaIdent::ThreeLetters)
-            } else {
-                "-".to_owned() // todo temp
+            let name = match &res.res_type {
+                ResidueType::AminoAcid(aa) => aa.to_str(AaIdent::ThreeLetters),
+                ResidueType::Other(name) => name.clone(),
             };
 
             // todo: Sequesnce number etc.
-            ui.label(RichText::new(format!("Res: {}: {name}", res.serial_number)).color(Color32::GOLD));
+            ui.label(
+                RichText::new(format!("Res: {}: {name}", res.serial_number)).color(Color32::GOLD),
+            );
         }
         Selection::None => (),
     }
@@ -353,13 +355,14 @@ fn residue_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
                     // it more organized, and keep UI space used down.
 
                     if !chain.residues.contains(&i) {
-                        continue
+                        continue;
                     }
-                    let name = if let Some(aa) = &res.aa {
-                        aa.to_str(AaIdent::OneLetter)
-                    } else {
-                        "-".to_owned()
+
+                    let name = match &res.res_type {
+                        ResidueType::AminoAcid(aa) => aa.to_str(AaIdent::OneLetter),
+                        ResidueType::Other(name) => name.clone(),
                     };
+
                     if ui
                         .button(format!("{}: {name}", res.serial_number))
                         .clicked()
@@ -403,7 +406,6 @@ fn chain_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
                 }
             }
 
-
             ui.add_space(COL_SPACING);
 
             ui.label("Select residues from:");
@@ -422,9 +424,7 @@ fn chain_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
                     state.ui.chain_to_pick_res = Some(i);
                 }
             }
-
         }
-
     });
 }
 
