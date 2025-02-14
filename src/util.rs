@@ -6,7 +6,7 @@ use lin_alg::{
 use na_seq::AaIdent;
 
 use crate::{
-    molecule::{Atom, Residue, ResidueType},
+    molecule::{Atom, Chain, Residue, ResidueType},
     Selection, State, ViewSelLevel,
 };
 
@@ -20,9 +20,6 @@ pub fn vec3_to_f32(v: Vec3) -> Vec3F32 {
 pub fn points_along_ray(ray: (Vec3F32, Vec3F32), atoms: &[Atom], dist_thresh: f32) -> Vec<usize> {
     let mut result = Vec::new();
 
-    // todo: Address this fn n ext in your selection fix quest.
-
-    // let ray_dir = ray.1.to_normalized();
     let ray_dir = (ray.1 - ray.0).to_normalized();
 
     for (i, atom) in atoms.iter().enumerate() {
@@ -37,7 +34,6 @@ pub fn points_along_ray(ray: (Vec3F32, Vec3F32), atoms: &[Atom], dist_thresh: f3
         let dist_to_ray = (atom_pos - closest_point).magnitude();
 
         if dist_to_ray < dist_thresh {
-            // result.push(atom);
             result.push(i);
         }
     }
@@ -47,26 +43,46 @@ pub fn points_along_ray(ray: (Vec3F32, Vec3F32), atoms: &[Atom], dist_thresh: f3
 
 /// From under the cursor; pick the one near the ray, closest to the camera.
 pub fn find_selected_atom(
-    sel: &[usize],
+    atoms_along_ray: &[usize],
     atoms: &[Atom],
     ress: &[Residue],
     ray: &(Vec3F32, Vec3F32),
     sel_level: ViewSelLevel,
+    chains: &[Chain],
 ) -> Selection {
-    if !sel.is_empty() {
+    if !atoms_along_ray.is_empty() {
         // todo: Also consider togglign between ones under the cursor near the front,
         // todo and picking the one closest to the ray.
 
         let mut near_i = 0;
-        let mut near_dist = 99999.;
+        let mut near_dist = 99_999.;
 
-        for atom_i in sel {
+        for atom_i in atoms_along_ray {
+            let chains_this_atom: Vec<&Chain> =
+                chains.iter().filter(|c| c.atoms.contains(atom_i)).collect();
+            let mut chain_hidden = false;
+            for chain in &chains_this_atom {
+                if !chain.visible {
+                    chain_hidden = true;
+                    break;
+                }
+            }
+            if chain_hidden {
+                continue;
+            }
+
             let atom = &atoms[*atom_i];
             let dist = (vec3_to_f32(atom.posit) - ray.0).magnitude();
             if dist < near_dist {
                 near_i = *atom_i;
                 near_dist = dist;
             }
+        }
+
+        // This is equivalent to our empty check above, but catches the case of the atom count being
+        // empty due to hidden chains.
+        if near_dist == 99_999. {
+            return Selection::None;
         }
 
         match sel_level {

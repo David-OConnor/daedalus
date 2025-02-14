@@ -7,7 +7,7 @@
 //!
 //! All lengths are in angstrom.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::{
     molecule::{
@@ -44,7 +44,7 @@ impl BondSpecs {
 
 // If interatomic distance is within this distance of one of our known bond lenghts, consider it to be a bond.
 const BOND_LEN_THRESH: f64 = 0.04; // todo: Adjust A/R based on performance.
-const GRID_SIZE: f64 = 1.6; // Slightly larger than the largest bond distancen + thresh.
+const GRID_SIZE: f64 = 1.6; // Slightly larger than the largest bond distance + thresh.
 
 #[rustfmt::skip]
 fn get_specs() -> Vec<BondSpecs> {
@@ -62,6 +62,11 @@ fn get_specs() -> Vec<BondSpecs> {
 
         // C–C sp²–sp³ single bond, e.g. connecting Phe's ring to the rest of the atom.
         BondSpecs::new(1.50, (Carbon, Carbon), SingleDoubleHybrid, Covalent),
+
+        // Workaround for Phe's ring in some cases.
+        BondSpecs::new(1.47, (Carbon, Carbon), SingleDoubleHybrid, Covalent),
+        BondSpecs::new(1.44, (Carbon, Carbon), SingleDoubleHybrid, Covalent),
+        BondSpecs::new(1.41, (Carbon, Carbon), SingleDoubleHybrid, Covalent),
 
         // C-C phenyl (aromatic) ring bond, or benzene ring.
         // Found in alkynes, where carbons are sp-hybridized (linear). ~1.37-1.40 Å
@@ -156,6 +161,7 @@ fn eval_lens(bonds: &mut Vec<Bond>, atoms: &[Atom], i: usize, j: usize, specs: &
     for spec in specs {
         // This directionality ensures only one bond per atom pair. Otherwise, we'd add two identical
         // ones with swapped atom positions.
+        // todo: This only prevents duplicate bonds if the elements are different.
         if !(atom_0.element == spec.elements.0 && atom_1.element == spec.elements.1) {
             continue;
         }
@@ -181,18 +187,6 @@ pub fn create_bonds(atoms: &[Atom]) -> Vec<Bond> {
     let mut result = Vec::new();
 
     let specs = get_specs();
-
-    // for (i, atom) in atoms.iter().enumerate() {
-    //     for (j, atom) in atoms.iter().enumerate() {
-    //         if i == j {
-    //             continue
-    //         }
-    //         eval_lens(&mut result, atoms, i, j, &specs);
-    //     }
-    // }
-
-    // todo: Something with your cell code is broken! Get it working. For now, we're skipping it.
-    // return result;
 
     // We use spacial partitioning, so as not to copmare every pair of atoms.
     let mut grid: HashMap<(i32, i32, i32), Vec<usize>> = HashMap::new();
@@ -225,6 +219,19 @@ pub fn create_bonds(atoms: &[Atom]) -> Vec<Bond> {
             }
         }
     }
+
+    // Remove duplicates, which will only occur in the case of same-element bonds.
+    // Retain only the *first* occurrence of each unordered bond pair
+    let mut seen = HashSet::new();
+    result.retain(|bond| {
+        // Sort the pair so that (atom_0, atom_1) and (atom_1, atom_0) are treated as the same key
+        let canonical_pair = if bond.atom_0 <= bond.atom_1 {
+            (bond.atom_0, bond.atom_1)
+        } else {
+            (bond.atom_1, bond.atom_0)
+        };
+        seen.insert(canonical_pair)
+    });
 
     result
 }

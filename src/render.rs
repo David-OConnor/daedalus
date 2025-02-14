@@ -40,7 +40,8 @@ pub const MESH_CUBE: usize = 1;
 pub const MESH_BOND: usize = 2;
 pub const MESH_SURFACE: usize = 3; // Van Der Waals surface.
 
-const SELECTION_DIST_THRESH: f32 = 0.7;
+const SELECTION_DIST_THRESH_SMALL: f32 = 0.7; // e.g. ball + stick
+const SELECTION_DIST_THRESH_LARGE: f32 = 1.3; // e.g. VDW views.
 
 // todo: By bond type etc
 const BOND_COLOR: Color = (0.2, 0.2, 0.2);
@@ -446,18 +447,26 @@ fn event_dev_handler(
                             let selected_ray = scene.screen_to_render(cursor);
 
                             if let Some(mol) = &state_.molecule {
-                                let atoms_sel = points_along_ray(
+                                // If we don't scale the selection distance appropriately, an atom etc
+                                // behind the desired one, but closer to the ray, may be selected; likely
+                                // this is undesired.
+                                let dist_thresh = match state_.ui.mol_view {
+                                    MoleculeView::Mesh | MoleculeView::Dots | MoleculeView::Spheres => SELECTION_DIST_THRESH_LARGE,
+                                    _ => SELECTION_DIST_THRESH_SMALL,
+                                };
+                                let atoms_along_ray = points_along_ray(
                                     selected_ray,
                                     &mol.atoms,
-                                    SELECTION_DIST_THRESH,
+                                    dist_thresh,
                                 );
 
                                 state_.selection = find_selected_atom(
-                                    &atoms_sel,
+                                    &atoms_along_ray,
                                     &mol.atoms,
                                     &mol.residues,
                                     &selected_ray,
                                     state_.ui.view_sel_level,
+                                    &mol.chains,
                                 );
 
                                 // todo: Debug code to draw teh ray on screen, so we can see why the selection is off.
