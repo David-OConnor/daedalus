@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use graphics::{Camera, FWD_VEC};
 use lin_alg::{
     f32::{Quaternion, Vec3 as Vec3F32},
@@ -12,9 +14,9 @@ use crate::{
 
 const MOVE_TO_TARGET_DIST: f32 = 15.;
 
-pub fn vec3_to_f32(v: Vec3) -> Vec3F32 {
-    Vec3F32::new(v.x as f32, v.y as f32, v.z as f32)
-}
+const DEFAULT_TAB_NAME: &str = "New tab";
+// When abbreviating a path, show no more than this many characters.
+const PATH_ABBREV_MAX_LEN: usize = 16;
 
 /// Used for cursor selection.
 pub fn points_along_ray(ray: (Vec3F32, Vec3F32), atoms: &[Atom], dist_thresh: f32) -> Vec<usize> {
@@ -23,10 +25,10 @@ pub fn points_along_ray(ray: (Vec3F32, Vec3F32), atoms: &[Atom], dist_thresh: f3
     let ray_dir = (ray.1 - ray.0).to_normalized();
 
     for (i, atom) in atoms.iter().enumerate() {
-        let atom_pos = vec3_to_f32(atom.posit);
+        let atom_pos: Vec3F32 = atom.posit.into();
 
         // Compute the closest point on the ray to the atom position
-        let to_atom = atom_pos - ray.0;
+        let to_atom: Vec3F32 = atom_pos - ray.0;
         let t = to_atom.dot(ray_dir);
         let closest_point = ray.0 + ray_dir * t;
 
@@ -72,7 +74,8 @@ pub fn find_selected_atom(
             }
 
             let atom = &atoms[*atom_i];
-            let dist = (vec3_to_f32(atom.posit) - ray.0).magnitude();
+            let posit: Vec3F32 = atom.posit.into();
+            let dist = (posit - ray.0).magnitude();
             if dist < near_dist {
                 near_i = *atom_i;
                 near_dist = dist;
@@ -120,13 +123,15 @@ pub fn mol_center_size(atoms: &[Atom]) -> (Vec3F32, f32) {
         }
     }
 
-    (vec3_to_f32(sum) / atoms.len() as f32, max_dim as f32)
+    let sum: Vec3F32 = sum.into();
+    (sum / atoms.len() as f32, max_dim as f32)
 }
 
 /// Move the camera to look at a point of interest. Takes the starting location into account.
 /// todo: Smooth interpolated zoom.
 pub fn cam_look_at(cam: &mut Camera, target: Vec3) {
-    let diff = vec3_to_f32(target) - cam.position;
+    let tgt: Vec3F32 = target.into();
+    let diff = tgt - cam.position;
     let dir = diff.to_normalized();
     let dist = diff.magnitude();
 
@@ -187,4 +192,28 @@ pub fn cycle_res_selected(state: &mut State, reverse: bool) {
             }
         }
     }
+}
+
+/// A short, descriptive name for a given opened tab.
+pub fn name_from_path(path: &Option<PathBuf>, plasmid_name: &str, abbrev_name: bool) -> String {
+    let mut name = match path {
+        Some(path) => path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(|name_str| name_str.to_string())
+            .unwrap(),
+        None => {
+            if !plasmid_name.is_empty() {
+                plasmid_name.to_owned()
+            } else {
+                DEFAULT_TAB_NAME.to_owned()
+            }
+        }
+    };
+
+    if abbrev_name && name.len() > PATH_ABBREV_MAX_LEN {
+        name = format!("{}...", &name[..PATH_ABBREV_MAX_LEN].to_string())
+    }
+
+    name
 }

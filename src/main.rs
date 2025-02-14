@@ -38,7 +38,7 @@ use crate::{
     render::{render, MoleculeView},
     ui::VIEW_DEPTH_MAX,
 };
-
+use crate::util::name_from_path;
 // pub const PREFS_SAVE_INTERVAL: f32 = 30.; // Seconds
 
 #[derive(Debug, Clone, Default)]
@@ -237,25 +237,14 @@ impl Default for StateVolatile {
             ..Default::default()
         }
         .add_file_filter(
-            // Note: We experience glitches if this name is too long. (Window extends horizontally)
             "PDB/CIF",
             Arc::new(|p| {
                 let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
                 ext == "pdb" || ext == "cif"
             }),
         );
-        // .add_file_filter(
-        //     "PDB",
-        //     Arc::new(|p| p.extension().unwrap_or_default().to_ascii_lowercase() == "pdb"),
-        // )
-        // .add_file_filter(
-        //     "CIF",
-        //     Arc::new(|p| p.extension().unwrap_or_default().to_ascii_lowercase() == "cif"),
-        // );
-        //
-        let load_dialog = FileDialog::with_config(cfg)
-            .default_file_filter("PDB/CIF")
-            .id("fd1");
+        let load_dialog = FileDialog::with_config(cfg).default_file_filter("PDB/CIF");
+        // .id("fd1");
 
         Self {
             load_dialog,
@@ -285,6 +274,32 @@ struct StateUi {
     dt: f32, // seconds.
     // For selecting residues from the GUI.
     chain_to_pick_res: Option<usize>,
+}
+
+#[derive(Encode, Decode, Clone, Default, Debug)]
+pub struct Tab {
+    pub path: Option<PathBuf>,
+    pub ab1: bool, // todo: Enum if you add a third category.
+}
+
+/// Used in several GUI components to get data from open tabs.
+/// Note: For name, we currently default to file name (with extension), then
+/// plasmid name, then a default. See if you want to default to plasmid name.
+///
+/// Returns the name, and the tab index.
+pub fn get_tab_names(
+    tabs: &[Tab],
+    plasmid_names: &[&str],
+    abbrev_name: bool,
+) -> Vec<(String, usize)> {
+    let mut result = Vec::new();
+
+    for (i, p) in tabs.iter().enumerate() {
+        let name = name_from_path(&p.path, plasmid_names[i], abbrev_name);
+        result.push((name, i));
+    }
+
+    result
 }
 
 #[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]
@@ -333,6 +348,7 @@ struct State {
     pub cam_snapshots: Vec<CamSnapshot>,
     // This allows us to keep in-memory data for other molecules.
     pub to_save: HashMap<String, StateToSave>,
+    pub tabs_open: Vec<Tab>,
 }
 
 fn main() {

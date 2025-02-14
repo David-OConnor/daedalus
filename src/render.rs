@@ -17,16 +17,14 @@ use lin_alg::{
 use crate::{
     molecule::{aa_color, BondCount, Chain, Molecule},
     ui::ui_handler,
-    util::{
-        cycle_res_selected, find_selected_atom, mol_center_size, points_along_ray, vec3_to_f32,
-    },
+    util::{cycle_res_selected, find_selected_atom, mol_center_size, points_along_ray},
     Selection, State, StateUi, StateVolatile, ViewSelLevel,
 };
 
 type Color = (f32, f32, f32);
 
 const WINDOW_TITLE: &str = "Bio Chem View";
-const WINDOW_SIZE_X: f32 = 1_600.;
+const WINDOW_SIZE_X: f32 = 1_400.;
 const WINDOW_SIZE_Y: f32 = 1_000.;
 const BACKGROUND_COLOR: Color = (0., 0., 0.);
 pub const RENDER_DIST: f32 = 1_000.;
@@ -213,7 +211,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
 
             scene.entities.push(Entity::new(
                 MESH_SPHERE,
-                vec3_to_f32(atom.posit),
+                atom.posit.into(),
                 Quaternion::new_identity(),
                 radius,
                 color,
@@ -254,9 +252,9 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                 continue;
             }
 
-            let center = (atom_0.posit + atom_1.posit) / 2.;
+            let center: Vec3 = ((atom_0.posit + atom_1.posit) / 2.).into();
 
-            let diff = vec3_to_f32(atom_0.posit - atom_1.posit);
+            let diff: Vec3 = (atom_0.posit - atom_1.posit).into();
             let diff_unit = diff.to_normalized();
             let orientation = Quaternion::from_unit_vecs(UP_VEC, diff_unit);
 
@@ -281,7 +279,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
 
                     let mut entity_0 = Entity::new(
                         MESH_BOND,
-                        vec3_to_f32(center) + offset_a,
+                        center + offset_a,
                         orientation,
                         1.,
                         color,
@@ -290,7 +288,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
 
                     let mut entity_1 = Entity::new(
                         MESH_BOND,
-                        vec3_to_f32(center) + offset_b,
+                        center + offset_b,
                         orientation,
                         1.,
                         color,
@@ -313,7 +311,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
 
                     let mut entity_0 = Entity::new(
                         MESH_BOND,
-                        vec3_to_f32(center) + offset_a,
+                        center + offset_a,
                         orientation,
                         1.,
                         color,
@@ -322,7 +320,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
 
                     let mut entity_1 = Entity::new(
                         MESH_BOND,
-                        vec3_to_f32(center) + offset_b,
+                        center + offset_b,
                         orientation,
                         1.,
                         color,
@@ -342,18 +340,12 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                     let offset_a = rotator.rotate_vec(Vec3::new(0.2, 0., 0.));
                     let offset_b = rotator.rotate_vec(Vec3::new(-0.2, 0., 0.));
 
-                    let mut entity_0 = Entity::new(
-                        MESH_BOND,
-                        vec3_to_f32(center),
-                        orientation,
-                        1.,
-                        color,
-                        BODY_SHINYNESS,
-                    );
+                    let mut entity_0 =
+                        Entity::new(MESH_BOND, center, orientation, 1., color, BODY_SHINYNESS);
 
                     let mut entity_1 = Entity::new(
                         MESH_BOND,
-                        vec3_to_f32(center) + offset_a,
+                        center + offset_a,
                         orientation,
                         1.,
                         color,
@@ -362,7 +354,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
 
                     let mut entity_2 = Entity::new(
                         MESH_BOND,
-                        vec3_to_f32(center) + offset_b,
+                        center + offset_b,
                         orientation,
                         1.,
                         color,
@@ -378,14 +370,8 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                     scene.entities.push(entity_2);
                 }
                 _ => {
-                    let mut entity = Entity::new(
-                        MESH_BOND,
-                        vec3_to_f32(center),
-                        orientation,
-                        1.,
-                        color,
-                        BODY_SHINYNESS,
-                    );
+                    let mut entity =
+                        Entity::new(MESH_BOND, center, orientation, 1., color, BODY_SHINYNESS);
 
                     entity.scale_partial = scale;
                     scene.entities.push(entity);
@@ -451,14 +437,13 @@ fn event_dev_handler(
                                 // behind the desired one, but closer to the ray, may be selected; likely
                                 // this is undesired.
                                 let dist_thresh = match state_.ui.mol_view {
-                                    MoleculeView::Mesh | MoleculeView::Dots | MoleculeView::Spheres => SELECTION_DIST_THRESH_LARGE,
+                                    MoleculeView::Mesh
+                                    | MoleculeView::Dots
+                                    | MoleculeView::Spheres => SELECTION_DIST_THRESH_LARGE,
                                     _ => SELECTION_DIST_THRESH_SMALL,
                                 };
-                                let atoms_along_ray = points_along_ray(
-                                    selected_ray,
-                                    &mol.atoms,
-                                    dist_thresh,
-                                );
+                                let atoms_along_ray =
+                                    points_along_ray(selected_ray, &mol.atoms, dist_thresh);
 
                                 state_.selection = find_selected_atom(
                                     &atoms_along_ray,

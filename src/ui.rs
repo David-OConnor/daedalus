@@ -474,6 +474,17 @@ fn residue_search(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
 pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> EngineUpdates {
     let mut engine_updates = EngineUpdates::default();
 
+    static mut DONE: bool = false;
+
+    unsafe {
+        if !DONE {
+            // todo temp
+            let v = StateVolatile::default();
+            state.volatile = v;
+            DONE = true;
+        }
+    }
+
     // return  engine_updates;
     let mut redraw = false;
     let mut reset_cam = false;
@@ -518,8 +529,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             }
 
             ui.add_space(COL_SPACING);
-
-            state.volatile.load_dialog.update(ctx);
 
             ui.label("View:");
             let prev_view = state.ui.mol_view;

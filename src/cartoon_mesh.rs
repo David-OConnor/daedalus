@@ -7,12 +7,10 @@ use std::f64::consts::PI;
 
 use graphics::{Mesh, Vertex};
 use lin_alg::f64::Vec3;
+use lin_alg::f32::Vec3 as Vec3F32;
 use na_seq::AminoAcid;
 
-use crate::{
-    molecule::{AaRole, Atom, Residue, ResidueType},
-    util::vec3_to_f32,
-};
+use crate::molecule::{AaRole, Atom, Residue, ResidueType};
 
 /// How many slices around each tube cross-section
 const TUBE_SIDES: usize = 8;
@@ -152,16 +150,14 @@ pub fn mesh_from_atoms(atoms: &[Atom], residues: &[Residue]) -> Mesh {
 
         // Add these vertices to the mesh
         for (pos, normal) in &start_ring {
-            mesh.vertices.push(Vertex::new(
-                vec3_to_f32(*pos).to_arr(),
-                vec3_to_f32(*normal),
-            ));
+            let pos: Vec3F32 = (*pos).into();
+            mesh.vertices
+                .push(Vertex::new(pos.to_arr(), (*normal).into()));
         }
         for (pos, normal) in &end_ring {
-            mesh.vertices.push(Vertex::new(
-                vec3_to_f32(*pos).to_arr(),
-                vec3_to_f32(*normal),
-            ));
+            let pos: Vec3F32 = (*pos).into();
+            mesh.vertices
+                .push(Vertex::new(pos.to_arr(), (*normal).into()));
         }
 
         // Build indices for the quads connecting start_ring to end_ring
