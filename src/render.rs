@@ -3,12 +3,8 @@
 use std::{f32::consts::TAU, fmt};
 
 use bincode::{Decode, Encode};
-use graphics::{
-    event::{RawKeyEvent, WindowEvent},
-    winit::keyboard::{KeyCode, PhysicalKey},
-    Camera, ControlScheme, DeviceEvent, ElementState, EngineUpdates, Entity, InputSettings,
-    LightType, Lighting, Mesh, PointLight, Scene, UiLayout, UiSettings, FWD_VEC, RIGHT_VEC, UP_VEC,
-};
+use graphics::{event::{RawKeyEvent, WindowEvent}, winit::keyboard::{KeyCode, PhysicalKey}, Camera, ControlScheme, DeviceEvent, ElementState, EngineUpdates, Entity, InputSettings, LightType, Lighting, Mesh, PointLight, Scene, UiLayout, UiSettings, FWD_VEC, RIGHT_VEC, UP_VEC, adjust_camera};
+use graphics::winit::keyboard::PhysicalKey::Code;
 use lin_alg::{
     f32::{Quaternion, Vec3},
     map_linear,
@@ -398,6 +394,10 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
         scene.lighting = set_lighting(volatile.mol_center, volatile.mol_size);
     }
 
+    if !mol.chains.is_empty() && state.ui.chain_to_pick_res == None {
+        state.ui.chain_to_pick_res = Some(0)
+    }
+
     // todo: Evaluate if this is a sufficiently-robust place to save prefs.
     state.update_save_prefs();
 }
@@ -406,7 +406,7 @@ fn event_dev_handler(
     state_: &mut State,
     event: DeviceEvent,
     scene: &mut Scene,
-    _dt: f32,
+    dt: f32,
 ) -> EngineUpdates {
     let mut updates = EngineUpdates::default();
 
@@ -414,6 +414,19 @@ fn event_dev_handler(
 
     match event {
         DeviceEvent::Button { button, state } => {
+            // Workaround for EGUI's built-in way of doing this being broken
+            // todo: This workaround isn't working due to inputs being disabled if mouse is in the GUI.
+            // if button == 0  {
+            //     // todo: Use input settings from below
+            //     println!("IP C: {:?}", &state_.ui.inputs_commanded);
+            //     adjust_camera(&mut scene.camera, &state_.ui.inputs_commanded, &InputSettings::default(), dt);
+            // }
+
+            if button == 0 {
+                // See note about camera movement resetting the snapshot. This impliles click + drag;
+                // we should probalby only do this when mouse movement is present too.
+                state_.ui.cam_snapshot = None;
+            }
             if button == 1 {
                 // Right click
                 match state {
@@ -487,13 +500,40 @@ fn event_dev_handler(
         }
         DeviceEvent::Key(key) => match key.state {
             ElementState::Pressed => match key.physical_key {
-                PhysicalKey::Code(KeyCode::ArrowLeft) => {
+                Code(KeyCode::ArrowLeft) => {
                     cycle_res_selected(state_, true);
                     redraw = true;
                 }
-                PhysicalKey::Code(KeyCode::ArrowRight) => {
+                Code(KeyCode::ArrowRight) => {
                     cycle_res_selected(state_, false);
                     redraw = true;
+                }
+                // Check the cases for the engine's built-in movement commands, to set the current-snapshot to None.
+                // C+P partially, from `graphics`.
+                // todo:  You need to check mouse movement too.
+                Code(KeyCode::KeyW) => {
+                    state_.ui.cam_snapshot = None;
+                }
+                Code(KeyCode::KeyS) => {
+                    state_.ui.cam_snapshot = None;
+                }
+                Code(KeyCode::KeyA) => {
+                    state_.ui.cam_snapshot = None;
+                }
+                Code(KeyCode::KeyD) => {
+                    state_.ui.cam_snapshot = None;
+                }
+                Code(KeyCode::Space) => {
+                    state_.ui.cam_snapshot = None;
+                }
+                Code(KeyCode::KeyC) => {
+                    state_.ui.cam_snapshot = None;
+                }
+                Code(KeyCode::KeyQ) => {
+                    state_.ui.cam_snapshot = None;
+                }
+                Code(KeyCode::KeyE) => {
+                    state_.ui.cam_snapshot = None;
                 }
                 _ => (),
             },

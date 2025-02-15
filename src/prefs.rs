@@ -18,6 +18,7 @@ pub struct StateToSave {
     show_nearby_only: bool,
     nearby_dist_thresh: u16,
     chain_vis: Vec<bool>,
+    chain_to_pick_res: Option<usize>,
 }
 
 impl StateToSave {
@@ -35,6 +36,7 @@ impl StateToSave {
             show_nearby_only: state.ui.show_nearby_only,
             nearby_dist_thresh: state.ui.nearby_dist_thresh,
             chain_vis,
+            chain_to_pick_res: state.ui.chain_to_pick_res,
         }
     }
 }
@@ -65,6 +67,7 @@ impl State {
                 self.ui.view_sel_level = data.view_sel_level;
                 self.ui.show_nearby_only = data.show_nearby_only;
                 self.ui.nearby_dist_thresh = data.nearby_dist_thresh;
+                self.ui.chain_to_pick_res = data.chain_to_pick_res;
 
                 for (i, chain) in mol.chains.iter_mut().enumerate() {
                     if i < data.chain_vis.len() {

@@ -27,7 +27,7 @@ use std::{
 
 use bincode::{Decode, Encode};
 use egui_file_dialog::{FileDialog, FileDialogConfig};
-use graphics::Camera;
+use graphics::{Camera, InputsCommanded};
 use lin_alg::f32::{Quaternion, Vec3};
 use molecule::Molecule;
 use pdbtbx::{self, PDB};
@@ -275,6 +275,8 @@ struct StateUi {
     dt: f32, // seconds.
     // For selecting residues from the GUI.
     chain_to_pick_res: Option<usize>,
+    /// Workaround for a bug or limitation in EGUI's `is_pointer_button_down_on`.
+    inputs_commanded: InputsCommanded
 }
 
 #[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]

@@ -169,17 +169,25 @@ pub fn select_from_search(state: &mut State) {
 pub fn cycle_res_selected(state: &mut State, reverse: bool) {
     if let Some(mol) = &state.molecule {
         state.ui.view_sel_level = ViewSelLevel::Residue;
+
         match state.selection {
             Selection::Residue(res_i) => {
-                if reverse {
-                    if res_i != 0 {
-                        state.selection = Selection::Residue(res_i - 1);
-                    }
-                } else {
-                    if res_i != mol.residues.len() - 1 {
-                        state.selection = Selection::Residue(res_i + 1);
-                    }
-                }
+                 if let Some(ch_i) = state.ui.chain_to_pick_res {
+                     // Only cycle to a residue in the selected chain.
+                     let chain = &mol.chains[ch_i];
+                     let mut new_res_i = res_i as isize;
+
+                     let dir = if reverse { -1 } else { 1 };
+
+                     while new_res_i < (mol.residues.len() as isize) - 1 {
+                         new_res_i += dir;
+                         let nri = new_res_i as usize;
+                         if chain.residues.contains(&nri) {
+                             state.selection = Selection::Residue(nri);
+                             break;
+                         }
+                     }
+                 }
             }
             _ => {
                 if !mol.residues.is_empty() {

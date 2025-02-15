@@ -113,12 +113,16 @@ fn cam_snapshots(
 ) {
     ui.heading("Views:");
     ui.label("Label:");
-    ui.add(TextEdit::singleline(&mut state.ui.cam_snapshot_name).desired_width(80.));
+    ui.add(TextEdit::singleline(&mut state.ui.cam_snapshot_name).desired_width(60.));
     if ui.button("Save").clicked() {
         state
             .cam_snapshots
             .push(CamSnapshot::from_cam(cam, &state.ui.cam_snapshot_name));
         state.ui.cam_snapshot_name = String::new();
+
+        state.ui.cam_snapshot = Some(state.cam_snapshots.len() - 1);
+
+        state.update_save_prefs();
     }
 
     let prev_snap = state.ui.cam_snapshot;
@@ -128,6 +132,7 @@ fn cam_snapshots(
         .width(80.)
         .selected_text(snap_name)
         .show_ui(ui, |ui| {
+            ui.selectable_value(&mut state.ui.cam_snapshot, None, "(None)");
             for (i, _snap) in state.cam_snapshots.iter().enumerate() {
                 ui.selectable_value(
                     &mut state.ui.cam_snapshot,
@@ -226,51 +231,57 @@ fn cam_controls(
         let mut movement_vec = None;
         let mut rotation = None;
 
-        // todo: for UI adccessbility
-        // if key_up_is_down {
-        //     up_button.highlight();
-        // }
-        // Movement (Alternative to keyboard)
+        state_ui.inputs_commanded = Default::default();
+
         if ui
             .button("⬅")
             .on_hover_text("Hotkey: A")
-            .is_pointer_button_down_on()
+            // `is_pointer_button_down_on()` is ideal, but stops after ~1s. Using hover +
+            // pointer.button_down check fails too. (Bug in EGUI?)
+            // .is_pointer_button_down_on()
+            .hovered()
         {
+            state_ui.inputs_commanded.left = true;
             movement_vec = Some(Vec3::new(-CAM_BUTTON_POS_STEP * state_ui.dt, 0., 0.));
         }
         if ui
             .button("➡")
             .on_hover_text("Hotkey: D")
-            .is_pointer_button_down_on()
+            .hovered()
         {
+            state_ui.inputs_commanded.right = true;
             movement_vec = Some(Vec3::new(CAM_BUTTON_POS_STEP * state_ui.dt, 0., 0.));
         }
         if ui
             .button("⬇")
             .on_hover_text("Hotkey: C")
-            .is_pointer_button_down_on()
+            .hovered()
         {
+            state_ui.inputs_commanded.down = true;
             movement_vec = Some(Vec3::new(0., -CAM_BUTTON_POS_STEP * state_ui.dt, 0.));
         }
         if ui
             .button("⬆")
             .on_hover_text("Hotkey: Space")
-            .is_pointer_button_down_on()
+            .hovered()
         {
+            state_ui.inputs_commanded.up = true;
             movement_vec = Some(Vec3::new(0., CAM_BUTTON_POS_STEP * state_ui.dt, 0.));
         }
         if ui
             .button("⬋")
             .on_hover_text("Hotkey: S")
-            .is_pointer_button_down_on()
+            .hovered()
         {
+            state_ui.inputs_commanded.back = true;
             movement_vec = Some(Vec3::new(0., 0., -CAM_BUTTON_POS_STEP * state_ui.dt));
         }
         if ui
             .button("⬈")
             .on_hover_text("Hotkey: W")
-            .is_pointer_button_down_on()
+            .hovered()
         {
+            state_ui.inputs_commanded.fwd = true;
             movement_vec = Some(Vec3::new(0., 0., CAM_BUTTON_POS_STEP * state_ui.dt));
         }
 
@@ -278,8 +289,9 @@ fn cam_controls(
         if ui
             .button("⟲")
             .on_hover_text("Hotkey: Q")
-            .is_pointer_button_down_on()
+            .hovered()
         {
+            state_ui.inputs_commanded.roll_ccw = true;
             let fwd = cam.orientation.rotate_vec(FWD_VEC);
             rotation = Some(Quaternion::from_axis_angle(
                 fwd,
@@ -289,8 +301,9 @@ fn cam_controls(
         if ui
             .button("⟳")
             .on_hover_text("Hotkey: R")
-            .is_pointer_button_down_on()
+            .hovered()
         {
+            state_ui.inputs_commanded.roll_ccw= true;
             let fwd = cam.orientation.rotate_vec(FWD_VEC);
             rotation = Some(Quaternion::from_axis_angle(
                 fwd,
@@ -311,6 +324,7 @@ fn cam_controls(
 
     if changed {
         engine_updates.camera = true;
+        state_ui.cam_snapshot = None;
     }
 }
 
@@ -606,6 +620,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                         if let Some(atom) = atom_sel {
                             cam_look_at(&mut scene.camera, atom.posit);
                             engine_updates.camera = true;
+                            state.ui.cam_snapshot = None;
                         }
                     }
                 }
