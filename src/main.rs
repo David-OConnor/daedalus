@@ -7,6 +7,7 @@ mod download_pdb;
 mod drug_like;
 mod input;
 mod molecule;
+mod navigation;
 mod pdb;
 mod prefs;
 mod render;
@@ -37,8 +38,8 @@ use crate::{
     pdb::load_pdb,
     render::{render, MoleculeView},
     ui::VIEW_DEPTH_MAX,
+    navigation::{Tab, name_from_path},
 };
-use crate::util::name_from_path;
 // pub const PREFS_SAVE_INTERVAL: f32 = 30.; // Seconds
 
 #[derive(Debug, Clone, Default)]
@@ -274,32 +275,6 @@ struct StateUi {
     dt: f32, // seconds.
     // For selecting residues from the GUI.
     chain_to_pick_res: Option<usize>,
-}
-
-#[derive(Encode, Decode, Clone, Default, Debug)]
-pub struct Tab {
-    pub path: Option<PathBuf>,
-    pub ab1: bool, // todo: Enum if you add a third category.
-}
-
-/// Used in several GUI components to get data from open tabs.
-/// Note: For name, we currently default to file name (with extension), then
-/// plasmid name, then a default. See if you want to default to plasmid name.
-///
-/// Returns the name, and the tab index.
-pub fn get_tab_names(
-    tabs: &[Tab],
-    plasmid_names: &[&str],
-    abbrev_name: bool,
-) -> Vec<(String, usize)> {
-    let mut result = Vec::new();
-
-    for (i, p) in tabs.iter().enumerate() {
-        let name = name_from_path(&p.path, plasmid_names[i], abbrev_name);
-        result.push((name, i));
-    }
-
-    result
 }
 
 #[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]

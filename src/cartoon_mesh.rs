@@ -6,8 +6,7 @@
 use std::f64::consts::PI;
 
 use graphics::{Mesh, Vertex};
-use lin_alg::f64::Vec3;
-use lin_alg::f32::Vec3 as Vec3F32;
+use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 use na_seq::AminoAcid;
 
 use crate::molecule::{AaRole, Atom, Residue, ResidueType};

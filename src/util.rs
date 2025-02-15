@@ -14,10 +14,6 @@ use crate::{
 
 const MOVE_TO_TARGET_DIST: f32 = 15.;
 
-const DEFAULT_TAB_NAME: &str = "New tab";
-// When abbreviating a path, show no more than this many characters.
-const PATH_ABBREV_MAX_LEN: usize = 16;
-
 /// Used for cursor selection.
 pub fn points_along_ray(ray: (Vec3F32, Vec3F32), atoms: &[Atom], dist_thresh: f32) -> Vec<usize> {
     let mut result = Vec::new();
@@ -192,28 +188,4 @@ pub fn cycle_res_selected(state: &mut State, reverse: bool) {
             }
         }
     }
-}
-
-/// A short, descriptive name for a given opened tab.
-pub fn name_from_path(path: &Option<PathBuf>, plasmid_name: &str, abbrev_name: bool) -> String {
-    let mut name = match path {
-        Some(path) => path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .map(|name_str| name_str.to_string())
-            .unwrap(),
-        None => {
-            if !plasmid_name.is_empty() {
-                plasmid_name.to_owned()
-            } else {
-                DEFAULT_TAB_NAME.to_owned()
-            }
-        }
-    };
-
-    if abbrev_name && name.len() > PATH_ABBREV_MAX_LEN {
-        name = format!("{}...", &name[..PATH_ABBREV_MAX_LEN].to_string())
-    }
-
-    name
 }

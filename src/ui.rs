@@ -25,8 +25,8 @@ pub const VIEW_DEPTH_MAX: u16 = 200;
 const NEARBY_THRESH_MIN: u16 = 5;
 const NEARBY_THRESH_MAX: u16 = 60;
 
-const CAM_BUTTON_POS_STEP: f32 = 20.;
-const CAM_BUTTON_ROT_STEP: f32 = TAU / 4.;
+const CAM_BUTTON_POS_STEP: f32 = 30.;
+const CAM_BUTTON_ROT_STEP: f32 = TAU / 3.;
 
 /// Update the tilebar to reflect the current molecule
 fn set_window_title(title: &str, scene: &mut Scene) {
