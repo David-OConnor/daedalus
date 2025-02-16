@@ -32,12 +32,13 @@ use graphics::{Camera, InputsCommanded};
 use lin_alg::f32::{Quaternion, Vec3};
 use molecule::Molecule;
 use pdbtbx::{self, PDB};
-use prefs::StateToSave;
+use prefs::PerMolToSave;
 use rayon::iter::ParallelIterator;
 
 use crate::{
     navigation::{name_from_path, Tab},
     pdb::load_pdb,
+    prefs::ToSave,
     render::{render, MoleculeView},
     ui::VIEW_DEPTH_MAX,
 };
@@ -322,7 +323,9 @@ struct State {
     pub selection: Selection,
     pub cam_snapshots: Vec<CamSnapshot>,
     // This allows us to keep in-memory data for other molecules.
-    pub to_save: HashMap<String, StateToSave>,
+    // Key is PDB ident; value is per-item.
+    // todo: Make a new struct if you add more non
+    pub to_save: ToSave,
     pub tabs_open: Vec<Tab>,
 }
 
@@ -342,14 +345,18 @@ fn main() {
 
     state.load_prefs();
 
-    let pdb = load_pdb(&PathBuf::from_str("4hhb.cif").unwrap());
-    if let Ok(p) = pdb {
-        state.pdb = Some(p);
+    // todo: Update: Load the last_loaded one
 
-        state.molecule = Some(Molecule::from_pdb(state.pdb.as_ref().unwrap()));
-        state.update_from_prefs();
-    } else {
-        eprintln!("Error loading PDB file at init.");
+    if let Some(last_opened) = &state.to_save.last_opened {
+        let pdb = load_pdb(last_opened);
+        if let Ok(p) = pdb {
+            state.pdb = Some(p);
+
+            state.molecule = Some(Molecule::from_pdb(state.pdb.as_ref().unwrap()));
+            state.update_from_prefs();
+        } else {
+            eprintln!("Error loading PDB file at init.");
+        }
     }
 
     render(state);

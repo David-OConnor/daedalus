@@ -56,6 +56,9 @@ fn load_file(
         *redraw = true;
         *reset_cam = true;
         engine_updates.entities = true;
+
+        state.to_save.last_opened = Some(path.to_owned());
+        state.update_save_prefs()
     } else {
         eprintln!("Error loading PDB file");
     }
@@ -507,6 +510,70 @@ fn residue_search(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
     });
 }
 
+fn selection_section(
+    state: &mut State,
+    scene: &mut Scene,
+    redraw: &mut bool,
+    engine_updates: &mut EngineUpdates,
+    ui: &mut Ui,
+) {
+    // todo: DRY with view.
+    ui.horizontal(|ui| {
+        ui.label("View/Select:");
+        let prev_view = state.ui.view_sel_level;
+        ComboBox::from_id_salt(1)
+            .width(80.)
+            .selected_text(state.ui.view_sel_level.to_string())
+            .show_ui(ui, |ui| {
+                for view in &[ViewSelLevel::Atom, ViewSelLevel::Residue] {
+                    ui.selectable_value(&mut state.ui.view_sel_level, *view, view.to_string());
+                }
+            });
+
+        if state.ui.view_sel_level != prev_view {
+            *redraw = true;
+            // Kludge to prevent surprising behavior.
+            state.selection = Selection::None;
+        }
+
+        ui.add_space(COL_SPACING);
+
+        ui.label("Filter nearby:");
+        if ui.checkbox(&mut state.ui.show_nearby_only, "").changed() {
+            *redraw = true;
+        }
+
+        ui.label("Nearby filter:");
+        let dist_prev = state.ui.nearby_dist_thresh;
+        ui.add(Slider::new(
+            &mut state.ui.nearby_dist_thresh,
+            NEARBY_THRESH_MIN..=NEARBY_THRESH_MAX,
+        ));
+
+        if state.ui.nearby_dist_thresh != dist_prev {
+            *redraw = true;
+        }
+
+        ui.add_space(COL_SPACING);
+
+        if let Some(mol) = &state.molecule {
+            if state.selection != Selection::None {
+                selected_data(mol, state.selection, ui);
+
+                if ui.button("Move cam to").clicked() {
+                    let atom_sel = mol.get_sel_atom(state.selection);
+
+                    if let Some(atom) = atom_sel {
+                        cam_look_at(&mut scene.camera, atom.posit);
+                        engine_updates.camera = true;
+                        state.ui.cam_snapshot = None;
+                    }
+                }
+            }
+        }
+    });
+}
+
 /// This function draws the (immediate-mode) GUI.
 /// [UI items](https://docs.rs/egui/latest/egui/struct.Ui.html)
 pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> EngineUpdates {
@@ -543,26 +610,26 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     }
                     ui.label(RichText::new(title).color(Color32::WHITE).size(12.));
                 }
-
-                if ui.button("Open").clicked() {
-                    state.volatile.load_dialog.pick_file();
-                }
-
-                // if ui.button("Get RCSB").clicked() {
-                //     match load_pdb_metadata(&mol.ident) {
-                //         Ok(d) => {
-                //             println!("Metadata loaded: {d:?}");
-                //             mol.metadata = Some(d);
-                //             metadata_loaded = true;
-                //         },
-                //         Err(_) => eprintln!("Error getting PDB metadata"),
-                //     }
-                // }
-
-                if ui.button("Open RCSB").clicked() {
+                if ui.button("View on RCSB").clicked() {
                     open_pdb(&mol.ident);
                 }
+                ui.add_space(COL_SPACING);
             }
+            if ui.button("Open").clicked() {
+                state.volatile.load_dialog.pick_file();
+            }
+
+            // if ui.button("Get RCSB").clicked() {
+            //     match load_pdb_metadata(&mol.ident) {
+            //         Ok(d) => {
+            //             println!("Metadata loaded: {d:?}");
+            //             mol.metadata = Some(d);
+            //             metadata_loaded = true;
+            //         },
+            //         Err(_) => eprintln!("Error getting PDB metadata"),
+            //     }
+            // }
+
             if metadata_loaded {
                 state.update_save_prefs();
             }
@@ -571,9 +638,9 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
             ui.add_space(COL_SPACING);
             ui.label("RCSB ident:");
-            ui.add(TextEdit::singleline(&mut state.ui.rcsb_input).desired_width(60.));
+            ui.add(TextEdit::singleline(&mut state.ui.rcsb_input).desired_width(40.));
 
-            if ui.button("Download mol from RCSB").clicked() {
+            if ui.button("Download from RCSB").clicked() {
                 match load_rcsb(&state.ui.rcsb_input) {
                     Ok(pdb) => {
                         state.pdb = Some(pdb);
@@ -603,9 +670,10 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                         MoleculeView::BallAndStick,
                         MoleculeView::Cartoon,
                         MoleculeView::Spheres,
-                        MoleculeView::Surface,
-                        MoleculeView::Mesh,
-                        MoleculeView::Dots,
+                        // todo: A/R
+                        // MoleculeView::Surface,
+                        // MoleculeView::Mesh,
+                        // MoleculeView::Dots,
                     ] {
                         ui.selectable_value(&mut state.ui.mol_view, *view, view.to_string());
                     }
@@ -614,65 +682,10 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             if state.ui.mol_view != prev_view {
                 redraw = true;
             }
-
-            ui.add_space(COL_SPACING);
-
-            // todo: DRY with view.
-            ui.label("View/Select:");
-            let prev_view = state.ui.view_sel_level;
-            ComboBox::from_id_salt(1)
-                .width(80.)
-                .selected_text(state.ui.view_sel_level.to_string())
-                .show_ui(ui, |ui| {
-                    for view in &[ViewSelLevel::Atom, ViewSelLevel::Residue] {
-                        ui.selectable_value(&mut state.ui.view_sel_level, *view, view.to_string());
-                    }
-                });
-
-            if state.ui.view_sel_level != prev_view {
-                redraw = true;
-                // Kludge to prevent surprising behavior.
-                state.selection = Selection::None;
-            }
-
-            ui.add_space(COL_SPACING);
-
-            ui.label("Filter nearby:");
-            if ui.checkbox(&mut state.ui.show_nearby_only, "").changed() {
-                redraw = true;
-            }
-
-            ui.add_space(COL_SPACING);
-
-            ui.label("Nearby filter:");
-            let dist_prev = state.ui.nearby_dist_thresh;
-            ui.add(Slider::new(
-                &mut state.ui.nearby_dist_thresh,
-                NEARBY_THRESH_MIN..=NEARBY_THRESH_MAX,
-            ));
-
-            if state.ui.nearby_dist_thresh != dist_prev {
-                redraw = true;
-            }
-
-            ui.add_space(COL_SPACING);
-
-            if let Some(mol) = &state.molecule {
-                if state.selection != Selection::None {
-                    selected_data(mol, state.selection, ui);
-
-                    if ui.button("Move cam to").clicked() {
-                        let atom_sel = mol.get_sel_atom(state.selection);
-
-                        if let Some(atom) = atom_sel {
-                            cam_look_at(&mut scene.camera, atom.posit);
-                            engine_updates.camera = true;
-                            state.ui.cam_snapshot = None;
-                        }
-                    }
-                }
-            }
         });
+
+        ui.add_space(ROW_SPACING);
+        selection_section(state, scene, &mut redraw, &mut engine_updates, ui);
 
         ui.add_space(ROW_SPACING);
 
@@ -719,7 +732,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 &mut redraw,
                 &mut reset_cam,
                 &mut engine_updates,
-                // ui,
             );
         }
 

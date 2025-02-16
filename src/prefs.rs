@@ -1,8 +1,9 @@
 //! Code related to saving user *preferences*. e.g. opened molecules, view configuration etc.
 
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf};
 
 use bincode::{Decode, Encode};
+use egui::epaint::tessellator::Path;
 use graphics::app_utils::{load, save};
 
 use crate::{
@@ -13,8 +14,14 @@ use crate::{
 
 pub const DEFAULT_PREFS_FILE: &str = "bcv_prefs.bcv";
 
+#[derive(Debug, Default, Encode, Decode)]
+pub struct ToSave {
+    pub per_mol: HashMap<String, PerMolToSave>,
+    pub last_opened: Option<PathBuf>,
+}
+
 #[derive(Debug, Encode, Decode)]
-pub struct StateToSave {
+pub struct PerMolToSave {
     selection: Selection,
     cam_snapshots: Vec<CamSnapshot>,
     mol_view: MoleculeView,
@@ -27,7 +34,7 @@ pub struct StateToSave {
     hide_sidechains: bool,
 }
 
-impl StateToSave {
+impl PerMolToSave {
     pub fn from_state(state: &State) -> Self {
         let mut chain_vis = Vec::new();
         let mut metadata = None;
@@ -56,9 +63,9 @@ impl State {
     /// Update when prefs change, periodically etc.
     pub fn update_save_prefs(&mut self) {
         if let Some(mol) = &self.molecule {
-            let data = StateToSave::from_state(self);
+            let data = PerMolToSave::from_state(self);
 
-            self.to_save.insert(mol.ident.clone(), data);
+            self.to_save.per_mol.insert(mol.ident.clone(), data);
 
             if let Err(e) = save(&PathBuf::from(DEFAULT_PREFS_FILE), &self.to_save) {
                 eprintln!("Error saving state: {e:?}");
@@ -71,8 +78,8 @@ impl State {
         self.reset_selections();
 
         if let Some(mol) = &mut self.molecule {
-            if self.to_save.contains_key(&mol.ident) {
-                let data = &self.to_save[&mol.ident];
+            if self.to_save.per_mol.contains_key(&mol.ident) {
+                let data = &self.to_save.per_mol[&mol.ident];
 
                 self.selection = data.selection;
                 self.cam_snapshots = data.cam_snapshots.clone();

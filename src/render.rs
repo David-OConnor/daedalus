@@ -287,8 +287,14 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                 BOND_COLOR
             };
 
+            // todo: Once you start the stick approach, this may need to change.
+            let bond_count = match ui.mol_view {
+                MoleculeView::Ribbon => BondCount::Single,
+                _ => bond.bond_count,
+            };
+
             // todo: Lots of DRY!
-            match bond.bond_count {
+            match bond_count {
                 BondCount::SingleDoubleHybrid => {
                     // Draw two offset bond cylinders.
                     let rotator = rot_ortho * orientation;

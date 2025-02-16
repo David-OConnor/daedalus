@@ -1,6 +1,6 @@
-use std::fmt;
 /// Contains data structures and related code for molecules, atoms, residues, chains, etc.
 use std::str::FromStr;
+use std::{collections::HashMap, fmt};
 
 use lin_alg::f64::Vec3;
 use na_seq::AminoAcid;
@@ -104,10 +104,19 @@ impl Molecule {
 
         println!("Atoms final...");
 
+        // This pre-computation of the AA map is more efficient;
+        let mut aa_map = HashMap::new();
+        for res in &residues {
+            for atom_i in &res.atoms {
+                aa_map.insert(*atom_i, res.res_type.clone());
+            }
+        }
+
         // todo: This is taking a while.
         let atoms: Vec<Atom> = atoms_pdb
             .into_iter()
-            .map(|atom| Atom::from_pdb(atom, &res_pdb))
+            .enumerate()
+            .map(|(i, atom)| Atom::from_pdb(atom, i, &aa_map))
             .collect();
 
         println!("Complete.");
@@ -225,7 +234,7 @@ pub struct Chain {
     pub visible: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ResidueType {
     AminoAcid(AminoAcid),
     Water,
@@ -284,24 +293,21 @@ pub struct Atom {
 }
 
 impl Atom {
-    pub fn from_pdb(atom_pdb: &pdbtbx::Atom, residues: &[&pdbtbx::Residue]) -> Self {
-        let mut amino_acid = None;
+    pub fn from_pdb(
+        atom_pdb: &pdbtbx::Atom,
+        atom_i: usize,
+        aa_map: &HashMap<usize, ResidueType>,
+    ) -> Self {
         // println!("Data: {:?}", atom_pdb.name());
 
-        // Find the amino acid type, if applicable.
-        for res in residues {
-            let res_atoms: Vec<&pdbtbx::Atom> = res.atoms().collect();
-
-            for atom in &res_atoms {
-                if atom.serial_number() == atom_pdb.serial_number() {
-                    let aa = AminoAcid::from_str(res.name().unwrap_or_default());
-
-                    if let Ok(a) = aa {
-                        amino_acid = Some(a);
-                    }
-                }
-            }
-        }
+        // Find the amino acid type this atom is part of, if applicable.
+        let amino_acid = match aa_map.get(&atom_i) {
+            Some(res_type) => match res_type {
+                ResidueType::AminoAcid(aa) => Some(aa),
+                _ => None,
+            },
+            None => None,
+        };
 
         // todo: This may be fragile.
         // todo: I don't fully understand how these are annotated in files; apeing pdbtbx's approach for now.
@@ -323,10 +329,11 @@ impl Atom {
             element: Element::from_pdb(atom_pdb.element()),
             // amino_acid: AminoAcid::from_pdb(pdb.r)
             role,
-            amino_acid,
+            amino_acid: amino_acid.copied(),
         }
     }
 
+    /// Note: This doesn't include backbone O etc; just the 3 main ones.
     pub fn is_backbone(&self) -> bool {
         match self.role {
             Some(r) => [AtomRole::C_Alpha, AtomRole::N_Backbone, AtomRole::C_Prime].contains(&r),
