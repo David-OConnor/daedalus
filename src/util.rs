@@ -8,7 +8,7 @@ use lin_alg::{
 use na_seq::AaIdent;
 
 use crate::{
-    molecule::{Atom, Chain, Residue, ResidueType},
+    molecule::{Atom, AtomRole, Chain, Residue, ResidueType},
     Selection, State, ViewSelLevel, PREFS_SAVE_INTERVAL,
 };
 
@@ -47,6 +47,7 @@ pub fn find_selected_atom(
     ray: &(Vec3F32, Vec3F32),
     sel_level: ViewSelLevel,
     chains: &[Chain],
+    hide_sidechains: bool,
 ) -> Selection {
     if !atoms_along_ray.is_empty() {
         // todo: Also consider togglign between ones under the cursor near the front,
@@ -70,6 +71,15 @@ pub fn find_selected_atom(
             }
 
             let atom = &atoms[*atom_i];
+
+            if hide_sidechains {
+                if let Some(role) = atom.role {
+                    if role == AtomRole::Sidechain {
+                        continue;
+                    }
+                }
+            }
+
             let posit: Vec3F32 = atom.posit.into();
             let dist = (posit - ray.0).magnitude();
             if dist < near_dist {

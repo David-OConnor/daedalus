@@ -332,8 +332,7 @@ fn selected_data(mol: &Molecule, selection: Selection, ui: &mut Ui) {
 
             ui.label(
                 RichText::new(format!(
-                    // todo: Coorsd are temp
-                    "{}, {} El: {:?}, {aa} {role}",
+                    "{}  {}  El: {:?}  {aa}  {role}",
                     atom.posit, atom.serial_number, atom.element
                 ))
                 .color(Color32::GOLD),
@@ -692,8 +691,10 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         ui.add_space(ROW_SPACING);
 
         ui.horizontal(|ui| {
-            chain_selector(state, &mut redraw, ui);
-            residue_selector(state, &mut redraw, ui);
+            ui.vertical(|ui| {
+                chain_selector(state, &mut redraw, ui);
+                residue_selector(state, &mut redraw, ui);
+            });
             ui.add_space(COL_SPACING);
             if ui
                 .checkbox(&mut state.ui.hide_sidechains, "Hide sidechains")

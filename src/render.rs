@@ -30,8 +30,8 @@ const WINDOW_SIZE_Y: f32 = 1_000.;
 const BACKGROUND_COLOR: Color = (0., 0., 0.);
 pub const RENDER_DIST: f32 = 1_000.;
 
-pub const ATOM_SHINYNESS: f32 = 2.;
-pub const BODY_SHINYNESS: f32 = 2.;
+pub const ATOM_SHINYNESS: f32 = 12.;
+pub const BODY_SHINYNESS: f32 = 12.;
 
 // Keep this in sync with mesh init.
 pub const MESH_SPHERE: usize = 0;
@@ -54,6 +54,8 @@ pub const SHELL_OPACITY: f32 = 0.01;
 // From the farthest molecule.
 pub const CAM_INIT_OFFSET: f32 = 10.;
 pub const OUTSIDE_LIGHTING_OFFSET: f32 = 400.;
+
+pub const COLOR_AA_NON_RESIDUE: Color = (0., 0.8, 1.0);
 
 #[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]
 pub enum MoleculeView {
@@ -180,11 +182,10 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
             let mut color = match ui.view_sel_level {
                 ViewSelLevel::Atom => atom.element.color(),
                 ViewSelLevel::Residue => {
-                    let mut c = atom.element.color();
-
-                    if let Some(aa) = atom.amino_acid {
-                        c = aa_color(aa);
-                    }
+                    let c = match atom.amino_acid {
+                        Some(aa) => aa_color(aa),
+                        None => COLOR_AA_NON_RESIDUE,
+                    };
                     // Below is currently equivalent:
                     // for res in &mol.residues {
                     //     if res.atoms.contains(&i) {
@@ -480,6 +481,7 @@ fn event_dev_handler(
                                     &selected_ray,
                                     state_.ui.view_sel_level,
                                     &mol.chains,
+                                    state_.ui.hide_sidechains,
                                 );
 
                                 // todo: Debug code to draw teh ray on screen, so we can see why the selection is off.
