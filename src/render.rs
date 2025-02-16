@@ -3,8 +3,13 @@
 use std::{f32::consts::TAU, fmt};
 
 use bincode::{Decode, Encode};
-use graphics::{event::{RawKeyEvent, WindowEvent}, winit::keyboard::{KeyCode, PhysicalKey}, Camera, ControlScheme, DeviceEvent, ElementState, EngineUpdates, Entity, InputSettings, LightType, Lighting, Mesh, PointLight, Scene, UiLayout, UiSettings, FWD_VEC, RIGHT_VEC, UP_VEC, adjust_camera};
-use graphics::winit::keyboard::PhysicalKey::Code;
+use graphics::{
+    adjust_camera,
+    event::{RawKeyEvent, WindowEvent},
+    winit::keyboard::{KeyCode, PhysicalKey, PhysicalKey::Code},
+    Camera, ControlScheme, DeviceEvent, ElementState, EngineUpdates, Entity, InputSettings,
+    LightType, Lighting, Mesh, PointLight, Scene, UiLayout, UiSettings, FWD_VEC, RIGHT_VEC, UP_VEC,
+};
 use lin_alg::{
     f32::{Quaternion, Vec3},
     map_linear,
@@ -393,20 +398,13 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
         // Update lighting based on the new molecule center and dims.
         scene.lighting = set_lighting(volatile.mol_center, volatile.mol_size);
     }
-
-    if !mol.chains.is_empty() && state.ui.chain_to_pick_res == None {
-        state.ui.chain_to_pick_res = Some(0)
-    }
-
-    // todo: Evaluate if this is a sufficiently-robust place to save prefs.
-    state.update_save_prefs();
 }
 
 fn event_dev_handler(
     state_: &mut State,
     event: DeviceEvent,
     scene: &mut Scene,
-    dt: f32,
+    _dt: f32,
 ) -> EngineUpdates {
     let mut updates = EngineUpdates::default();
 
@@ -577,8 +575,6 @@ fn render_handler(_state: &mut State, _scene: &mut Scene, _dt: f32) -> EngineUpd
 
 /// Entry point to our render and event loop.
 pub fn render(mut state: State) {
-    let white = [1., 1., 1., 1.];
-
     let mut scene = Scene {
         meshes: vec![
             Mesh::new_sphere(1., 16, 16),

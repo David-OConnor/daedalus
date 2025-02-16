@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Instant};
 
 use graphics::{Camera, FWD_VEC};
 use lin_alg::{
@@ -9,7 +9,7 @@ use na_seq::AaIdent;
 
 use crate::{
     molecule::{Atom, Chain, Residue, ResidueType},
-    Selection, State, ViewSelLevel,
+    Selection, State, ViewSelLevel, PREFS_SAVE_INTERVAL,
 };
 
 const MOVE_TO_TARGET_DIST: f32 = 15.;
@@ -172,28 +172,45 @@ pub fn cycle_res_selected(state: &mut State, reverse: bool) {
 
         match state.selection {
             Selection::Residue(res_i) => {
-                 if let Some(ch_i) = state.ui.chain_to_pick_res {
-                     // Only cycle to a residue in the selected chain.
-                     let chain = &mol.chains[ch_i];
-                     let mut new_res_i = res_i as isize;
+                if let Some(ch_i) = state.ui.chain_to_pick_res {
+                    // Only cycle to a residue in the selected chain.
+                    let chain = &mol.chains[ch_i];
+                    let mut new_res_i = res_i as isize;
 
-                     let dir = if reverse { -1 } else { 1 };
+                    let dir = if reverse { -1 } else { 1 };
 
-                     while new_res_i < (mol.residues.len() as isize) - 1 {
-                         new_res_i += dir;
-                         let nri = new_res_i as usize;
-                         if chain.residues.contains(&nri) {
-                             state.selection = Selection::Residue(nri);
-                             break;
-                         }
-                     }
-                 }
+                    while new_res_i < (mol.residues.len() as isize) - 1 && new_res_i >= 0 {
+                        new_res_i += dir;
+                        let nri = new_res_i as usize;
+                        if chain.residues.contains(&nri) {
+                            state.selection = Selection::Residue(nri);
+                            break;
+                        }
+                    }
+                }
             }
             _ => {
                 if !mol.residues.is_empty() {
                     state.selection = Selection::Residue(0);
                 }
             }
+        }
+    }
+}
+
+pub fn check_prefs_save(state: &mut State) {
+    static mut LAST_PREF_SAVE: Option<Instant> = None;
+    let now = Instant::now();
+
+    unsafe {
+        if let Some(last_save) = LAST_PREF_SAVE {
+            if (now - last_save).as_secs() > PREFS_SAVE_INTERVAL {
+                LAST_PREF_SAVE = Some(now);
+                state.update_save_prefs()
+            }
+        } else {
+            // Initialize LAST_PREF_SAVE the first time it's accessed
+            LAST_PREF_SAVE = Some(now);
         }
     }
 }

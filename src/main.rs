@@ -26,6 +26,7 @@ use std::{
 };
 
 use bincode::{Decode, Encode};
+use egui::{Align2, Pos2, Vec2};
 use egui_file_dialog::{FileDialog, FileDialogConfig};
 use graphics::{Camera, InputsCommanded};
 use lin_alg::f32::{Quaternion, Vec3};
@@ -35,12 +36,15 @@ use prefs::StateToSave;
 use rayon::iter::ParallelIterator;
 
 use crate::{
+    navigation::{name_from_path, Tab},
     pdb::load_pdb,
     render::{render, MoleculeView},
     ui::VIEW_DEPTH_MAX,
-    navigation::{Tab, name_from_path},
 };
-// pub const PREFS_SAVE_INTERVAL: f32 = 30.; // Seconds
+
+// todo: Eventually, implement a system that automatically checks for changes, and don't
+// todo save to disk if there are no changes.
+const PREFS_SAVE_INTERVAL: u64 = 60; // Save user preferences this often, in seconds.
 
 #[derive(Debug, Clone, Default)]
 pub enum ComputationDevice {
@@ -245,7 +249,6 @@ impl Default for StateVolatile {
             }),
         );
         let load_dialog = FileDialog::with_config(cfg).default_file_filter("PDB/CIF");
-        // .id("fd1");
 
         Self {
             load_dialog,
@@ -276,7 +279,7 @@ struct StateUi {
     // For selecting residues from the GUI.
     chain_to_pick_res: Option<usize>,
     /// Workaround for a bug or limitation in EGUI's `is_pointer_button_down_on`.
-    inputs_commanded: InputsCommanded
+    inputs_commanded: InputsCommanded,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]

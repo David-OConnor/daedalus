@@ -12,7 +12,7 @@ use crate::{
     molecule::{Molecule, ResidueType},
     pdb::load_pdb,
     render::{draw_molecule, MoleculeView, CAM_INIT_OFFSET, RENDER_DIST},
-    util::{cam_look_at, cycle_res_selected, select_from_search},
+    util::{cam_look_at, check_prefs_save, cycle_res_selected, select_from_search},
     CamSnapshot, Selection, State, StateUi, StateVolatile, ViewSelLevel,
 };
 
@@ -244,53 +244,29 @@ fn cam_controls(
             state_ui.inputs_commanded.left = true;
             movement_vec = Some(Vec3::new(-CAM_BUTTON_POS_STEP * state_ui.dt, 0., 0.));
         }
-        if ui
-            .button("➡")
-            .on_hover_text("Hotkey: D")
-            .hovered()
-        {
+        if ui.button("➡").on_hover_text("Hotkey: D").hovered() {
             state_ui.inputs_commanded.right = true;
             movement_vec = Some(Vec3::new(CAM_BUTTON_POS_STEP * state_ui.dt, 0., 0.));
         }
-        if ui
-            .button("⬇")
-            .on_hover_text("Hotkey: C")
-            .hovered()
-        {
+        if ui.button("⬇").on_hover_text("Hotkey: C").hovered() {
             state_ui.inputs_commanded.down = true;
             movement_vec = Some(Vec3::new(0., -CAM_BUTTON_POS_STEP * state_ui.dt, 0.));
         }
-        if ui
-            .button("⬆")
-            .on_hover_text("Hotkey: Space")
-            .hovered()
-        {
+        if ui.button("⬆").on_hover_text("Hotkey: Space").hovered() {
             state_ui.inputs_commanded.up = true;
             movement_vec = Some(Vec3::new(0., CAM_BUTTON_POS_STEP * state_ui.dt, 0.));
         }
-        if ui
-            .button("⬋")
-            .on_hover_text("Hotkey: S")
-            .hovered()
-        {
+        if ui.button("⬋").on_hover_text("Hotkey: S").hovered() {
             state_ui.inputs_commanded.back = true;
             movement_vec = Some(Vec3::new(0., 0., -CAM_BUTTON_POS_STEP * state_ui.dt));
         }
-        if ui
-            .button("⬈")
-            .on_hover_text("Hotkey: W")
-            .hovered()
-        {
+        if ui.button("⬈").on_hover_text("Hotkey: W").hovered() {
             state_ui.inputs_commanded.fwd = true;
             movement_vec = Some(Vec3::new(0., 0., CAM_BUTTON_POS_STEP * state_ui.dt));
         }
 
         // Rotation (Alternative to keyboard)
-        if ui
-            .button("⟲")
-            .on_hover_text("Hotkey: Q")
-            .hovered()
-        {
+        if ui.button("⟲").on_hover_text("Hotkey: Q").hovered() {
             state_ui.inputs_commanded.roll_ccw = true;
             let fwd = cam.orientation.rotate_vec(FWD_VEC);
             rotation = Some(Quaternion::from_axis_angle(
@@ -298,12 +274,8 @@ fn cam_controls(
                 CAM_BUTTON_ROT_STEP * state_ui.dt,
             ));
         }
-        if ui
-            .button("⟳")
-            .on_hover_text("Hotkey: R")
-            .hovered()
-        {
-            state_ui.inputs_commanded.roll_ccw= true;
+        if ui.button("⟳").on_hover_text("Hotkey: R").hovered() {
+            state_ui.inputs_commanded.roll_ccw = true;
             let fwd = cam.orientation.rotate_vec(FWD_VEC);
             rotation = Some(Quaternion::from_axis_angle(
                 fwd,
@@ -359,10 +331,16 @@ fn selected_data(mol: &Molecule, selection: Selection, ui: &mut Ui) {
 }
 
 fn residue_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
-    ui.horizontal(|ui| {
-        if let Some(mol) = &state.molecule {
-            if let Some(chain_i) = state.ui.chain_to_pick_res {
-                let chain = &mol.chains[chain_i];
+    // This is a bit fuzzy, as the size varies by residue name (Not always 1 for non-AAs), and index digits.
+    const BUTTON_WIDTH: f32 = 16.;
+
+    if let Some(mol) = &state.molecule {
+        if let Some(chain_i) = state.ui.chain_to_pick_res {
+            let chain = &mol.chains[chain_i];
+
+            ui.add_space(ROW_SPACING);
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing.x = 8.0;
 
                 for (i, res) in mol.residues.iter().enumerate() {
                     // Only let the user select residue from the selected chain. This should keep
@@ -377,26 +355,29 @@ fn residue_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
                         ResidueType::Other(name) => name.clone(),
                     };
 
+                    let mut color = Color32::GRAY;
+                    if let Selection::Residue(sel_i) = state.selection {
+                        if sel_i == i {
+                            color = Color32::LIGHT_BLUE;
+                        }
+                    }
                     if ui
-                        .button(format!("{}: {name}", res.serial_number))
+                        .button(
+                            RichText::new(format!("{} {name}", res.serial_number))
+                                .size(10.)
+                                .color(color),
+                        )
                         .clicked()
                     {
                         state.ui.view_sel_level = ViewSelLevel::Residue;
                         state.selection = Selection::Residue(i);
 
-                        // let res = &mol.residues[i];
-                        // if !res.atoms.is_empty() {
-                        //     let atom = &mol.atoms[res.atoms[0]];
-                        //     cam_look_at(cam, atom.posit);
-                        //     engine_updates.camera = true;
-                        // }
-
                         *redraw = true;
                     }
                 }
-            }
+            });
         }
-    });
+    }
 }
 
 /// Toggles chain visibility
@@ -435,7 +416,22 @@ fn chain_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
                     .button(RichText::new(chain.id.clone()).color(color))
                     .clicked()
                 {
-                    state.ui.chain_to_pick_res = Some(i);
+                    // Toggle behavior.
+                    if let Some(sel_i) = state.ui.chain_to_pick_res {
+                        if i == sel_i {
+                            state.ui.chain_to_pick_res = None;
+                        } else {
+                            state.ui.chain_to_pick_res = Some(i);
+                        }
+                    } else {
+                        state.ui.chain_to_pick_res = Some(i);
+                    }
+                }
+            }
+
+            if state.ui.chain_to_pick_res.is_some() {
+                if ui.button("(None)").clicked() {
+                    state.ui.chain_to_pick_res = None;
                 }
             }
         }
@@ -488,16 +484,7 @@ fn residue_search(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
 pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> EngineUpdates {
     let mut engine_updates = EngineUpdates::default();
 
-    static mut DONE: bool = false;
-
-    unsafe {
-        if !DONE {
-            // todo temp
-            let v = StateVolatile::default();
-            state.volatile = v;
-            DONE = true;
-        }
-    }
+    check_prefs_save(state);
 
     // return  engine_updates;
     let mut redraw = false;
@@ -644,8 +631,9 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         ui.add_space(ROW_SPACING);
 
         chain_selector(state, &mut redraw, ui);
-
         residue_selector(state, &mut redraw, ui);
+
+        ui.add_space(ROW_SPACING);
 
         residue_search(state, &mut redraw, ui);
 
