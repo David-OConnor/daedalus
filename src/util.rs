@@ -156,6 +156,7 @@ pub fn select_from_search(state: &mut State) {
                         state.selection = Selection::Residue(i);
                     }
                 }
+                ResidueType::Water => {} // todo: Select all water with a new selection type
                 ResidueType::Other(name) => {
                     if query.contains(&name.to_lowercase()) {
                         state.selection = Selection::Residue(i);
@@ -172,6 +173,8 @@ pub fn cycle_res_selected(state: &mut State, reverse: bool) {
 
         match state.selection {
             Selection::Residue(res_i) => {
+                // todo: Consider using the chain the current selection is on instead, if applicable.
+                // todo: E.g. if a residue is selected, but "Select Residues From" is None.
                 if let Some(ch_i) = state.ui.chain_to_pick_res {
                     // Only cycle to a residue in the selected chain.
                     let chain = &mol.chains[ch_i];

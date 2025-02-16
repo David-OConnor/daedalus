@@ -5,7 +5,11 @@ use std::path::PathBuf;
 use bincode::{Decode, Encode};
 use graphics::app_utils::{load, save};
 
-use crate::{render::MoleculeView, CamSnapshot, Selection, State, ViewSelLevel};
+use crate::{
+    rcsb_api::{load_pdb_metadata, PdbMetaData},
+    render::MoleculeView,
+    CamSnapshot, Selection, State, ViewSelLevel,
+};
 
 pub const DEFAULT_PREFS_FILE: &str = "bcv_prefs.bcv";
 
@@ -19,13 +23,18 @@ pub struct StateToSave {
     nearby_dist_thresh: u16,
     chain_vis: Vec<bool>,
     chain_to_pick_res: Option<usize>,
+    metadata: Option<PdbMetaData>,
+    hide_sidechains: bool,
 }
 
 impl StateToSave {
     pub fn from_state(state: &State) -> Self {
         let mut chain_vis = Vec::new();
+        let mut metadata = None;
+
         if let Some(mol) = &state.molecule {
             chain_vis = mol.chains.iter().map(|c| c.visible).collect();
+            metadata = mol.metadata.clone();
         }
 
         Self {
@@ -37,6 +46,8 @@ impl StateToSave {
             nearby_dist_thresh: state.ui.nearby_dist_thresh,
             chain_vis,
             chain_to_pick_res: state.ui.chain_to_pick_res,
+            metadata,
+            hide_sidechains: state.ui.hide_sidechains,
         }
     }
 }
@@ -57,6 +68,8 @@ impl State {
 
     /// Run this when prefs, or a new molecule are loaded.
     pub fn update_from_prefs(&mut self) {
+        self.reset_selections();
+
         if let Some(mol) = &mut self.molecule {
             if self.to_save.contains_key(&mol.ident) {
                 let data = &self.to_save[&mol.ident];
@@ -68,11 +81,25 @@ impl State {
                 self.ui.show_nearby_only = data.show_nearby_only;
                 self.ui.nearby_dist_thresh = data.nearby_dist_thresh;
                 self.ui.chain_to_pick_res = data.chain_to_pick_res;
+                self.ui.hide_sidechains = data.hide_sidechains;
+
+                if let Some(md) = &data.metadata {
+                    mol.metadata = Some(md.clone())
+                }
 
                 for (i, chain) in mol.chains.iter_mut().enumerate() {
                     if i < data.chain_vis.len() {
                         chain.visible = data.chain_vis[i];
                     }
+                }
+            }
+
+            // If loaded from file or not.
+            if mol.metadata.is_none() {
+                println!("Getting MD");
+                match load_pdb_metadata(&mol.ident) {
+                    Ok(md) => mol.metadata = Some(md),
+                    Err(_) => eprintln!("Error loading metadata for: {}", mol.ident),
                 }
             }
         }

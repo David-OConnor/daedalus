@@ -183,6 +183,7 @@ fn eval_lens(bonds: &mut Vec<Bond>, atoms: &[Atom], i: usize, j: usize, specs: &
 /// We Check pairs only within nearby bins.
 pub fn create_bonds(atoms: &[Atom]) -> Vec<Bond> {
     // todo: Paralllize?
+    println!("Starting bond creation...");
 
     let mut result = Vec::new();
 
@@ -232,6 +233,8 @@ pub fn create_bonds(atoms: &[Atom]) -> Vec<Bond> {
         };
         seen.insert(canonical_pair)
     });
+
+    println!("Bond creation complete.");
 
     result
 }

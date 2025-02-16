@@ -16,7 +16,7 @@ use lin_alg::{
 };
 
 use crate::{
-    molecule::{aa_color, BondCount, Chain, Molecule},
+    molecule::{aa_color, AtomRole, BondCount, Chain, Molecule, ResidueType},
     ui::ui_handler,
     util::{cycle_res_selected, find_selected_atom, mol_center_size, points_along_ray},
     Selection, State, StateUi, StateVolatile, ViewSelLevel,
@@ -157,6 +157,14 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                 continue;
             }
 
+            if state.ui.hide_sidechains {
+                if let Some(role) = atom.role {
+                    if role == AtomRole::Sidechain {
+                        continue;
+                    }
+                }
+            }
+
             if ui.show_nearby_only {
                 if ui.show_nearby_only {
                     let atom_sel = mol.get_sel_atom(state.selection);
@@ -178,10 +186,9 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                         c = aa_color(aa);
                     }
                     // Below is currently equivalent:
-
-                    // for res in &molecule.residues {
+                    // for res in &mol.residues {
                     //     if res.atoms.contains(&i) {
-                    //         if let Some(aa) = res.aa {
+                    //         if let ResidueType::AminoAcid(aa) = res.res_type {
                     //             c = aa_color(aa);
                     //         }
                     //     }
@@ -251,6 +258,16 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
             }
             if chain_not_sel {
                 continue;
+            }
+
+            if state.ui.hide_sidechains {
+                if let Some(role_0) = atom_0.role {
+                    if let Some(role_1) = atom_1.role {
+                        if role_0 == AtomRole::Sidechain || role_1 == AtomRole::Sidechain {
+                            continue;
+                        }
+                    }
+                }
             }
 
             let center: Vec3 = ((atom_0.posit + atom_1.posit) / 2.).into();

@@ -10,6 +10,7 @@ mod molecule;
 mod navigation;
 mod pdb;
 mod prefs;
+mod rcsb_api;
 mod render;
 mod save_load;
 mod ui;
@@ -26,7 +27,6 @@ use std::{
 };
 
 use bincode::{Decode, Encode};
-use egui::{Align2, Pos2, Vec2};
 use egui_file_dialog::{FileDialog, FileDialogConfig};
 use graphics::{Camera, InputsCommanded};
 use lin_alg::f32::{Quaternion, Vec3};
@@ -280,6 +280,7 @@ struct StateUi {
     chain_to_pick_res: Option<usize>,
     /// Workaround for a bug or limitation in EGUI's `is_pointer_button_down_on`.
     inputs_commanded: InputsCommanded,
+    hide_sidechains: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]
@@ -292,22 +293,16 @@ pub enum Selection {
 
 #[derive(Clone, Debug, Encode, Decode)]
 pub struct CamSnapshot {
-    // We don't use camera directly so we don't have to store the projection matrix, and so we can impl
+    // We don't use camera directly, so we don't have to store the projection matrix, and so we can impl
     // Encode/Decode
     pub position: Vec3,
     pub orientation: Quaternion,
     pub far: f32,
-    pub name: Option<String>,
+    pub name: String,
 }
 
 impl CamSnapshot {
-    pub fn from_cam(cam: &Camera, name: &str) -> Self {
-        let name = if name.is_empty() {
-            None
-        } else {
-            Some(name.to_owned())
-        };
-
+    pub fn from_cam(cam: &Camera, name: String) -> Self {
         Self {
             position: cam.position,
             orientation: cam.orientation,
@@ -331,6 +326,16 @@ struct State {
     pub tabs_open: Vec<Tab>,
 }
 
+impl State {
+    /// E.g. when loading a new molecule.
+    pub fn reset_selections(&mut self) {
+        self.selection = Selection::None;
+        self.cam_snapshots = Vec::new();
+        self.ui.cam_snapshot = None;
+        self.ui.chain_to_pick_res = None;
+    }
+}
+
 fn main() {
     let mut state = State::default();
     state.ui.view_depth = VIEW_DEPTH_MAX;
@@ -340,6 +345,7 @@ fn main() {
     let pdb = load_pdb(&PathBuf::from_str("4hhb.cif").unwrap());
     if let Ok(p) = pdb {
         state.pdb = Some(p);
+
         state.molecule = Some(Molecule::from_pdb(state.pdb.as_ref().unwrap()));
         state.update_from_prefs();
     } else {

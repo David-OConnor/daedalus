@@ -1,3 +1,4 @@
+use std::fmt;
 /// Contains data structures and related code for molecules, atoms, residues, chains, etc.
 use std::str::FromStr;
 
@@ -6,7 +7,7 @@ use na_seq::AminoAcid;
 use pdbtbx::PDB;
 use rayon::prelude::*;
 
-use crate::{bond_inference::create_bonds, Element, Selection};
+use crate::{bond_inference::create_bonds, rcsb_api::PdbMetaData, Element, Selection};
 
 #[derive(Debug)]
 // todo: This, or a PDB-specific format?
@@ -16,6 +17,7 @@ pub struct Molecule {
     pub bonds: Vec<Bond>,
     pub chains: Vec<Chain>,
     pub residues: Vec<Residue>,
+    pub metadata: Option<PdbMetaData>,
 }
 
 impl Molecule {
@@ -23,17 +25,25 @@ impl Molecule {
         // todo: Maybe return the PDB type here, and store that. Also have a way to
         // todo get molecules from it
 
+        // todo: Pdbtbx doesn't implm this yet for CIF.
+        for remark in pdb.remarks() {
+            // println!("Remark: {remark:?}");
+        }
+
+        println!("Loading atoms...");
         let atoms_pdb: Vec<&pdbtbx::Atom> = pdb.par_atoms().collect();
 
-        let res_pdb: Vec<&pdbtbx::Residue> = pdb.residues().collect();
+        println!("Gather residues...");
+        let res_pdb: Vec<&pdbtbx::Residue> = pdb.par_residues().collect();
 
         let mut residues: Vec<Residue> = pdb
-            .residues()
-            .into_iter()
+            .par_residues()
             .map(|res| Residue::from_pdb(res, &atoms_pdb))
             .collect();
 
         residues.sort_by_key(|r| r.serial_number);
+
+        println!("Setting up chains...");
 
         let mut chains = Vec::with_capacity(pdb.chain_count());
         for chain_pdb in pdb.chains() {
@@ -92,10 +102,15 @@ impl Molecule {
             chains.push(chain);
         }
 
+        println!("Atoms final...");
+
+        // todo: This is taking a while.
         let atoms: Vec<Atom> = atoms_pdb
             .into_iter()
             .map(|atom| Atom::from_pdb(atom, &res_pdb))
             .collect();
+
+        println!("Complete.");
 
         // todo: We use our own bond inference, since most PDBs seem to lack bond information.
         // let mut bonds = Vec::new();
@@ -111,6 +126,7 @@ impl Molecule {
             bonds,
             chains,
             residues,
+            metadata: None,
         }
     }
 
@@ -138,10 +154,28 @@ impl Molecule {
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
-pub enum AaRole {
+pub enum AtomRole {
     C_Alpha,
     C_Prime,
-    C_N,
+    N_Backbone,
+    O_Backbone,
+    H_Backbone,
+    Sidechain,
+    Other,
+}
+
+impl fmt::Display for AtomRole {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AtomRole::C_Alpha => write!(f, "Cα"),
+            AtomRole::C_Prime => write!(f, "C'"),
+            AtomRole::N_Backbone => write!(f, "N (bb)"),
+            AtomRole::O_Backbone => write!(f, "O (bb)"),
+            AtomRole::H_Backbone => write!(f, "H (bb)"),
+            AtomRole::Sidechain => write!(f, "Sidechain"),
+            AtomRole::Other => write!(f, "Other"),
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -194,6 +228,7 @@ pub struct Chain {
 #[derive(Debug)]
 pub enum ResidueType {
     AminoAcid(AminoAcid),
+    Water,
     Other(String),
 }
 
@@ -208,9 +243,15 @@ pub struct Residue {
 
 impl Residue {
     pub fn from_pdb(res_pdb: &pdbtbx::Residue, atoms_pdb: &[&pdbtbx::Atom]) -> Self {
-        let res_type = match AminoAcid::from_str(res_pdb.name().unwrap_or_default()) {
-            Ok(aa) => ResidueType::AminoAcid(aa),
-            Err(_) => ResidueType::Other(res_pdb.name().unwrap_or_default().to_owned()),
+        let res_name = res_pdb.name().unwrap_or_default();
+
+        let res_type = if res_name.to_uppercase() == "HOH" {
+            ResidueType::Water
+        } else {
+            match AminoAcid::from_str(res_name) {
+                Ok(aa) => ResidueType::AminoAcid(aa),
+                Err(_) => ResidueType::Other(res_pdb.name().unwrap_or_default().to_owned()),
+            }
         };
 
         let mut res = Residue {
@@ -238,15 +279,16 @@ pub struct Atom {
     pub serial_number: usize,
     pub posit: Vec3,
     pub element: Element,
-    pub role: Option<AaRole>,
+    pub role: Option<AtomRole>,
     pub amino_acid: Option<AminoAcid>, // todo: Duplicate with storing atom IDs with residues.
 }
 
 impl Atom {
     pub fn from_pdb(atom_pdb: &pdbtbx::Atom, residues: &[&pdbtbx::Residue]) -> Self {
         let mut amino_acid = None;
-        // println!("Data: {:?}", pdb.type_id());
+        // println!("Data: {:?}", atom_pdb.name());
 
+        // Find the amino acid type, if applicable.
         for res in residues {
             let res_atoms: Vec<&pdbtbx::Atom> = res.atoms().collect();
 
@@ -261,21 +303,33 @@ impl Atom {
             }
         }
 
+        // todo: This may be fragile.
+        // todo: I don't fully understand how these are annotated in files; apeing pdbtbx's approach for now.
+        let role = match amino_acid {
+            Some(_) => match atom_pdb.name() {
+                "CA" => Some(AtomRole::C_Alpha),
+                "C" => Some(AtomRole::C_Prime),
+                "N" => Some(AtomRole::N_Backbone),
+                "O" => Some(AtomRole::O_Backbone),
+                "H" | "H1" | "H2" | "H3" | "HA" | "HA2" | "HA3" => Some(AtomRole::H_Backbone),
+                _ => Some(AtomRole::Sidechain),
+            },
+            None => None,
+        };
+
         Self {
             serial_number: atom_pdb.serial_number(),
             posit: Vec3::new(atom_pdb.x(), atom_pdb.y(), atom_pdb.z()),
             element: Element::from_pdb(atom_pdb.element()),
             // amino_acid: AminoAcid::from_pdb(pdb.r)
-            // todo
-            role: None,
+            role,
             amino_acid,
-            // is_backbone: pdb.is_backbone(),
         }
     }
 
     pub fn is_backbone(&self) -> bool {
         match self.role {
-            Some(r) => [AaRole::C_Alpha, AaRole::C_N, AaRole::C_Prime].contains(&r),
+            Some(r) => [AtomRole::C_Alpha, AtomRole::N_Backbone, AtomRole::C_Prime].contains(&r),
             None => false,
         }
     }

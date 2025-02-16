@@ -9,7 +9,7 @@ use graphics::{Mesh, Vertex};
 use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 use na_seq::AminoAcid;
 
-use crate::molecule::{AaRole, Atom, Residue, ResidueType};
+use crate::molecule::{Atom, AtomRole, Residue, ResidueType};
 
 /// How many slices around each tube cross-section
 const TUBE_SIDES: usize = 8;
@@ -37,7 +37,7 @@ fn gather_alpha_positions(atoms: &[Atom], residues: &[Residue]) -> Vec<Vec3> {
         let mut found_ca = None;
         for &atom_idx in &residue.atoms {
             let atom = &atoms[atom_idx];
-            if atom.role == Some(AaRole::C_Alpha) {
+            if atom.role == Some(AtomRole::C_Alpha) {
                 found_ca = Some(atom.posit);
                 break;
             }

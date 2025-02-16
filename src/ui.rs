@@ -11,6 +11,7 @@ use crate::{
     download_pdb::load_rcsb,
     molecule::{Molecule, ResidueType},
     pdb::load_pdb,
+    rcsb_api::open_pdb,
     render::{draw_molecule, MoleculeView, CAM_INIT_OFFSET, RENDER_DIST},
     util::{cam_look_at, check_prefs_save, cycle_res_selected, select_from_search},
     CamSnapshot, Selection, State, StateUi, StateVolatile, ViewSelLevel,
@@ -27,6 +28,10 @@ const NEARBY_THRESH_MAX: u16 = 60;
 
 const CAM_BUTTON_POS_STEP: f32 = 30.;
 const CAM_BUTTON_ROT_STEP: f32 = TAU / 3.;
+
+const COLOR_ACTIVE: Color32 = Color32::LIGHT_GREEN;
+
+const MAX_TITLE_LEN: usize = 120; // Number of characters to display.
 
 /// Update the tilebar to reflect the current molecule
 fn set_window_title(title: &str, scene: &mut Scene) {
@@ -94,13 +99,7 @@ pub fn handle_input(
 
 fn get_snap_name(snap: Option<usize>, snaps: &[CamSnapshot]) -> String {
     match snap {
-        Some(i) => {
-            let snap = &snaps[i];
-            match &snap.name {
-                Some(name) => name.to_owned(),
-                None => i.to_string(),
-            }
-        }
+        Some(i) => snaps[i].name.clone(),
         None => "None".to_owned(),
     }
 }
@@ -115,9 +114,13 @@ fn cam_snapshots(
     ui.label("Label:");
     ui.add(TextEdit::singleline(&mut state.ui.cam_snapshot_name).desired_width(60.));
     if ui.button("Save").clicked() {
-        state
-            .cam_snapshots
-            .push(CamSnapshot::from_cam(cam, &state.ui.cam_snapshot_name));
+        let name = if !state.ui.cam_snapshot_name.is_empty() {
+            state.ui.cam_snapshot_name.clone()
+        } else {
+            format!("Snap {}", state.cam_snapshots.len() + 1)
+        };
+
+        state.cam_snapshots.push(CamSnapshot::from_cam(cam, name));
         state.ui.cam_snapshot_name = String::new();
 
         state.ui.cam_snapshot = Some(state.cam_snapshots.len() - 1);
@@ -141,6 +144,17 @@ fn cam_snapshots(
                 );
             }
         });
+
+    if let Some(i) = state.ui.cam_snapshot {
+        // ui.add_space(COL_SPACING);
+        if ui.button(RichText::new("❌").color(Color32::RED)).clicked() {
+            if i < state.cam_snapshots.len() {
+                state.cam_snapshots.remove(i);
+            }
+            state.ui.cam_snapshot = None;
+            state.update_save_prefs();
+        }
+    }
 
     if state.ui.cam_snapshot != prev_snap {
         if let Some(snap_i) = state.ui.cam_snapshot {
@@ -305,11 +319,22 @@ fn selected_data(mol: &Molecule, selection: Selection, ui: &mut Ui) {
     match selection {
         Selection::Atom(sel) => {
             let atom = &mol.atoms[sel];
+
+            let aa = match atom.amino_acid {
+                Some(a) => format!("AA: {}", a.to_str(AaIdent::OneLetter)),
+                None => String::new(),
+            };
+
+            let role = match atom.role {
+                Some(r) => format!("Role: {r}"),
+                None => String::new(),
+            };
+
             ui.label(
                 RichText::new(format!(
                     // todo: Coorsd are temp
-                    "{}, {} El: {:?}, AA: {:?}, Role: {:?}",
-                    atom.posit, atom.serial_number, atom.element, atom.amino_acid, atom.role
+                    "{}, {} El: {:?}, {aa} {role}",
+                    atom.posit, atom.serial_number, atom.element
                 ))
                 .color(Color32::GOLD),
             );
@@ -318,6 +343,7 @@ fn selected_data(mol: &Molecule, selection: Selection, ui: &mut Ui) {
             let res = &mol.residues[sel_i];
             let name = match &res.res_type {
                 ResidueType::AminoAcid(aa) => aa.to_str(AaIdent::ThreeLetters),
+                ResidueType::Water => "Water".to_owned(),
                 ResidueType::Other(name) => name.clone(),
             };
 
@@ -352,13 +378,14 @@ fn residue_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
 
                     let name = match &res.res_type {
                         ResidueType::AminoAcid(aa) => aa.to_str(AaIdent::OneLetter),
+                        ResidueType::Water => "Water".to_owned(),
                         ResidueType::Other(name) => name.clone(),
                     };
 
                     let mut color = Color32::GRAY;
                     if let Selection::Residue(sel_i) = state.selection {
                         if sel_i == i {
-                            color = Color32::LIGHT_BLUE;
+                            color = COLOR_ACTIVE;
                         }
                     }
                     if ui
@@ -388,7 +415,7 @@ fn chain_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
         if let Some(mol) = &mut state.molecule {
             for chain in &mut mol.chains {
                 let color = if chain.visible {
-                    Color32::LIGHT_BLUE
+                    COLOR_ACTIVE
                 } else {
                     Color32::GRAY
                 };
@@ -409,7 +436,7 @@ fn chain_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
                 let mut color = Color32::GRAY;
                 if let Some(i_sel) = state.ui.chain_to_pick_res {
                     if i == i_sel {
-                        color = Color32::LIGHT_BLUE
+                        color = COLOR_ACTIVE
                     }
                 }
                 if ui
@@ -426,12 +453,14 @@ fn chain_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
                     } else {
                         state.ui.chain_to_pick_res = Some(i);
                     }
+                    state.volatile.ui_height = ui.ctx().used_size().y;
                 }
             }
 
             if state.ui.chain_to_pick_res.is_some() {
                 if ui.button("(None)").clicked() {
                     state.ui.chain_to_pick_res = None;
+                    state.volatile.ui_height = ui.ctx().used_size().y;
                 }
             }
         }
@@ -499,21 +528,53 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         handle_input(state, ui, &mut redraw, &mut reset_cam, &mut engine_updates);
 
         ui.horizontal(|ui| {
-            if let Some(mol) = &state.molecule {
+            let mut metadata_loaded = false; // avoids borrow error.
+            if let Some(mol) = &mut state.molecule {
                 ui.heading(RichText::new(mol.ident.clone()).color(Color32::GOLD));
+
+                if let Some(metadata) = &mol.metadata {
+                    // Limit size to prevent UI problems.
+                    let mut title: String = metadata
+                        .prim_cit_title
+                        .chars()
+                        .take(MAX_TITLE_LEN)
+                        .collect();
+                    if title.len() != metadata.prim_cit_title.len() {
+                        title += "...";
+                    }
+                    ui.label(RichText::new(title).color(Color32::WHITE).size(12.));
+                }
+
+                if ui.button("Open").clicked() {
+                    state.volatile.load_dialog.pick_file();
+                }
+
+                // if ui.button("Get RCSB").clicked() {
+                //     match load_pdb_metadata(&mol.ident) {
+                //         Ok(d) => {
+                //             println!("Metadata loaded: {d:?}");
+                //             mol.metadata = Some(d);
+                //             metadata_loaded = true;
+                //         },
+                //         Err(_) => eprintln!("Error getting PDB metadata"),
+                //     }
+                // }
+
+                if ui.button("Open RCSB").clicked() {
+                    open_pdb(&mol.ident);
+                }
+            }
+            if metadata_loaded {
+                state.update_save_prefs();
             }
 
             ui.add_space(COL_SPACING);
-
-            if ui.button("Open").clicked() {
-                state.volatile.load_dialog.pick_file();
-            }
 
             ui.add_space(COL_SPACING);
             ui.label("RCSB ident:");
             ui.add(TextEdit::singleline(&mut state.ui.rcsb_input).desired_width(60.));
 
-            if ui.button("Load RCSB").clicked() {
+            if ui.button("Download mol from RCSB").clicked() {
                 match load_rcsb(&state.ui.rcsb_input) {
                     Ok(pdb) => {
                         state.pdb = Some(pdb);
@@ -630,8 +691,17 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         ui.add_space(ROW_SPACING);
 
-        chain_selector(state, &mut redraw, ui);
-        residue_selector(state, &mut redraw, ui);
+        ui.horizontal(|ui| {
+            chain_selector(state, &mut redraw, ui);
+            residue_selector(state, &mut redraw, ui);
+            ui.add_space(COL_SPACING);
+            if ui
+                .checkbox(&mut state.ui.hide_sidechains, "Hide sidechains")
+                .changed()
+            {
+                redraw = true;
+            }
+        });
 
         ui.add_space(ROW_SPACING);
 
@@ -648,6 +718,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 &mut redraw,
                 &mut reset_cam,
                 &mut engine_updates,
+                // ui,
             );
         }
 
@@ -662,8 +733,9 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         }
     });
 
-    // todo: You must set the UI height when performing actions that change it! Or selection will be wonky.
+    // At init only.
     if state.volatile.ui_height < f32::EPSILON {
+        println!("Setting UI height: {:?}", ctx.used_size().y);
         state.volatile.ui_height = ctx.used_size().y;
     }
 

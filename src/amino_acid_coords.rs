@@ -3,7 +3,7 @@
 use lin_alg::f64::Vec3;
 use na_seq::AminoAcid;
 
-use crate::molecule::{AaRole, Atom};
+use crate::molecule::{Atom, AtomRole};
 
 // / //// Perhaps consider a standard
 // pub struct AtomAa {
