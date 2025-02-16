@@ -282,6 +282,7 @@ struct StateUi {
     /// Workaround for a bug or limitation in EGUI's `is_pointer_button_down_on`.
     inputs_commanded: InputsCommanded,
     hide_sidechains: bool,
+    hide_water: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]

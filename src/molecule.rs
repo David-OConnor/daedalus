@@ -170,6 +170,7 @@ pub enum AtomRole {
     O_Backbone,
     H_Backbone,
     Sidechain,
+    Water,
     Other,
 }
 
@@ -182,6 +183,7 @@ impl fmt::Display for AtomRole {
             AtomRole::O_Backbone => write!(f, "O (bb)"),
             AtomRole::H_Backbone => write!(f, "H (bb)"),
             AtomRole::Sidechain => write!(f, "Sidechain"),
+            AtomRole::Water => write!(f, "Water"),
             AtomRole::Other => write!(f, "Other"),
         }
     }
@@ -318,6 +320,8 @@ impl Atom {
                 "N" => Some(AtomRole::N_Backbone),
                 "O" => Some(AtomRole::O_Backbone),
                 "H" | "H1" | "H2" | "H3" | "HA" | "HA2" | "HA3" => Some(AtomRole::H_Backbone),
+                // todo: Not under "name". Figure out how to handle A/R
+                // "HOH" => Some(AtomRole::Water),
                 _ => Some(AtomRole::Sidechain),
             },
             None => None,

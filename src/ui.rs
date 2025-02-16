@@ -666,7 +666,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 .show_ui(ui, |ui| {
                     for view in &[
                         MoleculeView::Sticks,
-                        MoleculeView::Ribbon,
+                        MoleculeView::Backbone,
                         MoleculeView::BallAndStick,
                         MoleculeView::Cartoon,
                         MoleculeView::Spheres,
@@ -709,8 +709,15 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 residue_selector(state, &mut redraw, ui);
             });
             ui.add_space(COL_SPACING);
+
             if ui
                 .checkbox(&mut state.ui.hide_sidechains, "Hide sidechains")
+                .changed()
+            {
+                redraw = true;
+            }
+            if ui
+                .checkbox(&mut state.ui.hide_water, "Hide water")
                 .changed()
             {
                 redraw = true;

@@ -32,6 +32,7 @@ pub struct PerMolToSave {
     chain_to_pick_res: Option<usize>,
     metadata: Option<PdbMetaData>,
     hide_sidechains: bool,
+    hide_water: bool,
 }
 
 impl PerMolToSave {
@@ -55,6 +56,7 @@ impl PerMolToSave {
             chain_to_pick_res: state.ui.chain_to_pick_res,
             metadata,
             hide_sidechains: state.ui.hide_sidechains,
+            hide_water: state.ui.hide_water,
         }
     }
 }
@@ -89,6 +91,7 @@ impl State {
                 self.ui.nearby_dist_thresh = data.nearby_dist_thresh;
                 self.ui.chain_to_pick_res = data.chain_to_pick_res;
                 self.ui.hide_sidechains = data.hide_sidechains;
+                self.ui.hide_water = data.hide_water;
 
                 if let Some(md) = &data.metadata {
                     mol.metadata = Some(md.clone())

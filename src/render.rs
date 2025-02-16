@@ -60,7 +60,7 @@ pub const COLOR_AA_NON_RESIDUE: Color = (0., 0.8, 1.0);
 #[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]
 pub enum MoleculeView {
     Sticks,
-    Ribbon,
+    Backbone,
     #[default]
     BallAndStick,
     /// i.e. Van der Waals radius, or CPK.
@@ -74,7 +74,7 @@ pub enum MoleculeView {
 impl fmt::Display for MoleculeView {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let val = match self {
-            Self::Ribbon => "Ribbon",
+            Self::Backbone => "Backbone",
             Self::Sticks => "Sticks",
             Self::BallAndStick => "Ball and stick",
             Self::Cartoon => "Cartoon",
@@ -159,9 +159,14 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                 continue;
             }
 
-            if state.ui.hide_sidechains {
-                if let Some(role) = atom.role {
+            if let Some(role) = atom.role {
+                if state.ui.hide_sidechains {
                     if role == AtomRole::Sidechain {
+                        continue;
+                    }
+                }
+                if state.ui.hide_water {
+                    if role == AtomRole::Water {
                         continue;
                     }
                 }
@@ -237,7 +242,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
             let atom_0 = &mol.atoms[bond.atom_0];
             let atom_1 = &mol.atoms[bond.atom_1];
 
-            if ui.mol_view == MoleculeView::Ribbon && !bond.is_backbone {
+            if ui.mol_view == MoleculeView::Backbone && !bond.is_backbone {
                 continue;
             }
 
@@ -261,6 +266,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                 continue;
             }
 
+            // Assuming water won't be bonded to the main molecule.
             if state.ui.hide_sidechains {
                 if let Some(role_0) = atom_0.role {
                     if let Some(role_1) = atom_1.role {
@@ -271,15 +277,18 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                 }
             }
 
-            let center: Vec3 = ((atom_0.posit + atom_1.posit) / 2.).into();
+            let posit_0: Vec3 = atom_0.posit.into();
+            let posit_1: Vec3 = atom_1.posit.into();
+            let center: Vec3 = (posit_0 + posit_1) / 2.;
 
-            let diff: Vec3 = (atom_0.posit - atom_1.posit).into();
+            let diff = posit_0 - posit_1;
             let diff_unit = diff.to_normalized();
             let orientation = Quaternion::from_unit_vecs(UP_VEC, diff_unit);
 
             let scale = Some(Vec3::new(1., diff.magnitude(), 1.));
             let scale_multibond = Some(Vec3::new(0.7, diff.magnitude(), 0.7));
 
+            // todo: Consider redoing this color logic.
             let color = if [MoleculeView::Sticks].contains(&ui.mol_view) {
                 // todo: A/R between teh two bonds. May need two bond elements.
                 atom_0.element.color()
@@ -287,120 +296,147 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                 BOND_COLOR
             };
 
-            // todo: Once you start the stick approach, this may need to change.
-            let bond_count = match ui.mol_view {
-                MoleculeView::Ribbon => BondCount::Single,
-                _ => bond.bond_count,
-            };
+            match ui.mol_view {
+                MoleculeView::Sticks => {
+                    // Split the bond into two entities, so you can color-code them separately based
+                    // on which atom the half is closer to.
 
-            // todo: Lots of DRY!
-            match bond_count {
-                BondCount::SingleDoubleHybrid => {
-                    // Draw two offset bond cylinders.
-                    let rotator = rot_ortho * orientation;
+                    let center_0 = (posit_0 + center) / 2.;
+                    let center_1 = (posit_1 + center) / 2.;
 
-                    let offset_a = rotator.rotate_vec(Vec3::new(0.2, 0., 0.));
-                    let offset_b = rotator.rotate_vec(Vec3::new(-0.2, 0., 0.));
-
-                    let mut entity_0 = Entity::new(
-                        MESH_BOND,
-                        center + offset_a,
-                        orientation,
-                        1.,
-                        color,
-                        BODY_SHINYNESS,
-                    );
-
-                    let mut entity_1 = Entity::new(
-                        MESH_BOND,
-                        center + offset_b,
-                        orientation,
-                        1.,
-                        color,
-                        BODY_SHINYNESS,
-                    );
-
-                    entity_0.scale_partial = scale_multibond;
-                    // Show only half len on one of the bonds as a visual differentiator.
-                    entity_1.scale_partial = Some(Vec3::new(0.7, diff.magnitude() * 0.3, 0.7));
-
-                    scene.entities.push(entity_0);
-                    scene.entities.push(entity_1);
-                }
-                BondCount::Double => {
-                    // Draw two offset bond cylinders.
-                    let rotator = rot_ortho * orientation;
-
-                    let offset_a = rotator.rotate_vec(Vec3::new(0.2, 0., 0.));
-                    let offset_b = rotator.rotate_vec(Vec3::new(-0.2, 0., 0.));
-
-                    let mut entity_0 = Entity::new(
-                        MESH_BOND,
-                        center + offset_a,
-                        orientation,
-                        1.,
-                        color,
-                        BODY_SHINYNESS,
-                    );
-
-                    let mut entity_1 = Entity::new(
-                        MESH_BOND,
-                        center + offset_b,
-                        orientation,
-                        1.,
-                        color,
-                        BODY_SHINYNESS,
-                    );
-
-                    entity_0.scale_partial = scale_multibond;
-                    entity_1.scale_partial = scale_multibond;
-
-                    scene.entities.push(entity_0);
-                    scene.entities.push(entity_1);
-                }
-                BondCount::Triple => {
-                    // Draw two offset bond cylinders.
-                    let rotator = rot_ortho * orientation;
-
-                    let offset_a = rotator.rotate_vec(Vec3::new(0.2, 0., 0.));
-                    let offset_b = rotator.rotate_vec(Vec3::new(-0.2, 0., 0.));
-
+                    // todo: Residue color etc A/R
                     let mut entity_0 =
-                        Entity::new(MESH_BOND, center, orientation, 1., color, BODY_SHINYNESS);
+                        Entity::new(MESH_BOND, center_0, orientation, 1., atom_0.element.color(), BODY_SHINYNESS);
 
-                    let mut entity_1 = Entity::new(
-                        MESH_BOND,
-                        center + offset_a,
-                        orientation,
-                        1.,
-                        color,
-                        BODY_SHINYNESS,
-                    );
+                    let mut entity_1 =
+                        Entity::new(MESH_BOND, center_1, orientation, 1., atom_1.element.color(), BODY_SHINYNESS);
 
-                    let mut entity_2 = Entity::new(
-                        MESH_BOND,
-                        center + offset_b,
-                        orientation,
-                        1.,
-                        color,
-                        BODY_SHINYNESS,
-                    );
-
-                    entity_0.scale_partial = scale_multibond;
-                    entity_1.scale_partial = scale_multibond;
-                    entity_2.scale_partial = scale_multibond;
+                    // todo: Extra mag calc here from above; perf implication.
+                    let scale_half = Some(Vec3::new(1., diff.magnitude()/2., 1.));
+                    entity_0.scale_partial = scale_half;
+                    entity_1.scale_partial = scale_half;
 
                     scene.entities.push(entity_0);
                     scene.entities.push(entity_1);
-                    scene.entities.push(entity_2);
                 }
                 _ => {
-                    let mut entity =
-                        Entity::new(MESH_BOND, center, orientation, 1., color, BODY_SHINYNESS);
+                    // todo: Consider if you want to display multi-bonds in stick view. Likely.
+                    let bond_count = match ui.mol_view {
+                        MoleculeView::Backbone | MoleculeView::Sticks => BondCount::Single,
+                        _ => bond.bond_count,
+                    };
 
-                    entity.scale_partial = scale;
-                    scene.entities.push(entity);
+                    // todo: Lots of DRY!
+                    match bond_count {
+                        BondCount::Single => {
+                            let mut entity =
+                                Entity::new(MESH_BOND, center, orientation, 1., color, BODY_SHINYNESS);
+
+                            entity.scale_partial = scale;
+                            scene.entities.push(entity);
+                        }
+                        BondCount::SingleDoubleHybrid => {
+                            // Draw two offset bond cylinders.
+                            let rotator = rot_ortho * orientation;
+
+                            let offset_a = rotator.rotate_vec(Vec3::new(0.2, 0., 0.));
+                            let offset_b = rotator.rotate_vec(Vec3::new(-0.2, 0., 0.));
+
+                            let mut entity_0 = Entity::new(
+                                MESH_BOND,
+                                center + offset_a,
+                                orientation,
+                                1.,
+                                color,
+                                BODY_SHINYNESS,
+                            );
+
+                            let mut entity_1 = Entity::new(
+                                MESH_BOND,
+                                center + offset_b,
+                                orientation,
+                                1.,
+                                color,
+                                BODY_SHINYNESS,
+                            );
+
+                            entity_0.scale_partial = scale_multibond;
+                            // Show only half len on one of the bonds as a visual differentiator.
+                            entity_1.scale_partial = Some(Vec3::new(0.7, diff.magnitude() * 0.3, 0.7));
+
+                            scene.entities.push(entity_0);
+                            scene.entities.push(entity_1);
+                        }
+                        BondCount::Double => {
+                            // Draw two offset bond cylinders.
+                            let rotator = rot_ortho * orientation;
+
+                            let offset_a = rotator.rotate_vec(Vec3::new(0.2, 0., 0.));
+                            let offset_b = rotator.rotate_vec(Vec3::new(-0.2, 0., 0.));
+
+                            let mut entity_0 = Entity::new(
+                                MESH_BOND,
+                                center + offset_a,
+                                orientation,
+                                1.,
+                                color,
+                                BODY_SHINYNESS,
+                            );
+
+                            let mut entity_1 = Entity::new(
+                                MESH_BOND,
+                                center + offset_b,
+                                orientation,
+                                1.,
+                                color,
+                                BODY_SHINYNESS,
+                            );
+
+                            entity_0.scale_partial = scale_multibond;
+                            entity_1.scale_partial = scale_multibond;
+
+                            scene.entities.push(entity_0);
+                            scene.entities.push(entity_1);
+                        }
+                        BondCount::Triple => {
+                            // Draw two offset bond cylinders.
+                            let rotator = rot_ortho * orientation;
+
+                            let offset_a = rotator.rotate_vec(Vec3::new(0.2, 0., 0.));
+                            let offset_b = rotator.rotate_vec(Vec3::new(-0.2, 0., 0.));
+
+                            let mut entity_0 =
+                                Entity::new(MESH_BOND, center, orientation, 1., color, BODY_SHINYNESS);
+
+                            let mut entity_1 = Entity::new(
+                                MESH_BOND,
+                                center + offset_a,
+                                orientation,
+                                1.,
+                                color,
+                                BODY_SHINYNESS,
+                            );
+
+                            let mut entity_2 = Entity::new(
+                                MESH_BOND,
+                                center + offset_b,
+                                orientation,
+                                1.,
+                                color,
+                                BODY_SHINYNESS,
+                            );
+
+                            entity_0.scale_partial = scale_multibond;
+                            entity_1.scale_partial = scale_multibond;
+                            entity_2.scale_partial = scale_multibond;
+
+                            scene.entities.push(entity_0);
+                            scene.entities.push(entity_1);
+                            scene.entities.push(entity_2);
+                        }
+                    }
                 }
+                _ => ()
             }
         }
     }
