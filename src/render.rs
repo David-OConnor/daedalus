@@ -4,22 +4,23 @@ use std::{f32::consts::TAU, fmt};
 
 use bincode::{Decode, Encode};
 use graphics::{
-    event::{WindowEvent},
     winit::keyboard::{KeyCode, PhysicalKey::Code},
     Camera, ControlScheme, DeviceEvent, ElementState, EngineUpdates, Entity, InputSettings,
-    LightType, Lighting, Mesh, PointLight, Scene, UiLayout, UiSettings, FWD_VEC, RIGHT_VEC, UP_VEC,
+    LightType, Lighting, Mesh, PointLight, Scene, UiLayout, UiSettings, WindowEvent, FWD_VEC,
+    RIGHT_VEC, UP_VEC,
 };
 use lin_alg::{
     f32::{Quaternion, Vec3},
     map_linear,
 };
+
 use crate::{
-    molecule::{aa_color, AtomRole, BondCount, Chain, Residue},
+    asa::{get_mesh_points, mesh_from_sas_points},
+    molecule::{aa_color, Atom, AtomRole, BondCount, Chain, Residue},
     ui::ui_handler,
     util::{cycle_res_selected, find_selected_atom, mol_center_size, points_along_ray},
-    Selection, State,  ViewSelLevel,
+    Selection, State, ViewSelLevel,
 };
-use crate::molecule::Atom;
 
 type Color = (f32, f32, f32);
 
@@ -33,11 +34,11 @@ pub const ATOM_SHINYNESS: f32 = 12.;
 pub const BODY_SHINYNESS: f32 = 12.;
 
 // Keep this in sync with mesh init.
-pub const MESH_SPHERE: usize = 0;
-pub const MESH_CUBE: usize = 1;
-pub const MESH_BOND: usize = 2;
-pub const MESH_SURFACE: usize = 3; // Van Der Waals surface.
-// pub const MESH_SPHERE_LOWRES: usize = 4;
+const MESH_SPHERE: usize = 0;
+const MESH_CUBE: usize = 1;
+const MESH_BOND: usize = 2;
+const MESH_SPHERE_LOWRES: usize = 3;
+const MESH_SURFACE: usize = 4; // Van Der Waals surface.
 
 const SELECTION_DIST_THRESH_SMALL: f32 = 0.7; // e.g. ball + stick
 const SELECTION_DIST_THRESH_LARGE: f32 = 1.3; // e.g. VDW views.
@@ -47,6 +48,9 @@ const BOND_COLOR: Color = (0.2, 0.2, 0.2);
 const BOND_RADIUS: f32 = 0.12;
 // const BOND_CAP_RADIUS: f32 = 1./BOND_RADIUS;
 const BOND_RADIUS_DOUBLE: f32 = 0.07;
+
+const RADIUS_SFC_DOT: f32 = 0.05;
+const COLOR_SFC_DOT: Color = (0.7, 0.7, 0.7);
 
 pub const COLOR_SELECTED: Color = (1., 0., 0.);
 
@@ -65,7 +69,7 @@ pub enum MoleculeView {
     #[default]
     BallAndStick,
     /// i.e. Van der Waals radius, or CPK.
-    Spheres,
+    SpaceFill,
     Cartoon,
     Surface,
     Mesh,
@@ -79,7 +83,7 @@ impl fmt::Display for MoleculeView {
             Self::Sticks => "Sticks",
             Self::BallAndStick => "Ball and stick",
             Self::Cartoon => "Cartoon",
-            Self::Spheres => "Spheres (Van der Waals)",
+            Self::SpaceFill => "Spacefill (Van der Waals)",
             Self::Surface => "Surface (Van der Waals)",
             Self::Mesh => "Mesh (Van der Waals)",
             Self::Dots => "Dots (Van der Waals)",
@@ -129,7 +133,13 @@ fn set_lighting(center: Vec3, size: f32) -> Lighting {
     }
 }
 
-fn atom_color(atom: &Atom, i: usize, residues: &[Residue], selection: Selection, view_sel_level: ViewSelLevel) -> Color {
+fn atom_color(
+    atom: &Atom,
+    i: usize,
+    residues: &[Residue],
+    selection: Selection,
+    view_sel_level: ViewSelLevel,
+) -> Color {
     let mut result = match view_sel_level {
         ViewSelLevel::Atom => atom.element.color(),
         ViewSelLevel::Residue => {
@@ -173,7 +183,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
     if state.molecule.is_none() {
         return;
     }
-    let mol = state.molecule.as_ref().unwrap();
+    let mol = state.molecule.as_mut().unwrap();
 
     // todo: Update this capacity A/R as you flesh out your renders.
     // *entities = Vec::with_capacity(molecule.bonds.len());
@@ -184,10 +194,70 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
 
     let chains_invis: Vec<&Chain> = mol.chains.iter().filter(|c| !c.visible).collect();
 
+    // todo: Figure out how to handle the VDW models A/R.
+    // todo: Mesh and/or Surface A/R.
+    if ui.mol_view == MoleculeView::Dots {
+        if mol.sa_surface_pts.is_none() {
+            println!("Starting getting mesh pts...");
+            mol.sa_surface_pts = Some(get_mesh_points(&mol.atoms));
+            println!("Mesh pts complete.");
+        }
+
+        // let mut i = 0;
+        for ring in mol.sa_surface_pts.as_ref().unwrap() {
+            for sfc_pt in ring {
+                scene.entities.push(Entity::new(
+                    MESH_SPHERE_LOWRES,
+                    *sfc_pt,
+                    Quaternion::new_identity(),
+                    RADIUS_SFC_DOT,
+                    COLOR_SFC_DOT,
+                    ATOM_SHINYNESS,
+                ));
+            }
+            // i += 1;
+            // if i > 100 {
+            //     break;
+            // }
+        }
+    }
+
+    if ui.mol_view == MoleculeView::Surface {
+        if mol.sa_surface_pts.is_none() {
+            // todo: DRY with above.
+            println!("Starting getting mesh pts...");
+            mol.sa_surface_pts = Some(get_mesh_points(&mol.atoms));
+            println!("Mesh pts complete.");
+        }
+
+        if !mol.mesh_created {
+            println!("Building surface mesh...");
+            scene.meshes[MESH_SURFACE] =
+                mesh_from_sas_points(&mol.sa_surface_pts.as_ref().unwrap());
+            mol.mesh_created = true;
+            println!("Mesh complete");
+        }
+
+        scene.entities.push(Entity::new(
+            MESH_SURFACE,
+            Vec3::new_zero(),
+            Quaternion::new_identity(),
+            1.,
+            COLOR_SFC_DOT,  // todo
+            ATOM_SHINYNESS, // todo
+        ));
+    }
+
     // Draw atoms.
-    if [MoleculeView::BallAndStick, MoleculeView::Spheres].contains(&ui.mol_view) {
+    if [MoleculeView::BallAndStick, MoleculeView::SpaceFill].contains(&ui.mol_view) {
         for (i, atom) in mol.atoms.iter().enumerate() {
-            let color_atom = atom_color(&atom, i, &mol.residues, state.selection, state.ui.view_sel_level);
+            let color_atom = atom_color(
+                &atom,
+                i,
+                &mol.residues,
+                state.selection,
+                state.ui.view_sel_level,
+            );
 
             let mut chain_not_sel = false;
             for chain in &chains_invis {
@@ -226,7 +296,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
             }
 
             let radius = match ui.mol_view {
-                MoleculeView::Spheres => atom.element.vdw_radius(),
+                MoleculeView::SpaceFill => atom.element.vdw_radius(),
                 _ => 0.3,
             };
 
@@ -244,13 +314,25 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
     let rot_ortho = Quaternion::from_unit_vecs(FWD_VEC, UP_VEC);
 
     // Draw bonds.
-    if ![MoleculeView::Spheres].contains(&ui.mol_view) {
+    if ![MoleculeView::SpaceFill].contains(&ui.mol_view) {
         for bond in &mol.bonds {
             let atom_0 = &mol.atoms[bond.atom_0];
             let atom_1 = &mol.atoms[bond.atom_1];
 
-            let mut color_atom_0 = atom_color(&atom_0, bond.atom_0, &mol.residues, state.selection, state.ui.view_sel_level);
-            let mut color_atom_1 = atom_color(&atom_1, bond.atom_1, &mol.residues, state.selection, state.ui.view_sel_level);
+            let mut color_atom_0 = atom_color(
+                &atom_0,
+                bond.atom_0,
+                &mol.residues,
+                state.selection,
+                state.ui.view_sel_level,
+            );
+            let mut color_atom_1 = atom_color(
+                &atom_1,
+                bond.atom_1,
+                &mol.residues,
+                state.selection,
+                state.ui.view_sel_level,
+            );
 
             if ui.mol_view == MoleculeView::Backbone && !bond.is_backbone {
                 continue;
@@ -299,7 +381,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
             let scale_multibond = Some(Vec3::new(0.7, diff.magnitude(), 0.7));
 
             match ui.mol_view {
-                MoleculeView::Sticks | MoleculeView::Backbone => {
+                MoleculeView::Sticks | MoleculeView::Backbone | MoleculeView::Dots => {
                     // Split the bond into two entities, so you can color-code them separately based
                     // on which atom the half is closer to.
 
@@ -307,19 +389,45 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                     let center_1 = (posit_1 + center) / 2.;
 
                     // todo: Residue color etc A/R
-                    let mut entity_0 =
-                        Entity::new(MESH_BOND, center_0, orientation, 1., color_atom_0, BODY_SHINYNESS);
+                    let mut entity_0 = Entity::new(
+                        MESH_BOND,
+                        center_0,
+                        orientation,
+                        1.,
+                        color_atom_0,
+                        BODY_SHINYNESS,
+                    );
 
-                    let mut entity_1 =
-                        Entity::new(MESH_BOND, center_1, orientation, 1., color_atom_1, BODY_SHINYNESS);
+                    let mut entity_1 = Entity::new(
+                        MESH_BOND,
+                        center_1,
+                        orientation,
+                        1.,
+                        color_atom_1,
+                        BODY_SHINYNESS,
+                    );
 
                     // These spheres are to put a rounded cap on each bond.
                     // todo: You only need a dome; performance implications.
-                    let rounding_0 = Entity::new(MESH_SPHERE, posit_0, Quaternion::new_identity(), BOND_RADIUS, color_atom_0, BODY_SHINYNESS);
-                    let rounding_1 = Entity::new(MESH_SPHERE, posit_1, Quaternion::new_identity(), BOND_RADIUS, color_atom_1, BODY_SHINYNESS);
+                    let rounding_0 = Entity::new(
+                        MESH_SPHERE,
+                        posit_0,
+                        Quaternion::new_identity(),
+                        BOND_RADIUS,
+                        color_atom_0,
+                        BODY_SHINYNESS,
+                    );
+                    let rounding_1 = Entity::new(
+                        MESH_SPHERE,
+                        posit_1,
+                        Quaternion::new_identity(),
+                        BOND_RADIUS,
+                        color_atom_1,
+                        BODY_SHINYNESS,
+                    );
 
                     // todo: Extra mag calc here from above; perf implication.
-                    let scale_half = Some(Vec3::new(1., diff.magnitude()/2., 1.));
+                    let scale_half = Some(Vec3::new(1., diff.magnitude() / 2., 1.));
                     entity_0.scale_partial = scale_half;
                     entity_1.scale_partial = scale_half;
 
@@ -344,8 +452,14 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                     // todo: Lots of DRY!
                     match bond_count {
                         BondCount::Single => {
-                            let mut entity =
-                                Entity::new(MESH_BOND, center, orientation, 1., color, BODY_SHINYNESS);
+                            let mut entity = Entity::new(
+                                MESH_BOND,
+                                center,
+                                orientation,
+                                1.,
+                                color,
+                                BODY_SHINYNESS,
+                            );
 
                             entity.scale_partial = scale;
                             scene.entities.push(entity);
@@ -377,7 +491,8 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
 
                             entity_0.scale_partial = scale_multibond;
                             // Show only half len on one of the bonds as a visual differentiator.
-                            entity_1.scale_partial = Some(Vec3::new(0.7, diff.magnitude() * 0.3, 0.7));
+                            entity_1.scale_partial =
+                                Some(Vec3::new(0.7, diff.magnitude() * 0.3, 0.7));
 
                             scene.entities.push(entity_0);
                             scene.entities.push(entity_1);
@@ -420,8 +535,14 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                             let offset_a = rotator.rotate_vec(Vec3::new(0.2, 0., 0.));
                             let offset_b = rotator.rotate_vec(Vec3::new(-0.2, 0., 0.));
 
-                            let mut entity_0 =
-                                Entity::new(MESH_BOND, center, orientation, 1., color, BODY_SHINYNESS);
+                            let mut entity_0 = Entity::new(
+                                MESH_BOND,
+                                center,
+                                orientation,
+                                1.,
+                                color,
+                                BODY_SHINYNESS,
+                            );
 
                             let mut entity_1 = Entity::new(
                                 MESH_BOND,
@@ -451,7 +572,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                         }
                     }
                 }
-                _ => ()
+                _ => (),
             }
         }
     }
@@ -525,7 +646,7 @@ fn event_dev_handler(
                                 let dist_thresh = match state_.ui.mol_view {
                                     MoleculeView::Mesh
                                     | MoleculeView::Dots
-                                    | MoleculeView::Spheres => SELECTION_DIST_THRESH_LARGE,
+                                    | MoleculeView::SpaceFill => SELECTION_DIST_THRESH_LARGE,
                                     _ => SELECTION_DIST_THRESH_SMALL,
                                 };
                                 let atoms_along_ray =
@@ -657,8 +778,8 @@ pub fn render(mut state: State) {
             // Mesh::from_obj_file("sphere.obj"),
             Mesh::new_box(1., 1., 1.),
             Mesh::new_cylinder(1., BOND_RADIUS, 20),
-            Mesh::new_box(1., 1., 1.), // todo: Temp. For VDW surface.
             Mesh::new_sphere(1., 8, 8), // low-res sphere
+            Mesh::new_box(1., 1., 1.),  // Placeholder for a VDW surface; populated later.
         ],
         entities: Vec::new(),
         camera: Camera {

@@ -31,7 +31,10 @@ cudarc = { version = "^0.13.3", optional=true, features=["cuda-12060"] }
 
 # For reading PDB and mmCIF files
 pdbtbx = "^0.12.0"
-#pdbtbx = { path = "../../../Desktop/pdbtbx" }
+#pdbtbx = { path = "../pdbtbx" }
+
+# todo: Eventually, audit this lib; may have some heavy deps?
+#rust-sasa = "^0.2.4"
 
 # These web deps are for querying RCSB.
 ureq = "^3.0.4"

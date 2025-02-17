@@ -669,11 +669,10 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                         MoleculeView::Backbone,
                         MoleculeView::BallAndStick,
                         MoleculeView::Cartoon,
-                        MoleculeView::Spheres,
-                        // todo: A/R
-                        // MoleculeView::Surface,
+                        MoleculeView::SpaceFill,
+                        // MoleculeView::Surface, // Partially-implemented, but broken/crashes.
                         // MoleculeView::Mesh,
-                        // MoleculeView::Dots,
+                        MoleculeView::Dots,
                     ] {
                         ui.selectable_value(&mut state.ui.mol_view, *view, view.to_string());
                     }

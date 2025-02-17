@@ -1,6 +1,7 @@
 extern crate core;
 
 mod amino_acid_coords;
+mod asa;
 mod bond_inference;
 mod cartoon_mesh;
 mod download_pdb;
@@ -177,7 +178,7 @@ impl Element {
     }
 
     /// Van-der-wals radius, in angstrom.
-    pub fn vdw_radius(&self) -> f32 {
+    pub const fn vdw_radius(&self) -> f32 {
         match self {
             Self::Hydrogen => 1.20,
             Self::Carbon => 1.70,

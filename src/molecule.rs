@@ -2,12 +2,14 @@
 use std::str::FromStr;
 use std::{collections::HashMap, fmt};
 
-use lin_alg::f64::Vec3;
+use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 use na_seq::AminoAcid;
 use pdbtbx::PDB;
 use rayon::prelude::*;
 
-use crate::{bond_inference::create_bonds, rcsb_api::PdbMetaData, Element, Selection};
+use crate::{
+    asa::get_mesh_points, bond_inference::create_bonds, rcsb_api::PdbMetaData, Element, Selection,
+};
 
 #[derive(Debug)]
 // todo: This, or a PDB-specific format?
@@ -18,6 +20,12 @@ pub struct Molecule {
     pub chains: Vec<Chain>,
     pub residues: Vec<Residue>,
     pub metadata: Option<PdbMetaData>,
+    /// Solvent-accessible surface. Details may evolve.
+    /// Current structure is a Vec of rings.
+    /// Initializes to empty; updated A/R when the appropriate view is selected.
+    pub sa_surface_pts: Option<Vec<Vec<Vec3F32>>>,
+    /// Stored in scene meshes; this variable keeps track if that's populated.
+    pub mesh_created: bool,
 }
 
 impl Molecule {
@@ -136,6 +144,8 @@ impl Molecule {
             chains,
             residues,
             metadata: None,
+            sa_surface_pts: None,
+            mesh_created: false,
         }
     }
 
