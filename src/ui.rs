@@ -255,35 +255,35 @@ fn cam_controls(
             .on_hover_text("Hotkey: A")
             // `is_pointer_button_down_on()` is ideal, but stops after ~1s. Using hover +
             // pointer.button_down check fails too. (Bug in EGUI?)
-            // .is_pointer_button_down_on()
-            .hovered()
+            .is_pointer_button_down_on()
+            // .hovered()
         {
             state_ui.inputs_commanded.left = true;
             movement_vec = Some(Vec3::new(-CAM_BUTTON_POS_STEP * state_ui.dt, 0., 0.));
         }
-        if ui.button("➡").on_hover_text("Hotkey: D").hovered() {
+        if ui.button("➡").on_hover_text("Hotkey: D").is_pointer_button_down_on() {
             state_ui.inputs_commanded.right = true;
             movement_vec = Some(Vec3::new(CAM_BUTTON_POS_STEP * state_ui.dt, 0., 0.));
         }
-        if ui.button("⬇").on_hover_text("Hotkey: C").hovered() {
+        if ui.button("⬇").on_hover_text("Hotkey: C").is_pointer_button_down_on() {
             state_ui.inputs_commanded.down = true;
             movement_vec = Some(Vec3::new(0., -CAM_BUTTON_POS_STEP * state_ui.dt, 0.));
         }
-        if ui.button("⬆").on_hover_text("Hotkey: Space").hovered() {
+        if ui.button("⬆").on_hover_text("Hotkey: Space").is_pointer_button_down_on() {
             state_ui.inputs_commanded.up = true;
             movement_vec = Some(Vec3::new(0., CAM_BUTTON_POS_STEP * state_ui.dt, 0.));
         }
-        if ui.button("⬋").on_hover_text("Hotkey: S").hovered() {
+        if ui.button("⬋").on_hover_text("Hotkey: S").is_pointer_button_down_on() {
             state_ui.inputs_commanded.back = true;
             movement_vec = Some(Vec3::new(0., 0., -CAM_BUTTON_POS_STEP * state_ui.dt));
         }
-        if ui.button("⬈").on_hover_text("Hotkey: W").hovered() {
+        if ui.button("⬈").on_hover_text("Hotkey: W").is_pointer_button_down_on() {
             state_ui.inputs_commanded.fwd = true;
             movement_vec = Some(Vec3::new(0., 0., CAM_BUTTON_POS_STEP * state_ui.dt));
         }
 
         // Rotation (Alternative to keyboard)
-        if ui.button("⟲").on_hover_text("Hotkey: Q").hovered() {
+        if ui.button("⟲").on_hover_text("Hotkey: Q").is_pointer_button_down_on() {
             state_ui.inputs_commanded.roll_ccw = true;
             let fwd = cam.orientation.rotate_vec(FWD_VEC);
             rotation = Some(Quaternion::from_axis_angle(
@@ -291,7 +291,7 @@ fn cam_controls(
                 CAM_BUTTON_ROT_STEP * state_ui.dt,
             ));
         }
-        if ui.button("⟳").on_hover_text("Hotkey: R").hovered() {
+        if ui.button("⟳").on_hover_text("Hotkey: R").is_pointer_button_down_on() {
             state_ui.inputs_commanded.roll_ccw = true;
             let fwd = cam.orientation.rotate_vec(FWD_VEC);
             rotation = Some(Quaternion::from_axis_angle(
@@ -344,7 +344,7 @@ fn selected_data(mol: &Molecule, selection: Selection, ui: &mut Ui) {
         Selection::Residue(sel_i) => {
             let res = &mol.residues[sel_i];
             let name = match &res.res_type {
-                ResidueType::AminoAcid(aa) => aa.to_str(AaIdent::ThreeLetters),
+                ResidueType::AminoAcid(aa) => aa.to_string(),
                 ResidueType::Water => "Water".to_owned(),
                 ResidueType::Other(name) => name.clone(),
             };
@@ -560,6 +560,7 @@ fn selection_section(
             if state.selection != Selection::None {
                 selected_data(mol, state.selection, ui);
 
+                ui.add_space(COL_SPACING/2.);
                 if ui.button("Move cam to").clicked() {
                     let atom_sel = mol.get_sel_atom(state.selection);
 

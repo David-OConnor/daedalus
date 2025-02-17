@@ -46,3 +46,9 @@ in 6 degrees of freedom, allowing you to easily view the molecule from any persp
 - **Right arrow**: Select next residue
 
 
+### Erratta
+- Cartoon view (Showing helices and sheets) is currently unavailable.
+- The only van der Waals surface view currently available is *dots*. No mesh yet.
+- The GUI buttons for movement and rotation stop working after 1 second of movement.
+
+

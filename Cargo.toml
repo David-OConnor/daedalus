@@ -30,8 +30,8 @@ rayon = "^1.10.0"  # Parallel execution on CPU using thread pools.
 cudarc = { version = "^0.13.3", optional=true, features=["cuda-12060"] }
 
 # For reading PDB and mmCIF files
-pdbtbx = "^0.12.0"
-#pdbtbx = { path = "../pdbtbx" }
+#pdbtbx = "^0.12.0"
+pdbtbx = { path = "../pdbtbx" }
 
 # todo: Eventually, audit this lib; may have some heavy deps?
 #rust-sasa = "^0.2.4"

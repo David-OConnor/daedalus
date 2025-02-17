@@ -4,7 +4,7 @@ use std::{collections::HashMap, fmt};
 
 use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 use na_seq::AminoAcid;
-use pdbtbx::PDB;
+use pdbtbx::{SecondaryStructure, PDB};
 use rayon::prelude::*;
 
 use crate::{
@@ -26,6 +26,7 @@ pub struct Molecule {
     pub sa_surface_pts: Option<Vec<Vec<Vec3F32>>>,
     /// Stored in scene meshes; this variable keeps track if that's populated.
     pub mesh_created: bool,
+    pub secondary_structure: Vec<SecondaryStructure>
 }
 
 impl Molecule {
@@ -146,6 +147,7 @@ impl Molecule {
             metadata: None,
             sa_surface_pts: None,
             mesh_created: false,
+            secondary_structure: pdb.secondary_structure.clone(),
         }
     }
 
@@ -382,3 +384,25 @@ pub fn aa_color(aa: AminoAcid) -> (f32, f32, f32) {
         AminoAcid::Trp => (0.121, 0.941, 0.121),
     }
 }
+
+
+// todo: A/R.
+
+// #[derive(Debug, Clone, PartialEq)]
+// /// http://www.bmsc.washington.edu/CrystaLinks/man/pdb/part_42.html
+// pub enum HelixClass {
+//     Right-handed alpha (default)                1
+// Right-handed omega                          2
+// Right-handed pi                             3
+// Right-handed gamma                          4
+// Right-handed 310                            5
+// Left-handed alpha                           6
+// Left-handed omega                           7
+// Left-handed gamma                           8
+// 27 ribbon/helix                             9
+// Polyproline                                10
+// }
+//
+// impl HelixClass {
+//     pub fn from
+// }
