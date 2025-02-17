@@ -4,9 +4,8 @@ use std::{f32::consts::TAU, fmt};
 
 use bincode::{Decode, Encode};
 use graphics::{
-    adjust_camera,
-    event::{RawKeyEvent, WindowEvent},
-    winit::keyboard::{KeyCode, PhysicalKey, PhysicalKey::Code},
+    event::{WindowEvent},
+    winit::keyboard::{KeyCode, PhysicalKey::Code},
     Camera, ControlScheme, DeviceEvent, ElementState, EngineUpdates, Entity, InputSettings,
     LightType, Lighting, Mesh, PointLight, Scene, UiLayout, UiSettings, FWD_VEC, RIGHT_VEC, UP_VEC,
 };
@@ -14,13 +13,13 @@ use lin_alg::{
     f32::{Quaternion, Vec3},
     map_linear,
 };
-
 use crate::{
-    molecule::{aa_color, AtomRole, BondCount, Chain, Molecule, ResidueType},
+    molecule::{aa_color, AtomRole, BondCount, Chain, Residue},
     ui::ui_handler,
     util::{cycle_res_selected, find_selected_atom, mol_center_size, points_along_ray},
-    Selection, State, StateUi, StateVolatile, ViewSelLevel,
+    Selection, State,  ViewSelLevel,
 };
+use crate::molecule::Atom;
 
 type Color = (f32, f32, f32);
 
@@ -38,13 +37,15 @@ pub const MESH_SPHERE: usize = 0;
 pub const MESH_CUBE: usize = 1;
 pub const MESH_BOND: usize = 2;
 pub const MESH_SURFACE: usize = 3; // Van Der Waals surface.
+// pub const MESH_SPHERE_LOWRES: usize = 4;
 
 const SELECTION_DIST_THRESH_SMALL: f32 = 0.7; // e.g. ball + stick
 const SELECTION_DIST_THRESH_LARGE: f32 = 1.3; // e.g. VDW views.
 
 // todo: By bond type etc
 const BOND_COLOR: Color = (0.2, 0.2, 0.2);
-const BOND_RADIUS: f32 = 0.10;
+const BOND_RADIUS: f32 = 0.12;
+// const BOND_CAP_RADIUS: f32 = 1./BOND_RADIUS;
 const BOND_RADIUS_DOUBLE: f32 = 0.07;
 
 pub const COLOR_SELECTED: Color = (1., 0., 0.);
@@ -128,6 +129,44 @@ fn set_lighting(center: Vec3, size: f32) -> Lighting {
     }
 }
 
+fn atom_color(atom: &Atom, i: usize, residues: &[Residue], selection: Selection, view_sel_level: ViewSelLevel) -> Color {
+    let mut result = match view_sel_level {
+        ViewSelLevel::Atom => atom.element.color(),
+        ViewSelLevel::Residue => {
+            let c = match atom.amino_acid {
+                Some(aa) => aa_color(aa),
+                None => COLOR_AA_NON_RESIDUE,
+            };
+            // Below is currently equivalent:
+            // for res in &mol.residues {
+            //     if res.atoms.contains(&i) {
+            //         if let ResidueType::AminoAcid(aa) = res.res_type {
+            //             c = aa_color(aa);
+            //         }
+            //     }
+            // }
+            c
+        }
+    };
+
+    // If selected, the selected color overrides the element or residue color.
+    match selection {
+        Selection::Atom(sel_i) => {
+            if sel_i == i {
+                result = COLOR_SELECTED;
+            }
+        }
+        Selection::Residue(sel_i) => {
+            if residues[sel_i].atoms.contains(&i) {
+                result = COLOR_SELECTED;
+            }
+        }
+        Selection::None => (),
+    }
+
+    result
+}
+
 /// Refreshes entities with the model passed.
 /// Sensitive to various view configuration parameters.
 pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: bool) {
@@ -148,6 +187,8 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
     // Draw atoms.
     if [MoleculeView::BallAndStick, MoleculeView::Spheres].contains(&ui.mol_view) {
         for (i, atom) in mol.atoms.iter().enumerate() {
+            let color_atom = atom_color(&atom, i, &mol.residues, state.selection, state.ui.view_sel_level);
+
             let mut chain_not_sel = false;
             for chain in &chains_invis {
                 if chain.atoms.contains(&i) {
@@ -184,40 +225,6 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                 }
             }
 
-            let mut color = match ui.view_sel_level {
-                ViewSelLevel::Atom => atom.element.color(),
-                ViewSelLevel::Residue => {
-                    let c = match atom.amino_acid {
-                        Some(aa) => aa_color(aa),
-                        None => COLOR_AA_NON_RESIDUE,
-                    };
-                    // Below is currently equivalent:
-                    // for res in &mol.residues {
-                    //     if res.atoms.contains(&i) {
-                    //         if let ResidueType::AminoAcid(aa) = res.res_type {
-                    //             c = aa_color(aa);
-                    //         }
-                    //     }
-                    // }
-                    c
-                }
-            };
-
-            // If selected, the selected color overrides the element or residue color.
-            match state.selection {
-                Selection::Atom(sel_i) => {
-                    if sel_i == i {
-                        color = COLOR_SELECTED;
-                    }
-                }
-                Selection::Residue(sel_i) => {
-                    if mol.residues[sel_i].atoms.contains(&i) {
-                        color = COLOR_SELECTED;
-                    }
-                }
-                Selection::None => (),
-            }
-
             let radius = match ui.mol_view {
                 MoleculeView::Spheres => atom.element.vdw_radius(),
                 _ => 0.3,
@@ -228,7 +235,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                 atom.posit.into(),
                 Quaternion::new_identity(),
                 radius,
-                color,
+                color_atom,
                 ATOM_SHINYNESS,
             ));
         }
@@ -241,6 +248,9 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
         for bond in &mol.bonds {
             let atom_0 = &mol.atoms[bond.atom_0];
             let atom_1 = &mol.atoms[bond.atom_1];
+
+            let mut color_atom_0 = atom_color(&atom_0, bond.atom_0, &mol.residues, state.selection, state.ui.view_sel_level);
+            let mut color_atom_1 = atom_color(&atom_1, bond.atom_1, &mol.residues, state.selection, state.ui.view_sel_level);
 
             if ui.mol_view == MoleculeView::Backbone && !bond.is_backbone {
                 continue;
@@ -288,16 +298,8 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
             let scale = Some(Vec3::new(1., diff.magnitude(), 1.));
             let scale_multibond = Some(Vec3::new(0.7, diff.magnitude(), 0.7));
 
-            // todo: Consider redoing this color logic.
-            let color = if [MoleculeView::Sticks].contains(&ui.mol_view) {
-                // todo: A/R between teh two bonds. May need two bond elements.
-                atom_0.element.color()
-            } else {
-                BOND_COLOR
-            };
-
             match ui.mol_view {
-                MoleculeView::Sticks => {
+                MoleculeView::Sticks | MoleculeView::Backbone => {
                     // Split the bond into two entities, so you can color-code them separately based
                     // on which atom the half is closer to.
 
@@ -306,10 +308,15 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
 
                     // todo: Residue color etc A/R
                     let mut entity_0 =
-                        Entity::new(MESH_BOND, center_0, orientation, 1., atom_0.element.color(), BODY_SHINYNESS);
+                        Entity::new(MESH_BOND, center_0, orientation, 1., color_atom_0, BODY_SHINYNESS);
 
                     let mut entity_1 =
-                        Entity::new(MESH_BOND, center_1, orientation, 1., atom_1.element.color(), BODY_SHINYNESS);
+                        Entity::new(MESH_BOND, center_1, orientation, 1., color_atom_1, BODY_SHINYNESS);
+
+                    // These spheres are to put a rounded cap on each bond.
+                    // todo: You only need a dome; performance implications.
+                    let rounding_0 = Entity::new(MESH_SPHERE, posit_0, Quaternion::new_identity(), BOND_RADIUS, color_atom_0, BODY_SHINYNESS);
+                    let rounding_1 = Entity::new(MESH_SPHERE, posit_1, Quaternion::new_identity(), BOND_RADIUS, color_atom_1, BODY_SHINYNESS);
 
                     // todo: Extra mag calc here from above; perf implication.
                     let scale_half = Some(Vec3::new(1., diff.magnitude()/2., 1.));
@@ -318,8 +325,16 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
 
                     scene.entities.push(entity_0);
                     scene.entities.push(entity_1);
+                    scene.entities.push(rounding_0);
+                    scene.entities.push(rounding_1);
                 }
                 _ => {
+                    let color = if ui.mol_view == MoleculeView::BallAndStick {
+                        BOND_COLOR
+                    } else {
+                        color_atom_0
+                    };
+
                     // todo: Consider if you want to display multi-bonds in stick view. Likely.
                     let bond_count = match ui.mol_view {
                         MoleculeView::Backbone | MoleculeView::Sticks => BondCount::Single,
@@ -641,8 +656,9 @@ pub fn render(mut state: State) {
             Mesh::new_sphere(1., 16, 16),
             // Mesh::from_obj_file("sphere.obj"),
             Mesh::new_box(1., 1., 1.),
-            Mesh::new_cylinder(1., BOND_RADIUS, 6),
+            Mesh::new_cylinder(1., BOND_RADIUS, 20),
             Mesh::new_box(1., 1., 1.), // todo: Temp. For VDW surface.
+            Mesh::new_sphere(1., 8, 8), // low-res sphere
         ],
         entities: Vec::new(),
         camera: Camera {
