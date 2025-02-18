@@ -33,6 +33,8 @@ pub struct PerMolToSave {
     metadata: Option<PdbMetaData>,
     hide_sidechains: bool,
     hide_water: bool,
+    hide_hetero: bool,
+    hide_non_hetero: bool,
 }
 
 impl PerMolToSave {
@@ -57,6 +59,8 @@ impl PerMolToSave {
             metadata,
             hide_sidechains: state.ui.hide_sidechains,
             hide_water: state.ui.hide_water,
+            hide_hetero: state.ui.hide_hetero,
+            hide_non_hetero: state.ui.hide_non_hetero,
         }
     }
 }
@@ -92,6 +96,8 @@ impl State {
                 self.ui.chain_to_pick_res = data.chain_to_pick_res;
                 self.ui.hide_sidechains = data.hide_sidechains;
                 self.ui.hide_water = data.hide_water;
+                self.ui.hide_hetero = data.hide_hetero;
+                self.ui.hide_non_hetero = data.hide_non_hetero;
 
                 if let Some(md) = &data.metadata {
                     mol.metadata = Some(md.clone())

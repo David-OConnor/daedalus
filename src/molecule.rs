@@ -26,7 +26,7 @@ pub struct Molecule {
     pub sa_surface_pts: Option<Vec<Vec<Vec3F32>>>,
     /// Stored in scene meshes; this variable keeps track if that's populated.
     pub mesh_created: bool,
-    pub secondary_structure: Vec<SecondaryStructure>
+    pub secondary_structure: Vec<SecondaryStructure>,
 }
 
 impl Molecule {
@@ -304,6 +304,7 @@ pub struct Atom {
     pub element: Element,
     pub role: Option<AtomRole>,
     pub amino_acid: Option<AminoAcid>, // todo: Duplicate with storing atom IDs with residues.
+    pub hetero: bool,
 }
 
 impl Atom {
@@ -346,6 +347,7 @@ impl Atom {
             // amino_acid: AminoAcid::from_pdb(pdb.r)
             role,
             amino_acid: amino_acid.copied(),
+            hetero: atom_pdb.hetero(),
         }
     }
 
@@ -384,7 +386,6 @@ pub fn aa_color(aa: AminoAcid) -> (f32, f32, f32) {
         AminoAcid::Trp => (0.121, 0.941, 0.121),
     }
 }
-
 
 // todo: A/R.
 

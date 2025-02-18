@@ -4,6 +4,7 @@ mod amino_acid_coords;
 mod asa;
 mod bond_inference;
 mod cartoon_mesh;
+mod docking;
 mod download_pdb;
 mod drug_like;
 mod input;
@@ -281,9 +282,13 @@ struct StateUi {
     // For selecting residues from the GUI.
     chain_to_pick_res: Option<usize>,
     /// Workaround for a bug or limitation in EGUI's `is_pointer_button_down_on`.
-    inputs_commanded: InputsCommanded,
+    // inputs_commanded: InputsCommanded,
     hide_sidechains: bool,
     hide_water: bool,
+    /// Hide hetero atoms: i.e. ones not part of a polypeptide.
+    hide_hetero: bool,
+    hide_non_hetero: bool,
+    middle_click_down: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]

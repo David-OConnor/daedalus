@@ -4,6 +4,7 @@ use std::{f32::consts::TAU, fmt};
 
 use bincode::{Decode, Encode};
 use graphics::{
+    event::MouseScrollDelta,
     winit::keyboard::{KeyCode, PhysicalKey::Code},
     Camera, ControlScheme, DeviceEvent, ElementState, EngineUpdates, Entity, InputSettings,
     LightType, Lighting, Mesh, PointLight, Scene, UiLayout, UiSettings, WindowEvent, FWD_VEC,
@@ -30,6 +31,7 @@ const WINDOW_SIZE_Y: f32 = 1_000.;
 const BACKGROUND_COLOR: Color = (0., 0., 0.);
 pub const RENDER_DIST: f32 = 1_000.;
 
+// todo: Shinyness broken?
 pub const ATOM_SHINYNESS: f32 = 12.;
 pub const BODY_SHINYNESS: f32 = 12.;
 
@@ -61,6 +63,9 @@ pub const CAM_INIT_OFFSET: f32 = 10.;
 pub const OUTSIDE_LIGHTING_OFFSET: f32 = 400.;
 
 pub const COLOR_AA_NON_RESIDUE: Color = (0., 0.8, 1.0);
+
+const MOVEMENT_SENS: f32 = 10.;
+const SCROLL_MOVE_AMT: f32 = 5.;
 
 #[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]
 pub enum MoleculeView {
@@ -100,36 +105,14 @@ fn set_lighting(center: Vec3, size: f32) -> Lighting {
     Lighting {
         ambient_color: white,
         ambient_intensity: 0.12,
-        point_lights: vec![
-            // Light in the middle
-            // PointLight {
-            //     type_: LightType::Omnidirectional,
-            //     position: center,
-            //     diffuse_color: white,
-            //     specular_color: white,
-            //     diffuse_intensity: 5.,
-            //     specular_intensity: 50.,
-            // },
-
-            // // Light from the right
-            // PointLight {
-            //     type_: LightType::Omnidirectional,
-            //     position: center + Vec3::new(0., 0., size + OUTSIDE_LIGHTING_OFFSET),
-            //     diffuse_color: white,
-            //     specular_color: white,
-            //     diffuse_intensity: 4_000.,
-            //     specular_intensity: 16_000.,
-            // },
-            // Light from above
-            PointLight {
-                type_: LightType::Omnidirectional,
-                position: center + Vec3::new(100., size + OUTSIDE_LIGHTING_OFFSET, 0.),
-                diffuse_color: white,
-                specular_color: white,
-                diffuse_intensity: 10_000.,
-                specular_intensity: 20_000.,
-            },
-        ],
+        point_lights: vec![PointLight {
+            type_: LightType::Omnidirectional,
+            position: center + Vec3::new(100., size + OUTSIDE_LIGHTING_OFFSET, 0.),
+            diffuse_color: white,
+            specular_color: white,
+            diffuse_intensity: 10_000.,
+            specular_intensity: 60_000.,
+        }],
     }
 }
 
@@ -251,14 +234,6 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
     // Draw atoms.
     if [MoleculeView::BallAndStick, MoleculeView::SpaceFill].contains(&ui.mol_view) {
         for (i, atom) in mol.atoms.iter().enumerate() {
-            let color_atom = atom_color(
-                &atom,
-                i,
-                &mol.residues,
-                state.selection,
-                state.ui.view_sel_level,
-            );
-
             let mut chain_not_sel = false;
             for chain in &chains_invis {
                 if chain.atoms.contains(&i) {
@@ -283,6 +258,12 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                 }
             }
 
+            if state.ui.hide_hetero && atom.hetero {
+                continue;
+            } else if !state.ui.hide_non_hetero && !atom.hetero {
+                continue;
+            }
+
             if ui.show_nearby_only {
                 if ui.show_nearby_only {
                     let atom_sel = mol.get_sel_atom(state.selection);
@@ -299,6 +280,14 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                 MoleculeView::SpaceFill => atom.element.vdw_radius(),
                 _ => 0.3,
             };
+
+            let color_atom = atom_color(
+                &atom,
+                i,
+                &mol.residues,
+                state.selection,
+                state.ui.view_sel_level,
+            );
 
             scene.entities.push(Entity::new(
                 MESH_SPHERE,
@@ -367,6 +356,12 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                         }
                     }
                 }
+            }
+
+            if state.ui.hide_hetero && atom_0.hetero && atom_1.hetero {
+                continue;
+            } else if !state.ui.hide_non_hetero && !atom_0.hetero && !atom_1.hetero {
+                continue;
             }
 
             let posit_0: Vec3 = atom_0.posit.into();
@@ -600,13 +595,26 @@ fn event_dev_handler(
     state_: &mut State,
     event: DeviceEvent,
     scene: &mut Scene,
-    _dt: f32,
+    dt: f32,
 ) -> EngineUpdates {
     let mut updates = EngineUpdates::default();
 
     let mut redraw = false;
 
     match event {
+        // Move the camera forward and back on scroll.
+        DeviceEvent::MouseWheel { delta } => match delta {
+            MouseScrollDelta::PixelDelta(_) => (),
+            MouseScrollDelta::LineDelta(_x, y) => {
+                let mut movement_vec = Vec3::new(0., 0., SCROLL_MOVE_AMT);
+                if y < 0. {
+                    movement_vec *= -1.;
+                }
+
+                scene.camera.position += scene.camera.orientation.rotate_vec(movement_vec);
+                updates.camera = true;
+            }
+        },
         DeviceEvent::Button { button, state } => {
             // Workaround for EGUI's built-in way of doing this being broken
             // todo: This workaround isn't working due to inputs being disabled if mouse is in the GUI.
@@ -692,6 +700,13 @@ fn event_dev_handler(
                     ElementState::Released => (),
                 }
             }
+            if button == 2 {
+                // Allow mouse movement to move the camera on middle click.
+                state_.ui.middle_click_down = match state {
+                    ElementState::Pressed => true,
+                    ElementState::Released => false,
+                }
+            }
         }
         DeviceEvent::Key(key) => match key.state {
             ElementState::Pressed => match key.physical_key {
@@ -734,6 +749,21 @@ fn event_dev_handler(
             },
             ElementState::Released => (),
         },
+        DeviceEvent::MouseMotion { delta } => {
+            // Free look handled by the engine; handle middle-click-move here.
+            if state_.ui.middle_click_down {
+                // The same movement sensitivity scaler we use for the (1x effective multiplier)
+                // on keyboard movement seems to work well enough here.
+                let movement_vec = Vec3::new(
+                    delta.0 as f32 * MOVEMENT_SENS * dt,
+                    -delta.1 as f32 * MOVEMENT_SENS * dt,
+                    0.,
+                );
+
+                scene.camera.position += scene.camera.orientation.rotate_vec(movement_vec);
+                updates.camera = true;
+            }
+        }
         _ => (),
     }
 
@@ -800,7 +830,7 @@ pub fn render(mut state: State) {
 
     let input_settings = InputSettings {
         initial_controls: ControlScheme::FreeCamera,
-        move_sens: 10.0,
+        move_sens: MOVEMENT_SENS,
         ..Default::default()
     };
     let ui_settings = UiSettings {

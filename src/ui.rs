@@ -1,7 +1,8 @@
 use std::{f32::consts::TAU, path::Path, time::Instant};
 
 use egui::{
-    Color32, ComboBox, Context, RichText, ScrollArea, Slider, TextEdit, TopBottomPanel, Ui,
+    Color32, ComboBox, Context, PointerButton, RichText, ScrollArea, Slider, TextEdit,
+    TopBottomPanel, Ui,
 };
 use graphics::{Camera, EngineUpdates, Scene, FWD_VEC, RIGHT_VEC, UP_VEC};
 use lin_alg::f32::{Quaternion, Vec3};
@@ -26,8 +27,11 @@ pub const VIEW_DEPTH_MAX: u16 = 200;
 const NEARBY_THRESH_MIN: u16 = 5;
 const NEARBY_THRESH_MAX: u16 = 60;
 
-const CAM_BUTTON_POS_STEP: f32 = 30.;
-const CAM_BUTTON_ROT_STEP: f32 = TAU / 3.;
+// todo: Teese aren't reacting correctly; too slow for the values set.
+// const CAM_BUTTON_POS_STEP: f32 = 30.;
+// const CAM_BUTTON_ROT_STEP: f32 = TAU / 3.;
+const CAM_BUTTON_POS_STEP: f32 = 30. * 3.;
+const CAM_BUTTON_ROT_STEP: f32 = TAU / 3. * 3.;
 
 const COLOR_ACTIVE: Color32 = Color32::LIGHT_GREEN;
 
@@ -248,7 +252,14 @@ fn cam_controls(
         let mut movement_vec = None;
         let mut rotation = None;
 
-        state_ui.inputs_commanded = Default::default();
+        // state_ui.inputs_commanded = Default::default();
+
+        // Workaround for .is_pointer_button_down() stopping after 1s.
+        // let pointer_down = {
+        //     let input = ui.input(|i| i.clone());
+        //     println!("Pointer: {:?}", input.pointer);
+        //     input.pointer.button_down(PointerButton::Primary)
+        // };
 
         if ui
             .button("⬅")
@@ -256,43 +267,75 @@ fn cam_controls(
             // `is_pointer_button_down_on()` is ideal, but stops after ~1s. Using hover +
             // pointer.button_down check fails too. (Bug in EGUI?)
             .is_pointer_button_down_on()
-            // .hovered()
         {
-            state_ui.inputs_commanded.left = true;
+            // state_ui.inputs_commanded.left = true;
             movement_vec = Some(Vec3::new(-CAM_BUTTON_POS_STEP * state_ui.dt, 0., 0.));
         }
-        if ui.button("➡").on_hover_text("Hotkey: D").is_pointer_button_down_on() {
-            state_ui.inputs_commanded.right = true;
+        if ui
+            .button("➡")
+            .on_hover_text("Hotkey: D")
+            .is_pointer_button_down_on()
+        {
+            // state_ui.inputs_commanded.right = true;
             movement_vec = Some(Vec3::new(CAM_BUTTON_POS_STEP * state_ui.dt, 0., 0.));
         }
-        if ui.button("⬇").on_hover_text("Hotkey: C").is_pointer_button_down_on() {
-            state_ui.inputs_commanded.down = true;
+        if ui
+            .button("⬇")
+            .on_hover_text("Hotkey: C")
+            .is_pointer_button_down_on()
+        {
+            // state_ui.inputs_commanded.down = true;
             movement_vec = Some(Vec3::new(0., -CAM_BUTTON_POS_STEP * state_ui.dt, 0.));
         }
-        if ui.button("⬆").on_hover_text("Hotkey: Space").is_pointer_button_down_on() {
-            state_ui.inputs_commanded.up = true;
+        if ui
+            .button("⬆")
+            .on_hover_text("Hotkey: Space")
+            .is_pointer_button_down_on()
+        {
+            // state_ui.inputs_commanded.up = true;
             movement_vec = Some(Vec3::new(0., CAM_BUTTON_POS_STEP * state_ui.dt, 0.));
         }
-        if ui.button("⬋").on_hover_text("Hotkey: S").is_pointer_button_down_on() {
-            state_ui.inputs_commanded.back = true;
+        if ui
+            .button("⬋")
+            .on_hover_text("Hotkey: S")
+            .is_pointer_button_down_on()
+        {
+            // state_ui.inputs_commanded.back = true;
             movement_vec = Some(Vec3::new(0., 0., -CAM_BUTTON_POS_STEP * state_ui.dt));
         }
-        if ui.button("⬈").on_hover_text("Hotkey: W").is_pointer_button_down_on() {
-            state_ui.inputs_commanded.fwd = true;
+
+        if ui
+            .button("⬈")
+            .on_hover_text("Hotkey: W")
+            .is_pointer_button_down_on()
+        {
+            // println!("Flats: {:?}", fwd_btn.flags);
+            // if fwd_btn.is_pointer_button_down_on() {
+            // if fwd_btn.hovered() && pointer_down {
+            // if fwd_btn.contains_pointer() && fwd_btn.clicked() {
+            // state_ui.inputs_commanded.fwd = true;
             movement_vec = Some(Vec3::new(0., 0., CAM_BUTTON_POS_STEP * state_ui.dt));
         }
 
         // Rotation (Alternative to keyboard)
-        if ui.button("⟲").on_hover_text("Hotkey: Q").is_pointer_button_down_on() {
-            state_ui.inputs_commanded.roll_ccw = true;
+        if ui
+            .button("⟲")
+            .on_hover_text("Hotkey: Q")
+            .is_pointer_button_down_on()
+        {
+            // state_ui.inputs_commanded.roll_ccw = true;
             let fwd = cam.orientation.rotate_vec(FWD_VEC);
             rotation = Some(Quaternion::from_axis_angle(
                 fwd,
                 CAM_BUTTON_ROT_STEP * state_ui.dt,
             ));
         }
-        if ui.button("⟳").on_hover_text("Hotkey: R").is_pointer_button_down_on() {
-            state_ui.inputs_commanded.roll_ccw = true;
+        if ui
+            .button("⟳")
+            .on_hover_text("Hotkey: R")
+            .is_pointer_button_down_on()
+        {
+            // state_ui.inputs_commanded.roll_ccw = true;
             let fwd = cam.orientation.rotate_vec(FWD_VEC);
             rotation = Some(Quaternion::from_axis_angle(
                 fwd,
@@ -560,7 +603,7 @@ fn selection_section(
             if state.selection != Selection::None {
                 selected_data(mol, state.selection, ui);
 
-                ui.add_space(COL_SPACING/2.);
+                ui.add_space(COL_SPACING / 2.);
                 if ui.button("Move cam to").clicked() {
                     let atom_sel = mol.get_sel_atom(state.selection);
 
@@ -705,23 +748,40 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
-                chain_selector(state, &mut redraw, ui);
+                ui.horizontal(|ui| {
+                    chain_selector(state, &mut redraw, ui);
+
+                    ui.add_space(COL_SPACING);
+
+                    // todo: Invert these so items show when checked.
+                    if ui
+                        .checkbox(&mut state.ui.hide_sidechains, "Hide sidechains")
+                        .changed()
+                    {
+                        redraw = true;
+                    }
+                    if ui
+                        .checkbox(&mut state.ui.hide_water, "Hide water")
+                        .changed()
+                    {
+                        redraw = true;
+                    }
+                    if ui
+                        .checkbox(&mut state.ui.hide_hetero, "Hide hetero")
+                        .changed()
+                    {
+                        redraw = true;
+                    }
+                    if ui
+                        .checkbox(&mut state.ui.hide_non_hetero, "Hide peptide")
+                        .changed()
+                    {
+                        redraw = true;
+                    }
+                });
+
                 residue_selector(state, &mut redraw, ui);
             });
-            ui.add_space(COL_SPACING);
-
-            if ui
-                .checkbox(&mut state.ui.hide_sidechains, "Hide sidechains")
-                .changed()
-            {
-                redraw = true;
-            }
-            if ui
-                .checkbox(&mut state.ui.hide_water, "Hide water")
-                .changed()
-            {
-                redraw = true;
-            }
         });
 
         ui.add_space(ROW_SPACING);
