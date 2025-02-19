@@ -50,22 +50,15 @@ fn load_file(
     reset_cam: &mut bool,
     engine_updates: &mut EngineUpdates,
 ) {
-    let pdb = load_pdb(&path);
+    state.open_molecule(&path);
 
-    if let Ok(p) = pdb {
-        state.pdb = Some(p);
-        state.molecule = Some(Molecule::from_pdb(state.pdb.as_ref().unwrap()));
-        state.update_from_prefs();
+    // todo: These only if successful.
+    *redraw = true;
+    *reset_cam = true;
+    engine_updates.entities = true;
 
-        *redraw = true;
-        *reset_cam = true;
-        engine_updates.entities = true;
-
-        state.to_save.last_opened = Some(path.to_owned());
-        state.update_save_prefs()
-    } else {
-        eprintln!("Error loading PDB file");
-    }
+    state.to_save.last_opened = Some(path.to_owned());
+    state.update_save_prefs()
 }
 
 fn _int_field(val: &mut usize, label: &str, redraw: &mut bool, ui: &mut Ui) {
@@ -414,9 +407,13 @@ fn residue_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
                 ui.spacing_mut().item_spacing.x = 8.0;
 
                 for (i, res) in mol.residues.iter().enumerate() {
+                    // For now, peptide residues only.
+                    if let ResidueType::Water = res.res_type {
+                        continue;
+                    }
+
                     // Only let the user select residue from the selected chain. This should keep
                     // it more organized, and keep UI space used down.
-
                     if !chain.residues.contains(&i) {
                         continue;
                     }
@@ -753,31 +750,86 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
                     ui.add_space(COL_SPACING);
 
+                    ui.label("Vis:");
+
+                    let color = if state.ui.hide_non_hetero {
+                        Color32::GRAY
+                    } else {
+                        COLOR_ACTIVE
+                    };
+                    if ui.button(RichText::new("Peptide").color(color)).clicked() {
+                        state.ui.hide_non_hetero = !state.ui.hide_non_hetero;
+                        redraw = true;
+                    }
+
+                    let color = if state.ui.hide_hetero {
+                        Color32::GRAY
+                    } else {
+                        COLOR_ACTIVE
+                    };
+                    if ui.button(RichText::new("Hetero").color(color)).clicked() {
+                        state.ui.hide_hetero = !state.ui.hide_hetero;
+                        redraw = true;
+                    }
+
+                    ui.add_space(COL_SPACING / 2.);
+
+                    if !state.ui.hide_non_hetero {
+                        // Subset of peptide.
+                        let color = if state.ui.hide_sidechains {
+                            Color32::GRAY
+                        } else {
+                            COLOR_ACTIVE
+                        };
+                        if ui
+                            .button(RichText::new("Sidechains").color(color))
+                            .clicked()
+                        {
+                            state.ui.hide_sidechains = !state.ui.hide_sidechains;
+                            redraw = true;
+                        }
+                    }
+
+                    if !state.ui.hide_hetero {
+                        // Subset of hetero.
+                        let color = if state.ui.hide_water {
+                            Color32::GRAY
+                        } else {
+                            COLOR_ACTIVE
+                        };
+                        if ui.button(RichText::new("Water").color(color)).clicked() {
+                            state.ui.hide_water = !state.ui.hide_water;
+                            redraw = true;
+                        }
+                    }
+
+                    // todo: Use selectable_value, or just colored buttons like chain vis, and sel res from?
                     // todo: Invert these so items show when checked.
-                    if ui
-                        .checkbox(&mut state.ui.hide_sidechains, "Hide sidechains")
-                        .changed()
-                    {
-                        redraw = true;
-                    }
-                    if ui
-                        .checkbox(&mut state.ui.hide_water, "Hide water")
-                        .changed()
-                    {
-                        redraw = true;
-                    }
-                    if ui
-                        .checkbox(&mut state.ui.hide_hetero, "Hide hetero")
-                        .changed()
-                    {
-                        redraw = true;
-                    }
-                    if ui
-                        .checkbox(&mut state.ui.hide_non_hetero, "Hide peptide")
-                        .changed()
-                    {
-                        redraw = true;
-                    }
+                    // if ui
+                    //     .checkbox(&mut state.ui.hide_sidechains, "Hide sidechains")
+                    //     .changed()
+                    // {
+                    //     redraw = true;
+                    // }
+                    // todo: Get hide water working.
+                    // if ui
+                    //     .checkbox(&mut state.ui.hide_water, "Hide water")
+                    //     .changed()
+                    // {
+                    //     redraw = true;
+                    // }
+                    // if ui
+                    //     .checkbox(&mut state.ui.hide_hetero, "Hide hetero")
+                    //     .changed()
+                    // {
+                    //     redraw = true;
+                    // }
+                    // if ui
+                    //     .checkbox(&mut state.ui.hide_non_hetero, "Hide peptide")
+                    //     .changed()
+                    // {
+                    //     redraw = true;
+                    // }
                 });
 
                 residue_selector(state, &mut redraw, ui);
@@ -815,7 +867,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
     // At init only.
     if state.volatile.ui_height < f32::EPSILON {
-        println!("Setting UI height: {:?}", ctx.used_size().y);
         state.volatile.ui_height = ctx.used_size().y;
     }
 

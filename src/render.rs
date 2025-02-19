@@ -251,7 +251,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                         continue;
                     }
                 }
-                if state.ui.hide_water {
+                if state.ui.hide_water || ui.mol_view == MoleculeView::SpaceFill {
                     if role == AtomRole::Water {
                         continue;
                     }
@@ -260,7 +260,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
 
             if state.ui.hide_hetero && atom.hetero {
                 continue;
-            } else if !state.ui.hide_non_hetero && !atom.hetero {
+            } else if state.ui.hide_non_hetero && !atom.hetero {
                 continue;
             }
 
@@ -360,7 +360,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
 
             if state.ui.hide_hetero && atom_0.hetero && atom_1.hetero {
                 continue;
-            } else if !state.ui.hide_non_hetero && !atom_0.hetero && !atom_1.hetero {
+            } else if state.ui.hide_non_hetero && !atom_0.hetero && !atom_1.hetero {
                 continue;
             }
 
@@ -665,9 +665,8 @@ fn event_dev_handler(
                                     &mol.atoms,
                                     &mol.residues,
                                     &selected_ray,
-                                    state_.ui.view_sel_level,
+                                    &state_.ui,
                                     &mol.chains,
-                                    state_.ui.hide_sidechains,
                                 );
 
                                 // todo: Debug code to draw teh ray on screen, so we can see why the selection is off.

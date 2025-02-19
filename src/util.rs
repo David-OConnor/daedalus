@@ -9,7 +9,7 @@ use na_seq::AaIdent;
 
 use crate::{
     molecule::{Atom, AtomRole, Chain, Residue, ResidueType},
-    Selection, State, ViewSelLevel, PREFS_SAVE_INTERVAL,
+    Selection, State, StateUi, ViewSelLevel, PREFS_SAVE_INTERVAL,
 };
 
 const MOVE_TO_TARGET_DIST: f32 = 15.;
@@ -45,68 +45,75 @@ pub fn find_selected_atom(
     atoms: &[Atom],
     ress: &[Residue],
     ray: &(Vec3F32, Vec3F32),
-    sel_level: ViewSelLevel,
+    ui: &StateUi,
     chains: &[Chain],
-    hide_sidechains: bool,
 ) -> Selection {
-    if !atoms_along_ray.is_empty() {
-        // todo: Also consider togglign between ones under the cursor near the front,
-        // todo and picking the one closest to the ray.
+    if atoms_along_ray.is_empty() {
+        return Selection::None;
+    }
 
-        let mut near_i = 0;
-        let mut near_dist = 99_999.;
+    // todo: Also consider togglign between ones under the cursor near the front,
+    // todo and picking the one closest to the ray.
 
-        for atom_i in atoms_along_ray {
-            let chains_this_atom: Vec<&Chain> =
-                chains.iter().filter(|c| c.atoms.contains(atom_i)).collect();
-            let mut chain_hidden = false;
-            for chain in &chains_this_atom {
-                if !chain.visible {
-                    chain_hidden = true;
-                    break;
+    let mut near_i = 0;
+    let mut near_dist = 99_999.;
+
+    for atom_i in atoms_along_ray {
+        let chains_this_atom: Vec<&Chain> =
+            chains.iter().filter(|c| c.atoms.contains(atom_i)).collect();
+        let mut chain_hidden = false;
+        for chain in &chains_this_atom {
+            if !chain.visible {
+                chain_hidden = true;
+                break;
+            }
+        }
+        if chain_hidden {
+            continue;
+        }
+
+        let atom = &atoms[*atom_i];
+
+        if ui.hide_sidechains {
+            if let Some(role) = atom.role {
+                if role == AtomRole::Sidechain {
+                    continue;
                 }
-            }
-            if chain_hidden {
-                continue;
-            }
-
-            let atom = &atoms[*atom_i];
-
-            if hide_sidechains {
-                if let Some(role) = atom.role {
-                    if role == AtomRole::Sidechain {
-                        continue;
-                    }
-                }
-            }
-
-            let posit: Vec3F32 = atom.posit.into();
-            let dist = (posit - ray.0).magnitude();
-            if dist < near_dist {
-                near_i = *atom_i;
-                near_dist = dist;
             }
         }
 
-        // This is equivalent to our empty check above, but catches the case of the atom count being
-        // empty due to hidden chains.
-        if near_dist == 99_999. {
-            return Selection::None;
+        if ui.hide_hetero && atom.hetero {
+            continue;
         }
 
-        match sel_level {
-            ViewSelLevel::Atom => Selection::Atom(near_i),
-            ViewSelLevel::Residue => {
-                for (i_res, res) in ress.iter().enumerate() {
-                    if res.atoms.contains(&near_i) {
-                        return Selection::Residue(i_res);
-                    }
-                }
-                Selection::None // Selected atom is not in a residue.
-            }
+        if ui.hide_non_hetero && !atom.hetero {
+            continue;
         }
-    } else {
-        Selection::None
+
+        let posit: Vec3F32 = atom.posit.into();
+        let dist = (posit - ray.0).magnitude();
+        if dist < near_dist {
+            near_i = *atom_i;
+            near_dist = dist;
+        }
+    }
+
+    // This is equivalent to our empty check above, but catches the case of the atom count being
+    // empty due to hidden chains.
+    if near_dist == 99_999. {
+        return Selection::None;
+    }
+
+    match ui.view_sel_level {
+        ViewSelLevel::Atom => Selection::Atom(near_i),
+        ViewSelLevel::Residue => {
+            for (i_res, res) in ress.iter().enumerate() {
+                if res.atoms.contains(&near_i) {
+                    return Selection::Residue(i_res);
+                }
+            }
+            Selection::None // Selected atom is not in a residue.
+        }
     }
 }
 

@@ -15,6 +15,7 @@ mod prefs;
 mod rcsb_api;
 mod render;
 mod save_load;
+mod sdf;
 mod ui;
 mod util;
 mod vibrations;
@@ -23,7 +24,7 @@ use std::{
     collections::HashMap,
     io,
     io::{ErrorKind, Read},
-    path::PathBuf,
+    path::{Path, PathBuf},
     str::FromStr,
     sync::Arc,
 };
@@ -42,6 +43,7 @@ use crate::{
     pdb::load_pdb,
     prefs::ToSave,
     render::{render, MoleculeView},
+    sdf::load_sdf,
     ui::VIEW_DEPTH_MAX,
 };
 
@@ -126,7 +128,7 @@ impl Element {
         }
     }
 
-    pub fn _from_letter(letter: &str) -> io::Result<Self> {
+    pub fn from_letter(letter: &str) -> io::Result<Self> {
         match letter.to_uppercase().as_ref() {
             "H" => Ok(Self::Hydrogen),
             "C" => Ok(Self::Carbon),
@@ -245,13 +247,13 @@ impl Default for StateVolatile {
             ..Default::default()
         }
         .add_file_filter(
-            "PDB/CIF",
+            "PDB/CIF/SDF",
             Arc::new(|p| {
                 let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
-                ext == "pdb" || ext == "cif"
+                ext == "pdb" || ext == "cif" || ext == "sdf"
             }),
         );
-        let load_dialog = FileDialog::with_config(cfg).default_file_filter("PDB/CIF");
+        let load_dialog = FileDialog::with_config(cfg).default_file_filter("PDB/CIF/SDF");
 
         Self {
             load_dialog,
@@ -344,6 +346,40 @@ impl State {
         self.ui.cam_snapshot = None;
         self.ui.chain_to_pick_res = None;
     }
+
+    pub fn open_molecule(&mut self, path: &Path) {
+        match path
+            .extension()
+            .unwrap_or_default()
+            .to_ascii_lowercase()
+            .to_str()
+            .unwrap_or_default()
+        {
+            "sdf" => {
+                let sdf = load_sdf(path);
+                if let Ok(s) = sdf {
+                    self.molecule = Some(Molecule::from_sdf(&s));
+                    self.update_from_prefs();
+
+                    println!("Molecule: {:?}", self.molecule);
+                } else {
+                    eprintln!("Error loading SDF file.");
+                }
+            }
+            _ => {
+                // e.g. cif, pdb
+                let pdb = load_pdb(path);
+                if let Ok(p) = pdb {
+                    self.pdb = Some(p);
+
+                    self.molecule = Some(Molecule::from_pdb(self.pdb.as_ref().unwrap()));
+                    self.update_from_prefs();
+                } else {
+                    eprintln!("Error loading PDB file.");
+                }
+            }
+        }
+    }
 }
 
 fn main() {
@@ -352,18 +388,9 @@ fn main() {
 
     state.load_prefs();
 
-    // todo: Update: Load the last_loaded one
-
-    if let Some(last_opened) = &state.to_save.last_opened {
-        let pdb = load_pdb(last_opened);
-        if let Ok(p) = pdb {
-            state.pdb = Some(p);
-
-            state.molecule = Some(Molecule::from_pdb(state.pdb.as_ref().unwrap()));
-            state.update_from_prefs();
-        } else {
-            eprintln!("Error loading PDB file at init.");
-        }
+    let last_opened = state.to_save.last_opened.clone();
+    if let Some(path) = &last_opened {
+        state.open_molecule(path);
     }
 
     render(state);

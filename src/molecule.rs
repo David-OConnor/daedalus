@@ -8,7 +8,8 @@ use pdbtbx::{SecondaryStructure, PDB};
 use rayon::prelude::*;
 
 use crate::{
-    asa::get_mesh_points, bond_inference::create_bonds, rcsb_api::PdbMetaData, Element, Selection,
+    asa::get_mesh_points, bond_inference::create_bonds, rcsb_api::PdbMetaData, sdf::Sdf, Element,
+    Selection,
 };
 
 #[derive(Debug)]
@@ -138,7 +139,7 @@ impl Molecule {
 
         let bonds = create_bonds(&atoms);
 
-        Molecule {
+        Self {
             ident: pdb.identifier.clone().unwrap_or_default(),
             atoms,
             bonds,
@@ -148,6 +149,38 @@ impl Molecule {
             sa_surface_pts: None,
             mesh_created: false,
             secondary_structure: pdb.secondary_structure.clone(),
+        }
+    }
+
+    pub fn from_sdf(sdf: &Sdf) -> Self {
+        let mut chains = Vec::new();
+        let mut residues = Vec::new();
+
+        let atom_indices: Vec<usize> = (0..sdf.atoms.len()).collect();
+
+        residues.push(Residue {
+            serial_number: 0,
+            res_type: ResidueType::Other("Unknown".to_string()),
+            atoms: atom_indices.clone(),
+        });
+
+        chains.push(Chain {
+            id: "A".to_string(),
+            residues: vec![0],
+            atoms: atom_indices,
+            visible: true,
+        });
+
+        Self {
+            ident: "".to_string(),
+            atoms: sdf.atoms.clone(),
+            bonds: Vec::new(),
+            chains,
+            residues,
+            metadata: None,
+            sa_surface_pts: None,
+            mesh_created: false,
+            secondary_structure: Vec::new(),
         }
     }
 
@@ -297,7 +330,7 @@ impl Residue {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Atom {
     pub serial_number: usize,
     pub posit: Vec3,
@@ -316,9 +349,15 @@ impl Atom {
         // println!("Data: {:?}", atom_pdb.name());
 
         // Find the amino acid type this atom is part of, if applicable.
+        let mut is_water = false;
+
         let amino_acid = match aa_map.get(&atom_i) {
             Some(res_type) => match res_type {
                 ResidueType::AminoAcid(aa) => Some(aa),
+                ResidueType::Water => {
+                    is_water = true;
+                    None
+                }
                 _ => None,
             },
             None => None,
@@ -326,19 +365,21 @@ impl Atom {
 
         // todo: This may be fragile.
         // todo: I don't fully understand how these are annotated in files; apeing pdbtbx's approach for now.
-        let role = match amino_acid {
+        let mut role = match amino_acid {
             Some(_) => match atom_pdb.name() {
                 "CA" => Some(AtomRole::C_Alpha),
                 "C" => Some(AtomRole::C_Prime),
                 "N" => Some(AtomRole::N_Backbone),
                 "O" => Some(AtomRole::O_Backbone),
                 "H" | "H1" | "H2" | "H3" | "HA" | "HA2" | "HA3" => Some(AtomRole::H_Backbone),
-                // todo: Not under "name". Figure out how to handle A/R
-                // "HOH" => Some(AtomRole::Water),
                 _ => Some(AtomRole::Sidechain),
             },
             None => None,
         };
+
+        if is_water {
+            role = Some(AtomRole::Water);
+        }
 
         Self {
             serial_number: atom_pdb.serial_number(),

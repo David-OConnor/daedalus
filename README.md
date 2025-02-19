@@ -28,7 +28,7 @@ in 6 degrees of freedom, allowing you to easily view the molecule from any persp
 ### Mouse controls:
 - Hold the **left mouse button while dragging** to rotate the camera in pitch and yaw.
 - Hold the **middle mouse button while dragging** to move the camera left, right, up, and down.
-- Scroll to move the camera position forward and backwards.
+- Scroll to move the camera forward and backwards.
 - **Right click** to select the atom or residue under the cursor.
 
 

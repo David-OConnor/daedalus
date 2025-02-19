@@ -43,7 +43,8 @@ impl BondSpecs {
 }
 
 // If interatomic distance is within this distance of one of our known bond lenghts, consider it to be a bond.
-const BOND_LEN_THRESH: f64 = 0.04; // todo: Adjust A/R based on performance.
+// Relevant to this is both bond variability under various conditions, and measurement precision.
+const BOND_LEN_THRESH: f64 = 0.05; // todo: Adjust A/R based on performance.
 const GRID_SIZE: f64 = 1.6; // Slightly larger than the largest bond distance + thresh.
 
 #[rustfmt::skip]
