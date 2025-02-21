@@ -21,25 +21,27 @@ mod util;
 mod vibrations;
 
 use std::{
-    collections::HashMap,
     io,
     io::{ErrorKind, Read},
-    path::{Path, PathBuf},
+    path::Path,
     str::FromStr,
     sync::Arc,
 };
 
 use bincode::{Decode, Encode};
 use egui_file_dialog::{FileDialog, FileDialogConfig};
-use graphics::{Camera, InputsCommanded};
-use lin_alg::f32::{Quaternion, Vec3};
+use graphics::Camera;
+use lin_alg::{
+    f32::{Quaternion, Vec3},
+    f64::{Quaternion as QuaternionF64, Vec3 as Vec3F64},
+};
 use molecule::Molecule;
 use pdbtbx::{self, PDB};
-use prefs::PerMolToSave;
 use rayon::iter::ParallelIterator;
 
 use crate::{
-    navigation::{name_from_path, Tab},
+    molecule::Ligand2,
+    navigation::Tab,
     pdb::load_pdb,
     prefs::ToSave,
     render::{render, MoleculeView},
@@ -234,6 +236,7 @@ impl ViewSelLevel {
 /// Temprary, and generated state.
 struct StateVolatile {
     load_dialog: FileDialog,
+    load_ligand_dialog: FileDialog,
     /// We use this for offsetting our cursor selection.
     ui_height: f32,
     /// Center and size are used for setting the camera. Dependent on the molecule atom positions.
@@ -253,10 +256,12 @@ impl Default for StateVolatile {
                 ext == "pdb" || ext == "cif" || ext == "sdf"
             }),
         );
-        let load_dialog = FileDialog::with_config(cfg).default_file_filter("PDB/CIF/SDF");
+        let load_dialog = FileDialog::with_config(cfg.clone()).default_file_filter("PDB/CIF/SDF");
+        let load_ligand_dialog = FileDialog::with_config(cfg).default_file_filter("PDB/CIF/SDF");
 
         Self {
             load_dialog,
+            load_ligand_dialog,
             mol_center: Vec3::new_zero(),
             mol_size: 80.,
             ui_height: 0.,
@@ -328,6 +333,9 @@ struct State {
     pub volatile: StateVolatile,
     pub pdb: Option<PDB>,
     pub molecule: Option<Molecule>,
+    // todo: Instead of molecule and ligand fields, maybe `Vec<Molecule>`?
+    // pub ligand: Option<Molecule>,
+    pub ligand: Option<Ligand2>,
     // todo: Should selection-related go in StateUi?
     pub selection: Selection,
     pub cam_snapshots: Vec<CamSnapshot>,
@@ -347,7 +355,8 @@ impl State {
         self.ui.chain_to_pick_res = None;
     }
 
-    pub fn open_molecule(&mut self, path: &Path) {
+    // todo: Consider how you handle loading and storing of ligands vs targets.
+    pub fn open_molecule(&mut self, path: &Path, ligand: bool) {
         match path
             .extension()
             .unwrap_or_default()
@@ -357,11 +366,22 @@ impl State {
         {
             "sdf" => {
                 let sdf = load_sdf(path);
-                if let Ok(s) = sdf {
-                    self.molecule = Some(Molecule::from_sdf(&s));
-                    self.update_from_prefs();
 
-                    println!("Molecule: {:?}", self.molecule);
+                if let Ok(s) = sdf {
+                    let mol = Molecule::from_sdf(&s);
+
+                    if ligand {
+                        self.ligand = Some(Ligand2 {
+                            molecule: mol,
+                            // todo: Offset temp.
+                            offset: Vec3F64::new(3., 0., 0.),
+                            orientation: QuaternionF64::new_identity(),
+                        });
+                    } else {
+                        self.molecule = Some(mol);
+                    }
+
+                    self.update_from_prefs();
                 } else {
                     eprintln!("Error loading SDF file.");
                 }
@@ -371,8 +391,19 @@ impl State {
                 let pdb = load_pdb(path);
                 if let Ok(p) = pdb {
                     self.pdb = Some(p);
+                    let mol = Molecule::from_pdb(self.pdb.as_ref().unwrap());
 
-                    self.molecule = Some(Molecule::from_pdb(self.pdb.as_ref().unwrap()));
+                    if ligand {
+                        self.ligand = Some(Ligand2 {
+                            molecule: mol,
+                            // todo: Offset temp.
+                            offset: Vec3F64::new(3., 0., 0.),
+                            orientation: QuaternionF64::new_identity(),
+                        });
+                    } else {
+                        self.molecule = Some(mol);
+                    }
+
                     self.update_from_prefs();
                 } else {
                     eprintln!("Error loading PDB file.");
@@ -390,7 +421,7 @@ fn main() {
 
     let last_opened = state.to_save.last_opened.clone();
     if let Some(path) = &last_opened {
-        state.open_molecule(path);
+        state.open_molecule(path, false);
     }
 
     render(state);

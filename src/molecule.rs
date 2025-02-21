@@ -2,15 +2,15 @@
 use std::str::FromStr;
 use std::{collections::HashMap, fmt};
 
-use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
+use lin_alg::{
+    f32::Vec3 as Vec3F32,
+    f64::{Quaternion, Vec3},
+};
 use na_seq::AminoAcid;
 use pdbtbx::{SecondaryStructure, PDB};
 use rayon::prelude::*;
 
-use crate::{
-    asa::get_mesh_points, bond_inference::create_bonds, rcsb_api::PdbMetaData, sdf::Sdf, Element,
-    Selection,
-};
+use crate::{bond_inference::create_bonds, rcsb_api::PdbMetaData, sdf::Sdf, Element, Selection};
 
 #[derive(Debug)]
 // todo: This, or a PDB-specific format?
@@ -171,10 +171,12 @@ impl Molecule {
             visible: true,
         });
 
+        let bonds = create_bonds(&sdf.atoms);
+
         Self {
             ident: "".to_string(),
             atoms: sdf.atoms.clone(),
-            bonds: Vec::new(),
+            bonds,
             chains,
             residues,
             metadata: None,
@@ -234,6 +236,13 @@ impl fmt::Display for AtomRole {
     }
 }
 
+#[derive(Debug)]
+pub struct Ligand2 {
+    pub molecule: Molecule,
+    pub offset: Vec3,
+    pub orientation: Quaternion,
+}
+
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum BondType {
     // C+P from pdbtbx for now
@@ -267,8 +276,6 @@ pub struct Bond {
     pub atom_1: usize,
     pub is_backbone: bool,
 }
-
-pub struct Ligand {}
 
 #[derive(Debug)]
 pub struct Chain {
@@ -402,14 +409,14 @@ impl Atom {
 }
 
 /// Can't find a PyMol equiv. Experimenting
-pub fn aa_color(aa: AminoAcid) -> (f32, f32, f32) {
+pub const fn aa_color(aa: AminoAcid) -> (f32, f32, f32) {
     match aa {
         AminoAcid::Arg => (0.7, 0.2, 0.9),
         AminoAcid::His => (0.2, 1., 0.2),
         AminoAcid::Lys => (1., 0.3, 0.3),
         AminoAcid::Asp => (0.2, 0.2, 1.0),
         AminoAcid::Glu => (0.701, 0.7, 0.2),
-        AminoAcid::Ser => (0.9, 0.775, 0.25),
+        AminoAcid::Ser => (177. / 255., 187. / 255., 161. / 255.),
         AminoAcid::Thr => (1.0, 0.502, 0.),
         AminoAcid::Asn => (0.878, 0.4, 0.2),
         AminoAcid::Gln => (0.784, 0.502, 0.2),

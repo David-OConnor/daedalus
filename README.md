@@ -2,7 +2,7 @@
 
 For viewing and performing minor edits on moleculars; espsecially proteins and nucleic acids.
 
-Conceptually similar to [PyMol](https://www.pymol.org/). Less functionality. Faster. Intuitive, flexible camera controls.
+Conceptually similar to [PyMol](https://www.pymol.org/), Discovery Studio, Chimera etc.
 
 ## Functionality
 

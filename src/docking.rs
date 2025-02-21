@@ -10,6 +10,8 @@
 //!
 //! Schrodinger Maestro: The one to beat.
 //!
+//! BIOVIA Discovery Studio Visualizer: Free viewer from Dassault (SolidWorks maker): https://discover.3ds.com/discovery-studio-visualizer-download
+//!
 //! //! Haddock: Server: https://rascar.science.uu.nl/haddock2.4/
 //!
 //!
@@ -18,12 +20,14 @@
 
 use lin_alg::{f32::Quaternion, f64::Vec3};
 
-use crate::molecule::{Ligand, Molecule};
+use crate::molecule::Molecule;
 
 #[derive(Clone, Copy, PartialEq)]
 enum GaCrossoverMode {
     Twopt,
 }
+
+// pub struct Ligand {}
 
 /// todo: Figure this out
 /// taken from a screenshot of an application that uses TK. (One of the ones you DLed?)
@@ -81,13 +85,13 @@ pub struct Pose {
 
 /// Calculate binding energy, in kcal/mol. The result will be negative. The maximum (negative) binding
 /// energy may be the ideal conformation. This is used as a scoring metric.
-pub fn binding_energy(mol: &Molecule, ligand: &Ligand, pose: Pose) -> f32 {
+pub fn binding_energy(target: &Molecule, ligand: &Molecule, pose: Pose) -> f32 {
     0.
 }
 
 pub fn find_optimal_pose(
-    mol: &Molecule,
-    ligand: &Ligand,
+    target: &Molecule,
+    ligand: &Molecule,
     params: &GeneticAlgorithmParameters,
 ) -> Pose {
     for _ in 0..params.num_runs {}

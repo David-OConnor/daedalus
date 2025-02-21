@@ -45,8 +45,10 @@ const MESH_SURFACE: usize = 4; // Van Der Waals surface.
 const SELECTION_DIST_THRESH_SMALL: f32 = 0.7; // e.g. ball + stick
 const SELECTION_DIST_THRESH_LARGE: f32 = 1.3; // e.g. VDW views.
 
+const BALL_STICK_RADIUS: f32 = 0.3;
+
 // todo: By bond type etc
-const BOND_COLOR: Color = (0.2, 0.2, 0.2);
+// const BOND_COLOR: Color = (0.2, 0.2, 0.2);
 const BOND_RADIUS: f32 = 0.12;
 // const BOND_CAP_RADIUS: f32 = 1./BOND_RADIUS;
 const BOND_RADIUS_DOUBLE: f32 = 0.07;
@@ -64,8 +66,9 @@ pub const OUTSIDE_LIGHTING_OFFSET: f32 = 400.;
 
 pub const COLOR_AA_NON_RESIDUE: Color = (0., 0.8, 1.0);
 
-const MOVEMENT_SENS: f32 = 10.;
-const SCROLL_MOVE_AMT: f32 = 5.;
+const MOVEMENT_SENS: f32 = 12.;
+const RUN_FACTOR: f32 = 6.; // i.e. shift key multiplier
+const SCROLL_MOVE_AMT: f32 = 4.;
 
 #[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]
 pub enum MoleculeView {
@@ -88,7 +91,7 @@ impl fmt::Display for MoleculeView {
             Self::Sticks => "Sticks",
             Self::BallAndStick => "Ball and stick",
             Self::Cartoon => "Cartoon",
-            Self::SpaceFill => "Spacefill (Van der Waals)",
+            Self::SpaceFill => "Spacefill (Van der Waals / CPK)",
             Self::Surface => "Surface (Van der Waals)",
             Self::Mesh => "Mesh (Van der Waals)",
             Self::Dots => "Dots (Van der Waals)",
@@ -158,6 +161,106 @@ fn atom_color(
     }
 
     result
+}
+
+// todo: DRY with/subset of draw_molecule?
+pub fn draw_ligand(state: &mut State, scene: &mut Scene, update_cam_lighting: bool) {
+    if state.ligand.is_none() {
+        return;
+    }
+    let ligand = state.ligand.as_mut().unwrap();
+    let mol = &ligand.molecule;
+
+    let ui = &state.ui;
+    let volatile = &mut state.volatile;
+
+    // todo: rotate using the orientation relative to the offset. Atoms and bonds.
+
+    // Hard-coded for ball and stick for now.
+    // todo: Just stick?
+
+    for atom in &mol.atoms {
+        scene.entities.push(Entity::new(
+            MESH_SPHERE,
+            (atom.posit + ligand.offset).into(),
+            Quaternion::new_identity(),
+            BALL_STICK_RADIUS,
+            atom.element.color(),
+            ATOM_SHINYNESS,
+        ));
+    }
+
+    // todo: C+P from draw_molecule. With some removed, but a lot of repeated.
+    for bond in &mol.bonds {
+        let atom_0 = &mol.atoms[bond.atom_0];
+        let atom_1 = &mol.atoms[bond.atom_1];
+
+        let color_atom_0 = atom_0.element.color();
+        let color_atom_1 = atom_1.element.color();
+
+        let posit_0: Vec3 = (atom_0.posit + ligand.offset).into();
+        let posit_1: Vec3 = (atom_1.posit + ligand.offset).into();
+        let center: Vec3 = (posit_0 + posit_1) / 2.;
+
+        let diff = posit_0 - posit_1;
+        let diff_unit = diff.to_normalized();
+        let orientation = Quaternion::from_unit_vecs(UP_VEC, diff_unit);
+
+        // todo: You probably need to update both this, and the normal disp, to display double bonds correctly.
+
+        // Split the bond into two entities, so you can color-code them separately based
+        // on which atom the half is closer to.
+        let center_0 = (posit_0 + center) / 2.;
+        let center_1 = (posit_1 + center) / 2.;
+
+        // todo: Residue color etc A/R
+        let mut entity_0 = Entity::new(
+            MESH_BOND,
+            center_0,
+            orientation,
+            1.,
+            color_atom_0,
+            BODY_SHINYNESS,
+        );
+
+        let mut entity_1 = Entity::new(
+            MESH_BOND,
+            center_1,
+            orientation,
+            1.,
+            color_atom_1,
+            BODY_SHINYNESS,
+        );
+
+        // These spheres are to put a rounded cap on each bond.
+        // todo: You only need a dome; performance implications.
+        let rounding_0 = Entity::new(
+            MESH_SPHERE,
+            posit_0,
+            Quaternion::new_identity(),
+            BOND_RADIUS,
+            color_atom_0,
+            BODY_SHINYNESS,
+        );
+        let rounding_1 = Entity::new(
+            MESH_SPHERE,
+            posit_1,
+            Quaternion::new_identity(),
+            BOND_RADIUS,
+            color_atom_1,
+            BODY_SHINYNESS,
+        );
+
+        // todo: Extra mag calc here from above; perf implication.
+        let scale_half = Some(Vec3::new(1., diff.magnitude() / 2., 1.));
+        entity_0.scale_partial = scale_half;
+        entity_1.scale_partial = scale_half;
+
+        scene.entities.push(entity_0);
+        scene.entities.push(entity_1);
+        scene.entities.push(rounding_0);
+        scene.entities.push(rounding_1);
+    }
 }
 
 /// Refreshes entities with the model passed.
@@ -278,7 +381,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
 
             let radius = match ui.mol_view {
                 MoleculeView::SpaceFill => atom.element.vdw_radius(),
-                _ => 0.3,
+                _ => BALL_STICK_RADIUS,
             };
 
             let color_atom = atom_color(
@@ -376,7 +479,10 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
             let scale_multibond = Some(Vec3::new(0.7, diff.magnitude(), 0.7));
 
             match ui.mol_view {
-                MoleculeView::Sticks | MoleculeView::Backbone | MoleculeView::Dots => {
+                MoleculeView::Sticks
+                | MoleculeView::BallAndStick
+                | MoleculeView::Backbone
+                | MoleculeView::Dots => {
                     // Split the bond into two entities, so you can color-code them separately based
                     // on which atom the half is closer to.
 
@@ -432,11 +538,13 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                     scene.entities.push(rounding_1);
                 }
                 _ => {
-                    let color = if ui.mol_view == MoleculeView::BallAndStick {
-                        BOND_COLOR
-                    } else {
-                        color_atom_0
-                    };
+                    // let color = if ui.mol_view == MoleculeView::BallAndStick {
+                    //     BOND_COLOR
+                    // } else {
+                    //     color_atom_0
+                    // };
+                    //
+                    let color = color_atom_0;
 
                     // todo: Consider if you want to display multi-bonds in stick view. Likely.
                     let bond_count = match ui.mol_view {
@@ -769,6 +877,7 @@ fn event_dev_handler(
     if redraw {
         // todo:This is overkill for certain keys. Just change the color of the one[s] in question, and set update.entities = true.
         draw_molecule(state_, scene, false);
+        draw_ligand(state_, scene, false);
         updates.entities = true;
     }
 
@@ -830,6 +939,7 @@ pub fn render(mut state: State) {
     let input_settings = InputSettings {
         initial_controls: ControlScheme::FreeCamera,
         move_sens: MOVEMENT_SENS,
+        run_factor: RUN_FACTOR,
         ..Default::default()
     };
     let ui_settings = UiSettings {
@@ -838,6 +948,7 @@ pub fn render(mut state: State) {
     };
 
     draw_molecule(&mut state, &mut scene, true);
+    draw_ligand(&mut state, &mut scene, true);
 
     graphics::run(
         state,

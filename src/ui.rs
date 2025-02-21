@@ -11,9 +11,8 @@ use na_seq::AaIdent;
 use crate::{
     download_pdb::load_rcsb,
     molecule::{Molecule, ResidueType},
-    pdb::load_pdb,
     rcsb_api::open_pdb,
-    render::{draw_molecule, MoleculeView, CAM_INIT_OFFSET, RENDER_DIST},
+    render::{draw_ligand, draw_molecule, MoleculeView, CAM_INIT_OFFSET, RENDER_DIST},
     util::{cam_look_at, check_prefs_save, cycle_res_selected, select_from_search},
     CamSnapshot, Selection, State, StateUi, StateVolatile, ViewSelLevel,
 };
@@ -49,8 +48,9 @@ fn load_file(
     redraw: &mut bool,
     reset_cam: &mut bool,
     engine_updates: &mut EngineUpdates,
+    ligand_load: bool,
 ) {
-    state.open_molecule(&path);
+    state.open_molecule(&path, ligand_load);
 
     // todo: These only if successful.
     *redraw = true;
@@ -91,7 +91,7 @@ pub fn handle_input(
         // Check for file drop
         if let Some(dropped_files) = ip.raw.dropped_files.first() {
             if let Some(path) = &dropped_files.path {
-                load_file(&path, state, redraw, reset_cam, engine_updates)
+                load_file(&path, state, redraw, reset_cam, engine_updates, false);
             }
         }
     });
@@ -110,14 +110,14 @@ fn cam_snapshots(
     engine_updates: &mut EngineUpdates,
     ui: &mut Ui,
 ) {
-    ui.heading("Views:");
+    ui.heading("Scenes:");
     ui.label("Label:");
     ui.add(TextEdit::singleline(&mut state.ui.cam_snapshot_name).desired_width(60.));
     if ui.button("Save").clicked() {
         let name = if !state.ui.cam_snapshot_name.is_empty() {
             state.ui.cam_snapshot_name.clone()
         } else {
-            format!("Snap {}", state.cam_snapshots.len() + 1)
+            format!("Scene {}", state.cam_snapshots.len() + 1)
         };
 
         state.cam_snapshots.push(CamSnapshot::from_cam(cam, name));
@@ -656,8 +656,13 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 }
                 ui.add_space(COL_SPACING);
             }
+
             if ui.button("Open").clicked() {
                 state.volatile.load_dialog.pick_file();
+            }
+
+            if ui.button("Open ligand").clicked() {
+                state.volatile.load_ligand_dialog.pick_file();
             }
 
             // if ui.button("Get RCSB").clicked() {
@@ -709,7 +714,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                         MoleculeView::Sticks,
                         MoleculeView::Backbone,
                         MoleculeView::BallAndStick,
-                        MoleculeView::Cartoon,
+                        // MoleculeView::Cartoon,
                         MoleculeView::SpaceFill,
                         // MoleculeView::Surface, // Partially-implemented, but broken/crashes.
                         // MoleculeView::Mesh,
@@ -802,35 +807,9 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                             redraw = true;
                         }
                     }
-
-                    // todo: Use selectable_value, or just colored buttons like chain vis, and sel res from?
-                    // todo: Invert these so items show when checked.
-                    // if ui
-                    //     .checkbox(&mut state.ui.hide_sidechains, "Hide sidechains")
-                    //     .changed()
-                    // {
-                    //     redraw = true;
-                    // }
-                    // todo: Get hide water working.
-                    // if ui
-                    //     .checkbox(&mut state.ui.hide_water, "Hide water")
-                    //     .changed()
-                    // {
-                    //     redraw = true;
-                    // }
-                    // if ui
-                    //     .checkbox(&mut state.ui.hide_hetero, "Hide hetero")
-                    //     .changed()
-                    // {
-                    //     redraw = true;
-                    // }
-                    // if ui
-                    //     .checkbox(&mut state.ui.hide_non_hetero, "Hide peptide")
-                    //     .changed()
-                    // {
-                    //     redraw = true;
-                    // }
                 });
+
+                // todo: Show hide based on AaCategory? i.e. residue.amino_acid.category(). Hydrophilic, acidic etc.
 
                 residue_selector(state, &mut redraw, ui);
             });
@@ -851,11 +830,24 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 &mut redraw,
                 &mut reset_cam,
                 &mut engine_updates,
+                false,
+            );
+        }
+
+        if let Some(path) = &state.volatile.load_ligand_dialog.take_picked() {
+            load_file(
+                path,
+                state,
+                &mut redraw,
+                &mut reset_cam,
+                &mut engine_updates,
+                true,
             );
         }
 
         if redraw {
             draw_molecule(state, scene, reset_cam);
+            draw_ligand(state, scene, reset_cam);
 
             if let Some(mol) = &state.molecule {
                 set_window_title(&mol.ident, scene);
@@ -871,6 +863,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
     }
 
     state.volatile.load_dialog.update(ctx);
+    state.volatile.load_ligand_dialog.update(ctx);
 
     state.ui.dt = start.elapsed().as_secs_f32();
 

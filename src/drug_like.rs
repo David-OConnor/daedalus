@@ -3,6 +3,6 @@
 //! Look up: Computer Aided Drug Design
 //! Structure Based Drug Design
 //!
-use crate::molecule::Ligand;
+use crate::molecule::Molecule;
 
-pub fn score(ligand: &Ligand) {}
+pub fn score(ligand: &Molecule) {}
