@@ -4,23 +4,24 @@ use std::{f32::consts::TAU, fmt};
 
 use bincode::{Decode, Encode};
 use graphics::{
+    Camera, ControlScheme, DeviceEvent, ElementState, EngineUpdates, Entity, FWD_VEC,
+    InputSettings, LightType, Lighting, Mesh, PointLight, RIGHT_VEC, Scene, UP_VEC, UiLayout,
+    UiSettings, WindowEvent,
     event::MouseScrollDelta,
     winit::keyboard::{KeyCode, PhysicalKey::Code},
-    Camera, ControlScheme, DeviceEvent, ElementState, EngineUpdates, Entity, InputSettings,
-    LightType, Lighting, Mesh, PointLight, Scene, UiLayout, UiSettings, WindowEvent, FWD_VEC,
-    RIGHT_VEC, UP_VEC,
 };
 use lin_alg::{
     f32::{Quaternion, Vec3},
+    f64::Quaternion as QuaternionF64,
     map_linear,
 };
 
 use crate::{
+    Selection, State, ViewSelLevel,
     asa::{get_mesh_points, mesh_from_sas_points},
-    molecule::{aa_color, Atom, AtomRole, BondCount, Chain, Residue},
+    molecule::{Atom, AtomRole, BondCount, Chain, Residue, aa_color},
     ui::ui_handler,
     util::{cycle_res_selected, find_selected_atom, mol_center_size, points_along_ray},
-    Selection, State, ViewSelLevel,
 };
 
 type Color = (f32, f32, f32);
@@ -207,7 +208,7 @@ fn add_bond(
             MESH_SPHERE,
             posit_0,
             Quaternion::new_identity(),
-            thickness,
+            BOND_RADIUS * thickness,
             color_0,
             BODY_SHINYNESS,
         );
@@ -215,7 +216,7 @@ fn add_bond(
             MESH_SPHERE,
             posit_1,
             Quaternion::new_identity(),
-            thickness,
+            BOND_RADIUS * thickness,
             color_1,
             BODY_SHINYNESS,
         );
@@ -234,8 +235,6 @@ fn add_bond(
 
 fn bond_entities(
     entities: &mut Vec<Entity>,
-    atom_0: &Atom,
-    atom_1: &Atom,
     posit_0: Vec3,
     posit_1: Vec3,
     color_0: Color,
@@ -244,14 +243,14 @@ fn bond_entities(
 ) {
     // todo: You probably need to update this to display double bonds correctly.
 
+    // todo: YOur multibond plane logic is off.
+
     let center: Vec3 = (posit_0 + posit_1) / 2.;
 
     let diff = posit_0 - posit_1;
     let diff_unit = diff.to_normalized();
     let orientation = Quaternion::from_unit_vecs(UP_VEC, diff_unit);
     let dist_half = diff.magnitude() / 2.;
-
-    let scale_multibond = Some(Vec3::new(0.7, diff.magnitude(), 0.7));
 
     let caps = true; // todo: Remove caps if ball+ stick
 
@@ -273,7 +272,7 @@ fn bond_entities(
             );
         }
         BondCount::SingleDoubleHybrid => {
-            //         // Draw two offset bond cylinders.
+            // Draw two offset bond cylinders.
             let rot_ortho = Quaternion::from_unit_vecs(FWD_VEC, UP_VEC);
             let rotator = rot_ortho * orientation;
 
@@ -286,7 +285,7 @@ fn bond_entities(
                 entities,
                 posit_0 + offset_a,
                 posit_1 + offset_a,
-                center,
+                center + offset_a,
                 color_0,
                 color_1,
                 orientation,
@@ -298,13 +297,13 @@ fn bond_entities(
                 entities,
                 posit_0 + offset_b,
                 posit_1 + offset_b,
-                center,
+                center + offset_b,
                 color_0,
                 color_1,
                 orientation,
                 dist_half,
                 caps,
-                0.5,
+                0.4,
             );
         }
         BondCount::Double => {
@@ -319,7 +318,7 @@ fn bond_entities(
                 entities,
                 posit_0 + offset_a,
                 posit_1 + offset_a,
-                center,
+                center + offset_a,
                 color_0,
                 color_1,
                 orientation,
@@ -331,7 +330,7 @@ fn bond_entities(
                 entities,
                 posit_0 + offset_b,
                 posit_1 + offset_b,
-                center,
+                center + offset_b,
                 color_0,
                 color_1,
                 orientation,
@@ -358,31 +357,31 @@ fn bond_entities(
                 orientation,
                 dist_half,
                 caps,
-                0.5,
+                0.4,
             );
             add_bond(
                 entities,
                 posit_0 + offset_a,
                 posit_1 + offset_a,
-                center,
+                center + offset_a,
                 color_0,
                 color_1,
                 orientation,
                 dist_half,
                 caps,
-                0.5,
+                0.4,
             );
             add_bond(
                 entities,
                 posit_0 + offset_b,
                 posit_1 + offset_b,
-                center,
+                center + offset_b,
                 color_0,
                 color_1,
                 orientation,
                 dist_half,
                 caps,
-                0.5,
+                0.4,
             );
         }
     }
@@ -402,10 +401,11 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene, update_cam_lighting: bo
 
     let mut atoms_rotated = mol.atoms.clone();
 
-    // Rotate around the local 0. position, as defined in the ligand's coordinates. Good enough for now,
-    // but relies on the ligand data's coordinate system.
+    // Rotate around the *molecule center* we calculated; this is invariant of the initial molecule coordinates.
+    // todo: that algorithm may be too naive.
     for atom in &mut atoms_rotated {
-        atom.posit = ligand.orientation.rotate_vec(atom.posit);
+        let posit_offset = atom.posit - mol.center;
+        atom.posit = ligand.orientation.rotate_vec(posit_offset);
     }
 
     // for atom in &mol.atoms {
@@ -424,13 +424,11 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene, update_cam_lighting: bo
         let atom_0 = &atoms_rotated[bond.atom_0];
         let atom_1 = &atoms_rotated[bond.atom_1];
 
-        let posit_0: Vec3 = (atom_0.posit + ligand.offset).into();
-        let posit_1: Vec3 = (atom_1.posit + ligand.offset).into();
+        let posit_0: Vec3 = (atom_0.posit + ligand.docking_init.site_posit).into();
+        let posit_1: Vec3 = (atom_1.posit + ligand.docking_init.site_posit).into();
 
         bond_entities(
             &mut scene.entities,
-            atom_0,
-            atom_1,
             posit_0,
             posit_1,
             atom_0.element.color(),
@@ -647,8 +645,6 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
 
             bond_entities(
                 &mut scene.entities,
-                atom_0,
-                atom_1,
                 posit_0,
                 posit_1,
                 color_0,
@@ -659,21 +655,15 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
     }
 
     if update_cam_lighting {
-        let (center, size) = mol_center_size(&mol.atoms);
-        volatile.mol_center = center;
-        volatile.mol_size = size;
-
-        scene.camera.position = Vec3::new(
-            volatile.mol_center.x,
-            volatile.mol_center.y,
-            volatile.mol_center.z - (volatile.mol_size + CAM_INIT_OFFSET),
-        );
+        let center: Vec3 = mol.center.into();
+        scene.camera.position =
+            Vec3::new(center.x, center.y, center.z - (mol.size + CAM_INIT_OFFSET));
         scene.camera.orientation = Quaternion::from_axis_angle(RIGHT_VEC, 0.);
         scene.camera.far = RENDER_DIST;
         scene.camera.update_proj_mat();
 
         // Update lighting based on the new molecule center and dims.
-        scene.lighting = set_lighting(volatile.mol_center, volatile.mol_size);
+        scene.lighting = set_lighting(center, mol.size);
     }
 }
 
@@ -829,6 +819,32 @@ fn event_dev_handler(
                 }
                 Code(KeyCode::KeyE) => {
                     state_.ui.cam_snapshot = None;
+                }
+                // todo: Temp to test Ligand rotation
+                Code(KeyCode::BracketLeft) => {
+                    if let Some(lig) = &mut state_.ligand {
+                        let rotation: QuaternionF64 =
+                            Quaternion::from_axis_angle(FWD_VEC, -10. * dt).into();
+                        lig.orientation = rotation * lig.orientation;
+
+                        // to clear entries; fine for this hack.
+                        draw_molecule(state_, scene, false);
+                        draw_ligand(state_, scene, false);
+                        updates.entities = true;
+                    }
+                }
+                // todo: Temp to test Ligand rotation
+                Code(KeyCode::BracketRight) => {
+                    if let Some(lig) = &mut state_.ligand {
+                        let rotation: QuaternionF64 =
+                            Quaternion::from_axis_angle(FWD_VEC, 10. * dt).into();
+                        lig.orientation = rotation * lig.orientation;
+
+                        // to clear entries; fine for this hack.
+                        draw_molecule(state_, scene, false);
+                        draw_ligand(state_, scene, false);
+                        updates.entities = true;
+                    }
                 }
                 _ => (),
             },

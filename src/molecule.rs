@@ -7,10 +7,13 @@ use lin_alg::{
     f64::{Quaternion, Vec3},
 };
 use na_seq::AminoAcid;
-use pdbtbx::{SecondaryStructure, PDB};
+use pdbtbx::{PDB, SecondaryStructure};
 use rayon::prelude::*;
 
-use crate::{bond_inference::create_bonds, rcsb_api::PdbMetaData, sdf::Sdf, Element, Selection};
+use crate::{
+    Element, Selection, bond_inference::create_bonds, docking::DockingInit, rcsb_api::PdbMetaData,
+    sdf::Sdf, util::mol_center_size,
+};
 
 #[derive(Debug)]
 // todo: This, or a PDB-specific format?
@@ -28,6 +31,9 @@ pub struct Molecule {
     /// Stored in scene meshes; this variable keeps track if that's populated.
     pub mesh_created: bool,
     pub secondary_structure: Vec<SecondaryStructure>,
+    /// Center and size are used for lighting, and for rotating ligands.
+    pub center: Vec3,
+    pub size: f32,
 }
 
 impl Molecule {
@@ -139,6 +145,8 @@ impl Molecule {
 
         let bonds = create_bonds(&atoms);
 
+        let (center, size) = mol_center_size(&atoms);
+
         Self {
             ident: pdb.identifier.clone().unwrap_or_default(),
             atoms,
@@ -149,6 +157,8 @@ impl Molecule {
             sa_surface_pts: None,
             mesh_created: false,
             secondary_structure: pdb.secondary_structure.clone(),
+            center,
+            size,
         }
     }
 
@@ -173,6 +183,8 @@ impl Molecule {
 
         let bonds = create_bonds(&sdf.atoms);
 
+        let (center, size) = mol_center_size(&sdf.atoms);
+
         Self {
             ident: "".to_string(),
             atoms: sdf.atoms.clone(),
@@ -183,6 +195,8 @@ impl Molecule {
             sa_surface_pts: None,
             mesh_created: false,
             secondary_structure: Vec::new(),
+            center,
+            size,
         }
     }
 
@@ -206,6 +220,12 @@ impl Molecule {
             }
             Selection::None => None,
         }
+    }
+
+    /// Crystolography files often omit hydrogens; add them programmatically. Required for molecular
+    /// dynamics.
+    pub fn populate_hydrogens(&mut self) {
+        // todo: Fill out
     }
 }
 
@@ -239,7 +259,8 @@ impl fmt::Display for AtomRole {
 #[derive(Debug)]
 pub struct Ligand2 {
     pub molecule: Molecule,
-    pub offset: Vec3,
+    // pub offset: Vec3,
+    pub docking_init: DockingInit,
     pub orientation: Quaternion, // Assumes rigid.
 }
 

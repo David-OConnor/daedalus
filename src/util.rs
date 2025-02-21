@@ -8,8 +8,8 @@ use lin_alg::{
 use na_seq::AaIdent;
 
 use crate::{
+    PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel,
     molecule::{Atom, AtomRole, Chain, Residue, ResidueType},
-    Selection, State, StateUi, ViewSelLevel, PREFS_SAVE_INTERVAL,
 };
 
 const MOVE_TO_TARGET_DIST: f32 = 15.;
@@ -117,7 +117,7 @@ pub fn find_selected_atom(
     }
 }
 
-pub fn mol_center_size(atoms: &[Atom]) -> (Vec3F32, f32) {
+pub fn mol_center_size(atoms: &[Atom]) -> (Vec3, f32) {
     let mut sum = Vec3::new_zero();
     let mut max_dim = 0.;
 
@@ -136,8 +136,7 @@ pub fn mol_center_size(atoms: &[Atom]) -> (Vec3F32, f32) {
         }
     }
 
-    let sum: Vec3F32 = sum.into();
-    (sum / atoms.len() as f32, max_dim as f32)
+    (sum / (atoms.len() as f64), max_dim as f32)
 }
 
 /// Move the camera to look at a point of interest. Takes the starting location into account.

@@ -1,7 +1,7 @@
 //! We use this to automatically compile CUDA C++ code when building.
 
 #[cfg(feature = "cuda")]
-use cuda_setup::{build, GpuArchitecture};
+use cuda_setup::{GpuArchitecture, build};
 
 fn main() {
     #[cfg(feature = "cuda")]

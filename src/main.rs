@@ -5,6 +5,7 @@ mod asa;
 mod bond_inference;
 mod cartoon_mesh;
 mod docking;
+mod docking_prep;
 mod download_pdb;
 mod drug_like;
 mod input;
@@ -23,7 +24,7 @@ mod vibrations;
 use std::{
     io,
     io::{ErrorKind, Read},
-    path::Path,
+    path::{Path, PathBuf},
     str::FromStr,
     sync::Arc,
 };
@@ -40,11 +41,12 @@ use pdbtbx::{self, PDB};
 use rayon::iter::ParallelIterator;
 
 use crate::{
+    docking::DockingInit,
     molecule::Ligand2,
     navigation::Tab,
     pdb::load_pdb,
     prefs::ToSave,
-    render::{render, MoleculeView},
+    render::{MoleculeView, render},
     sdf::load_sdf,
     ui::VIEW_DEPTH_MAX,
 };
@@ -239,9 +241,9 @@ struct StateVolatile {
     load_ligand_dialog: FileDialog,
     /// We use this for offsetting our cursor selection.
     ui_height: f32,
-    /// Center and size are used for setting the camera. Dependent on the molecule atom positions.
-    mol_center: Vec3,
-    mol_size: f32, // Dimension-agnostic
+    // /// Center and size are used for setting the camera. Dependent on the molecule atom positions.
+    // mol_center: Vec3,
+    // mol_size: f32, // Dimension-agnostic
 }
 
 impl Default for StateVolatile {
@@ -262,8 +264,8 @@ impl Default for StateVolatile {
         Self {
             load_dialog,
             load_ligand_dialog,
-            mol_center: Vec3::new_zero(),
-            mol_size: 80.,
+            // mol_center: Vec3::new_zero(),
+            // mol_size: 80.,
             ui_height: 0.,
         }
     }
@@ -344,6 +346,7 @@ struct State {
     // todo: Make a new struct if you add more non
     pub to_save: ToSave,
     pub tabs_open: Vec<Tab>,
+    pub autodock_vina_path: Option<PathBuf>,
 }
 
 impl State {
@@ -373,8 +376,10 @@ impl State {
                     if ligand {
                         self.ligand = Some(Ligand2 {
                             molecule: mol,
-                            // todo: Offset temp.
-                            offset: Vec3F64::new(3., 0., 0.),
+                            docking_init: DockingInit {
+                                site_posit: Vec3F64::new_zero(),
+                                site_box_size: 3.,
+                            },
                             orientation: QuaternionF64::new_identity(),
                         });
                     } else {
@@ -396,8 +401,10 @@ impl State {
                     if ligand {
                         self.ligand = Some(Ligand2 {
                             molecule: mol,
-                            // todo: Offset temp.
-                            offset: Vec3F64::new(3., 0., 0.),
+                            docking_init: DockingInit {
+                                site_posit: Vec3F64::new_zero(),
+                                site_box_size: 3.,
+                            },
                             orientation: QuaternionF64::new_identity(),
                         });
                     } else {
@@ -422,6 +429,11 @@ fn main() {
     let last_opened = state.to_save.last_opened.clone();
     if let Some(path) = &last_opened {
         state.open_molecule(path, false);
+    }
+
+    let last_ligand_opened = state.to_save.last_ligand_opened.clone();
+    if let Some(path) = &last_ligand_opened {
+        state.open_molecule(path, true);
     }
 
     render(state);

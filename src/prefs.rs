@@ -7,9 +7,9 @@ use egui::epaint::tessellator::Path;
 use graphics::app_utils::{load, save};
 
 use crate::{
-    rcsb_api::{load_pdb_metadata, PdbMetaData},
-    render::MoleculeView,
     CamSnapshot, Selection, State, ViewSelLevel,
+    rcsb_api::{PdbMetaData, load_pdb_metadata},
+    render::MoleculeView,
 };
 
 pub const DEFAULT_PREFS_FILE: &str = "bcv_prefs.bcv";
@@ -18,6 +18,7 @@ pub const DEFAULT_PREFS_FILE: &str = "bcv_prefs.bcv";
 pub struct ToSave {
     pub per_mol: HashMap<String, PerMolToSave>,
     pub last_opened: Option<PathBuf>,
+    pub last_ligand_opened: Option<PathBuf>,
 }
 
 #[derive(Debug, Encode, Decode)]

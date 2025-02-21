@@ -10,13 +10,13 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
+    Element,
+    Element::{Carbon, Hydrogen, Nitrogen, Oxygen, Sulfur},
     molecule::{
         Atom, Bond,
         BondCount::{self, *},
         BondType::{self, *},
     },
-    Element,
-    Element::{Carbon, Hydrogen, Nitrogen, Oxygen, Sulfur},
 };
 
 struct BondSpecs {

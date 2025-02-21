@@ -10,7 +10,7 @@ use std::{
 
 use lin_alg::f64::Vec3;
 
-use crate::{molecule::Atom, Element};
+use crate::{Element, molecule::Atom};
 
 #[derive(Debug)]
 pub struct Sdf {

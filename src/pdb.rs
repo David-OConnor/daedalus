@@ -4,7 +4,7 @@ use std::{
     path::Path,
 };
 
-use pdbtbx::{Format, ReadOptions, StrictnessLevel, PDB};
+use pdbtbx::{Format, PDB, ReadOptions, StrictnessLevel};
 
 /// From a string of a CIF or PDB text file.
 pub fn read_pdb(pdb_text: &str) -> io::Result<PDB> {

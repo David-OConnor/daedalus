@@ -9,7 +9,7 @@
 use std::{io, io::read_to_string, time::Duration};
 
 use bincode::{Decode, Encode};
-use na_seq::{seq_aa_to_str, seq_to_str_lower, Nucleotide};
+use na_seq::{Nucleotide, seq_aa_to_str, seq_to_str_lower};
 use serde::{Deserialize, Serialize};
 use serde_json::{self};
 use ureq::{self, Agent};
