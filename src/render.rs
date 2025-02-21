@@ -164,7 +164,7 @@ fn atom_color(
 }
 
 /// Adds a cylindrical bond. This is divided into two halves, so they can be color-coded by their side's
-/// atom. Adds optional rounding.
+/// atom. Adds optional rounding. `thickness` is relative to BOND_RADIUS.
 fn add_bond(
     entities: &mut Vec<Entity>,
     posit_0: Vec3,
@@ -182,7 +182,6 @@ fn add_bond(
     let center_0 = (posit_0 + center) / 2.;
     let center_1 = (posit_1 + center) / 2.;
 
-    // todo: Residue color etc A/R
     let mut entity_0 = Entity::new(
         MESH_BOND,
         center_0,
@@ -204,26 +203,25 @@ fn add_bond(
     if caps {
         // These spheres are to put a rounded cap on each bond.
         // todo: You only need a dome; performance implications.
-        // todo: No rounding for ball + stick; performance implication.
-        let rounding_0 = Entity::new(
+        let cap_0 = Entity::new(
             MESH_SPHERE,
             posit_0,
             Quaternion::new_identity(),
-            BOND_RADIUS,
+            thickness,
             color_0,
             BODY_SHINYNESS,
         );
-        let rounding_1 = Entity::new(
+        let cap_1 = Entity::new(
             MESH_SPHERE,
             posit_1,
             Quaternion::new_identity(),
-            BOND_RADIUS,
+            thickness,
             color_1,
             BODY_SHINYNESS,
         );
 
-        entities.push(rounding_0);
-        entities.push(rounding_1);
+        entities.push(cap_0);
+        entities.push(cap_1);
     }
 
     let scale = Some(Vec3::new(thickness, dist_half, thickness));
@@ -294,7 +292,7 @@ fn bond_entities(
                 orientation,
                 dist_half,
                 caps,
-                0.9,
+                0.7,
             );
             add_bond(
                 entities,
@@ -306,7 +304,7 @@ fn bond_entities(
                 orientation,
                 dist_half,
                 caps,
-                0.7,
+                0.5,
             );
         }
         BondCount::Double => {
@@ -327,7 +325,7 @@ fn bond_entities(
                 orientation,
                 dist_half,
                 caps,
-                0.7,
+                0.5,
             );
             add_bond(
                 entities,
@@ -339,7 +337,7 @@ fn bond_entities(
                 orientation,
                 dist_half,
                 caps,
-                0.7,
+                0.5,
             );
         }
         BondCount::Triple => {
