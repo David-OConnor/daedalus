@@ -240,7 +240,7 @@ impl fmt::Display for AtomRole {
 pub struct Ligand2 {
     pub molecule: Molecule,
     pub offset: Vec3,
-    pub orientation: Quaternion,
+    pub orientation: Quaternion, // Assumes rigid.
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]

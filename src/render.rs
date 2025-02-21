@@ -62,7 +62,7 @@ pub const SHELL_OPACITY: f32 = 0.01;
 
 // From the farthest molecule.
 pub const CAM_INIT_OFFSET: f32 = 10.;
-pub const OUTSIDE_LIGHTING_OFFSET: f32 = 400.;
+pub const OUTSIDE_LIGHTING_OFFSET: f32 = 300.;
 
 pub const COLOR_AA_NON_RESIDUE: Color = (0., 0.8, 1.0);
 
@@ -110,7 +110,7 @@ fn set_lighting(center: Vec3, size: f32) -> Lighting {
         ambient_intensity: 0.12,
         point_lights: vec![PointLight {
             type_: LightType::Omnidirectional,
-            position: center + Vec3::new(100., size + OUTSIDE_LIGHTING_OFFSET, 0.),
+            position: center + Vec3::new(40., size + OUTSIDE_LIGHTING_OFFSET, 0.),
             diffuse_color: white,
             specular_color: white,
             diffuse_intensity: 10_000.,
@@ -163,83 +163,54 @@ fn atom_color(
     result
 }
 
-// todo: DRY with/subset of draw_molecule?
-pub fn draw_ligand(state: &mut State, scene: &mut Scene, update_cam_lighting: bool) {
-    if state.ligand.is_none() {
-        return;
-    }
-    let ligand = state.ligand.as_mut().unwrap();
-    let mol = &ligand.molecule;
+/// Adds a cylindrical bond. This is divided into two halves, so they can be color-coded by their side's
+/// atom. Adds optional rounding.
+fn add_bond(
+    entities: &mut Vec<Entity>,
+    posit_0: Vec3,
+    posit_1: Vec3,
+    center: Vec3,
+    color_0: Color,
+    color_1: Color,
+    orientation: Quaternion,
+    dist_half: f32,
+    caps: bool,
+    thickness: f32,
+) {
+    // Split the bond into two entities, so you can color-code them separately based
+    // on which atom the half is closer to.
+    let center_0 = (posit_0 + center) / 2.;
+    let center_1 = (posit_1 + center) / 2.;
 
-    let ui = &state.ui;
-    let volatile = &mut state.volatile;
+    // todo: Residue color etc A/R
+    let mut entity_0 = Entity::new(
+        MESH_BOND,
+        center_0,
+        orientation,
+        1.,
+        color_0,
+        BODY_SHINYNESS,
+    );
 
-    // todo: rotate using the orientation relative to the offset. Atoms and bonds.
+    let mut entity_1 = Entity::new(
+        MESH_BOND,
+        center_1,
+        orientation,
+        1.,
+        color_1,
+        BODY_SHINYNESS,
+    );
 
-    // Hard-coded for ball and stick for now.
-    // todo: Just stick?
-
-    for atom in &mol.atoms {
-        scene.entities.push(Entity::new(
-            MESH_SPHERE,
-            (atom.posit + ligand.offset).into(),
-            Quaternion::new_identity(),
-            BALL_STICK_RADIUS,
-            atom.element.color(),
-            ATOM_SHINYNESS,
-        ));
-    }
-
-    // todo: C+P from draw_molecule. With some removed, but a lot of repeated.
-    for bond in &mol.bonds {
-        let atom_0 = &mol.atoms[bond.atom_0];
-        let atom_1 = &mol.atoms[bond.atom_1];
-
-        let color_atom_0 = atom_0.element.color();
-        let color_atom_1 = atom_1.element.color();
-
-        let posit_0: Vec3 = (atom_0.posit + ligand.offset).into();
-        let posit_1: Vec3 = (atom_1.posit + ligand.offset).into();
-        let center: Vec3 = (posit_0 + posit_1) / 2.;
-
-        let diff = posit_0 - posit_1;
-        let diff_unit = diff.to_normalized();
-        let orientation = Quaternion::from_unit_vecs(UP_VEC, diff_unit);
-
-        // todo: You probably need to update both this, and the normal disp, to display double bonds correctly.
-
-        // Split the bond into two entities, so you can color-code them separately based
-        // on which atom the half is closer to.
-        let center_0 = (posit_0 + center) / 2.;
-        let center_1 = (posit_1 + center) / 2.;
-
-        // todo: Residue color etc A/R
-        let mut entity_0 = Entity::new(
-            MESH_BOND,
-            center_0,
-            orientation,
-            1.,
-            color_atom_0,
-            BODY_SHINYNESS,
-        );
-
-        let mut entity_1 = Entity::new(
-            MESH_BOND,
-            center_1,
-            orientation,
-            1.,
-            color_atom_1,
-            BODY_SHINYNESS,
-        );
-
+    if caps {
         // These spheres are to put a rounded cap on each bond.
         // todo: You only need a dome; performance implications.
+        // todo: No rounding for ball + stick; performance implication.
         let rounding_0 = Entity::new(
             MESH_SPHERE,
             posit_0,
             Quaternion::new_identity(),
             BOND_RADIUS,
-            color_atom_0,
+            color_0,
             BODY_SHINYNESS,
         );
         let rounding_1 = Entity::new(
@@ -247,19 +218,227 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene, update_cam_lighting: bo
             posit_1,
             Quaternion::new_identity(),
             BOND_RADIUS,
-            color_atom_1,
+            color_1,
             BODY_SHINYNESS,
         );
 
-        // todo: Extra mag calc here from above; perf implication.
-        let scale_half = Some(Vec3::new(1., diff.magnitude() / 2., 1.));
-        entity_0.scale_partial = scale_half;
-        entity_1.scale_partial = scale_half;
+        entities.push(rounding_0);
+        entities.push(rounding_1);
+    }
 
-        scene.entities.push(entity_0);
-        scene.entities.push(entity_1);
-        scene.entities.push(rounding_0);
-        scene.entities.push(rounding_1);
+    let scale = Some(Vec3::new(thickness, dist_half, thickness));
+    entity_0.scale_partial = scale;
+    entity_1.scale_partial = scale;
+
+    entities.push(entity_0);
+    entities.push(entity_1);
+}
+
+fn bond_entities(
+    entities: &mut Vec<Entity>,
+    atom_0: &Atom,
+    atom_1: &Atom,
+    posit_0: Vec3,
+    posit_1: Vec3,
+    color_0: Color,
+    color_1: Color,
+    bond_count: BondCount,
+) {
+    // todo: You probably need to update this to display double bonds correctly.
+
+    let center: Vec3 = (posit_0 + posit_1) / 2.;
+
+    let diff = posit_0 - posit_1;
+    let diff_unit = diff.to_normalized();
+    let orientation = Quaternion::from_unit_vecs(UP_VEC, diff_unit);
+    let dist_half = diff.magnitude() / 2.;
+
+    let scale_multibond = Some(Vec3::new(0.7, diff.magnitude(), 0.7));
+
+    let caps = true; // todo: Remove caps if ball+ stick
+
+    // todo: Put this multibond code back.
+    // todo: Lots of DRY!
+    match bond_count {
+        BondCount::Single => {
+            add_bond(
+                entities,
+                posit_0,
+                posit_1,
+                center,
+                color_0,
+                color_1,
+                orientation,
+                dist_half,
+                caps,
+                1.,
+            );
+        }
+        BondCount::SingleDoubleHybrid => {
+            //         // Draw two offset bond cylinders.
+            let rot_ortho = Quaternion::from_unit_vecs(FWD_VEC, UP_VEC);
+            let rotator = rot_ortho * orientation;
+
+            let offset_a = rotator.rotate_vec(Vec3::new(0.2, 0., 0.));
+            let offset_b = rotator.rotate_vec(Vec3::new(-0.2, 0., 0.));
+
+            // todo: Make this one better
+
+            add_bond(
+                entities,
+                posit_0 + offset_a,
+                posit_1 + offset_a,
+                center,
+                color_0,
+                color_1,
+                orientation,
+                dist_half,
+                caps,
+                0.9,
+            );
+            add_bond(
+                entities,
+                posit_0 + offset_b,
+                posit_1 + offset_b,
+                center,
+                color_0,
+                color_1,
+                orientation,
+                dist_half,
+                caps,
+                0.7,
+            );
+        }
+        BondCount::Double => {
+            // Draw two offset bond cylinders.
+            let rot_ortho = Quaternion::from_unit_vecs(FWD_VEC, UP_VEC);
+            let rotator = rot_ortho * orientation;
+
+            let offset_a = rotator.rotate_vec(Vec3::new(0.2, 0., 0.));
+            let offset_b = rotator.rotate_vec(Vec3::new(-0.2, 0., 0.));
+
+            add_bond(
+                entities,
+                posit_0 + offset_a,
+                posit_1 + offset_a,
+                center,
+                color_0,
+                color_1,
+                orientation,
+                dist_half,
+                caps,
+                0.7,
+            );
+            add_bond(
+                entities,
+                posit_0 + offset_b,
+                posit_1 + offset_b,
+                center,
+                color_0,
+                color_1,
+                orientation,
+                dist_half,
+                caps,
+                0.7,
+            );
+        }
+        BondCount::Triple => {
+            //         // Draw two offset bond cylinders.
+            let rot_ortho = Quaternion::from_unit_vecs(FWD_VEC, UP_VEC);
+            let rotator = rot_ortho * orientation;
+
+            let offset_a = rotator.rotate_vec(Vec3::new(0.25, 0., 0.));
+            let offset_b = rotator.rotate_vec(Vec3::new(-0.25, 0., 0.));
+
+            add_bond(
+                entities,
+                posit_0,
+                posit_1,
+                center,
+                color_0,
+                color_1,
+                orientation,
+                dist_half,
+                caps,
+                0.5,
+            );
+            add_bond(
+                entities,
+                posit_0 + offset_a,
+                posit_1 + offset_a,
+                center,
+                color_0,
+                color_1,
+                orientation,
+                dist_half,
+                caps,
+                0.5,
+            );
+            add_bond(
+                entities,
+                posit_0 + offset_b,
+                posit_1 + offset_b,
+                center,
+                color_0,
+                color_1,
+                orientation,
+                dist_half,
+                caps,
+                0.5,
+            );
+        }
+    }
+}
+
+// todo: DRY with/subset of draw_molecule?
+pub fn draw_ligand(state: &mut State, scene: &mut Scene, update_cam_lighting: bool) {
+    // Hard-coded for sticks for now.
+
+    if state.ligand.is_none() {
+        return;
+    }
+    let ligand = state.ligand.as_ref().unwrap();
+    let mol = &ligand.molecule;
+
+    // todo: rotate using the orientation relative to the offset. Atoms and bonds.
+
+    let mut atoms_rotated = mol.atoms.clone();
+
+    // Rotate around the local 0. position, as defined in the ligand's coordinates. Good enough for now,
+    // but relies on the ligand data's coordinate system.
+    for atom in &mut atoms_rotated {
+        atom.posit = ligand.orientation.rotate_vec(atom.posit);
+    }
+
+    // for atom in &mol.atoms {
+    //     scene.entities.push(Entity::new(
+    //         MESH_SPHERE,
+    //         (atom.posit + ligand.offset).into(),
+    //         Quaternion::new_identity(),
+    //         BALL_STICK_RADIUS,
+    //         atom.element.color(),
+    //         ATOM_SHINYNESS,
+    //     ));
+    // }
+
+    // todo: C+P from draw_molecule. With some removed, but a lot of repeated.
+    for bond in &mol.bonds {
+        let atom_0 = &atoms_rotated[bond.atom_0];
+        let atom_1 = &atoms_rotated[bond.atom_1];
+
+        let posit_0: Vec3 = (atom_0.posit + ligand.offset).into();
+        let posit_1: Vec3 = (atom_1.posit + ligand.offset).into();
+
+        bond_entities(
+            &mut scene.entities,
+            atom_0,
+            atom_1,
+            posit_0,
+            posit_1,
+            atom_0.element.color(),
+            atom_1.element.color(),
+            bond.bond_count,
+        );
     }
 }
 
@@ -403,28 +582,11 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
         }
     }
 
-    let rot_ortho = Quaternion::from_unit_vecs(FWD_VEC, UP_VEC);
-
     // Draw bonds.
     if ![MoleculeView::SpaceFill].contains(&ui.mol_view) {
         for bond in &mol.bonds {
             let atom_0 = &mol.atoms[bond.atom_0];
             let atom_1 = &mol.atoms[bond.atom_1];
-
-            let mut color_atom_0 = atom_color(
-                &atom_0,
-                bond.atom_0,
-                &mol.residues,
-                state.selection,
-                state.ui.view_sel_level,
-            );
-            let mut color_atom_1 = atom_color(
-                &atom_1,
-                bond.atom_1,
-                &mol.residues,
-                state.selection,
-                state.ui.view_sel_level,
-            );
 
             if ui.mol_view == MoleculeView::Backbone && !bond.is_backbone {
                 continue;
@@ -469,214 +631,32 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
 
             let posit_0: Vec3 = atom_0.posit.into();
             let posit_1: Vec3 = atom_1.posit.into();
-            let center: Vec3 = (posit_0 + posit_1) / 2.;
 
-            let diff = posit_0 - posit_1;
-            let diff_unit = diff.to_normalized();
-            let orientation = Quaternion::from_unit_vecs(UP_VEC, diff_unit);
+            let color_0 = atom_color(
+                &atom_0,
+                bond.atom_0,
+                &mol.residues,
+                state.selection,
+                state.ui.view_sel_level,
+            );
+            let color_1 = atom_color(
+                &atom_1,
+                bond.atom_1,
+                &mol.residues,
+                state.selection,
+                state.ui.view_sel_level,
+            );
 
-            let scale = Some(Vec3::new(1., diff.magnitude(), 1.));
-            let scale_multibond = Some(Vec3::new(0.7, diff.magnitude(), 0.7));
-
-            match ui.mol_view {
-                MoleculeView::Sticks
-                | MoleculeView::BallAndStick
-                | MoleculeView::Backbone
-                | MoleculeView::Dots => {
-                    // Split the bond into two entities, so you can color-code them separately based
-                    // on which atom the half is closer to.
-
-                    let center_0 = (posit_0 + center) / 2.;
-                    let center_1 = (posit_1 + center) / 2.;
-
-                    // todo: Residue color etc A/R
-                    let mut entity_0 = Entity::new(
-                        MESH_BOND,
-                        center_0,
-                        orientation,
-                        1.,
-                        color_atom_0,
-                        BODY_SHINYNESS,
-                    );
-
-                    let mut entity_1 = Entity::new(
-                        MESH_BOND,
-                        center_1,
-                        orientation,
-                        1.,
-                        color_atom_1,
-                        BODY_SHINYNESS,
-                    );
-
-                    // These spheres are to put a rounded cap on each bond.
-                    // todo: You only need a dome; performance implications.
-                    let rounding_0 = Entity::new(
-                        MESH_SPHERE,
-                        posit_0,
-                        Quaternion::new_identity(),
-                        BOND_RADIUS,
-                        color_atom_0,
-                        BODY_SHINYNESS,
-                    );
-                    let rounding_1 = Entity::new(
-                        MESH_SPHERE,
-                        posit_1,
-                        Quaternion::new_identity(),
-                        BOND_RADIUS,
-                        color_atom_1,
-                        BODY_SHINYNESS,
-                    );
-
-                    // todo: Extra mag calc here from above; perf implication.
-                    let scale_half = Some(Vec3::new(1., diff.magnitude() / 2., 1.));
-                    entity_0.scale_partial = scale_half;
-                    entity_1.scale_partial = scale_half;
-
-                    scene.entities.push(entity_0);
-                    scene.entities.push(entity_1);
-                    scene.entities.push(rounding_0);
-                    scene.entities.push(rounding_1);
-                }
-                _ => {
-                    // let color = if ui.mol_view == MoleculeView::BallAndStick {
-                    //     BOND_COLOR
-                    // } else {
-                    //     color_atom_0
-                    // };
-                    //
-                    let color = color_atom_0;
-
-                    // todo: Consider if you want to display multi-bonds in stick view. Likely.
-                    let bond_count = match ui.mol_view {
-                        MoleculeView::Backbone | MoleculeView::Sticks => BondCount::Single,
-                        _ => bond.bond_count,
-                    };
-
-                    // todo: Lots of DRY!
-                    match bond_count {
-                        BondCount::Single => {
-                            let mut entity = Entity::new(
-                                MESH_BOND,
-                                center,
-                                orientation,
-                                1.,
-                                color,
-                                BODY_SHINYNESS,
-                            );
-
-                            entity.scale_partial = scale;
-                            scene.entities.push(entity);
-                        }
-                        BondCount::SingleDoubleHybrid => {
-                            // Draw two offset bond cylinders.
-                            let rotator = rot_ortho * orientation;
-
-                            let offset_a = rotator.rotate_vec(Vec3::new(0.2, 0., 0.));
-                            let offset_b = rotator.rotate_vec(Vec3::new(-0.2, 0., 0.));
-
-                            let mut entity_0 = Entity::new(
-                                MESH_BOND,
-                                center + offset_a,
-                                orientation,
-                                1.,
-                                color,
-                                BODY_SHINYNESS,
-                            );
-
-                            let mut entity_1 = Entity::new(
-                                MESH_BOND,
-                                center + offset_b,
-                                orientation,
-                                1.,
-                                color,
-                                BODY_SHINYNESS,
-                            );
-
-                            entity_0.scale_partial = scale_multibond;
-                            // Show only half len on one of the bonds as a visual differentiator.
-                            entity_1.scale_partial =
-                                Some(Vec3::new(0.7, diff.magnitude() * 0.3, 0.7));
-
-                            scene.entities.push(entity_0);
-                            scene.entities.push(entity_1);
-                        }
-                        BondCount::Double => {
-                            // Draw two offset bond cylinders.
-                            let rotator = rot_ortho * orientation;
-
-                            let offset_a = rotator.rotate_vec(Vec3::new(0.2, 0., 0.));
-                            let offset_b = rotator.rotate_vec(Vec3::new(-0.2, 0., 0.));
-
-                            let mut entity_0 = Entity::new(
-                                MESH_BOND,
-                                center + offset_a,
-                                orientation,
-                                1.,
-                                color,
-                                BODY_SHINYNESS,
-                            );
-
-                            let mut entity_1 = Entity::new(
-                                MESH_BOND,
-                                center + offset_b,
-                                orientation,
-                                1.,
-                                color,
-                                BODY_SHINYNESS,
-                            );
-
-                            entity_0.scale_partial = scale_multibond;
-                            entity_1.scale_partial = scale_multibond;
-
-                            scene.entities.push(entity_0);
-                            scene.entities.push(entity_1);
-                        }
-                        BondCount::Triple => {
-                            // Draw two offset bond cylinders.
-                            let rotator = rot_ortho * orientation;
-
-                            let offset_a = rotator.rotate_vec(Vec3::new(0.2, 0., 0.));
-                            let offset_b = rotator.rotate_vec(Vec3::new(-0.2, 0., 0.));
-
-                            let mut entity_0 = Entity::new(
-                                MESH_BOND,
-                                center,
-                                orientation,
-                                1.,
-                                color,
-                                BODY_SHINYNESS,
-                            );
-
-                            let mut entity_1 = Entity::new(
-                                MESH_BOND,
-                                center + offset_a,
-                                orientation,
-                                1.,
-                                color,
-                                BODY_SHINYNESS,
-                            );
-
-                            let mut entity_2 = Entity::new(
-                                MESH_BOND,
-                                center + offset_b,
-                                orientation,
-                                1.,
-                                color,
-                                BODY_SHINYNESS,
-                            );
-
-                            entity_0.scale_partial = scale_multibond;
-                            entity_1.scale_partial = scale_multibond;
-                            entity_2.scale_partial = scale_multibond;
-
-                            scene.entities.push(entity_0);
-                            scene.entities.push(entity_1);
-                            scene.entities.push(entity_2);
-                        }
-                    }
-                }
-                _ => (),
-            }
+            bond_entities(
+                &mut scene.entities,
+                atom_0,
+                atom_1,
+                posit_0,
+                posit_1,
+                color_0,
+                color_1,
+                bond.bond_count,
+            );
         }
     }
 

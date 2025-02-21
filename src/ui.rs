@@ -57,7 +57,10 @@ fn load_file(
     *reset_cam = true;
     engine_updates.entities = true;
 
-    state.to_save.last_opened = Some(path.to_owned());
+    if !ligand_load {
+        state.to_save.last_opened = Some(path.to_owned());
+    }
+
     state.update_save_prefs()
 }
 
