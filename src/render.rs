@@ -1,12 +1,10 @@
 //! This module integraties this application with the graphics engine.
 
-use std::{f32::consts::TAU, fmt};
+use std::f32::consts::TAU;
 
-use bincode::{Decode, Encode};
 use graphics::{
-    Camera, ControlScheme, DeviceEvent, ElementState, EngineUpdates, Entity, FWD_VEC,
-    InputSettings, LightType, Lighting, Mesh, PointLight, RIGHT_VEC, Scene, UP_VEC, UiLayout,
-    UiSettings, WindowEvent,
+    Camera, ControlScheme, DeviceEvent, ElementState, EngineUpdates, FWD_VEC, InputSettings,
+    LightType, Lighting, Mesh, PointLight, RIGHT_VEC, Scene, UiLayout, UiSettings, WindowEvent,
     event::MouseScrollDelta,
     winit::keyboard::{KeyCode, PhysicalKey::Code},
 };
@@ -17,14 +15,13 @@ use lin_alg::{
 };
 
 use crate::{
-    Selection, State, ViewSelLevel,
-    asa::{get_mesh_points, mesh_from_sas_points},
-    molecule::{Atom, AtomRole, BondCount, Chain, Residue, aa_color},
+    State, mol_drawing,
+    mol_drawing::MoleculeView,
     ui::ui_handler,
-    util::{cycle_res_selected, find_selected_atom, mol_center_size, points_along_ray},
+    util::{cycle_res_selected, find_selected_atom, points_along_ray},
 };
 
-type Color = (f32, f32, f32);
+pub type Color = (f32, f32, f32);
 
 const WINDOW_TITLE: &str = "Bio Chem View";
 const WINDOW_SIZE_X: f32 = 1_400.;
@@ -37,25 +34,25 @@ pub const ATOM_SHINYNESS: f32 = 12.;
 pub const BODY_SHINYNESS: f32 = 12.;
 
 // Keep this in sync with mesh init.
-const MESH_SPHERE: usize = 0;
-const MESH_CUBE: usize = 1;
-const MESH_BOND: usize = 2;
-const MESH_SPHERE_LOWRES: usize = 3;
-const MESH_SURFACE: usize = 4; // Van Der Waals surface.
+pub const MESH_SPHERE: usize = 0;
+pub const MESH_CUBE: usize = 1;
+pub const MESH_BOND: usize = 2;
+pub const MESH_SPHERE_LOWRES: usize = 3;
+pub const MESH_SURFACE: usize = 4; // Van Der Waals surface.
 
 const SELECTION_DIST_THRESH_SMALL: f32 = 0.7; // e.g. ball + stick
 const SELECTION_DIST_THRESH_LARGE: f32 = 1.3; // e.g. VDW views.
 
-const BALL_STICK_RADIUS: f32 = 0.3;
+pub const BALL_STICK_RADIUS: f32 = 0.3;
 
 // todo: By bond type etc
 // const BOND_COLOR: Color = (0.2, 0.2, 0.2);
-const BOND_RADIUS: f32 = 0.12;
+pub const BOND_RADIUS: f32 = 0.12;
 // const BOND_CAP_RADIUS: f32 = 1./BOND_RADIUS;
-const BOND_RADIUS_DOUBLE: f32 = 0.07;
+pub const BOND_RADIUS_DOUBLE: f32 = 0.07;
 
-const RADIUS_SFC_DOT: f32 = 0.05;
-const COLOR_SFC_DOT: Color = (0.7, 0.7, 0.7);
+pub const RADIUS_SFC_DOT: f32 = 0.05;
+pub const COLOR_SFC_DOT: Color = (0.7, 0.7, 0.7);
 
 pub const COLOR_SELECTED: Color = (1., 0., 0.);
 
@@ -71,39 +68,8 @@ const MOVEMENT_SENS: f32 = 12.;
 const RUN_FACTOR: f32 = 6.; // i.e. shift key multiplier
 const SCROLL_MOVE_AMT: f32 = 4.;
 
-#[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]
-pub enum MoleculeView {
-    Sticks,
-    Backbone,
-    #[default]
-    BallAndStick,
-    /// i.e. Van der Waals radius, or CPK.
-    SpaceFill,
-    Cartoon,
-    Surface,
-    Mesh,
-    Dots,
-}
-
-impl fmt::Display for MoleculeView {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let val = match self {
-            Self::Backbone => "Backbone",
-            Self::Sticks => "Sticks",
-            Self::BallAndStick => "Ball and stick",
-            Self::Cartoon => "Cartoon",
-            Self::SpaceFill => "Spacefill (Van der Waals / CPK)",
-            Self::Surface => "Surface (Van der Waals)",
-            Self::Mesh => "Mesh (Van der Waals)",
-            Self::Dots => "Dots (Van der Waals)",
-        };
-
-        write!(f, "{val}")
-    }
-}
-
 /// Set lighting based on the center and size of the molecule.
-fn set_lighting(center: Vec3, size: f32) -> Lighting {
+pub fn set_lighting(center: Vec3, size: f32) -> Lighting {
     let white = [1., 1., 1., 1.];
 
     Lighting {
@@ -117,553 +83,6 @@ fn set_lighting(center: Vec3, size: f32) -> Lighting {
             diffuse_intensity: 10_000.,
             specular_intensity: 60_000.,
         }],
-    }
-}
-
-fn atom_color(
-    atom: &Atom,
-    i: usize,
-    residues: &[Residue],
-    selection: Selection,
-    view_sel_level: ViewSelLevel,
-) -> Color {
-    let mut result = match view_sel_level {
-        ViewSelLevel::Atom => atom.element.color(),
-        ViewSelLevel::Residue => {
-            let c = match atom.amino_acid {
-                Some(aa) => aa_color(aa),
-                None => COLOR_AA_NON_RESIDUE,
-            };
-            // Below is currently equivalent:
-            // for res in &mol.residues {
-            //     if res.atoms.contains(&i) {
-            //         if let ResidueType::AminoAcid(aa) = res.res_type {
-            //             c = aa_color(aa);
-            //         }
-            //     }
-            // }
-            c
-        }
-    };
-
-    // If selected, the selected color overrides the element or residue color.
-    match selection {
-        Selection::Atom(sel_i) => {
-            if sel_i == i {
-                result = COLOR_SELECTED;
-            }
-        }
-        Selection::Residue(sel_i) => {
-            if residues[sel_i].atoms.contains(&i) {
-                result = COLOR_SELECTED;
-            }
-        }
-        Selection::None => (),
-    }
-
-    result
-}
-
-/// Adds a cylindrical bond. This is divided into two halves, so they can be color-coded by their side's
-/// atom. Adds optional rounding. `thickness` is relative to BOND_RADIUS.
-fn add_bond(
-    entities: &mut Vec<Entity>,
-    posit_0: Vec3,
-    posit_1: Vec3,
-    center: Vec3,
-    color_0: Color,
-    color_1: Color,
-    orientation: Quaternion,
-    dist_half: f32,
-    caps: bool,
-    thickness: f32,
-) {
-    // Split the bond into two entities, so you can color-code them separately based
-    // on which atom the half is closer to.
-    let center_0 = (posit_0 + center) / 2.;
-    let center_1 = (posit_1 + center) / 2.;
-
-    let mut entity_0 = Entity::new(
-        MESH_BOND,
-        center_0,
-        orientation,
-        1.,
-        color_0,
-        BODY_SHINYNESS,
-    );
-
-    let mut entity_1 = Entity::new(
-        MESH_BOND,
-        center_1,
-        orientation,
-        1.,
-        color_1,
-        BODY_SHINYNESS,
-    );
-
-    if caps {
-        // These spheres are to put a rounded cap on each bond.
-        // todo: You only need a dome; performance implications.
-        let cap_0 = Entity::new(
-            MESH_SPHERE,
-            posit_0,
-            Quaternion::new_identity(),
-            BOND_RADIUS * thickness,
-            color_0,
-            BODY_SHINYNESS,
-        );
-        let cap_1 = Entity::new(
-            MESH_SPHERE,
-            posit_1,
-            Quaternion::new_identity(),
-            BOND_RADIUS * thickness,
-            color_1,
-            BODY_SHINYNESS,
-        );
-
-        entities.push(cap_0);
-        entities.push(cap_1);
-    }
-
-    let scale = Some(Vec3::new(thickness, dist_half, thickness));
-    entity_0.scale_partial = scale;
-    entity_1.scale_partial = scale;
-
-    entities.push(entity_0);
-    entities.push(entity_1);
-}
-
-fn bond_entities(
-    entities: &mut Vec<Entity>,
-    posit_0: Vec3,
-    posit_1: Vec3,
-    color_0: Color,
-    color_1: Color,
-    bond_count: BondCount,
-) {
-    // todo: You probably need to update this to display double bonds correctly.
-
-    // todo: YOur multibond plane logic is off.
-
-    let center: Vec3 = (posit_0 + posit_1) / 2.;
-
-    let diff = posit_0 - posit_1;
-    let diff_unit = diff.to_normalized();
-    let orientation = Quaternion::from_unit_vecs(UP_VEC, diff_unit);
-    let dist_half = diff.magnitude() / 2.;
-
-    let caps = true; // todo: Remove caps if ball+ stick
-
-    // todo: Put this multibond code back.
-    // todo: Lots of DRY!
-    match bond_count {
-        BondCount::Single => {
-            add_bond(
-                entities,
-                posit_0,
-                posit_1,
-                center,
-                color_0,
-                color_1,
-                orientation,
-                dist_half,
-                caps,
-                1.,
-            );
-        }
-        BondCount::SingleDoubleHybrid => {
-            // Draw two offset bond cylinders.
-            let rot_ortho = Quaternion::from_unit_vecs(FWD_VEC, UP_VEC);
-            let rotator = rot_ortho * orientation;
-
-            let offset_a = rotator.rotate_vec(Vec3::new(0.2, 0., 0.));
-            let offset_b = rotator.rotate_vec(Vec3::new(-0.2, 0., 0.));
-
-            // todo: Make this one better
-
-            add_bond(
-                entities,
-                posit_0 + offset_a,
-                posit_1 + offset_a,
-                center + offset_a,
-                color_0,
-                color_1,
-                orientation,
-                dist_half,
-                caps,
-                0.7,
-            );
-            add_bond(
-                entities,
-                posit_0 + offset_b,
-                posit_1 + offset_b,
-                center + offset_b,
-                color_0,
-                color_1,
-                orientation,
-                dist_half,
-                caps,
-                0.4,
-            );
-        }
-        BondCount::Double => {
-            // Draw two offset bond cylinders.
-            let rot_ortho = Quaternion::from_unit_vecs(FWD_VEC, UP_VEC);
-            let rotator = rot_ortho * orientation;
-
-            let offset_a = rotator.rotate_vec(Vec3::new(0.2, 0., 0.));
-            let offset_b = rotator.rotate_vec(Vec3::new(-0.2, 0., 0.));
-
-            add_bond(
-                entities,
-                posit_0 + offset_a,
-                posit_1 + offset_a,
-                center + offset_a,
-                color_0,
-                color_1,
-                orientation,
-                dist_half,
-                caps,
-                0.5,
-            );
-            add_bond(
-                entities,
-                posit_0 + offset_b,
-                posit_1 + offset_b,
-                center + offset_b,
-                color_0,
-                color_1,
-                orientation,
-                dist_half,
-                caps,
-                0.5,
-            );
-        }
-        BondCount::Triple => {
-            //         // Draw two offset bond cylinders.
-            let rot_ortho = Quaternion::from_unit_vecs(FWD_VEC, UP_VEC);
-            let rotator = rot_ortho * orientation;
-
-            let offset_a = rotator.rotate_vec(Vec3::new(0.25, 0., 0.));
-            let offset_b = rotator.rotate_vec(Vec3::new(-0.25, 0., 0.));
-
-            add_bond(
-                entities,
-                posit_0,
-                posit_1,
-                center,
-                color_0,
-                color_1,
-                orientation,
-                dist_half,
-                caps,
-                0.4,
-            );
-            add_bond(
-                entities,
-                posit_0 + offset_a,
-                posit_1 + offset_a,
-                center + offset_a,
-                color_0,
-                color_1,
-                orientation,
-                dist_half,
-                caps,
-                0.4,
-            );
-            add_bond(
-                entities,
-                posit_0 + offset_b,
-                posit_1 + offset_b,
-                center + offset_b,
-                color_0,
-                color_1,
-                orientation,
-                dist_half,
-                caps,
-                0.4,
-            );
-        }
-    }
-}
-
-// todo: DRY with/subset of draw_molecule?
-pub fn draw_ligand(state: &mut State, scene: &mut Scene, update_cam_lighting: bool) {
-    // Hard-coded for sticks for now.
-
-    if state.ligand.is_none() {
-        return;
-    }
-    let ligand = state.ligand.as_ref().unwrap();
-    let mol = &ligand.molecule;
-
-    // todo: rotate using the orientation relative to the offset. Atoms and bonds.
-
-    let mut atoms_rotated = mol.atoms.clone();
-
-    // Rotate around the *molecule center* we calculated; this is invariant of the initial molecule coordinates.
-    // todo: that algorithm may be too naive.
-    for atom in &mut atoms_rotated {
-        let posit_offset = atom.posit - mol.center;
-        atom.posit = ligand.orientation.rotate_vec(posit_offset);
-    }
-
-    // for atom in &mol.atoms {
-    //     scene.entities.push(Entity::new(
-    //         MESH_SPHERE,
-    //         (atom.posit + ligand.offset).into(),
-    //         Quaternion::new_identity(),
-    //         BALL_STICK_RADIUS,
-    //         atom.element.color(),
-    //         ATOM_SHINYNESS,
-    //     ));
-    // }
-
-    // todo: C+P from draw_molecule. With some removed, but a lot of repeated.
-    for bond in &mol.bonds {
-        let atom_0 = &atoms_rotated[bond.atom_0];
-        let atom_1 = &atoms_rotated[bond.atom_1];
-
-        let posit_0: Vec3 = (atom_0.posit + ligand.docking_init.site_posit).into();
-        let posit_1: Vec3 = (atom_1.posit + ligand.docking_init.site_posit).into();
-
-        bond_entities(
-            &mut scene.entities,
-            posit_0,
-            posit_1,
-            atom_0.element.color(),
-            atom_1.element.color(),
-            bond.bond_count,
-        );
-    }
-}
-
-/// Refreshes entities with the model passed.
-/// Sensitive to various view configuration parameters.
-pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: bool) {
-    if state.molecule.is_none() {
-        return;
-    }
-    let mol = state.molecule.as_mut().unwrap();
-
-    // todo: Update this capacity A/R as you flesh out your renders.
-    // *entities = Vec::with_capacity(molecule.bonds.len());
-    scene.entities = Vec::new();
-
-    let ui = &state.ui;
-    let volatile = &mut state.volatile;
-
-    let chains_invis: Vec<&Chain> = mol.chains.iter().filter(|c| !c.visible).collect();
-
-    // todo: Figure out how to handle the VDW models A/R.
-    // todo: Mesh and/or Surface A/R.
-    if ui.mol_view == MoleculeView::Dots {
-        if mol.sa_surface_pts.is_none() {
-            println!("Starting getting mesh pts...");
-            mol.sa_surface_pts = Some(get_mesh_points(&mol.atoms));
-            println!("Mesh pts complete.");
-        }
-
-        // let mut i = 0;
-        for ring in mol.sa_surface_pts.as_ref().unwrap() {
-            for sfc_pt in ring {
-                scene.entities.push(Entity::new(
-                    MESH_SPHERE_LOWRES,
-                    *sfc_pt,
-                    Quaternion::new_identity(),
-                    RADIUS_SFC_DOT,
-                    COLOR_SFC_DOT,
-                    ATOM_SHINYNESS,
-                ));
-            }
-            // i += 1;
-            // if i > 100 {
-            //     break;
-            // }
-        }
-    }
-
-    if ui.mol_view == MoleculeView::Surface {
-        if mol.sa_surface_pts.is_none() {
-            // todo: DRY with above.
-            println!("Starting getting mesh pts...");
-            mol.sa_surface_pts = Some(get_mesh_points(&mol.atoms));
-            println!("Mesh pts complete.");
-        }
-
-        if !mol.mesh_created {
-            println!("Building surface mesh...");
-            scene.meshes[MESH_SURFACE] =
-                mesh_from_sas_points(&mol.sa_surface_pts.as_ref().unwrap());
-            mol.mesh_created = true;
-            println!("Mesh complete");
-        }
-
-        scene.entities.push(Entity::new(
-            MESH_SURFACE,
-            Vec3::new_zero(),
-            Quaternion::new_identity(),
-            1.,
-            COLOR_SFC_DOT,  // todo
-            ATOM_SHINYNESS, // todo
-        ));
-    }
-
-    // Draw atoms.
-    if [MoleculeView::BallAndStick, MoleculeView::SpaceFill].contains(&ui.mol_view) {
-        for (i, atom) in mol.atoms.iter().enumerate() {
-            let mut chain_not_sel = false;
-            for chain in &chains_invis {
-                if chain.atoms.contains(&i) {
-                    chain_not_sel = true;
-                    break;
-                }
-            }
-            if chain_not_sel {
-                continue;
-            }
-
-            if let Some(role) = atom.role {
-                if state.ui.hide_sidechains {
-                    if role == AtomRole::Sidechain {
-                        continue;
-                    }
-                }
-                if state.ui.hide_water || ui.mol_view == MoleculeView::SpaceFill {
-                    if role == AtomRole::Water {
-                        continue;
-                    }
-                }
-            }
-
-            if state.ui.hide_hetero && atom.hetero {
-                continue;
-            } else if state.ui.hide_non_hetero && !atom.hetero {
-                continue;
-            }
-
-            if ui.show_nearby_only {
-                if ui.show_nearby_only {
-                    let atom_sel = mol.get_sel_atom(state.selection);
-                    if let Some(a) = atom_sel {
-                        if (atom.posit - a.posit).magnitude() as f32 > ui.nearby_dist_thresh as f32
-                        {
-                            continue;
-                        }
-                    }
-                }
-            }
-
-            let radius = match ui.mol_view {
-                MoleculeView::SpaceFill => atom.element.vdw_radius(),
-                _ => BALL_STICK_RADIUS,
-            };
-
-            let color_atom = atom_color(
-                &atom,
-                i,
-                &mol.residues,
-                state.selection,
-                state.ui.view_sel_level,
-            );
-
-            scene.entities.push(Entity::new(
-                MESH_SPHERE,
-                atom.posit.into(),
-                Quaternion::new_identity(),
-                radius,
-                color_atom,
-                ATOM_SHINYNESS,
-            ));
-        }
-    }
-
-    // Draw bonds.
-    if ![MoleculeView::SpaceFill].contains(&ui.mol_view) {
-        for bond in &mol.bonds {
-            let atom_0 = &mol.atoms[bond.atom_0];
-            let atom_1 = &mol.atoms[bond.atom_1];
-
-            if ui.mol_view == MoleculeView::Backbone && !bond.is_backbone {
-                continue;
-            }
-
-            if ui.show_nearby_only {
-                let atom_sel = mol.get_sel_atom(state.selection);
-                if let Some(a) = atom_sel {
-                    if (atom_0.posit - a.posit).magnitude() as f32 > ui.nearby_dist_thresh as f32 {
-                        continue;
-                    }
-                }
-            }
-
-            let mut chain_not_sel = false;
-            for chain in &chains_invis {
-                if chain.atoms.contains(&bond.atom_0) {
-                    chain_not_sel = true;
-                    break;
-                }
-            }
-            if chain_not_sel {
-                continue;
-            }
-
-            // Assuming water won't be bonded to the main molecule.
-            if state.ui.hide_sidechains {
-                if let Some(role_0) = atom_0.role {
-                    if let Some(role_1) = atom_1.role {
-                        if role_0 == AtomRole::Sidechain || role_1 == AtomRole::Sidechain {
-                            continue;
-                        }
-                    }
-                }
-            }
-
-            if state.ui.hide_hetero && atom_0.hetero && atom_1.hetero {
-                continue;
-            } else if state.ui.hide_non_hetero && !atom_0.hetero && !atom_1.hetero {
-                continue;
-            }
-
-            let posit_0: Vec3 = atom_0.posit.into();
-            let posit_1: Vec3 = atom_1.posit.into();
-
-            let color_0 = atom_color(
-                &atom_0,
-                bond.atom_0,
-                &mol.residues,
-                state.selection,
-                state.ui.view_sel_level,
-            );
-            let color_1 = atom_color(
-                &atom_1,
-                bond.atom_1,
-                &mol.residues,
-                state.selection,
-                state.ui.view_sel_level,
-            );
-
-            bond_entities(
-                &mut scene.entities,
-                posit_0,
-                posit_1,
-                color_0,
-                color_1,
-                bond.bond_count,
-            );
-        }
-    }
-
-    if update_cam_lighting {
-        let center: Vec3 = mol.center.into();
-        scene.camera.position =
-            Vec3::new(center.x, center.y, center.z - (mol.size + CAM_INIT_OFFSET));
-        scene.camera.orientation = Quaternion::from_axis_angle(RIGHT_VEC, 0.);
-        scene.camera.far = RENDER_DIST;
-        scene.camera.update_proj_mat();
-
-        // Update lighting based on the new molecule center and dims.
-        scene.lighting = set_lighting(center, mol.size);
     }
 }
 
@@ -828,8 +247,8 @@ fn event_dev_handler(
                         lig.orientation = rotation * lig.orientation;
 
                         // to clear entries; fine for this hack.
-                        draw_molecule(state_, scene, false);
-                        draw_ligand(state_, scene, false);
+                        mol_drawing::draw_molecule(state_, scene, false);
+                        mol_drawing::draw_ligand(state_, scene, false);
                         updates.entities = true;
                     }
                 }
@@ -841,8 +260,8 @@ fn event_dev_handler(
                         lig.orientation = rotation * lig.orientation;
 
                         // to clear entries; fine for this hack.
-                        draw_molecule(state_, scene, false);
-                        draw_ligand(state_, scene, false);
+                        mol_drawing::draw_molecule(state_, scene, false);
+                        mol_drawing::draw_ligand(state_, scene, false);
                         updates.entities = true;
                     }
                 }
@@ -870,8 +289,8 @@ fn event_dev_handler(
 
     if redraw {
         // todo:This is overkill for certain keys. Just change the color of the one[s] in question, and set update.entities = true.
-        draw_molecule(state_, scene, false);
-        draw_ligand(state_, scene, false);
+        mol_drawing::draw_molecule(state_, scene, false);
+        mol_drawing::draw_ligand(state_, scene, false);
         updates.entities = true;
     }
 
@@ -941,8 +360,8 @@ pub fn render(mut state: State) {
         icon_path: Some("./resources/icon.png".to_owned()),
     };
 
-    draw_molecule(&mut state, &mut scene, true);
-    draw_ligand(&mut state, &mut scene, true);
+    mol_drawing::draw_molecule(&mut state, &mut scene, true);
+    mol_drawing::draw_ligand(&mut state, &mut scene, true);
 
     graphics::run(
         state,

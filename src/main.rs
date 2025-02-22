@@ -9,6 +9,7 @@ mod docking_prep;
 mod download_pdb;
 mod drug_like;
 mod input;
+mod mol_drawing;
 mod molecule;
 mod navigation;
 mod pdb;
@@ -36,19 +37,14 @@ use lin_alg::{
     f32::{Quaternion, Vec3},
     f64::{Quaternion as QuaternionF64, Vec3 as Vec3F64},
 };
+use mol_drawing::MoleculeView;
 use molecule::Molecule;
 use pdbtbx::{self, PDB};
 use rayon::iter::ParallelIterator;
 
 use crate::{
-    docking::DockingInit,
-    molecule::Ligand2,
-    navigation::Tab,
-    pdb::load_pdb,
-    prefs::ToSave,
-    render::{MoleculeView, render},
-    sdf::load_sdf,
-    ui::VIEW_DEPTH_MAX,
+    docking::DockingInit, molecule::Ligand2, navigation::Tab, pdb::load_pdb, prefs::ToSave,
+    render::render, sdf::load_sdf, ui::VIEW_DEPTH_MAX,
 };
 
 // todo: Eventually, implement a system that automatically checks for changes, and don't
@@ -297,6 +293,7 @@ struct StateUi {
     /// Hide hetero atoms: i.e. ones not part of a polypeptide.
     hide_hetero: bool,
     hide_non_hetero: bool,
+    hide_ligand: bool,
     middle_click_down: bool,
 }
 
@@ -377,7 +374,7 @@ impl State {
                         self.ligand = Some(Ligand2 {
                             molecule: mol,
                             docking_init: DockingInit {
-                                site_posit: Vec3F64::new_zero(),
+                                site_posit: Vec3F64::new(-11.83, 15.49, 65.88),
                                 site_box_size: 3.,
                             },
                             orientation: QuaternionF64::new_identity(),

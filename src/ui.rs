@@ -1,22 +1,21 @@
 use std::{f32::consts::TAU, path::Path, time::Instant};
 
-use egui::{
-    Color32, ComboBox, Context, PointerButton, RichText, ScrollArea, Slider, TextEdit,
-    TopBottomPanel, Ui,
-};
+use egui::{Color32, ComboBox, Context, RichText, Slider, TextEdit, TopBottomPanel, Ui};
 use graphics::{Camera, EngineUpdates, FWD_VEC, RIGHT_VEC, Scene, UP_VEC};
 use lin_alg::f32::{Quaternion, Vec3};
 use na_seq::AaIdent;
 
 use crate::{
-    CamSnapshot, Selection, State, StateUi, StateVolatile, ViewSelLevel,
+    CamSnapshot, Selection, State, ViewSelLevel,
     docking::find_optimal_pose,
     download_pdb::load_rcsb,
+    mol_drawing::{MoleculeView, draw_ligand, draw_molecule},
     molecule::{Molecule, ResidueType},
     rcsb_api::open_pdb,
-    render::{CAM_INIT_OFFSET, MoleculeView, RENDER_DIST, draw_ligand, draw_molecule},
+    render::{CAM_INIT_OFFSET, RENDER_DIST},
     util::{cam_look_at, check_prefs_save, cycle_res_selected, select_from_search},
 };
+use crate::render::Color;
 
 pub const ROW_SPACING: f32 = 10.;
 pub const COL_SPACING: f32 = 30.;
@@ -33,9 +32,18 @@ const NEARBY_THRESH_MAX: u16 = 60;
 const CAM_BUTTON_POS_STEP: f32 = 30. * 3.;
 const CAM_BUTTON_ROT_STEP: f32 = TAU / 3. * 3.;
 
+const COLOR_INACTIVE: Color32 = Color32::GRAY;
 const COLOR_ACTIVE: Color32 = Color32::LIGHT_GREEN;
 
 const MAX_TITLE_LEN: usize = 120; // Number of characters to display.
+
+fn active_color(val: bool) -> Color32 {
+     if val {
+        COLOR_ACTIVE
+    } else {
+        Color32::GRAY
+    }
+}
 
 /// Update the tilebar to reflect the current molecule
 fn set_window_title(title: &str, scene: &mut Scene) {
@@ -402,8 +410,6 @@ fn selected_data(mol: &Molecule, selection: Selection, ui: &mut Ui) {
 
 fn residue_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
     // This is a bit fuzzy, as the size varies by residue name (Not always 1 for non-AAs), and index digits.
-    const BUTTON_WIDTH: f32 = 16.;
-
     if let Some(mol) = &state.molecule {
         if let Some(chain_i) = state.ui.chain_to_pick_res {
             let chain = &mol.chains[chain_i];
@@ -462,11 +468,8 @@ fn chain_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
         ui.label("Chain visibility:");
         if let Some(mol) = &mut state.molecule {
             for chain in &mut mol.chains {
-                let color = if chain.visible {
-                    COLOR_ACTIVE
-                } else {
-                    Color32::GRAY
-                };
+                let color = active_color(chain.visible);
+
                 if ui
                     .button(RichText::new(chain.id.clone()).color(color))
                     .clicked()
@@ -765,21 +768,13 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
                     ui.label("Vis:");
 
-                    let color = if state.ui.hide_non_hetero {
-                        Color32::GRAY
-                    } else {
-                        COLOR_ACTIVE
-                    };
+                    let color = active_color(!state.ui.hide_non_hetero);
                     if ui.button(RichText::new("Peptide").color(color)).clicked() {
                         state.ui.hide_non_hetero = !state.ui.hide_non_hetero;
                         redraw = true;
                     }
 
-                    let color = if state.ui.hide_hetero {
-                        Color32::GRAY
-                    } else {
-                        COLOR_ACTIVE
-                    };
+                    let color = active_color(!state.ui.hide_hetero);
                     if ui.button(RichText::new("Hetero").color(color)).clicked() {
                         state.ui.hide_hetero = !state.ui.hide_hetero;
                         redraw = true;
@@ -789,11 +784,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
                     if !state.ui.hide_non_hetero {
                         // Subset of peptide.
-                        let color = if state.ui.hide_sidechains {
-                            Color32::GRAY
-                        } else {
-                            COLOR_ACTIVE
-                        };
+                        let color = active_color(!state.ui.hide_sidechains);
                         if ui
                             .button(RichText::new("Sidechains").color(color))
                             .clicked()
@@ -805,13 +796,17 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
                     if !state.ui.hide_hetero {
                         // Subset of hetero.
-                        let color = if state.ui.hide_water {
-                            Color32::GRAY
-                        } else {
-                            COLOR_ACTIVE
-                        };
+                        let color = active_color(!state.ui.hide_water);
                         if ui.button(RichText::new("Water").color(color)).clicked() {
                             state.ui.hide_water = !state.ui.hide_water;
+                            redraw = true;
+                        }
+                    }
+
+                    if state.ligand.is_some() {
+                        let color = active_color(!state.ui.hide_ligand);
+                        if ui.button(RichText::new("Ligand").color(color)).clicked() {
+                            state.ui.hide_ligand = !state.ui.hide_ligand;
                             redraw = true;
                         }
                     }

@@ -3,13 +3,12 @@
 use std::{collections::HashMap, path::PathBuf};
 
 use bincode::{Decode, Encode};
-use egui::epaint::tessellator::Path;
 use graphics::app_utils::{load, save};
 
 use crate::{
     CamSnapshot, Selection, State, ViewSelLevel,
+    mol_drawing::MoleculeView,
     rcsb_api::{PdbMetaData, load_pdb_metadata},
-    render::MoleculeView,
 };
 
 pub const DEFAULT_PREFS_FILE: &str = "bcv_prefs.bcv";
