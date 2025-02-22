@@ -35,6 +35,8 @@ pub struct PerMolToSave {
     hide_water: bool,
     hide_hetero: bool,
     hide_non_hetero: bool,
+    hide_ligand: bool,
+    hide_hydrogen: bool,
 }
 
 impl PerMolToSave {
@@ -61,6 +63,8 @@ impl PerMolToSave {
             hide_water: state.ui.hide_water,
             hide_hetero: state.ui.hide_hetero,
             hide_non_hetero: state.ui.hide_non_hetero,
+            hide_ligand: state.ui.hide_ligand,
+            hide_hydrogen: state.ui.hide_hydrogen,
         }
     }
 }
@@ -98,6 +102,8 @@ impl State {
                 self.ui.hide_water = data.hide_water;
                 self.ui.hide_hetero = data.hide_hetero;
                 self.ui.hide_non_hetero = data.hide_non_hetero;
+                self.ui.hide_ligand = data.hide_ligand;
+                self.ui.hide_hydrogen = data.hide_hydrogen;
 
                 if let Some(md) = &data.metadata {
                     mol.metadata = Some(md.clone())

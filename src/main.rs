@@ -6,7 +6,6 @@ mod asa;
 mod bond_inference;
 mod cartoon_mesh;
 mod docking;
-mod docking_prep;
 mod download_pdb;
 mod drug_like;
 mod input;
@@ -44,8 +43,14 @@ use pdbtbx::{self, PDB};
 use rayon::iter::ParallelIterator;
 
 use crate::{
-    docking::DockingInit, molecule::Ligand2, navigation::Tab, pdb::load_pdb, prefs::ToSave,
-    render::render, sdf::load_sdf, ui::VIEW_DEPTH_MAX,
+    docking::{DockingInit, docking_prep_external::check_babel_avail},
+    molecule::Ligand2,
+    navigation::Tab,
+    pdb::load_pdb,
+    prefs::ToSave,
+    render::render,
+    sdf::load_sdf,
+    ui::VIEW_DEPTH_MAX,
 };
 
 // todo: Eventually, implement a system that automatically checks for changes, and don't
@@ -213,36 +218,69 @@ impl Element {
         }
     }
 
+    #[rustfmt::skip]
+    /// Covalent radius, in angstrom.
+    /// https://github.com/openbabel/openbabel/blob/master/src/elementtable.h
+    pub fn covalent_radius(self) -> f64 {
+        match self {
+            Element::Hydrogen   => 0.31,
+            Element::Carbon     => 0.76,
+            Element::Oxygen     => 0.66,
+            Element::Nitrogen   => 0.71,
+            Element::Fluorine   => 0.57,
+            Element::Sulfur     => 1.05,
+            Element::Phosphorus => 1.07,
+            Element::Iron       => 1.32,
+            Element::Copper     => 1.32,
+            Element::Calcium    => 1.76,
+            Element::Potassium  => 2.03,
+            Element::Aluminum   => 1.21,
+            Element::Lead       => 1.46,
+            Element::Gold       => 1.36,
+            Element::Silver     => 1.45,
+            Element::Mercury    => 1.32,
+            Element::Tin        => 1.39,
+            Element::Zinc       => 1.22,
+            Element::Magnesium  => 1.41,
+            Element::Iodine     => 1.39,
+            Element::Chlorine   => 1.02,
+            Element::Tungsten   => 1.62,
+            Element::Tellurium  => 1.38,
+            Element::Selenium   => 1.20,
+            Element::Other      => 0.00,
+        }
+    }
+
+    #[rustfmt::skip]
     /// Van-der-wals radius, in angstrom.
+    /// https://github.com/openbabel/openbabel/blob/master/src/elementtable.h
     pub const fn vdw_radius(&self) -> f32 {
         match self {
-            Self::Hydrogen => 1.20,
-            Self::Carbon => 1.70,
-            Self::Nitrogen => 1.55,
-            Self::Oxygen => 1.52,
-            Self::Fluorine => 1.47,
-            Self::Sulfur => 1.80,
-            Self::Phosphorus => 1.80,
-            Self::Iron => 2.00, // Many references list ~1.56–1.63; 2.00 is a common PyMOL default.
-            Self::Copper => 1.40,
-            Self::Calcium => 2.31,
-            Self::Potassium => 2.75,
-            Self::Aluminum => 2.00,
-            Self::Lead => 2.02,
-            Self::Gold => 1.66,
-            Self::Silver => 1.72,
-            Self::Mercury => 1.55,
-            Self::Tin => 2.17,
-            Self::Zinc => 1.39,
-            Self::Magnesium => 1.73,
-            Self::Iodine => 1.98,
-            Self::Chlorine => 1.75,
-            Self::Tungsten => 2.10,
-            Self::Tellurium => 2.06,
-            Self::Selenium => 1.90,
-
-            // Fallback for elements not explicitly listed
-            Self::Other => 2.00,
+            Element::Hydrogen   => 1.10,
+            Element::Carbon     => 1.70,
+            Element::Oxygen     => 1.52,
+            Element::Nitrogen   => 1.55,
+            Element::Fluorine   => 1.47,
+            Element::Sulfur     => 1.80,
+            Element::Phosphorus => 1.80,
+            Element::Iron       => 2.05,
+            Element::Copper     => 2.00,
+            Element::Calcium    => 2.31,
+            Element::Potassium  => 2.75,
+            Element::Aluminum   => 1.84,
+            Element::Lead       => 2.02,
+            Element::Gold       => 2.10,
+            Element::Silver     => 2.10,
+            Element::Mercury    => 2.05,
+            Element::Tin        => 1.93,
+            Element::Zinc       => 2.10,
+            Element::Magnesium  => 1.73,
+            Element::Iodine     => 1.98,
+            Element::Chlorine   => 1.75,
+            Element::Tungsten   => 2.10,
+            Element::Tellurium  => 2.06,
+            Element::Selenium   => 1.90,
+            Element::Other      => 0.0,
         }
     }
 }
@@ -322,12 +360,14 @@ struct StateUi {
     /// Workaround for a bug or limitation in EGUI's `is_pointer_button_down_on`.
     // inputs_commanded: InputsCommanded,
     hide_sidechains: bool,
+    hide_hydrogen: bool,
     hide_water: bool,
     /// Hide hetero atoms: i.e. ones not part of a polypeptide.
     hide_hetero: bool,
     hide_non_hetero: bool,
     hide_ligand: bool,
     middle_click_down: bool,
+    autodock_path_valid: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]
@@ -377,6 +417,7 @@ struct State {
     pub to_save: ToSave,
     pub tabs_open: Vec<Tab>,
     pub autodock_vina_path: Option<PathBuf>,
+    pub babel_avail: bool,
 }
 
 impl State {
@@ -465,6 +506,12 @@ fn main() {
     if let Some(path) = &last_ligand_opened {
         state.open_molecule(path, true);
     }
+
+    if let Some(path) = &state.autodock_vina_path {
+        state.ui.autodock_path_valid = path.try_exists().unwrap_or_default();
+    }
+
+    state.babel_avail = check_babel_avail();
 
     render(state);
 }

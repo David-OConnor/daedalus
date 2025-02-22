@@ -7,14 +7,14 @@ use graphics::{Entity, FWD_VEC, RIGHT_VEC, Scene, UP_VEC};
 use lin_alg::f32::{Quaternion, Vec3};
 
 use crate::{
-    Selection, State, ViewSelLevel,
+    Element, Selection, State, ViewSelLevel,
     asa::{get_mesh_points, mesh_from_sas_points},
     molecule::{Atom, AtomRole, BondCount, Chain, Residue, aa_color},
     render,
     render::{
-        ATOM_SHINYNESS, BALL_STICK_RADIUS, BODY_SHINYNESS, BOND_RADIUS, CAM_INIT_OFFSET,
-        COLOR_AA_NON_RESIDUE, COLOR_SELECTED, COLOR_SFC_DOT, Color, MESH_BOND, MESH_SPHERE,
-        MESH_SPHERE_LOWRES, MESH_SURFACE, RADIUS_SFC_DOT, RENDER_DIST,
+        ATOM_SHINYNESS, BALL_STICK_RADIUS, BALL_STICK_RADIUS_H, BODY_SHINYNESS, BOND_RADIUS,
+        CAM_INIT_OFFSET, COLOR_AA_NON_RESIDUE, COLOR_SELECTED, COLOR_SFC_DOT, Color, MESH_BOND,
+        MESH_SPHERE, MESH_SPHERE_LOWRES, MESH_SURFACE, RADIUS_SFC_DOT, RENDER_DIST,
     },
 };
 
@@ -384,7 +384,6 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
     scene.entities = Vec::new();
 
     let ui = &state.ui;
-    let volatile = &mut state.volatile;
 
     let chains_invis: Vec<&Chain> = mol.chains.iter().filter(|c| !c.visible).collect();
 
@@ -456,6 +455,10 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                 continue;
             }
 
+            if state.ui.hide_hydrogen && atom.element == Element::Hydrogen {
+                continue;
+            }
+
             if let Some(role) = atom.role {
                 if state.ui.hide_sidechains {
                     if role == AtomRole::Sidechain {
@@ -489,7 +492,10 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
 
             let radius = match ui.mol_view {
                 MoleculeView::SpaceFill => atom.element.vdw_radius(),
-                _ => BALL_STICK_RADIUS,
+                _ => match atom.element {
+                    Element::Hydrogen => BALL_STICK_RADIUS_H,
+                    _ => BALL_STICK_RADIUS,
+                },
             };
 
             let color_atom = atom_color(
@@ -538,6 +544,12 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                 }
             }
             if chain_not_sel {
+                continue;
+            }
+
+            if state.ui.hide_hydrogen && atom_0.element == Element::Hydrogen
+                || atom_1.element == Element::Hydrogen
+            {
                 continue;
             }
 

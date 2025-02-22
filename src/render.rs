@@ -44,6 +44,7 @@ const SELECTION_DIST_THRESH_SMALL: f32 = 0.7; // e.g. ball + stick
 const SELECTION_DIST_THRESH_LARGE: f32 = 1.3; // e.g. VDW views.
 
 pub const BALL_STICK_RADIUS: f32 = 0.3;
+pub const BALL_STICK_RADIUS_H: f32 = 0.2;
 
 // todo: By bond type etc
 // const BOND_COLOR: Color = (0.2, 0.2, 0.2);
@@ -351,6 +352,7 @@ pub fn render(mut state: State) {
 
     let input_settings = InputSettings {
         initial_controls: ControlScheme::FreeCamera,
+        // initial_controls: ControlScheme::Arc{ center: Vec3::new_zero()},
         move_sens: MOVEMENT_SENS,
         run_factor: RUN_FACTOR,
         ..Default::default()
@@ -368,6 +370,7 @@ pub fn render(mut state: State) {
         scene,
         input_settings,
         ui_settings,
+        Default::default(),
         render_handler,
         event_dev_handler,
         event_win_handler,

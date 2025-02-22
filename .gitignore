@@ -16,6 +16,7 @@ Cargo.lock
 *.bcif
 *.gz
 *.sdf
+*.pdbqt
 
 # Our prefs format.
 *.bcv

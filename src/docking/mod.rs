@@ -28,6 +28,9 @@ use rand::Rng;
 
 use crate::molecule::{Ligand2, Molecule};
 
+pub mod docking_prep;
+pub mod docking_prep_external;
+
 #[derive(Clone, Copy, PartialEq)]
 enum GaCrossoverMode {
     Twopt,

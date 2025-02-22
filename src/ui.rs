@@ -1,13 +1,16 @@
 use std::{f32::consts::TAU, path::Path, time::Instant};
 
 use egui::{Color32, ComboBox, Context, RichText, Slider, TextEdit, TopBottomPanel, Ui};
-use graphics::{Camera, EngineUpdates, FWD_VEC, RIGHT_VEC, Scene, UP_VEC};
+use graphics::{Camera, EngineUpdates, RIGHT_VEC, Scene, UP_VEC};
 use lin_alg::f32::{Quaternion, Vec3};
 use na_seq::AaIdent;
 
 use crate::{
     CamSnapshot, Selection, State, ViewSelLevel,
-    docking::find_optimal_pose,
+    docking::{
+        docking_prep_external::{prepare_ligand, prepare_target},
+        find_optimal_pose,
+    },
     download_pdb::load_rcsb,
     mol_drawing::{MoleculeView, draw_ligand, draw_molecule},
     molecule::{Molecule, ResidueType},
@@ -37,7 +40,7 @@ const COLOR_ACTIVE: Color32 = Color32::LIGHT_GREEN;
 const MAX_TITLE_LEN: usize = 120; // Number of characters to display.
 
 fn active_color(val: bool) -> Color32 {
-    if val { COLOR_ACTIVE } else { Color32::GRAY }
+    if val { COLOR_ACTIVE } else { COLOR_INACTIVE }
 }
 
 /// Update the tilebar to reflect the current molecule
@@ -181,7 +184,6 @@ fn cam_snapshots(
 fn cam_controls(
     cam: &mut Camera,
     state: &mut State,
-    // state_ui: &mut StateUi,
     engine_updates: &mut EngineUpdates,
     ui: &mut Ui,
 ) {
@@ -231,28 +233,28 @@ fn cam_controls(
         ui.add_space(COL_SPACING);
 
         // todo: Grey-out, instead of setting render dist. (e.g. fog)
-        ui.label("Depth:");
-        let depth_prev = state.ui.view_depth;
-        ui.add(Slider::new(
-            &mut state.ui.view_depth,
-            VIEW_DEPTH_MIN..=VIEW_DEPTH_MAX,
-        ));
-
-        if state.ui.view_depth != depth_prev {
-            // Interpret the slider being at max position to mean (effectively) unlimited.
-            cam.far = if state.ui.view_depth == VIEW_DEPTH_MAX {
-                RENDER_DIST
-            } else {
-                state.ui.view_depth as f32
-            };
-            cam.update_proj_mat();
-            changed = true;
-        }
+        // ui.label("Depth:");
+        // let depth_prev = state.ui.view_depth;
+        // ui.add(Slider::new(
+        //     &mut state.ui.view_depth,
+        //     VIEW_DEPTH_MIN..=VIEW_DEPTH_MAX,
+        // ));
+        //
+        // if state.ui.view_depth != depth_prev {
+        //     // Interpret the slider being at max position to mean (effectively) unlimited.
+        //     cam.far = if state.ui.view_depth == VIEW_DEPTH_MAX {
+        //         RENDER_DIST
+        //     } else {
+        //         state.ui.view_depth as f32
+        //     };
+        //     cam.update_proj_mat();
+        //     changed = true;
+        // }
 
         ui.add_space(COL_SPACING);
 
-        let mut movement_vec = None;
-        let mut rotation = None;
+        // let mut movement_vec = None;
+        // let mut rotation = None;
 
         // state.ui.inputs_commanded = Default::default();
 
@@ -263,97 +265,97 @@ fn cam_controls(
         //     input.pointer.button_down(PointerButton::Primary)
         // };
 
-        if ui
-            .button("⬅")
-            .on_hover_text("Hotkey: A")
-            // `is_pointer_button_down_on()` is ideal, but stops after ~1s. Using hover +
-            // pointer.button_down check fails too. (Bug in EGUI?)
-            .is_pointer_button_down_on()
-        {
-            // state.ui.inputs_commanded.left = true;
-            movement_vec = Some(Vec3::new(-CAM_BUTTON_POS_STEP * state.ui.dt, 0., 0.));
-        }
-        if ui
-            .button("➡")
-            .on_hover_text("Hotkey: D")
-            .is_pointer_button_down_on()
-        {
-            // state.ui.inputs_commanded.right = true;
-            movement_vec = Some(Vec3::new(CAM_BUTTON_POS_STEP * state.ui.dt, 0., 0.));
-        }
-        if ui
-            .button("⬇")
-            .on_hover_text("Hotkey: C")
-            .is_pointer_button_down_on()
-        {
-            // state.ui.inputs_commanded.down = true;
-            movement_vec = Some(Vec3::new(0., -CAM_BUTTON_POS_STEP * state.ui.dt, 0.));
-        }
-        if ui
-            .button("⬆")
-            .on_hover_text("Hotkey: Space")
-            .is_pointer_button_down_on()
-        {
-            // state.ui.inputs_commanded.up = true;
-            movement_vec = Some(Vec3::new(0., CAM_BUTTON_POS_STEP * state.ui.dt, 0.));
-        }
-        if ui
-            .button("⬋")
-            .on_hover_text("Hotkey: S")
-            .is_pointer_button_down_on()
-        {
-            // state.ui.inputs_commanded.back = true;
-            movement_vec = Some(Vec3::new(0., 0., -CAM_BUTTON_POS_STEP * state.ui.dt));
-        }
-
-        if ui
-            .button("⬈")
-            .on_hover_text("Hotkey: W")
-            .is_pointer_button_down_on()
-        {
-            // println!("Flats: {:?}", fwd_btn.flags);
-            // if fwd_btn.is_pointer_button_down_on() {
-            // if fwd_btn.hovered() && pointer_down {
-            // if fwd_btn.contains_pointer() && fwd_btn.clicked() {
-            // state.ui.inputs_commanded.fwd = true;
-            movement_vec = Some(Vec3::new(0., 0., CAM_BUTTON_POS_STEP * state.ui.dt));
-        }
-
-        // Rotation (Alternative to keyboard)
-        if ui
-            .button("⟲")
-            .on_hover_text("Hotkey: Q")
-            .is_pointer_button_down_on()
-        {
-            // state.ui.inputs_commanded.roll_ccw = true;
-            let fwd = cam.orientation.rotate_vec(FWD_VEC);
-            rotation = Some(Quaternion::from_axis_angle(
-                fwd,
-                CAM_BUTTON_ROT_STEP * state.ui.dt,
-            ));
-        }
-        if ui
-            .button("⟳")
-            .on_hover_text("Hotkey: R")
-            .is_pointer_button_down_on()
-        {
-            // state.ui.inputs_commanded.roll_ccw = true;
-            let fwd = cam.orientation.rotate_vec(FWD_VEC);
-            rotation = Some(Quaternion::from_axis_angle(
-                fwd,
-                -CAM_BUTTON_ROT_STEP * state.ui.dt,
-            ));
-        }
-
-        if let Some(m) = movement_vec {
-            cam.position += cam.orientation.rotate_vec(m);
-            changed = true;
-        }
-
-        if let Some(r) = rotation {
-            cam.orientation = r * cam.orientation;
-            changed = true;
-        }
+        //     if ui
+        //         .button("⬅")
+        //         .on_hover_text("Hotkey: A")
+        //         // `is_pointer_button_down_on()` is ideal, but stops after ~1s. Using hover +
+        //         // pointer.button_down check fails too. (Bug in EGUI?)
+        //         .is_pointer_button_down_on()
+        //     {
+        //         // state.ui.inputs_commanded.left = true;
+        //         movement_vec = Some(Vec3::new(-CAM_BUTTON_POS_STEP * state.ui.dt, 0., 0.));
+        //     }
+        //     if ui
+        //         .button("➡")
+        //         .on_hover_text("Hotkey: D")
+        //         .is_pointer_button_down_on()
+        //     {
+        //         // state.ui.inputs_commanded.right = true;
+        //         movement_vec = Some(Vec3::new(CAM_BUTTON_POS_STEP * state.ui.dt, 0., 0.));
+        //     }
+        //     if ui
+        //         .button("⬇")
+        //         .on_hover_text("Hotkey: C")
+        //         .is_pointer_button_down_on()
+        //     {
+        //         // state.ui.inputs_commanded.down = true;
+        //         movement_vec = Some(Vec3::new(0., -CAM_BUTTON_POS_STEP * state.ui.dt, 0.));
+        //     }
+        //     if ui
+        //         .button("⬆")
+        //         .on_hover_text("Hotkey: Space")
+        //         .is_pointer_button_down_on()
+        //     {
+        //         // state.ui.inputs_commanded.up = true;
+        //         movement_vec = Some(Vec3::new(0., CAM_BUTTON_POS_STEP * state.ui.dt, 0.));
+        //     }
+        //     if ui
+        //         .button("⬋")
+        //         .on_hover_text("Hotkey: S")
+        //         .is_pointer_button_down_on()
+        //     {
+        //         // state.ui.inputs_commanded.back = true;
+        //         movement_vec = Some(Vec3::new(0., 0., -CAM_BUTTON_POS_STEP * state.ui.dt));
+        //     }
+        //
+        //     if ui
+        //         .button("⬈")
+        //         .on_hover_text("Hotkey: W")
+        //         .is_pointer_button_down_on()
+        //     {
+        //         // println!("Flats: {:?}", fwd_btn.flags);
+        //         // if fwd_btn.is_pointer_button_down_on() {
+        //         // if fwd_btn.hovered() && pointer_down {
+        //         // if fwd_btn.contains_pointer() && fwd_btn.clicked() {
+        //         // state.ui.inputs_commanded.fwd = true;
+        //         movement_vec = Some(Vec3::new(0., 0., CAM_BUTTON_POS_STEP * state.ui.dt));
+        //     }
+        //
+        //     // Rotation (Alternative to keyboard)
+        //     if ui
+        //         .button("⟲")
+        //         .on_hover_text("Hotkey: Q")
+        //         .is_pointer_button_down_on()
+        //     {
+        //         // state.ui.inputs_commanded.roll_ccw = true;
+        //         let fwd = cam.orientation.rotate_vec(FWD_VEC);
+        //         rotation = Some(Quaternion::from_axis_angle(
+        //             fwd,
+        //             CAM_BUTTON_ROT_STEP * state.ui.dt,
+        //         ));
+        //     }
+        //     if ui
+        //         .button("⟳")
+        //         .on_hover_text("Hotkey: R")
+        //         .is_pointer_button_down_on()
+        //     {
+        //         // state.ui.inputs_commanded.roll_ccw = true;
+        //         let fwd = cam.orientation.rotate_vec(FWD_VEC);
+        //         rotation = Some(Quaternion::from_axis_angle(
+        //             fwd,
+        //             -CAM_BUTTON_ROT_STEP * state.ui.dt,
+        //         ));
+        //     }
+        //
+        //     if let Some(m) = movement_vec {
+        //         cam.position += cam.orientation.rotate_vec(m);
+        //         changed = true;
+        //     }
+        //
+        //     if let Some(r) = rotation {
+        //         cam.orientation = r * cam.orientation;
+        //         changed = true;
+        //     }
     });
 
     if changed {
@@ -552,13 +554,44 @@ fn residue_search(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
             }
         }
 
+        ui.add_space(COL_SPACING);
+
+        if let Some(mol) = &mut state.molecule {
+            if ui.button(RichText::new("Add H")).clicked() {
+                mol.populate_hydrogens();
+                *redraw = true;
+            }
+        }
+
         if state.molecule.is_some() && state.ligand.is_some() {
             if ui.button("Dock").clicked() {
                 let tgt = state.molecule.as_ref().unwrap();
                 let ligand = state.ligand.as_ref().unwrap();
                 find_optimal_pose(tgt, ligand, &Default::default());
             }
+
+            if ui.button("Prepare").clicked() {
+                // todo: We may need to save path with the molecule and ligand.
+                if let Some(path) = &state.to_save.last_opened {
+                    if let Err(e) = prepare_target(path) {
+                        eprintln!("Error: Unable to process target molecule: {e:?}");
+                    };
+                }
+
+                if let Some(path) = &state.to_save.last_ligand_opened {
+                    if let Err(e) = prepare_ligand(path, false) {
+                        eprintln!("Error: Unable to process ligand molecule: {e:?}");
+                    };
+                }
+            }
         }
+
+        // todo: Clicking selects the path.
+        ui.label(RichText::new("🔘").color(active_color(state.ui.autodock_path_valid)))
+            .on_hover_text("Autodock Vina found");
+
+        ui.label(RichText::new("🔘").color(active_color(state.babel_avail)))
+            .on_hover_text("Open Babel found");
     });
 }
 
@@ -748,7 +781,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         ui.horizontal(|ui| {
             cam_controls(&mut scene.camera, state, &mut engine_updates, ui);
-            ui.add_space(COL_SPACING * 2.);
+            // ui.add_space(COL_SPACING * 2.);
             cam_snapshots(&mut scene.camera, state, &mut engine_updates, ui);
         });
 
@@ -787,6 +820,12 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                             state.ui.hide_sidechains = !state.ui.hide_sidechains;
                             redraw = true;
                         }
+
+                        let color = active_color(!state.ui.hide_hydrogen);
+                        if ui.button(RichText::new("H").color(color)).clicked() {
+                            state.ui.hide_hydrogen = !state.ui.hide_hydrogen;
+                            redraw = true;
+                        }
                     }
 
                     if !state.ui.hide_hetero {
@@ -794,13 +833,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                         let color = active_color(!state.ui.hide_water);
                         if ui.button(RichText::new("Water").color(color)).clicked() {
                             state.ui.hide_water = !state.ui.hide_water;
-                            redraw = true;
-                        }
-                    }
-
-                    if let Some(mol) = &mut state.molecule {
-                        if ui.button(RichText::new("Add H")).clicked() {
-                            mol.populate_hydrogens();
                             redraw = true;
                         }
                     }
