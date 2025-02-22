@@ -16,7 +16,6 @@ use crate::{
 };
 
 #[derive(Debug)]
-// todo: This, or a PDB-specific format?
 pub struct Molecule {
     pub ident: String,
     pub atoms: Vec<Atom>,
@@ -221,12 +220,6 @@ impl Molecule {
             Selection::None => None,
         }
     }
-
-    /// Crystolography files often omit hydrogens; add them programmatically. Required for molecular
-    /// dynamics.
-    pub fn populate_hydrogens(&mut self) {
-        // todo: Fill out
-    }
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -282,9 +275,20 @@ pub enum BondType {
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum BondCount {
     Single,
+    SingleDoubleHybrid,
     Double,
     Triple,
-    SingleDoubleHybrid,
+}
+
+impl BondCount {
+    pub fn value(&self) -> f64 {
+        match self {
+            Self::Single => 1.0,
+            Self::SingleDoubleHybrid => 1.5,
+            Self::Double => 2.0,
+            Self::Triple => 3.0,
+        }
+    }
 }
 
 #[derive(Debug)]

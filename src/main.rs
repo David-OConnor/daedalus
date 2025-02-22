@@ -1,5 +1,6 @@
 extern crate core;
 
+mod add_hydrogens;
 mod amino_acid_coords;
 mod asa;
 mod bond_inference;
@@ -86,6 +87,38 @@ pub enum Element {
     Tellurium,
     Selenium,
     Other,
+}
+
+impl Element {
+    pub fn valence_typical(&self) -> usize {
+        match self {
+            Self::Hydrogen => 1,
+            Self::Carbon => 4,
+            Self::Oxygen => 2,
+            Self::Nitrogen => 3,
+            Self::Fluorine => 1,
+            Self::Sulfur => 2,     // can be 2, 4, or 6, but 2 is a common choice
+            Self::Phosphorus => 5, // can be 3 or 5, here we pick 5
+            Self::Iron => 2,       // Fe(II) is common (Fe(III) also common)
+            Self::Copper => 2,     // Cu(I) and Cu(II) both occur, pick 2 as a naive default
+            Self::Calcium => 2,
+            Self::Potassium => 1,
+            Self::Aluminum => 3,
+            Self::Lead => 2,    // Pb(II) or Pb(IV), but Pb(II) is more common/stable
+            Self::Gold => 3,    // Au(I) and Au(III) are common, pick 3
+            Self::Silver => 1,  // Ag(I) is most common
+            Self::Mercury => 2, // Hg(I) and Hg(II), pick 2
+            Self::Tin => 4,     // Sn(II) or Sn(IV), pick 4
+            Self::Zinc => 2,
+            Self::Magnesium => 2,
+            Self::Iodine => 1, // can have higher, but 1 is typical in many simple compounds
+            Self::Chlorine => 1, // can also be 3,5,7, but 1 is the simplest (e.g., HCl)
+            Self::Tungsten => 6, // W can have multiple but 6 is a common oxidation state
+            Self::Tellurium => 2, // can also be 4 or 6, pick 2
+            Self::Selenium => 2, // can also be 4 or 6, pick 2
+            Self::Other => 0,  // default to 0 for unknown or unhandled elements
+        }
+    }
 }
 
 impl Element {

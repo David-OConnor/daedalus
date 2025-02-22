@@ -12,10 +12,9 @@ use crate::{
     mol_drawing::{MoleculeView, draw_ligand, draw_molecule},
     molecule::{Molecule, ResidueType},
     rcsb_api::open_pdb,
-    render::{CAM_INIT_OFFSET, RENDER_DIST},
+    render::{CAM_INIT_OFFSET, Color, RENDER_DIST},
     util::{cam_look_at, check_prefs_save, cycle_res_selected, select_from_search},
 };
-use crate::render::Color;
 
 pub const ROW_SPACING: f32 = 10.;
 pub const COL_SPACING: f32 = 30.;
@@ -38,11 +37,7 @@ const COLOR_ACTIVE: Color32 = Color32::LIGHT_GREEN;
 const MAX_TITLE_LEN: usize = 120; // Number of characters to display.
 
 fn active_color(val: bool) -> Color32 {
-     if val {
-        COLOR_ACTIVE
-    } else {
-        Color32::GRAY
-    }
+    if val { COLOR_ACTIVE } else { Color32::GRAY }
 }
 
 /// Update the tilebar to reflect the current molecule
@@ -799,6 +794,13 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                         let color = active_color(!state.ui.hide_water);
                         if ui.button(RichText::new("Water").color(color)).clicked() {
                             state.ui.hide_water = !state.ui.hide_water;
+                            redraw = true;
+                        }
+                    }
+
+                    if let Some(mol) = &mut state.molecule {
+                        if ui.button(RichText::new("Add H")).clicked() {
+                            mol.populate_hydrogens();
                             redraw = true;
                         }
                     }
