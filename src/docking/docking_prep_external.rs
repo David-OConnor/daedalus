@@ -1,8 +1,4 @@
-//! Currently calls Meeko to prepare targets and ligands.
-//! Requires python to be available at the CLI, with `meeko` installed, e.g. via pip.
-//! todo: Currently unable to install prody
-//!
-//! todo: Meeko and prody are fragile. I'm guessing slow too. Make your own. Using this is not sustainable.
+//! Runs Open babel to prepare targets and ligands.
 //!
 //! Update: Using Open Babel. Assume an installation, with `obabel` available in the path.
 
@@ -16,7 +12,7 @@ pub fn check_babel_avail() -> bool {
     let status = Command::new("obabel")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .args(["-V. U"])
+        .args(["-V"])
         .status();
 
     status.is_ok()
@@ -28,14 +24,8 @@ pub fn check_babel_avail() -> bool {
 /// Also, SEL modules crash it?
 pub fn prepare_target(mol_path: &Path) -> io::Result<()> {
     let path = mol_path.to_str().unwrap_or_default();
-    // Command::new("python")
-    //     // -f: Specify flexible residues.
-    //     // .args(["scripts/mk_prepare_receptor.py", "-i", p, "-o", "target_prepped.pdbqt", "-p"])
-    //     // .args(["scripts/mk_prepare_receptor.py", "-i", p, "-o", "target_prepped.pdbqt"])
-    //     .args(["scripts/mk_prepare_receptor.py", "--read_pdb", p, "-o", "target_prepped.pdbqt -p"])
-    //     .status()?;
-
     println!("Preparing target with Open Babel...");
+
     // This adds (missing) hydrogens, assigns Gasteiger partial charges, and removes water.
     // update: Seems to *add* water??
     Command::new("obabel")
@@ -55,9 +45,6 @@ pub fn prepare_target(mol_path: &Path) -> io::Result<()> {
 
 pub fn prepare_ligand(mol_path: &Path, ligand_is_2d: bool) -> io::Result<()> {
     let path = mol_path.to_str().unwrap_or_default();
-    // Command::new("python")
-    //     .args(["scripts/mk_prepare_ligand.py", "-i", p, "-o", "ligand_prepped.pdbqt"])
-    //     .status()?;
 
     // Adds H and partial charges as for target. Also handles notatible rotatable bonds.
     let mut args = vec![

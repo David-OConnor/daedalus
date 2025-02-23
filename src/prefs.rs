@@ -37,6 +37,7 @@ pub struct PerMolToSave {
     hide_non_hetero: bool,
     hide_ligand: bool,
     hide_hydrogen: bool,
+    autodock_vina_path: Option<PathBuf>,
 }
 
 impl PerMolToSave {
@@ -65,6 +66,7 @@ impl PerMolToSave {
             hide_non_hetero: state.ui.hide_non_hetero,
             hide_ligand: state.ui.hide_ligand,
             hide_hydrogen: state.ui.hide_hydrogen,
+            autodock_vina_path: state.autodock_vina_path.clone(),
         }
     }
 }
@@ -104,6 +106,7 @@ impl State {
                 self.ui.hide_non_hetero = data.hide_non_hetero;
                 self.ui.hide_ligand = data.hide_ligand;
                 self.ui.hide_hydrogen = data.hide_hydrogen;
+                self.autodock_vina_path = data.autodock_vina_path.clone();
 
                 if let Some(md) = &data.metadata {
                     mol.metadata = Some(md.clone())

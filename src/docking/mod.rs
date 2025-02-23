@@ -1,7 +1,9 @@
 //! Example docking software:
 //!
-//! Autodock Vina: Popular CLI tool, integrated into several GUI-based softwares:
-//! https://vina.scripps.edu/downloads/
+//! [Autodock Vina](https://vina.scripps.edu/): Popular CLI tool, integrated into several GUI-based applications.
+//! An improvement over Autodock 4 in speed and quality. Probably the best free Docking program; comparable in capability to commercial
+//! solutions. (But maybe not in user experience?) Autodock GPU is another modern imrpovement over Autodock 4.
+//!
 //!
 //! Chimera, with Autodock Vina integeration. [Open source](https://www.cgl.ucsf.edu/chimera/docs/sourcecode.html)
 //!
@@ -22,6 +24,13 @@
 //! Docking formats: Autodock Vina uses PDBQT files for both target and ligand. The targets, compared
 //! to PDB and mmCIF files, have hydrogens added and charges computed. The ligands define which bonds
 //! are rotatable. This format is specialized for docking operations.
+
+use std::{
+    io,
+    io::ErrorKind,
+    path::Path,
+    process::{Command, Stdio},
+};
 
 use lin_alg::f64::{Quaternion, Vec3};
 use rand::Rng;
@@ -79,7 +88,7 @@ impl Default for GeneticAlgorithmParameters {
 #[derive(Debug)]
 pub struct DockingInit {
     pub site_posit: Vec3,
-    pub site_box_size: f64, // Assume square.
+    pub site_box_size: f64, // Assume square. // todo: Allow diff dims
 }
 
 enum ConformationType {
@@ -205,6 +214,54 @@ pub fn find_optimal_pose(
     }
 
     (best_pose, best_energy)
+}
+
+pub fn check_adv_avail(vina_path: &Path) -> bool {
+    let status = Command::new(vina_path)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .args(["--version"])
+        .status();
+
+    status.is_ok()
+}
+
+/// Run Autodock Vina. `target_path` and `ligand_path` are to the prepared PDBQT files.
+/// https://vina.scripps.edu/manual/#usage (Or run the program with `--help`.)
+pub fn run_adv(
+    init: &DockingInit,
+    vina_path: &Path,
+    target_path: &Path,
+    ligand_path: &Path,
+) -> io::Result<Pose> {
+    Command::new(vina_path.to_str().unwrap_or_default())
+        .args([
+            "--receptor",
+            target_path.to_str().unwrap_or_default(),
+            // "--flex" // Flexible side chains; optional.
+            "--ligand",
+            ligand_path.to_str().unwrap_or_default(),
+            "--out",
+            "docking_result.pdbqt",
+            "--center_x",
+            &init.site_posit.x.to_string(),
+            "--center_y",
+            &init.site_posit.y.to_string(),
+            "--center_z",
+            &init.site_posit.z.to_string(),
+            "--size_x",
+            &init.site_box_size.to_string(),
+            "--size_y",
+            &init.site_box_size.to_string(),
+            "--size_z",
+            &init.site_box_size.to_string(),
+            // "--exhaustiveness", // Proportional to runtime. Higher is more accurate. Defaults to 8.
+            // "num_modes",
+            // "energy_range",
+        ])
+        .status()?;
+
+    Err(io::Error::new(ErrorKind::Other, ""))
 }
 
 // Find hydrogen bond interaction, hydrophobic interactions between ligand and protein.

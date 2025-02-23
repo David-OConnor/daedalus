@@ -240,8 +240,8 @@ fn bond_entities(
             let rot_ortho = Quaternion::from_unit_vecs(FWD_VEC, UP_VEC);
             let rotator = rot_ortho * orientation;
 
-            let offset_a = rotator.rotate_vec(Vec3::new(0.2, 0., 0.));
-            let offset_b = rotator.rotate_vec(Vec3::new(-0.2, 0., 0.));
+            let offset_a = rotator.rotate_vec(Vec3::new(0.15, 0., 0.));
+            let offset_b = rotator.rotate_vec(Vec3::new(-0.15, 0., 0.));
 
             add_bond(
                 entities,

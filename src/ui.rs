@@ -1,4 +1,9 @@
-use std::{f32::consts::TAU, path::Path, time::Instant};
+use std::{
+    f32::consts::TAU,
+    path::{Path, PathBuf},
+    str::FromStr,
+    time::Instant,
+};
 
 use egui::{Color32, ComboBox, Context, RichText, Slider, TextEdit, TopBottomPanel, Ui};
 use graphics::{Camera, EngineUpdates, RIGHT_VEC, Scene, UP_VEC};
@@ -8,14 +13,15 @@ use na_seq::AaIdent;
 use crate::{
     CamSnapshot, Selection, State, ViewSelLevel,
     docking::{
+        check_adv_avail,
         docking_prep_external::{prepare_ligand, prepare_target},
-        find_optimal_pose,
+        find_optimal_pose, run_adv,
     },
     download_pdb::load_rcsb,
     mol_drawing::{MoleculeView, draw_ligand, draw_molecule},
     molecule::{Molecule, ResidueType},
     rcsb_api::open_pdb,
-    render::{CAM_INIT_OFFSET, Color, RENDER_DIST},
+    render::CAM_INIT_OFFSET,
     util::{cam_look_at, check_prefs_save, cycle_res_selected, select_from_search},
 };
 
@@ -556,42 +562,79 @@ fn residue_search(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
 
         ui.add_space(COL_SPACING);
 
-        if let Some(mol) = &mut state.molecule {
-            if ui.button(RichText::new("Add H")).clicked() {
-                mol.populate_hydrogens();
-                *redraw = true;
-            }
-        }
+        // if let Some(mol) = &mut state.molecule {
+        //     if ui.button(RichText::new("Add H")).clicked() {
+        //         mol.populate_hydrogens();
+        //         *redraw = true;
+        //     }
+        // }
 
         if state.molecule.is_some() && state.ligand.is_some() {
-            if ui.button("Dock").clicked() {
-                let tgt = state.molecule.as_ref().unwrap();
-                let ligand = state.ligand.as_ref().unwrap();
-                find_optimal_pose(tgt, ligand, &Default::default());
+            if state.babel_avail {
+                if ui.button("Prepare").clicked() {
+                    let mut success_tgt = false;
+                    let mut success_ligand = false;
+                    // todo: We may need to save path with the molecule and ligand.
+                    if let Some(path) = &state.to_save.last_opened {
+                        if let Err(e) = prepare_target(path) {
+                            eprintln!("Error: Unable to process target molecule: {e:?}");
+                        } else {
+                            success_tgt = true;
+                        }
+                    }
+
+                    if let Some(path) = &state.to_save.last_ligand_opened {
+                        if let Err(e) = prepare_ligand(path, false) {
+                            eprintln!("Error: Unable to process ligand molecule: {e:?}");
+                        } else {
+                            success_ligand = true;
+                        }
+                    }
+
+                    // This is a loose proxy.
+                    if success_tgt && success_ligand {
+                        state.docking_ready = true;
+                    }
+                }
             }
 
-            if ui.button("Prepare").clicked() {
-                // todo: We may need to save path with the molecule and ligand.
-                if let Some(path) = &state.to_save.last_opened {
-                    if let Err(e) = prepare_target(path) {
-                        eprintln!("Error: Unable to process target molecule: {e:?}");
-                    };
-                }
+            // if state.docking_ready {
+            if true {
+                if ui.button("Dock").clicked() {
+                    // let tgt = state.molecule.as_ref().unwrap();
+                    let ligand = state.ligand.as_ref().unwrap();
 
-                if let Some(path) = &state.to_save.last_ligand_opened {
-                    if let Err(e) = prepare_ligand(path, false) {
-                        eprintln!("Error: Unable to process ligand molecule: {e:?}");
-                    };
+                    // find_optimal_pose(tgt, ligand, &Default::default());
+
+                    // Allow the user to select the autodock executable.
+                    if state.autodock_vina_path.is_none() {
+                        state.volatile.autodock_path_dialog.pick_file();
+                    }
+
+                    if let Some(vina_path) = &state.autodock_vina_path {
+                        match run_adv(
+                            &ligand.docking_init,
+                            vina_path,
+                            &PathBuf::from_str("target_prepped.pdbqt").unwrap(),
+                            &PathBuf::from_str("ligand_prepped.pdbqt").unwrap(),
+                        ) {
+                            Ok(r) => println!("Docking successful"),
+                            Err(e) => eprintln!("Docking failed: {e:?}"),
+                        }
+                    } else {
+                        eprintln!("No Autodock Vina install located yet.");
+                    }
                 }
             }
         }
 
-        // todo: Clicking selects the path.
-        ui.label(RichText::new("🔘").color(active_color(state.ui.autodock_path_valid)))
-            .on_hover_text("Autodock Vina found");
+        ui.add_space(COL_SPACING);
 
-        ui.label(RichText::new("🔘").color(active_color(state.babel_avail)))
-            .on_hover_text("Open Babel found");
+        ui.label(RichText::new("🔘AV").color(active_color(state.ui.autodock_path_valid)))
+            .on_hover_text("Autodock Vina available (Docking)");
+
+        ui.label(RichText::new("🔘OB").color(active_color(state.babel_avail)))
+            .on_hover_text("Open Babel available (Docking prep)");
     });
 }
 
@@ -882,6 +925,11 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             );
         }
 
+        if let Some(path) = &state.volatile.autodock_path_dialog.take_picked() {
+            state.ui.autodock_path_valid = check_adv_avail(path);
+            state.autodock_vina_path = Some(path.to_owned());
+        }
+
         if redraw {
             draw_molecule(state, scene, reset_cam);
             draw_ligand(state, scene, reset_cam);
@@ -901,6 +949,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
     state.volatile.load_dialog.update(ctx);
     state.volatile.load_ligand_dialog.update(ctx);
+    state.volatile.autodock_path_dialog.update(ctx);
 
     state.ui.dt = start.elapsed().as_secs_f32();
 

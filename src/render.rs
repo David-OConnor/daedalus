@@ -61,7 +61,7 @@ pub const SHELL_OPACITY: f32 = 0.01;
 
 // From the farthest molecule.
 pub const CAM_INIT_OFFSET: f32 = 10.;
-pub const OUTSIDE_LIGHTING_OFFSET: f32 = 300.;
+pub const OUTSIDE_LIGHTING_OFFSET: f32 = 400.;
 
 pub const COLOR_AA_NON_RESIDUE: Color = (0., 0.8, 1.0);
 
@@ -76,14 +76,24 @@ pub fn set_lighting(center: Vec3, size: f32) -> Lighting {
     Lighting {
         ambient_color: white,
         ambient_intensity: 0.12,
-        point_lights: vec![PointLight {
-            type_: LightType::Omnidirectional,
-            position: center + Vec3::new(40., size + OUTSIDE_LIGHTING_OFFSET, 0.),
-            diffuse_color: white,
-            specular_color: white,
-            diffuse_intensity: 10_000.,
-            specular_intensity: 60_000.,
-        }],
+        point_lights: vec![
+            // PointLight {
+            //     type_: LightType::Omnidirectional,
+            //     position: center + Vec3::new(40., size + OUTSIDE_LIGHTING_OFFSET, 0.),
+            //     diffuse_color: white,
+            //     specular_color: white,
+            //     diffuse_intensity: 6_000.,
+            //     specular_intensity: 60_000.,
+            // },
+            PointLight {
+                type_: LightType::Omnidirectional,
+                position: center + Vec3::new(40., -size - OUTSIDE_LIGHTING_OFFSET, 0.),
+                diffuse_color: white,
+                specular_color: white,
+                diffuse_intensity: 10_000.,
+                specular_intensity: 60_000.,
+            },
+        ],
     }
 }
 
@@ -326,7 +336,7 @@ fn render_handler(_state: &mut State, _scene: &mut Scene, _dt: f32) -> EngineUpd
 pub fn render(mut state: State) {
     let mut scene = Scene {
         meshes: vec![
-            Mesh::new_sphere(1., 16, 16),
+            Mesh::new_sphere(1., 14, 28),
             // Mesh::from_obj_file("sphere.obj"),
             Mesh::new_box(1., 1., 1.),
             Mesh::new_cylinder(1., BOND_RADIUS, 20),

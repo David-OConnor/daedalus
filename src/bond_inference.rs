@@ -44,7 +44,7 @@ impl BondSpecs {
 
 // If interatomic distance is within this distance of one of our known bond lenghts, consider it to be a bond.
 // Relevant to this is both bond variability under various conditions, and measurement precision.
-const BOND_LEN_THRESH: f64 = 0.05; // todo: Adjust A/R based on performance.
+const BOND_LEN_THRESH: f64 = 0.04; // todo: Adjust A/R based on performance.
 const GRID_SIZE: f64 = 1.6; // Slightly larger than the largest bond distance + thresh.
 
 #[rustfmt::skip]
@@ -94,10 +94,14 @@ fn get_specs() -> Vec<BondSpecs> {
         BondSpecs::new(1.46, (Carbon, Nitrogen), Single, Covalent),
 
         // C-N Indole N in 5-member aromatic ring, e.g. Trp. 1.36-1.39
-        BondSpecs::new(1.37, (Carbon, Nitrogen), SingleDoubleHybrid, Covalent),
+        // BondSpecs::new(1.37, (Carbon, Nitrogen), SingleDoubleHybrid, Covalent),
+        BondSpecs::new(1.37, (Carbon, Nitrogen), Single, Covalent),
+
+        // todo: Some adjustments here may be required regarding single vs hybrid N-C bonds.
 
         // C-N (amide). Partial double-bond character due to resonance in the amide.
-        BondSpecs::new(1.33, (Carbon, Nitrogen), SingleDoubleHybrid, Covalent),
+        // BondSpecs::new(1.33, (Carbon, Nitrogen), SingleDoubleHybrid, Covalent),
+        BondSpecs::new(1.33, (Carbon, Nitrogen), Single, Covalent),
 
         // C=N double bond
         // Typical for imines (Schiff bases). ~1.28 Å
@@ -122,7 +126,8 @@ fn get_specs() -> Vec<BondSpecs> {
         BondSpecs::new(1.37, (Carbon, Oxygen), Single, Covalent),
 
         // C′–O (in –COO⁻). 1.25-1.27 Å
-        BondSpecs::new(1.26, (Carbon, Oxygen), Single, Covalent),
+        // BondSpecs::new(1.26, (Carbon, Oxygen), Single, Covalent),
+        BondSpecs::new(1.26, (Carbon, Oxygen), Double, Covalent),
 
         // C=O double bond
         // Typical for carbonyl groups (aldehydes, ketones, carboxylic acids, amides). ~1.21–1.23 Å

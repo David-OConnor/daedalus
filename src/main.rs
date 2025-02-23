@@ -43,7 +43,7 @@ use pdbtbx::{self, PDB};
 use rayon::iter::ParallelIterator;
 
 use crate::{
-    docking::{DockingInit, docking_prep_external::check_babel_avail},
+    docking::{DockingInit, check_adv_avail, docking_prep_external::check_babel_avail},
     molecule::Ligand2,
     navigation::Tab,
     pdb::load_pdb,
@@ -306,6 +306,7 @@ impl ViewSelLevel {
 struct StateVolatile {
     load_dialog: FileDialog,
     load_ligand_dialog: FileDialog,
+    autodock_path_dialog: FileDialog,
     /// We use this for offsetting our cursor selection.
     ui_height: f32,
     // /// Center and size are used for setting the camera. Dependent on the molecule atom positions.
@@ -325,12 +326,28 @@ impl Default for StateVolatile {
                 ext == "pdb" || ext == "cif" || ext == "sdf"
             }),
         );
+
+        let cfg_vina = FileDialogConfig {
+            ..Default::default()
+        }
+        .add_file_filter(
+            "Executables",
+            Arc::new(|p| {
+                let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
+                ext == "" || ext == "exe"
+            }),
+        );
+
         let load_dialog = FileDialog::with_config(cfg.clone()).default_file_filter("PDB/CIF/SDF");
         let load_ligand_dialog = FileDialog::with_config(cfg).default_file_filter("PDB/CIF/SDF");
+
+        let autodock_path_dialog =
+            FileDialog::with_config(cfg_vina).default_file_filter("Executables");
 
         Self {
             load_dialog,
             load_ligand_dialog,
+            autodock_path_dialog,
             // mol_center: Vec3::new_zero(),
             // mol_size: 80.,
             ui_height: 0.,
@@ -418,6 +435,7 @@ struct State {
     pub tabs_open: Vec<Tab>,
     pub autodock_vina_path: Option<PathBuf>,
     pub babel_avail: bool,
+    pub docking_ready: bool,
 }
 
 impl State {
@@ -508,7 +526,7 @@ fn main() {
     }
 
     if let Some(path) = &state.autodock_vina_path {
-        state.ui.autodock_path_valid = path.try_exists().unwrap_or_default();
+        state.ui.autodock_path_valid = check_adv_avail(path);
     }
 
     state.babel_avail = check_babel_avail();
