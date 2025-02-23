@@ -9,12 +9,13 @@ use lin_alg::f32::{Quaternion, Vec3};
 use crate::{
     Element, Selection, State, ViewSelLevel,
     asa::{get_mesh_points, mesh_from_sas_points},
-    molecule::{Atom, AtomRole, BondCount, Chain, Residue, aa_color},
+    molecule::{Atom, AtomRole, Bond, BondCount, BondType, Chain, Residue, aa_color},
     render,
     render::{
         ATOM_SHINYNESS, BALL_STICK_RADIUS, BALL_STICK_RADIUS_H, BODY_SHINYNESS, BOND_RADIUS,
-        CAM_INIT_OFFSET, COLOR_AA_NON_RESIDUE, COLOR_SELECTED, COLOR_SFC_DOT, Color, MESH_BOND,
-        MESH_SPHERE, MESH_SPHERE_LOWRES, MESH_SURFACE, RADIUS_SFC_DOT, RENDER_DIST,
+        CAM_INIT_OFFSET, COLOR_AA_NON_RESIDUE, COLOR_H_BOND, COLOR_SELECTED, COLOR_SFC_DOT, Color,
+        MESH_BOND, MESH_SPHERE, MESH_SPHERE_LOWRES, MESH_SURFACE, RADIUS_H_BOND, RADIUS_SFC_DOT,
+        RENDER_DIST,
     },
 };
 
@@ -166,9 +167,9 @@ fn bond_entities(
     entities: &mut Vec<Entity>,
     posit_0: Vec3,
     posit_1: Vec3,
-    color_0: Color,
-    color_1: Color,
-    bond_count: BondCount,
+    mut color_0: Color,
+    mut color_1: Color,
+    bond_type: BondType,
 ) {
     // todo: You probably need to update this to display double bonds correctly.
 
@@ -183,10 +184,27 @@ fn bond_entities(
 
     let caps = true; // todo: Remove caps if ball+ stick
 
+    let bond_count = match bond_type {
+        BondType::Covalent { count } => count,
+        BondType::Hydrogen => BondCount::Single,
+        _ => unimplemented!(),
+    };
+
+    if bond_type == BondType::Hydrogen {
+        color_0 = COLOR_H_BOND;
+        color_1 = COLOR_H_BOND;
+    }
+
     // todo: Put this multibond code back.
     // todo: Lots of DRY!
     match bond_count {
         BondCount::Single => {
+            let thickness = if bond_type == BondType::Hydrogen {
+                RADIUS_H_BOND
+            } else {
+                1.
+            };
+
             add_bond(
                 entities,
                 posit_0,
@@ -197,7 +215,7 @@ fn bond_entities(
                 orientation,
                 dist_half,
                 caps,
-                1.,
+                thickness,
             );
         }
         BondCount::SingleDoubleHybrid => {
@@ -320,7 +338,7 @@ fn bond_entities(
 pub fn draw_ligand(state: &mut State, scene: &mut Scene, update_cam_lighting: bool) {
     // Hard-coded for sticks for now.
 
-    if state.ligand.is_none() || state.ui.hide_ligand {
+    if state.ligand.is_none() || state.ui.visibility.hide_ligand {
         return;
     }
     let ligand = state.ligand.as_ref().unwrap();
@@ -362,11 +380,9 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene, update_cam_lighting: bo
             &mut scene.entities,
             posit_0,
             posit_1,
-            // atom_0.element.color(),
-            // atom_1.element.color(),
             color_temp,
             color_temp,
-            bond.bond_count,
+            bond.bond_type,
         );
     }
 }
@@ -455,26 +471,26 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                 continue;
             }
 
-            if state.ui.hide_hydrogen && atom.element == Element::Hydrogen {
+            if state.ui.visibility.hide_hydrogen && atom.element == Element::Hydrogen {
                 continue;
             }
 
             if let Some(role) = atom.role {
-                if state.ui.hide_sidechains {
+                if state.ui.visibility.hide_sidechains {
                     if role == AtomRole::Sidechain {
                         continue;
                     }
                 }
-                if state.ui.hide_water || ui.mol_view == MoleculeView::SpaceFill {
+                if state.ui.visibility.hide_water || ui.mol_view == MoleculeView::SpaceFill {
                     if role == AtomRole::Water {
                         continue;
                     }
                 }
             }
 
-            if state.ui.hide_hetero && atom.hetero {
+            if state.ui.visibility.hide_hetero && atom.hetero {
                 continue;
-            } else if state.ui.hide_non_hetero && !atom.hetero {
+            } else if state.ui.visibility.hide_non_hetero && !atom.hetero {
                 continue;
             }
 
@@ -520,12 +536,16 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
     // Draw bonds.
     if ![MoleculeView::SpaceFill].contains(&ui.mol_view) {
         for bond in &mol.bonds {
-            let atom_0 = &mol.atoms[bond.atom_0];
-            let atom_1 = &mol.atoms[bond.atom_1];
-
             if ui.mol_view == MoleculeView::Backbone && !bond.is_backbone {
                 continue;
             }
+
+            if bond.bond_type == BondType::Hydrogen && ui.visibility.hide_h_bonds {
+                continue;
+            }
+
+            let atom_0 = &mol.atoms[bond.atom_0];
+            let atom_1 = &mol.atoms[bond.atom_1];
 
             if ui.show_nearby_only {
                 let atom_sel = mol.get_sel_atom(state.selection);
@@ -547,14 +567,14 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                 continue;
             }
 
-            if state.ui.hide_hydrogen && atom_0.element == Element::Hydrogen
+            if state.ui.visibility.hide_hydrogen && atom_0.element == Element::Hydrogen
                 || atom_1.element == Element::Hydrogen
             {
                 continue;
             }
 
             // Assuming water won't be bonded to the main molecule.
-            if state.ui.hide_sidechains {
+            if state.ui.visibility.hide_sidechains {
                 if let Some(role_0) = atom_0.role {
                     if let Some(role_1) = atom_1.role {
                         if role_0 == AtomRole::Sidechain || role_1 == AtomRole::Sidechain {
@@ -564,9 +584,9 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                 }
             }
 
-            if state.ui.hide_hetero && atom_0.hetero && atom_1.hetero {
+            if state.ui.visibility.hide_hetero && atom_0.hetero && atom_1.hetero {
                 continue;
-            } else if state.ui.hide_non_hetero && !atom_0.hetero && !atom_1.hetero {
+            } else if state.ui.visibility.hide_non_hetero && !atom_0.hetero && !atom_1.hetero {
                 continue;
             }
 
@@ -594,7 +614,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                 posit_1,
                 color_0,
                 color_1,
-                bond.bond_count,
+                bond.bond_type,
             );
         }
     }

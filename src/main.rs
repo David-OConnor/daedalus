@@ -355,6 +355,32 @@ impl Default for StateVolatile {
     }
 }
 
+#[derive(Debug, Clone, Encode, Decode)]
+struct Visibility {
+    hide_sidechains: bool,
+    hide_water: bool,
+    /// Hide hetero atoms: i.e. ones not part of a polypeptide.
+    hide_hetero: bool,
+    hide_non_hetero: bool,
+    hide_ligand: bool,
+    hide_hydrogen: bool,
+    hide_h_bonds: bool,
+}
+
+impl Default for Visibility {
+    fn default() -> Self {
+        Self {
+            hide_sidechains: false,
+            hide_water: false,
+            hide_hetero: false,
+            hide_non_hetero: false,
+            hide_ligand: false,
+            hide_hydrogen: false,
+            hide_h_bonds: true,
+        }
+    }
+}
+
 /// Ui text fields and similar.
 #[derive(Default)]
 struct StateUi {
@@ -376,13 +402,7 @@ struct StateUi {
     chain_to_pick_res: Option<usize>,
     /// Workaround for a bug or limitation in EGUI's `is_pointer_button_down_on`.
     // inputs_commanded: InputsCommanded,
-    hide_sidechains: bool,
-    hide_hydrogen: bool,
-    hide_water: bool,
-    /// Hide hetero atoms: i.e. ones not part of a polypeptide.
-    hide_hetero: bool,
-    hide_non_hetero: bool,
-    hide_ligand: bool,
+    visibility: Visibility,
     middle_click_down: bool,
     autodock_path_valid: bool,
 }
@@ -422,7 +442,6 @@ struct State {
     pub volatile: StateVolatile,
     pub pdb: Option<PDB>,
     pub molecule: Option<Molecule>,
-    // todo: Instead of molecule and ligand fields, maybe `Vec<Molecule>`?
     // pub ligand: Option<Molecule>,
     pub ligand: Option<Ligand2>,
     // todo: Should selection-related go in StateUi?
@@ -433,7 +452,6 @@ struct State {
     // todo: Make a new struct if you add more non
     pub to_save: ToSave,
     pub tabs_open: Vec<Tab>,
-    pub autodock_vina_path: Option<PathBuf>,
     pub babel_avail: bool,
     pub docking_ready: bool,
 }
@@ -525,8 +543,14 @@ fn main() {
         state.open_molecule(path, true);
     }
 
-    if let Some(path) = &state.autodock_vina_path {
+    if let Some(path) = &state.to_save.autodock_vina_path {
         state.ui.autodock_path_valid = check_adv_avail(path);
+
+        // If the saved path fails our check, leave it blank so the user can re-attempt.
+        if !state.ui.autodock_path_valid {
+            state.to_save.autodock_vina_path = None;
+            state.update_save_prefs();
+        }
     }
 
     state.babel_avail = check_babel_avail();

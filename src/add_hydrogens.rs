@@ -21,10 +21,11 @@ impl Molecule {
         self.bonds
             .iter()
             .filter_map(|bond| {
-                if bond.atom_0 == atom_index {
-                    Some(bond.bond_count.value())
-                } else if bond.atom_1 == atom_index {
-                    Some(bond.bond_count.value())
+                if bond.atom_0 == atom_index || bond.atom_1 == atom_index {
+                    match bond.bond_type {
+                        BondType::Covalent { count } => Some(count.value()),
+                        _ => None,
+                    }
                 } else {
                     None
                 }
@@ -139,6 +140,7 @@ impl Molecule {
 
     /// Crystolography files often omit hydrogens; add them programmatically. Required for molecular
     /// dynamics.
+    // todo: Some API asym between this and adding H bonds, which is a standalone fn.
     pub fn populate_hydrogens(&mut self) {
         // Collect new atoms/bonds in vectors to be appended later
         let mut new_atoms = Vec::new();
@@ -210,8 +212,9 @@ impl Molecule {
                 new_atoms.push(new_atom);
 
                 new_bonds.push(Bond {
-                    bond_type: BondType::Covalent,
-                    bond_count: BondCount::Single,
+                    bond_type: BondType::Covalent {
+                        count: BondCount::Single,
+                    },
                     atom_0: idx,
                     atom_1: new_atom_index,
                     is_backbone: false, // or match the parent's `is_backbone` if you want

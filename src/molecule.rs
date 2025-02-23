@@ -11,8 +11,12 @@ use pdbtbx::{PDB, SecondaryStructure};
 use rayon::prelude::*;
 
 use crate::{
-    Element, Selection, bond_inference::create_bonds, docking::DockingInit, rcsb_api::PdbMetaData,
-    sdf::Sdf, util::mol_center_size,
+    Element, Selection,
+    bond_inference::{create_bonds, make_hydrogen_bonds},
+    docking::DockingInit,
+    rcsb_api::PdbMetaData,
+    sdf::Sdf,
+    util::mol_center_size,
 };
 
 #[derive(Debug)]
@@ -142,7 +146,8 @@ impl Molecule {
         //     bonds.push((Atom::from_pdb(a0), Atom::from_pdb(a1), bond));
         // }
 
-        let bonds = create_bonds(&atoms);
+        let mut bonds = create_bonds(&atoms);
+        bonds.extend(make_hydrogen_bonds(&atoms));
 
         let (center, size) = mol_center_size(&atoms);
 
@@ -260,9 +265,12 @@ pub struct Ligand2 {
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum BondType {
     // C+P from pdbtbx for now
-    Covalent,
-    Disulfide,
+    Covalent {
+        count: BondCount,
+    },
+    /// Donor is always `atom0`.`
     Hydrogen,
+    Disulfide,
     MetalCoordination,
     MisMatchedBasePairs,
     SaltBridge,
@@ -294,7 +302,6 @@ impl BondCount {
 #[derive(Debug)]
 pub struct Bond {
     pub bond_type: BondType,
-    pub bond_count: BondCount,
     /// Index
     pub atom_0: usize,
     /// Index

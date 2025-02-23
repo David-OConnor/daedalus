@@ -10,6 +10,9 @@
 //! AutoDock (4? Racoon, and Vision?;  PyRx?)
 //! Mgl tools: Python Molecular viewer (PMV), Auto dock Tools.
 //!
+//! [Gnina](https://github.com/gnina/gnina?tab=readme-ov-file#usage) is another tool that may have some promising
+//! reasons to consider over Vina. Based on a fork of a fork of Vina. Uses ML.
+//!
 //! Schrodinger Maestro: The one to beat.
 //!
 //! BIOVIA Discovery Studio Visualizer: Free viewer from Dassault (SolidWorks maker): https://discover.3ds.com/discovery-studio-visualizer-download

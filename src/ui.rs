@@ -12,6 +12,7 @@ use na_seq::AaIdent;
 
 use crate::{
     CamSnapshot, Selection, State, ViewSelLevel,
+    bond_inference::make_hydrogen_bonds,
     docking::{
         check_adv_avail,
         docking_prep_external::{prepare_ligand, prepare_target},
@@ -19,7 +20,7 @@ use crate::{
     },
     download_pdb::load_rcsb,
     mol_drawing::{MoleculeView, draw_ligand, draw_molecule},
-    molecule::{Molecule, ResidueType},
+    molecule::{BondType, Molecule, ResidueType},
     rcsb_api::open_pdb,
     render::CAM_INIT_OFFSET,
     util::{cam_look_at, check_prefs_save, cycle_res_selected, select_from_search},
@@ -607,11 +608,11 @@ fn residue_search(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
                     // find_optimal_pose(tgt, ligand, &Default::default());
 
                     // Allow the user to select the autodock executable.
-                    if state.autodock_vina_path.is_none() {
+                    if state.to_save.autodock_vina_path.is_none() {
                         state.volatile.autodock_path_dialog.pick_file();
                     }
 
-                    if let Some(vina_path) = &state.autodock_vina_path {
+                    if let Some(vina_path) = &state.to_save.autodock_vina_path {
                         match run_adv(
                             &ligand.docking_init,
                             vina_path,
@@ -839,53 +840,60 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
                     ui.label("Vis:");
 
-                    let color = active_color(!state.ui.hide_non_hetero);
+                    let color = active_color(!state.ui.visibility.hide_non_hetero);
                     if ui.button(RichText::new("Peptide").color(color)).clicked() {
-                        state.ui.hide_non_hetero = !state.ui.hide_non_hetero;
+                        state.ui.visibility.hide_non_hetero = !state.ui.visibility.hide_non_hetero;
                         redraw = true;
                     }
 
-                    let color = active_color(!state.ui.hide_hetero);
+                    let color = active_color(!state.ui.visibility.hide_hetero);
                     if ui.button(RichText::new("Hetero").color(color)).clicked() {
-                        state.ui.hide_hetero = !state.ui.hide_hetero;
+                        state.ui.visibility.hide_hetero = !state.ui.visibility.hide_hetero;
                         redraw = true;
                     }
 
                     ui.add_space(COL_SPACING / 2.);
 
-                    if !state.ui.hide_non_hetero {
+                    if !state.ui.visibility.hide_non_hetero {
                         // Subset of peptide.
-                        let color = active_color(!state.ui.hide_sidechains);
+                        let color = active_color(!state.ui.visibility.hide_sidechains);
                         if ui
                             .button(RichText::new("Sidechains").color(color))
                             .clicked()
                         {
-                            state.ui.hide_sidechains = !state.ui.hide_sidechains;
+                            state.ui.visibility.hide_sidechains =
+                                !state.ui.visibility.hide_sidechains;
                             redraw = true;
                         }
 
-                        let color = active_color(!state.ui.hide_hydrogen);
+                        let color = active_color(!state.ui.visibility.hide_hydrogen);
                         if ui.button(RichText::new("H").color(color)).clicked() {
-                            state.ui.hide_hydrogen = !state.ui.hide_hydrogen;
+                            state.ui.visibility.hide_hydrogen = !state.ui.visibility.hide_hydrogen;
                             redraw = true;
                         }
                     }
 
-                    if !state.ui.hide_hetero {
+                    if !state.ui.visibility.hide_hetero {
                         // Subset of hetero.
-                        let color = active_color(!state.ui.hide_water);
+                        let color = active_color(!state.ui.visibility.hide_water);
                         if ui.button(RichText::new("Water").color(color)).clicked() {
-                            state.ui.hide_water = !state.ui.hide_water;
+                            state.ui.visibility.hide_water = !state.ui.visibility.hide_water;
                             redraw = true;
                         }
                     }
 
                     if state.ligand.is_some() {
-                        let color = active_color(!state.ui.hide_ligand);
+                        let color = active_color(!state.ui.visibility.hide_ligand);
                         if ui.button(RichText::new("Ligand").color(color)).clicked() {
-                            state.ui.hide_ligand = !state.ui.hide_ligand;
+                            state.ui.visibility.hide_ligand = !state.ui.visibility.hide_ligand;
                             redraw = true;
                         }
+                    }
+
+                    let color = active_color(!state.ui.visibility.hide_h_bonds);
+                    if ui.button(RichText::new("H bonds").color(color)).clicked() {
+                        state.ui.visibility.hide_h_bonds = !state.ui.visibility.hide_h_bonds;
+                        redraw = true;
                     }
                 });
 
@@ -927,7 +935,10 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         if let Some(path) = &state.volatile.autodock_path_dialog.take_picked() {
             state.ui.autodock_path_valid = check_adv_avail(path);
-            state.autodock_vina_path = Some(path.to_owned());
+            if state.ui.autodock_path_valid {
+                state.to_save.autodock_vina_path = Some(path.to_owned());
+                state.update_save_prefs();
+            }
         }
 
         if redraw {

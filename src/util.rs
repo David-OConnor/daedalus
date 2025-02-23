@@ -74,7 +74,7 @@ pub fn find_selected_atom(
 
         let atom = &atoms[*atom_i];
 
-        if ui.hide_sidechains {
+        if ui.visibility.hide_sidechains {
             if let Some(role) = atom.role {
                 if role == AtomRole::Sidechain {
                     continue;
@@ -82,11 +82,11 @@ pub fn find_selected_atom(
             }
         }
 
-        if ui.hide_hetero && atom.hetero {
+        if ui.visibility.hide_hetero && atom.hetero {
             continue;
         }
 
-        if ui.hide_non_hetero && !atom.hetero {
+        if ui.visibility.hide_non_hetero && !atom.hetero {
             continue;
         }
 

@@ -6,7 +6,7 @@ use bincode::{Decode, Encode};
 use graphics::app_utils::{load, save};
 
 use crate::{
-    CamSnapshot, Selection, State, ViewSelLevel,
+    CamSnapshot, Selection, State, ViewSelLevel, Visibility,
     mol_drawing::MoleculeView,
     rcsb_api::{PdbMetaData, load_pdb_metadata},
 };
@@ -18,6 +18,7 @@ pub struct ToSave {
     pub per_mol: HashMap<String, PerMolToSave>,
     pub last_opened: Option<PathBuf>,
     pub last_ligand_opened: Option<PathBuf>,
+    pub autodock_vina_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Encode, Decode)]
@@ -30,14 +31,8 @@ pub struct PerMolToSave {
     nearby_dist_thresh: u16,
     chain_vis: Vec<bool>,
     chain_to_pick_res: Option<usize>,
+    visibility: Visibility,
     metadata: Option<PdbMetaData>,
-    hide_sidechains: bool,
-    hide_water: bool,
-    hide_hetero: bool,
-    hide_non_hetero: bool,
-    hide_ligand: bool,
-    hide_hydrogen: bool,
-    autodock_vina_path: Option<PathBuf>,
 }
 
 impl PerMolToSave {
@@ -59,14 +54,8 @@ impl PerMolToSave {
             nearby_dist_thresh: state.ui.nearby_dist_thresh,
             chain_vis,
             chain_to_pick_res: state.ui.chain_to_pick_res,
+            visibility: state.ui.visibility.clone(),
             metadata,
-            hide_sidechains: state.ui.hide_sidechains,
-            hide_water: state.ui.hide_water,
-            hide_hetero: state.ui.hide_hetero,
-            hide_non_hetero: state.ui.hide_non_hetero,
-            hide_ligand: state.ui.hide_ligand,
-            hide_hydrogen: state.ui.hide_hydrogen,
-            autodock_vina_path: state.autodock_vina_path.clone(),
         }
     }
 }
@@ -100,13 +89,7 @@ impl State {
                 self.ui.show_nearby_only = data.show_nearby_only;
                 self.ui.nearby_dist_thresh = data.nearby_dist_thresh;
                 self.ui.chain_to_pick_res = data.chain_to_pick_res;
-                self.ui.hide_sidechains = data.hide_sidechains;
-                self.ui.hide_water = data.hide_water;
-                self.ui.hide_hetero = data.hide_hetero;
-                self.ui.hide_non_hetero = data.hide_non_hetero;
-                self.ui.hide_ligand = data.hide_ligand;
-                self.ui.hide_hydrogen = data.hide_hydrogen;
-                self.autodock_vina_path = data.autodock_vina_path.clone();
+                self.ui.visibility = data.visibility.clone();
 
                 if let Some(md) = &data.metadata {
                     mol.metadata = Some(md.clone())
