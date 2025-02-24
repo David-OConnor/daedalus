@@ -17,6 +17,8 @@
 //! `pythonsh prepare_receptor.py -r myprotein.pdb -o myprotein.pdbqt` (tgt)
 //! `pythonsh prepare_ligand4.py -l myligand.pdb -o myligand.pdbqt` (ligand)
 //!
+//! ADFR: https://ccsb.scripps.edu/adfr/downloads/ : another one. Having errors parsing OpenBabel's output.
+//!
 //! What we will use to start: the OpenBabel CLI program.
 
 use crate::molecule::Molecule;

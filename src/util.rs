@@ -1,4 +1,4 @@
-use std::{path::PathBuf, time::Instant};
+use std::{f64::consts::TAU, path::PathBuf, time::Instant};
 
 use graphics::{Camera, FWD_VEC};
 use lin_alg::{
@@ -9,7 +9,7 @@ use na_seq::AaIdent;
 
 use crate::{
     PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel,
-    molecule::{Atom, AtomRole, Chain, Residue, ResidueType},
+    molecule::{Atom, AtomRole, Bond, Chain, Residue, ResidueType},
 };
 
 const MOVE_TO_TARGET_DIST: f32 = 15.;
@@ -231,5 +231,38 @@ pub fn check_prefs_save(state: &mut State) {
             // Initialize LAST_PREF_SAVE the first time it's accessed
             LAST_PREF_SAVE = Some(now);
         }
+    }
+}
+
+// todo: Update this A/R.
+
+// todo: Also calculate the dihedral angle using 3 bonds. (4 atoms).
+/// Bond_0 and bond_1 must share an atom. For now, we assume `bond_0`'s atom_1 is the same as
+/// `bond_1`'s atom_0.
+pub fn bond_angle(atoms: &[Atom], bond_0: &Bond, bond_1: &Bond) -> f64 {
+    if bond_0.atom_1 != bond_1.atom_0 {
+        eprintln!("Error: bonds do not share an atom.");
+        return 0.;
+    }
+
+    let posit_0 = atoms[bond_0.atom_0].posit;
+    let posit_1 = atoms[bond_0.atom_1].posit; // Same as bond_1.atom_0.
+    let posit_2 = atoms[bond_1.atom_1].posit;
+
+    // Vectors from the central atom
+    let v1 = posit_0 - posit_1;
+    let v2 = posit_2 - posit_1;
+
+    let dot = v1.dot(v2);
+    let mag = v1.magnitude() * v2.magnitude();
+
+    if mag.abs() < 1e-9 {
+        // Avoid division by zero in degenerate cases
+        0.0
+    } else {
+        // Clamp to [-1.0, 1.0] to avoid numerical issues before acos
+        let mut cos_angle = dot / mag;
+        cos_angle = cos_angle.clamp(-1.0, 1.0);
+        cos_angle.acos().to_degrees()
     }
 }

@@ -19,7 +19,7 @@ barnes_hut = { path = "../barnes_hut", features = ["encode"]}
 #kifmm = { git = "https://github.com/bempp/kifmm/" }
 #kifmm = { version = "^2.0.0" }
 
-na_seq = "^0.2.6"
+na_seq = "^0.2.7"
 
 # For loading and saving config
 bincode = "^2.0.0-rc.3"

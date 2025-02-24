@@ -487,3 +487,24 @@ pub const fn aa_color(aa: AminoAcid) -> (f32, f32, f32) {
 // impl HelixClass {
 //     pub fn from
 // }
+
+// Modified from `peptide`.
+/// An amino acid in a protein structure, including all dihedral angles required to determine
+/// the conformation. Includes backbone and side chain dihedral angles. Doesn't store coordinates,
+/// but coordinates can be generated using forward kinematics from the angles.
+#[derive(Debug)]
+pub struct ResidueFlex {
+    /// Dihedral angle between C' and N
+    /// Tor (Cα, C, N, Cα) is the ω torsion angle
+    /// Assumed to be TAU/2 for most cases
+    pub ω: f64,
+    /// Dihedral angle between Cα and N.
+    /// Tor (C, N, Cα, C) is the φ torsion angle
+    pub φ: f64,
+    /// Dihedral angle, between Cα and C'
+    ///  Tor (N, Cα, C, N) is the ψ torsion angle
+    pub ψ: f64,
+    // /// Contains the χ angles that define t
+    // pub sidechain: Sidechain,
+    // pub dipole: Vec3,
+}

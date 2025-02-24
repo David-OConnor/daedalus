@@ -237,7 +237,11 @@ pub fn run_adv(
     target_path: &Path,
     ligand_path: &Path,
 ) -> io::Result<Pose> {
-    Command::new(vina_path.to_str().unwrap_or_default())
+    println!("Running Autodock Vina...");
+
+    let output_filename = "docking_result.pdbqt";
+
+    let output_text = Command::new(vina_path.to_str().unwrap_or_default())
         .args([
             "--receptor",
             target_path.to_str().unwrap_or_default(),
@@ -245,7 +249,7 @@ pub fn run_adv(
             "--ligand",
             ligand_path.to_str().unwrap_or_default(),
             "--out",
-            "docking_result.pdbqt",
+            output_filename,
             "--center_x",
             &init.site_posit.x.to_string(),
             "--center_y",
@@ -262,8 +266,18 @@ pub fn run_adv(
             // "num_modes",
             // "energy_range",
         ])
+        // todo: Status now for a clean print
+        // .output()?;
         .status()?;
 
+    println!("Complete.");
+    //
+    // // todo: Create a post from output text.
+    // println!("\n\nOutput text: {:?}\n\n", output_text);
+
+    // todo: Parse the output file into a pose here A/R
+
+    // todo: Output the pose.
     Err(io::Error::new(ErrorKind::Other, ""))
 }
 

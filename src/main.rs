@@ -1,5 +1,6 @@
 extern crate core;
 
+mod aa_coords;
 mod add_hydrogens;
 mod amino_acid_coords;
 mod asa;
@@ -13,6 +14,7 @@ mod mol_drawing;
 mod molecule;
 mod navigation;
 mod pdb;
+mod pdbqt;
 mod prefs;
 mod rcsb_api;
 mod render;
@@ -25,7 +27,7 @@ mod vibrations;
 use std::{
     io,
     io::{ErrorKind, Read},
-    path::{Path, PathBuf},
+    path::Path,
     str::FromStr,
     sync::Arc,
 };
@@ -484,7 +486,7 @@ impl State {
                         self.ligand = Some(Ligand2 {
                             molecule: mol,
                             docking_init: DockingInit {
-                                site_posit: Vec3F64::new(-11.83, 15.49, 65.88),
+                                site_posit: Vec3F64::new(0., 0., 30.),
                                 site_box_size: 3.,
                             },
                             orientation: QuaternionF64::new_identity(),

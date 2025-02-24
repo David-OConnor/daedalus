@@ -22,6 +22,7 @@ pub fn check_babel_avail() -> bool {
 // todo: What are the extra args?
 /// todo: PDB only; no cif.
 /// Also, SEL modules crash it?
+/// http://openbabel.org/docs/Command-line_tools/babel.html#options
 pub fn prepare_target(mol_path: &Path) -> io::Result<()> {
     let path = mol_path.to_str().unwrap_or_default();
     println!("Preparing target with Open Babel...");
@@ -35,7 +36,8 @@ pub fn prepare_target(mol_path: &Path) -> io::Result<()> {
             "target_prepped.pdbqt",
             "-h",
             "--partialcharge gasteiger",
-            // "-xr",
+            // `-xr` seems to be required to prevent errors about `ROOT` lines, when Vina reads the PDBQT file.
+            "-xr",
         ])
         .status()?;
     println!("Complete");
@@ -43,6 +45,7 @@ pub fn prepare_target(mol_path: &Path) -> io::Result<()> {
     Ok(())
 }
 
+/// http://openbabel.org/docs/Command-line_tools/babel.html#options
 pub fn prepare_ligand(mol_path: &Path, ligand_is_2d: bool) -> io::Result<()> {
     let path = mol_path.to_str().unwrap_or_default();
 

@@ -55,8 +55,8 @@ pub const BOND_RADIUS_DOUBLE: f32 = 0.07;
 pub const RADIUS_SFC_DOT: f32 = 0.05;
 pub const COLOR_SFC_DOT: Color = (0.7, 0.7, 0.7);
 
-pub const COLOR_SELECTED: Color = (0., 0., 1.);
-pub const COLOR_H_BOND: Color = (0.3, 0.3, 1.);
+pub const COLOR_SELECTED: Color = (1., 0., 0.);
+pub const COLOR_H_BOND: Color = (0.2, 0.2, 1.);
 pub const RADIUS_H_BOND: f32 = 0.2; // A scaler relative to covalent sticks.
 
 pub const SHELL_OPACITY: f32 = 0.01;
