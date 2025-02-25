@@ -46,6 +46,7 @@ use rayon::iter::ParallelIterator;
 use crate::{
     aa_coords::bond_vecs::init_local_bond_vecs,
     docking::{DockingInit, check_adv_avail, docking_prep_external::check_babel_avail},
+    file_io::pdbqt::load_pdbqt,
     molecule::Ligand2,
     navigation::Tab,
     prefs::ToSave,
@@ -364,7 +365,7 @@ impl Default for StateVolatile {
             "PDB/CIF/SDF",
             Arc::new(|p| {
                 let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
-                ext == "pdb" || ext == "cif" || ext == "sdf"
+                ext == "pdb" || ext == "cif" || ext == "sdf" || ext == "pdbqt"
             }),
         );
 
@@ -508,60 +509,49 @@ impl State {
 
     // todo: Consider how you handle loading and storing of ligands vs targets.
     pub fn open_molecule(&mut self, path: &Path, ligand: bool) {
-        match path
+        let molecule = match path
             .extension()
             .unwrap_or_default()
             .to_ascii_lowercase()
             .to_str()
             .unwrap_or_default()
         {
-            "sdf" => {
-                let sdf = load_sdf(path);
-
-                if let Ok(mol) = sdf {
-                    if ligand {
-                        self.ligand = Some(Ligand2 {
-                            molecule: mol,
-                            docking_init: DockingInit {
-                                site_posit: Vec3F64::new(0., 0., 30.),
-                                site_box_size: 3.,
-                            },
-                            orientation: QuaternionF64::new_identity(),
-                        });
-                    } else {
-                        self.molecule = Some(mol);
-                    }
-
-                    self.update_from_prefs();
-                } else {
-                    eprintln!("Error loading SDF file.");
-                }
-            }
-            _ => {
-                // e.g. cif, pdb
+            "sdf" => load_sdf(path),
+            "pdbqt" => load_pdbqt(path),
+            "pdb" | "cif" => {
                 let pdb = load_pdb(path);
-                if let Ok(p) = pdb {
-                    self.pdb = Some(p);
-                    let mol = Molecule::from_pdb(self.pdb.as_ref().unwrap());
-
-                    if ligand {
-                        self.ligand = Some(Ligand2 {
-                            molecule: mol,
-                            docking_init: DockingInit {
-                                site_posit: Vec3F64::new_zero(),
-                                site_box_size: 3.,
-                            },
-                            orientation: QuaternionF64::new_identity(),
-                        });
-                    } else {
-                        self.molecule = Some(mol);
+                match pdb {
+                    Ok(p) => {
+                        self.pdb = Some(p);
+                        Ok(Molecule::from_pdb(self.pdb.as_ref().unwrap()))
                     }
-
-                    self.update_from_prefs();
-                } else {
-                    eprintln!("Error loading PDB file.");
+                    Err(e) => Err(e),
                 }
             }
+            _ => Err(io::Error::new(
+                ErrorKind::InvalidData,
+                "Invalid file extension",
+            )),
+        };
+
+        match molecule {
+            Ok(mol) => {
+                if ligand {
+                    self.ligand = Some(Ligand2 {
+                        molecule: mol,
+                        docking_init: DockingInit {
+                            site_posit: Vec3F64::new(0., 0., 30.),
+                            site_box_size: 3.,
+                        },
+                        orientation: QuaternionF64::new_identity(),
+                    });
+                } else {
+                    self.molecule = Some(mol);
+                }
+
+                self.update_from_prefs();
+            }
+            Err(e) => eprintln!("Error loading file at path {path:?}: {e:?}"),
         }
     }
 }

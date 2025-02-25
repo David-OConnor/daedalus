@@ -8,6 +8,7 @@ use std::{
 };
 
 use lin_alg::f64::Vec3;
+use regex::Regex;
 
 use crate::{
     Element,
@@ -139,11 +140,29 @@ impl Molecule {
         let mut result = Self::default();
         let mut atoms = Vec::new();
 
+        let re_name = Regex::new(r"Name\s*=\s*(\S+)").unwrap();
+
         for line in pdb_text.lines() {
             // pad or skip lines that are too short to safely slice
             if line.len() < 6 {
                 continue;
             }
+
+            if let Some(caps) = re_name.captures(line) {
+                println!("NAME: {:?}", caps);
+                result.ident = caps[1].to_string();
+                println!("Actual name: {:?}", result.ident);
+                continue;
+            }
+
+            // if line.starts_with("REMARK") {
+            //     // Look for the substring "Name ="
+            //     if let Some(pos) = line.find("Name =") {
+            //         // Everything after "Name =" is presumably the value
+            //         let value = &line[pos + 6..]; // skip the characters in "Name ="
+            //         result.ident = value.trim().to_string();
+            //     }
+            // }
 
             let record_type = &line[0..6];
 
@@ -208,6 +227,11 @@ impl Molecule {
 
     pub fn save_pdbqt(&self, path: &Path) -> io::Result<()> {
         let mut file = File::create(path)?;
+
+        // Typically you'd end with "END" or "ENDMDL" or so, but not strictly required for many readers.
+        if !self.ident.is_empty() {
+            writeln!(file, "REMARK  NAME = {}", self.ident)?;
+        }
 
         // Optionally write remarks, ROOT/ENDROOT, etc. here if needed.
         // For each atom:
@@ -274,7 +298,9 @@ impl Molecule {
             )?;
         }
 
-        // Typically you'd end with "END" or "ENDMDL" or so, but not strictly required for many readers.
+        // If your PDBQT format typically has "ENDROOT" after the atoms:
+        writeln!(file, "ENDROOT")?;
+
         writeln!(file, "END")?;
 
         Ok(())

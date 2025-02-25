@@ -903,6 +903,18 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
                 // todo: Show hide based on AaCategory? i.e. residue.amino_acid.category(). Hydrophilic, acidic etc.
 
+                // todo: Temp here
+                if ui.button("Save PDBQT").clicked() {
+                    if let Some(mol) = &state.molecule {
+                        if mol
+                            .save_pdbqt(&PathBuf::from_str("test_out.pdbqt").unwrap())
+                            .is_err()
+                        {
+                            eprintln!("Error saving PDBQT file");
+                        }
+                    }
+                }
+
                 residue_selector(state, &mut redraw, ui);
             });
         });
