@@ -207,6 +207,10 @@ impl Molecule {
                     role: Some(AtomRole::H_Backbone),
                     amino_acid: atom.amino_acid,
                     hetero: false,
+                    partial_charge: None,
+                    autodock_type: None,
+                    occupancy: None,
+                    temperature_factor: None,
                 };
                 let new_atom_index = self.atoms.len() + new_atoms.len();
                 new_atoms.push(new_atom);

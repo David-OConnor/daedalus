@@ -1,7 +1,5 @@
 //! Add positions and orientations for all sidechain atoms. Quite repetative!
 
-// todo: This module is a C+P from peptide, modified.
-
 use std::f64::consts::TAU;
 
 use lin_alg::f64::{Quaternion, Vec3};

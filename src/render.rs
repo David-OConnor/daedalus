@@ -371,7 +371,7 @@ pub fn render(mut state: State) {
     };
     let ui_settings = UiSettings {
         layout: UiLayout::Top,
-        icon_path: Some("./resources/icon.png".to_owned()),
+        icon_path: Some("resources/icon.png".to_owned()),
     };
 
     mol_drawing::draw_molecule(&mut state, &mut scene, true);

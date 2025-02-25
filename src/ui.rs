@@ -672,15 +672,17 @@ fn selection_section(
             *redraw = true;
         }
 
-        ui.label("Nearby filter:");
-        let dist_prev = state.ui.nearby_dist_thresh;
-        ui.add(Slider::new(
-            &mut state.ui.nearby_dist_thresh,
-            NEARBY_THRESH_MIN..=NEARBY_THRESH_MAX,
-        ));
+        if state.ui.show_nearby_only {
+            ui.label("Dist:");
+            let dist_prev = state.ui.nearby_dist_thresh;
+            ui.add(Slider::new(
+                &mut state.ui.nearby_dist_thresh,
+                NEARBY_THRESH_MIN..=NEARBY_THRESH_MAX,
+            ));
 
-        if state.ui.nearby_dist_thresh != dist_prev {
-            *redraw = true;
+            if state.ui.nearby_dist_thresh != dist_prev {
+                *redraw = true;
+            }
         }
 
         ui.add_space(COL_SPACING);
@@ -772,21 +774,23 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             ui.add_space(COL_SPACING);
 
             ui.add_space(COL_SPACING);
-            ui.label("RCSB ident:");
+            ui.label("Query RCSB. Ident:");
             ui.add(TextEdit::singleline(&mut state.ui.rcsb_input).desired_width(40.));
 
-            if ui.button("Download from RCSB").clicked() {
-                match load_rcsb(&state.ui.rcsb_input) {
-                    Ok(pdb) => {
-                        state.pdb = Some(pdb);
-                        state.molecule = Some(Molecule::from_pdb(state.pdb.as_ref().unwrap()));
-                        state.update_from_prefs();
+            if !state.ui.rcsb_input.is_empty() {
+                if ui.button("Download from RCSB").clicked() {
+                    match load_rcsb(&state.ui.rcsb_input) {
+                        Ok(pdb) => {
+                            state.pdb = Some(pdb);
+                            state.molecule = Some(Molecule::from_pdb(state.pdb.as_ref().unwrap()));
+                            state.update_from_prefs();
 
-                        redraw = true;
-                        reset_cam = true;
-                    }
-                    Err(_e) => {
-                        eprintln!("Error loading PDB file");
+                            redraw = true;
+                            reset_cam = true;
+                        }
+                        Err(_e) => {
+                            eprintln!("Error loading PDB file");
+                        }
                     }
                 }
             }

@@ -198,7 +198,8 @@ fn bond_entities(
     // todo: Put this multibond code back.
     // todo: Lots of DRY!
     match bond_count {
-        BondCount::Single => {
+        // BondCount::Single => {
+        BondCount::Single | BondCount::SingleDoubleHybrid => {
             let thickness = if bond_type == BondType::Hydrogen {
                 RADIUS_H_BOND
             } else {
@@ -218,43 +219,46 @@ fn bond_entities(
                 thickness,
             );
         }
-        BondCount::SingleDoubleHybrid => {
-            // Draw two offset bond cylinders.
-            let rot_ortho = Quaternion::from_unit_vecs(FWD_VEC, UP_VEC);
-            let rotator = rot_ortho * orientation;
-
-            let offset_a = rotator.rotate_vec(Vec3::new(0.2, 0., 0.));
-            let offset_b = rotator.rotate_vec(Vec3::new(-0.2, 0., 0.));
-
-            // todo: Make this one better
-
-            add_bond(
-                entities,
-                posit_0 + offset_a,
-                posit_1 + offset_a,
-                center + offset_a,
-                color_0,
-                color_1,
-                orientation,
-                dist_half,
-                caps,
-                0.7,
-            );
-            add_bond(
-                entities,
-                posit_0 + offset_b,
-                posit_1 + offset_b,
-                center + offset_b,
-                color_0,
-                color_1,
-                orientation,
-                dist_half,
-                caps,
-                0.4,
-            );
-        }
+        // todo: Put back once you have a dihedral-angle-based approach.
+        // BondCount::SingleDoubleHybrid => {
+        //     // Draw two offset bond cylinders.
+        //     // todo: Set rot_ortho based on dihedral angle.
+        //     let rot_ortho = Quaternion::from_unit_vecs(FWD_VEC, UP_VEC);
+        //     let rotator = rot_ortho * orientation;
+        //
+        //     let offset_a = rotator.rotate_vec(Vec3::new(0.2, 0., 0.));
+        //     let offset_b = rotator.rotate_vec(Vec3::new(-0.2, 0., 0.));
+        //
+        //     // todo: Make this one better
+        //
+        //     add_bond(
+        //         entities,
+        //         posit_0 + offset_a,
+        //         posit_1 + offset_a,
+        //         center + offset_a,
+        //         color_0,
+        //         color_1,
+        //         orientation,
+        //         dist_half,
+        //         caps,
+        //         0.7,
+        //     );
+        //     add_bond(
+        //         entities,
+        //         posit_0 + offset_b,
+        //         posit_1 + offset_b,
+        //         center + offset_b,
+        //         color_0,
+        //         color_1,
+        //         orientation,
+        //         dist_half,
+        //         caps,
+        //         0.4,
+        //     );
+        // }
         BondCount::Double => {
             // Draw two offset bond cylinders.
+            // todo: Set rot_ortho based on dihedral angle.
             let rot_ortho = Quaternion::from_unit_vecs(FWD_VEC, UP_VEC);
             let rotator = rot_ortho * orientation;
 
@@ -287,7 +291,8 @@ fn bond_entities(
             );
         }
         BondCount::Triple => {
-            //         // Draw two offset bond cylinders.
+            // Draw two offset bond cylinders.
+            // todo: Set rot_ortho based on dihedral angle.
             let rot_ortho = Quaternion::from_unit_vecs(FWD_VEC, UP_VEC);
             let rotator = rot_ortho * orientation;
 

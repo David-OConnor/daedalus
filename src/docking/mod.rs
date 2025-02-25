@@ -22,6 +22,7 @@
 //!
 //! Molecule databases:
 //! - [Drugbank](https://go.drugbank.com/)
+//! - [Pubchem](https://pubchem.ncbi.nlm.nih.gov/)
 //!
 //!
 //! Docking formats: Autodock Vina uses PDBQT files for both target and ligand. The targets, compared

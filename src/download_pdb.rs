@@ -5,7 +5,7 @@ use std::{io, time::Duration};
 use pdbtbx::PDB;
 use ureq::{self, Agent};
 
-use crate::{molecule::Molecule, pdb::read_pdb};
+use crate::file_io::pdb::read_pdb;
 
 const PDB_BASE_URL: &str = "https://www.rcsb.org/structure";
 // const PDB_3D_VIEW_URL: &str = "https://www.rcsb.org/3d-view";

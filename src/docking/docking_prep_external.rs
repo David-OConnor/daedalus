@@ -29,6 +29,8 @@ pub fn prepare_target(mol_path: &Path) -> io::Result<()> {
 
     // This adds (missing) hydrogens, assigns Gasteiger partial charges, and removes water.
     // update: Seems to *add* water??
+    // todo: Kolman charges vice gasteiger?
+    // Todo: Rem water?
     Command::new("obabel")
         .args([
             path,
@@ -36,8 +38,11 @@ pub fn prepare_target(mol_path: &Path) -> io::Result<()> {
             "target_prepped.pdbqt",
             "-h",
             "--partialcharge gasteiger",
+            // "--partialcharge kolman",
             // `-xr` seems to be required to prevent errors about `ROOT` lines, when Vina reads the PDBQT file.
             "-xr",
+            // "--filter",
+            // "\"not water\""
         ])
         .status()?;
     println!("Complete");
@@ -50,6 +55,7 @@ pub fn prepare_ligand(mol_path: &Path, ligand_is_2d: bool) -> io::Result<()> {
     let path = mol_path.to_str().unwrap_or_default();
 
     // Adds H and partial charges as for target. Also handles notatible rotatable bonds.
+    //
     let mut args = vec![
         path,
         "-O",

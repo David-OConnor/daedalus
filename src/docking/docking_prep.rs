@@ -23,10 +23,13 @@
 
 use crate::molecule::Molecule;
 
-/// Adds hydrogens and charge data.
-pub fn prep_target(mol: &mut Molecule) {}
+impl Molecule {
+    /// Adds hydrogens, assigns partial charges etc.
+    pub fn prep_target(&mut self) {}
 
-pub fn prep_ligand(mol: &mut Molecule) {}
+    /// Indicates which atoms and bonds are flexible, etc.
+    pub fn prep_ligand(&mut self) {}
+}
 
 /// todo: Output string if it's a text-based format.
 pub fn export_pdbqt(target: &Molecule, ligand: &Molecule) -> Vec<u8> {

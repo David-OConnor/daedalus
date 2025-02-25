@@ -14,12 +14,13 @@ use crate::{
     Element, Selection,
     bond_inference::{create_bonds, make_hydrogen_bonds},
     docking::DockingInit,
+    file_io::pdbqt::AutodockType,
     rcsb_api::PdbMetaData,
-    sdf::Sdf,
     util::mol_center_size,
 };
+// use crate::file_io::sdf::Sdf;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Molecule {
     pub ident: String,
     pub atoms: Vec<Atom>,
@@ -40,6 +41,7 @@ pub struct Molecule {
 }
 
 impl Molecule {
+    /// From `pdbtbx`'s format.
     pub fn from_pdb(pdb: &PDB) -> Self {
         // todo: Maybe return the PDB type here, and store that. Also have a way to
         // todo get molecules from it
@@ -161,44 +163,6 @@ impl Molecule {
             sa_surface_pts: None,
             mesh_created: false,
             secondary_structure: pdb.secondary_structure.clone(),
-            center,
-            size,
-        }
-    }
-
-    pub fn from_sdf(sdf: &Sdf) -> Self {
-        let mut chains = Vec::new();
-        let mut residues = Vec::new();
-
-        let atom_indices: Vec<usize> = (0..sdf.atoms.len()).collect();
-
-        residues.push(Residue {
-            serial_number: 0,
-            res_type: ResidueType::Other("Unknown".to_string()),
-            atoms: atom_indices.clone(),
-        });
-
-        chains.push(Chain {
-            id: "A".to_string(),
-            residues: vec![0],
-            atoms: atom_indices,
-            visible: true,
-        });
-
-        let bonds = create_bonds(&sdf.atoms);
-
-        let (center, size) = mol_center_size(&sdf.atoms);
-
-        Self {
-            ident: "".to_string(),
-            atoms: sdf.atoms.clone(),
-            bonds,
-            chains,
-            residues,
-            metadata: None,
-            sa_surface_pts: None,
-            mesh_created: false,
-            secondary_structure: Vec::new(),
             center,
             size,
         }
@@ -377,6 +341,13 @@ pub struct Atom {
     pub role: Option<AtomRole>,
     pub amino_acid: Option<AminoAcid>, // todo: Duplicate with storing atom IDs with residues.
     pub hetero: bool,
+    /// For docking.
+    // todo: Consider a substruct for docking fields.
+    pub partial_charge: Option<f32>,
+    /// For docking.
+    pub autodock_type: Option<AutodockType>,
+    pub occupancy: Option<f32>,          // todo ?
+    pub temperature_factor: Option<f32>, // todo ?
 }
 
 impl Atom {
@@ -428,6 +399,10 @@ impl Atom {
             role,
             amino_acid: amino_acid.copied(),
             hetero: atom_pdb.hetero(),
+            partial_charge: None,
+            autodock_type: None,
+            occupancy: None,
+            temperature_factor: None,
         }
     }
 
@@ -487,24 +462,3 @@ pub const fn aa_color(aa: AminoAcid) -> (f32, f32, f32) {
 // impl HelixClass {
 //     pub fn from
 // }
-
-// Modified from `peptide`.
-/// An amino acid in a protein structure, including all dihedral angles required to determine
-/// the conformation. Includes backbone and side chain dihedral angles. Doesn't store coordinates,
-/// but coordinates can be generated using forward kinematics from the angles.
-#[derive(Debug)]
-pub struct ResidueFlex {
-    /// Dihedral angle between C' and N
-    /// Tor (Cα, C, N, Cα) is the ω torsion angle
-    /// Assumed to be TAU/2 for most cases
-    pub ω: f64,
-    /// Dihedral angle between Cα and N.
-    /// Tor (C, N, Cα, C) is the φ torsion angle
-    pub φ: f64,
-    /// Dihedral angle, between Cα and C'
-    ///  Tor (N, Cα, C, N) is the ψ torsion angle
-    pub ψ: f64,
-    // /// Contains the χ angles that define t
-    // pub sidechain: Sidechain,
-    // pub dipole: Vec3,
-}

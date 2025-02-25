@@ -9,17 +9,15 @@ mod cartoon_mesh;
 mod docking;
 mod download_pdb;
 mod drug_like;
+mod file_io;
 mod input;
 mod mol_drawing;
 mod molecule;
 mod navigation;
-mod pdb;
-mod pdbqt;
 mod prefs;
 mod rcsb_api;
 mod render;
 mod save_load;
-mod sdf;
 mod ui;
 mod util;
 mod vibrations;
@@ -34,6 +32,7 @@ use std::{
 
 use bincode::{Decode, Encode};
 use egui_file_dialog::{FileDialog, FileDialogConfig};
+use file_io::{pdb::load_pdb, sdf::load_sdf};
 use graphics::Camera;
 use lin_alg::{
     f32::{Quaternion, Vec3},
@@ -45,13 +44,12 @@ use pdbtbx::{self, PDB};
 use rayon::iter::ParallelIterator;
 
 use crate::{
+    aa_coords::bond_vecs::init_local_bond_vecs,
     docking::{DockingInit, check_adv_avail, docking_prep_external::check_babel_avail},
     molecule::Ligand2,
     navigation::Tab,
-    pdb::load_pdb,
     prefs::ToSave,
     render::render,
-    sdf::load_sdf,
     ui::VIEW_DEPTH_MAX,
 };
 
@@ -126,9 +124,7 @@ impl Element {
             Self::Other => 0,  // default to 0 for unknown or unhandled elements
         }
     }
-}
 
-impl Element {
     pub fn from_pdb(el: Option<&pdbtbx::Element>) -> Self {
         if let Some(e) = el {
             match e {
@@ -181,11 +177,54 @@ impl Element {
             "CU" => Ok(Self::Copper),
             "CA" => Ok(Self::Calcium),
             "K" => Ok(Self::Potassium),
+            "AL" => Ok(Self::Aluminum),
+            "PB" => Ok(Self::Lead),
+            "AU" => Ok(Self::Gold),
+            "AG" => Ok(Self::Silver),
+            "HG" => Ok(Self::Mercury),
+            "SN" => Ok(Self::Tin),
+            "ZN" => Ok(Self::Zinc),
+            "MG" => Ok(Self::Magnesium),
+            "I" => Ok(Self::Iodine),
+            "CL" => Ok(Self::Chlorine),
+            "W" => Ok(Self::Tungsten),
+            "TE" => Ok(Self::Tellurium),
+            "SE" => Ok(Self::Selenium),
             // todo: Fill in if you need, or remove this fn.
             _ => Err(io::Error::new(
                 ErrorKind::InvalidData,
                 "Invalid atom letter",
             )),
+        }
+    }
+
+    pub fn to_letter(&self) -> String {
+        match self {
+            Self::Hydrogen => "H".into(),
+            Self::Carbon => "C".into(),
+            Self::Oxygen => "O".into(),
+            Self::Nitrogen => "N".into(),
+            Self::Fluorine => "F".into(),
+            Self::Sulfur => "S".into(),
+            Self::Phosphorus => "P".into(),
+            Self::Iron => "FE".into(),
+            Self::Copper => "CU".into(),
+            Self::Calcium => "CA".into(),
+            Self::Potassium => "K".into(),
+            Self::Aluminum => "AL".into(),
+            Self::Lead => "PB".into(),
+            Self::Gold => "AU".into(),
+            Self::Silver => "AG".into(),
+            Self::Mercury => "HG".into(),
+            Self::Tin => "SN".into(),
+            Self::Zinc => "ZN".into(),
+            Self::Magnesium => "MG".into(),
+            Self::Iodine => "I".into(),
+            Self::Chlorine => "CL".into(),
+            Self::Tungsten => "W".into(),
+            Self::Tellurium => "TE".into(),
+            Self::Selenium => "SE".into(),
+            Self::Other => "X".into(),
         }
     }
 
@@ -479,9 +518,7 @@ impl State {
             "sdf" => {
                 let sdf = load_sdf(path);
 
-                if let Ok(s) = sdf {
-                    let mol = Molecule::from_sdf(&s);
-
+                if let Ok(mol) = sdf {
                     if ligand {
                         self.ligand = Some(Ligand2 {
                             molecule: mol,
@@ -556,6 +593,9 @@ fn main() {
     }
 
     state.babel_avail = check_babel_avail();
+
+    // todo: A/R
+    init_local_bond_vecs(); // todo: Maybe put this at start of program.
 
     render(state);
 }
