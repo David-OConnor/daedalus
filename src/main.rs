@@ -47,7 +47,7 @@ use crate::{
     aa_coords::bond_vecs::init_local_bond_vecs,
     docking::{DockingInit, check_adv_avail, docking_prep_external::check_babel_avail},
     file_io::pdbqt::load_pdbqt,
-    molecule::Ligand2,
+    molecule::Ligand,
     navigation::Tab,
     prefs::ToSave,
     render::render,
@@ -485,7 +485,7 @@ struct State {
     pub pdb: Option<PDB>,
     pub molecule: Option<Molecule>,
     // pub ligand: Option<Molecule>,
-    pub ligand: Option<Ligand2>,
+    pub ligand: Option<Ligand>,
     // todo: Should selection-related go in StateUi?
     pub selection: Selection,
     pub cam_snapshots: Vec<CamSnapshot>,
@@ -537,13 +537,14 @@ impl State {
         match molecule {
             Ok(mol) => {
                 if ligand {
-                    self.ligand = Some(Ligand2 {
+                    self.ligand = Some(Ligand {
                         molecule: mol,
                         docking_init: DockingInit {
                             site_posit: Vec3F64::new(0., 0., 30.),
                             site_box_size: 3.,
                         },
                         orientation: QuaternionF64::new_identity(),
+                        torsions: Vec::new(),
                     });
                 } else {
                     self.molecule = Some(mol);

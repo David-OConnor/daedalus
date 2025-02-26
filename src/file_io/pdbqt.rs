@@ -18,6 +18,7 @@ use crate::{
     molecule::{Atom, AtomRole, Bond, Chain, Molecule, Residue, ResidueType},
     util::mol_center_size,
 };
+use crate::docking::docking_prep::{Torsion, TorsionStatus};
 // #[derive(Debug, Default)]
 // pub struct PdbQt {
 //     pub atoms: Vec<Atom>,
@@ -179,6 +180,7 @@ fn parse_optional_f32(s: &str) -> io::Result<Option<f32>> {
     }
 }
 
+
 impl Molecule {
     /// From PQBQT text, e.g. loaded from a file.
     pub fn from_pdbqt(pdb_text: &str) -> io::Result<Self> {
@@ -198,14 +200,12 @@ impl Molecule {
 
             let cols: Vec<String> = line.split_whitespace().map(|s| s.to_string()).collect();
 
-            // pad or skip lines that are too short to safely slice
             if cols.len() < 9 {
                 continue;
             }
 
             let record_type = &cols[0];
 
-            // handle ATOM or HETATM
             if record_type.trim() == "ATOM" || record_type.trim() == "HETATM" {
                 // Safely parse fields if line long enough;
                 // todo: This is probably fragile. Split by spaces (column) instead.
@@ -233,6 +233,7 @@ impl Molecule {
                     if chain.id == chain_id {
                         chain.atoms.push(atom_id);
                         chain_found = true;
+                        break;
                     }
                 }
                 if !chain_found {
@@ -241,7 +242,7 @@ impl Molecule {
                         residues: Vec::new(), // todo temp
                         atoms: vec![atom_id],
                         visible: true,
-                    })
+                    });
                 }
 
                 let res_id = parse_usize(&cols[5]).unwrap_or_default() as isize;
@@ -250,6 +251,7 @@ impl Molecule {
                     if res.serial_number == res_id {
                         res.atoms.push(atom_id);
                         res_found = true;
+                        break;
                     }
                 }
                 if !res_found {
@@ -257,7 +259,7 @@ impl Molecule {
                         serial_number: 0,                       // todo temp
                         res_type: ResidueType::Other(res_name), // todo temp
                         atoms: vec![atom_id],
-                    })
+                    });
                 }
 
                 let x = parse_f64(&cols[6])?;
@@ -272,7 +274,6 @@ impl Molecule {
                     None
                 };
 
-                // Let’s call it ATOM if record is "ATOM  ", else hetero = true
                 let hetero = record_type.trim() == "HETATM";
 
                 atoms.push(Atom {
@@ -314,6 +315,26 @@ impl Molecule {
         // Typically you'd end with "END" or "ENDMDL" or so, but not strictly required for many readers.
         if !self.ident.is_empty() {
             writeln!(file, "REMARK  Name = {}", self.ident)?;
+        }
+
+
+        if ligand {
+            // todo: Temp! Use ligand field.
+            let mut torsions: Vec<Torsion> = vec![Torsion {
+                status: TorsionStatus::Active,
+                atom_0: "O_1".to_string(),
+                atom_1: "C_18".to_string(),
+            }];
+            let tor_len = torsions.len();
+            if tor_len > 0 {
+                writeln!(file, "REMARK  {tor_len} active torsions:")?;
+                writeln!(file, "REMARK  status: ('A' for Active; 'I' for Inactive)")?;
+
+            }
+
+            for (i, torsion) in torsions.iter().enumerate() {
+                writeln!(file, "REMARK {:>4}  {:>1}    between atoms: {}  and  {}", i + 1, torsion.status, torsion.atom_0, torsion.atom_1)?;
+            }
         }
 
         writeln!(
@@ -387,7 +408,7 @@ impl Molecule {
 
             writeln!(
                 file,
-                "{:<6}{:>5}  {:<2}  {:<3} {:>1}{:>4}    {:>8.3}{:>8.3}{:>8.3}{:>6.2}{:>6.2}    {:>+6.3} {:<2}",
+                "{:<6}{:>5}  {:<3} {:<3} {:>1}{:>4}    {:>8.3}{:>8.3}{:>8.3}{:>6.2}{:>6.2}    {:>+6.3} {:<2}",
                 record_name,                                 // columns 1-6
                 atom.serial_number,                          // columns 7-11
                 atom.name,                                   // columns 13-14 or 13-16

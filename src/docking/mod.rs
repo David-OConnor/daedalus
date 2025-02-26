@@ -39,7 +39,7 @@ use std::{
 use lin_alg::f64::{Quaternion, Vec3};
 use rand::Rng;
 
-use crate::molecule::{Ligand2, Molecule};
+use crate::molecule::{Ligand, Molecule};
 
 pub mod docking_prep;
 pub mod docking_prep_external;
@@ -48,8 +48,6 @@ pub mod docking_prep_external;
 enum GaCrossoverMode {
     Twopt,
 }
-
-// pub struct Ligand {}
 
 /// todo: Figure this out
 /// taken from a screenshot of an application that uses TK. (One of the ones you DLed?)
@@ -178,7 +176,7 @@ fn make_posits_orientations(
 /// Return best pose, and energy.
 pub fn find_optimal_pose(
     target: &Molecule,
-    ligand: &Ligand2,
+    ligand: &Ligand,
     params: &GeneticAlgorithmParameters,
 ) -> (Pose, f32) {
     // todo: Generic algorithm etc. Maybe that goes in the scoring fn?

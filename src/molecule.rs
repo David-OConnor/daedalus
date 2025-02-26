@@ -12,6 +12,7 @@ use pdbtbx::SecondaryStructure;
 use crate::{
     Element, Selection, docking::DockingInit, file_io::pdbqt::DockType, rcsb_api::PdbMetaData,
 };
+use crate::docking::docking_prep::Torsion;
 
 #[derive(Debug, Default)]
 pub struct Molecule {
@@ -98,11 +99,12 @@ impl fmt::Display for AtomRole {
 }
 
 #[derive(Debug)]
-pub struct Ligand2 {
+pub struct Ligand {
     pub molecule: Molecule,
     // pub offset: Vec3,
     pub docking_init: DockingInit,
     pub orientation: Quaternion, // Assumes rigid.
+    pub torsions: Vec<Torsion>,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
