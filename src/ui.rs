@@ -375,6 +375,9 @@ fn cam_controls(
 fn selected_data(mol: &Molecule, selection: Selection, ui: &mut Ui) {
     match selection {
         Selection::Atom(sel) => {
+            if sel >= mol.atoms.len() {
+                return;
+            }
             let atom = &mol.atoms[sel];
 
             let aa = match atom.residue_type {
@@ -570,12 +573,12 @@ fn residue_search(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
 
         ui.add_space(COL_SPACING);
 
-        // if let Some(mol) = &mut state.molecule {
-        //     if ui.button(RichText::new("Add H")).clicked() {
-        //         mol.populate_hydrogens();
-        //         *redraw = true;
-        //     }
-        // }
+        if let Some(mol) = &mut state.molecule {
+            if ui.button(RichText::new("Add H")).clicked() {
+                mol.populate_hydrogens();
+                *redraw = true;
+            }
+        }
 
         if state.molecule.is_some() && state.ligand.is_some() {
             if state.babel_avail {

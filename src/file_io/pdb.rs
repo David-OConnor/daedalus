@@ -18,6 +18,7 @@ use crate::{
     molecule::{Atom, AtomRole, Chain, Molecule, Residue, ResidueType},
     util::mol_center_size,
 };
+use crate::aa_coords::aa_data_from_coords;
 
 impl Atom {
     pub fn from_pdb(

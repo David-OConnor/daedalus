@@ -67,6 +67,7 @@ enum PartialChargeType {
     Kollman,
 }
 
+/// Note: Hydrogens must already be added prior to adding charges.
 fn setup_partial_charges(atoms: &mut Vec<Atom>, charge_type: PartialChargeType) {
 
 }

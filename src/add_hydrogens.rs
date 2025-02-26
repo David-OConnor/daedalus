@@ -1,12 +1,14 @@
 use std::f64::consts::TAU;
 
 use lin_alg::f64::Vec3;
-
+use na_seq::AminoAcid;
 use crate::{
     Element,
     file_io::pdbqt::DockType,
     molecule::{Atom, AtomRole, Bond, BondCount, BondType, Molecule},
 };
+use crate::aa_coords::aa_data_from_coords;
+use crate::molecule::ResidueType;
 
 /// A simple enum for guessable hybridization
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -134,15 +136,15 @@ impl Molecule {
                 dirs
             }
         }
-        .into_iter()
-        .map(|v| v.to_normalized())
-        .collect()
+            .into_iter()
+            .map(|v| v.to_normalized())
+            .collect()
     }
 
     /// Crystolography files often omit hydrogens; add them programmatically. Required for molecular
     /// dynamics.
     // todo: Some API asym between this and adding H bonds, which is a standalone fn.
-    pub fn populate_hydrogens(&mut self) {
+    pub fn populate_hydrogens_(&mut self) {
         // Collect new atoms/bonds in vectors to be appended later
         let mut new_atoms = Vec::new();
         let mut new_bonds = Vec::new();
@@ -233,5 +235,38 @@ impl Molecule {
         // Append the new atoms and bonds
         self.atoms.extend(new_atoms);
         self.bonds.extend(new_bonds);
+    }
+
+
+    // todo: DIff approach below:
+    pub fn populate_hydrogens(&mut self) {
+        // todo: Move this fn to this module? Split this and its diehdral component, or not?
+
+        let mut prev_cp_pos = Vec3::new_zero();
+
+        for res in &self.residues {
+            let atoms: Vec<&Atom> = res.atoms.iter().map(|i| &self.atoms[*i]).collect();
+
+            if let ResidueType::AminoAcid(aa) = &res.res_type {
+                let data = aa_data_from_coords(
+                    &atoms,
+                    *aa,
+                    // todo: Skip the first one; not set up yet.
+                    prev_cp_pos,
+                );
+
+                match data {
+                    Ok((dihedral_angles, hydrogens, cp_pos)) => {
+                        self.atoms.extend(hydrogens);
+                        prev_cp_pos = cp_pos;
+                    }
+                    Err(_) => {
+                        eprintln!("Problem making hydrogens");
+                    }
+                }
+
+            }
+        }
+
     }
 }
