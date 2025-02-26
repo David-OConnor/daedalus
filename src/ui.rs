@@ -377,9 +377,9 @@ fn selected_data(mol: &Molecule, selection: Selection, ui: &mut Ui) {
         Selection::Atom(sel) => {
             let atom = &mol.atoms[sel];
 
-            let aa = match atom.amino_acid {
-                Some(a) => format!("AA: {}", a.to_str(AaIdent::OneLetter)),
-                None => String::new(),
+            let aa = match atom.residue_type {
+                ResidueType::AminoAcid(a) => format!("AA: {}", a.to_str(AaIdent::OneLetter)),
+                _ => String::new(),
             };
 
             let role = match atom.role {
@@ -396,6 +396,10 @@ fn selected_data(mol: &Molecule, selection: Selection, ui: &mut Ui) {
             );
         }
         Selection::Residue(sel_i) => {
+            if sel_i >= mol.residues.len() {
+                return;
+            }
+
             let res = &mol.residues[sel_i];
             let name = match &res.res_type {
                 ResidueType::AminoAcid(aa) => aa.to_string(),
@@ -416,6 +420,9 @@ fn residue_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
     // This is a bit fuzzy, as the size varies by residue name (Not always 1 for non-AAs), and index digits.
     if let Some(mol) = &state.molecule {
         if let Some(chain_i) = state.ui.chain_to_pick_res {
+            if chain_i >= mol.chains.len() {
+                return;
+            }
             let chain = &mol.chains[chain_i];
 
             ui.add_space(ROW_SPACING);

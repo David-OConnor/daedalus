@@ -4,6 +4,7 @@ use lin_alg::f64::Vec3;
 
 use crate::{
     Element,
+    file_io::pdbqt::DockType,
     molecule::{Atom, AtomRole, Bond, BondCount, BondType, Molecule},
 };
 
@@ -202,13 +203,14 @@ impl Molecule {
                     serial_number: next_serial,
                     posit: h_pos,
                     element: Element::Hydrogen,
+                    name: "H".to_owned(), // todo: Is this right?
                     // Decide if it's backbone or sidechain, etc.
                     // For a real system, you'd check if the heavy atom is a backbone atom, etc.
                     role: Some(AtomRole::H_Backbone),
-                    amino_acid: atom.amino_acid,
+                    residue_type: atom.residue_type.clone(),
                     hetero: false,
                     partial_charge: None,
-                    autodock_type: None,
+                    dock_type: None,
                     occupancy: None,
                     temperature_factor: None,
                 };

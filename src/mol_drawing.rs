@@ -9,7 +9,7 @@ use lin_alg::f32::{Quaternion, Vec3};
 use crate::{
     Element, Selection, State, ViewSelLevel,
     asa::{get_mesh_points, mesh_from_sas_points},
-    molecule::{Atom, AtomRole, Bond, BondCount, BondType, Chain, Residue, aa_color},
+    molecule::{Atom, AtomRole, Bond, BondCount, BondType, Chain, Residue, ResidueType, aa_color},
     render,
     render::{
         ATOM_SHINYNESS, BALL_STICK_RADIUS, BALL_STICK_RADIUS_H, BODY_SHINYNESS, BOND_RADIUS,
@@ -60,9 +60,9 @@ fn atom_color(
     let mut result = match view_sel_level {
         ViewSelLevel::Atom => atom.element.color(),
         ViewSelLevel::Residue => {
-            let c = match atom.amino_acid {
-                Some(aa) => aa_color(aa),
-                None => COLOR_AA_NON_RESIDUE,
+            let c = match atom.residue_type {
+                ResidueType::AminoAcid(aa) => aa_color(aa),
+                _ => COLOR_AA_NON_RESIDUE,
             };
             // Below is currently equivalent:
             // for res in &mol.residues {

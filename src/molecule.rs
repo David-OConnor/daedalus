@@ -1,24 +1,17 @@
+use std::fmt;
 /// Contains data structures and related code for molecules, atoms, residues, chains, etc.
 use std::str::FromStr;
-use std::{collections::HashMap, fmt};
 
 use lin_alg::{
     f32::Vec3 as Vec3F32,
     f64::{Quaternion, Vec3},
 };
 use na_seq::AminoAcid;
-use pdbtbx::{PDB, SecondaryStructure};
-use rayon::prelude::*;
+use pdbtbx::SecondaryStructure;
 
 use crate::{
-    Element, Selection,
-    bond_inference::{create_bonds, make_hydrogen_bonds},
-    docking::DockingInit,
-    file_io::pdbqt::AutodockType,
-    rcsb_api::PdbMetaData,
-    util::mol_center_size,
+    Element, Selection, docking::DockingInit, file_io::pdbqt::DockType, rcsb_api::PdbMetaData,
 };
-// use crate::file_io::sdf::Sdf;
 
 #[derive(Debug, Default)]
 pub struct Molecule {
@@ -41,133 +34,6 @@ pub struct Molecule {
 }
 
 impl Molecule {
-    /// From `pdbtbx`'s format.
-    pub fn from_pdb(pdb: &PDB) -> Self {
-        // todo: Maybe return the PDB type here, and store that. Also have a way to
-        // todo get molecules from it
-
-        // todo: Pdbtbx doesn't implm this yet for CIF.
-        for remark in pdb.remarks() {
-            // println!("Remark: {remark:?}");
-        }
-
-        println!("Loading atoms...");
-        let atoms_pdb: Vec<&pdbtbx::Atom> = pdb.par_atoms().collect();
-
-        println!("Gather residues...");
-        let res_pdb: Vec<&pdbtbx::Residue> = pdb.par_residues().collect();
-
-        let mut residues: Vec<Residue> = pdb
-            .par_residues()
-            .map(|res| Residue::from_pdb(res, &atoms_pdb))
-            .collect();
-
-        residues.sort_by_key(|r| r.serial_number);
-
-        println!("Setting up chains...");
-
-        let mut chains = Vec::with_capacity(pdb.chain_count());
-        for chain_pdb in pdb.chains() {
-            // println!("Chain: {chain_pdb:?}");
-
-            let mut chain = Chain {
-                id: chain_pdb.id().to_owned(),
-                atoms: Vec::with_capacity(chain_pdb.atom_count()),
-                residues: Vec::with_capacity(chain_pdb.residue_count()),
-                visible: true,
-            };
-
-            for atom_c in chain_pdb.atoms() {
-                let atom_pdb = atoms_pdb
-                    .iter()
-                    .enumerate()
-                    .find(|(i, a)| a.serial_number() == atom_c.serial_number());
-                if let Some((i, _atom)) = atom_pdb {
-                    chain.atoms.push(i);
-                }
-            }
-
-            // We don't have a way to, using serial numbers alone, using PDBTBX, find which residues are associated with
-            // which chain. This method is a bit more indirect, using both serial number, and atom indexes.
-            for res_c in chain_pdb.residues() {
-                for (i, res) in residues.iter().enumerate() {
-                    if res.serial_number == res_c.serial_number() {
-                        let atom_sns_chain: Vec<usize> =
-                            res_c.atoms().map(|a| a.serial_number()).collect();
-                        // let atom_sns_res: Vec<usize> = res.atoms.iter().map(|a| a.serial_number).collect();
-                        let mut atom_sns_res = Vec::with_capacity(res.atoms.len());
-                        for atom_i in &res.atoms {
-                            atom_sns_res.push(atoms_pdb[*atom_i].serial_number());
-                        }
-
-                        // println!("Atoms 1: {:?}", atom_sns_chain);
-                        // println!("Atoms 2: {:?}\n", atom_sns_res);
-
-                        if atom_sns_chain == atom_sns_res {
-                            chain.residues.push(i);
-                        }
-                    }
-                }
-
-                // let res = residues
-                //     .iter()
-                //     .enumerate()
-                //     .find(|(i, r)| r.serial_number == res_c.serial_number() && r.atoms );
-                // if let Some((i, _res)) = res {
-                //     chain.residues.push(i);
-                // }
-            }
-
-            // println!("Chain: {}, {:?}", chain.id, chain.residues);
-
-            chains.push(chain);
-        }
-
-        println!("Atoms final...");
-
-        // This pre-computation of the AA map is more efficient;
-        let mut aa_map = HashMap::new();
-        for res in &residues {
-            for atom_i in &res.atoms {
-                aa_map.insert(*atom_i, res.res_type.clone());
-            }
-        }
-
-        // todo: This is taking a while.
-        let atoms: Vec<Atom> = atoms_pdb
-            .into_iter()
-            .enumerate()
-            .map(|(i, atom)| Atom::from_pdb(atom, i, &aa_map))
-            .collect();
-
-        println!("Complete.");
-
-        // todo: We use our own bond inference, since most PDBs seem to lack bond information.
-        // let mut bonds = Vec::new();
-        // for (a0, a1, bond) in pdb.bonds() {
-        //     bonds.push((Atom::from_pdb(a0), Atom::from_pdb(a1), bond));
-        // }
-
-        let mut bonds = create_bonds(&atoms);
-        bonds.extend(make_hydrogen_bonds(&atoms));
-
-        let (center, size) = mol_center_size(&atoms);
-
-        Self {
-            ident: pdb.identifier.clone().unwrap_or_default(),
-            atoms,
-            bonds,
-            chains,
-            residues,
-            metadata: None,
-            sa_surface_pts: None,
-            mesh_created: false,
-            secondary_structure: pdb.secondary_structure.clone(),
-            center,
-            size,
-        }
-    }
-
     /// If residue, get an arbitrary atom. (todo: Get c alpha always).
     pub fn get_sel_atom(&self, sel: Selection) -> Option<&Atom> {
         match sel {
@@ -201,6 +67,19 @@ pub enum AtomRole {
     Sidechain,
     Water,
     Other,
+}
+
+impl AtomRole {
+    pub fn from_name(name: &str) -> Self {
+        match name {
+            "CA" => Self::C_Alpha,
+            "C" => Self::C_Prime,
+            "N" => Self::N_Backbone,
+            "O" => Self::O_Backbone,
+            "H" | "H1" | "H2" | "H3" | "HA" | "HA2" | "HA3" => Self::H_Backbone,
+            _ => Self::Sidechain,
+        }
+    }
 }
 
 impl fmt::Display for AtomRole {
@@ -291,6 +170,20 @@ pub enum ResidueType {
     Other(String),
 }
 
+impl ResidueType {
+    /// Parses from the "name" field in common text-based formats lik CIF, PDB, and PDBQT.
+    pub fn from_str(name: &str) -> Self {
+        if name.to_uppercase() == "HOH" {
+            ResidueType::Water
+        } else {
+            match AminoAcid::from_str(name) {
+                Ok(aa) => ResidueType::AminoAcid(aa),
+                Err(_) => ResidueType::Other(name.to_owned()),
+            }
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Residue {
     /// We use serial number of display, search etc, and array index to select. Residue serial number is not
@@ -300,112 +193,26 @@ pub struct Residue {
     pub atoms: Vec<usize>, // Atom index
 }
 
-impl Residue {
-    pub fn from_pdb(res_pdb: &pdbtbx::Residue, atoms_pdb: &[&pdbtbx::Atom]) -> Self {
-        let res_name = res_pdb.name().unwrap_or_default();
-
-        let res_type = if res_name.to_uppercase() == "HOH" {
-            ResidueType::Water
-        } else {
-            match AminoAcid::from_str(res_name) {
-                Ok(aa) => ResidueType::AminoAcid(aa),
-                Err(_) => ResidueType::Other(res_pdb.name().unwrap_or_default().to_owned()),
-            }
-        };
-
-        let mut res = Residue {
-            serial_number: res_pdb.serial_number(),
-            res_type,
-            atoms: Vec::new(),
-        };
-
-        for atom_c in res_pdb.atoms() {
-            let atom_pdb = atoms_pdb
-                .iter()
-                .enumerate()
-                .find(|(i, a)| a.serial_number() == atom_c.serial_number());
-            if let Some((i, _atom)) = atom_pdb {
-                res.atoms.push(i);
-            }
-        }
-
-        res
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct Atom {
     pub serial_number: usize,
     pub posit: Vec3,
     pub element: Element,
+    pub name: String,
     pub role: Option<AtomRole>,
-    pub amino_acid: Option<AminoAcid>, // todo: Duplicate with storing atom IDs with residues.
+    pub residue_type: ResidueType, // todo: Duplicate with the residue association.
     pub hetero: bool,
     /// For docking.
     // todo: Consider a substruct for docking fields.
     pub partial_charge: Option<f32>,
     /// For docking.
-    pub autodock_type: Option<AutodockType>,
+    /// todo: Consider merging AtomName with AtomRole.
+    pub dock_type: Option<DockType>,
     pub occupancy: Option<f32>,          // todo ?
     pub temperature_factor: Option<f32>, // todo ?
 }
 
 impl Atom {
-    pub fn from_pdb(
-        atom_pdb: &pdbtbx::Atom,
-        atom_i: usize,
-        aa_map: &HashMap<usize, ResidueType>,
-    ) -> Self {
-        // println!("Data: {:?}", atom_pdb.name());
-
-        // Find the amino acid type this atom is part of, if applicable.
-        let mut is_water = false;
-
-        let amino_acid = match aa_map.get(&atom_i) {
-            Some(res_type) => match res_type {
-                ResidueType::AminoAcid(aa) => Some(aa),
-                ResidueType::Water => {
-                    is_water = true;
-                    None
-                }
-                _ => None,
-            },
-            None => None,
-        };
-
-        // todo: This may be fragile.
-        // todo: I don't fully understand how these are annotated in files; apeing pdbtbx's approach for now.
-        let mut role = match amino_acid {
-            Some(_) => match atom_pdb.name() {
-                "CA" => Some(AtomRole::C_Alpha),
-                "C" => Some(AtomRole::C_Prime),
-                "N" => Some(AtomRole::N_Backbone),
-                "O" => Some(AtomRole::O_Backbone),
-                "H" | "H1" | "H2" | "H3" | "HA" | "HA2" | "HA3" => Some(AtomRole::H_Backbone),
-                _ => Some(AtomRole::Sidechain),
-            },
-            None => None,
-        };
-
-        if is_water {
-            role = Some(AtomRole::Water);
-        }
-
-        Self {
-            serial_number: atom_pdb.serial_number(),
-            posit: Vec3::new(atom_pdb.x(), atom_pdb.y(), atom_pdb.z()),
-            element: Element::from_pdb(atom_pdb.element()),
-            // amino_acid: AminoAcid::from_pdb(pdb.r)
-            role,
-            amino_acid: amino_acid.copied(),
-            hetero: atom_pdb.hetero(),
-            partial_charge: None,
-            autodock_type: None,
-            occupancy: None,
-            temperature_factor: None,
-        }
-    }
-
     /// Note: This doesn't include backbone O etc; just the 3 main ones.
     pub fn is_backbone(&self) -> bool {
         match self.role {

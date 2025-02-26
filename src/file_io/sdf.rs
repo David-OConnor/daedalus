@@ -12,7 +12,7 @@ use lin_alg::f64::Vec3;
 
 use crate::{
     Element,
-    bond_inference::create_bonds,
+    bond_inference::{create_bonds, make_hydrogen_bonds},
     molecule::{Atom, Chain, Molecule, Residue, ResidueType},
     util::mol_center_size,
 };
@@ -102,11 +102,12 @@ impl Molecule {
                 serial_number: i - first_atom_line + 1,
                 posit: Vec3 { x, y, z }, // or however you store coordinates
                 element: Element::from_letter(element)?,
+                name: String::new(),
                 role: None,
-                amino_acid: None,
+                residue_type: ResidueType::Other(String::new()), // Not available in SDF.
                 hetero: false,
                 partial_charge: None,
-                autodock_type: None,
+                dock_type: None,
                 occupancy: None,
                 temperature_factor: None,
             };
@@ -140,8 +141,8 @@ impl Molecule {
             visible: true,
         });
 
-        let bonds = create_bonds(&atoms);
-
+        let mut bonds = create_bonds(&atoms);
+        bonds.extend(make_hydrogen_bonds(&atoms));
         let (center, size) = mol_center_size(&atoms);
 
         Ok(Self {
