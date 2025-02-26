@@ -907,7 +907,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 if ui.button("Save PDBQT").clicked() {
                     if let Some(mol) = &state.molecule {
                         if mol
-                            .save_pdbqt(&PathBuf::from_str("test_out.pdbqt").unwrap())
+                            .save_pdbqt(&PathBuf::from_str("test_out.pdbqt").unwrap(), false)
                             .is_err()
                         {
                             eprintln!("Error saving PDBQT file");

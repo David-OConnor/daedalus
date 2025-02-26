@@ -8,13 +8,14 @@ use std::{
 };
 
 use lin_alg::f64::Vec3;
+use na_seq::AaIdent;
 use regex::Regex;
 
 use crate::{
     Element,
     molecule::{Atom, Bond, Molecule},
 };
-
+use crate::molecule::ResidueType;
 // #[derive(Debug, Default)]
 // pub struct PdbQt {
 //     pub atoms: Vec<Atom>,
@@ -45,6 +46,17 @@ pub enum AutodockType {
     Cu,
     Hd,    // Polar hydrogen (hydrogen donor)
     Other, // Fallback for unknown types
+    Cb,
+    Cd,
+    Cd1,
+    Cd2,
+    Ce1,
+    Ce2,
+    Cg,
+    OG1,
+    Og2,
+    Oe1,
+    Ne2,
 }
 
 impl AutodockType {
@@ -70,6 +82,17 @@ impl AutodockType {
             "MN" => Self::Mn,
             "CU" => Self::Cu,
             "HD" => Self::Hd,
+            "CB" => Self::Cb,
+            "CD" => Self::Cd,
+            "CD1" => Self::Cd1,
+            "CD2" => Self::Cd2,
+            "CE1" => Self::Ce1,
+            "CE2" => Self::Ce2,
+            "CG" => Self::Cg,
+            "OG1" => Self::OG1,
+            "OG2" => Self::Og2,
+            "OE1" => Self::Oe1,
+            "NE2" => Self::Ne2,
             _ => Self::Other,
         }
     }
@@ -96,9 +119,20 @@ impl AutodockType {
             Self::Mn => "MN",
             Self::Cu => "CU",
             Self::Hd => "HD",
+            Self::Cb =>"CB",
+            Self::Cd =>"CD",
+            Self::Cd1 =>"CD1",
+            Self::Cd2 =>"CD2",
+            Self::Ce1 =>"CE1",
+            Self::Ce2 =>"CE2" ,
+            Self::Cg =>"CG" ,
+            Self::OG1 =>"OG1",
+            Self::Og2 =>"OG2",
+            Self::Oe1 =>"OE1",
+            Self::Ne2 =>"NE2" ,
             Self::Other => "Xx",
         }
-        .to_string()
+            .to_string()
     }
 }
 
@@ -123,10 +157,6 @@ fn parse_optional_f32(s: &str) -> io::Result<Option<f32>> {
 }
 
 fn guess_atom_name(atom: &Atom) -> String {
-    // You might do something like:
-    // * If we have an autodock type, use the first letter or two as name
-    // * Or if we have an Element, use the atomic symbol
-    // * Fallback to "X"
     if let Some(ref ad_type) = atom.autodock_type {
         ad_type.to_str()
     } else {
@@ -149,20 +179,9 @@ impl Molecule {
             }
 
             if let Some(caps) = re_name.captures(line) {
-                println!("NAME: {:?}", caps);
                 result.ident = caps[1].to_string();
-                println!("Actual name: {:?}", result.ident);
                 continue;
             }
-
-            // if line.starts_with("REMARK") {
-            //     // Look for the substring "Name ="
-            //     if let Some(pos) = line.find("Name =") {
-            //         // Everything after "Name =" is presumably the value
-            //         let value = &line[pos + 6..]; // skip the characters in "Name ="
-            //         result.ident = value.trim().to_string();
-            //     }
-            // }
 
             let record_type = &line[0..6];
 
@@ -225,17 +244,20 @@ impl Molecule {
         Ok(result)
     }
 
-    pub fn save_pdbqt(&self, path: &Path) -> io::Result<()> {
+    pub fn save_pdbqt(&self, path: &Path, ligand: bool) -> io::Result<()> {
         let mut file = File::create(path)?;
 
         // Typically you'd end with "END" or "ENDMDL" or so, but not strictly required for many readers.
         if !self.ident.is_empty() {
-            writeln!(file, "REMARK  NAME = {}", self.ident)?;
+            writeln!(file, "REMARK  Name = {}", self.ident)?;
         }
+
+        writeln!(file, "REMARK                            x       y       z     vdW  Elec       q    Type")?;
+        writeln!(file, "REMARK                         _______ _______ _______ _____ _____    ______ ____")?;
 
         // Optionally write remarks, ROOT/ENDROOT, etc. here if needed.
         // For each atom:
-        for atom in &self.atoms {
+        for (i, atom) in self.atoms.iter().enumerate() {
             // We'll just do a minimal line. Fill in placeholders for
             // residue name, chain, etc. as you like.
 
@@ -259,14 +281,31 @@ impl Molecule {
             // * occupancy and tempFactor set to 0.00
 
             let atom_name = guess_atom_name(atom);
-            let residue_name = "LIG";
-            let chain_id = "A";
-            let residue_seq = 1; // or something else
-            let occupancy = 0.00_f32;
-            let temp_factor = 0.00_f32;
 
-            // partial charge or default to 0.0
-            let charge = atom.partial_charge.unwrap_or(0.0);
+            let mut res_num = 1;
+
+            let residue_name = if ligand {
+                "UNL".to_owned()
+            } else {
+                match self.residues.iter().find(|r| r.atoms.contains(&i)) {
+                    Some(r) => match &r.res_type {
+                        ResidueType::AminoAcid(aa) => {
+                            res_num = r.serial_number;
+                            aa.to_str(AaIdent::ThreeLetters).to_uppercase()
+                        },
+                        // todo: Limit to 3 chars?
+                        ResidueType::Other(name) => name.clone(),
+                        ResidueType::Water => "HOH".to_owned(),
+                    }
+                    None => "---".to_owned()
+                }
+            };
+
+            let chain_id = match self.chains.iter().find(|c| c.atoms.contains(&i)) {
+                Some(c) => c.id.to_uppercase().chars().next().unwrap(),
+                None => 'A'
+            };
+
             // autodock_type or fallback
             let ad_type = atom
                 .autodock_type
@@ -281,19 +320,19 @@ impl Molecule {
 
             writeln!(
                 file,
-                "{:<6}{:>5}  {:>2}  {:<3} {:>1}{:>4}    {:>8.3}{:>8.3}{:>8.3}{:>6.2}{:>6.2}          {:>6.3}{:>2}",
+                "{:<6}{:>5}  {:<2}  {:<3} {:>1}{:>4}    {:>8.3}{:>8.3}{:>8.3}{:>6.2}{:>6.2}    {:>+6.3} {:<2}",
                 record_name,        // columns 1-6
                 atom.serial_number, // columns 7-11
                 atom_name,          // columns 13-14 or 13-16
                 residue_name,       // columns 18-20
                 chain_id,           // column 22
-                residue_seq,        // columns 23-26
+                res_num,        // columns 23-26
                 atom.posit.x,       // columns 31-38
                 atom.posit.y,       // columns 39-46
                 atom.posit.z,       // columns 47-54
-                occupancy,          // columns 55-60
-                temp_factor,        // columns 61-66
-                charge,             // columns 71-76
+                atom.occupancy.unwrap_or_default(),          // columns 55-60
+                atom.temperature_factor.unwrap_or_default(),        // columns 61-66
+                atom.partial_charge.unwrap_or_default(),             // columns 71-76
                 ad_type             // columns 77-78
             )?;
         }
