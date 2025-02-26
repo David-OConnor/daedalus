@@ -508,7 +508,9 @@ impl State {
     }
 
     // todo: Consider how you handle loading and storing of ligands vs targets.
-    pub fn open_molecule(&mut self, path: &Path, ligand: bool) {
+    pub fn open_molecule(&mut self, path: &Path, is_ligand: bool) {
+
+        let mut ligand = None;
         let molecule = match path
             .extension()
             .unwrap_or_default()
@@ -517,7 +519,15 @@ impl State {
             .unwrap_or_default()
         {
             "sdf" => load_sdf(path),
-            "pdbqt" => load_pdbqt(path),
+            "pdbqt" => {
+                load_pdbqt(path).map(|(molecule, mut ligand_)| {
+                    if ligand_.is_some() {
+                        ligand_.as_mut().unwrap().molecule = molecule.clone(); // sloppy
+                    }
+                    ligand = ligand_;
+                    molecule
+                })
+            }, // todo: Handle the ligand part.
             "pdb" | "cif" => {
                 let pdb = load_pdb(path);
                 match pdb {
@@ -536,7 +546,7 @@ impl State {
 
         match molecule {
             Ok(mol) => {
-                if ligand {
+                if is_ligand {
                     self.ligand = Some(Ligand {
                         molecule: mol,
                         docking_init: DockingInit {
@@ -545,6 +555,7 @@ impl State {
                         },
                         orientation: QuaternionF64::new_identity(),
                         torsions: Vec::new(),
+                        unit_cell_dims: Default::default(),
                     });
                 } else {
                     self.molecule = Some(mol);

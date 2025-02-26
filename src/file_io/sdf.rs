@@ -106,10 +106,10 @@ impl Molecule {
                 role: None,
                 residue_type: ResidueType::Other(String::new()), // Not available in SDF.
                 hetero: false,
-                partial_charge: None,
-                dock_type: None,
                 occupancy: None,
                 temperature_factor: None,
+                partial_charge: None,
+                dock_type: None,
             };
 
             atoms.push(atom);

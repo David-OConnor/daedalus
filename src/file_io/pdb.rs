@@ -46,10 +46,10 @@ impl Atom {
             role,
             residue_type,
             hetero: atom_pdb.hetero(),
-            partial_charge: None,
-            dock_type: Some(DockType::from_str(atom_pdb.name())),
             occupancy: None,
             temperature_factor: None,
+            partial_charge: None,
+            dock_type: Some(DockType::from_str(atom_pdb.name())),
         }
     }
 }

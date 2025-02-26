@@ -40,6 +40,19 @@ impl Display for TorsionStatus {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct UnitCellDims {
+    /// Lenghts in Angstroms.
+    pub a: f32,
+    pub b: f32,
+    pub c: f32,
+    /// Angles in degrees.
+    pub alpha: f32,
+    pub beta: f32,
+    pub gamma: f32,
+
+}
+
 #[derive(Debug)]
 pub struct Torsion {
     // todo: Initial hack; add/fix A/R.

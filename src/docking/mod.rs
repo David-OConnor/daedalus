@@ -87,7 +87,7 @@ impl Default for GeneticAlgorithmParameters {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct DockingInit {
     pub site_posit: Vec3,
     pub site_box_size: f64, // Assume square. // todo: Allow diff dims

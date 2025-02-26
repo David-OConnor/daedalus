@@ -12,9 +12,9 @@ use pdbtbx::SecondaryStructure;
 use crate::{
     Element, Selection, docking::DockingInit, file_io::pdbqt::DockType, rcsb_api::PdbMetaData,
 };
-use crate::docking::docking_prep::Torsion;
+use crate::docking::docking_prep::{Torsion, UnitCellDims};
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Molecule {
     pub ident: String,
     pub atoms: Vec<Atom>,
@@ -98,13 +98,14 @@ impl fmt::Display for AtomRole {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Ligand {
     pub molecule: Molecule,
     // pub offset: Vec3,
     pub docking_init: DockingInit,
     pub orientation: Quaternion, // Assumes rigid.
     pub torsions: Vec<Torsion>,
+    pub unit_cell_dims: UnitCellDims,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -144,7 +145,7 @@ impl BondCount {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Bond {
     pub bond_type: BondType,
     /// Index
@@ -154,7 +155,7 @@ pub struct Bond {
     pub is_backbone: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Chain {
     pub id: String,
     // todo: Do we want both residues and atoms stored here? It's an overconstraint.
@@ -186,7 +187,7 @@ impl ResidueType {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Residue {
     /// We use serial number of display, search etc, and array index to select. Residue serial number is not
     /// unique in the molecule; only in the chain.
@@ -205,13 +206,11 @@ pub struct Atom {
     pub residue_type: ResidueType, // todo: Duplicate with the residue association.
     pub hetero: bool,
     /// For docking.
-    // todo: Consider a substruct for docking fields.
-    pub partial_charge: Option<f32>,
-    /// For docking.
-    /// todo: Consider merging AtomName with AtomRole.
+    /// // todo: Consider a substruct for docking fields.
     pub dock_type: Option<DockType>,
-    pub occupancy: Option<f32>,          // todo ?
-    pub temperature_factor: Option<f32>, // todo ?
+    pub occupancy: Option<f32>,
+    pub partial_charge: Option<f32>,
+    pub temperature_factor: Option<f32>,
 }
 
 impl Atom {
