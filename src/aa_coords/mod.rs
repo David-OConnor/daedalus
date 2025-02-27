@@ -87,8 +87,9 @@ impl fmt::Display for Dihedral {
     }
 }
 
-/// Calculate the dihedral angle between 4 atoms.
-/// todo: How are these bonds represented as Vec3s? Maybe just subtract the atom posits.
+/// Calculate the dihedral angle between 4 positions.
+/// The `bonds` are one atom substracted from the next.
+/// todo: Move to `lin_alg` lib?
 pub fn calc_dihedral_angle(bond_middle: Vec3, bond_adjacent1: Vec3, bond_adjacent2: Vec3) -> f64 {
     // Project the next and previous bonds onto the plane that has this bond as its normal.
     // Re-normalize after projecting.
@@ -122,8 +123,8 @@ pub fn tetra_atoms(atom_center: Vec3, atom_a: Vec3, atom_b: Vec3, atom_c: Vec3) 
 fn tetra_atoms_2(center: Vec3, atom_0: Vec3, atom_1: Vec3, len: f64) -> (Vec3, Vec3) {
     // todo: Not working.
     // Move from world-space to local.
-    let bond_0 = (center - atom_0).to_normalized();
-    let bond_1 = (atom_1 - center).to_normalized();
+    let bond_0 = (atom_0 - center).to_normalized();
+    let bond_1 = (center - atom_1).to_normalized();
 
     // Aligns the tetrahedron leg A to bond 0.
     let rotator_a = Quaternion::from_unit_vecs(TETRA_A, bond_0);
@@ -131,12 +132,10 @@ fn tetra_atoms_2(center: Vec3, atom_0: Vec3, atom_1: Vec3, len: f64) -> (Vec3, V
     // Once the TETRA_A is aligned to bond_0, rotate the tetrahedron around this until TETRA_B aligs
     // with bond_1. Then, the other two tetra parts will be where we place our hydrogens.
     let tetra_b_rotated = rotator_a.rotate_vec(unsafe { TETRA_B });
-    let tetra_b_on_plane = tetra_b_rotated.project_to_plane(bond_0);
-    let bond_1_on_plane = bond_1.project_to_plane(bond_0);
-    let rot_amt = tetra_b_on_plane.dot(bond_1_on_plane).acos();
 
-    // let rotator_b = Quaternion::from_axis_angle(bond_0, -rot_amt);
-    let rotator_b = Quaternion::from_axis_angle(bond_0, -rot_amt);
+    let dihedral = calc_dihedral_angle(bond_0, tetra_b_rotated, bond_1);
+
+    let rotator_b = Quaternion::from_axis_angle(bond_0, -dihedral);
 
     let rotator = rotator_b * rotator_a;
 
@@ -398,19 +397,23 @@ pub fn aa_data_from_coords(
                             let dihedral =
                                 calc_dihedral_angle(bond_prev, planar_3_rotated, bond_back2);
 
-                            // todo: Offset; don't align.
-                            let rotator_b = Quaternion::from_axis_angle(bond_prev, -dihedral);
+                            // Offset; don't align; avoids steric hindrence.
+                            // todo: Not working correctly in some branch geometries.
+                            let rotator_b =
+                                Quaternion::from_axis_angle(bond_prev, -dihedral + TAU / 6.);
                             let rotator = rotator_b * rotator_a;
 
                             for tetra_bond in [TETRA_B, TETRA_C, TETRA_D] {
+                                println!("Adding methyl"); // todo temp
                                 hydrogens.push(Atom {
-                                    posit: atom.posit + rotator.rotate_vec(tetra_bond) * LEN_N_H,
+                                    posit: atom.posit + rotator.rotate_vec(tetra_bond) * LEN_C_H,
                                     ..h_default.clone()
                                 });
                             }
                         },
                         2 => unsafe {
-                            // Planar N arrangement.
+                            // Planar arrangement.
+                            // todo: Not just for N: This applies to rings as well. (?)
                             if atoms_bonded[0].1.element == Element::Nitrogen
                                 && atoms_bonded[1].1.element == Element::Nitrogen
                             {
