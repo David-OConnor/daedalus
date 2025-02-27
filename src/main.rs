@@ -447,6 +447,7 @@ struct StateUi {
     visibility: Visibility,
     middle_click_down: bool,
     autodock_path_valid: bool,
+    mouse_in_window: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]

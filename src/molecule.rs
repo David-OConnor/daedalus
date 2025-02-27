@@ -203,6 +203,22 @@ pub struct Residue {
     pub dihedral: Option<Dihedral>,
 }
 
+impl Residue {
+    pub fn descrip(&self) -> String {
+        let name = match &self.res_type {
+            ResidueType::AminoAcid(aa) => aa.to_string(),
+            ResidueType::Water => "Water".to_owned(),
+            ResidueType::Other(name) => name.clone(),
+        };
+
+        let mut result = format!("Res: {}: {name}", self.serial_number);
+        if let Some(dihedral) = &self.dihedral {
+            result += &format!("   {dihedral}");
+        }
+        result
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Atom {
     pub serial_number: usize,

@@ -22,7 +22,7 @@ use crate::{
     mol_drawing::{MoleculeView, draw_ligand, draw_molecule},
     molecule::{BondType, Molecule, ResidueType},
     rcsb_api::open_pdb,
-    render::CAM_INIT_OFFSET,
+    render::{CAM_INIT_OFFSET, RENDER_DIST},
     util::{cam_look_at, check_prefs_save, cycle_res_selected, select_from_search},
 };
 
@@ -30,7 +30,7 @@ pub const ROW_SPACING: f32 = 10.;
 pub const COL_SPACING: f32 = 30.;
 
 const VIEW_DEPTH_MIN: u16 = 10;
-pub const VIEW_DEPTH_MAX: u16 = 200;
+pub const VIEW_DEPTH_MAX: u16 = 50;
 
 const NEARBY_THRESH_MIN: u16 = 5;
 const NEARBY_THRESH_MAX: u16 = 60;
@@ -240,23 +240,23 @@ fn cam_controls(
         ui.add_space(COL_SPACING);
 
         // todo: Grey-out, instead of setting render dist. (e.g. fog)
-        // ui.label("Depth:");
-        // let depth_prev = state.ui.view_depth;
-        // ui.add(Slider::new(
-        //     &mut state.ui.view_depth,
-        //     VIEW_DEPTH_MIN..=VIEW_DEPTH_MAX,
-        // ));
-        //
-        // if state.ui.view_depth != depth_prev {
-        //     // Interpret the slider being at max position to mean (effectively) unlimited.
-        //     cam.far = if state.ui.view_depth == VIEW_DEPTH_MAX {
-        //         RENDER_DIST
-        //     } else {
-        //         state.ui.view_depth as f32
-        //     };
-        //     cam.update_proj_mat();
-        //     changed = true;
-        // }
+        ui.label("Depth:");
+        let depth_prev = state.ui.view_depth;
+        ui.add(Slider::new(
+            &mut state.ui.view_depth,
+            VIEW_DEPTH_MIN..=VIEW_DEPTH_MAX,
+        ));
+
+        if state.ui.view_depth != depth_prev {
+            // Interpret the slider being at max position to mean (effectively) unlimited.
+            cam.far = if state.ui.view_depth == VIEW_DEPTH_MAX {
+                RENDER_DIST
+            } else {
+                state.ui.view_depth as f32
+            };
+            cam.update_proj_mat();
+            changed = true;
+        }
 
         ui.add_space(COL_SPACING);
 
@@ -391,18 +391,18 @@ fn selected_data(mol: &Molecule, selection: Selection, ui: &mut Ui) {
                 None => String::new(),
             };
 
+            let mut text = format!(
+                "{}  {}  El: {:?}  {aa}  {role}",
+                atom.posit, atom.serial_number, atom.element
+            );
+
             // todo: Helper fn for this, and find otehr places in the code where we need it.
             let res = &mol.residues.iter().find(|r| r.atoms.contains(&sel_i));
-            if let Some(r) = res {}
+            if let Some(r) = res {
+                text += &format!("  {}", r.descrip());
+            }
 
-            // todo: Show res info too.
-            ui.label(
-                RichText::new(format!(
-                    "{}  {}  El: {:?}  {aa}  {role}",
-                    atom.posit, atom.serial_number, atom.element
-                ))
-                .color(Color32::GOLD),
-            );
+            ui.label(RichText::new(text).color(Color32::GOLD));
         }
         Selection::Residue(sel_i) => {
             if sel_i >= mol.residues.len() {
@@ -410,17 +410,7 @@ fn selected_data(mol: &Molecule, selection: Selection, ui: &mut Ui) {
             }
 
             let res = &mol.residues[sel_i];
-            let name = match &res.res_type {
-                ResidueType::AminoAcid(aa) => aa.to_string(),
-                ResidueType::Water => "Water".to_owned(),
-                ResidueType::Other(name) => name.clone(),
-            };
-
-            let mut text = format!("Res: {}: {name}", res.serial_number);
-            if let Some(dihedral) = &res.dihedral {
-                text += &format!("   {dihedral}");
-            }
-            ui.label(RichText::new(text).color(Color32::GOLD));
+            ui.label(RichText::new(res.descrip()).color(Color32::GOLD));
         }
         Selection::None => (),
     }

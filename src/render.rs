@@ -63,13 +63,15 @@ pub const SHELL_OPACITY: f32 = 0.01;
 
 // From the farthest molecule.
 pub const CAM_INIT_OFFSET: f32 = 10.;
-pub const OUTSIDE_LIGHTING_OFFSET: f32 = 400.;
+pub const OUTSIDE_LIGHTING_OFFSET: f32 = 600.;
 
 pub const COLOR_AA_NON_RESIDUE: Color = (0., 0.8, 1.0);
 
 const MOVEMENT_SENS: f32 = 12.;
 const RUN_FACTOR: f32 = 6.; // i.e. shift key multiplier
 const SCROLL_MOVE_AMT: f32 = 4.;
+
+const SEL_NEAR_PAD: f32 = 4.;
 
 /// Set lighting based on the center and size of the molecule.
 pub fn set_lighting(center: Vec3, size: f32) -> Lighting {
@@ -92,8 +94,8 @@ pub fn set_lighting(center: Vec3, size: f32) -> Lighting {
                 position: center + Vec3::new(40., -size - OUTSIDE_LIGHTING_OFFSET, 0.),
                 diffuse_color: white,
                 specular_color: white,
-                diffuse_intensity: 10_000.,
-                specular_intensity: 60_000.,
+                diffuse_intensity: 20_000.,
+                specular_intensity: 70_000.,
             },
         ],
     }
@@ -108,6 +110,11 @@ fn event_dev_handler(
     let mut updates = EngineUpdates::default();
 
     let mut redraw = false;
+
+    // todo: Move this logic to the engine (graphics lib)?
+    if !state_.ui.mouse_in_window {
+        return updates;
+    }
 
     match event {
         // Move the camera forward and back on scroll.
@@ -153,7 +160,13 @@ fn event_dev_handler(
                                 (0., state_.volatile.ui_height),
                             );
 
-                            let selected_ray = scene.screen_to_render(cursor);
+                            let mut selected_ray = scene.screen_to_render(cursor);
+
+                            // Clip the near end of this to prevent false selections that seem to the user
+                            // to be behind the camera.
+                            let diff = selected_ray.1 - selected_ray.0;
+
+                            selected_ray.0 += diff.to_normalized() * SEL_NEAR_PAD;
 
                             if let Some(mol) = &state_.molecule {
                                 // If we don't scale the selection distance appropriately, an atom etc
@@ -323,6 +336,12 @@ fn event_win_handler(
         } => {
             // state.ui.cursor_pos = Some((position.x as f32, position.y as f32 + state.ui.ui_height))
             state.ui.cursor_pos = Some((position.x as f32, position.y as f32))
+        }
+        WindowEvent::CursorEntered { device_id: _ } => {
+            state.ui.mouse_in_window = true;
+        }
+        WindowEvent::CursorLeft { device_id: _ } => {
+            state.ui.mouse_in_window = false;
         }
         _ => (),
     }
