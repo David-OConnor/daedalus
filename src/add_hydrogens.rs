@@ -6,10 +6,10 @@ use na_seq::AminoAcid;
 use crate::{
     Element,
     aa_coords::aa_data_from_coords,
+    bond_inference::{create_bonds, make_hydrogen_bonds},
     file_io::pdbqt::DockType,
     molecule::{Atom, AtomRole, Bond, BondCount, BondType, Molecule, ResidueType},
 };
-use crate::bond_inference::{create_bonds, make_hydrogen_bonds};
 
 /// A simple enum for guessable hybridization
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -142,102 +142,6 @@ impl Molecule {
         .collect()
     }
 
-    /// Crystolography files often omit hydrogens; add them programmatically. Required for molecular
-    /// dynamics.
-    // todo: Some API asym between this and adding H bonds, which is a standalone fn.
-    pub fn populate_hydrogens_(&mut self) {
-        // Collect new atoms/bonds in vectors to be appended later
-        let mut new_atoms = Vec::new();
-        let mut new_bonds = Vec::new();
-
-        // Track largest serial_number so we can assign new ones
-        let mut next_serial = self
-            .atoms
-            .iter()
-            .map(|a| a.serial_number)
-            .max()
-            .unwrap_or(0)
-            + 1;
-
-        // For each atom, see if it needs hydrogens
-        for (idx, atom) in self.atoms.iter().enumerate() {
-            // skip if it is hydrogen or metals
-            if atom.element == Element::Hydrogen {
-                continue;
-            }
-            let typical_val = atom.element.valence_typical();
-            if typical_val == 0 {
-                continue; // e.g. metals or unknown in this naive approach
-            }
-
-            // sum up bond order
-            let current_bond_order = self.sum_bond_order_for_atom(idx);
-            let needed_float = typical_val as f64 - current_bond_order;
-            // if negative or near 0, do nothing
-            if needed_float <= 0.0 {
-                continue;
-            }
-
-            // Round up. Real chemistry can get tricky with partial bonds,
-            // but let's do a naive integer rounding of needed hydrogens:
-            let needed_h = needed_float.round() as usize;
-            if needed_h == 0 {
-                continue;
-            }
-
-            // Guess the hybridization
-            let hybrid = Self::guess_hybridization(current_bond_order, needed_h);
-
-            // Get directions for the needed H in 3D
-            let directions = match hybrid {
-                Hybridization::Sp => Self::hydrogen_directions_sp(needed_h),
-                Hybridization::Sp2 => Self::hydrogen_directions_sp2(needed_h),
-                Hybridization::Sp3 => Self::hydrogen_directions_sp3(needed_h),
-            };
-
-            // For each direction, create an H atom + bond
-            for dir in directions {
-                // typical bond length (C-H ~1.09, N-H ~1.0, etc.).
-                // We'll pick something around 1.0 Å for demonstration.
-                let bond_len = 1.0;
-                let h_pos = atom.posit + dir * bond_len;
-
-                let new_atom = Atom {
-                    serial_number: next_serial,
-                    posit: h_pos,
-                    element: Element::Hydrogen,
-                    name: "H".to_owned(), // todo: Is this right?
-                    // Decide if it's backbone or sidechain, etc.
-                    // For a real system, you'd check if the heavy atom is a backbone atom, etc.
-                    role: Some(AtomRole::H_Backbone),
-                    residue_type: atom.residue_type.clone(),
-                    hetero: false,
-                    partial_charge: None,
-                    dock_type: None,
-                    occupancy: None,
-                    temperature_factor: None,
-                };
-                let new_atom_index = self.atoms.len() + new_atoms.len();
-                new_atoms.push(new_atom);
-
-                new_bonds.push(Bond {
-                    bond_type: BondType::Covalent {
-                        count: BondCount::Single,
-                    },
-                    atom_0: idx,
-                    atom_1: new_atom_index,
-                    is_backbone: false, // or match the parent's `is_backbone` if you want
-                });
-
-                next_serial += 1;
-            }
-        }
-
-        // Append the new atoms and bonds
-        self.atoms.extend(new_atoms);
-        self.bonds.extend(new_bonds);
-    }
-
     // todo: DIff approach below:
     pub fn populate_hydrogens(&mut self) {
         // todo: Move this fn to this module? Split this and its diehdral component, or not?
@@ -272,9 +176,5 @@ impl Molecule {
                 }
             }
         }
-
-        // todo: Consider adding hydrogens on init.
-        self.bonds = create_bonds(&self.atoms);
-        self.bonds.extend(make_hydrogen_bonds(&self.atoms));
     }
 }

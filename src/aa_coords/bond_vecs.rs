@@ -18,11 +18,11 @@ pub const LEN_CP_N: f64 = 1.33; // angstrom
 pub const LEN_N_CALPHA: f64 = 1.46; // angstrom
 pub const LEN_CALPHA_CP: f64 = 1.53; // angstrom
 
-pub const LEN_CP_O: f64 = 1.2; // angstrom // todo placeholder!
-pub const LEN_CALPHA_H: f64 = 1.0; // angstrom // todo placeholder!
-pub const LEN_N_H: f64 = 1.0; // angstrom // todo placeholder!
-pub const LEN_C_H: f64 = 1.0; // angstrom // todo placeholder!
-pub const LEN_O_H: f64 = 0.9572; // angstrom // In water molecules. What is it in proteins?
+pub const LEN_CP_O: f64 = 1.2; // angstrom
+pub const LEN_CALPHA_H: f64 = 1.09; // angstrom
+pub const LEN_N_H: f64 = 1.01; // angstrom
+pub const LEN_C_H: f64 = 1.09; // angstrom
+pub const LEN_O_H: f64 = 0.9572; // angstrom // In water molecules. In proteins, maybe 1.01?
 
 // Called in the creation of our bond vecs
 pub const θ_HOH_ANGLE: f64 = 1.82421813;

@@ -137,10 +137,12 @@ fn get_specs() -> Vec<BondSpecs> {
         // --------------------
         // todo: Expand this section.
 
-        BondSpecs::new(1.09, (Carbon, Hydrogen), single),
+        // BondSpecs::new(1.09, (Carbon, Hydrogen), single),
+        BondSpecs::new(1.09, (Hydrogen, Carbon), single),
 
         // 1.01–1.02 Å
-        BondSpecs::new(1.01, (Nitrogen, Hydrogen), single),
+        // BondSpecs::new(1.01, (Nitrogen, Hydrogen), single),
+        BondSpecs::new(1.01, (Hydrogen, Nitrogen), single),
 
         // 0.96 – 0.98 Å
         BondSpecs::new(1.01, (Oxygen, Hydrogen), single),
@@ -166,6 +168,9 @@ fn eval_lens(bonds: &mut Vec<Bond>, atoms: &[Atom], i: usize, j: usize, specs: &
     for spec in specs {
         // This directionality ensures only one bond per atom pair. Otherwise, we'd add two identical
         // ones with swapped atom positions.
+
+        // todo: We are seeing some buggy behavior regarding ordering.
+
         // todo: This only prevents duplicate bonds if the elements are different.
         if !(atom_0.element == spec.elements.0 && atom_1.element == spec.elements.1) {
             continue;

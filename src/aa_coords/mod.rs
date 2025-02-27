@@ -8,9 +8,7 @@ use na_seq::AminoAcid;
 use crate::{
     Element,
     aa_coords::{
-        bond_vecs::{
-            LEN_CALPHA_H, LEN_N_H, PLANAR3_A, PLANAR3_B, Planar3, TETRA_ANGLE, init_local_bond_vecs,
-        },
+        bond_vecs::{LEN_CALPHA_H, LEN_N_H},
         sidechain::Sidechain,
     },
     molecule::{Atom, AtomRole, ResidueType},
