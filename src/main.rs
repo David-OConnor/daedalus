@@ -509,7 +509,6 @@ impl State {
 
     // todo: Consider how you handle loading and storing of ligands vs targets.
     pub fn open_molecule(&mut self, path: &Path, is_ligand: bool) {
-
         let mut ligand = None;
         let molecule = match path
             .extension()
@@ -527,7 +526,7 @@ impl State {
                     ligand = ligand_;
                     molecule
                 })
-            }, // todo: Handle the ligand part.
+            } // todo: Handle the ligand part.
             "pdb" | "cif" => {
                 let pdb = load_pdb(path);
                 match pdb {

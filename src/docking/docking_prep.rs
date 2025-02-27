@@ -22,12 +22,13 @@
 //! What we will use to start: the OpenBabel CLI program.
 
 use std::fmt::Display;
+
 use crate::molecule::{Atom, Molecule};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum TorsionStatus {
     Active,
-    Inactive
+    Inactive,
 }
 
 impl Display for TorsionStatus {
@@ -50,7 +51,6 @@ pub struct UnitCellDims {
     pub alpha: f32,
     pub beta: f32,
     pub gamma: f32,
-
 }
 
 #[derive(Debug)]
@@ -63,14 +63,12 @@ pub struct Torsion {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum PartialChargeType {
-   Gasteiger,
+    Gasteiger,
     Kollman,
 }
 
 /// Note: Hydrogens must already be added prior to adding charges.
-fn setup_partial_charges(atoms: &mut Vec<Atom>, charge_type: PartialChargeType) {
-
-}
+fn setup_partial_charges(atoms: &mut Vec<Atom>, charge_type: PartialChargeType) {}
 
 impl Molecule {
     /// Adds hydrogens, assigns partial charges etc.

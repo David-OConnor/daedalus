@@ -27,6 +27,8 @@ pub const LEN_O_H: f64 = 0.9572; // angstrom // In water molecules. What is it i
 // Called in the creation of our bond vecs
 pub const θ_HOH_ANGLE: f64 = 1.82421813;
 
+pub const TETRA_ANGLE: f64 = 1.9106332; // Angle between any 2 bonds in a tetrahedron.
+
 // Ideal bond angles. There are an approximation; from averages. Consider replacing with something
 // more robust later. All angles are in radians. We use degrees with math to match common sources.
 // R indicates the side chain.
@@ -242,7 +244,6 @@ impl Default for Tetrahedral {
     fn default() -> Self {
         // Z is an arbitrary orthonormal vec to the anchor vec.
         let z = Vec3::new(0., 0., 1.);
-        let tetra_angle = 1.9106332; // Angle between any 2 bonds in a tetrahedron.
 
         let r1 = z;
         let r2 = Quaternion::from_axis_angle(ANCHOR_BOND_VEC, TAU / 3.).rotate_vec(z);
@@ -250,9 +251,9 @@ impl Default for Tetrahedral {
 
         Self {
             bond_a: ANCHOR_BOND_VEC,
-            bond_b: Quaternion::from_axis_angle(r1, tetra_angle).rotate_vec(ANCHOR_BOND_VEC),
-            bond_c: Quaternion::from_axis_angle(r2, tetra_angle).rotate_vec(ANCHOR_BOND_VEC),
-            bond_d: Quaternion::from_axis_angle(r3, tetra_angle).rotate_vec(ANCHOR_BOND_VEC),
+            bond_b: Quaternion::from_axis_angle(r1, TETRA_ANGLE).rotate_vec(ANCHOR_BOND_VEC),
+            bond_c: Quaternion::from_axis_angle(r2, TETRA_ANGLE).rotate_vec(ANCHOR_BOND_VEC),
+            bond_d: Quaternion::from_axis_angle(r3, TETRA_ANGLE).rotate_vec(ANCHOR_BOND_VEC),
         }
     }
 }

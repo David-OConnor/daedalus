@@ -16,23 +16,21 @@ use regex::Regex;
 use crate::{
     Element,
     bond_inference::{create_bonds, make_hydrogen_bonds},
-    molecule::{Atom, AtomRole, Bond, Chain, Molecule, Residue, ResidueType},
+    docking::docking_prep::{Torsion, TorsionStatus, UnitCellDims},
+    molecule::{Atom, AtomRole, Bond, Chain, Ligand, Molecule, Residue, ResidueType},
     util::mol_center_size,
 };
-use crate::docking::docking_prep::{Torsion, TorsionStatus, UnitCellDims};
-use crate::molecule::Ligand;
 // #[derive(Debug, Default)]
 // pub struct PdbQt {
 //     pub atoms: Vec<Atom>,
 //     pub bonds: Vec<Bond>,
 // }
 
-
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum DockType {
     // Standard AutoDock4/Vina atom types
-    A, // Aromatic carbon
-    C, // Aliphatic carbon
+    A,  // Aromatic carbon
+    C,  // Aliphatic carbon
     N,  // Nitrogen
     Na, // Nitrogen (acceptor)
     O,  // Oxygen
@@ -51,7 +49,7 @@ pub enum DockType {
     Ca,
     Mn,
     Cu,
-    Hd, // Polar hydrogen (hydrogen donor)
+    Hd,    // Polar hydrogen (hydrogen donor)
     Other, // Fallback for unknown types
 }
 
@@ -172,7 +170,6 @@ fn parse_optional_f32(s: &str) -> io::Result<Option<f32>> {
     }
 }
 
-
 impl Molecule {
     /// From PQBQT text, e.g. loaded from a file.
     pub fn from_pdbqt(pdb_text: &str) -> io::Result<(Self, Option<Ligand>)> {
@@ -248,7 +245,7 @@ impl Molecule {
                 }
                 if !res_found {
                     residues.push(Residue {
-                        serial_number: 0,                       // todo temp
+                        serial_number: 0, // todo temp
                         res_type: residue_type.clone(),
                         atoms: vec![atom_id],
                     });
@@ -301,7 +298,6 @@ impl Molecule {
 
                 ligand.as_mut().unwrap().unit_cell_dims = unit_cell_dims;
 
-
                 // todo: What to do with this?
             } else {
                 // handle other records if you like, e.g. REMARK, BRANCH, etc.
@@ -333,18 +329,23 @@ impl Molecule {
             writeln!(file, "REMARK  Name = {}", self.ident)?;
         }
 
-
         if ligand.is_some() {
             let torsions = &ligand.as_ref().unwrap().torsions;
             let tor_len = torsions.len();
             if tor_len > 0 {
                 writeln!(file, "REMARK  {tor_len} active torsions:")?;
                 writeln!(file, "REMARK  status: ('A' for Active; 'I' for Inactive)")?;
-
             }
 
             for (i, torsion) in torsions.iter().enumerate() {
-                writeln!(file, "REMARK {:>4}  {:>1}    between atoms: {}  and  {}", i + 1, torsion.status, torsion.atom_0, torsion.atom_1)?;
+                writeln!(
+                    file,
+                    "REMARK {:>4}  {:>1}    between atoms: {}  and  {}",
+                    i + 1,
+                    torsion.status,
+                    torsion.atom_0,
+                    torsion.atom_1
+                )?;
             }
         }
 

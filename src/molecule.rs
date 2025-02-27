@@ -10,9 +10,14 @@ use na_seq::AminoAcid;
 use pdbtbx::SecondaryStructure;
 
 use crate::{
-    Element, Selection, docking::DockingInit, file_io::pdbqt::DockType, rcsb_api::PdbMetaData,
+    Element, Selection,
+    docking::{
+        DockingInit,
+        docking_prep::{Torsion, UnitCellDims},
+    },
+    file_io::pdbqt::DockType,
+    rcsb_api::PdbMetaData,
 };
-use crate::docking::docking_prep::{Torsion, UnitCellDims};
 
 #[derive(Debug, Default, Clone)]
 pub struct Molecule {
