@@ -142,15 +142,36 @@ impl Molecule {
         .collect()
     }
 
-    // todo: DIff approach below:
+    /// Adds hydrogens, and populdates residue dihedral angles.
     pub fn populate_hydrogens(&mut self) {
         // todo: Move this fn to this module? Split this and its diehdral component, or not?
 
         let mut prev_cp_pos = Vec3::new_zero();
         let mut prev_ca_pos = Vec3::new_zero();
 
-        for res in &mut self.residues {
+        let res_len = self.residues.len();
+
+        let res_clone = self.residues.clone(); // todo: Come back to /avoid if possible.
+        // todo: Avoids a double-borrow error below.
+
+        for (i, res) in self.residues.iter_mut().enumerate() {
             let atoms: Vec<&Atom> = res.atoms.iter().map(|i| &self.atoms[*i]).collect();
+
+            let mut n_next_pos = Vec3::new_zero();
+            // todo: Messy DRY from the aa_data_from_coords fn.
+            if i < res_len - 1 {
+                let res_next = &res_clone[i + 1];
+                let n_next = res_next.atoms.iter().find(|i| {
+                    if let Some(role) = &self.atoms[**i].role {
+                        *role == AtomRole::N_Backbone
+                    } else {
+                        false
+                    }
+                });
+                if let Some(n_next) = n_next {
+                    n_next_pos = self.atoms[*n_next].posit;
+                }
+            }
 
             if let ResidueType::AminoAcid(aa) = &res.res_type {
                 let data = aa_data_from_coords(
@@ -159,16 +180,19 @@ impl Molecule {
                     // todo: Skip the first one; not set up yet.
                     prev_cp_pos,
                     prev_ca_pos,
+                    n_next_pos,
                 );
 
                 match data {
-                    Ok((dihedral_angles, hydrogens, cp_pos, ca_pos)) => {
+                    Ok((dihedral, hydrogens, cp_pos, ca_pos)) => {
                         for h in hydrogens {
                             self.atoms.push(h);
                             res.atoms.push(self.atoms.len() - 1);
                         }
                         prev_cp_pos = cp_pos;
                         prev_ca_pos = ca_pos;
+
+                        res.dihedral = Some(dihedral);
                     }
                     Err(_) => {
                         eprintln!("Problem making hydrogens");

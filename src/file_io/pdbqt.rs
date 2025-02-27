@@ -248,6 +248,7 @@ impl Molecule {
                         serial_number: 0, // todo temp
                         res_type: residue_type.clone(),
                         atoms: vec![atom_id],
+                        dihedral: None,
                     });
                 }
 

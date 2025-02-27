@@ -374,11 +374,12 @@ fn cam_controls(
 /// Display text of the selected atom
 fn selected_data(mol: &Molecule, selection: Selection, ui: &mut Ui) {
     match selection {
-        Selection::Atom(sel) => {
-            if sel >= mol.atoms.len() {
+        Selection::Atom(sel_i) => {
+            if sel_i >= mol.atoms.len() {
                 return;
             }
-            let atom = &mol.atoms[sel];
+
+            let atom = &mol.atoms[sel_i];
 
             let aa = match atom.residue_type {
                 ResidueType::AminoAcid(a) => format!("AA: {}", a.to_str(AaIdent::OneLetter)),
@@ -390,6 +391,11 @@ fn selected_data(mol: &Molecule, selection: Selection, ui: &mut Ui) {
                 None => String::new(),
             };
 
+            // todo: Helper fn for this, and find otehr places in the code where we need it.
+            let res = &mol.residues.iter().find(|r| r.atoms.contains(&sel_i));
+            if let Some(r) = res {}
+
+            // todo: Show res info too.
             ui.label(
                 RichText::new(format!(
                     "{}  {}  El: {:?}  {aa}  {role}",
@@ -410,10 +416,11 @@ fn selected_data(mol: &Molecule, selection: Selection, ui: &mut Ui) {
                 ResidueType::Other(name) => name.clone(),
             };
 
-            // todo: Sequesnce number etc.
-            ui.label(
-                RichText::new(format!("Res: {}: {name}", res.serial_number)).color(Color32::GOLD),
-            );
+            let mut text = format!("Res: {}: {name}", res.serial_number);
+            if let Some(dihedral) = &res.dihedral {
+                text += &format!("   {dihedral}");
+            }
+            ui.label(RichText::new(text).color(Color32::GOLD));
         }
         Selection::None => (),
     }

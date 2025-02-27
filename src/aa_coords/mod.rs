@@ -1,6 +1,10 @@
 //! Adapted from `peptide`. This includes sub-modules.
 
-use std::f64::consts::TAU;
+use std::{
+    f64::consts::TAU,
+    fmt,
+    fmt::{Formatter, write},
+};
 
 use lin_alg::f64::{Quaternion, Vec3};
 use na_seq::AminoAcid;
@@ -25,21 +29,34 @@ pub struct PlacementError {}
 /// An amino acid in a protein structure, including all dihedral angles required to determine
 /// the conformation. Includes backbone and side chain dihedral angles. Doesn't store coordinates,
 /// but coordinates can be generated using forward kinematics from the angles.
-#[derive(Debug)]
-pub struct ResidueFlex {
+#[derive(Debug, Clone)]
+pub struct Dihedral {
     /// Dihedral angle between C' and N
-    /// Tor (Cα, C, N, Cα) is the ω torsion angle
+    /// Tor (Cα, C', N, Cα) is the ω torsion angle
     /// Assumed to be TAU/2 for most cases
     pub ω: f64,
     /// Dihedral angle between Cα and N.
-    /// Tor (C, N, Cα, C) is the φ torsion angle
+    /// Tor (C', N, Cα, C') is the φ torsion angle
     pub φ: f64,
     /// Dihedral angle, between Cα and C'
-    ///  Tor (N, Cα, C, N) is the ψ torsion angle
+    ///  Tor (N, Cα, C', N) is the ψ torsion angle
     pub ψ: f64,
     // /// Contains the χ angles that define t
     pub sidechain: Sidechain,
     // pub dipole: Vec3,
+}
+
+impl fmt::Display for Dihedral {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "ω: {:.2}τ  φ: {:.2}τ  ψ: {:.2}τ",
+            self.ω / TAU,
+            self.φ / TAU,
+            self.ψ / TAU
+        )?;
+        Ok(())
+    }
 }
 
 /// Calculate the dihedral angle between 4 atoms.
@@ -72,15 +89,48 @@ pub fn tetra_atoms(atom_center: Vec3, atom_a: Vec3, atom_b: Vec3, atom_c: Vec3) 
     (avg - atom_center).to_normalized()
 }
 
+/// Given the positions of two atoms of a tetrahedron, find the remaining two.
+/// `len` is the length between the center, and each apex.
+fn tetra_atoms_2(center: Vec3, atom_0: Vec3, atom_1: Vec3, len: f64) -> (Vec3, Vec3) {
+    // todo: Not working.
+    // Move from world-space to local.
+    let bond_0 = (atom_0 - center).to_normalized();
+    let bond_1 = (atom_1 - center).to_normalized();
+
+    // Aligns the tetrahedron leg A to bond 0.
+    let rotator_a = Quaternion::from_unit_vecs(TETRA_A, bond_0);
+
+    // Once the TETRA_A is aligned to bond_0, rotate the tetrahedron around this until TETRA_B aligs
+    // with bond_1. Then, the other two tetra parts will be where we place our hydrogens.
+    let tetra_b_rotated = rotator_a.rotate_vec(unsafe { TETRA_B });
+    let tetra_b_on_plane = tetra_b_rotated.project_to_plane(bond_0);
+    let bond_1_on_plane = bond_1.project_to_plane(bond_0);
+    let rot_amt = tetra_b_on_plane.dot(bond_1_on_plane).acos();
+
+    // let rotator_b = Quaternion::from_axis_angle(bond_0, -rot_amt);
+    let rotator_b = Quaternion::from_axis_angle(bond_0, -rot_amt);
+
+    let rotator = rotator_b * rotator_a;
+
+    unsafe {
+        (
+            center + rotator.rotate_vec(TETRA_C) * len,
+            center + rotator.rotate_vec(TETRA_D) * len,
+        )
+    }
+}
+
 /// todo: Rename, etc.
 /// todo: Infer residue from coords instead of accepting as param?
-/// Returns (dihedral angles, H atoms, c'_pos, ca_pos)
+/// Returns (dihedral angles, H atoms, c'_pos, ca_pos). The parameter and output carbon positions
+/// are for use in calculating dihedral angles associated with other  chains.
 pub fn aa_data_from_coords(
     atoms: &[&Atom],
     aa: AminoAcid,
     prev_cp_pos: Vec3,
     prev_ca_pos: Vec3,
-) -> Result<(f32, Vec<Atom>, Vec3, Vec3), PlacementError> {
+    next_n_pos: Vec3,
+) -> Result<(Dihedral, Vec<Atom>, Vec3, Vec3), PlacementError> {
     // todo: With_capacity based on aa?
 
     // todo: Maybe split this into separate functions.
@@ -100,7 +150,7 @@ pub fn aa_data_from_coords(
     };
 
     // Initialized to default. Now, how to fill this out?
-    let mut res = ResidueFlex {
+    let mut dihedral = Dihedral {
         ω: 0.,
         φ: 0.,
         ψ: 0.,
@@ -109,7 +159,6 @@ pub fn aa_data_from_coords(
 
     // todo: Populate sidechain and main angles now based on coords. (?)
 
-    let dihedral_angles = 0.;
     let mut hydrogens = Vec::new();
 
     // Find the positions of the backbone atoms.
@@ -159,11 +208,11 @@ pub fn aa_data_from_coords(
     let bond_n_cp_prev = n_posit - prev_cp_pos;
     let bond_ca_n = c_alpha_posit - n_posit;
     let bond_cp_ca = c_p_posit - c_alpha_posit;
+    let bond_n_next_cp = next_n_pos - c_p_posit;
 
-    res.ω = calc_dihedral_angle(bond_n_cp_prev, bond_cp_prev_ca_prev, bond_ca_n);
-    res.φ = calc_dihedral_angle(bond_ca_n, bond_n_cp_prev, bond_cp_ca);
-    // todo: Need n next.
-    // res.ψ = calc_dihedral_angle(bond_middle: Vec3, bond_adjacent1: Vec3, bond_adjacent2: Vec3)
+    dihedral.ω = calc_dihedral_angle(bond_n_cp_prev, bond_cp_prev_ca_prev, bond_ca_n);
+    dihedral.φ = calc_dihedral_angle(bond_ca_n, bond_n_cp_prev, bond_cp_ca);
+    dihedral.ψ = calc_dihedral_angle(bond_cp_ca, bond_ca_n, bond_n_next_cp);
 
     // Add a H to the N atom. Planar.
     let n_plane_normal = bond_n_cp_prev.cross(bond_ca_n).to_normalized();
@@ -264,42 +313,27 @@ pub fn aa_data_from_coords(
                                 },
                                 2 => unsafe {
                                     // Add 2 H.
-                                    // todo: DRY
-                                    // todo: Not working.
-                                    let bond_0 =
-                                        (atoms_bonded[0].posit - atom.posit).to_normalized();
-                                    let bond_1 =
-                                        (atoms_bonded[1].posit - atom.posit).to_normalized();
+                                    let (h_0, h_1) = tetra_atoms_2(
+                                        atom.posit,
+                                        atoms_bonded[0].posit,
+                                        atoms_bonded[1].posit,
+                                        LEN_C_H,
+                                    );
 
-                                    let rotator_a = Quaternion::from_unit_vecs(TETRA_A, bond_0);
-                                    // Once the TETRA_A is aligned to bond_0, rotate around it until TETRA_B alings
-                                    // with bond_1. Then, the other two tetra parts will be where we place our hydrogens.
-
-                                    let tetra_b_rotated = rotator_a.rotate_vec(TETRA_B);
-                                    let tetra_b_on_plane = tetra_b_rotated.project_to_plane(bond_0);
-                                    let rot_amt = tetra_b_on_plane.dot(bond_1).acos();
-
-                                    let rotator_b = Quaternion::from_axis_angle(bond_0, rot_amt);
-
-                                    let rotator = rotator_b * rotator_a;
-                                    for tetra in [TETRA_C, TETRA_D] {
+                                    for posit in [h_0, h_1] {
                                         hydrogens.push(Atom {
-                                            posit: atom.posit + rotator.rotate_vec(tetra) * LEN_C_H,
+                                            posit,
                                             ..h_default.clone()
                                         });
                                     }
-
-                                    hydrogens.push(Atom {
-                                        posit: rotator
-                                            .rotate_vec(-bond_0.to_normalized() * LEN_C_H),
-                                        ..h_default.clone()
-                                    });
-                                    hydrogens.push(Atom {
-                                        posit: rotator.rotate_vec(bond_0.to_normalized() * LEN_C_H),
-                                        ..h_default.clone()
-                                    });
                                 },
                                 3 => {
+                                    if atoms_bonded[0].element == Element::Oxygen
+                                        || atoms_bonded[1].element == Element::Oxygen
+                                        || atoms_bonded[2].element == Element::Oxygen
+                                    {
+                                        continue;
+                                    }
                                     // Add 1 H.
                                     hydrogens.push(Atom {
                                         posit: atom.posit
@@ -328,5 +362,5 @@ pub fn aa_data_from_coords(
         }
     }
 
-    Ok((dihedral_angles, hydrogens, c_p_posit, c_alpha_posit))
+    Ok((dihedral, hydrogens, c_p_posit, c_alpha_posit))
 }

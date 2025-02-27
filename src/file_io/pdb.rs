@@ -7,13 +7,11 @@ use std::{
 };
 
 use lin_alg::f64::Vec3;
-use na_seq::AminoAcid;
 use pdbtbx::{Format, PDB, ReadOptions, StrictnessLevel};
 use rayon::prelude::*;
 
 use crate::{
     Element,
-    aa_coords::aa_data_from_coords,
     bond_inference::{create_bonds, make_hydrogen_bonds},
     file_io::pdbqt::DockType,
     molecule::{Atom, AtomRole, Chain, Molecule, Residue, ResidueType},
@@ -222,6 +220,7 @@ impl Residue {
             serial_number: res_pdb.serial_number(),
             res_type,
             atoms: Vec::new(),
+            dihedral: None,
         };
 
         for atom_c in res_pdb.atoms() {

@@ -132,6 +132,7 @@ impl Molecule {
             serial_number: 0,
             res_type: ResidueType::Other("Unknown".to_string()),
             atoms: atom_indices.clone(),
+            dihedral: None,
         });
 
         chains.push(Chain {

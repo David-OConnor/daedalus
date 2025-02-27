@@ -11,6 +11,7 @@ use pdbtbx::SecondaryStructure;
 
 use crate::{
     Element, Selection,
+    aa_coords::Dihedral,
     docking::{
         DockingInit,
         docking_prep::{Torsion, UnitCellDims},
@@ -199,6 +200,7 @@ pub struct Residue {
     pub serial_number: isize, // pdbtbx uses isize. Negative allowed?
     pub res_type: ResidueType,
     pub atoms: Vec<usize>, // Atom index
+    pub dihedral: Option<Dihedral>,
 }
 
 #[derive(Debug, Clone)]

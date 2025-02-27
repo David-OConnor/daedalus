@@ -32,7 +32,7 @@ pub const PRO_PHI_MAX: f64 = 5.53269;
 // the Oxygens, but Pymol doesn't.
 // For example:
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Sidechain {
     Arg(Arg),
     His(His),
@@ -56,6 +56,12 @@ pub enum Sidechain {
     Trp(Trp),
     /// Sec is not one of the most-common 20.
     Sec(Sec),
+}
+
+impl Default for Sidechain {
+    fn default() -> Self {
+        Self::Gly(Default::default())
+    }
 }
 
 impl fmt::Display for Sidechain {
@@ -1026,7 +1032,7 @@ pub struct CoordsTrp {
 // `χ_1` for each is for the bond between the c_alpha, and the first atom in the
 // sidechain (eg c_bravo)
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Arg {
     pub χ_1: f64,
     pub χ_2: f64,
@@ -1047,7 +1053,7 @@ impl Default for Arg {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct His {
     pub χ_1: f64,
     pub χ_2: f64,
@@ -1062,7 +1068,7 @@ impl Default for His {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Lys {
     pub χ_1: f64,
     pub χ_2: f64,
@@ -1081,7 +1087,7 @@ impl Default for Lys {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Asp {
     pub χ_1: f64,
     pub χ_2: f64,
@@ -1096,7 +1102,7 @@ impl Default for Asp {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Glu {
     pub χ_1: f64,
     pub χ_2: f64,
@@ -1113,7 +1119,7 @@ impl Default for Glu {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Ser {
     pub χ_1: f64,
 }
@@ -1124,7 +1130,7 @@ impl Default for Ser {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Thr {
     pub χ_1: f64,
 }
@@ -1135,7 +1141,7 @@ impl Default for Thr {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Asn {
     pub χ_1: f64,
     pub χ_2: f64,
@@ -1150,7 +1156,7 @@ impl Default for Asn {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Gln {
     pub χ_1: f64,
     pub χ_2: f64,
@@ -1167,7 +1173,7 @@ impl Default for Gln {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Cys {
     pub χ_1: f64,
 }
@@ -1178,7 +1184,7 @@ impl Default for Cys {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Sec {
     pub χ_1: f64,
 }
@@ -1189,16 +1195,16 @@ impl Default for Sec {
     }
 }
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq, Clone)]
 pub struct Gly {}
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq, Clone)]
 pub struct Pro {}
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq, Clone)]
 pub struct Ala {}
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Val {
     pub χ_1: f64,
 }
@@ -1209,7 +1215,7 @@ impl Default for Val {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Ile {
     pub χ_1: f64,
     pub χ_2: f64,
@@ -1224,7 +1230,7 @@ impl Default for Ile {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Leu {
     pub χ_1: f64,
     pub χ_2: f64,
@@ -1239,7 +1245,7 @@ impl Default for Leu {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Met {
     pub χ_1: f64,
     pub χ_2: f64,
@@ -1256,7 +1262,7 @@ impl Default for Met {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Phe {
     pub χ_1: f64,
     pub χ_2: f64,
@@ -1271,7 +1277,7 @@ impl Default for Phe {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Tyr {
     pub χ_1: f64,
     pub χ_2: f64,
@@ -1286,7 +1292,7 @@ impl Default for Tyr {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Trp {
     pub χ_1: f64,
     pub χ_2: f64,
