@@ -568,6 +568,8 @@ impl State {
 }
 
 fn main() {
+    init_local_bond_vecs();
+
     let mut state = State::default();
     state.ui.view_depth = VIEW_DEPTH_MAX;
 
@@ -594,9 +596,6 @@ fn main() {
     }
 
     state.babel_avail = check_babel_avail();
-
-    // todo: A/R
-    init_local_bond_vecs(); // todo: Maybe put this at start of program.
 
     render(state);
 }

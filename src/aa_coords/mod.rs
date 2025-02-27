@@ -8,7 +8,9 @@ use na_seq::AminoAcid;
 use crate::{
     Element,
     aa_coords::{
-        bond_vecs::{LEN_CALPHA_H, LEN_N_H},
+        bond_vecs::{
+            LEN_C_H, LEN_CALPHA_H, LEN_N_H, TETRA_A, TETRA_ANGLE, TETRA_B, TETRA_C, TETRA_D,
+        },
         sidechain::Sidechain,
     },
     molecule::{Atom, AtomRole, ResidueType},
@@ -221,23 +223,110 @@ pub fn aa_data_from_coords(
         ..h_default.clone()
     });
 
-    // for atom in atoms {
-    //     // println!("Atom: {}, {:?}", atom.element.to_letter(), atom.role);
-    //     match atom.element {
-    //         Element::Carbon => {}
-    //         Element::Nitrogen => {}
-    //         _ => {}
-    //     }
-    //
-    //     if let Some(role) = atom.role {
-    //         match role {
-    //             AtomRole::N_Backbone => {}
-    //             AtomRole::C_Prime => {}
-    //             AtomRole::C_Alpha => {}
-    //             _ => (),
-    //         }
-    //     }
-    // }
+    // Handle sidechains.
+    // todo: If this algorithm proves general enough, perhaps apply it to the backbone as well (?)
+    for (i, atom) in atoms.into_iter().enumerate() {
+        // println!("Atom: {}, {:?}", atom.element.to_letter(), atom.role);
+
+        if let Some(role) = atom.role {
+            match role {
+                AtomRole::Sidechain => {
+                    match atom.element {
+                        Element::Carbon => {
+                            // todo: Function for this A/R.
+                            let atoms_bonded: Vec<&Atom> = atoms
+                                .into_iter()
+                                .enumerate()
+                                .filter(|(j, a)| {
+                                    // todo: Handling only all-carbon bonds here for now.
+                                    // i != *j && a.element == Element::Carbon && (a.posit - atom.posit).magnitude() < 1.55
+                                    i != *j && (a.posit - atom.posit).magnitude() < 1.55
+                                })
+                                .map(|(_, a)| *a)
+                                .collect();
+
+                            // todo: Handle O bonded (doubleu bonds).
+                            match atoms_bonded.len() {
+                                1 => unsafe {
+                                    // todo: For now, this H array has an arbitrary rotation. I think the move may be to lock
+                                    // todo it to something that counter-aligns to the next hub's atoms.
+                                    // Add 3 H
+                                    let rotator = Quaternion::from_unit_vecs(
+                                        TETRA_A,
+                                        (atoms_bonded[0].posit - atom.posit).to_normalized(),
+                                    );
+                                    for tetra in [TETRA_B, TETRA_C, TETRA_D] {
+                                        hydrogens.push(Atom {
+                                            posit: atom.posit + rotator.rotate_vec(tetra) * LEN_C_H,
+                                            ..h_default.clone()
+                                        });
+                                    }
+                                },
+                                2 => unsafe {
+                                    // Add 2 H.
+                                    // todo: DRY
+                                    // todo: Not working.
+                                    let bond_0 =
+                                        (atoms_bonded[0].posit - atom.posit).to_normalized();
+                                    let bond_1 =
+                                        (atoms_bonded[1].posit - atom.posit).to_normalized();
+
+                                    let rotator_a = Quaternion::from_unit_vecs(TETRA_A, bond_0);
+                                    // Once the TETRA_A is aligned to bond_0, rotate around it until TETRA_B alings
+                                    // with bond_1. Then, the other two tetra parts will be where we place our hydrogens.
+
+                                    let tetra_b_rotated = rotator_a.rotate_vec(TETRA_B);
+                                    let tetra_b_on_plane = tetra_b_rotated.project_to_plane(bond_0);
+                                    let rot_amt = tetra_b_on_plane.dot(bond_1).acos();
+
+                                    let rotator_b = Quaternion::from_axis_angle(bond_0, rot_amt);
+
+                                    let rotator = rotator_b * rotator_a;
+                                    for tetra in [TETRA_C, TETRA_D] {
+                                        hydrogens.push(Atom {
+                                            posit: atom.posit + rotator.rotate_vec(tetra) * LEN_C_H,
+                                            ..h_default.clone()
+                                        });
+                                    }
+
+                                    hydrogens.push(Atom {
+                                        posit: rotator
+                                            .rotate_vec(-bond_0.to_normalized() * LEN_C_H),
+                                        ..h_default.clone()
+                                    });
+                                    hydrogens.push(Atom {
+                                        posit: rotator.rotate_vec(bond_0.to_normalized() * LEN_C_H),
+                                        ..h_default.clone()
+                                    });
+                                },
+                                3 => {
+                                    // Add 1 H.
+                                    hydrogens.push(Atom {
+                                        posit: atom.posit
+                                            // + tetra_atoms(
+                                            - tetra_atoms(
+                                                atom.posit,
+                                                atoms_bonded[0].posit,
+                                                atoms_bonded[1].posit,
+                                                atoms_bonded[2].posit,
+                                                // -bond_ca_n.to_normalized(),
+                                                // bond_cp_ca.to_normalized(),
+                                                // -bond_ca_sidechain.to_normalized(),
+                                            ) * LEN_CALPHA_H,
+                                        ..h_default.clone()
+                                    });
+                                }
+                                _ => (),
+                            }
+                        }
+                        Element::Nitrogen => {}
+                        _ => {}
+                    }
+                }
+                _ => (),
+            }
+        }
+    }
 
     Ok((dihedral_angles, hydrogens, c_p_posit, c_alpha_posit))
 }
