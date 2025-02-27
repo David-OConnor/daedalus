@@ -141,14 +141,12 @@ impl Molecule {
             visible: true,
         });
 
-        let mut bonds = create_bonds(&atoms);
-        bonds.extend(make_hydrogen_bonds(&atoms));
         let (center, size) = mol_center_size(&atoms);
 
-        Ok(Self {
+        let mut result = Self {
             ident: "".to_string(),
             atoms,
-            bonds,
+            bonds: Vec::new(),
             chains,
             residues,
             metadata: None,
@@ -157,7 +155,13 @@ impl Molecule {
             secondary_structure: Vec::new(),
             center,
             size,
-        })
+        };
+
+        result.populate_hydrogens();
+        result.bonds = create_bonds(&result.atoms);
+        result.bonds.extend(make_hydrogen_bonds(&result.atoms));
+
+        Ok(result)
     }
 
     pub fn save_sdf(&self, path: &Path) -> io::Result<()> {

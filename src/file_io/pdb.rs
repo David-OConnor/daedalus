@@ -163,14 +163,12 @@ impl Molecule {
         //     bonds.push((Atom::from_pdb(a0), Atom::from_pdb(a1), bond));
         // }
 
-        let mut bonds = create_bonds(&atoms);
-        bonds.extend(make_hydrogen_bonds(&atoms));
         let (center, size) = mol_center_size(&atoms);
 
-        Self {
+        let mut result = Self {
             ident: pdb.identifier.clone().unwrap_or_default(),
             atoms,
-            bonds,
+            bonds: Vec::new(),
             chains,
             residues,
             metadata: None,
@@ -179,7 +177,13 @@ impl Molecule {
             secondary_structure: pdb.secondary_structure.clone(),
             center,
             size,
-        }
+        };
+
+        result.populate_hydrogens();
+        result.bonds = create_bonds(&result.atoms);
+        result.bonds.extend(make_hydrogen_bonds(&result.atoms));
+
+        result
     }
 }
 

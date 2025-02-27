@@ -304,17 +304,18 @@ impl Molecule {
             }
         }
 
-        let mut bonds = create_bonds(&atoms);
-        bonds.extend(make_hydrogen_bonds(&atoms));
         let (center, size) = mol_center_size(&atoms);
 
         // put the atoms in the result
         result.atoms = atoms;
         result.chains = chains;
         result.residues = residues;
-        result.bonds = bonds;
         result.center = center;
         result.size = size;
+
+        result.populate_hydrogens();
+        result.bonds = create_bonds(&result.atoms);
+        result.bonds.extend(make_hydrogen_bonds(&result.atoms));
 
         // todo: ligand molecule??
 

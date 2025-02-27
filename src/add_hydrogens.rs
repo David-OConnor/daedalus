@@ -9,6 +9,7 @@ use crate::{
     file_io::pdbqt::DockType,
     molecule::{Atom, AtomRole, Bond, BondCount, BondType, Molecule, ResidueType},
 };
+use crate::bond_inference::{create_bonds, make_hydrogen_bonds};
 
 /// A simple enum for guessable hybridization
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -271,5 +272,9 @@ impl Molecule {
                 }
             }
         }
+
+        // todo: Consider adding hydrogens on init.
+        self.bonds = create_bonds(&self.atoms);
+        self.bonds.extend(make_hydrogen_bonds(&self.atoms));
     }
 }

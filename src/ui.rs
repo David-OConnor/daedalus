@@ -573,12 +573,13 @@ fn residue_search(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
 
         ui.add_space(COL_SPACING);
 
-        if let Some(mol) = &mut state.molecule {
-            if ui.button(RichText::new("Add H")).clicked() {
-                mol.populate_hydrogens();
-                *redraw = true;
-            }
-        }
+        // todo: Consider removing, and doing automatically on load.
+        // if let Some(mol) = &mut state.molecule {
+        //     if ui.button(RichText::new("Add H")).clicked() {
+        //         mol.populate_hydrogens();
+        //         *redraw = true;
+        //     }
+        // }
 
         if state.molecule.is_some() && state.ligand.is_some() {
             if state.babel_avail {
