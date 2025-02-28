@@ -1,10 +1,6 @@
 //! Adapted from `peptide`. This includes sub-modules.
 
-use std::{
-    f64::consts::TAU,
-    fmt,
-    fmt::{Formatter, write},
-};
+use std::{f64::consts::TAU, fmt, fmt::Formatter};
 
 use lin_alg::f64::{Quaternion, Vec3, det_from_cols};
 use na_seq::AminoAcid;
@@ -13,13 +9,14 @@ use crate::{
     Element,
     aa_coords::{
         bond_vecs::{
-            LEN_C_H, LEN_CALPHA_H, LEN_N_H, PLANAR3_A, PLANAR3_B, PLANAR3_C, TETRA_A, TETRA_ANGLE,
-            TETRA_B, TETRA_C, TETRA_D,
+            LEN_C_H, LEN_CALPHA_H, LEN_N_H, PLANAR3_A, PLANAR3_B, PLANAR3_C, TETRA_A, TETRA_B,
+            TETRA_C, TETRA_D,
         },
         sidechain::Sidechain,
     },
     molecule::{Atom, AtomRole, ResidueType},
 };
+use crate::aa_coords::bond_vecs::LEN_O_H;
 
 pub mod bond_vecs;
 pub mod sc_atom_placement;
@@ -104,7 +101,6 @@ pub fn calc_dihedral_angle(bond_middle: Vec3, bond_adjacent1: Vec3, bond_adjacen
     // need to modify is on the second half.
     let det = det_from_cols(bond1_on_plane, bond2_on_plane, bond_middle);
 
-    // todo: Exception if vecs are the same??
     if det < 0. { result } else { TAU - result }
 }
 
@@ -121,7 +117,6 @@ pub fn tetra_atoms(atom_center: Vec3, atom_a: Vec3, atom_b: Vec3, atom_c: Vec3) 
 /// Given the positions of two atoms of a tetrahedron, find the remaining two.
 /// `len` is the length between the center, and each apex.
 fn tetra_atoms_2(center: Vec3, atom_0: Vec3, atom_1: Vec3, len: f64) -> (Vec3, Vec3) {
-    // todo: Not working.
     // Move from world-space to local.
     let bond_0 = (atom_0 - center).to_normalized();
     let bond_1 = (center - atom_1).to_normalized();
@@ -205,6 +200,212 @@ fn get_prev_bonds(
     Ok((bond_prev, bond_back2))
 }
 
+/// Add hydrogens for side chains; this is more general than the initial logic that takes
+/// care of backbone hydrogens. It doesn't have to be used exclusively for sidechains.
+fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom) {
+    // Handle sidechains.
+    // todo: If this algorithm proves general enough, perhaps apply it to the backbone as well (?)
+    for (i, atom) in atoms.into_iter().enumerate() {
+        if atom.role.is_none() {
+            continue;
+        }
+        // todo: Experimenting with the first/last residues, to get
+        // if role != AtomRole::Sidechain && prev_cp_ca.is_some() && next_n.is_some() {
+        if atom.role.as_ref().unwrap() != &AtomRole::Sidechain {
+            continue;
+        }
+
+        let atoms_bonded = find_bonded_atoms(atom, atoms, i);
+
+        match atom.element {
+            Element::Carbon => {
+                // todo: Handle O bonded (doubleu bonds).
+                match atoms_bonded.len() {
+                    1 => unsafe {
+                        // Methyl.
+                        // todo: DRY with your Amine code below
+                        let (bond_prev, bond_back2) =
+                            match get_prev_bonds(atom, atoms, i, &atoms_bonded) {
+                                Ok(v) => v,
+                                Err(_) => {
+                                    eprintln!("Error: Could not find prev bonds on Methyl");
+                                    continue;
+                                }
+                            };
+
+                        // Initial rotator to align the tetrahedral geometry; positions almost correctly,
+                        // but needs an additional rotation around the bond vec axis.
+                        let rotator_a = Quaternion::from_unit_vecs(TETRA_A, bond_prev);
+
+                        let tetra_rotated = rotator_a.rotate_vec(TETRA_B);
+                        let dihedral =
+                            calc_dihedral_angle(bond_prev, tetra_rotated, bond_back2);
+
+                        // Offset; don't align; avoids steric hindrence.
+                        let rotator_b =
+                            Quaternion::from_axis_angle(bond_prev, -dihedral + TAU / 6.);
+                        let rotator = rotator_b * rotator_a;
+
+                        for tetra_bond in [TETRA_B, TETRA_C, TETRA_D] {
+                            hydrogens.push(Atom {
+                                posit: atom.posit + rotator.rotate_vec(tetra_bond) * LEN_C_H,
+                                ..h_default.clone()
+                            });
+                        }
+                    },
+                    2 => unsafe {
+                        // Planar arrangement.
+                        // todo: Not just for N: This applies to rings as well. (?)
+                        if atoms_bonded[0].1.element == Element::Nitrogen
+                            && atoms_bonded[1].1.element == Element::Nitrogen
+                        {
+                            let bond_0 = atom.posit - atoms_bonded[0].1.posit;
+                            let bond_1 = atoms_bonded[1].1.posit - atom.posit;
+                            // Add a single H in planar config.
+                            hydrogens.push(Atom {
+                                posit: planar_posit(atom.posit, bond_0, bond_1, LEN_C_H),
+                                ..h_default.clone()
+                            });
+                            continue;
+                        }
+
+                        // Add 2 H.
+                        let (h_0, h_1) = tetra_atoms_2(
+                            atom.posit,
+                            atoms_bonded[0].1.posit,
+                            atoms_bonded[1].1.posit,
+                            LEN_C_H,
+                        );
+
+                        for posit in [h_0, h_1] {
+                            hydrogens.push(Atom {
+                                posit,
+                                ..h_default.clone()
+                            });
+                        }
+                    },
+                    3 => {
+                        if atoms_bonded[0].1.element == Element::Oxygen
+                            || atoms_bonded[1].1.element == Element::Oxygen
+                            || atoms_bonded[2].1.element == Element::Oxygen
+                        {
+                            continue;
+                        }
+
+                        // Planar N arrangement.
+                        if atoms_bonded[0].1.element == Element::Nitrogen
+                            && atoms_bonded[1].1.element == Element::Nitrogen
+                            && atoms_bonded[2].1.element == Element::Nitrogen
+                        {
+                            continue;
+                        }
+
+                        // Add 1 H.
+                        // todo: If planar geometry, don't add a H!
+                        hydrogens.push(Atom {
+                            posit: atom.posit
+                                - tetra_atoms(
+                                atom.posit,
+                                atoms_bonded[0].1.posit,
+                                atoms_bonded[1].1.posit,
+                                atoms_bonded[2].1.posit,
+                            ) * LEN_CALPHA_H,
+                            ..h_default.clone()
+                        });
+                    }
+                    _ => (),
+                }
+            }
+            Element::Nitrogen => {
+                match atoms_bonded.len() {
+                    1 => unsafe {
+                        // Add 2 H. (Amine)
+                        // todo: DRY with methyl code above
+                        let (bond_prev, bond_back2) =
+                            match get_prev_bonds(atom, atoms, i, &atoms_bonded) {
+                                Ok(v) => v,
+                                Err(_) => {
+                                    eprintln!("Error: Could not find prev bonds on Amine");
+                                    continue;
+                                }
+                            };
+
+                        // Initial rotator to align the tetrahedral geometry; positions almost correctly,
+                        // but needs an additional rotation around the bond vec axis.
+                        let rotator_a = Quaternion::from_unit_vecs(PLANAR3_A, bond_prev);
+
+                        let planar_3_rotated = rotator_a.rotate_vec(PLANAR3_B);
+                        let dihedral =
+                            calc_dihedral_angle(bond_prev, planar_3_rotated, bond_back2);
+
+                        let rotator_b = Quaternion::from_axis_angle(bond_prev, -dihedral);
+                        let rotator = rotator_b * rotator_a;
+
+                        for planar_bond in [PLANAR3_B, PLANAR3_C] {
+                            hydrogens.push(Atom {
+                                posit: atom.posit + rotator.rotate_vec(planar_bond) * LEN_N_H,
+                                ..h_default.clone()
+                            });
+                        }
+                    },
+                    2 => {
+                        // Add 1 H.
+                        let bond_0 = atom.posit - atoms_bonded[0].1.posit;
+                        let bond_1 = atoms_bonded[1].1.posit - atom.posit;
+
+                        hydrogens.push(Atom {
+                            posit: planar_posit(atom.posit, bond_0, bond_1, LEN_N_H),
+                            ..h_default.clone()
+                        });
+                    }
+                    _ => ()
+                }
+            }
+            Element::Oxygen => {
+                match atoms_bonded.len() {
+                    1 => unsafe { // Hydroxyl. Add a single H with tetrahedral geometry.
+                        // todo: The bonds are coming out right; not sure why.
+                        // todo: This segment is DRY with 2+ sections above.
+                        let (bond_prev, bond_back2) =
+                            match get_prev_bonds(atom, atoms, i, &atoms_bonded) {
+                                Ok(v) => v,
+                                Err(_) => {
+                                    eprintln!("Error: Could not find prev bonds on Hydroxyl");
+                                    continue;
+                                }
+                            };
+
+                        let bond_prev_non_norm = atoms_bonded[0].1.posit - atom.posit;
+                        // This crude check may force these to only be created on Hydroxyls (?)
+                        // Looking for len characterisitic of a single bond vice double.
+                        if bond_prev_non_norm .magnitude() < 1.30 {
+                            continue
+                        }
+
+                        let rotator_a = Quaternion::from_unit_vecs(TETRA_A, bond_prev);
+
+                        let tetra_rotated = rotator_a.rotate_vec(TETRA_B);
+                        let dihedral =
+                            calc_dihedral_angle(bond_prev, tetra_rotated, bond_back2);
+
+                        // Offset; don't align; avoids steric hindrence.
+                        let rotator_b =
+                            Quaternion::from_axis_angle(bond_prev, -dihedral + TAU / 6.);
+                        let rotator = rotator_b * rotator_a;
+
+                        hydrogens.push(Atom {
+                            posit: atom.posit + rotator.rotate_vec(TETRA_B) * LEN_O_H,
+                            ..h_default.clone()
+                        });
+                    }
+                    _ => ()
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 /// todo: Rename, etc.
 /// todo: Infer residue from coords instead of accepting as param?
 /// Returns (dihedral angles, H atoms, c'_pos, ca_pos). The parameter and output carbon positions
@@ -214,7 +415,7 @@ pub fn aa_data_from_coords(
     aa: AminoAcid,
     prev_cp_ca: Option<(Vec3, Vec3)>,
     next_n: Option<Vec3>,
-) -> Result<(Dihedral, Vec<Atom>, Vec3, Vec3), PlacementError> {
+) -> (Dihedral, Vec<Atom>, Vec3, Vec3) {
     // todo: With_capacity based on aa?
 
     // todo: Maybe split this into separate functions.
@@ -270,7 +471,6 @@ pub fn aa_data_from_coords(
     }
     if !c_alpha_found || !c_p_found || !n_found {
         eprintln!("Error: Missing backbone atoms in coords.");
-        return Err(PlacementError {});
     }
 
     // /// Dihedral angle between C' and N
@@ -336,7 +536,11 @@ pub fn aa_data_from_coords(
 
     if posits_sc.is_empty() {
         eprintln!("Error: Could not find sidechain atom.");
-        return Err(PlacementError {});
+        // Note: This will also populate hydrogens on first and last backbones, and potentially
+        // on residues that don't have roles marked.
+        add_h_sidechain(&mut hydrogens, &atoms, &h_default);
+        // todo: Returning these posits here is wonky potentially.
+        return (dihedral, hydrogens, c_alpha_posit, c_alpha_posit);
     }
 
     let mut closest = (posits_sc[0] - c_alpha_posit).magnitude();
@@ -354,175 +558,14 @@ pub fn aa_data_from_coords(
     hydrogens.push(Atom {
         posit: c_alpha_posit
             + tetra_legs(
-                -bond_ca_n.to_normalized(),
-                bond_cp_ca.to_normalized(),
-                -bond_ca_sidechain.to_normalized(),
-            ) * LEN_CALPHA_H,
+            -bond_ca_n.to_normalized(),
+            bond_cp_ca.to_normalized(),
+            -bond_ca_sidechain.to_normalized(),
+        ) * LEN_CALPHA_H,
         ..h_default.clone()
     });
 
-    // Handle sidechains.
-    // todo: If this algorithm proves general enough, perhaps apply it to the backbone as well (?)
-    for (i, atom) in atoms.into_iter().enumerate() {
-        // println!("Atom: {}, {:?}", atom.element.to_letter(), atom.role);
+    add_h_sidechain(&mut hydrogens, &atoms, &h_default);
 
-        if let Some(role) = atom.role {
-            if role != AtomRole::Sidechain {
-                continue;
-            }
-
-            let atoms_bonded = find_bonded_atoms(atom, atoms, i);
-
-            match atom.element {
-                Element::Carbon => {
-                    // todo: Handle O bonded (doubleu bonds).
-                    match atoms_bonded.len() {
-                        1 => unsafe {
-                            // Methyl.
-                            // todo: DRY with your Amine code below
-                            let (bond_prev, bond_back2) =
-                                match get_prev_bonds(atom, atoms, i, &atoms_bonded) {
-                                    Ok(v) => v,
-                                    Err(_) => {
-                                        eprintln!("Error: Could not find prev bonds on Methyl");
-                                        continue;
-                                    }
-                                };
-
-                            // Initial rotator to align the tetrahedral geometry; positions almost correctly,
-                            // but needs an additional rotation around the bond vec axis.
-                            let rotator_a = Quaternion::from_unit_vecs(TETRA_A, bond_prev);
-
-                            let planar_3_rotated = rotator_a.rotate_vec(TETRA_B);
-                            let dihedral =
-                                calc_dihedral_angle(bond_prev, planar_3_rotated, bond_back2);
-
-                            // Offset; don't align; avoids steric hindrence.
-                            // todo: Not working correctly in some branch geometries.
-                            let rotator_b =
-                                Quaternion::from_axis_angle(bond_prev, -dihedral + TAU / 6.);
-                            let rotator = rotator_b * rotator_a;
-
-                            for tetra_bond in [TETRA_B, TETRA_C, TETRA_D] {
-                                println!("Adding methyl"); // todo temp
-                                hydrogens.push(Atom {
-                                    posit: atom.posit + rotator.rotate_vec(tetra_bond) * LEN_C_H,
-                                    ..h_default.clone()
-                                });
-                            }
-                        },
-                        2 => unsafe {
-                            // Planar arrangement.
-                            // todo: Not just for N: This applies to rings as well. (?)
-                            if atoms_bonded[0].1.element == Element::Nitrogen
-                                && atoms_bonded[1].1.element == Element::Nitrogen
-                            {
-                                let bond_0 = atom.posit - atoms_bonded[0].1.posit;
-                                let bond_1 = atoms_bonded[1].1.posit - atom.posit;
-                                // Add a single H in planar config.
-                                hydrogens.push(Atom {
-                                    posit: planar_posit(atom.posit, bond_0, bond_1, LEN_C_H),
-                                    ..h_default.clone()
-                                });
-                                continue;
-                            }
-
-                            // Add 2 H.
-                            let (h_0, h_1) = tetra_atoms_2(
-                                atom.posit,
-                                atoms_bonded[0].1.posit,
-                                atoms_bonded[1].1.posit,
-                                LEN_C_H,
-                            );
-
-                            for posit in [h_0, h_1] {
-                                hydrogens.push(Atom {
-                                    posit,
-                                    ..h_default.clone()
-                                });
-                            }
-                        },
-                        3 => {
-                            if atoms_bonded[0].1.element == Element::Oxygen
-                                || atoms_bonded[1].1.element == Element::Oxygen
-                                || atoms_bonded[2].1.element == Element::Oxygen
-                            {
-                                continue;
-                            }
-
-                            // Planar N arrangement.
-                            if atoms_bonded[0].1.element == Element::Nitrogen
-                                && atoms_bonded[1].1.element == Element::Nitrogen
-                                && atoms_bonded[2].1.element == Element::Nitrogen
-                            {
-                                continue;
-                            }
-
-                            // Add 1 H.
-                            // todo: If planar geometry, don't add a H!
-                            hydrogens.push(Atom {
-                                posit: atom.posit
-                                    - tetra_atoms(
-                                        atom.posit,
-                                        atoms_bonded[0].1.posit,
-                                        atoms_bonded[1].1.posit,
-                                        atoms_bonded[2].1.posit,
-                                    ) * LEN_CALPHA_H,
-                                ..h_default.clone()
-                            });
-                        }
-                        _ => (),
-                    }
-                }
-                Element::Nitrogen => {
-                    match atoms_bonded.len() {
-                        1 => unsafe {
-                            // Add 2 H. (Amine)
-                            // todo: DRY with methyl code above
-                            let (bond_prev, bond_back2) =
-                                match get_prev_bonds(atom, atoms, i, &atoms_bonded) {
-                                    Ok(v) => v,
-                                    Err(_) => {
-                                        eprintln!("Error: Could not find prev bonds on Amine");
-                                        continue;
-                                    }
-                                };
-
-                            // Initial rotator to align the tetrahedral geometry; positions almost correctly,
-                            // but needs an additional rotation around the bond vec axis.
-                            let rotator_a = Quaternion::from_unit_vecs(PLANAR3_A, bond_prev);
-
-                            let planar_3_rotated = rotator_a.rotate_vec(PLANAR3_B);
-                            let dihedral =
-                                calc_dihedral_angle(bond_prev, planar_3_rotated, bond_back2);
-
-                            let rotator_b = Quaternion::from_axis_angle(bond_prev, -dihedral);
-                            let rotator = rotator_b * rotator_a;
-
-                            for planar_bond in [PLANAR3_B, PLANAR3_C] {
-                                hydrogens.push(Atom {
-                                    posit: atom.posit + rotator.rotate_vec(planar_bond) * LEN_N_H,
-                                    ..h_default.clone()
-                                });
-                            }
-                        },
-                        2 => {
-                            // Add 1 H.
-                            let bond_0 = atom.posit - atoms_bonded[0].1.posit;
-                            let bond_1 = atoms_bonded[1].1.posit - atom.posit;
-
-                            hydrogens.push(Atom {
-                                posit: planar_posit(atom.posit, bond_0, bond_1, LEN_N_H),
-                                ..h_default.clone()
-                            });
-                        }
-                        _ => {}
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-
-    Ok((dihedral, hydrogens, c_p_posit, c_alpha_posit))
+    (dihedral, hydrogens, c_p_posit, c_alpha_posit)
 }

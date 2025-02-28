@@ -1,6 +1,5 @@
-use std::fmt;
-/// Contains data structures and related code for molecules, atoms, residues, chains, etc.
-use std::str::FromStr;
+//! Contains data structures and related code for molecules, atoms, residues, chains, etc.
+use std::{fmt, str::FromStr};
 
 use lin_alg::{
     f32::Vec3 as Vec3F32,

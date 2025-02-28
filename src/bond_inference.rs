@@ -45,7 +45,7 @@ fn get_specs() -> Vec<BondSpecs> {
     // Code shorteners
     let single = Covalent { count: Single };
     let hybrid = Covalent { count: SingleDoubleHybrid };
-    let typetypedouble = Covalent { count: Double };
+    let double = Covalent { count: Double };
     let triple = Covalent { count: Triple };
     
     vec![
@@ -77,7 +77,7 @@ fn get_specs() -> Vec<BondSpecs> {
 
         // C=C double bond
         // Common in alkenes (sp²-hybridized). Range: ~1.33–1.34 Å
-        BondSpecs::new(1.33, (Carbon, Carbon), typetypedouble),
+        BondSpecs::new(1.33, (Carbon, Carbon), double),
 
         // C≡C triple bond
         // Found in alkynes, where carbons are sp-hybridized (linear). ~1.20 Å
@@ -104,7 +104,7 @@ fn get_specs() -> Vec<BondSpecs> {
 
         // C=N double bond
         // Typical for imines (Schiff bases). ~1.28 Å
-        BondSpecs::new(1.28, (Carbon, Nitrogen), typetypedouble),
+        BondSpecs::new(1.28, (Carbon, Nitrogen), double),
 
         // C≡N triple bond
         // Typical of nitriles (–C≡N). ~1.16 Å
@@ -126,11 +126,11 @@ fn get_specs() -> Vec<BondSpecs> {
 
         // C′–O (in –COO⁻). 1.25-1.27 Å
         // BondSpecs::new(1.26, (Carbon, Oxygen), type_singl),
-        BondSpecs::new(1.26, (Carbon, Oxygen), typetypedouble),
+        BondSpecs::new(1.26, (Carbon, Oxygen), double),
 
         // C=O double bond
         // Typical for carbonyl groups (aldehydes, ketones, carboxylic acids, amides). ~1.21–1.23 Å
-        BondSpecs::new(1.22, (Carbon, Oxygen), typetypedouble),
+        BondSpecs::new(1.22, (Carbon, Oxygen), double),
 
         // --------------------
         // Carbon–Hydrogen Bonds
@@ -145,7 +145,10 @@ fn get_specs() -> Vec<BondSpecs> {
         BondSpecs::new(1.01, (Hydrogen, Nitrogen), single),
 
         // 0.96 – 0.98 Å
-        BondSpecs::new(1.01, (Oxygen, Hydrogen), single),
+        // BondSpecs::new(1.01, (Oxygen, Hydrogen), single),
+        BondSpecs::new(1.01, (Hydrogen, Oxygen), single),
+        // BondSpecs::new(1.01, (Hydrogen, Oxygen), single),
+        BondSpecs::new(0.95, (Hydrogen, Oxygen), single),
 
 
         // Non-protein-backbond bond lengths.

@@ -343,6 +343,9 @@ fn event_win_handler(
         WindowEvent::CursorLeft { device_id: _ } => {
             state.ui.mouse_in_window = false;
         }
+        WindowEvent::Resized(_) => {
+            state.ui.mouse_in_window = true;
+        }
         _ => (),
     }
     EngineUpdates::default() // todo: A/R.
