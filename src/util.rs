@@ -1,4 +1,4 @@
-use std::{f64::consts::TAU, path::PathBuf, time::Instant};
+use std::{collections::HashMap, f64::consts::TAU, path::PathBuf, time::Instant};
 
 use graphics::{Camera, FWD_VEC};
 use lin_alg::{
@@ -265,4 +265,50 @@ pub fn bond_angle(atoms: &[Atom], bond_0: &Bond, bond_1: &Bond) -> f64 {
         cos_angle = cos_angle.clamp(-1.0, 1.0);
         cos_angle.acos().to_degrees()
     }
+}
+
+// pub fn setup_neighbor_pairs(posits: &[&Vec3], grid_size: f64) -> HashMap<(i32, i32, i32), Vec<usize>>{
+pub fn setup_neighbor_pairs(posits: &[&Vec3], grid_size: f64) -> Vec<(usize, usize)> {
+    // Build a spatial grid for atom indices.
+    let mut grid: HashMap<(i32, i32, i32), Vec<usize>> = HashMap::new();
+
+    for (i, posit) in posits.iter().enumerate() {
+        let grid_pos = (
+            (posit.x / grid_size).floor() as i32,
+            (posit.y / grid_size).floor() as i32,
+            (posit.z / grid_size).floor() as i32,
+        );
+        grid.entry(grid_pos).or_default().push(i);
+    }
+
+    // grid
+    // Collect candidate atom pairs based on neighboring grid cells.
+    let mut result = Vec::new();
+    for (&cell, atom_indices) in &grid {
+        // Look at this cell and its neighbors.
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                for dz in -1..=1 {
+                    let neighbor_cell = (cell.0 + dx, cell.1 + dy, cell.2 + dz);
+                    if let Some(neighbor_indices) = grid.get(&neighbor_cell) {
+                        for &i in atom_indices {
+                            for &j in neighbor_indices {
+                                // if i ==j {
+                                //     continue
+                                // }
+
+                                // This seems to prevent duplicates of opposite order.
+                                // todo: QC
+                                if i < j {
+                                    result.push((i, j));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    result
 }

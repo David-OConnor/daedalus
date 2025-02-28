@@ -19,6 +19,8 @@ use crate::{
     rcsb_api::PdbMetaData,
 };
 
+pub const ATOM_NEIGHBOR_DIST_THRESH: f64 = 5.; // todo: Adjust A/R.
+
 #[derive(Debug, Default, Clone)]
 pub struct Molecule {
     pub ident: String,
@@ -37,6 +39,8 @@ pub struct Molecule {
     /// Center and size are used for lighting, and for rotating ligands.
     pub center: Vec3,
     pub size: f32,
+    pub pubchem_cid: Option<u32>,
+    pub drugbank_id: Option<String>,
 }
 
 impl Molecule {
@@ -71,6 +75,7 @@ pub enum AtomRole {
     O_Backbone,
     H_Backbone,
     Sidechain,
+    H_Sidechain,
     Water,
     Other,
 }
@@ -97,6 +102,7 @@ impl fmt::Display for AtomRole {
             AtomRole::O_Backbone => write!(f, "O (bb)"),
             AtomRole::H_Backbone => write!(f, "H (bb)"),
             AtomRole::Sidechain => write!(f, "Sidechain"),
+            AtomRole::H_Sidechain => write!(f, "H SC"),
             AtomRole::Water => write!(f, "Water"),
             AtomRole::Other => write!(f, "Other"),
         }
@@ -233,6 +239,9 @@ pub struct Atom {
     pub occupancy: Option<f32>,
     pub partial_charge: Option<f32>,
     pub temperature_factor: Option<f32>,
+    // todo: Impl this, for various calculations
+    // /// Atoms relatively close to this; simplifies  certain calculations.
+    // pub neighbors: Vec<usize>,
 }
 
 impl Atom {

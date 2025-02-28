@@ -5,7 +5,7 @@ use crate::{
 
 impl Molecule {
     /// Adds hydrogens, and populdates residue dihedral angles.
-    pub fn populate_hydrogens(&mut self) {
+    pub fn populate_hydrogens_angles(&mut self) {
         // todo: Move this fn to this module? Split this and its diehdral component, or not?
 
         let mut prev_cp_ca = None;

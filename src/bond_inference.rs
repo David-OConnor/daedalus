@@ -7,16 +7,17 @@
 //!
 //! All lengths are in angstrom.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use crate::{
     Element,
     Element::{Carbon, Hydrogen, Nitrogen, Oxygen, Sulfur},
     molecule::{
         Atom, Bond,
-        BondCount::{self, *},
+        BondCount::*,
         BondType::{self, *},
     },
+    util::setup_neighbor_pairs,
 };
 
 struct BondSpecs {
@@ -47,7 +48,7 @@ fn get_specs() -> Vec<BondSpecs> {
     let hybrid = Covalent { count: SingleDoubleHybrid };
     let double = Covalent { count: Double };
     let triple = Covalent { count: Triple };
-    
+
     vec![
         // --------------------
         // Carbon–Carbon Bonds
@@ -172,10 +173,9 @@ fn eval_lens(bonds: &mut Vec<Bond>, atoms: &[Atom], i: usize, j: usize, specs: &
         // This directionality ensures only one bond per atom pair. Otherwise, we'd add two identical
         // ones with swapped atom positions.
 
-        // todo: We are seeing some buggy behavior regarding ordering.
-
-        // todo: This only prevents duplicate bonds if the elements are different.
-        if !(atom_0.element == spec.elements.0 && atom_1.element == spec.elements.1) {
+        if !((atom_0.element == spec.elements.0 && atom_1.element == spec.elements.1)
+            || (atom_0.element == spec.elements.1 && atom_1.element == spec.elements.0))
+        {
             continue;
         }
 
@@ -202,35 +202,19 @@ pub fn create_bonds(atoms: &[Atom]) -> Vec<Bond> {
     let specs = get_specs();
 
     // We use spacial partitioning, so as not to copmare every pair of atoms.
-    let mut grid: HashMap<(i32, i32, i32), Vec<usize>> = HashMap::new();
+    let posits: Vec<_> = atoms.iter().map(|a| &a.posit).collect();
+    let neighbor_pairs = setup_neighbor_pairs(&posits, GRID_SIZE);
 
-    for (i, atom) in atoms.iter().enumerate() {
-        let grid_pos = (
-            (atom.posit.x / GRID_SIZE).floor() as i32,
-            (atom.posit.y / GRID_SIZE).floor() as i32,
-            (atom.posit.z / GRID_SIZE).floor() as i32,
-        );
-        grid.entry(grid_pos).or_default().push(i);
-    }
+    // todo: Should we create an Vec of neighbors for each atom. (Maybe storeed in a hashmap etc)
+    // todo, then iterate over that for neighbors in the j loop? WOuld be more generalizable/extract
+    // todo it out from the bus logic.
 
-    for (&cell, atom_indices) in &grid {
-        for dx in -1..=1 {
-            for dy in -1..=1 {
-                for dz in -1..=1 {
-                    let neighbor_cell = (cell.0 + dx, cell.1 + dy, cell.2 + dz);
-                    if let Some(neighbor_indices) = grid.get(&neighbor_cell) {
-                        for &i in atom_indices {
-                            for &j in neighbor_indices {
-                                if i == j {
-                                    continue;
-                                }
-                                eval_lens(&mut result, atoms, i, j, &specs);
-                            }
-                        }
-                    }
-                }
-            }
+    for &(i, j) in &neighbor_pairs {
+        if i == j {
+            // todo: Likely not required?
+            continue;
         }
+        eval_lens(&mut result, atoms, i, j, &specs);
     }
 
     // Remove duplicates, which will only occur in the case of same-element bonds.

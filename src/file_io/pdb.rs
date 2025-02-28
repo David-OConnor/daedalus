@@ -169,15 +169,13 @@ impl Molecule {
             bonds: Vec::new(),
             chains,
             residues,
-            metadata: None,
-            sa_surface_pts: None,
-            mesh_created: false,
             secondary_structure: pdb.secondary_structure.clone(),
             center,
             size,
+            ..Default::default()
         };
 
-        result.populate_hydrogens();
+        result.populate_hydrogens_angles();
         result.bonds = create_bonds(&result.atoms);
         result.bonds.extend(make_hydrogen_bonds(&result.atoms));
 

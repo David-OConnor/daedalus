@@ -23,7 +23,12 @@
 
 use std::fmt::Display;
 
-use crate::molecule::{Atom, Molecule};
+use crate::{
+    molecule::{Atom, Molecule},
+    util::setup_neighbor_pairs,
+};
+
+const GRID_SIZE: f64 = 1.6; // Slightly larger than the largest... todo: What?
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum TorsionStatus {
@@ -67,8 +72,45 @@ enum PartialChargeType {
     Kollman,
 }
 
+fn setup_partial_charges_inner(atoms: &mut [Atom], i: usize, j: usize) {}
+
 /// Note: Hydrogens must already be added prior to adding charges.
-fn setup_partial_charges(atoms: &mut Vec<Atom>, charge_type: PartialChargeType) {}
+fn setup_partial_charges(atoms: &mut [Atom], charge_type: PartialChargeType) {
+    if charge_type == PartialChargeType::Kollman {
+        unimplemented!()
+    }
+
+    // We use spacial partitioning, so as not to copmare every pair of atoms.
+    let posits: Vec<_> = atoms.iter().map(|a| &a.posit).collect();
+    let neighbor_pairs = setup_neighbor_pairs(&posits, GRID_SIZE);
+
+    // Run the iterative charge update over all candidate pairs.
+    const ITERATIONS: usize = 6; // More iterations may be needed in practice.
+    for _ in 0..ITERATIONS {
+        let mut charge_updates = vec![0.0; atoms.len()];
+
+        for &(i, j) in &neighbor_pairs {
+            if atoms[i].dock_type.is_none()|| atoms[j].dock_type.is_none() {
+                continue
+            }
+            let en_i = atoms[i].dock_type.unwrap().gasteiger_electronegativity();
+            let en_j = atoms[j].dock_type.unwrap().gasteiger_electronegativity();
+            // Compute a simple difference-based transfer.
+            let delta = 0.1 * (en_i - en_j);
+            // Transfer charge from atom i to atom j if en_i > en_j.
+            charge_updates[i] -= delta;
+            charge_updates[j] += delta;
+        }
+
+        // Apply the computed updates simultaneously.
+        for (atom, delta) in atoms.iter_mut().zip(charge_updates.iter()) {
+            match &mut atom.partial_charge {
+                Some(c) => *c += delta,
+                None => atom.partial_charge = Some(*delta),
+            }
+        }
+    }
+}
 
 impl Molecule {
     /// Adds hydrogens, assigns partial charges etc.

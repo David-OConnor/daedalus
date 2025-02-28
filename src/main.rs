@@ -126,6 +126,41 @@ impl Element {
         }
     }
 
+    // fn gasteiger_electronegativity(&self) -> f32 {
+    //     match self {
+    //         Element::Hydrogen => 2.20,
+    //         Element::Carbon => 2.55,
+    //         Element::Oxygen => 3.44,
+    //         Element::Nitrogen => 3.04,
+    //         Element::Fluorine => 3.98,
+    //         Element::Sulfur => 2.58,
+    //         Element::Phosphorus => 2.19,
+    //         Element::Iron => 1.83,
+    //         Element::Copper => 1.90,
+    //         Element::Calcium => 1.00,
+    //         Element::Potassium => 0.82,
+    //         Element::Aluminum => 1.61,
+    //         Element::Lead => 2.33,
+    //         Element::Gold => 2.54,
+    //         Element::Silver => 1.93,
+    //         Element::Mercury => 2.00,
+    //         Element::Tin => 1.96,
+    //         Element::Zinc => 1.65,
+    //         Element::Magnesium => 1.31,
+    //         Element::Iodine => 2.66,
+    //         Element::Chlorine => 3.16,
+    //         Element::Tungsten => 2.36,
+    //         Element::Tellurium => 2.10,
+    //         Element::Selenium => 2.55,
+    //         Element::Other => {
+    //             eprintln!(
+    //                 "Error: Attempting to get a Gasteiger electronegativity for an unknown element."
+    //             );
+    //             0.0
+    //         }
+    //     }
+    // }
+
     pub fn from_pdb(el: Option<&pdbtbx::Element>) -> Self {
         if let Some(e) = el {
             match e {
@@ -349,6 +384,7 @@ struct StateVolatile {
     load_dialog: FileDialog,
     load_ligand_dialog: FileDialog,
     autodock_path_dialog: FileDialog,
+    save_pdbqt_dialog: FileDialog,
     /// We use this for offsetting our cursor selection.
     ui_height: f32,
     // /// Center and size are used for setting the camera. Dependent on the molecule atom positions.
@@ -380,18 +416,31 @@ impl Default for StateVolatile {
             }),
         );
 
+        let cfg_save_pdbqt = FileDialogConfig {
+            ..Default::default()
+        };
+        // .add_file_filter(
+        //     "Executables",
+        //     Arc::new(|p| {
+        //         let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
+        //         ext == "" || ext == "exe"
+        //     }),
+        // );
+
         let load_dialog = FileDialog::with_config(cfg.clone()).default_file_filter("PDB/CIF/SDF");
         let load_ligand_dialog = FileDialog::with_config(cfg).default_file_filter("PDB/CIF/SDF");
 
         let autodock_path_dialog =
             FileDialog::with_config(cfg_vina).default_file_filter("Executables");
 
+        let save_pdbqt_dialog = FileDialog::with_config(cfg_save_pdbqt);
+        // .default_file_filter("Executables");
+
         Self {
             load_dialog,
             load_ligand_dialog,
             autodock_path_dialog,
-            // mol_center: Vec3::new_zero(),
-            // mol_size: 80.,
+            save_pdbqt_dialog,
             ui_height: 0.,
         }
     }

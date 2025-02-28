@@ -115,8 +115,45 @@ impl Molecule {
             atoms.push(atom);
         }
 
+        // Look for a molecule identifier in the file. Check for either
+        // "> <PUBCHEM_COMPOUND_CID>" or "> <DATABASE_ID>" and take the next nonempty line.
+        let mut pubchem = false;
+        let mut drugbank = false;
+        let mut pubchem_cid = None;
+        let mut drugbank_id = None;
+
+        let mut ident: Option<String> = None;
+        for (i, line) in lines.iter().enumerate() {
+            if line.contains("> <PUBCHEM_COMPOUND_CID>") {
+                pubchem = true;
+            }
+            if line.contains("> <DATABASE_ID>") {
+                drugbank = true;
+            }
+
+            if pubchem || drugbank {
+                if let Some(value_line) = lines.get(i + 1) {
+                    let value = value_line.trim();
+                    if !value.is_empty() {
+                        ident = Some(value.to_string());
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Fallback: use the first line (often the title) if no identifier field was found.
+        let ident = ident.unwrap_or_else(|| lines[0].trim().to_string());
+
+        if pubchem {
+            pubchem_cid = Some(ident.parse().unwrap_or_default());
+        }
+        if drugbank {
+            drugbank_id = Some(ident.clone());
+        }
+
         // We could now skip over the bond lines if we want:
-        //   let first_bond_line = last_atom_line;
+        //   let first_bond_line = last_atom_ line;
         //   let last_bond_line = first_bond_line + nbonds;
         // etc.
         // Then we look for "M  END" or the data fields, etc.
@@ -145,7 +182,7 @@ impl Molecule {
         let (center, size) = mol_center_size(&atoms);
 
         let mut result = Self {
-            ident: "".to_string(),
+            ident,
             atoms,
             bonds: Vec::new(),
             chains,
@@ -156,9 +193,11 @@ impl Molecule {
             secondary_structure: Vec::new(),
             center,
             size,
+            pubchem_cid,
+            drugbank_id,
         };
 
-        result.populate_hydrogens();
+        result.populate_hydrogens_angles();
         result.bonds = create_bonds(&result.atoms);
         result.bonds.extend(make_hydrogen_bonds(&result.atoms));
 

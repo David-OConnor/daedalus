@@ -58,24 +58,10 @@ impl DockType {
         match s.to_uppercase().as_str() {
             "A" => Self::A,
             "C" => Self::C,
-            // "CB" => Self::Cb,
-            // "CD" => Self::Cd,
-            // "CD1" => Self::Cd1,
-            // "CD2" => Self::Cd2,
-            // "CE" => Self::Ce,
-            // "CE1" => Self::Ce1,
-            // "CE2" => Self::Ce2,
-            // "CG" => Self::Cg,
-            // "CG1" => Self::Cg1,
-            // "CG2" => Self::Cg2,
-            // "CZ" => Self::Cz,
             "N" => Self::N,
             "NA" => Self::Na,
             "O" => Self::O,
             "OA" => Self::Oa,
-            // "OG" => Self::OG,
-            // "OG1" => Self::OG1,
-            // "OG2" => Self::Og2,
             "OH" => Self::Oh,
             "S" => Self::S,
             "SA" => Self::Sa,
@@ -91,10 +77,10 @@ impl DockType {
             "MN" => Self::Mn,
             "CU" => Self::Cu,
             "HD" => Self::Hd,
-            // "OE1" => Self::Oe1,
-            // "NE2" => Self::Ne2,
-            // "SD" => Self::Sd,
-            _ => Self::Other,
+            _ => {
+                eprintln!("Unknown dock type: {}", s);
+                Self::Other
+            }
         }
     }
 
@@ -102,24 +88,10 @@ impl DockType {
         match self {
             Self::A => "A",
             Self::C => "C",
-            // Self::Cb =>"CB",
-            // Self::Cd =>"CD",
-            // Self::Cd1 =>"CD1",
-            // Self::Cd2 =>"CD2",
-            // Self::Ce =>"CE",
-            // Self::Ce1 =>"CE1",
-            // Self::Ce2 =>"CE2" ,
-            // Self::Cg =>"CG" ,
-            // Self::Cg1 =>"CG1",
-            // Self::Cg2 =>"CG2" ,
-            // Self::Cz =>"CZ" ,
             Self::N => "N",
             Self::Na => "NA",
             Self::O => "O",
             Self::Oa => "OA",
-            // Self::OG =>"OG",
-            // Self::OG1 =>"OG1",
-            // Self::Og2 =>"OG2",
             Self::Oh => "OH",
             Self::S => "S",
             Self::Sa => "SA",
@@ -135,12 +107,36 @@ impl DockType {
             Self::Mn => "MN",
             Self::Cu => "CU",
             Self::Hd => "HD",
-            // Self::Oe1 =>"OE1",
-            // Self::Ne2 =>"NE2" ,
-            // Self::Sd =>"SD" ,
             Self::Other => "Xx",
         }
         .to_string()
+    }
+
+    pub fn gasteiger_electronegativity(&self) -> f32 {
+        match self {
+            Self::A  => 2.50,
+            Self::C  => 2.55,
+            Self::N  => 3.04,
+            Self::Na => 3.10,
+            Self::O  => 3.44,
+            Self::Oh => 3.44,
+            Self::Oa => 3.50,
+            Self::S  => 2.50,
+            Self::Sa => 2.60,
+            Self::P  => 2.19,
+            Self::F  => 3.98,
+            Self::Cl => 3.16,
+            Self::Br => 2.96,
+            Self::I  => 2.66,
+            Self::Zn => 1.65,
+            Self::Fe => 1.83,
+            Self::Mg => 1.31,
+            Self::Ca => 1.00,
+            Self::Mn => 1.55,
+            Self::Cu => 1.90,
+            Self::Hd => 2.20,
+            Self::Other => 2.50, // Fallback default value
+        }
     }
 }
 
@@ -314,7 +310,7 @@ impl Molecule {
         result.center = center;
         result.size = size;
 
-        result.populate_hydrogens();
+        result.populate_hydrogens_angles();
         result.bonds = create_bonds(&result.atoms);
         result.bonds.extend(make_hydrogen_bonds(&result.atoms));
 
@@ -323,7 +319,7 @@ impl Molecule {
         Ok((result, ligand))
     }
 
-    pub fn save_pdbqt(&self, path: &Path, ligand: Option<Ligand>) -> io::Result<()> {
+    pub fn save_pdbqt(&self, path: &Path, ligand: Option<&Ligand>) -> io::Result<()> {
         let mut file = File::create(path)?;
 
         // Typically you'd end with "END" or "ENDMDL" or so, but not strictly required for many readers.
@@ -363,6 +359,14 @@ impl Molecule {
         // Optionally write remarks, ROOT/ENDROOT, etc. here if needed.
         // For each atom:
         for (i, atom) in self.atoms.iter().enumerate() {
+            if let Some(role) = atom.role {
+                if role == AtomRole::Water {
+                    // Skipping water in the context of Docking prep, which is where we expect
+                    // PDBQT files to be used.
+                    continue;
+                }
+            }
+
             // We'll just do a minimal line. Fill in placeholders for
             // residue name, chain, etc. as you like.
 

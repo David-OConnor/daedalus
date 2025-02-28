@@ -580,7 +580,7 @@ fn residue_search(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
 
         if state.molecule.is_some() && state.ligand.is_some() {
             if state.babel_avail {
-                if ui.button("Prepare").clicked() {
+                if ui.button("Prepare (Babel)").clicked() {
                     let mut success_tgt = false;
                     let mut success_ligand = false;
                     // todo: We may need to save path with the molecule and ligand.
@@ -913,14 +913,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
                 // todo: Temp here
                 if ui.button("Save PDBQT").clicked() {
-                    if let Some(mol) = &state.molecule {
-                        if mol
-                            .save_pdbqt(&PathBuf::from_str("test_out.pdbqt").unwrap(), None)
-                            .is_err()
-                        {
-                            eprintln!("Error saving PDBQT file");
-                        }
-                    }
+                    state.volatile.save_pdbqt_dialog.pick_directory();
                 }
 
                 residue_selector(state, &mut redraw, ui);
@@ -965,6 +958,24 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             }
         }
 
+        if let Some(path_dir) = &state.volatile.save_pdbqt_dialog.take_picked() {
+            if let Some(mol) = &state.molecule {
+                let filename = format!("{}_target.pdbqt", mol.ident);
+                let path = Path::new(path_dir).join(filename);
+                if mol.save_pdbqt(&path, None).is_err() {
+                    eprintln!("Error saving PDBQT target");
+                }
+            }
+
+            if let Some(lig) = &state.ligand {
+                let filename = format!("{}_ligand.pdbqt", lig.molecule.ident);
+                let path = Path::new(path_dir).join(filename);
+                if lig.molecule.save_pdbqt(&path, None).is_err() {
+                    eprintln!("Error saving PDBQT ligand");
+                }
+            }
+        }
+
         if redraw {
             draw_molecule(state, scene, reset_cam);
             draw_ligand(state, scene, reset_cam);
@@ -985,6 +996,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
     state.volatile.load_dialog.update(ctx);
     state.volatile.load_ligand_dialog.update(ctx);
     state.volatile.autodock_path_dialog.update(ctx);
+    state.volatile.save_pdbqt_dialog.update(ctx);
 
     state.ui.dt = start.elapsed().as_secs_f32();
 

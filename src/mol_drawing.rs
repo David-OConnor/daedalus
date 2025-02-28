@@ -373,6 +373,10 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene, update_cam_lighting: bo
 
     // todo: C+P from draw_molecule. With some removed, but a lot of repeated.
     for bond in &mol.bonds {
+        if bond.bond_type == BondType::Hydrogen && state.ui.visibility.hide_h_bonds {
+            continue;
+        }
+
         let atom_0 = &atoms_rotated[bond.atom_0];
         let atom_1 = &atoms_rotated[bond.atom_1];
 

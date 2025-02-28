@@ -1,4 +1,4 @@
-//! Adapted from `peptide`. This includes sub-modules.
+//! Adapted from `peptide`. Operations related to the geometry of atomic coordinates.
 
 use std::{f64::consts::TAU, fmt, fmt::Formatter};
 
@@ -9,14 +9,13 @@ use crate::{
     Element,
     aa_coords::{
         bond_vecs::{
-            LEN_C_H, LEN_CALPHA_H, LEN_N_H, PLANAR3_A, PLANAR3_B, PLANAR3_C, TETRA_A, TETRA_B,
-            TETRA_C, TETRA_D,
+            LEN_C_H, LEN_CALPHA_H, LEN_N_H, LEN_O_H, PLANAR3_A, PLANAR3_B, PLANAR3_C, TETRA_A,
+            TETRA_B, TETRA_C, TETRA_D,
         },
         sidechain::Sidechain,
     },
     molecule::{Atom, AtomRole, ResidueType},
 };
-use crate::aa_coords::bond_vecs::LEN_O_H;
 
 pub mod bond_vecs;
 pub mod sc_atom_placement;
@@ -205,6 +204,12 @@ fn get_prev_bonds(
 fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom) {
     // Handle sidechains.
     // todo: If this algorithm proves general enough, perhaps apply it to the backbone as well (?)
+
+    let h_default_sc = Atom {
+        role: Some(AtomRole::H_Sidechain),
+        ..h_default.clone()
+    };
+
     for (i, atom) in atoms.into_iter().enumerate() {
         if atom.role.is_none() {
             continue;
@@ -238,8 +243,7 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
                         let rotator_a = Quaternion::from_unit_vecs(TETRA_A, bond_prev);
 
                         let tetra_rotated = rotator_a.rotate_vec(TETRA_B);
-                        let dihedral =
-                            calc_dihedral_angle(bond_prev, tetra_rotated, bond_back2);
+                        let dihedral = calc_dihedral_angle(bond_prev, tetra_rotated, bond_back2);
 
                         // Offset; don't align; avoids steric hindrence.
                         let rotator_b =
@@ -264,7 +268,7 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
                             // Add a single H in planar config.
                             hydrogens.push(Atom {
                                 posit: planar_posit(atom.posit, bond_0, bond_1, LEN_C_H),
-                                ..h_default.clone()
+                                ..h_default_sc.clone()
                             });
                             continue;
                         }
@@ -280,7 +284,7 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
                         for posit in [h_0, h_1] {
                             hydrogens.push(Atom {
                                 posit,
-                                ..h_default.clone()
+                                ..h_default_sc.clone()
                             });
                         }
                     },
@@ -305,12 +309,12 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
                         hydrogens.push(Atom {
                             posit: atom.posit
                                 - tetra_atoms(
-                                atom.posit,
-                                atoms_bonded[0].1.posit,
-                                atoms_bonded[1].1.posit,
-                                atoms_bonded[2].1.posit,
-                            ) * LEN_CALPHA_H,
-                            ..h_default.clone()
+                                    atom.posit,
+                                    atoms_bonded[0].1.posit,
+                                    atoms_bonded[1].1.posit,
+                                    atoms_bonded[2].1.posit,
+                                ) * LEN_CALPHA_H,
+                            ..h_default_sc.clone()
                         });
                     }
                     _ => (),
@@ -335,8 +339,7 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
                         let rotator_a = Quaternion::from_unit_vecs(PLANAR3_A, bond_prev);
 
                         let planar_3_rotated = rotator_a.rotate_vec(PLANAR3_B);
-                        let dihedral =
-                            calc_dihedral_angle(bond_prev, planar_3_rotated, bond_back2);
+                        let dihedral = calc_dihedral_angle(bond_prev, planar_3_rotated, bond_back2);
 
                         let rotator_b = Quaternion::from_axis_angle(bond_prev, -dihedral);
                         let rotator = rotator_b * rotator_a;
@@ -344,7 +347,7 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
                         for planar_bond in [PLANAR3_B, PLANAR3_C] {
                             hydrogens.push(Atom {
                                 posit: atom.posit + rotator.rotate_vec(planar_bond) * LEN_N_H,
-                                ..h_default.clone()
+                                ..h_default_sc.clone()
                             });
                         }
                     },
@@ -355,15 +358,16 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
 
                         hydrogens.push(Atom {
                             posit: planar_posit(atom.posit, bond_0, bond_1, LEN_N_H),
-                            ..h_default.clone()
+                            ..h_default_sc.clone()
                         });
                     }
-                    _ => ()
+                    _ => (),
                 }
             }
             Element::Oxygen => {
                 match atoms_bonded.len() {
-                    1 => unsafe { // Hydroxyl. Add a single H with tetrahedral geometry.
+                    1 => unsafe {
+                        // Hydroxyl. Add a single H with tetrahedral geometry.
                         // todo: The bonds are coming out right; not sure why.
                         // todo: This segment is DRY with 2+ sections above.
                         let (bond_prev, bond_back2) =
@@ -378,15 +382,14 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
                         let bond_prev_non_norm = atoms_bonded[0].1.posit - atom.posit;
                         // This crude check may force these to only be created on Hydroxyls (?)
                         // Looking for len characterisitic of a single bond vice double.
-                        if bond_prev_non_norm .magnitude() < 1.30 {
-                            continue
+                        if bond_prev_non_norm.magnitude() < 1.30 {
+                            continue;
                         }
 
                         let rotator_a = Quaternion::from_unit_vecs(TETRA_A, bond_prev);
 
                         let tetra_rotated = rotator_a.rotate_vec(TETRA_B);
-                        let dihedral =
-                            calc_dihedral_angle(bond_prev, tetra_rotated, bond_back2);
+                        let dihedral = calc_dihedral_angle(bond_prev, tetra_rotated, bond_back2);
 
                         // Offset; don't align; avoids steric hindrence.
                         let rotator_b =
@@ -395,10 +398,10 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
 
                         hydrogens.push(Atom {
                             posit: atom.posit + rotator.rotate_vec(TETRA_B) * LEN_O_H,
-                            ..h_default.clone()
+                            ..h_default_sc.clone()
                         });
-                    }
-                    _ => ()
+                    },
+                    _ => (),
                 }
             }
             _ => {}
@@ -558,10 +561,10 @@ pub fn aa_data_from_coords(
     hydrogens.push(Atom {
         posit: c_alpha_posit
             + tetra_legs(
-            -bond_ca_n.to_normalized(),
-            bond_cp_ca.to_normalized(),
-            -bond_ca_sidechain.to_normalized(),
-        ) * LEN_CALPHA_H,
+                -bond_ca_n.to_normalized(),
+                bond_cp_ca.to_normalized(),
+                -bond_ca_sidechain.to_normalized(),
+            ) * LEN_CALPHA_H,
         ..h_default.clone()
     });
 
