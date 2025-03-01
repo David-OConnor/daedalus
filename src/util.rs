@@ -288,7 +288,6 @@ pub fn setup_neighbor_pairs(posits: &[&Vec3], grid_size: f64) -> Vec<(usize, usi
         grid.entry(grid_pos).or_default().push(i);
     }
 
-    // grid
     // Collect candidate atom pairs based on neighboring grid cells.
     let mut result = Vec::new();
     for (&cell, indices) in &grid {
@@ -301,6 +300,8 @@ pub fn setup_neighbor_pairs(posits: &[&Vec3], grid_size: f64) -> Vec<(usize, usi
                         // Attempt to prevent duplicates as we iterate. Note working.
                         for &i in indices {
                             for &j in neighbor_indices {
+                                // todo: What's going on here? The i < j should prevent duplicates,
+                                // todo: But it's also blocking a number of valid matches. Including all H bonds.
                                 if i != j {
                                 // if i < j {
                                     result.push((i, j));
@@ -313,14 +314,17 @@ pub fn setup_neighbor_pairs(posits: &[&Vec3], grid_size: f64) -> Vec<(usize, usi
         }
     }
 
-    // Remove pair-reverse duplicates; e.g. of A->B and B->A; one would be removed.
-    // let mut seen = HashSet::new();
-    // result.retain(|(i, j)| {
-        // Sort the pair so that (i, j) and (j, i) are treated as the same key
-        // let canonical_pair = if i <= j { (*i, *j) } else { (*j, *i) };
-        // seen.insert(canonical_pair)
-        // i < j
-    // });
 
-    result
+    let mut result_new = Vec::new();
+    let mut seen = HashSet::new();
+    for (i, j) in result.iter() {
+        if seen.contains(&(i, j)) ||seen.contains(&(j, i)) {
+            continue;
+        } else {
+            seen.insert((i, j));
+            result_new.push((*i, *j));
+        }
+    }
+
+    result_new
 }

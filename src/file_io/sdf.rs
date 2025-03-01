@@ -4,18 +4,18 @@
 use std::{
     fs::File,
     io,
-    io::{BufReader, ErrorKind, Read},
+    io::{ErrorKind, Read},
     path::Path,
 };
 
 use lin_alg::f64::Vec3;
 
 use crate::{
-    Element,
     bond_inference::{create_bonds, create_hydrogen_bonds},
     molecule::{Atom, Chain, Molecule, Residue, ResidueType},
     util::mol_center_size,
 };
+use crate::element::Element;
 
 impl Molecule {
     /// From a string of a CIF or PDB text file.

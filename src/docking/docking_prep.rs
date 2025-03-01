@@ -24,13 +24,232 @@
 use std::fmt::Display;
 
 use crate::{
-    Element,
-    file_io::pdbqt::DockType,
     molecule::{Atom, Molecule},
     util::setup_neighbor_pairs,
 };
+use crate::element::Element;
+use crate::molecule::Bond;
 
 const GRID_SIZE: f64 = 1.6; // Slightly larger than the largest... todo: What?
+
+
+/// Used to determine if a gasteiger charge is a donoar (bonded to at least one H), or accepter (not
+/// bonded to any H).
+fn bonded_to_h(bonds: &[Bond], atoms: &[Atom]) -> bool {
+    for bond in bonds {
+        let atom_0 = &atoms[bond.atom_0];
+        let atom_1 = &atoms[bond.atom_1];
+        if atom_0.element == Element::Hydrogen || atom_1.element == Element::Hydrogen {
+            return true
+        }
+    }
+    false
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum DockType {
+    // Standard AutoDock4/Vina atom types
+    A,  // Aromatic carbon
+    C,  // Aliphatic carbon
+    N,  // Nitrogen
+    Na, // Nitrogen (acceptor)
+    // O,  // Oxygen
+    Oh,
+    Oa, // Oxygen (acceptor)
+    S,  // Sulfur
+    Sa, // Sulfur (acceptor)
+    P,  // Phosphorus
+    F,  // Fluorine
+    Cl, // Chlorine
+    K,
+    Al,
+    Pb,
+    Au,
+    Ag,
+    Br, // Bromine
+    I,  // Iodine
+    Zn,
+    Fe,
+    Mg,
+    Ca,
+    Mn,
+    Cu,
+    Hd,    // Polar hydrogen (hydrogen donor)
+    Other, // Fallback for unknown types
+}
+
+impl DockType {
+    /// Simple guess
+    /// For N if it is bonded to at least one hydrogen, treat it as a standard N
+    /// (likely acting as a donor), otherwise mark it as NA (acceptor).
+    /// For an oxygen atom, if it’s bound to a hydrogen (for example, in a hydroxyl group), you might
+    /// assign it as Oh; if not, then as Oa.
+    pub fn infer(atom: &Atom, bonds: &[Bond], atoms: &[Atom]) -> Self {
+        match atom.element {
+            Element::Carbon => {
+                // todo:  Hande Aromatic case A/R.
+                Self::C
+            }
+            Element::Nitrogen => {
+                if bonded_to_h(bonds, atoms) {
+                    Self::N
+                } else {
+                    Self::Na
+                }
+            }
+            Element::Oxygen => {
+                if bonded_to_h(bonds, atoms) {
+                    Self::Oh
+                } else {
+                    Self::Oa
+                }
+                // todo: When to make it Oh?
+            }
+            Element::Sulfur => {
+                if bonded_to_h(bonds, atoms) {
+                    Self::S
+                } else {
+                    Self::Sa
+                }
+            }
+            Element::Phosphorus => Self::P,
+            Element::Fluorine => Self::F,
+            Element::Chlorine => Self::Cl,
+            Element::Bromine => Self::Br,
+            Element::Iodine => Self::I,
+            Element::Zinc => Self::Zn,
+            Element::Iron => Self::Fe,
+            Element::Magnesium => Self::Mg,
+            Element::Calcium => Self::Ca,
+            Element::Potassium => Self::Other,
+            Element::Aluminum => Self::Other,
+            Element::Mercury => Self::Other, // todo
+            Element::Tin => Self::Other, // todo
+            Element::Tungsten => Self::Other, // todo
+            Element::Tellurium => Self::Other,// todo
+            Element::Selenium => Self::Other, // todo
+            Element::Lead => Self::Other,
+            Element::Gold => Self::Other,
+            Element::Silver => Self::Other,
+            Element::Manganese => Self::Mn,
+            Element::Copper => Self::Cu,
+            Element::Hydrogen => Self::Hd,
+            Element::Other => Self::Other,
+        }
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        let s = s.to_uppercase();
+        match s.as_ref() {
+            "A" => Self::A,
+            "C" => Self::C,
+            "N" => Self::N,
+            "NA" => Self::Na,
+            // "O" => Self::O,
+            "OA" => Self::Oa,
+            "OH" => Self::Oh,
+            "S" => Self::S,
+            "SA" => Self::Sa,
+            "P" => Self::P,
+            "F" => Self::F,
+            "CL" => Self::Cl,
+            "K" => Self::K,
+            "AL" => Self::Al,
+            "PB" => Self::Pb,
+            "AU" => Self::Au,
+            "AG" => Self::Ag,
+            "BR" => Self::Br,
+            "I" => Self::I,
+            "ZN" => Self::Zn,
+            "FE" => Self::Fe,
+            "MG" => Self::Mg,
+            "CA" => Self::Ca,
+            "MN" => Self::Mn,
+            "CU" => Self::Cu,
+            "HD" => Self::Hd,
+            _ => {
+                if s.starts_with("C") {
+                    Self::C
+                } else if s.starts_with("N") {
+                    Self::N
+                } else if s.starts_with("O") {
+                    Self::Oh
+                } else if s.starts_with("S") {
+                    Self::S
+                } else {
+                    eprintln!("Unknown dock type: {}", s);
+                    Self::Other
+                }
+            }
+        }
+    }
+
+    pub fn to_str(&self) -> String {
+        match self {
+            Self::A => "A",
+            Self::C => "C",
+            Self::N => "N",
+            Self::Na => "NA",
+            // Self::O => "O",
+            Self::Oa => "OA",
+            Self::Oh => "OH",
+            Self::S => "S",
+            Self::Sa => "SA",
+            Self::P => "P",
+            Self::F => "F",
+            Self::Cl => "CL",
+            Self::K => "K",
+            Self::Al => "AL",
+            Self::Pb => "PB",
+            Self::Au => "AU",
+            Self::Ag => "AG",
+            Self::Br => "BR",
+            Self::I => "I",
+            Self::Zn => "ZN",
+            Self::Fe => "FE",
+            Self::Mg => "MG",
+            Self::Ca => "CA",
+            Self::Mn => "MN",
+            Self::Cu => "CU",
+            Self::Hd => "HD",
+            Self::Other => "--",
+        }
+            .to_string()
+    }
+
+    pub fn gasteiger_electronegativity(&self) -> f32 {
+        match self {
+            Self::A => 2.50,
+            Self::C => 2.55,
+            Self::N => 3.04,
+            Self::Na => 3.10,
+            // Self::O => 3.44,
+            Self::Oh => 3.44,
+            Self::Oa => 3.50,
+            Self::S => 2.50,
+            Self::Sa => 2.60,
+            Self::P => 2.19,
+            Self::F => 3.98,
+            Self::Cl => 3.16,
+            // todo: These 5: Need to look up.
+            Self::K => 2.84,
+            Self::Al => 2.65,
+            Self::Pb => 2.10,
+            Self::Au => 2.10,
+            Self::Ag => 2.10,
+            Self::Br => 2.96,
+            Self::I => 2.66,
+            Self::Zn => 1.65,
+            Self::Fe => 1.83,
+            Self::Mg => 1.31,
+            Self::Ca => 1.00,
+            Self::Mn => 1.55,
+            Self::Cu => 1.90,
+            Self::Hd => 2.20,
+            Self::Other => 2.50, // Fallback default value
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum TorsionStatus {

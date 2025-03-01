@@ -9,15 +9,16 @@ use na_seq::AminoAcid;
 use pdbtbx::SecondaryStructure;
 
 use crate::{
-    Element, Selection,
     aa_coords::Dihedral,
     docking::{
-        DockingInit,
         docking_prep::{Torsion, UnitCellDims},
+        DockingInit,
     },
-    file_io::pdbqt::DockType,
     rcsb_api::PdbMetaData,
+    Selection,
 };
+use crate::docking::docking_prep::DockType;
+use crate::element::Element;
 
 pub const ATOM_NEIGHBOR_DIST_THRESH: f64 = 5.; // todo: Adjust A/R.
 

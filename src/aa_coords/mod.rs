@@ -2,20 +2,20 @@
 
 use std::{f64::consts::TAU, fmt, fmt::Formatter};
 
-use lin_alg::f64::{Quaternion, Vec3, det_from_cols};
+use lin_alg::f64::{det_from_cols, Quaternion, Vec3};
 use na_seq::AminoAcid;
 
 use crate::{
-    Element,
     aa_coords::{
         bond_vecs::{
-            LEN_C_H, LEN_CALPHA_H, LEN_N_H, LEN_O_H, PLANAR3_A, PLANAR3_B, PLANAR3_C, TETRA_A,
+            LEN_CALPHA_H, LEN_C_H, LEN_N_H, LEN_O_H, PLANAR3_A, PLANAR3_B, PLANAR3_C, TETRA_A,
             TETRA_B, TETRA_C, TETRA_D,
         },
         sidechain::Sidechain,
     },
     molecule::{Atom, AtomRole, ResidueType},
 };
+use crate::element::Element;
 
 pub mod bond_vecs;
 pub mod sc_atom_placement;

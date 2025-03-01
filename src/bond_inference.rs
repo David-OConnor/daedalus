@@ -8,8 +8,6 @@
 //! All lengths are in angstrom.
 
 use crate::{
-    Element,
-    Element::{Carbon, Hydrogen, Nitrogen, Oxygen, Sulfur},
     molecule::{
         Atom, Bond,
         BondCount::*,
@@ -17,6 +15,8 @@ use crate::{
     },
     util::setup_neighbor_pairs,
 };
+use crate::element::Element::{Carbon, Hydrogen, Nitrogen, Oxygen, Sulfur};
+use crate::element::Element;
 
 struct BondSpecs {
     len: f64,
@@ -39,10 +39,8 @@ impl BondSpecs {
 const COV_BOND_LEN_THRESH: f64 = 0.04; // todo: Adjust A/R based on performance.
 const COV_DIST_GRID: f64 = 1.6; // Slightly larger than the largest bond distance + thresh.
 
-// const H_BOND_DIST_THRESH: f64 = 3.5; // Angstrom.
 const H_BOND_DIST_THRESH: f64 = 3.5; // Angstrom.
 const H_BOND_DIST_GRID: f64 = 3.6; // Angstrom.
-// const H_BOND_DIST_GRID: f64 = 10.; // Angstrom. // todo
 
 #[rustfmt::skip]
 fn get_specs() -> Vec<BondSpecs> {

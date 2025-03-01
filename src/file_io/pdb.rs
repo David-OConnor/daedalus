@@ -7,16 +7,16 @@ use std::{
 };
 
 use lin_alg::f64::Vec3;
-use pdbtbx::{Format, PDB, ReadOptions, StrictnessLevel};
+use pdbtbx::{Format, ReadOptions, StrictnessLevel, PDB};
 use rayon::prelude::*;
 
 use crate::{
-    Element,
     bond_inference::{create_bonds, create_hydrogen_bonds},
-    file_io::pdbqt::DockType,
     molecule::{Atom, AtomRole, Chain, Molecule, Residue, ResidueType},
     util::mol_center_size,
 };
+use crate::docking::docking_prep::DockType;
+use crate::element::Element;
 
 impl Atom {
     pub fn from_pdb(

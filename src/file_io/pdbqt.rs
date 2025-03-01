@@ -10,146 +10,22 @@ use std::{
 };
 
 use lin_alg::f64::Vec3;
-use na_seq::{AaIdent, AminoAcid};
+use na_seq::AaIdent;
 use regex::Regex;
 
 use crate::{
-    Element,
     bond_inference::{create_bonds, create_hydrogen_bonds},
-    docking::docking_prep::{Torsion, TorsionStatus, UnitCellDims},
-    molecule::{Atom, AtomRole, Bond, Chain, Ligand, Molecule, Residue, ResidueType},
+    docking::docking_prep::UnitCellDims,
+    molecule::{Atom, AtomRole, Chain, Ligand, Molecule, Residue, ResidueType},
     util::mol_center_size,
 };
+use crate::docking::docking_prep::DockType;
+use crate::element::Element;
 // #[derive(Debug, Default)]
 // pub struct PdbQt {
 //     pub atoms: Vec<Atom>,
 //     pub bonds: Vec<Bond>,
 // }
-
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub enum DockType {
-    // Standard AutoDock4/Vina atom types
-    A,  // Aromatic carbon
-    C,  // Aliphatic carbon
-    N,  // Nitrogen
-    Na, // Nitrogen (acceptor)
-    O,  // Oxygen
-    Oh,
-    Oa, // Oxygen (acceptor)
-    S,  // Sulfur
-    Sa, // Sulfur (acceptor)
-    P,  // Phosphorus
-    F,  // Fluorine
-    Cl, // Chlorine
-    Br, // Bromine
-    I,  // Iodine
-    Zn,
-    Fe,
-    Mg,
-    Ca,
-    Mn,
-    Cu,
-    Hd,    // Polar hydrogen (hydrogen donor)
-    Other, // Fallback for unknown types
-}
-
-impl DockType {
-    pub fn from_str(s: &str) -> Self {
-        let s = s.to_uppercase();
-        match s.as_ref() {
-            "A" => Self::A,
-            "C" => Self::C,
-            "N" => Self::N,
-            "NA" => Self::Na,
-            "O" => Self::O,
-            "OA" => Self::Oa,
-            "OH" => Self::Oh,
-            "S" => Self::S,
-            "SA" => Self::Sa,
-            "P" => Self::P,
-            "F" => Self::F,
-            "CL" => Self::Cl,
-            "BR" => Self::Br,
-            "I" => Self::I,
-            "ZN" => Self::Zn,
-            "FE" => Self::Fe,
-            "MG" => Self::Mg,
-            "CA" => Self::Ca,
-            "MN" => Self::Mn,
-            "CU" => Self::Cu,
-            "HD" => Self::Hd,
-            _ => {
-                if s.starts_with("C") {
-                    Self::C
-                } else if s.starts_with("N") {
-                    Self::N
-                } else if s.starts_with("O") {
-                    Self::O
-                } else if s.starts_with("S") {
-                    Self::S
-                } else {
-                    eprintln!("Unknown dock type: {}", s);
-                    Self::Other
-                }
-            }
-        }
-    }
-
-    pub fn to_str(&self) -> String {
-        match self {
-            Self::A => "A",
-            Self::C => "C",
-            Self::N => "N",
-            Self::Na => "NA",
-            Self::O => "O",
-            Self::Oa => "OA",
-            Self::Oh => "OH",
-            Self::S => "S",
-            Self::Sa => "SA",
-            Self::P => "P",
-            Self::F => "F",
-            Self::Cl => "CL",
-            Self::Br => "BR",
-            Self::I => "I",
-            Self::Zn => "ZN",
-            Self::Fe => "FE",
-            Self::Mg => "MG",
-            Self::Ca => "CA",
-            Self::Mn => "MN",
-            Self::Cu => "CU",
-            Self::Hd => "HD",
-            Self::Other => "--",
-        }
-        .to_string()
-    }
-
-    pub fn gasteiger_electronegativity(&self) -> f32 {
-        match self {
-            Self::A => 2.50,
-            Self::C => 2.55,
-            Self::N => 3.04,
-            Self::Na => 3.10,
-            Self::O => 3.44,
-            Self::Oh => 3.44,
-            Self::Oa => 3.50,
-            Self::S => 2.50,
-            Self::Sa => 2.60,
-            Self::P => 2.19,
-            Self::F => 3.98,
-            Self::Cl => 3.16,
-            Self::Br => 2.96,
-            Self::I => 2.66,
-            Self::Zn => 1.65,
-            Self::Fe => 1.83,
-            Self::Mg => 1.31,
-            Self::Ca => 1.00,
-            Self::Mn => 1.55,
-            Self::Cu => 1.90,
-            Self::Hd => 2.20,
-            Self::Other => 2.50, // Fallback default value
-        }
-    }
-}
 
 /// Helpers for parsing
 fn parse_usize(s: &str) -> io::Result<usize> {

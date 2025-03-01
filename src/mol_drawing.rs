@@ -3,21 +3,22 @@
 use std::fmt;
 
 use bincode::{Decode, Encode};
-use graphics::{Entity, FWD_VEC, RIGHT_VEC, Scene, UP_VEC};
+use graphics::{Entity, Scene, FWD_VEC, RIGHT_VEC, UP_VEC};
 use lin_alg::f32::{Quaternion, Vec3};
 
 use crate::{
-    Element, Selection, State, ViewSelLevel,
-    asa::{get_mesh_points, mesh_from_sas_points},
-    molecule::{Atom, AtomRole, Bond, BondCount, BondType, Chain, Residue, ResidueType, aa_color},
-    render,
+    asa::{get_mesh_points, mesh_from_sas_points}, molecule::{aa_color, Atom, AtomRole, BondCount, BondType, Chain, Residue, ResidueType}, render,
     render::{
-        ATOM_SHINYNESS, BALL_STICK_RADIUS, BALL_STICK_RADIUS_H, BODY_SHINYNESS, BOND_RADIUS,
-        CAM_INIT_OFFSET, COLOR_AA_NON_RESIDUE, COLOR_H_BOND, COLOR_SELECTED, COLOR_SFC_DOT, Color,
+        Color, ATOM_SHINYNESS, BALL_STICK_RADIUS, BALL_STICK_RADIUS_H, BODY_SHINYNESS,
+        BOND_RADIUS, CAM_INIT_OFFSET, COLOR_AA_NON_RESIDUE, COLOR_H_BOND, COLOR_SELECTED, COLOR_SFC_DOT,
         MESH_BOND, MESH_SPHERE, MESH_SPHERE_LOWRES, MESH_SURFACE, RADIUS_H_BOND, RADIUS_SFC_DOT,
         RENDER_DIST,
     },
+    Selection,
+    State,
+    ViewSelLevel,
 };
+use crate::element::Element;
 
 #[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]
 pub enum MoleculeView {
