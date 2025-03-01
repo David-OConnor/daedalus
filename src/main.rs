@@ -9,6 +9,7 @@ mod cartoon_mesh;
 mod docking;
 mod download_pdb;
 // mod drug_like;
+mod element;
 mod file_io;
 mod input;
 mod mol_drawing;
@@ -21,7 +22,6 @@ mod save_load;
 mod ui;
 mod util;
 mod vibrations;
-mod element;
 
 use std::{
     io,
@@ -46,7 +46,7 @@ use rayon::iter::ParallelIterator;
 
 use crate::{
     aa_coords::bond_vecs::init_local_bond_vecs,
-    docking::{check_adv_avail, docking_prep_external::check_babel_avail, DockingInit},
+    docking::{DockingInit, check_adv_avail, docking_prep_external::check_babel_avail},
     file_io::pdbqt::load_pdbqt,
     molecule::Ligand,
     navigation::Tab,

@@ -303,7 +303,7 @@ pub fn setup_neighbor_pairs(posits: &[&Vec3], grid_size: f64) -> Vec<(usize, usi
                                 // todo: What's going on here? The i < j should prevent duplicates,
                                 // todo: But it's also blocking a number of valid matches. Including all H bonds.
                                 if i != j {
-                                // if i < j {
+                                    // if i < j {
                                     result.push((i, j));
                                 }
                             }
@@ -314,11 +314,10 @@ pub fn setup_neighbor_pairs(posits: &[&Vec3], grid_size: f64) -> Vec<(usize, usi
         }
     }
 
-
     let mut result_new = Vec::new();
     let mut seen = HashSet::new();
     for (i, j) in result.iter() {
-        if seen.contains(&(i, j)) ||seen.contains(&(j, i)) {
+        if seen.contains(&(i, j)) || seen.contains(&(j, i)) {
             continue;
         } else {
             seen.insert((i, j));

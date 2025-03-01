@@ -1,5 +1,4 @@
-use std::io;
-use std::io::ErrorKind;
+use std::{io, io::ErrorKind};
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Element {
@@ -55,13 +54,13 @@ impl Element {
             Self::Zinc => 2,
             Self::Magnesium => 2,
             Self::Manganese => 7, // todo: Not sure
-            Self::Iodine => 1, // can have higher, but 1 is typical in many simple compounds
-            Self::Chlorine => 1, // can also be 3,5,7, but 1 is the simplest (e.g., HCl)
-            Self::Tungsten => 6, // W can have multiple but 6 is a common oxidation state
+            Self::Iodine => 1,    // can have higher, but 1 is typical in many simple compounds
+            Self::Chlorine => 1,  // can also be 3,5,7, but 1 is the simplest (e.g., HCl)
+            Self::Tungsten => 6,  // W can have multiple but 6 is a common oxidation state
             Self::Tellurium => 2, // can also be 4 or 6, pick 2
-            Self::Selenium => 2, // can also be 4 or 6, pick 2
+            Self::Selenium => 2,  // can also be 4 or 6, pick 2
             Self::Bromine => 7,
-            Self::Other => 0,  // default to 0 for unknown or unhandled elements
+            Self::Other => 0, // default to 0 for unknown or unhandled elements
         }
     }
 
@@ -245,7 +244,7 @@ impl Element {
     #[rustfmt::skip]
     /// Covalent radius, in angstrom.
     /// https://github.com/openbabel/openbabel/blob/master/src/elementtable.h
-/// https://en.wikipedia.org/wiki/Atomic_radii_of_the_elements_(data_page)
+    /// https://en.wikipedia.org/wiki/Atomic_radii_of_the_elements_(data_page)
     pub fn covalent_radius(self) -> f64 {
         match self {
             Element::Hydrogen   => 0.31,

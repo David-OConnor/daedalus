@@ -12,10 +12,10 @@ use lin_alg::f64::Vec3;
 
 use crate::{
     bond_inference::{create_bonds, create_hydrogen_bonds},
+    element::Element,
     molecule::{Atom, Chain, Molecule, Residue, ResidueType},
     util::mol_center_size,
 };
-use crate::element::Element;
 
 impl Molecule {
     /// From a string of a CIF or PDB text file.

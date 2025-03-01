@@ -15,12 +15,11 @@ use regex::Regex;
 
 use crate::{
     bond_inference::{create_bonds, create_hydrogen_bonds},
-    docking::docking_prep::UnitCellDims,
+    docking::docking_prep::{DockType, UnitCellDims},
+    element::Element,
     molecule::{Atom, AtomRole, Chain, Ligand, Molecule, Residue, ResidueType},
     util::mol_center_size,
 };
-use crate::docking::docking_prep::DockType;
-use crate::element::Element;
 // #[derive(Debug, Default)]
 // pub struct PdbQt {
 //     pub atoms: Vec<Atom>,

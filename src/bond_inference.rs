@@ -8,6 +8,10 @@
 //! All lengths are in angstrom.
 
 use crate::{
+    element::{
+        Element,
+        Element::{Carbon, Hydrogen, Nitrogen, Oxygen, Sulfur},
+    },
     molecule::{
         Atom, Bond,
         BondCount::*,
@@ -15,8 +19,6 @@ use crate::{
     },
     util::setup_neighbor_pairs,
 };
-use crate::element::Element::{Carbon, Hydrogen, Nitrogen, Oxygen, Sulfur};
-use crate::element::Element;
 
 struct BondSpecs {
     len: f64,

@@ -24,14 +24,12 @@
 use std::fmt::Display;
 
 use crate::{
-    molecule::{Atom, Molecule},
+    element::Element,
+    molecule::{Atom, Bond, Molecule},
     util::setup_neighbor_pairs,
 };
-use crate::element::Element;
-use crate::molecule::Bond;
 
 const GRID_SIZE: f64 = 1.6; // Slightly larger than the largest... todo: What?
-
 
 /// Used to determine if a gasteiger charge is a donoar (bonded to at least one H), or accepter (not
 /// bonded to any H).
@@ -40,7 +38,7 @@ fn bonded_to_h(bonds: &[Bond], atoms: &[Atom]) -> bool {
         let atom_0 = &atoms[bond.atom_0];
         let atom_1 = &atoms[bond.atom_1];
         if atom_0.element == Element::Hydrogen || atom_1.element == Element::Hydrogen {
-            return true
+            return true;
         }
     }
     false
@@ -123,11 +121,11 @@ impl DockType {
             Element::Calcium => Self::Ca,
             Element::Potassium => Self::Other,
             Element::Aluminum => Self::Other,
-            Element::Mercury => Self::Other, // todo
-            Element::Tin => Self::Other, // todo
-            Element::Tungsten => Self::Other, // todo
-            Element::Tellurium => Self::Other,// todo
-            Element::Selenium => Self::Other, // todo
+            Element::Mercury => Self::Other,   // todo
+            Element::Tin => Self::Other,       // todo
+            Element::Tungsten => Self::Other,  // todo
+            Element::Tellurium => Self::Other, // todo
+            Element::Selenium => Self::Other,  // todo
             Element::Lead => Self::Other,
             Element::Gold => Self::Other,
             Element::Silver => Self::Other,
@@ -214,7 +212,7 @@ impl DockType {
             Self::Hd => "HD",
             Self::Other => "--",
         }
-            .to_string()
+        .to_string()
     }
 
     pub fn gasteiger_electronegativity(&self) -> f32 {
