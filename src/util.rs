@@ -301,8 +301,8 @@ pub fn setup_neighbor_pairs(posits: &[&Vec3], grid_size: f64) -> Vec<(usize, usi
                         // Attempt to prevent duplicates as we iterate. Note working.
                         for &i in indices {
                             for &j in neighbor_indices {
-                                // if i != j {
-                                if i < j {
+                                if i != j {
+                                // if i < j {
                                     result.push((i, j));
                                 }
                             }

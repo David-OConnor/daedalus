@@ -39,9 +39,10 @@ impl BondSpecs {
 const COV_BOND_LEN_THRESH: f64 = 0.04; // todo: Adjust A/R based on performance.
 const COV_DIST_GRID: f64 = 1.6; // Slightly larger than the largest bond distance + thresh.
 
+// const H_BOND_DIST_THRESH: f64 = 3.5; // Angstrom.
 const H_BOND_DIST_THRESH: f64 = 3.5; // Angstrom.
-// const H_BOND_DIST_GRID: f64 = 3.6; // Angstrom.
-const H_BOND_DIST_GRID: f64 = 4.; // Angstrom.
+const H_BOND_DIST_GRID: f64 = 3.6; // Angstrom.
+// const H_BOND_DIST_GRID: f64 = 10.; // Angstrom. // todo
 
 #[rustfmt::skip]
 fn get_specs() -> Vec<BondSpecs> {
@@ -229,8 +230,8 @@ pub fn create_hydrogen_bonds(atoms: &[Atom]) -> Vec<Bond> {
     // todo: This approach is very crude.
 
     for &(i, j) in &neighbor_pairs {
-        let atom0 = &atoms[0];
-        let atom1 = &atoms[1];
+        let atom0 = &atoms[i];
+        let atom1 = &atoms[j];
 
         // todo: QC this logic with rules of H bonding.
         if !matches!(atom0.element, Nitrogen | Oxygen)
@@ -240,7 +241,6 @@ pub fn create_hydrogen_bonds(atoms: &[Atom]) -> Vec<Bond> {
         }
 
         if (atom0.posit - atom1.posit).magnitude() < H_BOND_DIST_THRESH {
-            println!("WHAT?");
             result.push(Bond {
                 bond_type: BondType::Hydrogen,
                 // todo: Set it up so atom_0 is always the donor!
