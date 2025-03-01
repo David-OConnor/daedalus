@@ -7,8 +7,6 @@
 //!
 //! All lengths are in angstrom.
 
-use std::collections::HashSet;
-
 use crate::{
     Element,
     Element::{Carbon, Hydrogen, Nitrogen, Oxygen, Sulfur},
@@ -38,8 +36,12 @@ impl BondSpecs {
 
 // If interatomic distance is within this distance of one of our known bond lenghts, consider it to be a bond.
 // Relevant to this is both bond variability under various conditions, and measurement precision.
-const BOND_LEN_THRESH: f64 = 0.04; // todo: Adjust A/R based on performance.
-const GRID_SIZE: f64 = 1.6; // Slightly larger than the largest bond distance + thresh.
+const COV_BOND_LEN_THRESH: f64 = 0.04; // todo: Adjust A/R based on performance.
+const COV_DIST_GRID: f64 = 1.6; // Slightly larger than the largest bond distance + thresh.
+
+const H_BOND_DIST_THRESH: f64 = 3.5; // Angstrom.
+// const H_BOND_DIST_GRID: f64 = 3.6; // Angstrom.
+const H_BOND_DIST_GRID: f64 = 4.; // Angstrom.
 
 #[rustfmt::skip]
 fn get_specs() -> Vec<BondSpecs> {
@@ -138,15 +140,12 @@ fn get_specs() -> Vec<BondSpecs> {
         // --------------------
         // todo: Expand this section.
 
-        // BondSpecs::new(1.09, (Carbon, Hydrogen), single),
         BondSpecs::new(1.09, (Hydrogen, Carbon), single),
 
         // 1.01–1.02 Å
-        // BondSpecs::new(1.01, (Nitrogen, Hydrogen), single),
         BondSpecs::new(1.01, (Hydrogen, Nitrogen), single),
 
         // 0.96 – 0.98 Å
-        // BondSpecs::new(1.01, (Oxygen, Hydrogen), single),
         BondSpecs::new(1.01, (Hydrogen, Oxygen), single),
         // BondSpecs::new(1.01, (Hydrogen, Oxygen), single),
         BondSpecs::new(0.95, (Hydrogen, Oxygen), single),
@@ -170,16 +169,13 @@ fn eval_lens(bonds: &mut Vec<Bond>, atoms: &[Atom], i: usize, j: usize, specs: &
     let dist = (atom_0.posit - atom_1.posit).magnitude();
 
     for spec in specs {
-        // This directionality ensures only one bond per atom pair. Otherwise, we'd add two identical
-        // ones with swapped atom positions.
-
         if !((atom_0.element == spec.elements.0 && atom_1.element == spec.elements.1)
             || (atom_0.element == spec.elements.1 && atom_1.element == spec.elements.0))
         {
             continue;
         }
 
-        if (dist - spec.len).abs() < BOND_LEN_THRESH {
+        if (dist - spec.len).abs() < COV_BOND_LEN_THRESH {
             bonds.push(Bond {
                 bond_type: spec.bond_type,
                 atom_0: i,
@@ -203,32 +199,15 @@ pub fn create_bonds(atoms: &[Atom]) -> Vec<Bond> {
 
     // We use spacial partitioning, so as not to copmare every pair of atoms.
     let posits: Vec<_> = atoms.iter().map(|a| &a.posit).collect();
-    let neighbor_pairs = setup_neighbor_pairs(&posits, GRID_SIZE);
+    let neighbor_pairs = setup_neighbor_pairs(&posits, COV_DIST_GRID);
 
     // todo: Should we create an Vec of neighbors for each atom. (Maybe storeed in a hashmap etc)
     // todo, then iterate over that for neighbors in the j loop? WOuld be more generalizable/extract
     // todo it out from the bus logic.
 
     for &(i, j) in &neighbor_pairs {
-        if i == j {
-            // todo: Likely not required?
-            continue;
-        }
         eval_lens(&mut result, atoms, i, j, &specs);
     }
-
-    // Remove duplicates, which will only occur in the case of same-element bonds.
-    // Retain only the *first* occurrence of each unordered bond pair
-    let mut seen = HashSet::new();
-    result.retain(|bond| {
-        // Sort the pair so that (atom_0, atom_1) and (atom_1, atom_0) are treated as the same key
-        let canonical_pair = if bond.atom_0 <= bond.atom_1 {
-            (bond.atom_0, bond.atom_1)
-        } else {
-            (bond.atom_1, bond.atom_0)
-        };
-        seen.insert(canonical_pair)
-    });
 
     println!("Bond creation complete.");
 
@@ -241,36 +220,36 @@ pub fn create_bonds(atoms: &[Atom]) -> Vec<Bond> {
 /// and adds a bond if their distance is less than the cutoff.
 /// todo: UPdate this approach to be more robust. Use bond agnles etc. And maybe integrate
 /// todo with populated h ydrogens.
-pub fn make_hydrogen_bonds(atoms: &[Atom]) -> Vec<Bond> {
-    let mut bonds = Vec::new();
-    let cutoff = 3.5; // distance cutoff in Angstroms
+pub fn create_hydrogen_bonds(atoms: &[Atom]) -> Vec<Bond> {
+    let mut result = Vec::new();
 
-    // todo: This algorithm is slow. Feasible for now given that most atoms are not O or N.
-    // todo: Use a grid-approach like in your covalent bond inference.
+    let posits: Vec<_> = atoms.iter().map(|a| &a.posit).collect();
+    let neighbor_pairs = setup_neighbor_pairs(&posits, H_BOND_DIST_GRID);
 
-    // todo: Consider even integrating this into the main bond-inference loop.
+    // todo: This approach is very crude.
 
-    // iterate over all unique pairs
-    for (i, a1) in atoms.iter().enumerate() {
-        if !matches!(a1.element, Nitrogen | Oxygen) {
+    for &(i, j) in &neighbor_pairs {
+        let atom0 = &atoms[0];
+        let atom1 = &atoms[1];
+
+        // todo: QC this logic with rules of H bonding.
+        if !matches!(atom0.element, Nitrogen | Oxygen)
+            || !matches!(atom1.element, Nitrogen | Oxygen)
+        {
             continue;
         }
-        for (j, a2) in atoms.iter().enumerate().skip(i + 1) {
-            if !matches!(a2.element, Nitrogen | Oxygen) {
-                continue;
-            }
-            // Assuming Vec3 supports subtraction and a norm() method.
-            if (a1.posit - a2.posit).magnitude() < cutoff {
-                // todo: Consider if this should be teh same type as your Covalent type etc.
-                bonds.push(Bond {
-                    bond_type: BondType::Hydrogen,
-                    // todo: Set it up so atom_0 is always the donor!
-                    atom_0: i,
-                    atom_1: j,
-                    is_backbone: false,
-                });
-            }
+
+        if (atom0.posit - atom1.posit).magnitude() < H_BOND_DIST_THRESH {
+            println!("WHAT?");
+            result.push(Bond {
+                bond_type: BondType::Hydrogen,
+                // todo: Set it up so atom_0 is always the donor!
+                atom_0: i,
+                atom_1: j,
+                is_backbone: false,
+            });
         }
     }
-    bonds
+
+    result
 }

@@ -24,6 +24,8 @@
 use std::fmt::Display;
 
 use crate::{
+    Element,
+    file_io::pdbqt::DockType,
     molecule::{Atom, Molecule},
     util::setup_neighbor_pairs,
 };
@@ -90,8 +92,8 @@ fn setup_partial_charges(atoms: &mut [Atom], charge_type: PartialChargeType) {
         let mut charge_updates = vec![0.0; atoms.len()];
 
         for &(i, j) in &neighbor_pairs {
-            if atoms[i].dock_type.is_none()|| atoms[j].dock_type.is_none() {
-                continue
+            if atoms[i].dock_type.is_none() || atoms[j].dock_type.is_none() {
+                continue;
             }
             let en_i = atoms[i].dock_type.unwrap().gasteiger_electronegativity();
             let en_j = atoms[j].dock_type.unwrap().gasteiger_electronegativity();
@@ -124,3 +126,43 @@ impl Molecule {
 pub fn export_pdbqt(target: &Molecule, ligand: &Molecule) -> Vec<u8> {
     Vec::new()
 }
+
+// // todo: C+P from ChatGPT. I'm low-confidence on it
+// /// This helper function infers the DockType of an atom based on its element
+// /// and its bonding environment. The `atoms` slice is used to examine neighbors.
+// pub fn infer_dock_type(atom: &Atom, atoms: &[Atom]) -> DockType {
+//     match atom.element {
+//         Element::Nitrogen => {
+//             // If any neighbor is hydrogen, assume it’s a donor (N);
+//             // otherwise, treat it as an acceptor (NA).
+//             let has_hydrogen = atom.neighbors.iter()
+//                 .any(|&i| atoms[i].element == Element::Hydrogen);
+//             if has_hydrogen {
+//                 DockType::N
+//             } else {
+//                 DockType::Na
+//             }
+//         }
+//         Element::Oxygen => {
+//             // If oxygen is bonded to a hydrogen, assign it as hydroxyl (Oh);
+//             // otherwise, assign it as acceptor (Oa).
+//             let has_hydrogen = atom.neighbors.iter()
+//                 .any(|&i| atoms[i].element == Element::Hydrogen);
+//             if has_hydrogen {
+//                 DockType::Oh
+//             } else {
+//                 DockType::Oa
+//             }
+//         }
+//         Element::Carbon => {
+//             // Here you could add aromaticity detection.
+//             // For now, we assume a default of aliphatic carbon.
+//             DockType::C
+//         }
+//         Element::Hydrogen => {
+//             // Polar hydrogen donors are typically assigned Hd.
+//             DockType::Hd
+//         }
+//         _ => DockType::Other,
+//     }
+// }

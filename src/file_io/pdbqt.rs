@@ -15,7 +15,7 @@ use regex::Regex;
 
 use crate::{
     Element,
-    bond_inference::{create_bonds, make_hydrogen_bonds},
+    bond_inference::{create_bonds, create_hydrogen_bonds},
     docking::docking_prep::{Torsion, TorsionStatus, UnitCellDims},
     molecule::{Atom, AtomRole, Bond, Chain, Ligand, Molecule, Residue, ResidueType},
     util::mol_center_size,
@@ -55,7 +55,8 @@ pub enum DockType {
 
 impl DockType {
     pub fn from_str(s: &str) -> Self {
-        match s.to_uppercase().as_str() {
+        let s = s.to_uppercase();
+        match s.as_ref() {
             "A" => Self::A,
             "C" => Self::C,
             "N" => Self::N,
@@ -78,8 +79,18 @@ impl DockType {
             "CU" => Self::Cu,
             "HD" => Self::Hd,
             _ => {
-                eprintln!("Unknown dock type: {}", s);
-                Self::Other
+                if s.starts_with("C") {
+                    Self::C
+                } else if s.starts_with("N") {
+                    Self::N
+                } else if s.starts_with("O") {
+                    Self::O
+                } else if s.starts_with("S") {
+                    Self::S
+                } else {
+                    eprintln!("Unknown dock type: {}", s);
+                    Self::Other
+                }
             }
         }
     }
@@ -107,27 +118,27 @@ impl DockType {
             Self::Mn => "MN",
             Self::Cu => "CU",
             Self::Hd => "HD",
-            Self::Other => "Xx",
+            Self::Other => "--",
         }
         .to_string()
     }
 
     pub fn gasteiger_electronegativity(&self) -> f32 {
         match self {
-            Self::A  => 2.50,
-            Self::C  => 2.55,
-            Self::N  => 3.04,
+            Self::A => 2.50,
+            Self::C => 2.55,
+            Self::N => 3.04,
             Self::Na => 3.10,
-            Self::O  => 3.44,
+            Self::O => 3.44,
             Self::Oh => 3.44,
             Self::Oa => 3.50,
-            Self::S  => 2.50,
+            Self::S => 2.50,
             Self::Sa => 2.60,
-            Self::P  => 2.19,
-            Self::F  => 3.98,
+            Self::P => 2.19,
+            Self::F => 3.98,
             Self::Cl => 3.16,
             Self::Br => 2.96,
-            Self::I  => 2.66,
+            Self::I => 2.66,
             Self::Zn => 1.65,
             Self::Fe => 1.83,
             Self::Mg => 1.31,
@@ -312,7 +323,7 @@ impl Molecule {
 
         result.populate_hydrogens_angles();
         result.bonds = create_bonds(&result.atoms);
-        result.bonds.extend(make_hydrogen_bonds(&result.atoms));
+        result.bonds.extend(create_hydrogen_bonds(&result.atoms));
 
         // todo: ligand molecule??
 

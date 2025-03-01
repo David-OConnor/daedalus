@@ -12,7 +12,7 @@ use rayon::prelude::*;
 
 use crate::{
     Element,
-    bond_inference::{create_bonds, make_hydrogen_bonds},
+    bond_inference::{create_bonds, create_hydrogen_bonds},
     file_io::pdbqt::DockType,
     molecule::{Atom, AtomRole, Chain, Molecule, Residue, ResidueType},
     util::mol_center_size,
@@ -177,7 +177,7 @@ impl Molecule {
 
         result.populate_hydrogens_angles();
         result.bonds = create_bonds(&result.atoms);
-        result.bonds.extend(make_hydrogen_bonds(&result.atoms));
+        result.bonds.extend(create_hydrogen_bonds(&result.atoms));
 
         result
     }

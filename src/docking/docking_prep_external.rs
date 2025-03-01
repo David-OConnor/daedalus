@@ -23,7 +23,7 @@ pub fn check_babel_avail() -> bool {
 /// todo: PDB only; no cif.
 /// Also, SEL modules crash it?
 /// http://openbabel.org/docs/Command-line_tools/babel.html#options
-pub fn prepare_target(mol_path: &Path) -> io::Result<()> {
+pub fn prepare_target(mol_path: &Path, ident: &str) -> io::Result<()> {
     let path = mol_path.to_str().unwrap_or_default();
     println!("Preparing target with Open Babel...");
 
@@ -31,11 +31,14 @@ pub fn prepare_target(mol_path: &Path) -> io::Result<()> {
     // update: Seems to *add* water??
     // todo: Kolman charges vice gasteiger?
     // Todo: Rem water?
+
+    let filename = format!("{}_target.pdbqt", ident);
+
     Command::new("obabel")
         .args([
             path,
             "-O",
-            "target_prepped.pdbqt",
+            &filename,
             "-h",
             "--partialcharge gasteiger",
             // "--partialcharge kolman",
@@ -51,15 +54,16 @@ pub fn prepare_target(mol_path: &Path) -> io::Result<()> {
 }
 
 /// http://openbabel.org/docs/Command-line_tools/babel.html#options
-pub fn prepare_ligand(mol_path: &Path, ligand_is_2d: bool) -> io::Result<()> {
+pub fn prepare_ligand(mol_path: &Path, ident: &str, ligand_is_2d: bool) -> io::Result<()> {
     let path = mol_path.to_str().unwrap_or_default();
 
     // Adds H and partial charges as for target. Also handles notatible rotatable bonds.
-    //
+    let filename = format!("{}_ligand.pdbqt", ident);
+
     let mut args = vec![
         path,
         "-O",
-        "ligand_prepped.pdbqt",
+        &filename,
         "--gen3d",
         "-h",
         "--partialcharge gasteiger",

@@ -1,4 +1,9 @@
-use std::{collections::HashMap, f64::consts::TAU, path::PathBuf, time::Instant};
+use std::{
+    collections::{HashMap, HashSet},
+    f64::consts::TAU,
+    path::PathBuf,
+    time::Instant,
+};
 
 use graphics::{Camera, FWD_VEC};
 use lin_alg::{
@@ -267,6 +272,8 @@ pub fn bond_angle(atoms: &[Atom], bond_0: &Bond, bond_1: &Bond) -> f64 {
     }
 }
 
+/// Creates pairs of all *nearby* positions. Much faster than comparing every combination, if only nearly
+/// ones are relevant.
 // pub fn setup_neighbor_pairs(posits: &[&Vec3], grid_size: f64) -> HashMap<(i32, i32, i32), Vec<usize>>{
 pub fn setup_neighbor_pairs(posits: &[&Vec3], grid_size: f64) -> Vec<(usize, usize)> {
     // Build a spatial grid for atom indices.
@@ -284,21 +291,17 @@ pub fn setup_neighbor_pairs(posits: &[&Vec3], grid_size: f64) -> Vec<(usize, usi
     // grid
     // Collect candidate atom pairs based on neighboring grid cells.
     let mut result = Vec::new();
-    for (&cell, atom_indices) in &grid {
+    for (&cell, indices) in &grid {
         // Look at this cell and its neighbors.
         for dx in -1..=1 {
             for dy in -1..=1 {
                 for dz in -1..=1 {
                     let neighbor_cell = (cell.0 + dx, cell.1 + dy, cell.2 + dz);
                     if let Some(neighbor_indices) = grid.get(&neighbor_cell) {
-                        for &i in atom_indices {
+                        // Attempt to prevent duplicates as we iterate. Note working.
+                        for &i in indices {
                             for &j in neighbor_indices {
-                                // if i ==j {
-                                //     continue
-                                // }
-
-                                // This seems to prevent duplicates of opposite order.
-                                // todo: QC
+                                // if i != j {
                                 if i < j {
                                     result.push((i, j));
                                 }
@@ -309,6 +312,15 @@ pub fn setup_neighbor_pairs(posits: &[&Vec3], grid_size: f64) -> Vec<(usize, usi
             }
         }
     }
+
+    // Remove pair-reverse duplicates; e.g. of A->B and B->A; one would be removed.
+    // let mut seen = HashSet::new();
+    // result.retain(|(i, j)| {
+        // Sort the pair so that (i, j) and (j, i) are treated as the same key
+        // let canonical_pair = if i <= j { (*i, *j) } else { (*j, *i) };
+        // seen.insert(canonical_pair)
+        // i < j
+    // });
 
     result
 }

@@ -12,7 +12,6 @@ use na_seq::AaIdent;
 
 use crate::{
     CamSnapshot, Selection, State, ViewSelLevel,
-    bond_inference::make_hydrogen_bonds,
     docking::{
         check_adv_avail,
         docking_prep_external::{prepare_ligand, prepare_target},
@@ -585,7 +584,9 @@ fn residue_search(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
                     let mut success_ligand = false;
                     // todo: We may need to save path with the molecule and ligand.
                     if let Some(path) = &state.to_save.last_opened {
-                        if let Err(e) = prepare_target(path) {
+                        if let Err(e) =
+                            prepare_target(path, &state.molecule.as_ref().unwrap().ident)
+                        {
                             eprintln!("Error: Unable to process target molecule: {e:?}");
                         } else {
                             success_tgt = true;
@@ -593,7 +594,11 @@ fn residue_search(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
                     }
 
                     if let Some(path) = &state.to_save.last_ligand_opened {
-                        if let Err(e) = prepare_ligand(path, false) {
+                        if let Err(e) = prepare_ligand(
+                            path,
+                            &state.ligand.as_ref().unwrap().molecule.ident,
+                            false,
+                        ) {
                             eprintln!("Error: Unable to process ligand molecule: {e:?}");
                         } else {
                             success_ligand = true;
@@ -607,35 +612,42 @@ fn residue_search(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
                 }
             }
 
+            if ui.button("Save PDBQT").clicked() {
+                state.volatile.save_pdbqt_dialog.pick_directory();
+            }
+
             // if state.docking_ready {
-            if true {
-                if ui.button("Dock").clicked() {
-                    // let tgt = state.molecule.as_ref().unwrap();
-                    let ligand = state.ligand.as_ref().unwrap();
+            if ui.button("Dock").clicked() {
+                // let tgt = state.molecule.as_ref().unwrap();
+                let mol = state.molecule.as_ref().unwrap();
+                let ligand = state.ligand.as_ref().unwrap();
 
-                    // find_optimal_pose(tgt, ligand, &Default::default());
+                // find_optimal_pose(tgt, ligand, &Default::default());
 
-                    // Allow the user to select the autodock executable.
-                    if state.to_save.autodock_vina_path.is_none() {
-                        state.volatile.autodock_path_dialog.pick_file();
+                // Allow the user to select the autodock executable.
+                if state.to_save.autodock_vina_path.is_none() {
+                    state.volatile.autodock_path_dialog.pick_file();
+                }
+
+                if let Some(vina_path) = &state.to_save.autodock_vina_path {
+                    match run_adv(
+                        &ligand.docking_init,
+                        vina_path,
+                        &PathBuf::from_str(&format!("{}_target.pdbqt", mol.ident)).unwrap(),
+                        &PathBuf::from_str(&format!("{}_ligand.pdbqt", ligand.molecule.ident))
+                            .unwrap(),
+                        // &PathBuf::from_str("target_prepped.pdbqt").unwrap(),
+                        // &PathBuf::from_str("ligand_prepped.pdbqt").unwrap(),
+                    ) {
+                        Ok(r) => println!("Docking successful"),
+                        Err(e) => eprintln!("Docking failed: {e:?}"),
                     }
-
-                    if let Some(vina_path) = &state.to_save.autodock_vina_path {
-                        match run_adv(
-                            &ligand.docking_init,
-                            vina_path,
-                            &PathBuf::from_str("target_prepped.pdbqt").unwrap(),
-                            &PathBuf::from_str("ligand_prepped.pdbqt").unwrap(),
-                        ) {
-                            Ok(r) => println!("Docking successful"),
-                            Err(e) => eprintln!("Docking failed: {e:?}"),
-                        }
-                    } else {
-                        eprintln!("No Autodock Vina install located yet.");
-                    }
+                } else {
+                    eprintln!("No Autodock Vina install located yet.");
                 }
             }
         }
+        // }
 
         ui.add_space(COL_SPACING);
 
@@ -910,11 +922,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 });
 
                 // todo: Show hide based on AaCategory? i.e. residue.amino_acid.category(). Hydrophilic, acidic etc.
-
-                // todo: Temp here
-                if ui.button("Save PDBQT").clicked() {
-                    state.volatile.save_pdbqt_dialog.pick_directory();
-                }
 
                 residue_selector(state, &mut redraw, ui);
             });
