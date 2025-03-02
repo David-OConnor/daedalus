@@ -65,7 +65,7 @@ pub const SHELL_OPACITY: f32 = 0.01;
 
 // From the farthest molecule.
 pub const CAM_INIT_OFFSET: f32 = 10.;
-pub const OUTSIDE_LIGHTING_OFFSET: f32 = 700.;
+
 
 pub const COLOR_AA_NON_RESIDUE: Color = (0., 0.8, 1.0);
 
@@ -77,6 +77,7 @@ const SEL_NEAR_PAD: f32 = 4.;
 
 // A higher value will result in a less-dramatic brightness change with distance.
 const FLASHLIGHT_OFFSET: f32 = 20.;
+pub const OUTSIDE_LIGHTING_OFFSET: f32 = 800.;
 
 /// Set the flashlight to be a little bit behind the camera; prevents too dramatic of an intensity
 /// scaling on the object looked at, WRT distance.
@@ -384,20 +385,20 @@ pub fn render(mut state: State) {
         // Lighting is set when drawing molecules; placeholder here.
         lighting: Lighting {
             ambient_color: white,
-            ambient_intensity: 0.05,
+            ambient_intensity: 0.,
             point_lights: vec![
                 // The camera-oriented *flashlight*. Moves with the camera.
                 PointLight {
                     type_: LightType::Directional(Vec3::new_zero()),
-                    diffuse_intensity: 50.,
-                    specular_intensity: 400.,
+                    diffuse_intensity: 30.,
+                    specular_intensity: 300.,
                     ..Default::default()
                 },
                 PointLight {
                     diffuse_color: white,
                     specular_color: white,
-                    diffuse_intensity: 20_000.,
-                    specular_intensity: 70_000.,
+                    diffuse_intensity: 40_000.,
+                    specular_intensity: 40_000.,
                     ..Default::default()
                 },
             ],
