@@ -16,7 +16,7 @@ use crate::{
         ATOM_SHINYNESS, BALL_STICK_RADIUS, BALL_STICK_RADIUS_H, BODY_SHINYNESS, BOND_RADIUS,
         CAM_INIT_OFFSET, COLOR_AA_NON_RESIDUE, COLOR_DOCKING_BOX, COLOR_H_BOND, COLOR_SELECTED,
         COLOR_SFC_DOT, Color, MESH_BOND, MESH_BOX, MESH_SPHERE, MESH_SPHERE_LOWRES, MESH_SURFACE,
-        RADIUS_H_BOND, RADIUS_SFC_DOT, RENDER_DIST,
+        RADIUS_H_BOND, RADIUS_SFC_DOT, RENDER_DIST, set_flashlight, set_static_light,
     },
 };
 
@@ -61,10 +61,10 @@ fn atom_color(
     let mut result = match view_sel_level {
         ViewSelLevel::Atom => atom.element.color(),
         ViewSelLevel::Residue => {
-          match atom.residue_type {
-                 ResidueType::AminoAcid(aa) => aa_color(aa),
-               _ => COLOR_AA_NON_RESIDUE,
-           }
+            match atom.residue_type {
+                ResidueType::AminoAcid(aa) => aa_color(aa),
+                _ => COLOR_AA_NON_RESIDUE,
+            }
             // Below is currently equivalent:
             // for res in &mol.residues {
             //     if res.atoms.contains(&i) {
@@ -343,11 +343,27 @@ fn bond_entities(
 pub fn draw_ligand(state: &mut State, scene: &mut Scene, update_cam_lighting: bool) {
     // Hard-coded for sticks for now.
 
-    if state.ligand.is_none() || state.ui.visibility.hide_ligand {
+    if state.ligand.is_none() {
         return;
     }
+
     let ligand = state.ligand.as_ref().unwrap();
     let mol = &ligand.molecule;
+
+    // Add a box for the docking site.
+    scene.entities.push(Entity {
+        mesh: MESH_BOX,
+        position: ligand.docking_init.site_center.into(),
+        scale: ligand.docking_init.site_box_size as f32,
+        color: COLOR_DOCKING_BOX,
+        opacity: 0.5,
+        shinyness: ATOM_SHINYNESS,
+        ..Default::default()
+    });
+
+    if state.ui.visibility.hide_ligand {
+        return;
+    }
 
     // todo: rotate using the orientation relative to the offset. Atoms and bonds.
 
@@ -394,18 +410,6 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene, update_cam_lighting: bo
             bond.bond_type,
         );
     }
-
-    // todo: This needs to be transparent.
-    // Add a box for the docking site.
-    scene.entities.push(Entity::new(
-        MESH_BOX,
-        ligand.docking_init.site_center.into(),
-        Quaternion::new_identity(),
-        // todo: Scale in different dims if you allow it to be non-box
-        ligand.docking_init.site_box_size as f32,
-        COLOR_DOCKING_BOX,
-        ATOM_SHINYNESS,
-    ))
 }
 
 /// Refreshes entities with the model passed.
@@ -649,6 +653,6 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
         scene.camera.update_proj_mat();
 
         // Update lighting based on the new molecule center and dims.
-        scene.lighting = render::set_lighting(center, mol.size);
+        set_static_light(scene, center, mol.size);
     }
 }

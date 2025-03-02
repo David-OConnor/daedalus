@@ -306,8 +306,8 @@ impl State {
             Ok(mol) => {
                 if is_ligand {
                     let docking_init = DockingInit {
-                        site_center: Vec3F64::new(0., 0., 30.),
-                        site_box_size: 3.,
+                        site_center: Vec3F64::new(-18.955, -5.188, 8.617),
+                        site_box_size: 10.,
                     };
 
                     self.ui.docking_site_x = docking_init.site_center.x.to_string();

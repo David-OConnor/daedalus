@@ -30,8 +30,8 @@ const BACKGROUND_COLOR: Color = (0., 0., 0.);
 pub const RENDER_DIST: f32 = 1_000.;
 
 // todo: Shinyness broken?
-pub const ATOM_SHINYNESS: f32 = 12.;
-pub const BODY_SHINYNESS: f32 = 12.;
+pub const ATOM_SHINYNESS: f32 = 0.9;
+pub const BODY_SHINYNESS: f32 = 0.9;
 
 // Keep this in sync with mesh init.
 pub const MESH_SPHERE: usize = 0;
@@ -65,7 +65,7 @@ pub const SHELL_OPACITY: f32 = 0.01;
 
 // From the farthest molecule.
 pub const CAM_INIT_OFFSET: f32 = 10.;
-pub const OUTSIDE_LIGHTING_OFFSET: f32 = 600.;
+pub const OUTSIDE_LIGHTING_OFFSET: f32 = 700.;
 
 pub const COLOR_AA_NON_RESIDUE: Color = (0., 0.8, 1.0);
 
@@ -75,38 +75,32 @@ const SCROLL_MOVE_AMT: f32 = 4.;
 
 const SEL_NEAR_PAD: f32 = 4.;
 
-/// Set lighting based on the center and size of the molecule.
-pub fn set_lighting(center: Vec3, size: f32) -> Lighting {
-    let white = [1., 1., 1., 1.];
+// A higher value will result in a less-dramatic brightness change with distance.
+const FLASHLIGHT_OFFSET: f32 = 20.;
 
-    Lighting {
-        ambient_color: white,
-        ambient_intensity: 0.12,
-        point_lights: vec![
-            // PointLight {
-            //     type_: LightType::Omnidirectional,
-            //     position: center + Vec3::new(40., size + OUTSIDE_LIGHTING_OFFSET, 0.),
-            //     diffuse_color: white,
-            //     specular_color: white,
-            //     diffuse_intensity: 6_000.,
-            //     specular_intensity: 60_000.,
-            // },
-            PointLight {
-                type_: LightType::Omnidirectional,
-                position: center + Vec3::new(40., -size - OUTSIDE_LIGHTING_OFFSET, 0.),
-                diffuse_color: white,
-                specular_color: white,
-                diffuse_intensity: 20_000.,
-                specular_intensity: 70_000.,
-            },
-        ],
-    }
+/// Set the flashlight to be a little bit behind the camera; prevents too dramatic of an intensity
+/// scaling on the object looked at, WRT distance.
+pub fn set_flashlight(scene: &mut Scene) {
+    scene.lighting.point_lights[0].position = scene.camera.position
+        + scene
+            .camera
+            .orientation
+            .rotate_vec(Vec3::new(0., 0., -FLASHLIGHT_OFFSET));
+    scene.lighting.point_lights[0].type_ =
+        LightType::Directional(scene.camera.orientation.rotate_vec(FWD_VEC));
+}
+
+/// Set lighting based on the center and size of the molecule.
+pub fn set_static_light(scene: &mut Scene, center: Vec3, size: f32) {
+    scene.lighting.point_lights[1].position =
+        center + Vec3::new(40., -size - OUTSIDE_LIGHTING_OFFSET, 0.);
 }
 
 fn event_dev_handler(
     state_: &mut State,
     event: DeviceEvent,
     scene: &mut Scene,
+    engine_inputs: bool,
     dt: f32,
 ) -> EngineUpdates {
     let mut updates = EngineUpdates::default();
@@ -322,6 +316,12 @@ fn event_dev_handler(
         updates.entities = true;
     }
 
+    // Move the flashlight; it stays with the camera.
+    if engine_inputs || updates.camera {
+        set_flashlight(scene);
+        updates.lighting = true;
+    }
+
     updates
 }
 
@@ -360,14 +360,15 @@ fn render_handler(_state: &mut State, _scene: &mut Scene, _dt: f32) -> EngineUpd
 
 /// Entry point to our render and event loop.
 pub fn render(mut state: State) {
+    let white = [1., 1., 1., 0.5];
+
     let mut scene = Scene {
         meshes: vec![
-            Mesh::new_sphere(1., 14, 28),
-            // Mesh::from_obj_file("sphere.obj"),
+            Mesh::new_sphere(1., 3),
             Mesh::new_box(1., 1., 1.),
             Mesh::new_cylinder(1., BOND_RADIUS, 20),
-            Mesh::new_sphere(1., 8, 8), // low-res sphere
-            Mesh::new_box(1., 1., 1.),  // Placeholder for a VDW surface; populated later.
+            Mesh::new_sphere(1., 1),   // low-res sphere
+            Mesh::new_box(1., 1., 1.), // Placeholder for a VDW surface; populated later.
             Mesh::new_box(1., 1., 1.),
         ],
         entities: Vec::new(),
@@ -381,7 +382,26 @@ pub fn render(mut state: State) {
             ..Default::default()
         },
         // Lighting is set when drawing molecules; placeholder here.
-        lighting: Default::default(),
+        lighting: Lighting {
+            ambient_color: white,
+            ambient_intensity: 0.05,
+            point_lights: vec![
+                // The camera-oriented *flashlight*. Moves with the camera.
+                PointLight {
+                    type_: LightType::Directional(Vec3::new_zero()),
+                    diffuse_intensity: 50.,
+                    specular_intensity: 400.,
+                    ..Default::default()
+                },
+                PointLight {
+                    diffuse_color: white,
+                    specular_color: white,
+                    diffuse_intensity: 20_000.,
+                    specular_intensity: 70_000.,
+                    ..Default::default()
+                },
+            ],
+        },
         background_color: BACKGROUND_COLOR,
         window_size: (WINDOW_SIZE_X, WINDOW_SIZE_Y),
         window_title: WINDOW_TITLE.to_owned(),

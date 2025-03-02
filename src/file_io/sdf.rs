@@ -182,6 +182,10 @@ impl Molecule {
 
         let (center, size) = mol_center_size(&atoms);
 
+        // todo: Load partial charges adn other data from SDF. (Format specific fields.)
+        // todo: For example, PUBCHEM.
+        // todo; May also have donor/acceptor/cation etc data.
+
         let mut result = Self {
             ident,
             atoms,

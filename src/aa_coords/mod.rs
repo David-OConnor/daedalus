@@ -309,11 +309,11 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
                         hydrogens.push(Atom {
                             posit: atom.posit
                                 - tetra_atoms(
-                                atom.posit,
-                                atoms_bonded[0].1.posit,
-                                atoms_bonded[1].1.posit,
-                                atoms_bonded[2].1.posit,
-                            ) * LEN_CALPHA_H,
+                                    atom.posit,
+                                    atoms_bonded[0].1.posit,
+                                    atoms_bonded[1].1.posit,
+                                    atoms_bonded[2].1.posit,
+                                ) * LEN_CALPHA_H,
                             ..h_default_sc.clone()
                         });
                     }
@@ -558,10 +558,10 @@ pub fn aa_data_from_coords(
     hydrogens.push(Atom {
         posit: c_alpha_posit
             + tetra_legs(
-            -bond_ca_n.to_normalized(),
-            bond_cp_ca.to_normalized(),
-            -bond_ca_sidechain.to_normalized(),
-        ) * LEN_CALPHA_H,
+                -bond_ca_n.to_normalized(),
+                bond_cp_ca.to_normalized(),
+                -bond_ca_sidechain.to_normalized(),
+            ) * LEN_CALPHA_H,
         ..h_default.clone()
     });
 
