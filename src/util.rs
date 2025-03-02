@@ -11,11 +11,11 @@ use lin_alg::{
     f64::Vec3,
 };
 use na_seq::AaIdent;
-
 use crate::{
     PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel,
     molecule::{Atom, AtomRole, Bond, Chain, Residue, ResidueType},
 };
+use crate::element::Element;
 
 const MOVE_TO_TARGET_DIST: f32 = 15.;
 
@@ -79,12 +79,17 @@ pub fn find_selected_atom(
 
         let atom = &atoms[*atom_i];
 
-        if ui.visibility.hide_sidechains {
-            if let Some(role) = atom.role {
-                if role == AtomRole::Sidechain {
-                    continue;
-                }
+        if let Some(role) = atom.role {
+            if ui.visibility.hide_sidechains && role == AtomRole::Sidechain {
+                continue;
             }
+            if ui.visibility.hide_water && role == AtomRole::Water {
+                continue;
+            }
+        }
+
+        if ui.visibility.hide_hydrogen && atom.element == Element::Hydrogen {
+            continue;
         }
 
         if ui.visibility.hide_hetero && atom.hetero {

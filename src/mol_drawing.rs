@@ -19,6 +19,7 @@ use crate::{
         RADIUS_H_BOND, RADIUS_SFC_DOT, RENDER_DIST, set_flashlight, set_static_light,
     },
 };
+use crate::render::set_docking_light;
 
 #[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]
 pub enum MoleculeView {
@@ -350,6 +351,7 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene, update_cam_lighting: bo
     let ligand = state.ligand.as_ref().unwrap();
     let mol = &ligand.molecule;
 
+
     // Add a box for the docking site.
     scene.entities.push(Entity {
         mesh: MESH_BOX,
@@ -362,6 +364,7 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene, update_cam_lighting: bo
     });
 
     if state.ui.visibility.hide_ligand {
+        set_docking_light(scene, None);
         return;
     }
 
@@ -410,6 +413,8 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene, update_cam_lighting: bo
             bond.bond_type,
         );
     }
+
+    set_docking_light(scene, Some(&state.ligand.as_ref().unwrap().docking_init));
 }
 
 /// Refreshes entities with the model passed.

@@ -24,6 +24,7 @@ use crate::{
     render::{CAM_INIT_OFFSET, RENDER_DIST},
     util::{cam_look_at, check_prefs_save, cycle_res_selected, select_from_search},
 };
+use crate::render::set_docking_light;
 
 pub const ROW_SPACING: f32 = 10.;
 pub const COL_SPACING: f32 = 30.;
@@ -528,7 +529,7 @@ fn chain_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
     });
 }
 
-fn residue_search(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
+fn residue_search(state: &mut State, scene: &mut Scene, redraw: &mut bool, engine_updates: &mut EngineUpdates, ui: &mut Ui) {
     ui.horizontal(|ui| {
         let sel_prev = state.selection;
         ui.label("Find residue:");
@@ -647,12 +648,15 @@ fn residue_search(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
             ui.label("Docking site setup:");
             ui.label("Center:");
 
+            let mut docking_init_changed = false;
+
             if ui
                 .add(TextEdit::singleline(&mut state.ui.docking_site_x).desired_width(30.))
                 .changed()
             {
                 if let Ok(v) = state.ui.docking_site_x.parse::<f64>() {
                     ligand.docking_init.site_center.x = v;
+                    docking_init_changed = true;
                     *redraw = true;
                 }
             }
@@ -662,6 +666,7 @@ fn residue_search(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
             {
                 if let Ok(v) = state.ui.docking_site_y.parse::<f64>() {
                     ligand.docking_init.site_center.y = v;
+                    docking_init_changed = true;
                     *redraw = true;
                 }
             }
@@ -671,6 +676,7 @@ fn residue_search(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
             {
                 if let Ok(v) = state.ui.docking_site_z.parse::<f64>() {
                     ligand.docking_init.site_center.z = v;
+                    docking_init_changed = true;
                     *redraw = true;
                 }
             }
@@ -682,8 +688,15 @@ fn residue_search(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
             {
                 if let Ok(v) = state.ui.docking_site_size.parse::<f64>() {
                     ligand.docking_init.site_box_size = v;
+                    docking_init_changed = true;
                     *redraw = true;
                 }
+            }
+
+            if docking_init_changed {
+                // todo: Hardcoded as some.
+                set_docking_light(scene, Some(&ligand.docking_init));
+                engine_updates.lighting = true;
             }
         }
         // }
@@ -995,7 +1008,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         ui.add_space(ROW_SPACING);
 
-        residue_search(state, &mut redraw, ui);
+        residue_search(state, scene, &mut redraw, &mut engine_updates, ui);
 
         // todo: Allow switching between chains and secondary-structure features here.
 

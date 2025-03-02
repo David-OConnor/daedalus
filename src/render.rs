@@ -20,6 +20,7 @@ use crate::{
     ui::ui_handler,
     util::{cycle_res_selected, find_selected_atom, points_along_ray},
 };
+use crate::docking::DockingInit;
 
 pub type Color = (f32, f32, f32);
 
@@ -76,8 +77,11 @@ const SCROLL_MOVE_AMT: f32 = 4.;
 const SEL_NEAR_PAD: f32 = 4.;
 
 // A higher value will result in a less-dramatic brightness change with distance.
-const FLASHLIGHT_OFFSET: f32 = 20.;
+const FLASHLIGHT_OFFSET: f32 = 10.;
+const FLASHLIGHT_FOV: f32 = TAU/16.;
 pub const OUTSIDE_LIGHTING_OFFSET: f32 = 800.;
+// todo: Temp rem
+pub const DOCKING_LIGHT_INTENSITY: f32 = 0.;
 
 /// Set the flashlight to be a little bit behind the camera; prevents too dramatic of an intensity
 /// scaling on the object looked at, WRT distance.
@@ -88,13 +92,32 @@ pub fn set_flashlight(scene: &mut Scene) {
             .orientation
             .rotate_vec(Vec3::new(0., 0., -FLASHLIGHT_OFFSET));
     scene.lighting.point_lights[0].type_ =
-        LightType::Directional(scene.camera.orientation.rotate_vec(FWD_VEC));
+        LightType::Directional{ direction: scene.camera.orientation.rotate_vec(FWD_VEC), fov: FLASHLIGHT_FOV };
 }
 
 /// Set lighting based on the center and size of the molecule.
 pub fn set_static_light(scene: &mut Scene, center: Vec3, size: f32) {
     scene.lighting.point_lights[1].position =
         center + Vec3::new(40., -size - OUTSIDE_LIGHTING_OFFSET, 0.);
+}
+
+/// Set lighting based on the docking location.
+pub fn set_docking_light(scene: &mut Scene, docking_init: Option<&DockingInit>) {
+    let mut light = &mut scene.lighting.point_lights[2];
+
+    match docking_init {
+        Some(docking_init) => {
+            let intensity = DOCKING_LIGHT_INTENSITY * docking_init.site_box_size as f32;
+
+            light.position = docking_init.site_center.into();
+            light.diffuse_intensity = intensity;
+            light.specular_intensity = intensity;
+        }
+        None => {
+            light.diffuse_intensity = 0.;
+            light.specular_intensity = 0.;
+        },
+    }
 }
 
 fn event_dev_handler(
@@ -112,6 +135,8 @@ fn event_dev_handler(
     if !state_.ui.mouse_in_window {
         return updates;
     }
+    let mut cam_moved
+        = false;
 
     match event {
         // Move the camera forward and back on scroll.
@@ -139,7 +164,7 @@ fn event_dev_handler(
             if button == 0 {
                 // See note about camera movement resetting the snapshot. This impliles click + drag;
                 // we should probalby only do this when mouse movement is present too.
-                state_.ui.cam_snapshot = None;
+                cam_moved = true;
             }
             if button == 1 {
                 // Right click
@@ -239,28 +264,29 @@ fn event_dev_handler(
                 // C+P partially, from `graphics`.
                 // todo:  You need to check mouse movement too.
                 Code(KeyCode::KeyW) => {
-                    state_.ui.cam_snapshot = None;
+
+                    cam_moved = true;
                 }
                 Code(KeyCode::KeyS) => {
-                    state_.ui.cam_snapshot = None;
+                    cam_moved = true;
                 }
                 Code(KeyCode::KeyA) => {
-                    state_.ui.cam_snapshot = None;
+                    cam_moved = true;
                 }
                 Code(KeyCode::KeyD) => {
-                    state_.ui.cam_snapshot = None;
+                    cam_moved = true;
                 }
                 Code(KeyCode::Space) => {
-                    state_.ui.cam_snapshot = None;
+                    cam_moved = true;
                 }
                 Code(KeyCode::KeyC) => {
-                    state_.ui.cam_snapshot = None;
+                    cam_moved = true;
                 }
                 Code(KeyCode::KeyQ) => {
-                    state_.ui.cam_snapshot = None;
+                    cam_moved = true;
                 }
                 Code(KeyCode::KeyE) => {
-                    state_.ui.cam_snapshot = None;
+                    cam_moved = true;
                 }
                 // todo: Temp to test Ligand rotation
                 Code(KeyCode::BracketLeft) => {
@@ -318,8 +344,9 @@ fn event_dev_handler(
     }
 
     // Move the flashlight; it stays with the camera.
-    if engine_inputs || updates.camera {
+    if engine_inputs || cam_moved || updates.camera {
         set_flashlight(scene);
+        state_.ui.cam_snapshot = None;
         updates.lighting = true;
     }
 
@@ -362,6 +389,7 @@ fn render_handler(_state: &mut State, _scene: &mut Scene, _dt: f32) -> EngineUpd
 /// Entry point to our render and event loop.
 pub fn render(mut state: State) {
     let white = [1., 1., 1., 0.5];
+    let pink = [1., 0.6, 1., 0.5];
 
     let mut scene = Scene {
         meshes: vec![
@@ -389,16 +417,25 @@ pub fn render(mut state: State) {
             point_lights: vec![
                 // The camera-oriented *flashlight*. Moves with the camera.
                 PointLight {
-                    type_: LightType::Directional(Vec3::new_zero()),
-                    diffuse_intensity: 30.,
-                    specular_intensity: 300.,
+                    type_: LightType::Directional{ direction: Vec3::new_zero(), fov: FLASHLIGHT_FOV },
+                    diffuse_intensity: 20.,
+                    specular_intensity: 20.,
                     ..Default::default()
                 },
+                // A fixed light, from *above*
                 PointLight {
                     diffuse_color: white,
                     specular_color: white,
-                    diffuse_intensity: 40_000.,
-                    specular_intensity: 40_000.,
+                    diffuse_intensity: 35_000.,
+                    specular_intensity: 35_000.,
+                    ..Default::default()
+                },
+                // A light on the docking site, if applicable.
+                PointLight {
+                    diffuse_color: pink,
+                    specular_color: pink,
+                    diffuse_intensity: 0.,
+                    specular_intensity: 0.,
                     ..Default::default()
                 },
             ],
@@ -422,6 +459,8 @@ pub fn render(mut state: State) {
 
     mol_drawing::draw_molecule(&mut state, &mut scene, true);
     mol_drawing::draw_ligand(&mut state, &mut scene, true);
+
+    set_flashlight(&mut scene);
 
     graphics::run(
         state,
