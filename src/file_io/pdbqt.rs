@@ -89,11 +89,11 @@ impl Molecule {
                 let element = Element::from_letter(&name[..1]).unwrap_or(Element::Carbon);
 
                 let res_name = line[17..21].trim();
-                let residue_type = ResidueType::from_str(&res_name);
+                let residue_type = ResidueType::from_str(res_name);
                 let mut role = None;
 
                 role = match residue_type {
-                    ResidueType::AminoAcid(_aa) => Some(AtomRole::from_name(&res_name)),
+                    ResidueType::AminoAcid(_aa) => Some(AtomRole::from_name(res_name)),
                     ResidueType::Water => Some(AtomRole::Water),
                     _ => None,
                 };

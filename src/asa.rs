@@ -63,6 +63,8 @@ impl AtomGrid {
     fn new(atoms: &[Atom], cell_size: f32) -> Self {
         let (min_bounds, max_bounds) = compute_bounding_box(atoms);
 
+        // todo: Replace this with your pairs fn A/R.
+
         // Build the hash map of cell -> atom indices.
         let mut cells: HashMap<(i32, i32, i32), Vec<usize>> = HashMap::new();
         for (i, atom) in atoms.iter().enumerate() {
@@ -84,7 +86,7 @@ impl AtomGrid {
                         let nx = ix + dx;
                         let ny = iy + dy;
                         let nz = iz + dz;
-                        cells.entry((nx, ny, nz)).or_insert_with(Vec::new).push(i);
+                        cells.entry((nx, ny, nz)).or_default().push(i);
                     }
                 }
             }

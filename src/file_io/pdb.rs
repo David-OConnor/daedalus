@@ -48,7 +48,7 @@ impl Atom {
             occupancy: None,
             temperature_factor: None,
             partial_charge: None,
-            dock_type: Some(DockType::from_str(atom_pdb.name())),
+            dock_type: Some(DockType::from_str(atom_pdb.name())), // Updated later with Donor/Acceptor
         }
     }
 }
@@ -178,6 +178,12 @@ impl Molecule {
         result.populate_hydrogens_angles();
         result.bonds = create_bonds(&result.atoms);
         result.bonds.extend(create_hydrogen_bonds(&result.atoms));
+
+        // todo: Don't like this clone.
+        let atoms_clone = result.atoms.clone();
+        for atom in &mut result.atoms {
+            atom.dock_type = Some(DockType::infer(atom, &result.bonds, &atoms_clone));
+        }
 
         result
     }

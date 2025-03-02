@@ -18,6 +18,8 @@ use url::Url;
 use crate::{Selection, State};
 
 const PDB_BASE_URL: &str = "https://www.rcsb.org/structure";
+const DRUGBANK_BASE_URL: &str = "https://go.drugbank.com/drugs";
+const PUBCHEM_BASE_URL: &str = "https://pubchem.ncbi.nlm.nih.gov/compound";
 const PDB_3D_VIEW_URL: &str = "https://www.rcsb.org/3d-view";
 const PDB_STRUCTURE_FILE_URL: &str = "https://files.rcsb.org/view";
 
@@ -195,7 +197,6 @@ pub fn load_pdb_data() -> Result<Vec<PdbData>, ReqError> {
 
 /// Open a PDB search for this protein's sequence, given a PDB ID, which we load from the API.
 pub fn open_pdb(pdb_id: &str) {
-    // Open the URL in the default web browser
     if let Err(e) = webbrowser::open(&format!("{PDB_BASE_URL}/{pdb_id}")) {
         eprintln!("Failed to open the web browser: {:?}", e);
     }
@@ -203,8 +204,19 @@ pub fn open_pdb(pdb_id: &str) {
 
 /// Open a PDB search for this protein's sequence, given a PDB ID, which we load from the API.
 pub fn open_pdb_3d_view(pdb_id: &str) {
-    // Open the URL in the default web browser
     if let Err(e) = webbrowser::open(&format!("{PDB_3D_VIEW_URL}/{pdb_id}")) {
+        eprintln!("Failed to open the web browser: {:?}", e);
+    }
+}
+
+pub fn open_drugbank(id: &str) {
+    if let Err(e) = webbrowser::open(&format!("{DRUGBANK_BASE_URL}/{id}")) {
+        eprintln!("Failed to open the web browser: {:?}", e);
+    }
+}
+
+pub fn open_pubchem(id: u32) {
+    if let Err(e) = webbrowser::open(&format!("{PUBCHEM_BASE_URL}/{id}")) {
         eprintln!("Failed to open the web browser: {:?}", e);
     }
 }

@@ -267,7 +267,7 @@ impl Display for TorsionStatus {
 
 #[derive(Debug, Default)]
 pub struct UnitCellDims {
-    /// Lenghts in Angstroms.
+    /// Lengths in Angstroms.
     pub a: f32,
     pub b: f32,
     pub c: f32,

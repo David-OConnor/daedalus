@@ -14,9 +14,9 @@ use crate::{
     render,
     render::{
         ATOM_SHINYNESS, BALL_STICK_RADIUS, BALL_STICK_RADIUS_H, BODY_SHINYNESS, BOND_RADIUS,
-        CAM_INIT_OFFSET, COLOR_AA_NON_RESIDUE, COLOR_H_BOND, COLOR_SELECTED, COLOR_SFC_DOT, Color,
-        MESH_BOND, MESH_SPHERE, MESH_SPHERE_LOWRES, MESH_SURFACE, RADIUS_H_BOND, RADIUS_SFC_DOT,
-        RENDER_DIST,
+        CAM_INIT_OFFSET, COLOR_AA_NON_RESIDUE, COLOR_DOCKING_BOX, COLOR_H_BOND, COLOR_SELECTED,
+        COLOR_SFC_DOT, Color, MESH_BOND, MESH_BOX, MESH_SPHERE, MESH_SPHERE_LOWRES, MESH_SURFACE,
+        RADIUS_H_BOND, RADIUS_SFC_DOT, RENDER_DIST,
     },
 };
 
@@ -61,10 +61,10 @@ fn atom_color(
     let mut result = match view_sel_level {
         ViewSelLevel::Atom => atom.element.color(),
         ViewSelLevel::Residue => {
-            let c = match atom.residue_type {
-                ResidueType::AminoAcid(aa) => aa_color(aa),
-                _ => COLOR_AA_NON_RESIDUE,
-            };
+          match atom.residue_type {
+                 ResidueType::AminoAcid(aa) => aa_color(aa),
+               _ => COLOR_AA_NON_RESIDUE,
+           }
             // Below is currently equivalent:
             // for res in &mol.residues {
             //     if res.atoms.contains(&i) {
@@ -73,7 +73,6 @@ fn atom_color(
             //         }
             //     }
             // }
-            c
         }
     };
 
@@ -381,8 +380,8 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene, update_cam_lighting: bo
         let atom_0 = &atoms_rotated[bond.atom_0];
         let atom_1 = &atoms_rotated[bond.atom_1];
 
-        let posit_0: Vec3 = (atom_0.posit + ligand.docking_init.site_posit).into();
-        let posit_1: Vec3 = (atom_1.posit + ligand.docking_init.site_posit).into();
+        let posit_0: Vec3 = (atom_0.posit + ligand.docking_init.site_center).into();
+        let posit_1: Vec3 = (atom_1.posit + ligand.docking_init.site_center).into();
 
         let color_temp = (0., 0.4, 1.);
 
@@ -395,6 +394,18 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene, update_cam_lighting: bo
             bond.bond_type,
         );
     }
+
+    // todo: This needs to be transparent.
+    // Add a box for the docking site.
+    scene.entities.push(Entity::new(
+        MESH_BOX,
+        ligand.docking_init.site_center.into(),
+        Quaternion::new_identity(),
+        // todo: Scale in different dims if you allow it to be non-box
+        ligand.docking_init.site_box_size as f32,
+        COLOR_DOCKING_BOX,
+        ATOM_SHINYNESS,
+    ))
 }
 
 /// Refreshes entities with the model passed.
@@ -604,14 +615,14 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
             let posit_1: Vec3 = atom_1.posit.into();
 
             let color_0 = atom_color(
-                &atom_0,
+                atom_0,
                 bond.atom_0,
                 &mol.residues,
                 state.selection,
                 state.ui.view_sel_level,
             );
             let color_1 = atom_color(
-                &atom_1,
+                atom_1,
                 bond.atom_1,
                 &mol.residues,
                 state.selection,

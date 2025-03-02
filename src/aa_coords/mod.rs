@@ -158,7 +158,7 @@ fn find_bonded_atoms<'a>(
     atom_i: usize,
 ) -> Vec<(usize, &'a Atom)> {
     atoms
-        .into_iter()
+        .iter()
         .enumerate()
         .filter(|(j, a)| {
             // todo: Adj this len A/R, or calc it per-branch with a fn.
@@ -210,7 +210,7 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
         ..h_default.clone()
     };
 
-    for (i, atom) in atoms.into_iter().enumerate() {
+    for (i, atom) in atoms.iter().enumerate() {
         if atom.role.is_none() {
             continue;
         }
@@ -309,11 +309,11 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
                         hydrogens.push(Atom {
                             posit: atom.posit
                                 - tetra_atoms(
-                                    atom.posit,
-                                    atoms_bonded[0].1.posit,
-                                    atoms_bonded[1].1.posit,
-                                    atoms_bonded[2].1.posit,
-                                ) * LEN_CALPHA_H,
+                                atom.posit,
+                                atoms_bonded[0].1.posit,
+                                atoms_bonded[1].1.posit,
+                                atoms_bonded[2].1.posit,
+                            ) * LEN_CALPHA_H,
                             ..h_default_sc.clone()
                         });
                     }
@@ -527,13 +527,10 @@ pub fn aa_data_from_coords(
         if atom_sc.role.is_none() {
             continue;
         }
-        match atom_sc.role.as_ref().unwrap() {
-            AtomRole::Sidechain => {
-                if atom_sc.element == Element::Carbon {
-                    posits_sc.push(atom_sc.posit);
-                }
+        if atom_sc.role.as_ref().unwrap() == &AtomRole::Sidechain {
+            if atom_sc.element == Element::Carbon {
+                posits_sc.push(atom_sc.posit);
             }
-            _ => (),
         }
     }
 
@@ -541,7 +538,7 @@ pub fn aa_data_from_coords(
         eprintln!("Error: Could not find sidechain atom.");
         // Note: This will also populate hydrogens on first and last backbones, and potentially
         // on residues that don't have roles marked.
-        add_h_sidechain(&mut hydrogens, &atoms, &h_default);
+        add_h_sidechain(&mut hydrogens, atoms, &h_default);
         // todo: Returning these posits here is wonky potentially.
         return (dihedral, hydrogens, c_alpha_posit, c_alpha_posit);
     }
@@ -561,14 +558,14 @@ pub fn aa_data_from_coords(
     hydrogens.push(Atom {
         posit: c_alpha_posit
             + tetra_legs(
-                -bond_ca_n.to_normalized(),
-                bond_cp_ca.to_normalized(),
-                -bond_ca_sidechain.to_normalized(),
-            ) * LEN_CALPHA_H,
+            -bond_ca_n.to_normalized(),
+            bond_cp_ca.to_normalized(),
+            -bond_ca_sidechain.to_normalized(),
+        ) * LEN_CALPHA_H,
         ..h_default.clone()
     });
 
-    add_h_sidechain(&mut hydrogens, &atoms, &h_default);
+    add_h_sidechain(&mut hydrogens, atoms, &h_default);
 
     (dihedral, hydrogens, c_p_posit, c_alpha_posit)
 }

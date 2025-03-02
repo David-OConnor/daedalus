@@ -8,7 +8,7 @@ use std::{
 use egui::{Color32, ComboBox, Context, RichText, Slider, TextEdit, TopBottomPanel, Ui};
 use graphics::{Camera, EngineUpdates, RIGHT_VEC, Scene, UP_VEC};
 use lin_alg::f32::{Quaternion, Vec3};
-use na_seq::AaIdent;
+use na_seq::{AaIdent, ligation::ligate};
 
 use crate::{
     CamSnapshot, Selection, State, ViewSelLevel,
@@ -20,7 +20,7 @@ use crate::{
     download_pdb::load_rcsb,
     mol_drawing::{MoleculeView, draw_ligand, draw_molecule},
     molecule::{BondType, Molecule, ResidueType},
-    rcsb_api::open_pdb,
+    rcsb_api::{open_drugbank, open_pdb, open_pubchem},
     render::{CAM_INIT_OFFSET, RENDER_DIST},
     util::{cam_look_at, check_prefs_save, cycle_res_selected, select_from_search},
 };
@@ -63,7 +63,7 @@ fn load_file(
     engine_updates: &mut EngineUpdates,
     ligand_load: bool,
 ) {
-    state.open_molecule(&path, ligand_load);
+    state.open_molecule(path, ligand_load);
 
     // todo: These only if successful.
     *redraw = true;
@@ -109,7 +109,7 @@ pub fn handle_input(
         // Check for file drop
         if let Some(dropped_files) = ip.raw.dropped_files.first() {
             if let Some(path) = &dropped_files.path {
-                load_file(&path, state, redraw, reset_cam, engine_updates, false);
+                load_file(path, state, redraw, reset_cam, engine_updates, false);
             }
         }
     });
@@ -577,7 +577,10 @@ fn residue_search(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
         //     }
         // }
 
+        // todo: Delegate to a docking fn.
         if state.molecule.is_some() && state.ligand.is_some() {
+            let ligand = &mut state.ligand.as_mut().unwrap();
+
             if state.babel_avail {
                 if ui.button("Prepare (Babel)").clicked() {
                     let mut success_tgt = false;
@@ -594,11 +597,7 @@ fn residue_search(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
                     }
 
                     if let Some(path) = &state.to_save.last_ligand_opened {
-                        if let Err(e) = prepare_ligand(
-                            path,
-                            &state.ligand.as_ref().unwrap().molecule.ident,
-                            false,
-                        ) {
+                        if let Err(e) = prepare_ligand(path, &ligand.molecule.ident, false) {
                             eprintln!("Error: Unable to process ligand molecule: {e:?}");
                         } else {
                             success_ligand = true;
@@ -620,8 +619,6 @@ fn residue_search(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
             if ui.button("Dock").clicked() {
                 // let tgt = state.molecule.as_ref().unwrap();
                 let mol = state.molecule.as_ref().unwrap();
-                let ligand = state.ligand.as_ref().unwrap();
-
                 // find_optimal_pose(tgt, ligand, &Default::default());
 
                 // Allow the user to select the autodock executable.
@@ -644,6 +641,48 @@ fn residue_search(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
                     }
                 } else {
                     eprintln!("No Autodock Vina install located yet.");
+                }
+            }
+
+            ui.label("Docking site setup:");
+            ui.label("Center:");
+
+            if ui
+                .add(TextEdit::singleline(&mut state.ui.docking_site_x).desired_width(30.))
+                .changed()
+            {
+                if let Ok(v) = state.ui.docking_site_x.parse::<f64>() {
+                    ligand.docking_init.site_center.x = v;
+                    *redraw = true;
+                }
+            }
+            if ui
+                .add(TextEdit::singleline(&mut state.ui.docking_site_y).desired_width(30.))
+                .changed()
+            {
+                if let Ok(v) = state.ui.docking_site_y.parse::<f64>() {
+                    ligand.docking_init.site_center.y = v;
+                    *redraw = true;
+                }
+            }
+            if ui
+                .add(TextEdit::singleline(&mut state.ui.docking_site_z).desired_width(30.))
+                .changed()
+            {
+                if let Ok(v) = state.ui.docking_site_z.parse::<f64>() {
+                    ligand.docking_init.site_center.z = v;
+                    *redraw = true;
+                }
+            }
+
+            ui.label("Size:");
+            if ui
+                .add(TextEdit::singleline(&mut state.ui.docking_site_size).desired_width(30.))
+                .changed()
+            {
+                if let Ok(v) = state.ui.docking_site_size.parse::<f64>() {
+                    ligand.docking_init.site_box_size = v;
+                    *redraw = true;
                 }
             }
         }
@@ -726,6 +765,42 @@ fn selection_section(
     });
 }
 
+fn mol_descrip(mol: &Molecule, ui: &mut Ui) {
+    ui.heading(RichText::new(mol.ident.clone()).color(Color32::GOLD));
+
+    if let Some(metadata) = &mol.metadata {
+        // Limit size to prevent UI problems.
+        let mut title: String = metadata
+            .prim_cit_title
+            .chars()
+            .take(MAX_TITLE_LEN)
+            .collect();
+        if title.len() != metadata.prim_cit_title.len() {
+            title += "...";
+        }
+        ui.label(RichText::new(title).color(Color32::WHITE).size(12.));
+    }
+
+    if mol.ident.len() <= 5 {
+        // todo: You likely need a better approach.
+        if ui.button("View on RCSB").clicked() {
+            open_pdb(&mol.ident);
+        }
+    }
+
+    if let Some(id) = &mol.drugbank_id {
+        if ui.button("View on Drugbank").clicked() {
+            open_drugbank(id);
+        }
+    }
+
+    if let Some(id) = mol.pubchem_cid {
+        if ui.button("View on PubChem").clicked() {
+            open_pubchem(id);
+        }
+    }
+}
+
 /// This function draws the (immediate-mode) GUI.
 /// [UI items](https://docs.rs/egui/latest/egui/struct.Ui.html)
 pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> EngineUpdates {
@@ -748,23 +823,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         ui.horizontal(|ui| {
             let mut metadata_loaded = false; // avoids borrow error.
             if let Some(mol) = &mut state.molecule {
-                ui.heading(RichText::new(mol.ident.clone()).color(Color32::GOLD));
-
-                if let Some(metadata) = &mol.metadata {
-                    // Limit size to prevent UI problems.
-                    let mut title: String = metadata
-                        .prim_cit_title
-                        .chars()
-                        .take(MAX_TITLE_LEN)
-                        .collect();
-                    if title.len() != metadata.prim_cit_title.len() {
-                        title += "...";
-                    }
-                    ui.label(RichText::new(title).color(Color32::WHITE).size(12.));
-                }
-                if ui.button("View on RCSB").clicked() {
-                    open_pdb(&mol.ident);
-                }
+                mol_descrip(mol, ui);
                 ui.add_space(COL_SPACING);
             }
 
@@ -841,6 +900,13 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 redraw = true;
             }
         });
+
+        ui.add_space(ROW_SPACING);
+        if let Some(ligand) = &mut state.ligand {
+            ui.horizontal(|ui| {
+                mol_descrip(&ligand.molecule, ui);
+            });
+        }
 
         ui.add_space(ROW_SPACING);
         selection_section(state, scene, &mut redraw, &mut engine_updates, ui);

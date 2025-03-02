@@ -39,6 +39,7 @@ pub const MESH_CUBE: usize = 1;
 pub const MESH_BOND: usize = 2;
 pub const MESH_SPHERE_LOWRES: usize = 3;
 pub const MESH_SURFACE: usize = 4; // Van Der Waals surface.
+pub const MESH_BOX: usize = 5;
 
 const SELECTION_DIST_THRESH_SMALL: f32 = 0.7; // e.g. ball + stick
 const SELECTION_DIST_THRESH_LARGE: f32 = 1.3; // e.g. VDW views.
@@ -54,6 +55,7 @@ pub const BOND_RADIUS_DOUBLE: f32 = 0.07;
 
 pub const RADIUS_SFC_DOT: f32 = 0.05;
 pub const COLOR_SFC_DOT: Color = (0.7, 0.7, 0.7);
+pub const COLOR_DOCKING_BOX: Color = (0.3, 0.3, 0.9);
 
 pub const COLOR_SELECTED: Color = (1., 0., 0.);
 pub const COLOR_H_BOND: Color = (0.2, 0.2, 1.);
@@ -366,6 +368,7 @@ pub fn render(mut state: State) {
             Mesh::new_cylinder(1., BOND_RADIUS, 20),
             Mesh::new_sphere(1., 8, 8), // low-res sphere
             Mesh::new_box(1., 1., 1.),  // Placeholder for a VDW surface; populated later.
+            Mesh::new_box(1., 1., 1.),
         ],
         entities: Vec::new(),
         camera: Camera {

@@ -202,6 +202,10 @@ struct StateUi {
     middle_click_down: bool,
     autodock_path_valid: bool,
     mouse_in_window: bool,
+    docking_site_x: String,
+    docking_site_y: String,
+    docking_site_z: String,
+    docking_site_size: String,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]
@@ -301,12 +305,19 @@ impl State {
         match molecule {
             Ok(mol) => {
                 if is_ligand {
+                    let docking_init = DockingInit {
+                        site_center: Vec3F64::new(0., 0., 30.),
+                        site_box_size: 3.,
+                    };
+
+                    self.ui.docking_site_x = docking_init.site_center.x.to_string();
+                    self.ui.docking_site_y = docking_init.site_center.y.to_string();
+                    self.ui.docking_site_z = docking_init.site_center.z.to_string();
+                    self.ui.docking_site_size = docking_init.site_box_size.to_string();
+
                     self.ligand = Some(Ligand {
                         molecule: mol,
-                        docking_init: DockingInit {
-                            site_posit: Vec3F64::new(0., 0., 30.),
-                            site_box_size: 3.,
-                        },
+                        docking_init,
                         orientation: QuaternionF64::new_identity(),
                         torsions: Vec::new(),
                         unit_cell_dims: Default::default(),

@@ -88,9 +88,11 @@ impl Default for GeneticAlgorithmParameters {
 }
 
 #[derive(Debug, Default)]
+/// Area IVO the docking site.
 pub struct DockingInit {
-    pub site_posit: Vec3,
+    pub site_center: Vec3,
     pub site_box_size: f64, // Assume square. // todo: Allow diff dims
+                            // todo: Num points in each dimension?
 }
 
 enum ConformationType {
@@ -139,9 +141,9 @@ fn make_posits_orientations(
     for i in 0..nx {
         for j in 0..ny {
             for k in 0..nz {
-                let x = init.site_posit.x - init.site_box_size + (i as f64 + 0.5) * dx;
-                let y = init.site_posit.y - init.site_box_size + (j as f64 + 0.5) * dy;
-                let z = init.site_posit.z - init.site_box_size + (k as f64 + 0.5) * dz;
+                let x = init.site_center.x - init.site_box_size + (i as f64 + 0.5) * dx;
+                let y = init.site_center.y - init.site_box_size + (j as f64 + 0.5) * dy;
+                let z = init.site_center.z - init.site_box_size + (k as f64 + 0.5) * dz;
                 ligand_posits.push(Vec3::new(x, y, z));
             }
         }
@@ -206,7 +208,7 @@ pub fn find_optimal_pose(
                 },
             };
 
-            let energy = binding_energy(&target, &ligand.molecule, &pose);
+            let energy = binding_energy(target, &ligand.molecule, &pose);
 
             if energy < best_energy {
                 best_energy = energy;
@@ -250,11 +252,11 @@ pub fn run_adv(
             "--out",
             output_filename,
             "--center_x",
-            &init.site_posit.x.to_string(),
+            &init.site_center.x.to_string(),
             "--center_y",
-            &init.site_posit.y.to_string(),
+            &init.site_center.y.to_string(),
             "--center_z",
-            &init.site_posit.z.to_string(),
+            &init.site_center.z.to_string(),
             "--size_x",
             &init.site_box_size.to_string(),
             "--size_y",

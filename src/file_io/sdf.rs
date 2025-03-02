@@ -12,6 +12,7 @@ use lin_alg::f64::Vec3;
 
 use crate::{
     bond_inference::{create_bonds, create_hydrogen_bonds},
+    docking::docking_prep::DockType,
     element::Element,
     molecule::{Atom, Chain, Molecule, Residue, ResidueType},
     util::mol_center_size,
@@ -200,6 +201,12 @@ impl Molecule {
         result.populate_hydrogens_angles();
         result.bonds = create_bonds(&result.atoms);
         result.bonds.extend(create_hydrogen_bonds(&result.atoms));
+
+        // todo: Don't like this clone.
+        let atoms_clone = result.atoms.clone();
+        for atom in &mut result.atoms {
+            atom.dock_type = Some(DockType::infer(atom, &result.bonds, &atoms_clone));
+        }
 
         Ok(result)
     }

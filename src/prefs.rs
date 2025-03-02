@@ -46,7 +46,7 @@ impl PerMolToSave {
         }
 
         Self {
-            selection: state.selection.clone(),
+            selection: state.selection,
             cam_snapshots: state.cam_snapshots.clone(),
             mol_view: state.ui.mol_view,
             view_sel_level: state.ui.view_sel_level,
