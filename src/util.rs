@@ -5,7 +5,7 @@ use std::{
     time::Instant,
 };
 
-use graphics::{Camera, FWD_VEC};
+use graphics::{Camera, ControlScheme, FWD_VEC, Scene};
 use lin_alg::{
     f32::{Quaternion, Vec3 as Vec3F32},
     f64::Vec3,
@@ -194,7 +194,7 @@ pub fn select_from_search(state: &mut State) {
     }
 }
 
-pub fn cycle_res_selected(state: &mut State, reverse: bool) {
+pub fn cycle_res_selected(state: &mut State, scene: &mut Scene, reverse: bool) {
     if let Some(mol) = &state.molecule {
         state.ui.view_sel_level = ViewSelLevel::Residue;
 
@@ -225,6 +225,10 @@ pub fn cycle_res_selected(state: &mut State, reverse: bool) {
                 }
             }
         }
+    }
+
+    if let ControlScheme::Arc { center } = &mut scene.input_settings.control_scheme {
+        *center = orbit_center(state);
     }
 }
 
@@ -320,16 +324,68 @@ pub fn setup_neighbor_pairs(posits: &[&Vec3], grid_size: f64) -> Vec<(usize, usi
         }
     }
 
-    let mut result_new = Vec::new();
-    let mut seen = HashSet::new();
-    for (i, j) in result.iter() {
-        if seen.contains(&(i, j)) && seen.contains(&(j, i)) {
-            continue;
+    // todo: Broken still...
+    // todo: Put back and fix.
+    // let mut result_no_dupes = Vec::new();
+    // let mut seen = HashSet::new();
+    // for (i, j) in result.iter() {
+    //     if seen.contains(&(i, j)) || seen.contains(&(j, i)) {
+    //         continue;
+    //     } else {
+    //         seen.insert((i, j));
+    //         result_no_dupes.push((*i, *j));
+    //     }
+    // }
+
+    // result_no_dupes
+    result
+}
+
+/// Based on selection status and if a molecule is open, find the center for the orbit camera.
+pub fn orbit_center(state: &State) -> Vec3F32 {
+    if state.ui.orbit_around_selection {
+        match state.selection {
+            Selection::Atom(i) => {
+                if let Some(mol) = &state.molecule {
+                    match mol.atoms.get(i) {
+                        Some(a) => a.posit.into(),
+                        None => Vec3F32::new_zero(),
+                    }
+                } else {
+                    Vec3F32::new_zero()
+                }
+            }
+            Selection::Residue(i) => {
+                if let Some(mol) = &state.molecule {
+                    match mol.residues.get(i) {
+                        Some(res) => {
+                            match mol.atoms.get(match res.atoms.first() {
+                                Some(a) => *a,
+                                None => return Vec3F32::new_zero(),
+                            }) {
+                                Some(a) => a.posit.into(),
+                                None => Vec3F32::new_zero(),
+                            }
+                        }
+                        None => Vec3F32::new_zero(),
+                    }
+                } else {
+                    Vec3F32::new_zero()
+                }
+            }
+            Selection::None => {
+                if let Some(mol) = &state.molecule {
+                    mol.center.into()
+                } else {
+                    lin_alg::f32::Vec3::new_zero()
+                }
+            }
+        }
+    } else {
+        if let Some(mol) = &state.molecule {
+            mol.center.into()
         } else {
-            seen.insert((i, j));
-            result_new.push((*i, *j));
+            Vec3F32::new_zero()
         }
     }
-
-    result_new
 }

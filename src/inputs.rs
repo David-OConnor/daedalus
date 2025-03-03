@@ -1,7 +1,7 @@
 //! Handles user inputs, e.g. from keyboard and mouse.
 
 use graphics::{
-    DeviceEvent, ElementState, EngineUpdates, FWD_VEC, Scene, WindowEvent,
+    ControlScheme, DeviceEvent, ElementState, EngineUpdates, FWD_VEC, Scene, WindowEvent,
     event::MouseScrollDelta,
     winit::keyboard::{KeyCode, PhysicalKey::Code},
 };
@@ -15,13 +15,14 @@ use crate::{
     State, mol_drawing,
     mol_drawing::MoleculeView,
     render,
-    util::{cycle_res_selected, find_selected_atom, points_along_ray},
+    util::{cycle_res_selected, find_selected_atom, orbit_center, points_along_ray},
 };
 
 pub const MOVEMENT_SENS: f32 = 12.;
 pub const RUN_FACTOR: f32 = 6.; // i.e. shift key multiplier
 
 const SCROLL_MOVE_AMT: f32 = 4.;
+const SCROLL_ROTATE_AMT: f32 = 12.;
 
 const SELECTION_DIST_THRESH_SMALL: f32 = 0.7; // e.g. ball + stick
 const SELECTION_DIST_THRESH_LARGE: f32 = 1.3; // e.g. VDW views.
@@ -58,12 +59,25 @@ pub fn event_dev_handler(
         DeviceEvent::MouseWheel { delta } => match delta {
             MouseScrollDelta::PixelDelta(_) => (),
             MouseScrollDelta::LineDelta(_x, y) => {
-                let mut movement_vec = Vec3::new(0., 0., SCROLL_MOVE_AMT);
-                if y < 0. {
-                    movement_vec *= -1.;
-                }
+                if state_.ui.left_click_down {
+                    // Roll if left button down while scrolling?
+                    let fwd = scene.camera.orientation.rotate_vec(FWD_VEC);
 
-                scene.camera.position += scene.camera.orientation.rotate_vec(movement_vec);
+                    let mut rot_amt = -SCROLL_ROTATE_AMT * dt;
+                    if y > 0. {
+                        rot_amt *= -1.;
+                    }
+
+                    let rotator = Quaternion::from_axis_angle(fwd, rot_amt);
+                    scene.camera.orientation = rotator * scene.camera.orientation;
+                } else {
+                    let mut movement_vec = Vec3::new(0., 0., SCROLL_MOVE_AMT);
+                    if y < 0. {
+                        movement_vec *= -1.;
+                    }
+
+                    scene.camera.position += scene.camera.orientation.rotate_vec(movement_vec);
+                }
                 updates.camera = true;
             }
         },
@@ -80,6 +94,11 @@ pub fn event_dev_handler(
                 // See note about camera movement resetting the snapshot. This impliles click + drag;
                 // we should probalby only do this when mouse movement is present too.
                 freelook = true;
+
+                state_.ui.left_click_down = match state {
+                    ElementState::Pressed => true,
+                    ElementState::Released => false,
+                }
             }
             if button == 1 {
                 // Right click
@@ -127,6 +146,12 @@ pub fn event_dev_handler(
                                     &mol.chains,
                                 );
 
+                                if let ControlScheme::Arc { center } =
+                                    &mut scene.input_settings.control_scheme
+                                {
+                                    *center = orbit_center(state_);
+                                }
+
                                 // todo: Debug code to draw teh ray on screen, so we can see why the selection is off.
                                 // {
                                 //     let center = (selected_ray.0 + selected_ray.1) / 2.;
@@ -169,11 +194,11 @@ pub fn event_dev_handler(
             match key.state {
                 ElementState::Pressed => match key.physical_key {
                     Code(KeyCode::ArrowLeft) => {
-                        cycle_res_selected(state_, true);
+                        cycle_res_selected(state_, scene, true);
                         redraw = true;
                     }
                     Code(KeyCode::ArrowRight) => {
-                        cycle_res_selected(state_, false);
+                        cycle_res_selected(state_, scene, false);
                         redraw = true;
                     }
                     // todo: Temp to test Ligand rotation

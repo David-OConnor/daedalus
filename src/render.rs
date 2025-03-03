@@ -169,18 +169,21 @@ pub fn render(mut state: State) {
                 },
             ],
         },
+        input_settings: InputSettings {
+            // todo temp
+            control_scheme: ControlScheme::Arc {
+                center: Vec3::new(-22.4, -7.8, 11.),
+            },
+            // control_scheme: ControlScheme::FreeCamera,
+            move_sens: MOVEMENT_SENS,
+            run_factor: RUN_FACTOR,
+            ..Default::default()
+        },
         background_color: BACKGROUND_COLOR,
         window_size: (WINDOW_SIZE_X, WINDOW_SIZE_Y),
         window_title: WINDOW_TITLE.to_owned(),
     };
 
-    let input_settings = InputSettings {
-        initial_controls: ControlScheme::FreeCamera,
-        // initial_controls: ControlScheme::Arc{ center: Vec3::new_zero()},
-        move_sens: MOVEMENT_SENS,
-        run_factor: RUN_FACTOR,
-        ..Default::default()
-    };
     let ui_settings = UiSettings {
         layout: UiLayout::Top,
         icon_path: Some("resources/icon.png".to_owned()),
@@ -194,7 +197,6 @@ pub fn render(mut state: State) {
     graphics::run(
         state,
         scene,
-        input_settings,
         ui_settings,
         Default::default(),
         render_handler,

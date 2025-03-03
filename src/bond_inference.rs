@@ -5,7 +5,7 @@
 //! Some info here: https://www.ruppweb.org/Xray/tutorial/protein_structure.htm
 //! https://itp.uni-frankfurt.de/~engel/amino.html
 //!
-//! All lengths are in angstrom.
+//! All lengths are in angstrom (Å)
 
 use crate::{
     element::{
@@ -41,8 +41,13 @@ impl BondSpecs {
 const COV_BOND_LEN_THRESH: f64 = 0.04; // todo: Adjust A/R based on performance.
 const COV_DIST_GRID: f64 = 1.6; // Slightly larger than the largest bond distance + thresh.
 
-const H_BOND_DIST_THRESH: f64 = 3.5; // Angstrom.
-const H_BOND_DIST_GRID: f64 = 3.6; // Angstrom.
+// Note: Chimera shows H bonds as ranging generally from 2.8 to 3.3.
+const H_BOND_O_O_DIST: f64 = 2.7;
+const H_BOND_N_N_DIST: f64 = 3.05;
+const H_BOND_O_N_DIST: f64 = 2.9;
+
+const H_BOND_DIST_THRESH: f64 = 0.3;
+const H_BOND_DIST_GRID: f64 = 3.5;
 
 #[rustfmt::skip]
 fn get_specs() -> Vec<BondSpecs> {
@@ -228,22 +233,44 @@ pub fn create_hydrogen_bonds(atoms: &[Atom]) -> Vec<Bond> {
         let atom0 = &atoms[i];
         let atom1 = &atoms[j];
 
-        // todo: QC this logic with rules of H bonding.
         if !matches!(atom0.element, Nitrogen | Oxygen)
             || !matches!(atom1.element, Nitrogen | Oxygen)
         {
             continue;
         }
 
-        if (atom0.posit - atom1.posit).magnitude() < H_BOND_DIST_THRESH {
-            result.push(Bond {
-                bond_type: BondType::Hydrogen,
-                // todo: Set it up so atom_0 is always the donor!
-                atom_0: i,
-                atom_1: j,
-                is_backbone: false,
-            });
+        let bond_dist = (atom0.posit - atom1.posit).magnitude();
+
+        // todo: QC this logic with rules of H bonding.
+        if atom0.element == Oxygen && atom1.element == Oxygen {
+            if bond_dist < H_BOND_O_O_DIST - H_BOND_DIST_THRESH
+                || bond_dist > H_BOND_O_O_DIST + H_BOND_DIST_THRESH
+            {
+                continue;
+            }
+        } else if atom0.element == Nitrogen && atom1.element == Nitrogen {
+            if bond_dist < H_BOND_N_N_DIST - H_BOND_DIST_THRESH
+                || bond_dist > H_BOND_N_N_DIST + H_BOND_DIST_THRESH
+            {
+                continue;
+            }
+        } else if (atom0.element == Nitrogen && atom1.element == Oxygen)
+            || (atom1.element == Nitrogen && atom0.element == Oxygen)
+        {
+            if bond_dist < H_BOND_O_N_DIST - H_BOND_DIST_THRESH
+                || bond_dist > H_BOND_O_N_DIST + H_BOND_DIST_THRESH
+            {
+                continue;
+            }
         }
+
+        result.push(Bond {
+            bond_type: BondType::Hydrogen,
+            // todo: Set it up so atom_0 is always the donor!
+            atom_0: i,
+            atom_1: j,
+            is_backbone: false,
+        });
     }
 
     result

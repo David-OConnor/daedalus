@@ -6,7 +6,7 @@ use std::{
 };
 
 use egui::{Color32, ComboBox, Context, RichText, Slider, TextEdit, TopBottomPanel, Ui};
-use graphics::{Camera, EngineUpdates, RIGHT_VEC, Scene, UP_VEC};
+use graphics::{Camera, ControlScheme, EngineUpdates, RIGHT_VEC, Scene, UP_VEC};
 use lin_alg::f32::{Quaternion, Vec3};
 use na_seq::{AaIdent, ligation::ligate};
 
@@ -22,8 +22,8 @@ use crate::{
     mol_drawing::{MoleculeView, draw_ligand, draw_molecule},
     molecule::{BondType, Molecule, ResidueType},
     rcsb_api::{open_drugbank, open_pdb, open_pubchem},
-    render::{CAM_INIT_OFFSET, RENDER_DIST, set_docking_light},
-    util::{cam_look_at, check_prefs_save, cycle_res_selected, select_from_search},
+    render::{CAM_INIT_OFFSET, RENDER_DIST, set_docking_light, set_flashlight},
+    util::{cam_look_at, check_prefs_save, cycle_res_selected, orbit_center, select_from_search},
 };
 
 pub const ROW_SPACING: f32 = 10.;
@@ -43,11 +43,21 @@ const CAM_BUTTON_ROT_STEP: f32 = TAU / 3. * 3.;
 
 const COLOR_INACTIVE: Color32 = Color32::GRAY;
 const COLOR_ACTIVE: Color32 = Color32::LIGHT_GREEN;
+const COLOR_ACTIVE_RADIO: Color32 = Color32::LIGHT_BLUE;
 
 const MAX_TITLE_LEN: usize = 120; // Number of characters to display.
 
 fn active_color(val: bool) -> Color32 {
     if val { COLOR_ACTIVE } else { COLOR_INACTIVE }
+}
+
+/// Visually distinct; fore buttons that operate as radio buttons
+fn active_color_sel(val: bool) -> Color32 {
+    if val {
+        COLOR_ACTIVE_RADIO
+    } else {
+        COLOR_INACTIVE
+    }
 }
 
 /// Update the tilebar to reflect the current molecule
@@ -177,19 +187,25 @@ fn cam_snapshots(
 
     if state.ui.cam_snapshot != prev_snap {
         if let Some(snap_i) = state.ui.cam_snapshot {
-            let snap = &state.cam_snapshots[snap_i];
-            cam.position = snap.position;
-            cam.orientation = snap.orientation;
-            cam.far = snap.far;
+            match state.cam_snapshots.get(snap_i) {
+                Some(snap) => {
+                    cam.position = snap.position;
+                    cam.orientation = snap.orientation;
+                    cam.far = snap.far;
 
-            cam.update_proj_mat(); // In case `far` etc changed.
-            engine_updates.camera = true;
+                    cam.update_proj_mat(); // In case `far` etc changed.
+                    engine_updates.camera = true;
+                }
+                None => {
+                    eprintln!("Error: Could not find snapshot {}", snap_i);
+                }
+            }
         }
     }
 }
 
 fn cam_controls(
-    cam: &mut Camera,
+    scene: &mut Scene,
     state: &mut State,
     engine_updates: &mut EngineUpdates,
     ui: &mut Ui,
@@ -198,6 +214,8 @@ fn cam_controls(
     // todo: Set the position not relative to 0, but  relative to the center of the atoms.
 
     let mut changed = false;
+
+    let cam = &mut scene.camera;
 
     ui.horizontal(|ui| {
         ui.label("Camera:");
@@ -234,6 +252,45 @@ fn cam_controls(
                 cam.orientation = Quaternion::from_axis_angle(UP_VEC, TAU / 4.);
 
                 changed = true;
+            }
+        }
+
+        ui.add_space(COL_SPACING);
+
+        let free_active = scene.input_settings.control_scheme == ControlScheme::FreeCamera;
+        let arc_active = scene.input_settings.control_scheme != ControlScheme::FreeCamera;
+
+        if ui
+            .button(RichText::new("Free").color(active_color_sel(free_active)))
+            .clicked()
+        {
+            scene.input_settings.control_scheme = ControlScheme::FreeCamera;
+            engine_updates.input_settings = true;
+        }
+
+        if ui
+            .button(RichText::new("Arc").color(active_color_sel(arc_active)))
+            .clicked()
+        {
+            let center = match &state.molecule {
+                Some(mol) => mol.center.into(),
+                None => Vec3::new_zero(),
+            };
+            scene.input_settings.control_scheme = ControlScheme::Arc { center };
+            engine_updates.input_settings = true;
+        }
+
+        if arc_active {
+            if ui
+                .button(
+                    RichText::new("Orbit sel").color(active_color(state.ui.orbit_around_selection)),
+                )
+                .clicked()
+            {
+                state.ui.orbit_around_selection = !state.ui.orbit_around_selection;
+
+                let center = orbit_center(state);
+                scene.input_settings.control_scheme = ControlScheme::Arc { center };
             }
         }
 
@@ -367,6 +424,10 @@ fn cam_controls(
 
     if changed {
         engine_updates.camera = true;
+
+        set_flashlight(scene);
+        engine_updates.lighting = true; // flashlight.
+
         state.ui.cam_snapshot = None;
     }
 }
@@ -391,9 +452,14 @@ fn selected_data(mol: &Molecule, selection: Selection, ui: &mut Ui) {
                 None => String::new(),
             };
 
+            // Similar to `Vec3`'s format impl, but with fewer digits.
+            let posit_txt = format!(
+                "|{:.3}, {:.3}, {:.3}|",
+                atom.posit.x, atom.posit.y, atom.posit.z
+            );
             let mut text = format!(
                 "{}  {}  El: {:?}  {aa}  {role}",
-                atom.posit, atom.serial_number, atom.element
+                posit_txt, atom.serial_number, atom.element
             );
 
             // todo: Helper fn for this, and find otehr places in the code where we need it.
@@ -416,8 +482,11 @@ fn selected_data(mol: &Molecule, selection: Selection, ui: &mut Ui) {
     }
 }
 
-fn residue_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
+fn residue_selector(state: &mut State, scene: &mut Scene, redraw: &mut bool, ui: &mut Ui) {
     // This is a bit fuzzy, as the size varies by residue name (Not always 1 for non-AAs), and index digits.
+
+    let mut update_arc_center = false;
+
     if let Some(mol) = &state.molecule {
         if let Some(chain_i) = state.ui.chain_to_pick_res {
             if chain_i >= mol.chains.len() {
@@ -464,10 +533,18 @@ fn residue_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
                         state.ui.view_sel_level = ViewSelLevel::Residue;
                         state.selection = Selection::Residue(i);
 
+                        update_arc_center = true; // Avoids borrow error.
+
                         *redraw = true;
                     }
                 }
             });
+        }
+    }
+
+    if update_arc_center {
+        if let ControlScheme::Arc { center } = &mut scene.input_settings.control_scheme {
+            *center = orbit_center(state);
         }
     }
 }
@@ -560,7 +637,7 @@ fn residue_search(
                 .on_hover_text("Hotkey: Left arrow")
                 .clicked()
             {
-                cycle_res_selected(state, true);
+                cycle_res_selected(state, scene, true);
                 *redraw = true;
             }
             // todo: DRY
@@ -569,7 +646,7 @@ fn residue_search(
                 .on_hover_text("Hotkey: Right arrow")
                 .clicked()
             {
-                cycle_res_selected(state, false);
+                cycle_res_selected(state, scene, false);
                 *redraw = true;
             }
         }
@@ -998,7 +1075,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         ui.add_space(ROW_SPACING);
 
         ui.horizontal(|ui| {
-            cam_controls(&mut scene.camera, state, &mut engine_updates, ui);
+            cam_controls(scene, state, &mut engine_updates, ui);
             // ui.add_space(COL_SPACING * 2.);
             cam_snapshots(&mut scene.camera, state, &mut engine_updates, ui);
         });
@@ -1011,7 +1088,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
                 // todo: Show hide based on AaCategory? i.e. residue.amino_acid.category(). Hydrophilic, acidic etc.
 
-                residue_selector(state, &mut redraw, ui);
+                residue_selector(state, scene, &mut redraw, ui);
             });
         });
 

@@ -47,13 +47,7 @@ impl Molecule {
     /// If residue, get an arbitrary atom. (todo: Get c alpha always).
     pub fn get_sel_atom(&self, sel: Selection) -> Option<&Atom> {
         match sel {
-            Selection::Atom(i) => {
-                if i < self.atoms.len() {
-                    Some(&self.atoms[i])
-                } else {
-                    None
-                }
-            }
+            Selection::Atom(i) => self.atoms.get(i),
             Selection::Residue(i) => {
                 let res = &self.residues[i];
                 if !res.atoms.is_empty() {

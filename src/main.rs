@@ -35,7 +35,7 @@ use std::{
 use bincode::{Decode, Encode};
 use egui_file_dialog::{FileDialog, FileDialogConfig};
 use file_io::{pdb::load_pdb, sdf::load_sdf};
-use graphics::Camera;
+use graphics::{Camera, ControlScheme};
 use lin_alg::{
     f32::{Quaternion, Vec3},
     f64::{Quaternion as QuaternionF64, Vec3 as Vec3F64},
@@ -199,6 +199,7 @@ struct StateUi {
     /// Workaround for a bug or limitation in EGUI's `is_pointer_button_down_on`.
     // inputs_commanded: InputsCommanded,
     visibility: Visibility,
+    left_click_down: bool,
     middle_click_down: bool,
     autodock_path_valid: bool,
     mouse_in_window: bool,
@@ -206,6 +207,8 @@ struct StateUi {
     docking_site_y: String,
     docking_site_z: String,
     docking_site_size: String,
+    /// For the arc/orbit cam only.
+    orbit_around_selection: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]
