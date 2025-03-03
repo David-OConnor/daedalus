@@ -162,32 +162,6 @@ fn get_specs() -> Vec<BondSpecs> {
     ]
 }
 
-/// This is the business logic of evaluating bond lengths. For a single atom pair.
-fn eval_lens(bonds: &mut Vec<Bond>, atoms: &[Atom], i: usize, j: usize, specs: &[BondSpecs]) {
-    let atom_0 = &atoms[i];
-    let atom_1 = &atoms[j];
-
-    let dist = (atom_0.posit - atom_1.posit).magnitude();
-
-    for spec in specs {
-        if !((atom_0.element == spec.elements.0 && atom_1.element == spec.elements.1)
-            || (atom_0.element == spec.elements.1 && atom_1.element == spec.elements.0))
-        {
-            continue;
-        }
-
-        if (dist - spec.len).abs() < COV_BOND_LEN_THRESH {
-            bonds.push(Bond {
-                bond_type: spec.bond_type,
-                atom_0: i,
-                atom_1: j,
-                is_backbone: atom_0.is_backbone() && atom_1.is_backbone(),
-            });
-            break;
-        }
-    }
-}
-
 /// Infer bonds from atom distances. Uses spacial partitioning for efficiency.
 /// We Check pairs only within nearby bins.
 pub fn create_bonds(atoms: &[Atom]) -> Vec<Bond> {
@@ -207,7 +181,28 @@ pub fn create_bonds(atoms: &[Atom]) -> Vec<Bond> {
     // todo it out from the bus logic.
 
     for &(i, j) in &neighbor_pairs {
-        eval_lens(&mut result, atoms, i, j, &specs);
+        let atom_0 = &atoms[i];
+        let atom_1 = &atoms[j];
+
+        let dist = (atom_0.posit - atom_1.posit).magnitude();
+
+        for spec in &specs {
+            if !((atom_0.element == spec.elements.0 && atom_1.element == spec.elements.1)
+                || (atom_0.element == spec.elements.1 && atom_1.element == spec.elements.0))
+            {
+                continue;
+            }
+
+            if (dist - spec.len).abs() < COV_BOND_LEN_THRESH {
+                result.push(Bond {
+                    bond_type: spec.bond_type,
+                    atom_0: i,
+                    atom_1: j,
+                    is_backbone: atom_0.is_backbone() && atom_1.is_backbone(),
+                });
+                break;
+            }
+        }
     }
 
     println!("Bond creation complete.");

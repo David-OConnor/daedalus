@@ -42,10 +42,10 @@ pub fn prepare_target(mol_path: &Path, ident: &str) -> io::Result<()> {
             "-h",
             "--partialcharge gasteiger",
             // "--partialcharge kolman",
-            // `-xr` seems to be required to prevent errors about `ROOT` lines, when Vina reads the PDBQT file.
+            // Outpust a rigid model. (no branches or torsion tree)
+            // todo: `h` to preserve hydrogens
+            // todo: `b` for autoamtic bonding
             "-xr",
-            // "--filter",
-            // "\"not water\""
         ])
         .status()?;
     println!("Complete");

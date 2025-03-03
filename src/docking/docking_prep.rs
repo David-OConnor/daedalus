@@ -190,7 +190,7 @@ impl DockType {
             Self::Na => "NA",
             // Self::O => "O",
             Self::Oa => "OA",
-            Self::Oh => "OH",
+            Self::Oh => "O",
             Self::S => "S",
             Self::Sa => "SA",
             Self::P => "P",
@@ -203,7 +203,7 @@ impl DockType {
             Self::Ag => "AG",
             Self::Br => "BR",
             Self::I => "I",
-            Self::Zn => "ZN",
+            Self::Zn => "", // Appears to be the correct response. Likely for other types here too.
             Self::Fe => "FE",
             Self::Mg => "MG",
             Self::Ca => "CA",
@@ -286,15 +286,13 @@ pub struct Torsion {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-enum PartialChargeType {
+pub enum PartialChargeType {
     Gasteiger,
     Kollman,
 }
 
-fn setup_partial_charges_inner(atoms: &mut [Atom], i: usize, j: usize) {}
-
 /// Note: Hydrogens must already be added prior to adding charges.
-fn setup_partial_charges(atoms: &mut [Atom], charge_type: PartialChargeType) {
+pub fn setup_partial_charges(atoms: &mut [Atom], charge_type: PartialChargeType) {
     if charge_type == PartialChargeType::Kollman {
         unimplemented!()
     }

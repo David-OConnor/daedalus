@@ -14,6 +14,7 @@ use crate::{
     CamSnapshot, Selection, State, ViewSelLevel,
     docking::{
         check_adv_avail,
+        docking_prep::{PartialChargeType, setup_partial_charges},
         docking_prep_external::{prepare_ligand, prepare_target},
         find_optimal_pose, run_adv,
     },
@@ -21,10 +22,9 @@ use crate::{
     mol_drawing::{MoleculeView, draw_ligand, draw_molecule},
     molecule::{BondType, Molecule, ResidueType},
     rcsb_api::{open_drugbank, open_pdb, open_pubchem},
-    render::{CAM_INIT_OFFSET, RENDER_DIST},
+    render::{CAM_INIT_OFFSET, RENDER_DIST, set_docking_light},
     util::{cam_look_at, check_prefs_save, cycle_res_selected, select_from_search},
 };
-use crate::render::set_docking_light;
 
 pub const ROW_SPACING: f32 = 10.;
 pub const COL_SPACING: f32 = 30.;
@@ -529,7 +529,13 @@ fn chain_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
     });
 }
 
-fn residue_search(state: &mut State, scene: &mut Scene, redraw: &mut bool, engine_updates: &mut EngineUpdates, ui: &mut Ui) {
+fn residue_search(
+    state: &mut State,
+    scene: &mut Scene,
+    redraw: &mut bool,
+    engine_updates: &mut EngineUpdates,
+    ui: &mut Ui,
+) {
     ui.horizontal(|ui| {
         let sel_prev = state.selection;
         ui.label("Find residue:");
@@ -814,6 +820,97 @@ fn mol_descrip(mol: &Molecule, ui: &mut Ui) {
     }
 }
 
+fn view_settings(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
+    ui.horizontal(|ui| {
+        chain_selector(state, redraw, ui);
+
+        ui.add_space(COL_SPACING);
+
+        ui.label("View:");
+        let prev_view = state.ui.mol_view;
+        ComboBox::from_id_salt(0)
+            .width(80.)
+            .selected_text(state.ui.mol_view.to_string())
+            .show_ui(ui, |ui| {
+                for view in &[
+                    MoleculeView::Sticks,
+                    MoleculeView::Backbone,
+                    MoleculeView::BallAndStick,
+                    // MoleculeView::Cartoon,
+                    MoleculeView::SpaceFill,
+                    // MoleculeView::Surface, // Partially-implemented, but broken/crashes.
+                    // MoleculeView::Mesh,
+                    MoleculeView::Dots,
+                ] {
+                    ui.selectable_value(&mut state.ui.mol_view, *view, view.to_string());
+                }
+            });
+
+        if state.ui.mol_view != prev_view {
+            *redraw = true;
+        }
+
+        ui.add_space(COL_SPACING);
+
+        ui.label("Vis:");
+
+        let color = active_color(!state.ui.visibility.hide_non_hetero);
+        if ui.button(RichText::new("Peptide").color(color)).clicked() {
+            state.ui.visibility.hide_non_hetero = !state.ui.visibility.hide_non_hetero;
+            *redraw = true;
+        }
+
+        let color = active_color(!state.ui.visibility.hide_hetero);
+        if ui.button(RichText::new("Hetero").color(color)).clicked() {
+            state.ui.visibility.hide_hetero = !state.ui.visibility.hide_hetero;
+            *redraw = true;
+        }
+
+        ui.add_space(COL_SPACING / 2.);
+
+        if !state.ui.visibility.hide_non_hetero {
+            // Subset of peptide.
+            let color = active_color(!state.ui.visibility.hide_sidechains);
+            if ui
+                .button(RichText::new("Sidechains").color(color))
+                .clicked()
+            {
+                state.ui.visibility.hide_sidechains = !state.ui.visibility.hide_sidechains;
+                *redraw = true;
+            }
+
+            let color = active_color(!state.ui.visibility.hide_hydrogen);
+            if ui.button(RichText::new("H").color(color)).clicked() {
+                state.ui.visibility.hide_hydrogen = !state.ui.visibility.hide_hydrogen;
+                *redraw = true;
+            }
+        }
+
+        if !state.ui.visibility.hide_hetero {
+            // Subset of hetero.
+            let color = active_color(!state.ui.visibility.hide_water);
+            if ui.button(RichText::new("Water").color(color)).clicked() {
+                state.ui.visibility.hide_water = !state.ui.visibility.hide_water;
+                *redraw = true;
+            }
+        }
+
+        if state.ligand.is_some() {
+            let color = active_color(!state.ui.visibility.hide_ligand);
+            if ui.button(RichText::new("Ligand").color(color)).clicked() {
+                state.ui.visibility.hide_ligand = !state.ui.visibility.hide_ligand;
+                *redraw = true;
+            }
+        }
+
+        let color = active_color(!state.ui.visibility.hide_h_bonds);
+        if ui.button(RichText::new("H bonds").color(color)).clicked() {
+            state.ui.visibility.hide_h_bonds = !state.ui.visibility.hide_h_bonds;
+            *redraw = true;
+        }
+    });
+}
+
 /// This function draws the (immediate-mode) GUI.
 /// [UI items](https://docs.rs/egui/latest/egui/struct.Ui.html)
 pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> EngineUpdates {
@@ -886,32 +983,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     }
                 }
             }
-
-            ui.add_space(COL_SPACING);
-
-            ui.label("View:");
-            let prev_view = state.ui.mol_view;
-            ComboBox::from_id_salt(0)
-                .width(80.)
-                .selected_text(state.ui.mol_view.to_string())
-                .show_ui(ui, |ui| {
-                    for view in &[
-                        MoleculeView::Sticks,
-                        MoleculeView::Backbone,
-                        MoleculeView::BallAndStick,
-                        // MoleculeView::Cartoon,
-                        MoleculeView::SpaceFill,
-                        // MoleculeView::Surface, // Partially-implemented, but broken/crashes.
-                        // MoleculeView::Mesh,
-                        MoleculeView::Dots,
-                    ] {
-                        ui.selectable_value(&mut state.ui.mol_view, *view, view.to_string());
-                    }
-                });
-
-            if state.ui.mol_view != prev_view {
-                redraw = true;
-            }
         });
 
         ui.add_space(ROW_SPACING);
@@ -936,69 +1007,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
-                ui.horizontal(|ui| {
-                    chain_selector(state, &mut redraw, ui);
-
-                    ui.add_space(COL_SPACING);
-
-                    ui.label("Vis:");
-
-                    let color = active_color(!state.ui.visibility.hide_non_hetero);
-                    if ui.button(RichText::new("Peptide").color(color)).clicked() {
-                        state.ui.visibility.hide_non_hetero = !state.ui.visibility.hide_non_hetero;
-                        redraw = true;
-                    }
-
-                    let color = active_color(!state.ui.visibility.hide_hetero);
-                    if ui.button(RichText::new("Hetero").color(color)).clicked() {
-                        state.ui.visibility.hide_hetero = !state.ui.visibility.hide_hetero;
-                        redraw = true;
-                    }
-
-                    ui.add_space(COL_SPACING / 2.);
-
-                    if !state.ui.visibility.hide_non_hetero {
-                        // Subset of peptide.
-                        let color = active_color(!state.ui.visibility.hide_sidechains);
-                        if ui
-                            .button(RichText::new("Sidechains").color(color))
-                            .clicked()
-                        {
-                            state.ui.visibility.hide_sidechains =
-                                !state.ui.visibility.hide_sidechains;
-                            redraw = true;
-                        }
-
-                        let color = active_color(!state.ui.visibility.hide_hydrogen);
-                        if ui.button(RichText::new("H").color(color)).clicked() {
-                            state.ui.visibility.hide_hydrogen = !state.ui.visibility.hide_hydrogen;
-                            redraw = true;
-                        }
-                    }
-
-                    if !state.ui.visibility.hide_hetero {
-                        // Subset of hetero.
-                        let color = active_color(!state.ui.visibility.hide_water);
-                        if ui.button(RichText::new("Water").color(color)).clicked() {
-                            state.ui.visibility.hide_water = !state.ui.visibility.hide_water;
-                            redraw = true;
-                        }
-                    }
-
-                    if state.ligand.is_some() {
-                        let color = active_color(!state.ui.visibility.hide_ligand);
-                        if ui.button(RichText::new("Ligand").color(color)).clicked() {
-                            state.ui.visibility.hide_ligand = !state.ui.visibility.hide_ligand;
-                            redraw = true;
-                        }
-                    }
-
-                    let color = active_color(!state.ui.visibility.hide_h_bonds);
-                    if ui.button(RichText::new("H bonds").color(color)).clicked() {
-                        state.ui.visibility.hide_h_bonds = !state.ui.visibility.hide_h_bonds;
-                        redraw = true;
-                    }
-                });
+                view_settings(state, &mut redraw, ui);
 
                 // todo: Show hide based on AaCategory? i.e. residue.amino_acid.category(). Hydrophilic, acidic etc.
 
@@ -1045,17 +1054,24 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         }
 
         if let Some(path_dir) = &state.volatile.save_pdbqt_dialog.take_picked() {
-            if let Some(mol) = &state.molecule {
+            if let Some(mol) = &mut state.molecule {
                 let filename = format!("{}_target.pdbqt", mol.ident);
                 let path = Path::new(path_dir).join(filename);
+
+                // todo: You will likely need to add charges earlier, so you can view their data in the UI.
+                setup_partial_charges(&mut mol.atoms, PartialChargeType::Gasteiger);
+
                 if mol.save_pdbqt(&path, None).is_err() {
                     eprintln!("Error saving PDBQT target");
                 }
             }
 
-            if let Some(lig) = &state.ligand {
+            if let Some(lig) = &mut state.ligand {
                 let filename = format!("{}_ligand.pdbqt", lig.molecule.ident);
                 let path = Path::new(path_dir).join(filename);
+
+                setup_partial_charges(&mut lig.molecule.atoms, PartialChargeType::Gasteiger);
+
                 if lig.molecule.save_pdbqt(&path, None).is_err() {
                     eprintln!("Error saving PDBQT ligand");
                 }

@@ -16,10 +16,10 @@ use crate::{
         ATOM_SHINYNESS, BALL_STICK_RADIUS, BALL_STICK_RADIUS_H, BODY_SHINYNESS, BOND_RADIUS,
         CAM_INIT_OFFSET, COLOR_AA_NON_RESIDUE, COLOR_DOCKING_BOX, COLOR_H_BOND, COLOR_SELECTED,
         COLOR_SFC_DOT, Color, MESH_BOND, MESH_BOX, MESH_SPHERE, MESH_SPHERE_LOWRES, MESH_SURFACE,
-        RADIUS_H_BOND, RADIUS_SFC_DOT, RENDER_DIST, set_flashlight, set_static_light,
+        RADIUS_H_BOND, RADIUS_SFC_DOT, RENDER_DIST, set_docking_light, set_flashlight,
+        set_static_light,
     },
 };
-use crate::render::set_docking_light;
 
 #[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]
 pub enum MoleculeView {
@@ -351,14 +351,13 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene, update_cam_lighting: bo
     let ligand = state.ligand.as_ref().unwrap();
     let mol = &ligand.molecule;
 
-
     // Add a box for the docking site.
     scene.entities.push(Entity {
         mesh: MESH_BOX,
         position: ligand.docking_init.site_center.into(),
         scale: ligand.docking_init.site_box_size as f32,
         color: COLOR_DOCKING_BOX,
-        opacity: 0.5,
+        opacity: 0.3,
         shinyness: ATOM_SHINYNESS,
         ..Default::default()
     });
@@ -507,7 +506,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
 
             if let Some(role) = atom.role {
                 if state.ui.visibility.hide_sidechains {
-                    if role == AtomRole::Sidechain {
+                    if matches!(role, AtomRole::Sidechain | AtomRole::H_Sidechain) {
                         continue;
                     }
                 }

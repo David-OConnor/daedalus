@@ -12,6 +12,7 @@ mod download_pdb;
 mod element;
 mod file_io;
 mod input;
+mod inputs;
 mod mol_drawing;
 mod molecule;
 mod navigation;
@@ -139,7 +140,6 @@ impl Default for StateVolatile {
             FileDialog::with_config(cfg_vina).default_file_filter("Executables");
 
         let save_pdbqt_dialog = FileDialog::with_config(cfg_save_pdbqt);
-        // .default_file_filter("Executables");
 
         Self {
             load_dialog,

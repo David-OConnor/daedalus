@@ -253,7 +253,7 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
                         for tetra_bond in [TETRA_B, TETRA_C, TETRA_D] {
                             hydrogens.push(Atom {
                                 posit: atom.posit + rotator.rotate_vec(tetra_bond) * LEN_C_H,
-                                ..h_default.clone()
+                                ..h_default_sc.clone()
                             });
                         }
                     },

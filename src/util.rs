@@ -11,11 +11,12 @@ use lin_alg::{
     f64::Vec3,
 };
 use na_seq::AaIdent;
+
 use crate::{
     PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel,
+    element::Element,
     molecule::{Atom, AtomRole, Bond, Chain, Residue, ResidueType},
 };
-use crate::element::Element;
 
 const MOVE_TO_TARGET_DIST: f32 = 15.;
 
@@ -322,7 +323,7 @@ pub fn setup_neighbor_pairs(posits: &[&Vec3], grid_size: f64) -> Vec<(usize, usi
     let mut result_new = Vec::new();
     let mut seen = HashSet::new();
     for (i, j) in result.iter() {
-        if seen.contains(&(i, j)) || seen.contains(&(j, i)) {
+        if seen.contains(&(i, j)) && seen.contains(&(j, i)) {
             continue;
         } else {
             seen.insert((i, j));

@@ -30,12 +30,13 @@
 //! are rotatable. This format is specialized for docking operations.
 
 use std::{
+    collections::VecDeque,
     io,
     io::ErrorKind,
     path::Path,
     process::{Command, Stdio},
 };
-use std::collections::VecDeque;
+
 use lin_alg::f64::{Quaternion, Vec3};
 use rand::Rng;
 
@@ -238,12 +239,24 @@ fn find_docking_sites(mol: &Molecule) -> Vec<DockingInit> {
 
     for atom in &mol.atoms {
         let p = atom.posit;
-        if p.x < min_x { min_x = p.x; }
-        if p.y < min_y { min_y = p.y; }
-        if p.z < min_z { min_z = p.z; }
-        if p.x > max_x { max_x = p.x; }
-        if p.y > max_y { max_y = p.y; }
-        if p.z > max_z { max_z = p.z; }
+        if p.x < min_x {
+            min_x = p.x;
+        }
+        if p.y < min_y {
+            min_y = p.y;
+        }
+        if p.z < min_z {
+            min_z = p.z;
+        }
+        if p.x > max_x {
+            max_x = p.x;
+        }
+        if p.y > max_y {
+            max_y = p.y;
+        }
+        if p.z > max_z {
+            max_z = p.z;
+        }
     }
 
     // Pad the bounding box slightly, to ensure we capture surface
@@ -313,16 +326,23 @@ fn find_docking_sites(mol: &Molecule) -> Vec<DockingInit> {
         let iy_i = iy as isize;
         let iz_i = iz as isize;
         for (dx, dy, dz) in &[
-            (1, 0, 0), (-1, 0, 0),
-            (0, 1, 0), (0, -1, 0),
-            (0, 0, 1), (0, 0, -1),
+            (1, 0, 0),
+            (-1, 0, 0),
+            (0, 1, 0),
+            (0, -1, 0),
+            (0, 0, 1),
+            (0, 0, -1),
         ] {
             let nx_i = ix_i + dx;
             let ny_i = iy_i + dy;
             let nz_i = iz_i + dz;
-            if nx_i >= 0 && (nx_i as usize) < nx &&
-                ny_i >= 0 && (ny_i as usize) < ny &&
-                nz_i >= 0 && (nz_i as usize) < nz {
+            if nx_i >= 0
+                && (nx_i as usize) < nx
+                && ny_i >= 0
+                && (ny_i as usize) < ny
+                && nz_i >= 0
+                && (nz_i as usize) < nz
+            {
                 neighs.push((nx_i as usize, ny_i as usize, nz_i as usize));
             }
         }

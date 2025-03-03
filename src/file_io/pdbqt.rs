@@ -246,6 +246,7 @@ impl Molecule {
         // For each atom:
         for (i, atom) in self.atoms.iter().enumerate() {
             if let Some(role) = atom.role {
+                // if role == AtomRole::Water || atom.element == Element::Hydrogen {
                 if role == AtomRole::Water {
                     // Skipping water in the context of Docking prep, which is where we expect
                     // PDBQT files to be used.
