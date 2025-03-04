@@ -11,7 +11,6 @@ mod download_pdb;
 // mod drug_like;
 mod element;
 mod file_io;
-mod input;
 mod inputs;
 mod mol_drawing;
 mod molecule;
@@ -35,7 +34,7 @@ use std::{
 use bincode::{Decode, Encode};
 use egui_file_dialog::{FileDialog, FileDialogConfig};
 use file_io::{pdb::load_pdb, sdf::load_sdf};
-use graphics::{Camera, ControlScheme};
+use graphics::{Camera, ControlScheme, InputSettings, InputsCommanded};
 use lin_alg::{
     f32::{Quaternion, Vec3},
     f64::{Quaternion as QuaternionF64, Vec3 as Vec3F64},
@@ -96,6 +95,9 @@ struct StateVolatile {
     // /// Center and size are used for setting the camera. Dependent on the molecule atom positions.
     // mol_center: Vec3,
     // mol_size: f32, // Dimension-agnostic
+    /// We Use this to keep track of key press state for the camera movement, so we can continuously
+    /// update the flashlight when moving.
+    inputs_commanded: InputsCommanded,
 }
 
 impl Default for StateVolatile {
@@ -147,6 +149,7 @@ impl Default for StateVolatile {
             autodock_path_dialog,
             save_pdbqt_dialog,
             ui_height: 0.,
+            inputs_commanded: Default::default(),
         }
     }
 }

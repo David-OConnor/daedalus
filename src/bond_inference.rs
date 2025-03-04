@@ -45,9 +45,15 @@ const COV_BOND_LEN_THRESH: f64 = 0.04; // todo: Adjust A/R based on performance.
 const COV_DIST_GRID: f64 = 1.6; // Slightly larger than the largest bond distance + thresh.
 
 // Note: Chimera shows H bonds as ranging generally from 2.8 to 3.3.
+// Note: These values all depend on which is the donor. Your code doesn't take this into account.
 const H_BOND_O_O_DIST: f64 = 2.7;
 const H_BOND_N_N_DIST: f64 = 3.05;
 const H_BOND_O_N_DIST: f64 = 2.9;
+
+const H_BOND_N_F_DIST: f64 = 2.75;
+const H_BOND_N_S_DIST: f64 = 3.35;
+const H_BOND_S_O_DIST: f64 = 3.35;
+const H_BOND_S_F_DIST: f64 = 3.2; // rarate
 
 const H_BOND_DIST_THRESH: f64 = 0.3;
 const H_BOND_DIST_GRID: f64 = 3.6;
@@ -264,20 +270,22 @@ pub fn create_hydrogen_bonds(atoms: &[Atom], bonds: &[Bond]) -> Vec<HydrogenBond
                 continue;
             }
 
-            // todo: F and S too.
-            let dist_thresh=
-                if donor_heavy.element == Oxygen && acc_candidate.element == Oxygen {
-                        H_BOND_O_O_DIST
-                } else if donor_heavy.element == Nitrogen && acc_candidate.element == Nitrogen {
-                        H_BOND_N_N_DIST
-                } else if (donor_heavy.element == Oxygen && acc_candidate.element == Nitrogen)
-                    || (donor_heavy.element == Nitrogen && acc_candidate.element == Oxygen)
-                {
-                        H_BOND_O_N_DIST
-                } else {
-                    println!("S or F encountered in H bond calc. implement.");
-                    continue;
-                };
+            // todo: Take into account typical lenghs of donor adn receptor; here your order doesn't matter.
+            let dist_thresh = if donor_heavy.element == Oxygen && acc_candidate.element == Oxygen {
+                H_BOND_O_O_DIST
+            } else if donor_heavy.element == Nitrogen && acc_candidate.element == Nitrogen {
+                H_BOND_N_N_DIST
+            } else if (donor_heavy.element == Oxygen && acc_candidate.element == Nitrogen)
+                || (donor_heavy.element == Nitrogen && acc_candidate.element == Oxygen)
+            {
+                H_BOND_O_N_DIST
+            } else if (donor_heavy.element == Fluorine && acc_candidate.element == Nitrogen)
+                || (donor_heavy.element == Nitrogen && acc_candidate.element == Fluorine)
+            {
+                H_BOND_N_F_DIST
+            } else {
+                H_BOND_N_S_DIST // Good enough for the other types, for now.
+            };
 
             let dist_thresh_min = dist_thresh - H_BOND_DIST_THRESH;
             let dist_thresh_max = dist_thresh + H_BOND_DIST_THRESH;
@@ -297,7 +305,7 @@ pub fn create_hydrogen_bonds(atoms: &[Atom], bonds: &[Bond]) -> Vec<HydrogenBond
                     .acos()
             };
 
-            if angle > H_BOND_ANGLE_THRESH  {
+            if angle > H_BOND_ANGLE_THRESH {
                 result.push(HydrogenBond {
                     donor: donor_heavy_i,
                     acceptor: acc_i,

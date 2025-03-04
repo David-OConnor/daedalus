@@ -22,6 +22,7 @@ use crate::{
     mol_drawing::{MoleculeView, draw_ligand, draw_molecule},
     molecule::{BondType, Molecule, ResidueType},
     rcsb_api::{open_drugbank, open_pdb, open_pubchem},
+    render,
     render::{CAM_INIT_OFFSET, RENDER_DIST, set_docking_light, set_flashlight},
     util::{cam_look_at, check_prefs_save, cycle_res_selected, orbit_center, select_from_search},
 };
@@ -1176,6 +1177,12 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
     state.volatile.load_ligand_dialog.update(ctx);
     state.volatile.autodock_path_dialog.update(ctx);
     state.volatile.save_pdbqt_dialog.update(ctx);
+
+    // todo: Appropriate place for this?
+    if state.volatile.inputs_commanded.inputs_present() {
+        set_flashlight(scene);
+        engine_updates.lighting = true;
+    }
 
     state.ui.dt = start.elapsed().as_secs_f32();
 

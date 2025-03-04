@@ -232,35 +232,69 @@ pub fn event_dev_handler(
                 ElementState::Released => (),
             }
 
-            match key.physical_key {
-                // Check the cases for the engine's built-in movement commands, to set the current-snapshot to None.
-                // C+P partially, from `graphics`. These are for press and release.
-                // todo:  You need to check mouse movement too.
-                Code(KeyCode::KeyW) => {
-                    cam_moved = true;
+            // todo: If you enable a direction-dependent flashlight, you will need to modify the mouse movement
+            // todo state too.
+            // Similar code to the engine. Update state so we can update the flashlight while a key is held,
+            // and reset snapshots.
+            if key.state == ElementState::Pressed {
+                match key.physical_key {
+                    // Check the cases for the engine's built-in movement commands, to set the current-snapshot to None.
+                    // C+P partially, from `graphics`. These are for press and release.
+                    // todo:  You need to check mouse movement too.
+                    Code(KeyCode::KeyW) => {
+                        state_.volatile.inputs_commanded.fwd = true;
+                    }
+                    Code(KeyCode::KeyS) => {
+                        state_.volatile.inputs_commanded.back = true;
+                    }
+                    Code(KeyCode::KeyA) => {
+                        state_.volatile.inputs_commanded.left = true;
+                    }
+                    Code(KeyCode::KeyD) => {
+                        state_.volatile.inputs_commanded.right = true;
+                    }
+                    Code(KeyCode::Space) => {
+                        state_.volatile.inputs_commanded.up = true;
+                    }
+                    Code(KeyCode::KeyC) => {
+                        state_.volatile.inputs_commanded.down = true;
+                    }
+                    Code(KeyCode::KeyQ) => {
+                        state_.volatile.inputs_commanded.roll_ccw = true;
+                    }
+                    Code(KeyCode::KeyE) => {
+                        state_.volatile.inputs_commanded.roll_cw = true;
+                    }
+                    _ => (),
                 }
-                Code(KeyCode::KeyS) => {
-                    cam_moved = true;
+            } else if key.state == ElementState::Released {
+                match key.physical_key {
+                    Code(KeyCode::KeyW) => {
+                        state_.volatile.inputs_commanded.fwd = false;
+                    }
+                    Code(KeyCode::KeyS) => {
+                        state_.volatile.inputs_commanded.back = false;
+                    }
+                    Code(KeyCode::KeyA) => {
+                        state_.volatile.inputs_commanded.left = false;
+                    }
+                    Code(KeyCode::KeyD) => {
+                        state_.volatile.inputs_commanded.right = false;
+                    }
+                    Code(KeyCode::Space) => {
+                        state_.volatile.inputs_commanded.up = false;
+                    }
+                    Code(KeyCode::KeyC) => {
+                        state_.volatile.inputs_commanded.down = false;
+                    }
+                    Code(KeyCode::KeyQ) => {
+                        state_.volatile.inputs_commanded.roll_ccw = false;
+                    }
+                    Code(KeyCode::KeyE) => {
+                        state_.volatile.inputs_commanded.roll_cw = false;
+                    }
+                    _ => (),
                 }
-                Code(KeyCode::KeyA) => {
-                    cam_moved = true;
-                }
-                Code(KeyCode::KeyD) => {
-                    cam_moved = true;
-                }
-                Code(KeyCode::Space) => {
-                    cam_moved = true;
-                }
-                Code(KeyCode::KeyC) => {
-                    cam_moved = true;
-                }
-                Code(KeyCode::KeyQ) => {
-                    cam_moved = true;
-                }
-                Code(KeyCode::KeyE) => {
-                    cam_moved = true;
-                }
-                _ => (),
             }
         }
         DeviceEvent::MouseMotion { delta } => {
@@ -293,12 +327,10 @@ pub fn event_dev_handler(
         updates.entities = true;
     }
 
-    // Move the flashlight; it stays with the camera.
-    if cam_moved || updates.camera {
+    // We handle the flashlight elsewhere, as this event handler only fires upon events; not while
+    // a key is held.
+    if state_.volatile.inputs_commanded.inputs_present() {
         state_.ui.cam_snapshot = None;
-
-        render::set_flashlight(scene);
-        updates.lighting = true;
     }
 
     updates
