@@ -60,10 +60,10 @@ pub const CAM_INIT_OFFSET: f32 = 10.;
 pub const COLOR_AA_NON_RESIDUE: Color = (0., 0.8, 1.0);
 
 // A higher value will result in a less-dramatic brightness change with distance.
-const FLASHLIGHT_OFFSET: f32 = 14.;
+const FLASHLIGHT_OFFSET: f32 = 10.;
 const FLASHLIGHT_FOV: f32 = TAU / 16.;
 pub const OUTSIDE_LIGHTING_OFFSET: f32 = 800.;
-pub const DOCKING_LIGHT_INTENSITY: f32 = 1.;
+pub const DOCKING_LIGHT_INTENSITY: f32 = 0.3;
 
 /// Set the flashlight to be a little bit behind the camera; prevents too dramatic of an intensity
 /// scaling on the object looked at, WRT distance.
@@ -115,7 +115,7 @@ fn render_handler(_state: &mut State, _scene: &mut Scene, _dt: f32) -> EngineUpd
 /// Entry point to our render and event loop.
 pub fn render(mut state: State) {
     let white = [1., 1., 1., 0.5];
-    let pink = [1., 0.2, 1., 0.5];
+    let pink = [1., 0., 1., 1.];
 
     let mut scene = Scene {
         meshes: vec![
@@ -145,8 +145,8 @@ pub fn render(mut state: State) {
                 PointLight {
                     // todo: temp rm TS
                     // type_: LightType::Directional{ direction: Vec3::new_zero(), fov: FLASHLIGHT_FOV },
-                    diffuse_intensity: 20.,
-                    specular_intensity: 20.,
+                    diffuse_intensity: 24.,
+                    specular_intensity: 24.,
                     ..Default::default()
                 },
                 // A fixed light, from *above*
@@ -161,8 +161,6 @@ pub fn render(mut state: State) {
                 PointLight {
                     diffuse_color: pink,
                     specular_color: pink,
-                    // diffuse_color: white,
-                    // specular_color: white,
                     diffuse_intensity: 0.,
                     specular_intensity: 0.,
                     ..Default::default()

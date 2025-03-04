@@ -266,7 +266,6 @@ fn cam_controls(
             .clicked()
         {
             scene.input_settings.control_scheme = ControlScheme::FreeCamera;
-            engine_updates.input_settings = true;
         }
 
         if ui
@@ -278,7 +277,6 @@ fn cam_controls(
                 None => Vec3::new_zero(),
             };
             scene.input_settings.control_scheme = ControlScheme::Arc { center };
-            engine_updates.input_settings = true;
         }
 
         if arc_active {
@@ -1165,6 +1163,11 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             }
 
             engine_updates.entities = true;
+
+            // For docking light, but may be overkill here.
+            if state.ligand.is_some() {
+                engine_updates.lighting = true;
+            }
         }
     });
 

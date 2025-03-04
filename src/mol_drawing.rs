@@ -344,7 +344,8 @@ fn bond_entities(
 pub fn draw_ligand(state: &mut State, scene: &mut Scene, update_cam_lighting: bool) {
     // Hard-coded for sticks for now.
 
-    if state.ligand.is_none() {
+    if state.ligand.is_none() || state.ui.visibility.hide_ligand {
+        set_docking_light(scene, None);
         return;
     }
 
@@ -361,11 +362,6 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene, update_cam_lighting: bo
         shinyness: ATOM_SHINYNESS,
         ..Default::default()
     });
-
-    if state.ui.visibility.hide_ligand {
-        set_docking_light(scene, None);
-        return;
-    }
 
     // todo: rotate using the orientation relative to the offset. Atoms and bonds.
 

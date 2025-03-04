@@ -14,9 +14,9 @@ use lin_alg::{
 use crate::{
     State, mol_drawing,
     mol_drawing::MoleculeView,
-    render,
     util::{cycle_res_selected, find_selected_atom, orbit_center, points_along_ray},
 };
+use crate::render::set_flashlight;
 
 pub const MOVEMENT_SENS: f32 = 12.;
 pub const RUN_FACTOR: f32 = 6.; // i.e. shift key multiplier
@@ -47,11 +47,6 @@ pub fn event_dev_handler(
         return updates;
     }
 
-    // Note: We're also using `cam_moved` to indicate the engine's built-in free camera,
-    // which isn't correctly signaling using `engine_inputs`.
-    // todo: Actually, I suspect engine_inputs is working, and something else is going wrong.
-    let mut cam_moved = false;
-
     let mut freelook = false;
 
     match event {
@@ -79,6 +74,9 @@ pub fn event_dev_handler(
                     scene.camera.position += scene.camera.orientation.rotate_vec(movement_vec);
                 }
                 updates.camera = true;
+
+                set_flashlight(scene);
+                updates.lighting = true;
             }
         },
         DeviceEvent::Button { button, state } => {
@@ -91,10 +89,6 @@ pub fn event_dev_handler(
             // }
 
             if button == 0 {
-                // See note about camera movement resetting the snapshot. This impliles click + drag;
-                // we should probalby only do this when mouse movement is present too.
-                freelook = true;
-
                 state_.ui.left_click_down = match state {
                     ElementState::Pressed => true,
                     ElementState::Released => false,
@@ -310,10 +304,14 @@ pub fn event_dev_handler(
 
                 scene.camera.position += scene.camera.orientation.rotate_vec(movement_vec);
                 updates.camera = true;
+
+                set_flashlight(scene);
+                updates.lighting = true;
             }
 
-            if freelook {
-                cam_moved = true;
+            if state_.ui.left_click_down {
+                set_flashlight(scene);
+                updates.lighting = true;
             }
         }
         _ => (),
