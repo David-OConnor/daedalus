@@ -174,8 +174,8 @@ impl Default for Visibility {
             hide_hetero: false,
             hide_non_hetero: false,
             hide_ligand: false,
-            hide_hydrogen: false,
-            hide_h_bonds: true,
+            hide_hydrogen: true,
+            hide_h_bonds: false,
         }
     }
 }
@@ -256,7 +256,6 @@ struct State {
     pub cam_snapshots: Vec<CamSnapshot>,
     // This allows us to keep in-memory data for other molecules.
     // Key is PDB ident; value is per-item.
-    // todo: Make a new struct if you add more non
     pub to_save: ToSave,
     pub tabs_open: Vec<Tab>,
     pub babel_avail: bool,

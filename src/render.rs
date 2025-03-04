@@ -49,7 +49,8 @@ pub const COLOR_SFC_DOT: Color = (0.7, 0.7, 0.7);
 pub const COLOR_DOCKING_BOX: Color = (0.3, 0.3, 0.9);
 
 pub const COLOR_SELECTED: Color = (1., 0., 0.);
-pub const COLOR_H_BOND: Color = (0.2, 0.2, 1.);
+// pub const COLOR_H_BOND: Color = (0.2, 0.2, 1.);
+pub const COLOR_H_BOND: Color = (1., 0.5, 0.1);
 pub const RADIUS_H_BOND: f32 = 0.2; // A scaler relative to covalent sticks.
 
 pub const SHELL_OPACITY: f32 = 0.01;
@@ -62,7 +63,7 @@ pub const COLOR_AA_NON_RESIDUE: Color = (0., 0.8, 1.0);
 // A higher value will result in a less-dramatic brightness change with distance.
 const FLASHLIGHT_OFFSET: f32 = 10.;
 const FLASHLIGHT_FOV: f32 = TAU / 16.;
-pub const OUTSIDE_LIGHTING_OFFSET: f32 = 800.;
+pub const OUTSIDE_LIGHTING_OFFSET: f32 = 900.;
 pub const DOCKING_LIGHT_INTENSITY: f32 = 0.3;
 
 /// Set the flashlight to be a little bit behind the camera; prevents too dramatic of an intensity
@@ -153,8 +154,8 @@ pub fn render(mut state: State) {
                 PointLight {
                     diffuse_color: white,
                     specular_color: white,
-                    diffuse_intensity: 25_000.,
-                    specular_intensity: 25_000.,
+                    diffuse_intensity: 30_000.,
+                    specular_intensity: 30_000.,
                     ..Default::default()
                 },
                 // A light on the docking site, if applicable.
@@ -169,6 +170,7 @@ pub fn render(mut state: State) {
         },
         input_settings: InputSettings {
             // control_scheme: ControlScheme::FreeCamera,
+            control_scheme: state.to_save.control_scheme,
             move_sens: MOVEMENT_SENS,
             run_factor: RUN_FACTOR,
             ..Default::default()

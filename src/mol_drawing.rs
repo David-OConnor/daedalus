@@ -3,7 +3,7 @@
 use std::fmt;
 
 use bincode::{Decode, Encode};
-use graphics::{Entity, FWD_VEC, RIGHT_VEC, Scene, UP_VEC};
+use graphics::{ControlScheme, Entity, FWD_VEC, RIGHT_VEC, Scene, UP_VEC};
 use lin_alg::f32::{Quaternion, Vec3};
 
 use crate::{
@@ -19,6 +19,7 @@ use crate::{
         RADIUS_H_BOND, RADIUS_SFC_DOT, RENDER_DIST, set_docking_light, set_flashlight,
         set_static_light,
     },
+    util::orbit_center,
 };
 
 #[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]
@@ -517,7 +518,9 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
             }
 
             if let Some(role) = atom.role {
-                if state.ui.visibility.hide_sidechains {
+                if state.ui.visibility.hide_sidechains
+                    || state.ui.mol_view == MoleculeView::Backbone
+                {
                     if matches!(role, AtomRole::Sidechain | AtomRole::H_Sidechain) {
                         continue;
                     }
@@ -608,14 +611,14 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                 continue;
             }
 
-            if state.ui.visibility.hide_hydrogen && atom_0.element == Element::Hydrogen
-                || atom_1.element == Element::Hydrogen
+            if state.ui.visibility.hide_hydrogen
+                && (atom_0.element == Element::Hydrogen || atom_1.element == Element::Hydrogen)
             {
                 continue;
             }
 
             // Assuming water won't be bonded to the main molecule.
-            if state.ui.visibility.hide_sidechains {
+            if state.ui.visibility.hide_sidechains || state.ui.mol_view == MoleculeView::Backbone {
                 if let Some(role_0) = atom_0.role {
                     if let Some(role_1) = atom_1.role {
                         if role_0 == AtomRole::Sidechain || role_1 == AtomRole::Sidechain {
@@ -665,6 +668,44 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                 let atom_donor = &mol.atoms[bond.donor];
                 let atom_acceptor = &mol.atoms[bond.acceptor];
 
+                // todo: DRY with above.
+                if state.ui.visibility.hide_sidechains
+                    || state.ui.mol_view == MoleculeView::Backbone
+                {
+                    if let Some(role_0) = atom_donor.role {
+                        if let Some(role_1) = atom_acceptor.role {
+                            if role_0 == AtomRole::Sidechain || role_1 == AtomRole::Sidechain {
+                                continue;
+                            }
+                        }
+                    }
+                }
+
+                // todo: More DRY with cov bonds
+                if ui.show_nearby_only {
+                    let atom_sel = mol.get_sel_atom(state.selection);
+                    if let Some(a) = atom_sel {
+                        if (atom_donor.posit - a.posit).magnitude() as f32
+                            > ui.nearby_dist_thresh as f32
+                        {
+                            continue;
+                        }
+                    }
+                }
+
+                if state.ui.visibility.hide_water {
+                    if let Some(role) = atom_donor.role {
+                        if role == AtomRole::Water {
+                            continue;
+                        }
+                    }
+                    if let Some(role) = atom_acceptor.role {
+                        if role == AtomRole::Water {
+                            continue;
+                        }
+                    }
+                }
+
                 bond_entities(
                     &mut scene.entities,
                     atom_donor.posit.into(),
@@ -687,5 +728,9 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
 
         // Update lighting based on the new molecule center and dims.
         set_static_light(scene, center, mol.size);
+    }
+
+    if let ControlScheme::Arc { center } = &mut scene.input_settings.control_scheme {
+        *center = orbit_center(state);
     }
 }

@@ -40,7 +40,7 @@ use std::{
 use lin_alg::f64::{Quaternion, Vec3};
 use rand::Rng;
 
-use crate::molecule::{Ligand, Molecule};
+use crate::molecule::{Atom, Ligand, Molecule};
 
 pub mod docking_prep;
 pub mod docking_prep_external;
@@ -50,6 +50,36 @@ const GRID_SPACING_SITE_FINDING: f64 = 1.0;
 #[derive(Clone, Copy, PartialEq)]
 enum GaCrossoverMode {
     Twopt,
+}
+
+/// Calculate the Lennard-Jones potential between two atoms.
+///
+/// \[ V_{LJ}(r) = 4 \epsilon \left[\left(\frac{\sigma}{r}\right)^{12}
+///     - \left(\frac{\sigma}{r}\right)^{6}\right] \]
+///
+/// In a real system, you’d want to parameterize \(\sigma\) and \(\epsilon\)
+/// based on the atom types (i.e. from a force field lookup). Here, we’ll
+/// just demonstrate the structure of the calculation with made-up constants.
+pub fn lj_potential(atom_0: &Atom, atom_1: &Atom) -> f32 {
+    // 1. Get *intrinsic* LJ parameters for each element
+    let (sigma_a, epsilon_a) = atom_0.element.lj_params();
+    let (sigma_b, epsilon_b) = atom_1.element.lj_params();
+
+    // 2. Combine them for the pair (Lorentz-Berthelot)
+    let sigma = 0.5 * (sigma_a + sigma_b);
+    let epsilon = (epsilon_a * epsilon_b).sqrt();
+
+    let r = (atom_0.posit - atom_1.posit).magnitude() as f32;
+
+    if r < f32::EPSILON {
+        return 0.0;
+    }
+
+    // Note: Our sigma and eps values are very rough.
+    let sr = sigma / r;
+    let sr6 = sr.powi(6);
+    let sr12 = sr6 * sr6;
+    4.0 * epsilon * (sr12 - sr6)
 }
 
 /// todo: Figure this out

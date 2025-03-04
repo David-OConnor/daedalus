@@ -3,7 +3,10 @@
 use std::{collections::HashMap, path::PathBuf};
 
 use bincode::{Decode, Encode};
-use graphics::app_utils::{load, save};
+use graphics::{
+    ControlScheme,
+    app_utils::{load, save},
+};
 
 use crate::{
     CamSnapshot, Selection, State, ViewSelLevel, Visibility,
@@ -19,6 +22,7 @@ pub struct ToSave {
     pub last_opened: Option<PathBuf>,
     pub last_ligand_opened: Option<PathBuf>,
     pub autodock_vina_path: Option<PathBuf>,
+    pub control_scheme: ControlScheme,
 }
 
 #[derive(Debug, Encode, Decode)]

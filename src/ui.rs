@@ -266,6 +266,7 @@ fn cam_controls(
             .clicked()
         {
             scene.input_settings.control_scheme = ControlScheme::FreeCamera;
+            state.to_save.control_scheme = ControlScheme::FreeCamera;
         }
 
         if ui
@@ -277,6 +278,7 @@ fn cam_controls(
                 None => Vec3::new_zero(),
             };
             scene.input_settings.control_scheme = ControlScheme::Arc { center };
+            state.to_save.control_scheme = ControlScheme::Arc { center };
         }
 
         if arc_active {
@@ -909,8 +911,8 @@ fn view_settings(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
             .selected_text(state.ui.mol_view.to_string())
             .show_ui(ui, |ui| {
                 for view in &[
-                    MoleculeView::Sticks,
                     MoleculeView::Backbone,
+                    MoleculeView::Sticks,
                     MoleculeView::BallAndStick,
                     // MoleculeView::Cartoon,
                     MoleculeView::SpaceFill,

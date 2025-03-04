@@ -22,10 +22,14 @@ This application can load data from mmCIF and PDB files.
 
 ## The camera
 
-The camera controls operate on the perspective of the viewer, vice the molecule. You can move and rotate the camera
+There are two camera control schemes, selectable using buttons in the *camera* section of the GUI.
+
+### Free camera
+The free camera controls is intended to be used with a keyboard and mouse together. They operate on the perspective of 
+the viewer, vice the molecule. You can move and rotate and move the camera
 in 6 degrees of freedom, allowing you to easily view the molecule from any perspective.
 
-### Mouse controls:
+#### Mouse controls:
 - Hold the **left mouse button while dragging** to rotate the camera in pitch and yaw.
 - Hold the **middle mouse button while dragging** to move the camera left, right, up, and down.
 - **Scroll** to move the camera forward and backwards.
@@ -33,7 +37,7 @@ in 6 degrees of freedom, allowing you to easily view the molecule from any persp
 - **Right click** to select the atom or residue under the cursor.
 
 
-### Camera Hotkeys (Also available as GUI buttons)
+#### Camera Hotkeys (Also available as GUI buttons)
 - **W**: Move forward
 - **A**: Move right
 - **A**: Move left
@@ -47,6 +51,12 @@ in 6 degrees of freedom, allowing you to easily view the molecule from any persp
 
 - **Left arrow**: Select previous residue
 - **Right arrow**: Select next residue
+
+
+### Arc camera
+Similar to traditional molecular viewing software. The camera arcs (or orbits) around the molecule, when holding the left
+mouse button and dragging. Other controls, like scroll wheel and middle mouse, operate similar to the free camera.
+If *orbit sel* is set in the GUI, the orbit center will be the selected atom or residue, vice the molecule center.
 
 
 ### Erratta

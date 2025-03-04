@@ -312,4 +312,58 @@ impl Element {
             Element::Other      => 0.0,
         }
     }
+
+    /// Returns approximate Lennard-Jones parameters (\sigma, \epsilon) in Å and kJ/mol.
+    /// These are *not* real force-field values, just a demonstration.
+    pub fn lj_params(self) -> (f32, f32) {
+        // For demonstration, we compute sigma from the van der Waals radius
+        //   sigma = (2 * vdw_radius) / 2^(1/6).
+        // Then guess epsilon from a trivial rule or store a small table.
+        // Real simulations typically get these from standard force fields!
+
+        let r_vdw = self.vdw_radius(); // in Å
+        // Avoid zero or negative vdw radius
+        let r_vdw = if r_vdw <= 0.0 { 1.5 } else { r_vdw };
+
+        // Sigma from naive formula:
+        let sigma = (2.0 * r_vdw) / (2_f32.powf(1.0 / 6.0));
+
+        // A naive guess for epsilon
+        // (In reality, you’d store carefully fit data or use a better heuristic.)
+        // For example, heavier elements get a bigger well depth:
+        let approximate_atomic_number = match self {
+            Element::Hydrogen => 1,
+            Element::Carbon => 6,
+            Element::Nitrogen => 7,
+            Element::Oxygen => 8,
+            Element::Fluorine => 9,
+            Element::Sulfur => 16,
+            Element::Phosphorus => 15,
+            Element::Iron => 26,
+            Element::Copper => 29,
+            Element::Calcium => 20,
+            Element::Potassium => 19,
+            Element::Aluminum => 13,
+            Element::Lead => 82,
+            Element::Gold => 79,
+            Element::Silver => 47,
+            Element::Mercury => 80,
+            Element::Tin => 50,
+            Element::Zinc => 30,
+            Element::Magnesium => 12,
+            Element::Manganese => 25,
+            Element::Iodine => 53,
+            Element::Chlorine => 17,
+            Element::Tungsten => 74,
+            Element::Tellurium => 52,
+            Element::Selenium => 34,
+            Element::Bromine => 35,
+            Element::Other => 20, // fallback
+        };
+
+        // Pretend epsilon in kJ/mol is something like 0.01 * Z^(0.7)
+        let epsilon = 0.01 * (approximate_atomic_number as f32).powf(0.7);
+
+        (sigma, epsilon)
+    }
 }

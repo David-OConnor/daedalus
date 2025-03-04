@@ -20,7 +20,7 @@ use crate::{
         BondType::{self, *},
         HydrogenBond,
     },
-    util::{points_along_ray, setup_neighbor_pairs},
+    util::setup_neighbor_pairs,
 };
 
 struct BondSpecs {
@@ -155,7 +155,6 @@ fn get_specs() -> Vec<BondSpecs> {
         // --------------------
         // Carbon–Hydrogen Bonds
         // --------------------
-        // todo: Expand this section.
 
         BondSpecs::new(1.09, (Hydrogen, Carbon), single),
 
@@ -190,7 +189,9 @@ pub fn create_bonds(atoms: &[Atom]) -> Vec<Bond> {
 
     // We use spacial partitioning, so as not to copmare every pair of atoms.
     let posits: Vec<_> = atoms.iter().map(|a| &a.posit).collect();
-    let neighbor_pairs = setup_neighbor_pairs(&posits, COV_DIST_GRID);
+    // Indices are all values here.
+    let indices: Vec<_> = (0..posits.len()).collect();
+    let neighbor_pairs = setup_neighbor_pairs(&posits, &indices, COV_DIST_GRID);
 
     // todo: Should we create an Vec of neighbors for each atom. (Maybe storeed in a hashmap etc)
     // todo, then iterate over that for neighbors in the j loop? WOuld be more generalizable/extract
@@ -220,8 +221,6 @@ pub fn create_bonds(atoms: &[Atom]) -> Vec<Bond> {
             }
         }
     }
-
-    println!("Bond creation complete.");
 
     result
 }
@@ -253,6 +252,12 @@ pub fn create_hydrogen_bonds(atoms: &[Atom], bonds: &[Bond]) -> Vec<HydrogenBond
         })
         .collect();
 
+    let potential_acceptors: Vec<(usize, &Atom)> = atoms
+        .iter()
+        .enumerate()
+        .filter(|(i, a)| h_bond_candidate_el(a))
+        .collect();
+
     for donor_bond in potential_donor_bonds {
         let donor_0 = &atoms[donor_bond.atom_0];
         let donor_1 = &atoms[donor_bond.atom_1];
@@ -263,13 +268,7 @@ pub fn create_hydrogen_bonds(atoms: &[Atom], bonds: &[Bond]) -> Vec<HydrogenBond
             (donor_0, donor_1, donor_bond.atom_0, donor_bond.atom_1)
         };
 
-        // todo: Iterating over all atoms here is temp. Works, but inefficient. Find a way to only iterate
-        // todo over near atoms, e.g. your neighbor algorithm with a reworked API for this case.
-        for (acc_i, acc_candidate) in atoms.iter().enumerate() {
-            if !h_bond_candidate_el(acc_candidate) {
-                continue;
-            }
-
+        for (acc_i, acc_candidate) in &potential_acceptors {
             // todo: Take into account typical lenghs of donor adn receptor; here your order doesn't matter.
             let dist_thresh = if donor_heavy.element == Oxygen && acc_candidate.element == Oxygen {
                 H_BOND_O_O_DIST
@@ -308,7 +307,7 @@ pub fn create_hydrogen_bonds(atoms: &[Atom], bonds: &[Bond]) -> Vec<HydrogenBond
             if angle > H_BOND_ANGLE_THRESH {
                 result.push(HydrogenBond {
                     donor: donor_heavy_i,
-                    acceptor: acc_i,
+                    acceptor: *acc_i,
                     hydrogen: donor_h_i,
                 });
             }

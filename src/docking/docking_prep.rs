@@ -299,7 +299,8 @@ pub fn setup_partial_charges(atoms: &mut [Atom], charge_type: PartialChargeType)
 
     // We use spacial partitioning, so as not to copmare every pair of atoms.
     let posits: Vec<_> = atoms.iter().map(|a| &a.posit).collect();
-    let neighbor_pairs = setup_neighbor_pairs(&posits, GRID_SIZE);
+    let indices: Vec<_> = (0..atoms.len()).collect();
+    let neighbor_pairs = setup_neighbor_pairs(&posits, &indices, GRID_SIZE);
 
     // Run the iterative charge update over all candidate pairs.
     const ITERATIONS: usize = 6; // More iterations may be needed in practice.

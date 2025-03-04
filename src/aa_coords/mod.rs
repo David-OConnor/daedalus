@@ -13,7 +13,7 @@ use crate::{
         },
         sidechain::Sidechain,
     },
-    element::Element,
+    element::{Element, Element::Hydrogen},
     molecule::{Atom, AtomRole, ResidueType},
 };
 
@@ -28,6 +28,14 @@ pub const PHI_HELIX: f64 = -0.715584993317675;
 pub const PSI_HELIX: f64 = -0.715584993317675;
 pub const PHI_SHEET: f64 = -140. * TAU / 360.;
 pub const PSI_SHEET: f64 = 135. * TAU / 360.;
+
+// The dihedral angle must be within this of [0 | TAU | TAU/2] for atoms to be considered planar.
+const PLANAR_DIHEDRAL_THRESH: f64 = 0.4;
+
+// The angle between adjacent bonds must be greater than this for a bond to be considered triplanar,
+// vice tetrahedral. Tetra ideal: 1.91. Planar idea: 2.094
+// todo: This seems high, but produces better results from oneo data set.d
+const PLANAR_ANGLE_THRESH: f64 = 2.1;
 
 struct BondError {}
 
@@ -94,6 +102,10 @@ pub fn calc_dihedral_angle(bond_middle: Vec3, bond_adjacent1: Vec3, bond_adjacen
 
     // Not sure why we need to offset by 𝜏/2 here, but it seems to be the case
     let result = bond1_on_plane.dot(bond2_on_plane).acos() + TAU / 2.;
+
+    if result.is_nan() {
+        return 0.; // todo: What causes this? todo: Confirm it shouldn't be tau/2.
+    }
 
     // The dot product approach to angles between vectors only covers half of possible
     // rotations; use a determinant of the 3 vectors as matrix columns to determine if what we
@@ -162,41 +174,39 @@ fn find_bonded_atoms<'a>(
         .enumerate()
         .filter(|(j, a)| {
             // todo: Adj this len A/R, or calc it per-branch with a fn.
-            atom_i != *j && (a.posit - atom.posit).magnitude() < 1.80
+            atom_i != *j && (a.posit - atom.posit).magnitude() < 1.80 && a.element != Hydrogen
             // atom_i != *j && (a.posit - atom.posit).magnitude() < 1.40
         })
         .map(|(j, a)| (j, *a))
         .collect()
 }
 
-/// Find bonds from the previous to current, and an arbitrary 2-back to the prev. Useful for finding
+/// Find bonds from the next (or prev) to current, and an arbitrary 2 offset from the next. Useful for finding
 /// dihedral angles on sidechains, etc.
 fn get_prev_bonds(
     atom: &Atom,
     atoms: &[&Atom],
     atom_i: usize,
-    atoms_bonded: &[(usize, &Atom)],
+    atom_next: (usize, &Atom),
 ) -> Result<(Vec3, Vec3), BondError> {
-    let atom_prev = atoms_bonded[0].1;
+    // Find atoms one step farther down the chain.
+    let bonded_to_next: Vec<(usize, &Atom)> = find_bonded_atoms(atom_next.1, atoms, atom_next.0)
+        .into_iter()
+        // Don't include the original atom in this list.
+        .filter(|a| a.0 != atom_i)
+        .collect();
 
-    // Don't include the original atom in this list.
-    let prev_atoms_bonded: Vec<(usize, &Atom)> =
-        find_bonded_atoms(atom_prev, atoms, atoms_bonded[0].0)
-            .into_iter()
-            .filter(|a| a.0 != atom_i)
-            .collect();
-
-    if prev_atoms_bonded.is_empty() {
+    if bonded_to_next.is_empty() {
         return Err(BondError {});
     }
 
     // Arbitrary one.
-    let atom_2back = prev_atoms_bonded[0].1;
+    let atom_2_after = bonded_to_next[0].1;
 
-    let bond_prev = (atom_prev.posit - atom.posit).to_normalized();
-    let bond_back2 = (atom_prev.posit - atom_2back.posit).to_normalized();
+    let this_to_next = (atom_next.1.posit - atom.posit).to_normalized();
+    let next_to_2after = (atom_next.1.posit - atom_2_after.posit).to_normalized();
 
-    Ok((bond_prev, bond_back2))
+    Ok((this_to_next, next_to_2after))
 }
 
 /// Add hydrogens for side chains; this is more general than the initial logic that takes
@@ -224,13 +234,13 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
 
         match atom.element {
             Element::Carbon => {
-                // todo: Handle O bonded (doubleu bonds).
+                // todo: Handle O bonded (double bonds).
                 match atoms_bonded.len() {
                     1 => unsafe {
                         // Methyl.
                         // todo: DRY with your Amine code below
                         let (bond_prev, bond_back2) =
-                            match get_prev_bonds(atom, atoms, i, &atoms_bonded) {
+                            match get_prev_bonds(atom, atoms, i, atoms_bonded[0]) {
                                 Ok(v) => v,
                                 Err(_) => {
                                     eprintln!("Error: Could not find prev bonds on Methyl");
@@ -258,11 +268,65 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
                         }
                     },
                     2 => unsafe {
-                        // Planar arrangement.
-                        // todo: Not just for N: This applies to rings as well. (?)
+                        let mut planar = false;
                         if atoms_bonded[0].1.element == Element::Nitrogen
                             && atoms_bonded[1].1.element == Element::Nitrogen
                         {
+                            planar = true;
+                        } else {
+                            // Rings. Calculate dihedral angle to assess if a flat geometry.
+                            // todo: C+P. DRY.
+
+                            // todo: Our check using dihedral angles is having trouble. Try this: A simple
+                            // check for a typical planar-arrangemenet angle.
+                            // note: Next and prev here are arbitrary.
+                            let bond_next = (atoms_bonded[1].1.posit - atom.posit).to_normalized();
+                            let bond_prev = (atoms_bonded[0].1.posit - atom.posit).to_normalized();
+
+                            let angle = (bond_next.dot(bond_prev)).acos();
+
+                            if angle > PLANAR_ANGLE_THRESH {
+                                planar_dist = Some(LEN_C_H);
+                            }
+
+                            // // Check the atoms in both directions for a flat dihedral angle.
+                            // for bonded in [atoms_bonded[0], atoms_bonded[1]] {
+                            //     // todo: Perhaps you have to try the opposit eorder
+                            //     let (bond_prev, bond_back2) =
+                            //         match get_prev_bonds(atom, atoms, i, bonded) {
+                            //             Ok(v) => v,
+                            //             Err(_) => {
+                            //                 eprintln!("Error: Could not find prev bonds when examining ring config");
+                            //                 continue; // todo: Don't continue, just assume tetra. (?)
+                            //             }
+                            //         };
+                            //
+                            //
+                            //
+                            //     let dihedral = calc_dihedral_angle(bond_prev, -bond_next, -bond_back2);
+                            //
+                            //     if let ResidueType::AminoAcid(aa) = atom.residue_type {
+                            //         if aa == AminoAcid::Tyr || aa == AminoAcid::Phe {
+                            //             println!("Dihedral: {:?}", dihedral);
+                            //             println!("Angle: {:?}", angle);
+                            //         }
+                            //     }
+                            //
+                            //     // todo: Adjust this thresh A/R.
+                            //     // todo: I'm not sure why we need to check for both tau/2 and tau.
+                            //     //     if (dihedral - TAU/2.).abs() < PLANAR_ANGLE_THRESH || dihedral.abs() < PLANAR_ANGLE_THRESH ||(TAU - dihedral.abs()) < PLANAR_ANGLE_THRESH {
+                            //     if dihedral < PLANAR_ANGLE_THRESH || (TAU - dihedral).abs() < PLANAR_ANGLE_THRESH {
+                            //         planar_dist = Some(LEN_C_H);
+                            //         println!("Planar due to ring");
+                            //         if let ResidueType::AminoAcid(aa) = atom.residue_type {
+                            //             println!("AA: {:?}", aa);
+                            //         }
+                            //         break;
+                            //     }
+                            // }
+                        }
+
+                        if planar {
                             let bond_0 = atom.posit - atoms_bonded[0].1.posit;
                             let bond_1 = atoms_bonded[1].1.posit - atom.posit;
                             // Add a single H in planar config.
@@ -270,10 +334,11 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
                                 posit: planar_posit(atom.posit, bond_0, bond_1, LEN_C_H),
                                 ..h_default_sc.clone()
                             });
+
                             continue;
                         }
 
-                        // Add 2 H.
+                        // Add 2 H in a tetrahedral config.
                         let (h_0, h_1) = tetra_atoms_2(
                             atom.posit,
                             atoms_bonded[0].1.posit,
@@ -304,6 +369,16 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
                             continue;
                         }
 
+                        // Planar C arrangement.
+                        let bond_next = (atoms_bonded[1].1.posit - atom.posit).to_normalized();
+                        let bond_prev = (atoms_bonded[0].1.posit - atom.posit).to_normalized();
+
+                        let angle = (bond_next.dot(bond_prev)).acos();
+
+                        if angle > PLANAR_ANGLE_THRESH {
+                            continue;
+                        }
+
                         // Add 1 H.
                         // todo: If planar geometry, don't add a H!
                         hydrogens.push(Atom {
@@ -326,7 +401,7 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
                         // Add 2 H. (Amine)
                         // todo: DRY with methyl code above
                         let (bond_prev, bond_back2) =
-                            match get_prev_bonds(atom, atoms, i, &atoms_bonded) {
+                            match get_prev_bonds(atom, atoms, i, atoms_bonded[0]) {
                                 Ok(v) => v,
                                 Err(_) => {
                                     eprintln!("Error: Could not find prev bonds on Amine");
@@ -371,7 +446,7 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
                         // todo: The bonds are coming out right; not sure why.
                         // todo: This segment is DRY with 2+ sections above.
                         let (bond_prev, bond_back2) =
-                            match get_prev_bonds(atom, atoms, i, &atoms_bonded) {
+                            match get_prev_bonds(atom, atoms, i, atoms_bonded[0]) {
                                 Ok(v) => v,
                                 Err(_) => {
                                     eprintln!("Error: Could not find prev bonds on Hydroxyl");

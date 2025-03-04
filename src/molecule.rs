@@ -251,7 +251,13 @@ impl Atom {
     /// Note: This doesn't include backbone O etc; just the 3 main ones.
     pub fn is_backbone(&self) -> bool {
         match self.role {
-            Some(r) => [AtomRole::C_Alpha, AtomRole::N_Backbone, AtomRole::C_Prime].contains(&r),
+            Some(r) => [
+                AtomRole::C_Alpha,
+                AtomRole::N_Backbone,
+                AtomRole::C_Prime,
+                AtomRole::O_Backbone,
+            ]
+            .contains(&r),
             None => false,
         }
     }

@@ -14,9 +14,9 @@ use lin_alg::{
 use crate::{
     State, mol_drawing,
     mol_drawing::MoleculeView,
+    render::set_flashlight,
     util::{cycle_res_selected, find_selected_atom, orbit_center, points_along_ray},
 };
-use crate::render::set_flashlight;
 
 pub const MOVEMENT_SENS: f32 = 12.;
 pub const RUN_FACTOR: f32 = 6.; // i.e. shift key multiplier
@@ -35,7 +35,7 @@ pub fn event_dev_handler(
     state_: &mut State,
     event: DeviceEvent,
     scene: &mut Scene,
-    engine_inputs: bool,
+    _engine_inputs: bool,
     dt: f32,
 ) -> EngineUpdates {
     let mut updates = EngineUpdates::default();
@@ -46,8 +46,6 @@ pub fn event_dev_handler(
     if !state_.ui.mouse_in_window {
         return updates;
     }
-
-    let mut freelook = false;
 
     match event {
         // Move the camera forward and back on scroll.
@@ -296,11 +294,15 @@ pub fn event_dev_handler(
             if state_.ui.middle_click_down {
                 // The same movement sensitivity scaler we use for the (1x effective multiplier)
                 // on keyboard movement seems to work well enough here.
-                let movement_vec = Vec3::new(
+                let mut movement_vec = Vec3::new(
                     delta.0 as f32 * MOVEMENT_SENS * dt,
                     -delta.1 as f32 * MOVEMENT_SENS * dt,
                     0.,
                 );
+
+                if scene.input_settings.control_scheme != ControlScheme::FreeCamera {
+                    movement_vec *= -1.;
+                }
 
                 scene.camera.position += scene.camera.orientation.rotate_vec(movement_vec);
                 updates.camera = true;

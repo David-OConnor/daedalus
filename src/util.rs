@@ -21,7 +21,11 @@ use crate::{
 const MOVE_TO_TARGET_DIST: f32 = 15.;
 
 /// Used for cursor selection.
-pub fn points_along_ray(ray: (Vec3F32, Vec3F32), atoms: &[Atom], dist_thresh: f32) -> Vec<usize> {
+pub fn points_along_ray(
+    ray: (Vec3F32, Vec3F32),
+    atoms: &[Atom],
+    mut dist_thresh: f32,
+) -> Vec<usize> {
     let mut result = Vec::new();
 
     let ray_dir = (ray.1 - ray.0).to_normalized();
@@ -37,6 +41,11 @@ pub fn points_along_ray(ray: (Vec3F32, Vec3F32), atoms: &[Atom], dist_thresh: f3
         // Compute the perpendicular distance to the ray
         let dist_to_ray = (atom_pos - closest_point).magnitude();
 
+        // todo: take atom radius into account. E.g. Hydrogens should required a smaller dist.
+        // todo: This approach is a bit sloppy, but probably better than not including it.
+        if atom.element == Element::Hydrogen {
+            dist_thresh *= 0.6;
+        }
         if dist_to_ray < dist_thresh {
             result.push(i);
         }
@@ -284,8 +293,13 @@ pub fn bond_angle(atoms: &[Atom], bond_0: &Bond, bond_1: &Bond) -> f64 {
 
 /// Creates pairs of all *nearby* positions. Much faster than comparing every combination, if only nearly
 /// ones are relevant.
-// pub fn setup_neighbor_pairs(posits: &[(usize, &Vec3)], grid_size: f64) -> Vec<(usize, usize)> {
-pub fn setup_neighbor_pairs(posits: &[&Vec3], grid_size: f64) -> Vec<(usize, usize)> {
+/// The separate `indexes` parameter allows `posits` to be a subset of the array we're indexing into,
+/// e.g. a filtered set of atoms.
+pub fn setup_neighbor_pairs(
+    posits: &[&Vec3],
+    indexes: &[usize],
+    grid_size: f64,
+) -> Vec<(usize, usize)> {
     // Build a spatial grid for atom indices.
     let mut grid: HashMap<(i32, i32, i32), Vec<usize>> = HashMap::new();
 
@@ -295,7 +309,8 @@ pub fn setup_neighbor_pairs(posits: &[&Vec3], grid_size: f64) -> Vec<(usize, usi
             (posit.y / grid_size).floor() as i32,
             (posit.z / grid_size).floor() as i32,
         );
-        grid.entry(grid_pos).or_default().push(i);
+        // grid.entry(grid_pos).or_default().push(i);
+        grid.entry(grid_pos).or_default().push(indexes[i]);
     }
 
     // Collect candidate atom pairs based on neighboring grid cells.
@@ -310,10 +325,8 @@ pub fn setup_neighbor_pairs(posits: &[&Vec3], grid_size: f64) -> Vec<(usize, usi
                         // Attempt to prevent duplicates as we iterate. Note working.
                         for &i in indices {
                             for &j in neighbor_indices {
-                                // todo: What's going on here? The i < j should prevent duplicates,
-                                // todo: But it's also blocking a number of valid matches. Including all H bonds.
-                                if i != j {
-                                    // if i < j {
+                                // The ordering prevents duplicates.
+                                if i < j {
                                     result.push((i, j));
                                 }
                             }
@@ -324,20 +337,6 @@ pub fn setup_neighbor_pairs(posits: &[&Vec3], grid_size: f64) -> Vec<(usize, usi
         }
     }
 
-    // todo: Broken still...
-    // todo: Put back and fix.
-    // let mut result_no_dupes = Vec::new();
-    // let mut seen = HashSet::new();
-    // for (i, j) in result.iter() {
-    //     if seen.contains(&(i, j)) || seen.contains(&(j, i)) {
-    //         continue;
-    //     } else {
-    //         seen.insert((i, j));
-    //         result_no_dupes.push((*i, *j));
-    //     }
-    // }
-
-    // result_no_dupes
     result
 }
 
