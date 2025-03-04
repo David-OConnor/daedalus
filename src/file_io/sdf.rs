@@ -190,6 +190,7 @@ impl Molecule {
             ident,
             atoms,
             bonds: Vec::new(),
+            bonds_hydrogen: Vec::new(),
             chains,
             residues,
             metadata: None,
@@ -204,7 +205,7 @@ impl Molecule {
 
         result.populate_hydrogens_angles();
         result.bonds = create_bonds(&result.atoms);
-        result.bonds.extend(create_hydrogen_bonds(&result.atoms));
+        result.bonds_hydrogen = create_hydrogen_bonds(&result.atoms, &result.bonds);
 
         // todo: Don't like this clone.
         let atoms_clone = result.atoms.clone();

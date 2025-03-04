@@ -60,7 +60,7 @@ pub const CAM_INIT_OFFSET: f32 = 10.;
 pub const COLOR_AA_NON_RESIDUE: Color = (0., 0.8, 1.0);
 
 // A higher value will result in a less-dramatic brightness change with distance.
-const FLASHLIGHT_OFFSET: f32 = 10.;
+const FLASHLIGHT_OFFSET: f32 = 14.;
 const FLASHLIGHT_FOV: f32 = TAU / 16.;
 pub const OUTSIDE_LIGHTING_OFFSET: f32 = 800.;
 pub const DOCKING_LIGHT_INTENSITY: f32 = 1.;
@@ -170,10 +170,6 @@ pub fn render(mut state: State) {
             ],
         },
         input_settings: InputSettings {
-            // todo temp
-            control_scheme: ControlScheme::Arc {
-                center: Vec3::new(-22.4, -7.8, 11.),
-            },
             // control_scheme: ControlScheme::FreeCamera,
             move_sens: MOVEMENT_SENS,
             run_factor: RUN_FACTOR,

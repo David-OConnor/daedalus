@@ -198,7 +198,7 @@ impl Molecule {
 
         result.populate_hydrogens_angles();
         result.bonds = create_bonds(&result.atoms);
-        result.bonds.extend(create_hydrogen_bonds(&result.atoms));
+        result.bonds_hydrogen = create_hydrogen_bonds(&result.atoms, &result.bonds);
 
         // todo: ligand molecule??
 

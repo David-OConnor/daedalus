@@ -7,17 +7,20 @@
 //!
 //! All lengths are in angstrom (Å)
 
+use std::f64::consts::TAU;
+
 use crate::{
     element::{
         Element,
-        Element::{Carbon, Hydrogen, Nitrogen, Oxygen, Sulfur},
+        Element::{Carbon, Fluorine, Hydrogen, Nitrogen, Oxygen, Sulfur},
     },
     molecule::{
         Atom, Bond,
         BondCount::*,
         BondType::{self, *},
+        HydrogenBond,
     },
-    util::setup_neighbor_pairs,
+    util::{points_along_ray, setup_neighbor_pairs},
 };
 
 struct BondSpecs {
@@ -47,7 +50,9 @@ const H_BOND_N_N_DIST: f64 = 3.05;
 const H_BOND_O_N_DIST: f64 = 2.9;
 
 const H_BOND_DIST_THRESH: f64 = 0.3;
-const H_BOND_DIST_GRID: f64 = 3.5;
+const H_BOND_DIST_GRID: f64 = 3.6;
+
+const H_BOND_ANGLE_THRESH: f64 = TAU / 3.;
 
 #[rustfmt::skip]
 fn get_specs() -> Vec<BondSpecs> {
@@ -215,62 +220,91 @@ pub fn create_bonds(atoms: &[Atom]) -> Vec<Bond> {
     result
 }
 
-/// Infer hydrogen bonds from a list of atoms.
-/// This simple implementation iterates over all pairs of atoms.
-/// It considers only atoms that are candidates (N or O)
-/// and adds a bond if their distance is less than the cutoff.
-/// todo: UPdate this approach to be more robust. Use bond agnles etc. And maybe integrate
-/// todo with populated h ydrogens.
-pub fn create_hydrogen_bonds(atoms: &[Atom]) -> Vec<Bond> {
+/// Helper
+fn h_bond_candidate_el(atom: &Atom) -> bool {
+    matches!(atom.element, Nitrogen | Oxygen | Sulfur | Fluorine)
+}
+
+/// Infer hydrogen bonds from a list of atoms. This takes into account bond distance between suitable
+/// atom types (generally N and O; sometimes S and F), and geometry regarding the hydrogen covalently
+/// bonded to the donor.
+pub fn create_hydrogen_bonds(atoms: &[Atom], bonds: &[Bond]) -> Vec<HydrogenBond> {
     let mut result = Vec::new();
 
-    let posits: Vec<_> = atoms.iter().map(|a| &a.posit).collect();
-    let neighbor_pairs = setup_neighbor_pairs(&posits, H_BOND_DIST_GRID);
+    // todo: S and F as well.
 
-    // todo: This approach is very crude.
+    // Bonds between donor and H.
+    let potential_donor_bonds: Vec<&Bond> = bonds
+        .iter()
+        .filter(|b| {
+            let atom_0 = &atoms[b.atom_0];
+            let atom_1 = &atoms[b.atom_1];
 
-    for &(i, j) in &neighbor_pairs {
-        let atom0 = &atoms[i];
-        let atom1 = &atoms[j];
+            let cfg_0_valid = h_bond_candidate_el(atom_0) && atom_1.element == Hydrogen;
+            let cfg_1_valid = h_bond_candidate_el(atom_1) && atom_0.element == Hydrogen;
 
-        if !matches!(atom0.element, Nitrogen | Oxygen)
-            || !matches!(atom1.element, Nitrogen | Oxygen)
-        {
-            continue;
+            cfg_0_valid || cfg_1_valid
+        })
+        .collect();
+
+    for donor_bond in potential_donor_bonds {
+        let donor_0 = &atoms[donor_bond.atom_0];
+        let donor_1 = &atoms[donor_bond.atom_1];
+
+        let (donor_heavy, donor_h, donor_heavy_i, donor_h_i) = if donor_0.element == Hydrogen {
+            (donor_1, donor_0, donor_bond.atom_1, donor_bond.atom_0)
+        } else {
+            (donor_0, donor_1, donor_bond.atom_0, donor_bond.atom_1)
+        };
+
+        // todo: Iterating over all atoms here is temp. Works, but inefficient. Find a way to only iterate
+        // todo over near atoms, e.g. your neighbor algorithm with a reworked API for this case.
+        for (acc_i, acc_candidate) in atoms.iter().enumerate() {
+            if !h_bond_candidate_el(acc_candidate) {
+                continue;
+            }
+
+            // todo: F and S too.
+            let dist_thresh=
+                if donor_heavy.element == Oxygen && acc_candidate.element == Oxygen {
+                        H_BOND_O_O_DIST
+                } else if donor_heavy.element == Nitrogen && acc_candidate.element == Nitrogen {
+                        H_BOND_N_N_DIST
+                } else if (donor_heavy.element == Oxygen && acc_candidate.element == Nitrogen)
+                    || (donor_heavy.element == Nitrogen && acc_candidate.element == Oxygen)
+                {
+                        H_BOND_O_N_DIST
+                } else {
+                    println!("S or F encountered in H bond calc. implement.");
+                    continue;
+                };
+
+            let dist_thresh_min = dist_thresh - H_BOND_DIST_THRESH;
+            let dist_thresh_max = dist_thresh + H_BOND_DIST_THRESH;
+
+            let dist = (acc_candidate.posit - donor_heavy.posit).magnitude();
+            if dist < dist_thresh_min || dist > dist_thresh_max {
+                continue;
+            }
+
+            let angle = {
+                let donor_h = donor_h.posit - donor_heavy.posit;
+                let donor_acceptor = donor_heavy.posit - acc_candidate.posit;
+
+                donor_acceptor
+                    .to_normalized()
+                    .dot(donor_h.to_normalized())
+                    .acos()
+            };
+
+            if angle > H_BOND_ANGLE_THRESH  {
+                result.push(HydrogenBond {
+                    donor: donor_heavy_i,
+                    acceptor: acc_i,
+                    hydrogen: donor_h_i,
+                });
+            }
         }
-
-        let bond_dist = (atom0.posit - atom1.posit).magnitude();
-
-        // todo: QC this logic with rules of H bonding.
-        if atom0.element == Oxygen && atom1.element == Oxygen {
-            if bond_dist < H_BOND_O_O_DIST - H_BOND_DIST_THRESH
-                || bond_dist > H_BOND_O_O_DIST + H_BOND_DIST_THRESH
-            {
-                continue;
-            }
-        } else if atom0.element == Nitrogen && atom1.element == Nitrogen {
-            if bond_dist < H_BOND_N_N_DIST - H_BOND_DIST_THRESH
-                || bond_dist > H_BOND_N_N_DIST + H_BOND_DIST_THRESH
-            {
-                continue;
-            }
-        } else if (atom0.element == Nitrogen && atom1.element == Oxygen)
-            || (atom1.element == Nitrogen && atom0.element == Oxygen)
-        {
-            if bond_dist < H_BOND_O_N_DIST - H_BOND_DIST_THRESH
-                || bond_dist > H_BOND_O_N_DIST + H_BOND_DIST_THRESH
-            {
-                continue;
-            }
-        }
-
-        result.push(Bond {
-            bond_type: BondType::Hydrogen,
-            // todo: Set it up so atom_0 is always the donor!
-            atom_0: i,
-            atom_1: j,
-            is_backbone: false,
-        });
     }
 
     result

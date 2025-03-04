@@ -26,6 +26,7 @@ pub struct Molecule {
     pub ident: String,
     pub atoms: Vec<Atom>,
     pub bonds: Vec<Bond>,
+    pub bonds_hydrogen: Vec<HydrogenBond>,
     pub chains: Vec<Chain>,
     pub residues: Vec<Residue>,
     pub metadata: Option<PdbMetaData>,
@@ -158,6 +159,14 @@ pub struct Bond {
     /// Index
     pub atom_1: usize,
     pub is_backbone: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct HydrogenBond {
+    /// All three atoms are indexes.
+    pub donor: usize,
+    pub acceptor: usize,
+    pub hydrogen: usize,
 }
 
 #[derive(Debug, Clone)]

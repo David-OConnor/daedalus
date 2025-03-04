@@ -391,10 +391,6 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene, update_cam_lighting: bo
 
     // todo: C+P from draw_molecule. With some removed, but a lot of repeated.
     for bond in &mol.bonds {
-        if bond.bond_type == BondType::Hydrogen && state.ui.visibility.hide_h_bonds {
-            continue;
-        }
-
         let atom_0 = &atoms_rotated[bond.atom_0];
         let atom_1 = &atoms_rotated[bond.atom_1];
 
@@ -411,6 +407,26 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene, update_cam_lighting: bo
             color_temp,
             bond.bond_type,
         );
+    }
+
+    if !state.ui.visibility.hide_h_bonds {
+        for bond in &mol.bonds_hydrogen {
+            let atom_donor = &atoms_rotated[bond.donor];
+            let atom_acceptor = &atoms_rotated[bond.acceptor];
+
+            let posit_donor: Vec3 = (atom_donor.posit + ligand.docking_init.site_center).into();
+            let posit_acceptor: Vec3 =
+                (atom_acceptor.posit + ligand.docking_init.site_center).into();
+
+            bond_entities(
+                &mut scene.entities,
+                posit_donor,
+                posit_acceptor,
+                COLOR_H_BOND,
+                COLOR_H_BOND,
+                BondType::Hydrogen,
+            );
+        }
     }
 
     set_docking_light(scene, Some(&state.ligand.as_ref().unwrap().docking_init));
@@ -645,6 +661,23 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                 color_1,
                 bond.bond_type,
             );
+        }
+
+        // todo: DRY with Ligand
+        if !state.ui.visibility.hide_h_bonds {
+            for bond in &mol.bonds_hydrogen {
+                let atom_donor = &mol.atoms[bond.donor];
+                let atom_acceptor = &mol.atoms[bond.acceptor];
+
+                bond_entities(
+                    &mut scene.entities,
+                    atom_donor.posit.into(),
+                    atom_acceptor.posit.into(),
+                    COLOR_H_BOND,
+                    COLOR_H_BOND,
+                    BondType::Hydrogen,
+                );
+            }
         }
     }
 

@@ -284,7 +284,7 @@ pub fn bond_angle(atoms: &[Atom], bond_0: &Bond, bond_1: &Bond) -> f64 {
 
 /// Creates pairs of all *nearby* positions. Much faster than comparing every combination, if only nearly
 /// ones are relevant.
-// pub fn setup_neighbor_pairs(posits: &[&Vec3], grid_size: f64) -> HashMap<(i32, i32, i32), Vec<usize>>{
+// pub fn setup_neighbor_pairs(posits: &[(usize, &Vec3)], grid_size: f64) -> Vec<(usize, usize)> {
 pub fn setup_neighbor_pairs(posits: &[&Vec3], grid_size: f64) -> Vec<(usize, usize)> {
     // Build a spatial grid for atom indices.
     let mut grid: HashMap<(i32, i32, i32), Vec<usize>> = HashMap::new();
