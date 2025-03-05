@@ -5,7 +5,7 @@ mod asa;
 mod bond_inference;
 mod cartoon_mesh;
 mod docking;
-mod download_pdb;
+mod download_mols;
 // mod drug_like;
 mod element;
 mod file_io;
@@ -44,7 +44,9 @@ use rayon::iter::ParallelIterator;
 
 use crate::{
     aa_coords::bond_vecs::init_local_bond_vecs,
-    docking::{DockingInit, check_adv_avail, docking_prep_external::check_babel_avail},
+    docking::{
+        DockingInit, docking_external::check_adv_avail, docking_prep_external::check_babel_avail,
+    },
     file_io::pdbqt::load_pdbqt,
     molecule::Ligand,
     navigation::Tab,
@@ -308,23 +310,13 @@ impl State {
         match molecule {
             Ok(mol) => {
                 if is_ligand {
-                    let docking_init = DockingInit {
-                        site_center: Vec3F64::new(-18.955, -5.188, 8.617),
-                        site_box_size: 10.,
-                    };
+                    let lig = Ligand::new(mol);
+                    self.ui.docking_site_x = lig.docking_init.site_center.x.to_string();
+                    self.ui.docking_site_y = lig.docking_init.site_center.y.to_string();
+                    self.ui.docking_site_z = lig.docking_init.site_center.z.to_string();
+                    self.ui.docking_site_size = lig.docking_init.site_box_size.to_string();
 
-                    self.ui.docking_site_x = docking_init.site_center.x.to_string();
-                    self.ui.docking_site_y = docking_init.site_center.y.to_string();
-                    self.ui.docking_site_z = docking_init.site_center.z.to_string();
-                    self.ui.docking_site_size = docking_init.site_box_size.to_string();
-
-                    self.ligand = Some(Ligand {
-                        molecule: mol,
-                        docking_init,
-                        orientation: QuaternionF64::new_identity(),
-                        torsions: Vec::new(),
-                        unit_cell_dims: Default::default(),
-                    });
+                    self.ligand = Some(lig);
                 } else {
                     self.molecule = Some(mol);
                 }
@@ -354,17 +346,17 @@ fn main() {
         state.open_molecule(path, true);
     }
 
-    if let Some(path) = &state.to_save.autodock_vina_path {
-        state.ui.autodock_path_valid = check_adv_avail(path);
+    // if let Some(path) = &state.to_save.autodock_vina_path {
+    //     state.ui.autodock_path_valid = check_adv_avail(path);
+    //
+    //     // If the saved path fails our check, leave it blank so the user can re-attempt.
+    //     if !state.ui.autodock_path_valid {
+    //         state.to_save.autodock_vina_path = None;
+    //         state.update_save_prefs();
+    //     }
+    // }
 
-        // If the saved path fails our check, leave it blank so the user can re-attempt.
-        if !state.ui.autodock_path_valid {
-            state.to_save.autodock_vina_path = None;
-            state.update_save_prefs();
-        }
-    }
-
-    state.babel_avail = check_babel_avail();
+    // state.babel_avail = check_babel_avail();
 
     render(state);
 }

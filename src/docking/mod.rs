@@ -31,23 +31,20 @@
 
 // 4MZI/160355 docking example: https://www.youtube.com/watch?v=vU2aNuP3Y8I
 
-use std::{
-    io,
-    io::ErrorKind,
-    path::Path,
-    process::{Command, Stdio},
-};
-
 use lin_alg::f64::{Quaternion, Vec3};
 use rand::Rng;
+use rayon::prelude::*;
 
 use crate::molecule::{Atom, Ligand, Molecule};
 
+pub mod docking_external;
 pub mod docking_prep;
 pub mod docking_prep_external;
 pub mod find_sites;
 
-const GRID_SPACING_SITE_FINDING: f64 = 1.0;
+const GRID_SPACING_SITE_FINDING: f64 = 5.0;
+
+const ATOM_NEAR_SITE_DIST_THRESH: f64 = 5.0; // todo: A.R.
 
 #[derive(Clone, Copy, PartialEq)]
 enum GaCrossoverMode {
@@ -62,16 +59,24 @@ enum GaCrossoverMode {
 /// In a real system, you’d want to parameterize \(\sigma\) and \(\epsilon\)
 /// based on the atom types (i.e. from a force field lookup). Here, we’ll
 /// just demonstrate the structure of the calculation with made-up constants.
-pub fn lj_potential(atom_0: &Atom, atom_1: &Atom) -> f32 {
+pub fn lj_potential(atom_0: &Atom, atom_1: &Atom, ligand_atom_posit: Vec3) -> f32 {
+    let r = (atom_0.posit - ligand_atom_posit).magnitude() as f32;
+
+    // todo: Experiment
+    const LJ_DIST_THRESH: f32 = 5.; // performance saver?
+    if r > LJ_DIST_THRESH {
+        return 0.;
+    }
+
     // 1. Get *intrinsic* LJ parameters for each element
+
+    // todo: Cache these in a table!
     let (sigma_a, epsilon_a) = atom_0.element.lj_params();
     let (sigma_b, epsilon_b) = atom_1.element.lj_params();
 
     // 2. Combine them for the pair (Lorentz-Berthelot)
     let sigma = 0.5 * (sigma_a + sigma_b);
     let epsilon = (epsilon_a * epsilon_b).sqrt();
-
-    let r = (atom_0.posit - atom_1.posit).magnitude() as f32;
 
     if r < f32::EPSILON {
         return 0.0;
@@ -127,41 +132,103 @@ impl Default for GeneticAlgorithmParameters {
 pub struct DockingInit {
     pub site_center: Vec3,
     pub site_box_size: f64, // Assume square. // todo: Allow diff dims
-                            // todo: Num points in each dimension?
+    // todo: Num points in each dimension?
 }
 
-enum ConformationType {
+#[derive(Clone, Debug)]
+pub enum ConformationType {
     Rigid { orientation: Quaternion },
     Flexible { dihedral_angles: Vec<f32> },
 }
 
+impl Default for ConformationType {
+    fn default() -> Self {
+        Self::Rigid {
+            orientation: Quaternion::new_identity(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default)]
 pub struct Pose {
-    // todo
-    /// These offsets are relative to the molecule origins for target and ligand. E.g., they depend,
-    /// on the specific coordinate system used from mmCIF file etc they were loaded from.
-    /// We move both the ligand, and target, so that the docking site is near the origin, for
-    /// numerical reasons.
-    // pub target_offset: Vec3,
-    pub ligand_offset: Vec3,
+    pub anchor_atom: usize, // Index.
+    /// The offset of the ligand's anchor atom from the docking center.
+    /// todo: Consider normalizing positions to be around the origin, for numerical precision issues.
+    pub anchor_posit: Vec3,
     pub conformation_type: ConformationType,
 }
 
 /// Calculate binding energy, in kcal/mol. The result will be negative. The maximum (negative) binding
 /// energy may be the ideal conformation. This is used as a scoring metric.
-pub fn binding_energy(target: &Molecule, ligand: &Molecule, pose: &Pose) -> f32 {
-    0.
+pub fn binding_energy(target: &Molecule, ligand: &Ligand, pose: &Pose) -> f32 {
+    // todo: Integrate CUDA.
+
+    // Add this offset to each ligand atom to gets is position relative to this pose.
+    // The anchor atom will be at the pose's anchor posit.
+    let ligand_offset = pose.anchor_posit - ligand.molecule.atoms[pose.anchor_atom].posit;
+
+    let mut vdw = 0.;
+
+    match &pose.conformation_type {
+        ConformationType::Rigid { orientation } => {}
+        ConformationType::Flexible { dihedral_angles } => {
+            unimplemented!()
+        }
+    }
+
+    // todo: Use a neighbor grid or similar. Set it up so there are two separate sides?
+
+    let tgt_atoms_near_site: Vec<&Atom> = target
+        .atoms
+        .iter()
+        .filter(|a| {
+            // todo: What other filters besides non-hetero?
+            (a.posit - pose.anchor_posit).magnitude() < ATOM_NEAR_SITE_DIST_THRESH && !a.hetero
+        })
+        .collect();
+
+    let mut atom_posits: Vec<Vec3> = ligand.molecule.atoms.iter().map(|a| a.posit).collect();
+    for i in 0..atom_posits.len() {
+        atom_posits[i] = ligand.position_atom(i, Some(pose));
+    }
+
+    // Note: This iterates in parallel over target, which has a much higher atom count.
+    let lj: f32 = tgt_atoms_near_site
+        .par_iter()
+        // For each `atom_tgt`, compute the sum of LJ potentials with all ligand atoms
+        .map(|atom_tgt| {
+            ligand
+                .molecule
+                .atoms
+                .iter()
+                .enumerate()
+                .map(|(i_lig, atom_ligand)| {
+                    lj_potential(atom_tgt, atom_ligand, atom_posits[i_lig])
+                })
+                .sum::<f32>()
+        })
+        // Finally, sum up all partial sums into a single total.
+        .sum();
+
+    let vdw = lj; // todo?
+
+    let mut h_bond = 0.;
+    let mut hydrophobic = 0.;
+    let mut electrostatic = 0.;
+
+    vdw + h_bond + hydrophobic + electrostatic
 }
 
 /// Brute-force, naive iteration of combinations. (For now)
 fn make_posits_orientations(
     init: &DockingInit,
-    num_posits: usize,
+    posit_val: usize,
     num_orientations: usize,
 ) -> (Vec<Vec3>, Vec<Quaternion>) {
     // We'll break the box into 4 × 5 × 5 = 100 points
     // so that we fill out 'num_posits' exactly:
-    let (nx, ny, nz) = (10, 10, 10);
-    let num_posits = nx * ny * nz; // = 100 // todo: ...
+    let (nx, ny, nz) = (posit_val, posit_val, posit_val);
+    let num_posits = nx * ny * nz;
 
     // The total extent along each axis is 2*site_box_size.
     // We'll divide that into nx, ny, nz intervals respectively.
@@ -213,37 +280,48 @@ fn make_posits_orientations(
 /// Return best pose, and energy.
 pub fn find_optimal_pose(
     target: &Molecule,
-    ligand: &Ligand,
+    ligand: &mut Ligand,
     params: &GeneticAlgorithmParameters,
 ) -> (Pose, f32) {
     // todo: Generic algorithm etc. Maybe that goes in the scoring fn?
     // for _ in 0..params.num_runs {
     // }
 
-    let num_posits = 1_000;
-    let num_orientations = 200;
+    println!("Finding optimal pose...");
 
-    let (ligand_posits, orientations) =
+    let num_posits: usize = 5; // Gets cubed.
+    let num_orientations = 20;
+
+    println!(
+        "Conformation count: {:?}",
+        num_posits.pow(3) * num_orientations
+    );
+
+    // These positions are of the ligand's anchor atom.
+    let (anchor_posits, orientations) =
         make_posits_orientations(&ligand.docking_init, num_posits, num_orientations);
 
     let mut best_energy = 0.;
     let mut best_pose = Pose {
-        ligand_offset: Vec3::new_zero(),
+        anchor_atom: 0,
+        anchor_posit: Vec3::new_zero(),
         conformation_type: ConformationType::Rigid {
             orientation: Quaternion::new_identity(),
         },
     };
 
-    for ligand_posit in &ligand_posits {
+    // todo: RAyon.
+    for anchor_posit in &anchor_posits {
         for orientation in &orientations {
             let pose = Pose {
-                ligand_offset: *ligand_posit,
+                anchor_atom: 0,
+                anchor_posit: *anchor_posit,
                 conformation_type: ConformationType::Rigid {
                     orientation: *orientation,
                 },
             };
 
-            let energy = binding_energy(target, &ligand.molecule, &pose);
+            let energy = binding_energy(target, &ligand, &pose);
 
             if energy < best_energy {
                 best_energy = energy;
@@ -252,69 +330,11 @@ pub fn find_optimal_pose(
         }
     }
 
+    ligand.pose = best_pose.clone();
+    ligand.set_anchor();
+
+    println!("Complete. Best pose: {best_pose:?} E: {best_energy}");
     (best_pose, best_energy)
-}
-
-pub fn check_adv_avail(vina_path: &Path) -> bool {
-    let status = Command::new(vina_path)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .args(["--version"])
-        .status();
-
-    status.is_ok()
-}
-
-/// Run Autodock Vina. `target_path` and `ligand_path` are to the prepared PDBQT files.
-/// https://vina.scripps.edu/manual/#usage (Or run the program with `--help`.)
-pub fn run_adv(
-    init: &DockingInit,
-    vina_path: &Path,
-    target_path: &Path,
-    ligand_path: &Path,
-) -> io::Result<Pose> {
-    println!("Running Autodock Vina...");
-
-    let output_filename = "docking_result.pdbqt";
-
-    let output_text = Command::new(vina_path.to_str().unwrap_or_default())
-        .args([
-            "--receptor",
-            target_path.to_str().unwrap_or_default(),
-            // "--flex" // Flexible side chains; optional.
-            "--ligand",
-            ligand_path.to_str().unwrap_or_default(),
-            "--out",
-            output_filename,
-            "--center_x",
-            &init.site_center.x.to_string(),
-            "--center_y",
-            &init.site_center.y.to_string(),
-            "--center_z",
-            &init.site_center.z.to_string(),
-            "--size_x",
-            &init.site_box_size.to_string(),
-            "--size_y",
-            &init.site_box_size.to_string(),
-            "--size_z",
-            &init.site_box_size.to_string(),
-            // "--exhaustiveness", // Proportional to runtime. Higher is more accurate. Defaults to 8.
-            // "num_modes",
-            // "energy_range",
-        ])
-        // todo: Status now for a clean print
-        // .output()?;
-        .status()?;
-
-    println!("Complete.");
-    //
-    // // todo: Create a post from output text.
-    // println!("\n\nOutput text: {:?}\n\n", output_text);
-
-    // todo: Parse the output file into a pose here A/R
-
-    // todo: Output the pose.
-    Err(io::Error::new(ErrorKind::Other, ""))
 }
 
 // Find hydrogen bond interaction, hydrophobic interactions between ligand and protein.

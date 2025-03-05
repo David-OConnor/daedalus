@@ -618,11 +618,11 @@ pub fn aa_data_from_coords(
     }
 
     if posits_sc.is_empty() {
-        eprintln!("Error: Could not find sidechain atom.");
+        // This generally means the residue is Glycine, which doesn't have a sidechain.
+
         // Note: This will also populate hydrogens on first and last backbones, and potentially
         // on residues that don't have roles marked.
         add_h_sidechain(&mut hydrogens, atoms, &h_default);
-        // todo: Returning these posits here is wonky potentially.
         return (dihedral, hydrogens, c_p_posit, c_alpha_posit);
     }
 

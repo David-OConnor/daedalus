@@ -234,8 +234,6 @@ fn h_bond_candidate_el(atom: &Atom) -> bool {
 pub fn create_hydrogen_bonds(atoms: &[Atom], bonds: &[Bond]) -> Vec<HydrogenBond> {
     let mut result = Vec::new();
 
-    // todo: S and F as well.
-
     // Bonds between donor and H.
     let potential_donor_bonds: Vec<&Bond> = bonds
         .iter()
@@ -267,21 +265,19 @@ pub fn create_hydrogen_bonds(atoms: &[Atom], bonds: &[Bond]) -> Vec<HydrogenBond
         };
 
         for (acc_i, acc_candidate) in &potential_acceptors {
-            // todo: Take into account typical lenghs of donor adn receptor; here your order doesn't matter.
-            let dist_thresh = if donor_heavy.element == Oxygen && acc_candidate.element == Oxygen {
+            let d_e = donor_heavy.element; // Cleans up the verbose code below.
+            let a_e = acc_candidate.element;
+            // todo: Take into account typical lenghs of donor and receptor; here your order isn't used.
+            let dist_thresh = if d_e == Oxygen && a_e == Oxygen {
                 H_BOND_O_O_DIST
-            } else if donor_heavy.element == Nitrogen && acc_candidate.element == Nitrogen {
+            } else if d_e == Nitrogen && a_e == Nitrogen {
                 H_BOND_N_N_DIST
-            } else if (donor_heavy.element == Oxygen && acc_candidate.element == Nitrogen)
-                || (donor_heavy.element == Nitrogen && acc_candidate.element == Oxygen)
-            {
+            } else if (d_e == Oxygen && a_e == Nitrogen) || (d_e == Nitrogen && a_e == Oxygen) {
                 H_BOND_O_N_DIST
-            } else if (donor_heavy.element == Fluorine && acc_candidate.element == Nitrogen)
-                || (donor_heavy.element == Nitrogen && acc_candidate.element == Fluorine)
-            {
+            } else if (d_e == Fluorine && a_e == Nitrogen) || (d_e == Nitrogen && a_e == Fluorine) {
                 H_BOND_N_F_DIST
             } else {
-                H_BOND_N_S_DIST // Good enough for the other types, for now.
+                H_BOND_N_S_DIST // Good enough for other combos involving S and F, for now.
             };
 
             let dist_thresh_min = dist_thresh - H_BOND_DIST_THRESH;

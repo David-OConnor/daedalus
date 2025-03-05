@@ -2,7 +2,6 @@
 
 use graphics::{
     ControlScheme, DeviceEvent, ElementState, EngineUpdates, FWD_VEC, Scene, WindowEvent,
-    event::MouseScrollDelta,
     winit::keyboard::{KeyCode, PhysicalKey::Code},
 };
 use lin_alg::{
@@ -21,8 +20,8 @@ use crate::{
 pub const MOVEMENT_SENS: f32 = 12.;
 pub const RUN_FACTOR: f32 = 6.; // i.e. shift key multiplier
 
-const SCROLL_MOVE_AMT: f32 = 4.;
-const SCROLL_ROTATE_AMT: f32 = 12.;
+pub const SCROLL_MOVE_AMT: f32 = 4.;
+pub const SCROLL_ROTATE_AMT: f32 = 12.;
 
 const SELECTION_DIST_THRESH_SMALL: f32 = 0.7; // e.g. ball + stick
 const SELECTION_DIST_THRESH_LARGE: f32 = 1.3; // e.g. VDW views.
@@ -49,34 +48,10 @@ pub fn event_dev_handler(
 
     match event {
         // Move the camera forward and back on scroll.
-        DeviceEvent::MouseWheel { delta } => match delta {
-            MouseScrollDelta::PixelDelta(_) => (),
-            MouseScrollDelta::LineDelta(_x, y) => {
-                if state_.ui.left_click_down {
-                    // Roll if left button down while scrolling?
-                    let fwd = scene.camera.orientation.rotate_vec(FWD_VEC);
-
-                    let mut rot_amt = -SCROLL_ROTATE_AMT * dt;
-                    if y > 0. {
-                        rot_amt *= -1.;
-                    }
-
-                    let rotator = Quaternion::from_axis_angle(fwd, rot_amt);
-                    scene.camera.orientation = rotator * scene.camera.orientation;
-                } else {
-                    let mut movement_vec = Vec3::new(0., 0., SCROLL_MOVE_AMT);
-                    if y < 0. {
-                        movement_vec *= -1.;
-                    }
-
-                    scene.camera.position += scene.camera.orientation.rotate_vec(movement_vec);
-                }
-                updates.camera = true;
-
-                set_flashlight(scene);
-                updates.lighting = true;
-            }
-        },
+        DeviceEvent::MouseWheel { delta: _ } => {
+            set_flashlight(scene);
+            updates.lighting = true;
+        }
         DeviceEvent::Button { button, state } => {
             // Workaround for EGUI's built-in way of doing this being broken
             // todo: This workaround isn't working due to inputs being disabled if mouse is in the GUI.
@@ -196,9 +171,9 @@ pub fn event_dev_handler(
                     // todo: Temp to test Ligand rotation
                     Code(KeyCode::BracketLeft) => {
                         if let Some(lig) = &mut state_.ligand {
-                            let rotation: QuaternionF64 =
-                                Quaternion::from_axis_angle(FWD_VEC, -10. * dt).into();
-                            lig.orientation = rotation * lig.orientation;
+                            // let rotation: QuaternionF64 =
+                            //     Quaternion::from_axis_angle(FWD_VEC, -10. * dt).into();
+                            // lig.orientation = rotation * lig.orientation;
 
                             // to clear entries; fine for this hack.
                             mol_drawing::draw_molecule(state_, scene, false);
@@ -209,9 +184,9 @@ pub fn event_dev_handler(
                     // todo: Temp to test Ligand rotation
                     Code(KeyCode::BracketRight) => {
                         if let Some(lig) = &mut state_.ligand {
-                            let rotation: QuaternionF64 =
-                                Quaternion::from_axis_angle(FWD_VEC, 10. * dt).into();
-                            lig.orientation = rotation * lig.orientation;
+                            // let rotation: QuaternionF64 =
+                            //     Quaternion::from_axis_angle(FWD_VEC, 10. * dt).into();
+                            // lig.orientation = rotation * lig.orientation;
 
                             // to clear entries; fine for this hack.
                             mol_drawing::draw_molecule(state_, scene, false);

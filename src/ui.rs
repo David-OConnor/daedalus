@@ -16,14 +16,13 @@ use na_seq::AaIdent;
 use crate::{
     CamSnapshot, Selection, State, ViewSelLevel,
     docking::{
-        check_adv_avail,
+        docking_external::{check_adv_avail, dock_with_vina},
         docking_prep::{PartialChargeType, setup_partial_charges},
         docking_prep_external::{prepare_ligand, prepare_target},
         find_optimal_pose,
         find_sites::find_docking_sites,
-        run_adv,
     },
-    download_pdb::{load_cif_rcsb, load_sdf_drugbank},
+    download_mols::{load_cif_rcsb, load_sdf_drugbank, load_sdf_pubchem},
     mol_drawing::{MoleculeView, draw_ligand, draw_molecule},
     molecule::{BondType, Ligand, Molecule, ResidueType},
     rcsb_api::{open_drugbank, open_pdb, open_pubchem},
@@ -716,29 +715,14 @@ fn residue_search(
             if ui.button("Dock").clicked() {
                 // let tgt = state.molecule.as_ref().unwrap();
                 let mol = state.molecule.as_ref().unwrap();
-                // find_optimal_pose(tgt, ligand, &Default::default());
+                find_optimal_pose(mol, ligand, &Default::default());
 
                 // Allow the user to select the autodock executable.
-                if state.to_save.autodock_vina_path.is_none() {
-                    state.volatile.autodock_path_dialog.pick_file();
-                }
-
-                if let Some(vina_path) = &state.to_save.autodock_vina_path {
-                    match run_adv(
-                        &ligand.docking_init,
-                        vina_path,
-                        &PathBuf::from_str(&format!("{}_target.pdbqt", mol.ident)).unwrap(),
-                        &PathBuf::from_str(&format!("{}_ligand.pdbqt", ligand.molecule.ident))
-                            .unwrap(),
-                        // &PathBuf::from_str("target_prepped.pdbqt").unwrap(),
-                        // &PathBuf::from_str("ligand_prepped.pdbqt").unwrap(),
-                    ) {
-                        Ok(r) => println!("Docking successful"),
-                        Err(e) => eprintln!("Docking failed: {e:?}"),
-                    }
-                } else {
-                    eprintln!("No Autodock Vina install located yet.");
-                }
+                // if state.to_save.autodock_vina_path.is_none() {
+                //     state.volatile.autodock_path_dialog.pick_file();
+                // }
+                // dock_with_vina(mol, ligand, &state.to_save.autodock_vina_path);
+                *redraw = true;
             }
 
             ui.label("Docking site setup:");
@@ -799,11 +783,11 @@ fn residue_search(
 
         ui.add_space(COL_SPACING);
 
-        ui.label(RichText::new("🔘AV").color(active_color(state.ui.autodock_path_valid)))
-            .on_hover_text("Autodock Vina available (Docking)");
-
-        ui.label(RichText::new("🔘OB").color(active_color(state.babel_avail)))
-            .on_hover_text("Open Babel available (Docking prep)");
+        // ui.label(RichText::new("🔘AV").color(active_color(state.ui.autodock_path_valid)))
+        //     .on_hover_text("Autodock Vina available (Docking)");
+        //
+        // ui.label(RichText::new("🔘OB").color(active_color(state.babel_avail)))
+        //     .on_hover_text("Open Babel available (Docking prep)");
     });
 }
 
@@ -1074,7 +1058,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                             reset_cam = true;
                         }
                         Err(_e) => {
-                            eprintln!("Error loading PDB file");
+                            eprintln!("Error loading CIF file");
                         }
                     }
                 }
@@ -1087,10 +1071,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
                             state.ligand = Some(Ligand {
                                 molecule: mol,
-                                docking_init: Default::default(),
-                                orientation: QuaternionF64::new_identity(),
-                                torsions: Vec::new(),
-                                unit_cell_dims: Default::default(),
+                                ..Default::default()
                             });
 
                             state.update_from_prefs();
@@ -1099,7 +1080,29 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                             reset_cam = true;
                         }
                         Err(_e) => {
-                            eprintln!("Error loading PDB file");
+                            eprintln!("Error loading SDF file");
+                        }
+                    }
+                }
+
+                if ui.button("Download from PubChem").clicked() {
+                    match load_sdf_pubchem(&state.ui.rcsb_input) {
+                        // todo: Load as ligand for now.
+                        Ok(mol) => {
+                            // state.pdb = None;
+
+                            state.ligand = Some(Ligand {
+                                molecule: mol,
+                                ..Default::default()
+                            });
+
+                            state.update_from_prefs();
+
+                            redraw = true;
+                            reset_cam = true;
+                        }
+                        Err(_e) => {
+                            eprintln!("Error loading SDF file");
                         }
                     }
                 }

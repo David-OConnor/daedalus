@@ -44,7 +44,8 @@ pub fn points_along_ray(
         // todo: take atom radius into account. E.g. Hydrogens should required a smaller dist.
         // todo: This approach is a bit sloppy, but probably better than not including it.
         if atom.element == Element::Hydrogen {
-            dist_thresh *= 0.6;
+            // todo: This seems to prevent selecting at all; not sure why.
+            // dist_thresh *= 0.9;
         }
         if dist_to_ray < dist_thresh {
             result.push(i);
@@ -309,7 +310,7 @@ pub fn setup_neighbor_pairs(
             (posit.y / grid_size).floor() as i32,
             (posit.z / grid_size).floor() as i32,
         );
-        // grid.entry(grid_pos).or_default().push(i);
+
         grid.entry(grid_pos).or_default().push(indexes[i]);
     }
 

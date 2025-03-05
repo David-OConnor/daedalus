@@ -1,9 +1,8 @@
 //! Contains data structures and related code for molecules, atoms, residues, chains, etc.
 use std::{fmt, str::FromStr};
-
 use lin_alg::{
     f32::Vec3 as Vec3F32,
-    f64::{Quaternion, Vec3},
+    f64::{ Vec3},
 };
 use na_seq::AminoAcid;
 use pdbtbx::SecondaryStructure;
@@ -12,12 +11,13 @@ use crate::{
     Selection,
     aa_coords::Dihedral,
     docking::{
-        DockingInit,
+        DockingInit, Pose,
         docking_prep::{DockType, Torsion, UnitCellDims},
     },
     element::Element,
     rcsb_api::PdbMetaData,
 };
+use crate::docking::ConformationType;
 
 pub const ATOM_NEIGHBOR_DIST_THRESH: f64 = 5.; // todo: Adjust A/R.
 
@@ -108,10 +108,71 @@ impl fmt::Display for AtomRole {
 pub struct Ligand {
     pub molecule: Molecule,
     // pub offset: Vec3,
+    pub pose: Pose,
     pub docking_init: DockingInit,
-    pub orientation: Quaternion, // Assumes rigid.
+    // pub orientation: Quaternion, // Assumes rigid.
     pub torsions: Vec<Torsion>,
     pub unit_cell_dims: UnitCellDims,
+}
+
+impl Ligand {
+    pub fn new(molecule: Molecule) -> Self {
+        let docking_init = DockingInit {
+            // site_center: Vec3::new(-18.955, -5.188, 8.617),
+            site_center: Vec3::new(38.699, 36.415, 30.815),
+            site_box_size: 10.,
+        };
+
+        let mut result = Self {
+            molecule,
+            docking_init,
+            ..Default::default()
+        };
+        result.set_anchor();
+        result
+    }
+
+    /// Separate from constructor; run when the pose changes, for now.
+    pub fn set_anchor(&mut self) {
+        let mut center = Vec3::new_zero();
+        for atom in &self.molecule.atoms {
+            center += atom.posit;
+        }
+        center /= self.molecule.atoms.len() as f64;
+
+        let mut anchor_atom = 0;
+        let mut best_dist = 999999.;
+
+        for (i, atom) in self.molecule.atoms.iter().enumerate() {
+            let dist = (atom.posit - center).magnitude();
+            if dist < best_dist {
+                best_dist = dist;
+                anchor_atom = i;
+            }
+        }
+
+        self.pose.anchor_atom = anchor_atom;
+    }
+
+    pub fn position_atom(&self, atom_i: usize, pose: Option<&Pose>) -> Vec3 {
+        let atom = self.molecule.atoms[atom_i].posit;
+
+        let pose_ = match pose {
+            Some(p) => p,
+            None => &self.pose,
+        };
+
+        match &pose_.conformation_type {
+            ConformationType::Rigid { orientation } => {
+                let anchor = self.molecule.atoms[pose_.anchor_atom].posit;
+                // Rotate around the anchor atom.
+                let posit_rel = atom - anchor;
+                pose_.anchor_posit + orientation.rotate_vec(posit_rel)
+                // self.pose.anchor_posit + posit_rel
+            }
+            ConformationType::Flexible { dihedral_angles } => {unimplemented!()}
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]

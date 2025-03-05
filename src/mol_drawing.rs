@@ -19,6 +19,7 @@ use crate::{
     },
     util::orbit_center,
 };
+use crate::docking::ConformationType;
 
 #[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]
 pub enum MoleculeView {
@@ -364,13 +365,9 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene, update_cam_lighting: bo
 
     // todo: rotate using the orientation relative to the offset. Atoms and bonds.
 
-    let mut atoms_rotated = mol.atoms.clone();
-
-    // Rotate around the *molecule center* we calculated; this is invariant of the initial molecule coordinates.
-    // todo: that algorithm may be too naive.
-    for atom in &mut atoms_rotated {
-        let posit_offset = atom.posit - mol.center;
-        atom.posit = ligand.orientation.rotate_vec(posit_offset);
+    let mut atoms_positioned = mol.atoms.clone();
+    for (i, atom) in &mut atoms_positioned.iter_mut().enumerate() {
+        atom.posit = ligand.position_atom(i, None);
     }
 
     // for atom in &mol.atoms {
@@ -384,34 +381,46 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene, update_cam_lighting: bo
     //     ));
     // }
 
+    println!("ANCHOR: {:?}", ligand.pose.anchor_atom);
     // todo: C+P from draw_molecule. With some removed, but a lot of repeated.
     for bond in &mol.bonds {
-        let atom_0 = &atoms_rotated[bond.atom_0];
-        let atom_1 = &atoms_rotated[bond.atom_1];
+        let atom_0 = &atoms_positioned[bond.atom_0];
+        let atom_1 = &atoms_positioned[bond.atom_1];
 
-        let posit_0: Vec3 = (atom_0.posit + ligand.docking_init.site_center).into();
-        let posit_1: Vec3 = (atom_1.posit + ligand.docking_init.site_center).into();
+        let posit_0: Vec3 = atom_0.posit.into();
+        let posit_1: Vec3 = atom_1.posit.into();
 
-        let color_temp = (0., 0.4, 1.);
+        // todo: A/R.
+        let mut color_0 = (0., 0.4, 1.);
+        let mut color_1 = (0., 0.4, 1.);
+
+        // Highlight the anchor.
+        if bond.atom_0 == ligand.pose.anchor_atom {
+            color_0 = (1., 0., 1.);
+        }
+
+        if bond.atom_1 == ligand.pose.anchor_atom {
+            color_1 = (1., 0., 1.);
+        }
 
         bond_entities(
             &mut scene.entities,
             posit_0,
             posit_1,
-            color_temp,
-            color_temp,
+            color_0,
+            color_1,
             bond.bond_type,
         );
     }
 
     if !state.ui.visibility.hide_h_bonds {
         for bond in &mol.bonds_hydrogen {
-            let atom_donor = &atoms_rotated[bond.donor];
-            let atom_acceptor = &atoms_rotated[bond.acceptor];
+            let atom_donor = &atoms_positioned[bond.donor];
+            let atom_acceptor = &atoms_positioned[bond.acceptor];
 
-            let posit_donor: Vec3 = (atom_donor.posit + ligand.docking_init.site_center).into();
-            let posit_acceptor: Vec3 =
-                (atom_acceptor.posit + ligand.docking_init.site_center).into();
+            let posit_donor: Vec3 = atom_donor.posit.into();
+
+            let posit_acceptor: Vec3 =atom_acceptor.posit.into();
 
             bond_entities(
                 &mut scene.entities,

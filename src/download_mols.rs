@@ -53,6 +53,15 @@ fn sdf_url_drugbank(ident: &str) -> String {
     )
 }
 
+fn sdf_url_pubchem(ident: &str) -> String {
+    // todo: LIkely wrong.
+    format!(
+        "https://pubchem.ncbi.nlm.nih.gov/rest/pug/conformers/0000FE0400000001/SDF?response_type=\
+        save&response_basename=Conformer3D_COMPOUND_CID_{}",
+        ident.to_uppercase()
+    )
+}
+
 /// Download a CIF file from the RSCB, and parse as PDB.
 pub fn load_cif_rcsb(ident: &str) -> Result<PDB, ReqError> {
     let agent = make_agent();
@@ -66,12 +75,25 @@ pub fn load_cif_rcsb(ident: &str) -> Result<PDB, ReqError> {
     read_pdb(&resp).map_err(|e| ReqError {})
 }
 
-/// Download a SDF file from DrugBank, and parse as a molecule.
+/// Download an SDF file from DrugBank, and parse as a molecule.
 pub fn load_sdf_drugbank(ident: &str) -> Result<Molecule, ReqError> {
     let agent = make_agent();
 
     let resp = agent
         .get(sdf_url_drugbank(ident))
+        .call()?
+        .body_mut()
+        .read_to_string()?;
+
+    Molecule::from_sdf(&resp).map_err(|e| ReqError {})
+}
+
+/// Download an SDF file from DrugBank, and parse as a molecule.
+pub fn load_sdf_pubchem(ident: &str) -> Result<Molecule, ReqError> {
+    let agent = make_agent();
+
+    let resp = agent
+        .get(sdf_url_pubchem(ident))
         .call()?
         .body_mut()
         .read_to_string()?;

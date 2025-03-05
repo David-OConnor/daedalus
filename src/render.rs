@@ -4,7 +4,7 @@ use std::f32::consts::TAU;
 
 use graphics::{
     Camera, ControlScheme, EngineUpdates, FWD_VEC, InputSettings, LightType, Lighting, Mesh,
-    PointLight, RIGHT_VEC, Scene, UiLayout, UiSettings,
+    PointLight, RIGHT_VEC, Scene, ScrollBehavior, UiLayout, UiSettings,
 };
 use lin_alg::f32::{Quaternion, Vec3};
 
@@ -12,7 +12,7 @@ use crate::{
     State,
     docking::DockingInit,
     inputs,
-    inputs::{MOVEMENT_SENS, RUN_FACTOR},
+    inputs::{MOVEMENT_SENS, RUN_FACTOR, SCROLL_MOVE_AMT, SCROLL_ROTATE_AMT},
     mol_drawing,
     ui::ui_handler,
 };
@@ -173,6 +173,10 @@ pub fn render(mut state: State) {
             control_scheme: state.to_save.control_scheme,
             move_sens: MOVEMENT_SENS,
             run_factor: RUN_FACTOR,
+            scroll_behavior: ScrollBehavior::MoveRoll {
+                move_amt: SCROLL_MOVE_AMT,
+                rotate_amt: SCROLL_ROTATE_AMT,
+            },
             ..Default::default()
         },
         background_color: BACKGROUND_COLOR,
