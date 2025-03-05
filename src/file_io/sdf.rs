@@ -2,6 +2,7 @@
 //! than PDB.
 
 use std::{
+    collections::HashMap,
     fs::File,
     io,
     io::{ErrorKind, Read},
@@ -18,10 +19,16 @@ use crate::{
     util::mol_center_size,
 };
 
+struct Sdf {
+    pub molecule: Molecule,
+    /// These fields aren't universal to the format.
+    pub metadata: HashMap<String, String>,
+}
+
 impl Molecule {
     /// From a string of a CIF or PDB text file.
-    pub fn from_sdf(pdb_text: &str) -> io::Result<Self> {
-        let lines: Vec<&str> = pdb_text.lines().collect();
+    pub fn from_sdf(sdf_text: &str) -> io::Result<Self> {
+        let lines: Vec<&str> = sdf_text.lines().collect();
 
         // SDF files typically have at least 4 lines before the atom block:
         //   1) A title or identifier

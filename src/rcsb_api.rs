@@ -6,16 +6,12 @@
 //! PDB Search API: https://search.rcsb.org/#search-api
 //! PDB Data API: https://data.rcsb.org/#data-api
 
-use std::{io, io::read_to_string, time::Duration};
+use std::{io, time::Duration};
 
 use bincode::{Decode, Encode};
-use na_seq::{Nucleotide, seq_aa_to_str, seq_to_str_lower};
 use serde::{Deserialize, Serialize};
 use serde_json::{self};
 use ureq::{self, Agent};
-use url::Url;
-
-use crate::{Selection, State};
 
 const PDB_BASE_URL: &str = "https://www.rcsb.org/structure";
 const DRUGBANK_BASE_URL: &str = "https://go.drugbank.com/drugs";

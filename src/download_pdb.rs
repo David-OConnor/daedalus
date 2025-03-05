@@ -5,7 +5,7 @@ use std::{io, time::Duration};
 use pdbtbx::PDB;
 use ureq::{self, Agent};
 
-use crate::file_io::pdb::read_pdb;
+use crate::{file_io::pdb::read_pdb, molecule::Molecule};
 
 const PDB_BASE_URL: &str = "https://www.rcsb.org/structure";
 // const PDB_3D_VIEW_URL: &str = "https://www.rcsb.org/3d-view";
@@ -19,6 +19,14 @@ const HTTP_TIMEOUT: u64 = 4; // In seconds
 // Workraound for not being able to construct ureq's errors in a way I've found.
 pub struct ReqError {}
 
+fn make_agent() -> Agent {
+    let config = Agent::config_builder()
+        .timeout_global(Some(Duration::from_secs(HTTP_TIMEOUT)))
+        .build();
+
+    config.into()
+}
+
 impl From<ureq::Error> for ReqError {
     fn from(_err: ureq::Error) -> Self {
         Self {}
@@ -31,26 +39,42 @@ impl From<io::Error> for ReqError {
     }
 }
 
-fn cif_url(ident: &str) -> String {
+fn cif_url_rscb(ident: &str) -> String {
     format!(
         "https://files.rcsb.org/download/{}.cif",
         ident.to_uppercase()
     )
 }
 
-pub fn load_rcsb(ident: &str) -> Result<PDB, ReqError> {
-    let config = Agent::config_builder()
-        .timeout_global(Some(Duration::from_secs(HTTP_TIMEOUT)))
-        .build();
+fn sdf_url_drugbank(ident: &str) -> String {
+    format!(
+        "https://go.drugbank.com/structures/small_molecule_drugs/{}.sdf?type=3d",
+        ident.to_uppercase()
+    )
+}
 
-    let agent: Agent = config.into();
+/// Download a CIF file from the RSCB, and parse as PDB.
+pub fn load_cif_rcsb(ident: &str) -> Result<PDB, ReqError> {
+    let agent = make_agent();
 
     let resp = agent
-        .get(cif_url(ident))
+        .get(cif_url_rscb(ident))
         .call()?
         .body_mut()
         .read_to_string()?;
 
-    // todo: Don't unwrap.
     read_pdb(&resp).map_err(|e| ReqError {})
+}
+
+/// Download a SDF file from DrugBank, and parse as a molecule.
+pub fn load_sdf_drugbank(ident: &str) -> Result<Molecule, ReqError> {
+    let agent = make_agent();
+
+    let resp = agent
+        .get(sdf_url_drugbank(ident))
+        .call()?
+        .body_mut()
+        .read_to_string()?;
+
+    Molecule::from_sdf(&resp).map_err(|e| ReqError {})
 }

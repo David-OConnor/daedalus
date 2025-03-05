@@ -9,6 +9,8 @@
 
 use std::f64::consts::TAU;
 
+use rayon::prelude::*;
+
 use crate::{
     element::{
         Element,
@@ -180,11 +182,6 @@ fn get_specs() -> Vec<BondSpecs> {
 /// Infer bonds from atom distances. Uses spacial partitioning for efficiency.
 /// We Check pairs only within nearby bins.
 pub fn create_bonds(atoms: &[Atom]) -> Vec<Bond> {
-    // todo: Paralllize?
-    println!("Starting bond creation...");
-
-    let mut result = Vec::new();
-
     let specs = get_specs();
 
     // We use spacial partitioning, so as not to copmare every pair of atoms.
@@ -197,32 +194,33 @@ pub fn create_bonds(atoms: &[Atom]) -> Vec<Bond> {
     // todo, then iterate over that for neighbors in the j loop? WOuld be more generalizable/extract
     // todo it out from the bus logic.
 
-    for &(i, j) in &neighbor_pairs {
-        let atom_0 = &atoms[i];
-        let atom_1 = &atoms[j];
+    neighbor_pairs
+        .par_iter()
+        .filter_map(|(i, j)| {
+            let atom_0 = &atoms[*i];
+            let atom_1 = &atoms[*j];
+            let dist = (atom_0.posit - atom_1.posit).magnitude();
 
-        let dist = (atom_0.posit - atom_1.posit).magnitude();
+            specs.iter().find_map(|spec| {
+                let matches_elements = (atom_0.element == spec.elements.0
+                    && atom_1.element == spec.elements.1)
+                    || (atom_0.element == spec.elements.1 && atom_1.element == spec.elements.0);
 
-        for spec in &specs {
-            if !((atom_0.element == spec.elements.0 && atom_1.element == spec.elements.1)
-                || (atom_0.element == spec.elements.1 && atom_1.element == spec.elements.0))
-            {
-                continue;
-            }
-
-            if (dist - spec.len).abs() < COV_BOND_LEN_THRESH {
-                result.push(Bond {
-                    bond_type: spec.bond_type,
-                    atom_0: i,
-                    atom_1: j,
-                    is_backbone: atom_0.is_backbone() && atom_1.is_backbone(),
-                });
-                break;
-            }
-        }
-    }
-
-    result
+                // If both the element match and distance-threshold check pass,
+                // we create a Bond and stop searching any further specs.
+                if matches_elements && (dist - spec.len).abs() < COV_BOND_LEN_THRESH {
+                    Some(Bond {
+                        bond_type: spec.bond_type,
+                        atom_0: *i,
+                        atom_1: *j,
+                        is_backbone: atom_0.is_backbone() && atom_1.is_backbone(),
+                    })
+                } else {
+                    None
+                }
+            })
+        })
+        .collect()
 }
 
 /// Helper

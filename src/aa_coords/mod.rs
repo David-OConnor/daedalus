@@ -35,7 +35,9 @@ const PLANAR_DIHEDRAL_THRESH: f64 = 0.4;
 // The angle between adjacent bonds must be greater than this for a bond to be considered triplanar,
 // vice tetrahedral. Tetra ideal: 1.91. Planar idea: 2.094
 // todo: This seems high, but produces better results from oneo data set.d
-const PLANAR_ANGLE_THRESH: f64 = 2.1;
+const PLANAR_ANGLE_THRESH: f64 = 2.00; // Higher means more likely to classify as tetrahedral.
+
+const SP2_PLANAR_ANGLE: f64 = TAU / 3.;
 
 struct BondError {}
 
@@ -104,7 +106,7 @@ pub fn calc_dihedral_angle(bond_middle: Vec3, bond_adjacent1: Vec3, bond_adjacen
     let result = bond1_on_plane.dot(bond2_on_plane).acos() + TAU / 2.;
 
     if result.is_nan() {
-        return 0.; // todo: What causes this? todo: Confirm it shouldn't be tau/2.
+        // return 0.; // todo: What causes this? todo: Confirm it shouldn't be tau/2.
     }
 
     // The dot product approach to angles between vectors only covers half of possible
@@ -157,7 +159,7 @@ fn tetra_atoms_2(center: Vec3, atom_0: Vec3, atom_1: Vec3, len: f64) -> (Vec3, V
 fn planar_posit(posit_center: Vec3, bond_0: Vec3, bond_1: Vec3, len: f64) -> Vec3 {
     let bond_0_unit = bond_0.to_normalized();
     let n_plane_normal = bond_0_unit.cross(bond_1).to_normalized();
-    let rotator = Quaternion::from_axis_angle(n_plane_normal, TAU / 3.);
+    let rotator = Quaternion::from_axis_angle(n_plane_normal, SP2_PLANAR_ANGLE);
 
     posit_center + rotator.rotate_vec(-bond_0_unit) * len
 }
@@ -286,7 +288,7 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
                             let angle = (bond_next.dot(bond_prev)).acos();
 
                             if angle > PLANAR_ANGLE_THRESH {
-                                planar_dist = Some(LEN_C_H);
+                                planar = true;
                             }
 
                             // // Check the atoms in both directions for a flat dihedral angle.
@@ -576,6 +578,12 @@ pub fn aa_data_from_coords(
             bond_ca_n,
         ));
 
+        // todo temp: C' Gly #154 is showing as the coords for Calpha.
+        if dihedral.ω.unwrap().is_nan() {
+            // println!("\nomega NAN. n_cp: {bond_n_cp_prev}, cp_prev_ca_prev: {bond_cp_prev_ca_prev}, ca-n: {bond_ca_n}");
+            println!("NAN: prev_cp: {prev_cp} prev_ca: {prev_ca}\n")
+        }
+
         // Add a H to the backbone N. (Amine) Sp2/Planar.
         hydrogens.push(Atom {
             posit: planar_posit(n_posit, bond_n_cp_prev, bond_ca_n, LEN_N_H),
@@ -615,7 +623,7 @@ pub fn aa_data_from_coords(
         // on residues that don't have roles marked.
         add_h_sidechain(&mut hydrogens, atoms, &h_default);
         // todo: Returning these posits here is wonky potentially.
-        return (dihedral, hydrogens, c_alpha_posit, c_alpha_posit);
+        return (dihedral, hydrogens, c_p_posit, c_alpha_posit);
     }
 
     let mut closest = (posits_sc[0] - c_alpha_posit).magnitude();

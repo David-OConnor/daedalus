@@ -11,13 +11,11 @@ use crate::{
     asa::{get_mesh_points, mesh_from_sas_points},
     element::Element,
     molecule::{Atom, AtomRole, BondCount, BondType, Chain, Residue, ResidueType, aa_color},
-    render,
     render::{
         ATOM_SHINYNESS, BALL_STICK_RADIUS, BALL_STICK_RADIUS_H, BODY_SHINYNESS, BOND_RADIUS,
         CAM_INIT_OFFSET, COLOR_AA_NON_RESIDUE, COLOR_DOCKING_BOX, COLOR_H_BOND, COLOR_SELECTED,
         COLOR_SFC_DOT, Color, MESH_BOND, MESH_BOX, MESH_SPHERE, MESH_SPHERE_LOWRES, MESH_SURFACE,
-        RADIUS_H_BOND, RADIUS_SFC_DOT, RENDER_DIST, set_docking_light, set_flashlight,
-        set_static_light,
+        RADIUS_H_BOND, RADIUS_SFC_DOT, RENDER_DIST, set_docking_light, set_static_light,
     },
     util::orbit_center,
 };
@@ -359,7 +357,7 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene, update_cam_lighting: bo
         position: ligand.docking_init.site_center.into(),
         scale: ligand.docking_init.site_box_size as f32,
         color: COLOR_DOCKING_BOX,
-        opacity: 0.3,
+        opacity: 0.2,
         shinyness: ATOM_SHINYNESS,
         ..Default::default()
     });

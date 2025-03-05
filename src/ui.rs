@@ -7,8 +7,11 @@ use std::{
 
 use egui::{Color32, ComboBox, Context, RichText, Slider, TextEdit, TopBottomPanel, Ui};
 use graphics::{Camera, ControlScheme, EngineUpdates, RIGHT_VEC, Scene, UP_VEC};
-use lin_alg::f32::{Quaternion, Vec3};
-use na_seq::{AaIdent, ligation::ligate};
+use lin_alg::{
+    f32::{Quaternion, Vec3},
+    f64::Quaternion as QuaternionF64,
+};
+use na_seq::AaIdent;
 
 use crate::{
     CamSnapshot, Selection, State, ViewSelLevel,
@@ -16,13 +19,14 @@ use crate::{
         check_adv_avail,
         docking_prep::{PartialChargeType, setup_partial_charges},
         docking_prep_external::{prepare_ligand, prepare_target},
-        find_optimal_pose, run_adv,
+        find_optimal_pose,
+        find_sites::find_docking_sites,
+        run_adv,
     },
-    download_pdb::load_rcsb,
+    download_pdb::{load_cif_rcsb, load_sdf_drugbank},
     mol_drawing::{MoleculeView, draw_ligand, draw_molecule},
-    molecule::{BondType, Molecule, ResidueType},
+    molecule::{BondType, Ligand, Molecule, ResidueType},
     rcsb_api::{open_drugbank, open_pdb, open_pubchem},
-    render,
     render::{CAM_INIT_OFFSET, RENDER_DIST, set_docking_light, set_flashlight},
     util::{cam_look_at, check_prefs_save, cycle_res_selected, orbit_center, select_from_search},
 };
@@ -700,6 +704,14 @@ fn residue_search(
                 state.volatile.save_pdbqt_dialog.pick_directory();
             }
 
+            if ui.button("Find sites").clicked() {
+                let mol = state.molecule.as_ref().unwrap();
+                let sites = find_docking_sites(mol);
+                for site in sites {
+                    println!("Docking site: {:?}", site);
+                }
+            }
+
             // if state.docking_ready {
             if ui.button("Dock").clicked() {
                 // let tgt = state.molecule.as_ref().unwrap();
@@ -1012,6 +1024,12 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             let mut metadata_loaded = false; // avoids borrow error.
             if let Some(mol) = &mut state.molecule {
                 mol_descrip(mol, ui);
+
+                if ui.button("Close").clicked() {
+                    state.molecule = None;
+                    scene.entities = Vec::new();
+                    redraw = true;
+                }
                 ui.add_space(COL_SPACING);
             }
 
@@ -1046,10 +1064,35 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
             if !state.ui.rcsb_input.is_empty() {
                 if ui.button("Download from RCSB").clicked() {
-                    match load_rcsb(&state.ui.rcsb_input) {
+                    match load_cif_rcsb(&state.ui.rcsb_input) {
                         Ok(pdb) => {
                             state.pdb = Some(pdb);
                             state.molecule = Some(Molecule::from_pdb(state.pdb.as_ref().unwrap()));
+                            state.update_from_prefs();
+
+                            redraw = true;
+                            reset_cam = true;
+                        }
+                        Err(_e) => {
+                            eprintln!("Error loading PDB file");
+                        }
+                    }
+                }
+
+                if ui.button("Download from DrugBank").clicked() {
+                    match load_sdf_drugbank(&state.ui.rcsb_input) {
+                        // todo: Load as ligand for now.
+                        Ok(mol) => {
+                            // state.pdb = None;
+
+                            state.ligand = Some(Ligand {
+                                molecule: mol,
+                                docking_init: Default::default(),
+                                orientation: QuaternionF64::new_identity(),
+                                torsions: Vec::new(),
+                                unit_cell_dims: Default::default(),
+                            });
+
                             state.update_from_prefs();
 
                             redraw = true;
@@ -1064,10 +1107,21 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         });
 
         ui.add_space(ROW_SPACING);
+        let mut close_ligand = false; // to avoid borrow error.
         if let Some(ligand) = &mut state.ligand {
             ui.horizontal(|ui| {
                 mol_descrip(&ligand.molecule, ui);
+
+                if ui.button("Close").clicked() {
+                    close_ligand = true;
+                }
             });
+        }
+
+        if close_ligand {
+            state.ligand = None;
+            scene.entities = Vec::new();
+            redraw = true;
         }
 
         ui.add_space(ROW_SPACING);

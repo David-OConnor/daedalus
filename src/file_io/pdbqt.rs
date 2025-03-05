@@ -331,9 +331,8 @@ impl Molecule {
         }
 
         // If your PDBQT format typically has "ENDROOT" after the atoms:
-        writeln!(file, "ENDROOT")?;
-
-        writeln!(file, "END")?;
+        // writeln!(file, "ENDROOT")?;
+        // writeln!(file, "END")?;
 
         Ok(())
     }

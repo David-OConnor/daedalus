@@ -35,10 +35,8 @@ impl Molecule {
             }
 
             if let ResidueType::AminoAcid(aa) = &res.res_type {
-                let (dihedral, hydrogens, cp_pos, ca_pos) = aa_data_from_coords(
-                    &atoms, *aa, // todo: Skip the first one; not set up yet.
-                    prev_cp_ca, n_next_pos,
-                );
+                let (dihedral, hydrogens, cp_pos, ca_pos) =
+                    aa_data_from_coords(&atoms, *aa, prev_cp_ca, n_next_pos);
 
                 for h in hydrogens {
                     self.atoms.push(h);

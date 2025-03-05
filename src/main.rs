@@ -1,5 +1,3 @@
-extern crate core;
-
 mod aa_coords;
 mod add_hydrogens;
 mod amino_acid_coords;
