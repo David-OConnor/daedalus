@@ -715,7 +715,12 @@ fn residue_search(
             if ui.button("Dock").clicked() {
                 // let tgt = state.molecule.as_ref().unwrap();
                 let mol = state.molecule.as_ref().unwrap();
-                find_optimal_pose(mol, ligand, &Default::default());
+                find_optimal_pose(
+                    mol,
+                    ligand,
+                    &Default::default(),
+                    &state.volatile.lj_lookup_table,
+                );
 
                 // Allow the user to select the autodock executable.
                 // if state.to_save.autodock_vina_path.is_none() {

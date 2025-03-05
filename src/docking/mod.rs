@@ -31,11 +31,16 @@
 
 // 4MZI/160355 docking example: https://www.youtube.com/watch?v=vU2aNuP3Y8I
 
+use std::collections::HashMap;
+
 use lin_alg::f64::{Quaternion, Vec3};
 use rand::Rng;
 use rayon::prelude::*;
 
-use crate::molecule::{Atom, Ligand, Molecule};
+use crate::{
+    element::{Element, get_lj_params},
+    molecule::{Atom, Ligand, Molecule},
+};
 
 pub mod docking_external;
 pub mod docking_prep;
@@ -59,28 +64,23 @@ enum GaCrossoverMode {
 /// In a real system, you’d want to parameterize \(\sigma\) and \(\epsilon\)
 /// based on the atom types (i.e. from a force field lookup). Here, we’ll
 /// just demonstrate the structure of the calculation with made-up constants.
-pub fn lj_potential(atom_0: &Atom, atom_1: &Atom, ligand_atom_posit: Vec3) -> f32 {
-    let r = (atom_0.posit - ligand_atom_posit).magnitude() as f32;
+pub fn lj_potential(
+    atom_0: &Atom,
+    atom_1: &Atom,
+    atom_1_posit: Vec3,
+    lj_lut: &HashMap<(Element, Element), (f32, f32)>,
+) -> f32 {
+    let r = (atom_0.posit - atom_1_posit).magnitude() as f32;
 
     // todo: Experiment
     const LJ_DIST_THRESH: f32 = 5.; // performance saver?
-    if r > LJ_DIST_THRESH {
+    if r > LJ_DIST_THRESH || r < f32::EPSILON {
         return 0.;
     }
 
     // 1. Get *intrinsic* LJ parameters for each element
 
-    // todo: Cache these in a table!
-    let (sigma_a, epsilon_a) = atom_0.element.lj_params();
-    let (sigma_b, epsilon_b) = atom_1.element.lj_params();
-
-    // 2. Combine them for the pair (Lorentz-Berthelot)
-    let sigma = 0.5 * (sigma_a + sigma_b);
-    let epsilon = (epsilon_a * epsilon_b).sqrt();
-
-    if r < f32::EPSILON {
-        return 0.0;
-    }
+    let (sigma, epsilon) = get_lj_params(atom_0.element, atom_1.element, lj_lut);
 
     // Note: Our sigma and eps values are very rough.
     let sr = sigma / r;
@@ -132,7 +132,7 @@ impl Default for GeneticAlgorithmParameters {
 pub struct DockingInit {
     pub site_center: Vec3,
     pub site_box_size: f64, // Assume square. // todo: Allow diff dims
-    // todo: Num points in each dimension?
+                            // todo: Num points in each dimension?
 }
 
 #[derive(Clone, Debug)]
@@ -160,7 +160,12 @@ pub struct Pose {
 
 /// Calculate binding energy, in kcal/mol. The result will be negative. The maximum (negative) binding
 /// energy may be the ideal conformation. This is used as a scoring metric.
-pub fn binding_energy(target: &Molecule, ligand: &Ligand, pose: &Pose) -> f32 {
+pub fn binding_energy(
+    target: &Molecule,
+    ligand: &Ligand,
+    pose: &Pose,
+    lj_lut: &HashMap<(Element, Element), (f32, f32)>,
+) -> f32 {
     // todo: Integrate CUDA.
 
     // Add this offset to each ligand atom to gets is position relative to this pose.
@@ -187,9 +192,9 @@ pub fn binding_energy(target: &Molecule, ligand: &Ligand, pose: &Pose) -> f32 {
         })
         .collect();
 
-    let mut atom_posits: Vec<Vec3> = ligand.molecule.atoms.iter().map(|a| a.posit).collect();
-    for i in 0..atom_posits.len() {
-        atom_posits[i] = ligand.position_atom(i, Some(pose));
+    let mut lig_posits: Vec<Vec3> = ligand.molecule.atoms.iter().map(|a| a.posit).collect();
+    for i in 0..lig_posits.len() {
+        lig_posits[i] = ligand.position_atom(i, Some(pose));
     }
 
     // Note: This iterates in parallel over target, which has a much higher atom count.
@@ -203,11 +208,10 @@ pub fn binding_energy(target: &Molecule, ligand: &Ligand, pose: &Pose) -> f32 {
                 .iter()
                 .enumerate()
                 .map(|(i_lig, atom_ligand)| {
-                    lj_potential(atom_tgt, atom_ligand, atom_posits[i_lig])
+                    lj_potential(atom_tgt, atom_ligand, lig_posits[i_lig], lj_lut)
                 })
                 .sum::<f32>()
         })
-        // Finally, sum up all partial sums into a single total.
         .sum();
 
     let vdw = lj; // todo?
@@ -282,6 +286,7 @@ pub fn find_optimal_pose(
     target: &Molecule,
     ligand: &mut Ligand,
     params: &GeneticAlgorithmParameters,
+    lj_lut: &HashMap<(Element, Element), (f32, f32)>,
 ) -> (Pose, f32) {
     // todo: Generic algorithm etc. Maybe that goes in the scoring fn?
     // for _ in 0..params.num_runs {
@@ -321,7 +326,7 @@ pub fn find_optimal_pose(
                 },
             };
 
-            let energy = binding_energy(target, &ligand, &pose);
+            let energy = binding_energy(target, &ligand, &pose, lj_lut);
 
             if energy < best_energy {
                 best_energy = energy;

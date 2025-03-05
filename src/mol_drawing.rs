@@ -9,6 +9,7 @@ use lin_alg::f32::{Quaternion, Vec3};
 use crate::{
     Selection, State, ViewSelLevel,
     asa::{get_mesh_points, mesh_from_sas_points},
+    docking::ConformationType,
     element::Element,
     molecule::{Atom, AtomRole, BondCount, BondType, Chain, Residue, ResidueType, aa_color},
     render::{
@@ -19,7 +20,6 @@ use crate::{
     },
     util::orbit_center,
 };
-use crate::docking::ConformationType;
 
 #[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]
 pub enum MoleculeView {
@@ -420,7 +420,7 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene, update_cam_lighting: bo
 
             let posit_donor: Vec3 = atom_donor.posit.into();
 
-            let posit_acceptor: Vec3 =atom_acceptor.posit.into();
+            let posit_acceptor: Vec3 = atom_acceptor.posit.into();
 
             bond_entities(
                 &mut scene.entities,

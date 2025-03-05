@@ -1,9 +1,7 @@
 //! Contains data structures and related code for molecules, atoms, residues, chains, etc.
 use std::{fmt, str::FromStr};
-use lin_alg::{
-    f32::Vec3 as Vec3F32,
-    f64::{ Vec3},
-};
+
+use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 use na_seq::AminoAcid;
 use pdbtbx::SecondaryStructure;
 
@@ -11,13 +9,12 @@ use crate::{
     Selection,
     aa_coords::Dihedral,
     docking::{
-        DockingInit, Pose,
+        ConformationType, DockingInit, Pose,
         docking_prep::{DockType, Torsion, UnitCellDims},
     },
     element::Element,
     rcsb_api::PdbMetaData,
 };
-use crate::docking::ConformationType;
 
 pub const ATOM_NEIGHBOR_DIST_THRESH: f64 = 5.; // todo: Adjust A/R.
 
@@ -170,7 +167,9 @@ impl Ligand {
                 pose_.anchor_posit + orientation.rotate_vec(posit_rel)
                 // self.pose.anchor_posit + posit_rel
             }
-            ConformationType::Flexible { dihedral_angles } => {unimplemented!()}
+            ConformationType::Flexible { dihedral_angles } => {
+                unimplemented!()
+            }
         }
     }
 }

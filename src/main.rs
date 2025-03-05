@@ -22,6 +22,7 @@ mod util;
 mod vibrations;
 
 use std::{
+    collections::HashMap,
     io,
     io::{ErrorKind, Read},
     path::Path,
@@ -47,6 +48,7 @@ use crate::{
     docking::{
         DockingInit, docking_external::check_adv_avail, docking_prep_external::check_babel_avail,
     },
+    element::{Element, init_lj_lut},
     file_io::pdbqt::load_pdbqt,
     molecule::Ligand,
     navigation::Tab,
@@ -98,6 +100,8 @@ struct StateVolatile {
     /// We Use this to keep track of key press state for the camera movement, so we can continuously
     /// update the flashlight when moving.
     inputs_commanded: InputsCommanded,
+    /// (Sigma, Epsilon). Initialize once at startup. Not-quite-static.
+    lj_lookup_table: HashMap<(Element, Element), (f32, f32)>,
 }
 
 impl Default for StateVolatile {
@@ -150,6 +154,7 @@ impl Default for StateVolatile {
             save_pdbqt_dialog,
             ui_height: 0.,
             inputs_commanded: Default::default(),
+            lj_lookup_table: init_lj_lut(),
         }
     }
 }
@@ -332,6 +337,7 @@ fn main() {
     init_local_bond_vecs();
 
     let mut state = State::default();
+
     state.ui.view_depth = VIEW_DEPTH_MAX;
 
     state.load_prefs();
