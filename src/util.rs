@@ -1,9 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    f64::consts::TAU,
-    path::PathBuf,
-    time::Instant,
-};
+use std::{collections::HashMap, time::Instant};
 
 use graphics::{Camera, ControlScheme, FWD_VEC, Scene};
 use lin_alg::{
@@ -388,4 +383,15 @@ pub fn orbit_center(state: &State) -> Vec3F32 {
             Vec3F32::new_zero()
         }
     }
+}
+
+/// A helper fn.
+pub fn find_atom<'a>(atoms: &'a [Atom], indices: &[usize], i_full_set: usize) -> Option<&'a Atom> {
+    for (j, atom) in atoms.iter().enumerate() {
+        if indices[j] == i_full_set {
+            return Some(atom);
+        }
+    }
+
+    None
 }

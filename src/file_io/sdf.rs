@@ -187,40 +187,15 @@ impl Molecule {
             visible: true,
         });
 
-        let (center, size) = mol_center_size(&atoms);
-
-        // todo: Load partial charges adn other data from SDF. (Format specific fields.)
-        // todo: For example, PUBCHEM.
-        // todo; May also have donor/acceptor/cation etc data.
-
-        let mut result = Self {
+        Ok(Molecule::new(
             ident,
             atoms,
-            bonds: Vec::new(),
-            bonds_hydrogen: Vec::new(),
             chains,
             residues,
-            metadata: None,
-            sa_surface_pts: None,
-            mesh_created: false,
-            secondary_structure: Vec::new(),
-            center,
-            size,
+            Vec::new(),
             pubchem_cid,
             drugbank_id,
-        };
-
-        result.populate_hydrogens_angles();
-        result.bonds = create_bonds(&result.atoms);
-        result.bonds_hydrogen = create_hydrogen_bonds(&result.atoms, &result.bonds);
-
-        // todo: Don't like this clone.
-        let atoms_clone = result.atoms.clone();
-        for atom in &mut result.atoms {
-            atom.dock_type = Some(DockType::infer(atom, &result.bonds, &atoms_clone));
-        }
-
-        Ok(result)
+        ))
     }
 
     pub fn save_sdf(&self, path: &Path) -> io::Result<()> {

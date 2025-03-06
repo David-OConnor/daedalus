@@ -22,7 +22,7 @@ use crate::{
         BondType::{self, *},
         HydrogenBond,
     },
-    util::setup_neighbor_pairs,
+    util::{find_atom, setup_neighbor_pairs},
 };
 
 struct BondSpecs {
@@ -228,18 +228,96 @@ fn h_bond_candidate_el(atom: &Atom) -> bool {
     matches!(atom.element, Nitrogen | Oxygen | Sulfur | Fluorine)
 }
 
+fn hydrogen_bond_inner(
+    bonds: &mut Vec<HydrogenBond>,
+    donor_heavy: &Atom,
+    donor_h: &Atom,
+    acc_candidate: &Atom,
+    donor_heavy_i: usize,
+    donor_h_i: usize,
+    acc_i: usize,
+) {
+    let d_e = donor_heavy.element; // Cleans up the verbose code below.
+    let a_e = acc_candidate.element;
+    // todo: Take into account typical lenghs of donor and receptor; here your order isn't used.
+    let dist_thresh = if d_e == Oxygen && a_e == Oxygen {
+        H_BOND_O_O_DIST
+    } else if d_e == Nitrogen && a_e == Nitrogen {
+        H_BOND_N_N_DIST
+    } else if (d_e == Oxygen && a_e == Nitrogen) || (d_e == Nitrogen && a_e == Oxygen) {
+        H_BOND_O_N_DIST
+    } else if (d_e == Fluorine && a_e == Nitrogen) || (d_e == Nitrogen && a_e == Fluorine) {
+        H_BOND_N_F_DIST
+    } else {
+        H_BOND_N_S_DIST // Good enough for other combos involving S and F, for now.
+    };
+
+    let dist_thresh_min = dist_thresh - H_BOND_DIST_THRESH;
+    let dist_thresh_max = dist_thresh + H_BOND_DIST_THRESH;
+
+    let dist = (acc_candidate.posit - donor_heavy.posit).magnitude();
+    if dist < dist_thresh_min || dist > dist_thresh_max {
+        return;
+    }
+
+    let angle = {
+        let donor_h = donor_h.posit - donor_heavy.posit;
+        let donor_acceptor = donor_heavy.posit - acc_candidate.posit;
+
+        donor_acceptor
+            .to_normalized()
+            .dot(donor_h.to_normalized())
+            .acos()
+    };
+
+    if angle > H_BOND_ANGLE_THRESH {
+        bonds.push(HydrogenBond {
+            donor: donor_heavy_i,
+            acceptor: acc_i,
+            hydrogen: donor_h_i,
+        });
+    }
+}
+
+/// Create hydrogen bonds between all atomsm in a group. See `create_hydrogen_bonds_one_way` for the more
+/// flexible fn it calls.
+pub fn create_hydrogen_bonds(atoms: &[Atom], bonds: &[Bond]) -> Vec<HydrogenBond> {
+    // create_hydrogen_bonds_one_way(atoms, bonds, atoms)
+
+    let indices: Vec<_> = (0..atoms.len()).collect();
+    create_hydrogen_bonds_one_way(atoms, &indices, bonds, atoms, &indices)
+}
+
 /// Infer hydrogen bonds from a list of atoms. This takes into account bond distance between suitable
 /// atom types (generally N and O; sometimes S and F), and geometry regarding the hydrogen covalently
 /// bonded to the donor.
-pub fn create_hydrogen_bonds(atoms: &[Atom], bonds: &[Bond]) -> Vec<HydrogenBond> {
+///
+/// Separates donor from acceptor inputs, use use in cases like bonds between targets and ligands.
+///
+pub fn create_hydrogen_bonds_one_way(
+    atoms_donor: &[Atom],
+    atoms_donor_i: &[usize],
+    bonds_donor: &[Bond],
+    atoms_acc: &[Atom],
+    atoms_acc_i: &[usize],
+) -> Vec<HydrogenBond> {
     let mut result = Vec::new();
 
     // Bonds between donor and H.
-    let potential_donor_bonds: Vec<&Bond> = bonds
+    let potential_donor_bonds: Vec<&Bond> = bonds_donor
         .iter()
         .filter(|b| {
-            let atom_0 = &atoms[b.atom_0];
-            let atom_1 = &atoms[b.atom_1];
+            let atom_0 = find_atom(atoms_donor, atoms_donor_i, b.atom_0);
+            let atom_1 = find_atom(atoms_donor, atoms_donor_i, b.atom_1);
+
+            if atom_0.is_none() || atom_1.is_none() {
+                eprintln!(
+                    "Error! Can't find atoms from indices when making H bonds (Donor finding)"
+                );
+                return false;
+            }
+            let atom_0 = atom_0.unwrap();
+            let atom_1 = atom_1.unwrap();
 
             let cfg_0_valid = h_bond_candidate_el(atom_0) && atom_1.element == Hydrogen;
             let cfg_1_valid = h_bond_candidate_el(atom_1) && atom_0.element == Hydrogen;
@@ -248,15 +326,25 @@ pub fn create_hydrogen_bonds(atoms: &[Atom], bonds: &[Bond]) -> Vec<HydrogenBond
         })
         .collect();
 
-    let potential_acceptors: Vec<(usize, &Atom)> = atoms
+    let potential_acceptors: Vec<(usize, &Atom)> = atoms_acc
         .iter()
         .enumerate()
         .filter(|(i, a)| h_bond_candidate_el(a))
         .collect();
 
     for donor_bond in potential_donor_bonds {
-        let donor_0 = &atoms[donor_bond.atom_0];
-        let donor_1 = &atoms[donor_bond.atom_1];
+        // let donor_0 = &atoms_donor[donor_bond.atom_0];
+        // let donor_1 = &atoms_donor[donor_bond.atom_1];
+
+        let donor_0 = find_atom(atoms_donor, atoms_donor_i, donor_bond.atom_0);
+        let donor_1 = find_atom(atoms_donor, atoms_donor_i, donor_bond.atom_1);
+
+        if donor_0.is_none() || donor_1.is_none() {
+            eprintln!("Error! Can't find atoms from indices when making H bonds");
+            return continue;
+        }
+        let donor_0 = donor_0.unwrap();
+        let donor_1 = donor_1.unwrap();
 
         let (donor_heavy, donor_h, donor_heavy_i, donor_h_i) = if donor_0.element == Hydrogen {
             (donor_1, donor_0, donor_bond.atom_1, donor_bond.atom_0)
@@ -264,47 +352,29 @@ pub fn create_hydrogen_bonds(atoms: &[Atom], bonds: &[Bond]) -> Vec<HydrogenBond
             (donor_0, donor_1, donor_bond.atom_0, donor_bond.atom_1)
         };
 
-        for (acc_i, acc_candidate) in &potential_acceptors {
-            let d_e = donor_heavy.element; // Cleans up the verbose code below.
-            let a_e = acc_candidate.element;
-            // todo: Take into account typical lenghs of donor and receptor; here your order isn't used.
-            let dist_thresh = if d_e == Oxygen && a_e == Oxygen {
-                H_BOND_O_O_DIST
-            } else if d_e == Nitrogen && a_e == Nitrogen {
-                H_BOND_N_N_DIST
-            } else if (d_e == Oxygen && a_e == Nitrogen) || (d_e == Nitrogen && a_e == Oxygen) {
-                H_BOND_O_N_DIST
-            } else if (d_e == Fluorine && a_e == Nitrogen) || (d_e == Nitrogen && a_e == Fluorine) {
-                H_BOND_N_F_DIST
-            } else {
-                H_BOND_N_S_DIST // Good enough for other combos involving S and F, for now.
-            };
-
-            let dist_thresh_min = dist_thresh - H_BOND_DIST_THRESH;
-            let dist_thresh_max = dist_thresh + H_BOND_DIST_THRESH;
-
-            let dist = (acc_candidate.posit - donor_heavy.posit).magnitude();
-            if dist < dist_thresh_min || dist > dist_thresh_max {
-                continue;
+        for (acc_i_, acc_candidate) in &potential_acceptors {
+            let mut acc_i = None;
+            for (j, atom) in atoms_acc.iter().enumerate() {
+                if atoms_acc_i[j] == *acc_i_ {
+                    acc_i = Some(j);
+                }
             }
 
-            let angle = {
-                let donor_h = donor_h.posit - donor_heavy.posit;
-                let donor_acceptor = donor_heavy.posit - acc_candidate.posit;
-
-                donor_acceptor
-                    .to_normalized()
-                    .dot(donor_h.to_normalized())
-                    .acos()
-            };
-
-            if angle > H_BOND_ANGLE_THRESH {
-                result.push(HydrogenBond {
-                    donor: donor_heavy_i,
-                    acceptor: *acc_i,
-                    hydrogen: donor_h_i,
-                });
+            if acc_i.is_none() {
+                eprintln!("Error! Can't find acceptor index when making H bonds.");
+                return continue;
             }
+            let acc_i = acc_i.unwrap();
+
+            hydrogen_bond_inner(
+                &mut result,
+                donor_heavy,
+                donor_h,
+                acc_candidate,
+                donor_heavy_i,
+                donor_h_i,
+                acc_i,
+            );
         }
     }
 

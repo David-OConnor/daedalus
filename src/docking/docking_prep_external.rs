@@ -2,6 +2,8 @@
 //!
 //! Update: Using Open Babel. Assume an installation, with `obabel` available in the path.
 
+// todo: We are deprecating babel.
+
 use std::{
     io,
     path::Path,

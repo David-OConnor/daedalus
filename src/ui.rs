@@ -715,18 +715,23 @@ fn residue_search(
             if ui.button("Dock").clicked() {
                 // let tgt = state.molecule.as_ref().unwrap();
                 let mol = state.molecule.as_ref().unwrap();
-                find_optimal_pose(
-                    mol,
-                    ligand,
-                    &Default::default(),
-                    &state.volatile.lj_lookup_table,
-                );
+                find_optimal_pose(mol, ligand, &state.volatile.lj_lookup_table);
 
                 // Allow the user to select the autodock executable.
                 // if state.to_save.autodock_vina_path.is_none() {
                 //     state.volatile.autodock_path_dialog.pick_file();
                 // }
                 // dock_with_vina(mol, ligand, &state.to_save.autodock_vina_path);
+                *redraw = true;
+            }
+
+            if ui.button("Dock (Vina)").clicked() {
+                let tgt = state.molecule.as_ref().unwrap();
+                // Allow the user to select the autodock executable.
+                if state.to_save.autodock_vina_path.is_none() {
+                    state.volatile.autodock_path_dialog.pick_file();
+                }
+                dock_with_vina(tgt, ligand, &state.to_save.autodock_vina_path);
                 *redraw = true;
             }
 
@@ -788,11 +793,8 @@ fn residue_search(
 
         ui.add_space(COL_SPACING);
 
-        // ui.label(RichText::new("🔘AV").color(active_color(state.ui.autodock_path_valid)))
-        //     .on_hover_text("Autodock Vina available (Docking)");
-        //
-        // ui.label(RichText::new("🔘OB").color(active_color(state.babel_avail)))
-        //     .on_hover_text("Open Babel available (Docking prep)");
+        ui.label(RichText::new("🔘AV").color(active_color(state.ui.autodock_path_valid)))
+            .on_hover_text("Autodock Vina available (Docking)");
     });
 }
 
@@ -957,12 +959,12 @@ fn view_settings(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
                 state.ui.visibility.hide_sidechains = !state.ui.visibility.hide_sidechains;
                 *redraw = true;
             }
+        }
 
-            let color = active_color(!state.ui.visibility.hide_hydrogen);
-            if ui.button(RichText::new("H").color(color)).clicked() {
-                state.ui.visibility.hide_hydrogen = !state.ui.visibility.hide_hydrogen;
-                *redraw = true;
-            }
+        let color = active_color(!state.ui.visibility.hide_hydrogen);
+        if ui.button(RichText::new("H").color(color)).clicked() {
+            state.ui.visibility.hide_hydrogen = !state.ui.visibility.hide_hydrogen;
+            *redraw = true;
         }
 
         if !state.ui.visibility.hide_hetero {

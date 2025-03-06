@@ -38,8 +38,9 @@ use rand::Rng;
 use rayon::prelude::*;
 
 use crate::{
+    bond_inference::{create_hydrogen_bonds, create_hydrogen_bonds_one_way},
     element::{Element, get_lj_params},
-    molecule::{Atom, Ligand, Molecule},
+    molecule::{Atom, Bond, HydrogenBond, Ligand, Molecule},
 };
 
 pub mod docking_external;
@@ -49,7 +50,10 @@ pub mod find_sites;
 
 const GRID_SPACING_SITE_FINDING: f64 = 5.0;
 
-const ATOM_NEAR_SITE_DIST_THRESH: f64 = 5.0; // todo: A.R.
+// Don't take into account target atoms that are not within this distance of the docking site center x
+// docking site size. Keep in mind, the difference between side len (e.g. of the box drawn), and dist
+// from center.
+const ATOM_NEAR_SITE_DIST_THRESH: f64 = 1.5;
 
 #[derive(Clone, Copy, PartialEq)]
 enum GaCrossoverMode {
@@ -72,21 +76,17 @@ pub fn lj_potential(
 ) -> f32 {
     let r = (atom_0.posit - atom_1_posit).magnitude() as f32;
 
-    // todo: Experiment
-    const LJ_DIST_THRESH: f32 = 5.; // performance saver?
-    if r > LJ_DIST_THRESH || r < f32::EPSILON {
+    if r < f32::EPSILON {
         return 0.;
     }
-
-    // 1. Get *intrinsic* LJ parameters for each element
 
     let (sigma, epsilon) = get_lj_params(atom_0.element, atom_1.element, lj_lut);
 
     // Note: Our sigma and eps values are very rough.
     let sr = sigma / r;
     let sr6 = sr.powi(6);
-    let sr12 = sr6 * sr6;
-    4.0 * epsilon * (sr12 - sr6)
+    let sr12 = sr6.powi(2);
+    4. * epsilon * (sr12 - sr6)
 }
 
 /// todo: Figure this out
@@ -151,7 +151,7 @@ impl Default for ConformationType {
 
 #[derive(Clone, Debug, Default)]
 pub struct Pose {
-    pub anchor_atom: usize, // Index.
+    // pub anchor_atom: usize, // Index.
     /// The offset of the ligand's anchor atom from the docking center.
     /// todo: Consider normalizing positions to be around the origin, for numerical precision issues.
     pub anchor_posit: Vec3,
@@ -161,18 +161,14 @@ pub struct Pose {
 /// Calculate binding energy, in kcal/mol. The result will be negative. The maximum (negative) binding
 /// energy may be the ideal conformation. This is used as a scoring metric.
 pub fn binding_energy(
-    target: &Molecule,
+    tgt_atoms_near_site: &[Atom],
+    tgt_indices: &[usize],
+    tgt_bonds_near_site: &[Bond],
     ligand: &Ligand,
     pose: &Pose,
     lj_lut: &HashMap<(Element, Element), (f32, f32)>,
 ) -> f32 {
     // todo: Integrate CUDA.
-
-    // Add this offset to each ligand atom to gets is position relative to this pose.
-    // The anchor atom will be at the pose's anchor posit.
-    let ligand_offset = pose.anchor_posit - ligand.molecule.atoms[pose.anchor_atom].posit;
-
-    let mut vdw = 0.;
 
     match &pose.conformation_type {
         ConformationType::Rigid { orientation } => {}
@@ -183,22 +179,13 @@ pub fn binding_energy(
 
     // todo: Use a neighbor grid or similar. Set it up so there are two separate sides?
 
-    let tgt_atoms_near_site: Vec<&Atom> = target
-        .atoms
-        .iter()
-        .filter(|a| {
-            // todo: What other filters besides non-hetero?
-            (a.posit - pose.anchor_posit).magnitude() < ATOM_NEAR_SITE_DIST_THRESH && !a.hetero
-        })
-        .collect();
-
     let mut lig_posits: Vec<Vec3> = ligand.molecule.atoms.iter().map(|a| a.posit).collect();
     for i in 0..lig_posits.len() {
         lig_posits[i] = ligand.position_atom(i, Some(pose));
     }
 
     // Note: This iterates in parallel over target, which has a much higher atom count.
-    let lj: f32 = tgt_atoms_near_site
+    let vdw: f32 = tgt_atoms_near_site
         .par_iter()
         // For each `atom_tgt`, compute the sum of LJ potentials with all ligand atoms
         .map(|atom_tgt| {
@@ -208,15 +195,29 @@ pub fn binding_energy(
                 .iter()
                 .enumerate()
                 .map(|(i_lig, atom_ligand)| {
-                    lj_potential(atom_tgt, atom_ligand, lig_posits[i_lig], lj_lut)
+                    lj_potential(&atom_tgt, atom_ligand, lig_posits[i_lig], lj_lut)
                 })
                 .sum::<f32>()
         })
         .sum();
 
-    let vdw = lj; // todo?
+    let lig_indices: Vec<usize> = (0..ligand.molecule.atoms.len()).collect();
 
-    let mut h_bond = 0.;
+    let mut h_bonds = create_hydrogen_bonds_one_way(
+        tgt_atoms_near_site,
+        tgt_indices,
+        tgt_bonds_near_site,
+        &ligand.molecule.atoms,
+        &lig_indices,
+    );
+
+    if h_bonds.len() > 0 {
+        println!("Num H bonds: {:?}", h_bonds.len());
+    }
+
+    const E_PER_H_BOND: f32 = -1.; // todo A/R.
+    let h_bond = h_bonds.len() as f32 * E_PER_H_BOND;
+
     let mut hydrophobic = 0.;
     let mut electrostatic = 0.;
 
@@ -285,20 +286,19 @@ fn make_posits_orientations(
 pub fn find_optimal_pose(
     target: &Molecule,
     ligand: &mut Ligand,
-    params: &GeneticAlgorithmParameters,
     lj_lut: &HashMap<(Element, Element), (f32, f32)>,
 ) -> (Pose, f32) {
     // todo: Generic algorithm etc. Maybe that goes in the scoring fn?
     // for _ in 0..params.num_runs {
     // }
 
-    println!("Finding optimal pose...");
+    let dist_thresh = ATOM_NEAR_SITE_DIST_THRESH * ligand.docking_init.site_box_size;
 
-    let num_posits: usize = 5; // Gets cubed.
-    let num_orientations = 20;
+    let num_posits: usize = 6; // Gets cubed.
+    let num_orientations = 30;
 
     println!(
-        "Conformation count: {:?}",
+        "\nFinding optimal pose... Conformation count: {:?}",
         num_posits.pow(3) * num_orientations
     );
 
@@ -306,40 +306,86 @@ pub fn find_optimal_pose(
     let (anchor_posits, orientations) =
         make_posits_orientations(&ligand.docking_init, num_posits, num_orientations);
 
-    let mut best_energy = 0.;
-    let mut best_pose = Pose {
-        anchor_atom: 0,
-        anchor_posit: Vec3::new_zero(),
-        conformation_type: ConformationType::Rigid {
-            orientation: Quaternion::new_identity(),
-        },
-    };
+    // Preliminary setup; computations that are not pose-specific, including optimizations.
+    // let tgt_atoms_near_site: Vec<(usize, &_)> = target
+    //     .atoms
+    //     .iter()
+    //     .enumerate()
+    //     .filter(|(i, a)| {
+    //         (a.posit - ligand.docking_init.site_center).magnitude() < dist_thresh && !a.hetero
+    //     })
+    //     .collect();
 
-    // todo: RAyon.
-    for anchor_posit in &anchor_posits {
-        for orientation in &orientations {
-            let pose = Pose {
-                anchor_atom: 0,
+    println!("Dist thresh: {:?}", dist_thresh);
+    let mut tgt_atom_indices = Vec::new();
+    let tgt_atoms_near_site: Vec<_> = target
+        .atoms
+        .iter()
+        .enumerate()
+        .filter(|(i, a)| {
+            let r =
+                (a.posit - ligand.docking_init.site_center).magnitude() < dist_thresh && !a.hetero;
+            if r {
+                tgt_atom_indices.push(*i);
+            }
+            r
+        })
+        .map(|(i, a)| a.clone()) // todo: Don't like the clone;
+        .collect();
+
+    // Calculate hydrogen bonds between ligand and molecule.
+    // let tgt_atom_indices: Vec<usize> = tgt_atoms_near_site.iter().map(|(i, _)| *i).collect();
+
+    let tgt_bonds_near_site: Vec<_> = target
+        .bonds
+        .iter()
+        .filter(|b| tgt_atom_indices.contains(&b.atom_0) || tgt_atom_indices.contains(&b.atom_1))
+        .map(|b| b.clone()) // todo: don't like the clone
+        .collect();
+
+    // Build a list of all candidate poses
+    let poses: Vec<_> = anchor_posits
+        .iter()
+        .flat_map(|anchor_posit| {
+            orientations.iter().map(move |orientation| Pose {
                 anchor_posit: *anchor_posit,
                 conformation_type: ConformationType::Rigid {
                     orientation: *orientation,
                 },
-            };
+            })
+        })
+        .collect();
 
-            let energy = binding_energy(target, &ligand, &pose, lj_lut);
-
-            if energy < best_energy {
-                best_energy = energy;
-                best_pose = pose;
-            }
-        }
-    }
+    // Now process them in parallel and reduce to the single best pose:
+    let (best_energy, best_pose) = poses
+        .par_iter()
+        .map(|pose| {
+            let energy = binding_energy(
+                &tgt_atoms_near_site,
+                &tgt_atom_indices,
+                &tgt_bonds_near_site,
+                &ligand,
+                pose,
+                lj_lut,
+            );
+            (energy, pose)
+        })
+        // Provide an identity value for reduction; here we use +∞ for energy:
+        .reduce(
+            || (f32::INFINITY, &poses[0]),
+            |(energy_a, pose_a), (energy_b, pose_b)| {
+                if energy_b < energy_a {
+                    (energy_b, pose_b)
+                } else {
+                    (energy_a, pose_a)
+                }
+            },
+        );
 
     ligand.pose = best_pose.clone();
-    ligand.set_anchor();
 
     println!("Complete. Best pose: {best_pose:?} E: {best_energy}");
-    (best_pose, best_energy)
+    (best_pose.clone(), best_energy)
 }
 
 // Find hydrogen bond interaction, hydrophobic interactions between ligand and protein.

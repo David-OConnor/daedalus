@@ -14,12 +14,33 @@ use crate::{
     molecule::{Atom, AtomRole, BondCount, BondType, Chain, Residue, ResidueType, aa_color},
     render::{
         ATOM_SHINYNESS, BALL_STICK_RADIUS, BALL_STICK_RADIUS_H, BODY_SHINYNESS, BOND_RADIUS,
-        CAM_INIT_OFFSET, COLOR_AA_NON_RESIDUE, COLOR_DOCKING_BOX, COLOR_H_BOND, COLOR_SELECTED,
-        COLOR_SFC_DOT, Color, MESH_BOND, MESH_BOX, MESH_SPHERE, MESH_SPHERE_LOWRES, MESH_SURFACE,
-        RADIUS_H_BOND, RADIUS_SFC_DOT, RENDER_DIST, set_docking_light, set_static_light,
+        CAM_INIT_OFFSET, Color, MESH_BOND, MESH_BOX, MESH_SPHERE, MESH_SPHERE_LOWRES, MESH_SURFACE,
+        RADIUS_SFC_DOT, RENDER_DIST, set_docking_light, set_static_light,
     },
     util::orbit_center,
 };
+
+const LIGAND_COLOR: Color = (0., 0.4, 1.);
+const LIGAND_COLOR_ANCHOR: Color = (1., 0., 1.);
+const COLOR_AA_NON_RESIDUE: Color = (0., 0.8, 1.0);
+
+const COLOR_SELECTED: Color = (1., 0., 0.);
+const COLOR_H_BOND: Color = (1., 0.5, 0.1);
+const RADIUS_H_BOND: f32 = 0.2; // A scaler relative to covalent sticks.
+
+const COLOR_SFC_DOT: Color = (0.7, 0.7, 0.7);
+const COLOR_DOCKING_BOX: Color = (0.3, 0.3, 0.9);
+
+/// Make ligands stand out visually, when colored by atom.
+fn mod_color_for_ligand(color: &Color) -> Color {
+    let blend = (0., 0.3, 1.);
+
+    (
+        (color.0 + blend.0) / 2.,
+        (color.1 + blend.1) / 2.,
+        (color.2 + blend.2) / 2.,
+    )
+}
 
 #[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]
 pub enum MoleculeView {
@@ -381,7 +402,6 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene, update_cam_lighting: bo
     //     ));
     // }
 
-    println!("ANCHOR: {:?}", ligand.pose.anchor_atom);
     // todo: C+P from draw_molecule. With some removed, but a lot of repeated.
     for bond in &mol.bonds {
         let atom_0 = &atoms_positioned[bond.atom_0];
@@ -390,17 +410,31 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene, update_cam_lighting: bo
         let posit_0: Vec3 = atom_0.posit.into();
         let posit_1: Vec3 = atom_1.posit.into();
 
-        // todo: A/R.
-        let mut color_0 = (0., 0.4, 1.);
-        let mut color_1 = (0., 0.4, 1.);
+        let mut color_0 = atom_color(
+            atom_0,
+            0,
+            &mol.residues,
+            Selection::None,
+            state.ui.view_sel_level,
+        );
+        let mut color_1 = atom_color(
+            atom_1,
+            0,
+            &mol.residues,
+            Selection::None,
+            state.ui.view_sel_level,
+        );
+
+        color_0 = mod_color_for_ligand(&color_0);
+        color_1 = mod_color_for_ligand(&color_1);
 
         // Highlight the anchor.
-        if bond.atom_0 == ligand.pose.anchor_atom {
-            color_0 = (1., 0., 1.);
+        if bond.atom_0 == ligand.anchor_atom {
+            color_0 = LIGAND_COLOR_ANCHOR;
         }
 
-        if bond.atom_1 == ligand.pose.anchor_atom {
-            color_1 = (1., 0., 1.);
+        if bond.atom_1 == ligand.anchor_atom {
+            color_1 = LIGAND_COLOR_ANCHOR;
         }
 
         bond_entities(
@@ -670,7 +704,8 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
         }
 
         // todo: DRY with Ligand
-        if !state.ui.visibility.hide_h_bonds {
+        // todo: This incorrectly hides hetero-only H bonds.
+        if !state.ui.visibility.hide_h_bonds && !state.ui.visibility.hide_non_hetero {
             for bond in &mol.bonds_hydrogen {
                 let atom_donor = &mol.atoms[bond.donor];
                 let atom_acceptor = &mol.atoms[bond.acceptor];

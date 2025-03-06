@@ -93,8 +93,8 @@ impl fmt::Display for Dihedral {
     }
 }
 
-/// Calculate the dihedral angle between 4 positions.
-/// The `bonds` are one atom substracted from the next.
+/// Calculate the dihedral angle between 4 positions (3 bonds).
+/// The `bonds` are one atom's position, substracted from the next. Order matters.
 /// todo: Move to `lin_alg` lib?
 pub fn calc_dihedral_angle(bond_middle: Vec3, bond_adjacent1: Vec3, bond_adjacent2: Vec3) -> f64 {
     // Project the next and previous bonds onto the plane that has this bond as its normal.
@@ -104,10 +104,6 @@ pub fn calc_dihedral_angle(bond_middle: Vec3, bond_adjacent1: Vec3, bond_adjacen
 
     // Not sure why we need to offset by 𝜏/2 here, but it seems to be the case
     let result = bond1_on_plane.dot(bond2_on_plane).acos() + TAU / 2.;
-
-    if result.is_nan() {
-        // return 0.; // todo: What causes this? todo: Confirm it shouldn't be tau/2.
-    }
 
     // The dot product approach to angles between vectors only covers half of possible
     // rotations; use a determinant of the 3 vectors as matrix columns to determine if what we
@@ -486,48 +482,22 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
     }
 }
 
-/// todo: Rename, etc.
-/// todo: Infer residue from coords instead of accepting as param?
-/// Returns (dihedral angles, H atoms, c'_pos, ca_pos). The parameter and output carbon positions
-/// are for use in calculating dihedral angles associated with other  chains.
-pub fn aa_data_from_coords(
+/// Add hydrogens to AA backbone atoms, and update the dihedral angles.
+/// Returns (Dihedral, (this c', this ca).
+fn handle_backbone(
+    hydrogens: &mut Vec<Atom>,
     atoms: &[&Atom],
-    aa: AminoAcid,
+    posits_sc: &[Vec3],
     prev_cp_ca: Option<(Vec3, Vec3)>,
     next_n: Option<Vec3>,
-) -> (Dihedral, Vec<Atom>, Vec3, Vec3) {
-    // todo: With_capacity based on aa?
-
-    // todo: Maybe split this into separate functions.
-
-    let h_default = Atom {
-        serial_number: 0,
-        posit: Vec3::new_zero(),
-        element: Element::Hydrogen,
-        name: "H".to_string(),
-        role: Some(AtomRole::H_Backbone),
-        residue_type: ResidueType::AminoAcid(aa),
-        hetero: false,
-        dock_type: None,
-        occupancy: None,
-        partial_charge: None,
-        temperature_factor: None,
-    };
-
-    // Initialized to default. Now, how to fill this out?
+    h_default: &Atom,
+) -> (Dihedral, Option<(Vec3, Vec3)>) {
     let mut dihedral = Dihedral::default();
 
-    // todo: Populate sidechain and main angles now based on coords. (?)
-
-    let mut hydrogens = Vec::new();
-
     // Find the positions of the backbone atoms.
-    let mut n_posit = Vec3::new_zero();
-    let mut c_alpha_posit = Vec3::new_zero();
-    let mut c_p_posit = Vec3::new_zero();
-    let mut n_found = false;
-    let mut c_alpha_found = false;
-    let mut c_p_found = false;
+    let mut n_posit = None;
+    let mut c_alpha_posit = None;
+    let mut c_p_posit = None;
 
     for atom in atoms {
         if atom.role.is_none() {
@@ -535,23 +505,26 @@ pub fn aa_data_from_coords(
         }
         match atom.role.as_ref().unwrap() {
             AtomRole::N_Backbone => {
-                n_posit = atom.posit;
-                n_found = true;
+                n_posit = Some(atom.posit);
             }
             AtomRole::C_Alpha => {
-                c_alpha_posit = atom.posit;
-                c_alpha_found = true;
+                c_alpha_posit = Some(atom.posit);
             }
             AtomRole::C_Prime => {
-                c_p_posit = atom.posit;
-                c_p_found = true;
+                c_p_posit = Some(atom.posit);
             }
             _ => (),
         }
     }
-    if !c_alpha_found || !c_p_found || !n_found {
+
+    if c_alpha_posit.is_none() || c_p_posit.is_none() || n_posit.is_none() {
         eprintln!("Error: Missing backbone atoms in coords.");
+        return (dihedral, None);
     }
+
+    let c_alpha_posit = c_alpha_posit.unwrap();
+    let c_p_posit = c_p_posit.unwrap();
+    let n_posit = n_posit.unwrap();
 
     // /// Dihedral angle between C' and N
     // /// Tor (Cα, C', N, Cα) is the ω torsion angle
@@ -597,6 +570,76 @@ pub fn aa_data_from_coords(
         dihedral.ψ = Some(calc_dihedral_angle(bond_cp_ca, bond_ca_n, bond_n_next_cp));
     }
 
+    if posits_sc.is_empty() {
+        // This generally means the residue is Glycine, which doesn't have a sidechain.
+
+        // Note: This will also populate hydrogens on first and last backbones, and potentially
+        // on residues that don't have roles marked.
+        add_h_sidechain(hydrogens, atoms, &h_default);
+        return (dihedral, Some((c_p_posit, c_alpha_posit)));
+    }
+
+    let mut closest = (posits_sc[0] - c_alpha_posit).magnitude();
+    let mut closest_sc = posits_sc[0];
+
+    for pos in posits_sc {
+        let dist = (*pos - c_alpha_posit).magnitude();
+        if dist < closest {
+            closest = dist;
+            closest_sc = *pos;
+        }
+    }
+    let bond_ca_sidechain = c_alpha_posit - closest_sc;
+
+    hydrogens.push(Atom {
+        posit: c_alpha_posit
+            + tetra_legs(
+                -bond_ca_n.to_normalized(),
+                bond_cp_ca.to_normalized(),
+                -bond_ca_sidechain.to_normalized(),
+            ) * LEN_CALPHA_H,
+        ..h_default.clone()
+    });
+
+    (dihedral, Some((c_p_posit, c_alpha_posit)))
+}
+
+/// todo: Rename, etc.
+/// todo: Infer residue from coords instead of accepting as param?
+/// Returns (dihedral angles, H atoms, (c'_pos, ca_pos)). The parameter and output carbon positions
+/// are for use in calculating dihedral angles associated with other  chains.
+pub fn aa_data_from_coords(
+    atoms: &[&Atom],
+    // aa: AminoAcid,
+    residue_type: &ResidueType,
+    prev_cp_ca: Option<(Vec3, Vec3)>,
+    next_n: Option<Vec3>,
+) -> (Dihedral, Vec<Atom>, Option<(Vec3, Vec3)>) {
+    // todo: With_capacity based on aa?
+
+    // todo: Maybe split this into separate functions.
+
+    let h_default = Atom {
+        serial_number: 0,
+        posit: Vec3::new_zero(),
+        element: Hydrogen,
+        name: "H".to_string(),
+        role: Some(AtomRole::H_Backbone),
+        residue_type: residue_type.clone(),
+        hetero: false,
+        dock_type: None,
+        occupancy: None,
+        partial_charge: None,
+        temperature_factor: None,
+    };
+
+    // todo: Populate sidechain and main angles now based on coords. (?)
+
+    let mut hydrogens = Vec::new();
+
+    let mut dihedral = Dihedral::default();
+    let mut this_cp_ca = None;
+
     // Find the nearest sidechain atom
 
     // Add a H to the C alpha atom. Tetrahedral.
@@ -617,38 +660,18 @@ pub fn aa_data_from_coords(
         }
     }
 
-    if posits_sc.is_empty() {
-        // This generally means the residue is Glycine, which doesn't have a sidechain.
-
-        // Note: This will also populate hydrogens on first and last backbones, and potentially
-        // on residues that don't have roles marked.
-        add_h_sidechain(&mut hydrogens, atoms, &h_default);
-        return (dihedral, hydrogens, c_p_posit, c_alpha_posit);
+    if let ResidueType::AminoAcid(_) = residue_type {
+        (dihedral, this_cp_ca) = handle_backbone(
+            &mut hydrogens,
+            atoms,
+            &posits_sc,
+            prev_cp_ca,
+            next_n,
+            &h_default,
+        );
     }
-
-    let mut closest = (posits_sc[0] - c_alpha_posit).magnitude();
-    let mut closest_sc = posits_sc[0];
-
-    for pos in posits_sc {
-        let dist = (pos - c_alpha_posit).magnitude();
-        if dist < closest {
-            closest = dist;
-            closest_sc = pos;
-        }
-    }
-    let bond_ca_sidechain = c_alpha_posit - closest_sc;
-
-    hydrogens.push(Atom {
-        posit: c_alpha_posit
-            + tetra_legs(
-                -bond_ca_n.to_normalized(),
-                bond_cp_ca.to_normalized(),
-                -bond_ca_sidechain.to_normalized(),
-            ) * LEN_CALPHA_H,
-        ..h_default.clone()
-    });
 
     add_h_sidechain(&mut hydrogens, atoms, &h_default);
 
-    (dihedral, hydrogens, c_p_posit, c_alpha_posit)
+    (dihedral, hydrogens, this_cp_ca)
 }

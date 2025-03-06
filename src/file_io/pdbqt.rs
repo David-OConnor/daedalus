@@ -55,7 +55,6 @@ fn parse_optional_f32(s: &str) -> io::Result<Option<f32>> {
 impl Molecule {
     /// From PQBQT text, e.g. loaded from a file.
     pub fn from_pdbqt(pdb_text: &str) -> io::Result<(Self, Option<Ligand>)> {
-        let mut result = Self::default();
         let mut atoms = Vec::new();
 
         let re_ident = Regex::new(r"Name\s*=\s*(\S+)").unwrap();
@@ -65,9 +64,11 @@ impl Molecule {
 
         let mut ligand: Option<Ligand> = None;
 
+        let mut ident = String::new();
+
         for line in pdb_text.lines() {
             if let Some(caps) = re_ident.captures(line) {
-                result.ident = caps[1].to_string();
+                ident = caps[1].to_string();
                 continue;
             }
 
@@ -187,22 +188,10 @@ impl Molecule {
             }
         }
 
-        let (center, size) = mol_center_size(&atoms);
-
-        // put the atoms in the result
-        result.atoms = atoms;
-        result.chains = chains;
-        result.residues = residues;
-        result.center = center;
-        result.size = size;
-
-        result.populate_hydrogens_angles();
-        result.bonds = create_bonds(&result.atoms);
-        result.bonds_hydrogen = create_hydrogen_bonds(&result.atoms, &result.bonds);
-
-        // todo: ligand molecule??
-
-        Ok((result, ligand))
+        Ok((
+            Molecule::new(ident, atoms, chains, residues, Vec::new(), None, None),
+            ligand,
+        ))
     }
 
     pub fn save_pdbqt(&self, path: &Path, ligand: Option<&Ligand>) -> io::Result<()> {

@@ -352,17 +352,15 @@ fn main() {
         state.open_molecule(path, true);
     }
 
-    // if let Some(path) = &state.to_save.autodock_vina_path {
-    //     state.ui.autodock_path_valid = check_adv_avail(path);
-    //
-    //     // If the saved path fails our check, leave it blank so the user can re-attempt.
-    //     if !state.ui.autodock_path_valid {
-    //         state.to_save.autodock_vina_path = None;
-    //         state.update_save_prefs();
-    //     }
-    // }
+    if let Some(path) = &state.to_save.autodock_vina_path {
+        state.ui.autodock_path_valid = check_adv_avail(path);
 
-    // state.babel_avail = check_babel_avail();
+        // If the saved path fails our check, leave it blank so the user can re-attempt.
+        if !state.ui.autodock_path_valid {
+            state.to_save.autodock_vina_path = None;
+            state.update_save_prefs();
+        }
+    }
 
     render(state);
 }

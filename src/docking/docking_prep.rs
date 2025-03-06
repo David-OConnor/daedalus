@@ -23,6 +23,8 @@
 
 use std::fmt::Display;
 
+use lin_alg::f64::Vec3;
+
 use crate::{
     element::Element,
     molecule::{Atom, Bond, Molecule},
@@ -31,7 +33,26 @@ use crate::{
 
 const GRID_SIZE: f64 = 1.6; // Slightly larger than the largest... todo: What?
 
-/// Used to determine if a gasteiger charge is a donoar (bonded to at least one H), or accepter (not
+#[derive(Debug)]
+pub struct PartialCharge {
+    pub posit: Vec3,
+    pub charge: f32,
+}
+
+/// Create a set of partial charges around atoms. Rough simulation of electronic density imbalances
+/// in charges molecules, and/or at short distances.
+///
+/// `charge_density` is a general standin. Higher means more charges; more accurate, and more computationally
+/// intense.
+fn create_partial_charges(atoms: &[Atom], charge_density: f32) -> Vec<PartialCharge> {
+    let mut result = Vec::new();
+
+    // to
+
+    result
+}
+
+/// Used to determine if a gasteiger charge is a donar (bonded to at least one H), or accepter (not
 /// bonded to any H).
 fn bonded_to_h(bonds: &[Bond], atoms: &[Atom]) -> bool {
     for bond in bonds {

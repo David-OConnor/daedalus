@@ -34,17 +34,23 @@ impl Molecule {
                 }
             }
 
-            if let ResidueType::AminoAcid(aa) = &res.res_type {
-                let (dihedral, hydrogens, cp_pos, ca_pos) =
-                    aa_data_from_coords(&atoms, *aa, prev_cp_ca, n_next_pos);
+            // if let ResidueType::AminoAcid(aa) = &res.res_type {
+            let (dihedral, hydrogens, this_cp_ca) =
+                aa_data_from_coords(&atoms, &res.res_type, prev_cp_ca, n_next_pos);
 
-                for h in hydrogens {
-                    self.atoms.push(h);
-                    res.atoms.push(self.atoms.len() - 1);
-                }
-                prev_cp_ca = Some((cp_pos, ca_pos));
-                res.dihedral = Some(dihedral);
+            let h_len = hydrogens.len();
+            for h in hydrogens {
+                self.atoms.push(h);
+                res.atoms.push(self.atoms.len() - 1);
             }
+
+            if res.serial_number == 940 {
+                println!("H len: {:?}", h_len);
+            }
+
+            prev_cp_ca = this_cp_ca;
+            res.dihedral = Some(dihedral);
         }
+        // }
     }
 }

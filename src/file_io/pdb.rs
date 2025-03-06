@@ -153,39 +153,21 @@ impl Molecule {
             .map(|(i, atom)| Atom::from_pdb(atom, i, &aa_map))
             .collect();
 
-        println!("Complete.");
-
         // todo: We use our own bond inference, since most PDBs seem to lack bond information.
         // let mut bonds = Vec::new();
         // for (a0, a1, bond) in pdb.bonds() {
         //     bonds.push((Atom::from_pdb(a0), Atom::from_pdb(a1), bond));
         // }
 
-        let (center, size) = mol_center_size(&atoms);
-
-        let mut result = Self {
-            ident: pdb.identifier.clone().unwrap_or_default(),
+        Molecule::new(
+            pdb.identifier.clone().unwrap_or_default(),
             atoms,
-            bonds: Vec::new(),
             chains,
             residues,
-            secondary_structure: pdb.secondary_structure.clone(),
-            center,
-            size,
-            ..Default::default()
-        };
-
-        result.populate_hydrogens_angles();
-        result.bonds = create_bonds(&result.atoms);
-        result.bonds_hydrogen = create_hydrogen_bonds(&result.atoms, &result.bonds);
-
-        // todo: Don't like this clone.
-        let atoms_clone = result.atoms.clone();
-        for atom in &mut result.atoms {
-            atom.dock_type = Some(DockType::infer(atom, &result.bonds, &atoms_clone));
-        }
-
-        result
+            pdb.secondary_structure.clone(),
+            None,
+            None,
+        )
     }
 }
 

@@ -8,12 +8,14 @@ use pdbtbx::SecondaryStructure;
 use crate::{
     Selection,
     aa_coords::Dihedral,
+    bond_inference::{create_bonds, create_hydrogen_bonds},
     docking::{
         ConformationType, DockingInit, Pose,
         docking_prep::{DockType, Torsion, UnitCellDims},
     },
     element::Element,
     rcsb_api::PdbMetaData,
+    util::mol_center_size,
 };
 
 pub const ATOM_NEIGHBOR_DIST_THRESH: f64 = 5.; // todo: Adjust A/R.
@@ -42,13 +44,63 @@ pub struct Molecule {
 }
 
 impl Molecule {
-    /// If residue, get an arbitrary atom. (todo: Get c alpha always).
+    /// This constructor handles assumes details are ingested into a common format upstream. It adds
+    /// them to the resulting structure, and augments it with bonds, hydrogen positions, and other things A/R.
+    pub fn new(
+        ident: String,
+        atoms: Vec<Atom>,
+        chains: Vec<Chain>,
+        residues: Vec<Residue>,
+        secondary_structure: Vec<SecondaryStructure>,
+        pubchem_cid: Option<u32>,
+        drugbank_id: Option<String>,
+    ) -> Self {
+        let (center, size) = mol_center_size(&atoms);
+
+        let mut result = Self {
+            ident,
+            atoms,
+            bonds: Vec::new(),
+            chains,
+            residues,
+            secondary_structure,
+            center,
+            size,
+            pubchem_cid,
+            drugbank_id,
+            ..Default::default()
+        };
+
+        result.populate_hydrogens_angles();
+        result.bonds = create_bonds(&result.atoms);
+        result.bonds_hydrogen = create_hydrogen_bonds(&result.atoms, &result.bonds);
+
+        // todo: Don't like this clone.
+        let atoms_clone = result.atoms.clone();
+        for atom in &mut result.atoms {
+            atom.dock_type = Some(DockType::infer(atom, &result.bonds, &atoms_clone));
+        }
+
+        result
+    }
+
+    /// If a residue, get the alpha C.
     pub fn get_sel_atom(&self, sel: Selection) -> Option<&Atom> {
         match sel {
             Selection::Atom(i) => self.atoms.get(i),
             Selection::Residue(i) => {
                 let res = &self.residues[i];
                 if !res.atoms.is_empty() {
+                    for atom_i in &res.atoms {
+                        let atom = &self.atoms[*atom_i];
+                        if let Some(role) = atom.role {
+                            if role == AtomRole::C_Alpha {
+                                return Some(atom);
+                            }
+                        }
+                    }
+
+                    // If we can't find  C alpha, default to the first atom.
                     Some(&self.atoms[res.atoms[0]])
                 } else {
                     None
@@ -105,11 +157,12 @@ impl fmt::Display for AtomRole {
 pub struct Ligand {
     pub molecule: Molecule,
     // pub offset: Vec3,
+    pub anchor_atom: usize, // Index.
     pub pose: Pose,
     pub docking_init: DockingInit,
     // pub orientation: Quaternion, // Assumes rigid.
     pub torsions: Vec<Torsion>,
-    pub unit_cell_dims: UnitCellDims,
+    pub unit_cell_dims: UnitCellDims, // todo: Unused
 }
 
 impl Ligand {
@@ -148,10 +201,11 @@ impl Ligand {
             }
         }
 
-        self.pose.anchor_atom = anchor_atom;
+        self.anchor_atom = anchor_atom;
     }
 
     pub fn position_atom(&self, atom_i: usize, pose: Option<&Pose>) -> Vec3 {
+        let anchor = self.molecule.atoms[self.anchor_atom].posit;
         let atom = self.molecule.atoms[atom_i].posit;
 
         let pose_ = match pose {
@@ -161,7 +215,6 @@ impl Ligand {
 
         match &pose_.conformation_type {
             ConformationType::Rigid { orientation } => {
-                let anchor = self.molecule.atoms[pose_.anchor_atom].posit;
                 // Rotate around the anchor atom.
                 let posit_rel = atom - anchor;
                 pose_.anchor_posit + orientation.rotate_vec(posit_rel)

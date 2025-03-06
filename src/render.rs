@@ -45,20 +45,11 @@ pub const BOND_RADIUS: f32 = 0.12;
 pub const BOND_RADIUS_DOUBLE: f32 = 0.07;
 
 pub const RADIUS_SFC_DOT: f32 = 0.05;
-pub const COLOR_SFC_DOT: Color = (0.7, 0.7, 0.7);
-pub const COLOR_DOCKING_BOX: Color = (0.3, 0.3, 0.9);
-
-pub const COLOR_SELECTED: Color = (1., 0., 0.);
-// pub const COLOR_H_BOND: Color = (0.2, 0.2, 1.);
-pub const COLOR_H_BOND: Color = (1., 0.5, 0.1);
-pub const RADIUS_H_BOND: f32 = 0.2; // A scaler relative to covalent sticks.
 
 pub const SHELL_OPACITY: f32 = 0.01;
 
 // From the farthest molecule.
 pub const CAM_INIT_OFFSET: f32 = 10.;
-
-pub const COLOR_AA_NON_RESIDUE: Color = (0., 0.8, 1.0);
 
 // A higher value will result in a less-dramatic brightness change with distance.
 const FLASHLIGHT_OFFSET: f32 = 10.;
