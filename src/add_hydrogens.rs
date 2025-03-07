@@ -44,10 +44,6 @@ impl Molecule {
                 res.atoms.push(self.atoms.len() - 1);
             }
 
-            if res.serial_number == 940 {
-                println!("H len: {:?}", h_len);
-            }
-
             prev_cp_ca = this_cp_ca;
             res.dihedral = Some(dihedral);
         }

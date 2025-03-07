@@ -53,7 +53,9 @@ const GRID_SPACING_SITE_FINDING: f64 = 5.0;
 // Don't take into account target atoms that are not within this distance of the docking site center x
 // docking site size. Keep in mind, the difference between side len (e.g. of the box drawn), and dist
 // from center.
-const ATOM_NEAR_SITE_DIST_THRESH: f64 = 1.5;
+const ATOM_NEAR_SITE_DIST_THRESH: f64 = 1.2;
+
+const HYDROPHOBIC_CUTOFF: f32 = 4.25; // 3.5 - 5 angstrom?
 
 #[derive(Clone, Copy, PartialEq)]
 enum GaCrossoverMode {
@@ -158,6 +160,42 @@ pub struct Pose {
     pub conformation_type: ConformationType,
 }
 
+#[derive(Debug, Default)]
+pub struct BindingEnergy {
+    vdw: f32,
+    h_bond_count: usize,
+    h_bond: f32, // score
+    hydrophobic: f32,
+    electrostatic: f32,
+    score: f32,
+}
+
+impl BindingEnergy {
+    pub fn new(vdw: f32, h_bond_count: usize, hydrophobic: f32, electrostatic: f32) -> Self {
+        const E_PER_H_BOND: f32 = -1.; // todo A/R.
+
+        let h_bond = h_bond_count as f32 * E_PER_H_BOND;
+        let score = vdw + h_bond + hydrophobic + electrostatic;
+
+        Self {
+            vdw,
+            h_bond_count,
+            h_bond,
+            hydrophobic,
+            electrostatic,
+            score,
+        }
+    }
+}
+
+/// todo: Improve this.
+fn is_hydrophobic(atom: &Atom) -> bool {
+    match atom.element {
+        Element::Carbon => true,
+        _ => false,
+    }
+}
+
 /// Calculate binding energy, in kcal/mol. The result will be negative. The maximum (negative) binding
 /// energy may be the ideal conformation. This is used as a scoring metric.
 pub fn binding_energy(
@@ -167,7 +205,7 @@ pub fn binding_energy(
     ligand: &Ligand,
     pose: &Pose,
     lj_lut: &HashMap<(Element, Element), (f32, f32)>,
-) -> f32 {
+) -> BindingEnergy {
     // todo: Integrate CUDA.
 
     match &pose.conformation_type {
@@ -201,27 +239,72 @@ pub fn binding_energy(
         })
         .sum();
 
-    let lig_indices: Vec<usize> = (0..ligand.molecule.atoms.len()).collect();
+    // Calculate Hydrophobic (solvation) interactions
+    // -- HYDROPHOBIC INTERACTION TERM -- //
+    // Example: We’ll collect a simple sum of energies for hydrophobic pairs.
+    // For a more advanced approach, you might do a distance-based well function, etc.
+    let hydrophobic_score: f32 = tgt_atoms_near_site
+        .par_iter()
+        .map(|atom_tgt| {
+            ligand
+                .molecule
+                .atoms
+                .iter()
+                .enumerate()
+                .filter_map(|(i_lig, atom_ligand)| {
+                    // Check if both are hydrophobic
+                    if is_hydrophobic(atom_tgt) && is_hydrophobic(atom_ligand) {
+                        let r = (atom_tgt.posit - lig_posits[i_lig]).magnitude() as f32;
 
-    let mut h_bonds = create_hydrogen_bonds_one_way(
-        tgt_atoms_near_site,
-        tgt_indices,
-        tgt_bonds_near_site,
-        &ligand.molecule.atoms,
-        &lig_indices,
-    );
+                        // If they are within a cutoff, add favorable energy.
+                        // (Your real scoring might be more nuanced.)
+                        if r < HYDROPHOBIC_CUTOFF {
+                            // Simple approach: add a small negative (favorable) energy
+                            // or some distance-dependent function:
+                            // E = -k * (1 - r/CUTOFF) for example
+                            let k = 0.2; // scale factor in kcal/mol
+                            let scaled = 1.0 - (r / HYDROPHOBIC_CUTOFF);
+                            return Some(-k * scaled.max(0.0));
+                        }
+                    }
+                    None
+                })
+                .sum::<f32>()
+        })
+        .sum();
 
-    if h_bonds.len() > 0 {
-        println!("Num H bonds: {:?}", h_bonds.len());
+    let h_bond_count = {
+        // Calculate hydrogen bonds
+        let lig_indices: Vec<usize> = (0..ligand.molecule.atoms.len()).collect();
+
+        // todo: Given you're using a relaxed distance thresh for H bonds, adjust the score
+        // todo based on the actual distance of the bond.
+        // We keep these separate, so the bond indices are meaningful.
+        let h_bonds_tgt_donor = create_hydrogen_bonds_one_way(
+            tgt_atoms_near_site,
+            tgt_indices,
+            tgt_bonds_near_site,
+            &ligand.molecule.atoms,
+            &lig_indices,
+            true,
+        );
+        let h_bonds_lig_donor = create_hydrogen_bonds_one_way(
+            &ligand.molecule.atoms,
+            &lig_indices,
+            &ligand.molecule.bonds,
+            tgt_atoms_near_site,
+            tgt_indices,
+            true,
+        );
+
+        h_bonds_tgt_donor.len() + h_bonds_lig_donor.len()
+    };
+
+    if h_bond_count > 0 {
+        println!("Num H bonds: {:?}", h_bond_count);
     }
 
-    const E_PER_H_BOND: f32 = -1.; // todo A/R.
-    let h_bond = h_bonds.len() as f32 * E_PER_H_BOND;
-
-    let mut hydrophobic = 0.;
-    let mut electrostatic = 0.;
-
-    vdw + h_bond + hydrophobic + electrostatic
+    BindingEnergy::new(vdw, h_bond_count, hydrophobic_score, 0.)
 }
 
 /// Brute-force, naive iteration of combinations. (For now)
@@ -287,15 +370,18 @@ pub fn find_optimal_pose(
     target: &Molecule,
     ligand: &mut Ligand,
     lj_lut: &HashMap<(Element, Element), (f32, f32)>,
-) -> (Pose, f32) {
+) -> (Pose, BindingEnergy) {
     // todo: Generic algorithm etc. Maybe that goes in the scoring fn?
     // for _ in 0..params.num_runs {
     // }
 
     let dist_thresh = ATOM_NEAR_SITE_DIST_THRESH * ligand.docking_init.site_box_size;
 
-    let num_posits: usize = 6; // Gets cubed.
-    let num_orientations = 30;
+    let num_posits: usize = 8; // Gets cubed.
+    let num_orientations = 60;
+
+    // For your test, see if you can get a version tha tis flexed correctly.
+    // todo: And/or set up a mol angle editing feature, and use it.
 
     println!(
         "\nFinding optimal pose... Conformation count: {:?}",
@@ -333,13 +419,12 @@ pub fn find_optimal_pose(
         .map(|(i, a)| a.clone()) // todo: Don't like the clone;
         .collect();
 
-    // Calculate hydrogen bonds between ligand and molecule.
-    // let tgt_atom_indices: Vec<usize> = tgt_atoms_near_site.iter().map(|(i, _)| *i).collect();
-
+    // Bonds here is used for identifying donor heavy and H pairs for hydrogen bonds.
     let tgt_bonds_near_site: Vec<_> = target
         .bonds
         .iter()
-        .filter(|b| tgt_atom_indices.contains(&b.atom_0) || tgt_atom_indices.contains(&b.atom_1))
+        // Don't use ||; all atom indices in these bonds must be present in `tgt_atoms_near_site`.
+        .filter(|b| tgt_atom_indices.contains(&b.atom_0) && tgt_atom_indices.contains(&b.atom_1))
         .map(|b| b.clone()) // todo: don't like the clone
         .collect();
 
@@ -372,9 +457,9 @@ pub fn find_optimal_pose(
         })
         // Provide an identity value for reduction; here we use +∞ for energy:
         .reduce(
-            || (f32::INFINITY, &poses[0]),
+            || (BindingEnergy::default(), &poses[0]),
             |(energy_a, pose_a), (energy_b, pose_b)| {
-                if energy_b < energy_a {
+                if energy_b.score < energy_a.score {
                     (energy_b, pose_b)
                 } else {
                     (energy_a, pose_a)
@@ -384,7 +469,7 @@ pub fn find_optimal_pose(
 
     ligand.pose = best_pose.clone();
 
-    println!("Complete. Best pose: {best_pose:?} E: {best_energy}");
+    println!("Complete. Best pose: {best_pose:?} E: {best_energy:?}");
     (best_pose.clone(), best_energy)
 }
 

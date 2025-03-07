@@ -236,6 +236,7 @@ fn hydrogen_bond_inner(
     donor_heavy_i: usize,
     donor_h_i: usize,
     acc_i: usize,
+    relaxed_dist_thresh: bool,
 ) {
     let d_e = donor_heavy.element; // Cleans up the verbose code below.
     let a_e = acc_candidate.element;
@@ -252,8 +253,14 @@ fn hydrogen_bond_inner(
         H_BOND_N_S_DIST // Good enough for other combos involving S and F, for now.
     };
 
-    let dist_thresh_min = dist_thresh - H_BOND_DIST_THRESH;
-    let dist_thresh_max = dist_thresh + H_BOND_DIST_THRESH;
+    let modifier = if relaxed_dist_thresh {
+        H_BOND_DIST_THRESH * 10.
+    } else {
+        H_BOND_DIST_THRESH
+    };
+
+    let dist_thresh_min = dist_thresh - modifier;
+    let dist_thresh_max = dist_thresh + modifier;
 
     let dist = (acc_candidate.posit - donor_heavy.posit).magnitude();
     if dist < dist_thresh_min || dist > dist_thresh_max {
@@ -282,10 +289,8 @@ fn hydrogen_bond_inner(
 /// Create hydrogen bonds between all atomsm in a group. See `create_hydrogen_bonds_one_way` for the more
 /// flexible fn it calls.
 pub fn create_hydrogen_bonds(atoms: &[Atom], bonds: &[Bond]) -> Vec<HydrogenBond> {
-    // create_hydrogen_bonds_one_way(atoms, bonds, atoms)
-
     let indices: Vec<_> = (0..atoms.len()).collect();
-    create_hydrogen_bonds_one_way(atoms, &indices, bonds, atoms, &indices)
+    create_hydrogen_bonds_one_way(atoms, &indices, bonds, atoms, &indices, false)
 }
 
 /// Infer hydrogen bonds from a list of atoms. This takes into account bond distance between suitable
@@ -300,6 +305,7 @@ pub fn create_hydrogen_bonds_one_way(
     bonds_donor: &[Bond],
     atoms_acc: &[Atom],
     atoms_acc_i: &[usize],
+    relaxed_dist_thresh: bool,
 ) -> Vec<HydrogenBond> {
     let mut result = Vec::new();
 
@@ -307,6 +313,7 @@ pub fn create_hydrogen_bonds_one_way(
     let potential_donor_bonds: Vec<&Bond> = bonds_donor
         .iter()
         .filter(|b| {
+            // Maps from a global index, to a local atom from a subset.
             let atom_0 = find_atom(atoms_donor, atoms_donor_i, b.atom_0);
             let atom_1 = find_atom(atoms_donor, atoms_donor_i, b.atom_1);
 
@@ -330,6 +337,7 @@ pub fn create_hydrogen_bonds_one_way(
         .iter()
         .enumerate()
         .filter(|(i, a)| h_bond_candidate_el(a))
+        .map(|(i, a)| (atoms_acc_i[i], a))
         .collect();
 
     for donor_bond in potential_donor_bonds {
@@ -352,20 +360,7 @@ pub fn create_hydrogen_bonds_one_way(
             (donor_0, donor_1, donor_bond.atom_0, donor_bond.atom_1)
         };
 
-        for (acc_i_, acc_candidate) in &potential_acceptors {
-            let mut acc_i = None;
-            for (j, atom) in atoms_acc.iter().enumerate() {
-                if atoms_acc_i[j] == *acc_i_ {
-                    acc_i = Some(j);
-                }
-            }
-
-            if acc_i.is_none() {
-                eprintln!("Error! Can't find acceptor index when making H bonds.");
-                return continue;
-            }
-            let acc_i = acc_i.unwrap();
-
+        for (acc_i, acc_candidate) in &potential_acceptors {
             hydrogen_bond_inner(
                 &mut result,
                 donor_heavy,
@@ -373,7 +368,8 @@ pub fn create_hydrogen_bonds_one_way(
                 acc_candidate,
                 donor_heavy_i,
                 donor_h_i,
-                acc_i,
+                *acc_i,
+                relaxed_dist_thresh,
             );
         }
     }

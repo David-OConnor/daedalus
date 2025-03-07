@@ -385,10 +385,10 @@ pub fn orbit_center(state: &State) -> Vec3F32 {
     }
 }
 
-/// A helper fn.
-pub fn find_atom<'a>(atoms: &'a [Atom], indices: &[usize], i_full_set: usize) -> Option<&'a Atom> {
-    for (j, atom) in atoms.iter().enumerate() {
-        if indices[j] == i_full_set {
+/// A helper fn. Maps from a global index, to a local atom from a subset.
+pub fn find_atom<'a>(atoms: &'a [Atom], indices: &[usize], i_to_find: usize) -> Option<&'a Atom> {
+    for (i_set, atom) in atoms.iter().enumerate() {
+        if indices[i_set] == i_to_find {
             return Some(atom);
         }
     }
