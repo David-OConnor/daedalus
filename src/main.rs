@@ -33,11 +33,8 @@ use std::{
 use bincode::{Decode, Encode};
 use egui_file_dialog::{FileDialog, FileDialogConfig};
 use file_io::{pdb::load_pdb, sdf::load_sdf};
-use graphics::{Camera, ControlScheme, InputSettings, InputsCommanded};
-use lin_alg::{
-    f32::{Quaternion, Vec3},
-    f64::{Quaternion as QuaternionF64, Vec3 as Vec3F64},
-};
+use graphics::{Camera, InputsCommanded};
+use lin_alg::f32::{Quaternion, Vec3};
 use mol_drawing::MoleculeView;
 use molecule::Molecule;
 use pdbtbx::{self, PDB};
@@ -45,9 +42,7 @@ use rayon::iter::ParallelIterator;
 
 use crate::{
     aa_coords::bond_vecs::init_local_bond_vecs,
-    docking::{
-        DockingInit, docking_external::check_adv_avail, docking_prep_external::check_babel_avail,
-    },
+    docking::docking_external::check_adv_avail,
     element::{Element, init_lj_lut},
     file_io::pdbqt::load_pdbqt,
     molecule::Ligand,
@@ -66,7 +61,7 @@ pub enum ComputationDevice {
     #[default]
     Cpu,
     #[cfg(feature = "cuda")]
-    Gpu(Arc<CudaDevice>),
+    Gpu(Arc<cudarc::driver::CudaDevice>),
 }
 
 #[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]
@@ -334,6 +329,25 @@ impl State {
 }
 
 fn main() {
+    #[cfg(feature = "cuda")]
+    let dev = {
+        // This is compiled in `build_`.
+        let cuda_dev = cudarc::driver::CudaDevice::new(0).unwrap();
+        cuda_dev
+            .load_ptx(
+                cudarc::nvrtc::Ptx::from_file("./cuda.ptx"),
+                "cuda",
+                &["coulomb_kernel", "lj_kernel"],
+            )
+            .unwrap();
+
+        // println!("Using the GPU for computations.");
+        ComputationDevice::Gpu(cuda_dev)
+    };
+
+    #[cfg(not(feature = "cuda"))]
+    let dev = ComputationDevice::Cpu;
+
     init_local_bond_vecs();
 
     let mut state = State::default();

@@ -33,11 +33,13 @@
 
 // 4MZI/160355 docking example: https://www.youtube.com/watch?v=vU2aNuP3Y8I
 
-use std::collections::HashMap;
+// todo: Temp/feature-gate
+use std::arch::x86_64::*;
+use std::{collections::HashMap, intrinsics::transmute};
 
 use barnes_hut::{BhConfig, Cube, Tree};
 use lin_alg::{
-    f32::Vec3 as Vec3F32,
+    f32::{Vec3 as Vec3F32, Vec3S},
     f64::{Quaternion, Vec3},
 };
 use rand::Rng;
@@ -118,6 +120,40 @@ pub fn lj_potential(
     let sr6 = sr.powi(6);
     let sr12 = sr6.powi(2);
     4. * epsilon * (sr12 - sr6)
+}
+
+/// todo: Experimental
+pub fn lj_potential_simd(
+    atom_0_posit: Vec3S,
+    atom_1_posit: Vec3S,
+    atom_0_els: [Element; 8],
+    atom_1_els: [Element; 8],
+    lj_lut: &HashMap<(Element, Element), (f32, f32)>,
+) -> __m256 {
+    unsafe {
+        let r = (atom_0_posit - atom_1_posit).magnitude();
+
+        let mut sig = [0.0; 8];
+        let mut eps = [0.0; 8];
+
+        for i in 0..8 {
+            (sig[i], eps[i]) = get_lj_params(atom_0_els[i], atom_1_els[i], lj_lut)
+        }
+
+        let sig_ = _mm256_loadu_ps(sig.as_ptr());
+        let eps_ = _mm256_loadu_ps(eps.as_ptr());
+
+        // Intermediate steps; no SIMD exponent.
+        let sr = _mm256_div_ps(sig_, r);
+        let sr2 = _mm256_mul_ps(sr, sr);
+        let sr4 = _mm256_mul_ps(sr2, sr2);
+
+        let sr6 = _mm256_mul_ps(sr4, sr2);
+        let sr12 = _mm256_mul_ps(sr6, sr6);
+
+        let four = _mm256_set1_ps(4.);
+        _mm256_mul_ps(four, _mm256_mul_ps(eps_, _mm256_div_ps(sr12, sr6)))
+    }
 }
 
 /// todo: Figure this out
@@ -204,7 +240,15 @@ impl BindingEnergy {
         const E_PER_H_BOND: f32 = -1.; // todo A/R.
 
         let h_bond = h_bond_count as f32 * E_PER_H_BOND;
-        let score = vdw + h_bond + hydrophobic + electrostatic;
+
+        let weight_vdw = 1.;
+        let weight_hydrophobic = 1.;
+        let weight_electrostatic = 1.;
+
+        let score = weight_vdw * vdw
+            + h_bond
+            + weight_hydrophobic * hydrophobic
+            + weight_electrostatic * electrostatic;
 
         Self {
             vdw,
@@ -247,29 +291,32 @@ pub fn binding_energy(
         }
     }
 
-    // todo: Use a neighbor grid or similar. Set it up so there are two separate sides?
-
     let mut lig_posits: Vec<Vec3> = ligand.molecule.atoms.iter().map(|a| a.posit).collect();
     for i in 0..lig_posits.len() {
         lig_posits[i] = ligand.position_atom(i, Some(pose));
     }
 
-    // Note: This iterates in parallel over target, which has a much higher atom count.
-    let vdw: f32 = tgt_atoms_near_site
-        .par_iter()
-        // For each `atom_tgt`, compute the sum of LJ potentials with all ligand atoms
-        .map(|atom_tgt| {
-            ligand
-                .molecule
-                .atoms
-                .iter()
-                .enumerate()
-                .map(|(i_lig, atom_ligand)| {
-                    lj_potential(&atom_tgt, atom_ligand, lig_posits[i_lig], lj_lut)
-                })
-                .sum::<f32>()
-        })
-        .sum();
+    // todo: Use a neighbor grid or similar? Set it up so there are two separate sides?
+    let vdw: f32 = {
+        let pairs: Vec<(&Atom, &Atom, usize)> = tgt_atoms_near_site
+            .iter()
+            .flat_map(|atom_tgt| {
+                ligand
+                    .molecule
+                    .atoms
+                    .iter()
+                    .enumerate()
+                    .map(move |(i_lig, atom_ligand)| (atom_tgt, atom_ligand, i_lig))
+            })
+            .collect();
+
+        pairs
+            .par_iter()
+            .map(|(atom_tgt, atom_ligand, lig_posit_i)| {
+                lj_potential(atom_tgt, atom_ligand, lig_posits[*lig_posit_i], lj_lut)
+            })
+            .sum()
+    };
 
     let h_bond_count = {
         // Calculate hydrogen bonds
@@ -386,9 +433,8 @@ pub fn binding_energy(
                 .into();
             }
 
-            // todo: Convert the force vector to a score here.
-            // force
-            0.
+            // Force magnitude. Closest to 0 is best, indicating stability?
+            force.magnitude()
         } else {
             0.
         }
@@ -431,7 +477,7 @@ fn make_posits_orientations(
 
     // todo: Try without random?
 
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let orientations: Vec<Quaternion> = (0..num_orientations)
         .map(|_| {
             let u1: f64 = rng.random();
@@ -531,8 +577,17 @@ pub fn find_optimal_pose(
         })
         .collect();
 
+    // Note: Splitting the partial charges between target and ligand (As opposed to analyzing every pair
+    // combination) may give us more useful data, and is likely much more efficient, if one side has substantially
+    // fewer charges than the other.
     let partial_charges_tgt = create_partial_charges(&tgt_atoms_near_site, 1.);
     let partial_charges_lig = create_partial_charges(&ligand.molecule.atoms, 1.);
+
+    println!(
+        "Partial charges tgt: {} lig: {}",
+        partial_charges_tgt.len(),
+        partial_charges_lig.len()
+    );
 
     // For the Barnes Hut electrostatics tree.
     let bh_bounding_box = Cube::from_bodies(&partial_charges_tgt, 0., true);

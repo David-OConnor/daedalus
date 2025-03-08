@@ -21,7 +21,7 @@
 //!
 //! What we will use to start: the OpenBabel CLI program.
 
-use std::fmt::Display;
+use std::{f32::consts::TAU, fmt::Display};
 
 use barnes_hut::BodyModel;
 use lin_alg::{f32::Vec3, f64::Vec3 as Vec3F64};
@@ -88,7 +88,7 @@ pub fn create_partial_charges(atoms: &[Atom], charge_density: f32) -> Vec<Partia
             if count_neg_points > 0 {
                 let neg_charge_per_point = -(electron_count as f32) / (count_neg_points as f32);
 
-                // Decide on a radius scale (totally arbitrary!).
+                // Decide on a radius scale
                 // For small molecules, you might pick something like 0.2–0.5 Å for “cloud radius”
                 // or randomize in a band: [0, r_max].
                 let r_max = 0.3;
@@ -97,7 +97,7 @@ pub fn create_partial_charges(atoms: &[Atom], charge_density: f32) -> Vec<Partia
                     // Sample a random direction
                     // We can do this by sampling spherical coordinates or
                     // sampling a random vector from a Gaussian, then normalizing
-                    let theta = rng.random_range(0.0..std::f32::consts::TAU);
+                    let theta = rng.random_range(0.0..TAU);
                     let u: f32 = rng.random_range(-1.0..1.0); // for cos(phi)
 
                     let sqrt_1_minus_u2 = (1.0 - u * u).sqrt();
