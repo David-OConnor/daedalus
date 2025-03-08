@@ -23,6 +23,8 @@
 //! Molecule databases:
 //! - [Drugbank](https://go.drugbank.com/)
 //! - [Pubchem](https://pubchem.ncbi.nlm.nih.gov/)
+//! - [Available Chemicals Database](https://www.psds.ac.uk/) // todo: Login required?
+//! - Roche compound inventory?
 //!
 //!
 //! Docking formats: Autodock Vina uses PDBQT files for both target and ligand. The targets, compared
@@ -33,12 +35,17 @@
 
 use std::collections::HashMap;
 
-use lin_alg::f64::{Quaternion, Vec3};
+use barnes_hut::{BhConfig, Cube, Tree};
+use lin_alg::{
+    f32::Vec3 as Vec3F32,
+    f64::{Quaternion, Vec3},
+};
 use rand::Rng;
 use rayon::prelude::*;
 
 use crate::{
     bond_inference::{create_hydrogen_bonds, create_hydrogen_bonds_one_way},
+    docking::docking_prep::{PartialCharge, create_partial_charges, setup_partial_charges},
     element::{Element, get_lj_params},
     molecule::{Atom, Bond, HydrogenBond, Ligand, Molecule},
 };
@@ -57,9 +64,31 @@ const ATOM_NEAR_SITE_DIST_THRESH: f64 = 1.2;
 
 const HYDROPHOBIC_CUTOFF: f32 = 4.25; // 3.5 - 5 angstrom?
 
+const THETA_BH: f64 = 0.5;
+
+// const SOFTENING_FACTOR_SQ_ELECTROSTATIC: f32 = 1e-6;
+const SOFTENING_FACTOR_SQ_ELECTROSTATIC: f64 = 1e-6;
+
+const Q: f32 = 1.; // elementary charge.
+
 #[derive(Clone, Copy, PartialEq)]
 enum GaCrossoverMode {
     Twopt,
+}
+
+/// The most fundamental part of Newtonian acceleration calculation.
+/// `acc_dir` is a unit vector.
+// todo: F64 A/R.
+// pub fn acc_elec(acc_dir: Vec3F32, src_q: f32, tgt_q: f32, dist: f32, softening_factor_sq: f32) -> Vec3F32 {
+pub fn acc_elec(
+    acc_dir: Vec3,
+    src_q: f64,
+    tgt_q: f64,
+    dist: f64,
+    softening_factor_sq: f64,
+) -> Vec3 {
+    // Assume the coulomb constant is 1.
+    acc_dir * src_q * tgt_q / (dist.powi(2) + softening_factor_sq)
 }
 
 /// Calculate the Lennard-Jones potential between two atoms.
@@ -205,6 +234,9 @@ pub fn binding_energy(
     ligand: &Ligand,
     pose: &Pose,
     lj_lut: &HashMap<(Element, Element), (f32, f32)>,
+    partial_charges_tgt: &[PartialCharge],
+    partial_charges_ligand: &[PartialCharge],
+    bh_bounding_box: &Option<Cube>,
 ) -> BindingEnergy {
     // todo: Integrate CUDA.
 
@@ -234,40 +266,6 @@ pub fn binding_energy(
                 .enumerate()
                 .map(|(i_lig, atom_ligand)| {
                     lj_potential(&atom_tgt, atom_ligand, lig_posits[i_lig], lj_lut)
-                })
-                .sum::<f32>()
-        })
-        .sum();
-
-    // Calculate Hydrophobic (solvation) interactions
-    // -- HYDROPHOBIC INTERACTION TERM -- //
-    // Example: We’ll collect a simple sum of energies for hydrophobic pairs.
-    // For a more advanced approach, you might do a distance-based well function, etc.
-    let hydrophobic_score: f32 = tgt_atoms_near_site
-        .par_iter()
-        .map(|atom_tgt| {
-            ligand
-                .molecule
-                .atoms
-                .iter()
-                .enumerate()
-                .filter_map(|(i_lig, atom_ligand)| {
-                    // Check if both are hydrophobic
-                    if is_hydrophobic(atom_tgt) && is_hydrophobic(atom_ligand) {
-                        let r = (atom_tgt.posit - lig_posits[i_lig]).magnitude() as f32;
-
-                        // If they are within a cutoff, add favorable energy.
-                        // (Your real scoring might be more nuanced.)
-                        if r < HYDROPHOBIC_CUTOFF {
-                            // Simple approach: add a small negative (favorable) energy
-                            // or some distance-dependent function:
-                            // E = -k * (1 - r/CUTOFF) for example
-                            let k = 0.2; // scale factor in kcal/mol
-                            let scaled = 1.0 - (r / HYDROPHOBIC_CUTOFF);
-                            return Some(-k * scaled.max(0.0));
-                        }
-                    }
-                    None
                 })
                 .sum::<f32>()
         })
@@ -304,7 +302,99 @@ pub fn binding_energy(
         println!("Num H bonds: {:?}", h_bond_count);
     }
 
-    BindingEnergy::new(vdw, h_bond_count, hydrophobic_score, 0.)
+    // Calculate Hydrophobic (solvation) interactions
+    // -- HYDROPHOBIC INTERACTION TERM -- //
+    // Example: We’ll collect a simple sum of energies for hydrophobic pairs.
+    // For a more advanced approach, you might do a distance-based well function, etc.
+    let hydrophobic_score: f32 = tgt_atoms_near_site
+        .par_iter()
+        .map(|atom_tgt| {
+            ligand
+                .molecule
+                .atoms
+                .iter()
+                .enumerate()
+                .filter_map(|(i_lig, atom_ligand)| {
+                    // Check if both are hydrophobic
+                    if is_hydrophobic(atom_tgt) && is_hydrophobic(atom_ligand) {
+                        let r = (atom_tgt.posit - lig_posits[i_lig]).magnitude() as f32;
+
+                        // If they are within a cutoff, add favorable energy.
+                        // (Your real scoring might be more nuanced.)
+                        if r < HYDROPHOBIC_CUTOFF {
+                            // Simple approach: add a small negative (favorable) energy
+                            // or some distance-dependent function:
+                            // E = -k * (1 - r/CUTOFF) for example
+                            let k = 0.2; // scale factor in kcal/mol
+                            let scaled = 1.0 - (r / HYDROPHOBIC_CUTOFF);
+                            return Some(-k * scaled.max(0.0));
+                        }
+                    }
+                    None
+                })
+                .sum::<f32>()
+        })
+        .sum();
+
+    // Handle partial charges between target, and ligand. This is a standard electrostatics calculation.
+    // We use Barnes Hut to provide an approximate solution at higher speed.
+    // todo: Determine if you want to use Rayon, for the expected partial charge count.
+    // todo: Rayon.
+
+    // todo: Your barnes_hut lib is only set up up for a single set where everything interacts.
+    // todo: how do you set things up so one set interacts with the other?
+
+    // todo: Sort out f32 vs f64 for this.
+    let electrostatic = {
+        if let Some(bb) = bh_bounding_box {
+            // todo: Move this struct to state.
+            let bh_config = BhConfig {
+                θ: THETA_BH,
+                ..Default::default()
+            };
+
+            // This tree is over the target (receptor) charges. This may be more efficient
+            // than over the ligand, as we expect the tgt nearby atoms to be more numerous.
+            let tree = Tree::new(&partial_charges_tgt, bb, &bh_config);
+
+            let mut force = Vec3F32::new_zero();
+
+            // In the barnes_hut etc nomenclature, we are iterating over *target* bodies. (Not associated
+            // with target=protein=receptor; actually, the opposite!
+
+            for q_lig in partial_charges_ligand {
+                // let diff: Vec3F32 = (q_tgt.posit - q_lig.posit).into(); // todo: QC dir.
+                // let dist = diff.magnitude();
+
+                let force_fn = |acc_dir, q_src, dist| {
+                    acc_elec(
+                        acc_dir,
+                        q_src,
+                        q_lig.charge.into(),
+                        dist,
+                        SOFTENING_FACTOR_SQ_ELECTROSTATIC,
+                    )
+                };
+
+                force += barnes_hut::run_bh(
+                    q_lig.posit.into(),
+                    999_999, // N/A, since we're comparing separate sets.
+                    &tree,
+                    &bh_config,
+                    &force_fn,
+                )
+                .into();
+            }
+
+            // todo: Convert the force vector to a score here.
+            // force
+            0.
+        } else {
+            0.
+        }
+    };
+
+    BindingEnergy::new(vdw, h_bond_count, hydrophobic_score, electrostatic)
 }
 
 /// Brute-force, naive iteration of combinations. (For now)
@@ -441,6 +531,12 @@ pub fn find_optimal_pose(
         })
         .collect();
 
+    let partial_charges_tgt = create_partial_charges(&tgt_atoms_near_site, 1.);
+    let partial_charges_lig = create_partial_charges(&ligand.molecule.atoms, 1.);
+
+    // For the Barnes Hut electrostatics tree.
+    let bh_bounding_box = Cube::from_bodies(&partial_charges_tgt, 0., true);
+
     // Now process them in parallel and reduce to the single best pose:
     let (best_energy, best_pose) = poses
         .par_iter()
@@ -452,6 +548,9 @@ pub fn find_optimal_pose(
                 &ligand,
                 pose,
                 lj_lut,
+                &partial_charges_tgt,
+                &partial_charges_lig,
+                &bh_bounding_box,
             );
             (energy, pose)
         })
@@ -469,7 +568,7 @@ pub fn find_optimal_pose(
 
     ligand.pose = best_pose.clone();
 
-    println!("Complete. Best pose: {best_pose:?} E: {best_energy:?}");
+    println!("Complete. \n\nBest pose: {best_pose:?} \n\nScores: {best_energy:.3?}\n\n");
     (best_pose.clone(), best_energy)
 }
 

@@ -316,25 +316,8 @@ impl Element {
         }
     }
 
-    /// Returns approximate Lennard-Jones parameters (\sigma, \epsilon) in Å and kJ/mol.
-    /// These are *not* real force-field values, just a demonstration.
-    pub fn lj_params(self) -> (f32, f32) {
-        // For demonstration, we compute sigma from the van der Waals radius
-        //   sigma = (2 * vdw_radius) / 2^(1/6).
-        // Then guess epsilon from a trivial rule or store a small table.
-        // Real simulations typically get these from standard force fields!
-
-        let r_vdw = self.vdw_radius(); // in Å
-        // Avoid zero or negative vdw radius
-        let r_vdw = if r_vdw <= 0.0 { 1.5 } else { r_vdw };
-
-        // Sigma from naive formula:
-        let sigma = (2.0 * r_vdw) / (2_f32.powf(1.0 / 6.0));
-
-        // A naive guess for epsilon
-        // (In reality, you’d store carefully fit data or use a better heuristic.)
-        // For example, heavier elements get a bigger well depth:
-        let approximate_atomic_number = match self {
+    pub fn atomic_number(&self) -> u8 {
+        match self {
             Hydrogen => 1,
             Carbon => 6,
             Nitrogen => 7,
@@ -362,7 +345,28 @@ impl Element {
             Selenium => 34,
             Bromine => 35,
             Other => 20, // fallback
-        };
+        }
+    }
+
+    /// Returns approximate Lennard-Jones parameters (\sigma, \epsilon) in Å and kJ/mol.
+    /// These are *not* real force-field values, just a demonstration.
+    pub fn lj_params(&self) -> (f32, f32) {
+        // For demonstration, we compute sigma from the van der Waals radius
+        //   sigma = (2 * vdw_radius) / 2^(1/6).
+        // Then guess epsilon from a trivial rule or store a small table.
+        // Real simulations typically get these from standard force fields!
+
+        let r_vdw = self.vdw_radius(); // in Å
+        // Avoid zero or negative vdw radius
+        let r_vdw = if r_vdw <= 0.0 { 1.5 } else { r_vdw };
+
+        // Sigma from naive formula:
+        let sigma = (2.0 * r_vdw) / (2_f32.powf(1.0 / 6.0));
+
+        // A naive guess for epsilon
+        // (In reality, you’d store carefully fit data or use a better heuristic.)
+        // For example, heavier elements get a bigger well depth:
+        let approximate_atomic_number = self.atomic_number();
 
         // Pretend epsilon in kJ/mol is something like 0.01 * Z^(0.7)
         let epsilon = 0.01 * (approximate_atomic_number as f32).powf(0.7);

@@ -9,7 +9,6 @@ use lin_alg::f32::{Quaternion, Vec3};
 use crate::{
     Selection, State, ViewSelLevel,
     asa::{get_mesh_points, mesh_from_sas_points},
-    docking::ConformationType,
     element::Element,
     molecule::{Atom, AtomRole, BondCount, BondType, Chain, Residue, ResidueType, aa_color},
     render::{
@@ -406,6 +405,12 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene, update_cam_lighting: bo
     for bond in &mol.bonds {
         let atom_0 = &atoms_positioned[bond.atom_0];
         let atom_1 = &atoms_positioned[bond.atom_1];
+
+        if state.ui.visibility.hide_hydrogen
+            && (atom_0.element == Element::Hydrogen || atom_1.element == Element::Hydrogen)
+        {
+            continue;
+        }
 
         let posit_0: Vec3 = atom_0.posit.into();
         let posit_1: Vec3 = atom_1.posit.into();
