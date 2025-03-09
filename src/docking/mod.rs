@@ -34,28 +34,29 @@
 // 4MZI/160355 docking example: https://www.youtube.com/watch?v=vU2aNuP3Y8I
 
 // todo: Temp/feature-gate
-use std::arch::x86_64::*;
-use std::{collections::HashMap, intrinsics::transmute};
+use std::{arch::x86_64::*, collections::HashMap};
 
 use barnes_hut::{BhConfig, Cube, Tree};
 use lin_alg::{
     f32::{Vec3 as Vec3F32, Vec3S},
     f64::{Quaternion, Vec3},
 };
+use partial_charge::{PartialCharge, create_partial_charges};
 use rand::Rng;
 use rayon::prelude::*;
 
 use crate::{
-    bond_inference::{create_hydrogen_bonds, create_hydrogen_bonds_one_way},
-    docking::docking_prep::{PartialCharge, create_partial_charges, setup_partial_charges},
+    bond_inference::create_hydrogen_bonds_one_way,
+    docking::docking_prep::Torsion,
     element::{Element, get_lj_params},
-    molecule::{Atom, Bond, HydrogenBond, Ligand, Molecule},
+    molecule::{Atom, Bond, Ligand, Molecule},
 };
 
 pub mod docking_external;
 pub mod docking_prep;
 pub mod docking_prep_external;
 pub mod find_sites;
+pub mod partial_charge;
 
 const GRID_SPACING_SITE_FINDING: f64 = 5.0;
 
@@ -205,7 +206,7 @@ pub struct DockingInit {
 #[derive(Clone, Debug)]
 pub enum ConformationType {
     Rigid { orientation: Quaternion },
-    Flexible { dihedral_angles: Vec<f32> },
+    Flexible { torsions: Vec<Torsion> },
 }
 
 impl Default for ConformationType {
@@ -272,48 +273,71 @@ fn is_hydrophobic(atom: &Atom) -> bool {
 /// Calculate binding energy, in kcal/mol. The result will be negative. The maximum (negative) binding
 /// energy may be the ideal conformation. This is used as a scoring metric.
 pub fn binding_energy(
-    tgt_atoms_near_site: &[Atom],
-    tgt_indices: &[usize],
-    tgt_bonds_near_site: &[Bond],
+    rec_atoms_near_site: &[Atom],
+    rec_indices: &[usize],
+    rec_bonds_near_site: &[Bond],
     ligand: &Ligand,
-    pose: &Pose,
+    // pose: &Pose,
+    lig_posits: &[Vec3],
     lj_lut: &HashMap<(Element, Element), (f32, f32)>,
-    partial_charges_tgt: &[PartialCharge],
+    partial_charges_rec: &[PartialCharge],
     partial_charges_ligand: &[PartialCharge],
     bh_bounding_box: &Option<Cube>,
 ) -> BindingEnergy {
     // todo: Integrate CUDA.
 
-    match &pose.conformation_type {
-        ConformationType::Rigid { orientation } => {}
-        ConformationType::Flexible { dihedral_angles } => {
-            unimplemented!()
-        }
-    }
-
-    let mut lig_posits: Vec<Vec3> = ligand.molecule.atoms.iter().map(|a| a.posit).collect();
-    for i in 0..lig_posits.len() {
-        lig_posits[i] = ligand.position_atom(i, Some(pose));
-    }
-
     // todo: Use a neighbor grid or similar? Set it up so there are two separate sides?
     let vdw: f32 = {
-        let pairs: Vec<(&Atom, &Atom, usize)> = tgt_atoms_near_site
+        // todo: Experimenting with a different apch.
+
+        let pair_count = rec_atoms_near_site.len() * ligand.molecule.atoms.len();
+        let mut atoms_rec_paired = Vec::with_capacity(pair_count);
+        let mut atoms_lig_paired = Vec::with_capacity(pair_count);
+        let mut i_lig_paired = Vec::with_capacity(pair_count);
+
+        for atom_rec in rec_atoms_near_site {
+            for (i_lig, atom_lig) in ligand.molecule.atoms.iter().enumerate() {
+                atoms_rec_paired.push(atom_rec);
+                atoms_lig_paired.push(atom_lig);
+                i_lig_paired.push(i_lig);
+            }
+        }
+
+        let pairs: Vec<(&Atom, &Atom, usize)> = rec_atoms_near_site
             .iter()
-            .flat_map(|atom_tgt| {
+            .flat_map(|atom_rec| {
                 ligand
                     .molecule
                     .atoms
                     .iter()
                     .enumerate()
-                    .map(move |(i_lig, atom_ligand)| (atom_tgt, atom_ligand, i_lig))
+                    .map(move |(i_lig, atom_ligand)| (atom_rec, atom_ligand, i_lig))
             })
             .collect();
 
+        // {
+        //     // this is, for now, just to get you familiar with how SIMD might work.
+        //     // Prepare SIMD Vec3s.
+        //
+        //     // todo: Placeholder, while you have `pairs` set up as a tuple. Avoid the extra iteration
+        //     // todo by directio byilding these vecs.
+        //     let rec_posits_: Vec<Vec3F32> = pairs.iter().map(|a| a.0.posit.into()).collect();
+        //     let lig_posits_: Vec<Vec3F32> = pairs.iter().map(|a| a.1.posit.into()).collect();
+        //
+        //     let rec_posits = vec3s_to_simd(&rec_posits_);
+        // let lig_posits = vec3s_to_simd(&lig_posits_);
+        //
+        //     // todo: You'd use Rayon here too.
+        //     // let mut sum = Vec::new();
+        //     // for i in 0..pairs.len() {
+        //         // sum += lj_potential_simd(rec_posits[i], lig_posits[i], rec_els, lig_els, &lj_lut);
+        //     // }
+        // }
+
         pairs
             .par_iter()
-            .map(|(atom_tgt, atom_ligand, lig_posit_i)| {
-                lj_potential(atom_tgt, atom_ligand, lig_posits[*lig_posit_i], lj_lut)
+            .map(|(atom_rec, atom_ligand, lig_posit_i)| {
+                lj_potential(atom_rec, atom_ligand, lig_posits[*lig_posit_i], lj_lut)
             })
             .sum()
     };
@@ -325,10 +349,10 @@ pub fn binding_energy(
         // todo: Given you're using a relaxed distance thresh for H bonds, adjust the score
         // todo based on the actual distance of the bond.
         // We keep these separate, so the bond indices are meaningful.
-        let h_bonds_tgt_donor = create_hydrogen_bonds_one_way(
-            tgt_atoms_near_site,
-            tgt_indices,
-            tgt_bonds_near_site,
+        let h_bonds_rec_donor = create_hydrogen_bonds_one_way(
+            rec_atoms_near_site,
+            rec_indices,
+            rec_bonds_near_site,
             &ligand.molecule.atoms,
             &lig_indices,
             true,
@@ -337,12 +361,12 @@ pub fn binding_energy(
             &ligand.molecule.atoms,
             &lig_indices,
             &ligand.molecule.bonds,
-            tgt_atoms_near_site,
-            tgt_indices,
+            rec_atoms_near_site,
+            rec_indices,
             true,
         );
 
-        h_bonds_tgt_donor.len() + h_bonds_lig_donor.len()
+        h_bonds_rec_donor.len() + h_bonds_lig_donor.len()
     };
 
     if h_bond_count > 0 {
@@ -353,9 +377,9 @@ pub fn binding_energy(
     // -- HYDROPHOBIC INTERACTION TERM -- //
     // Example: We’ll collect a simple sum of energies for hydrophobic pairs.
     // For a more advanced approach, you might do a distance-based well function, etc.
-    let hydrophobic_score: f32 = tgt_atoms_near_site
+    let hydrophobic_score: f32 = rec_atoms_near_site
         .par_iter()
-        .map(|atom_tgt| {
+        .map(|atom_rec| {
             ligand
                 .molecule
                 .atoms
@@ -363,8 +387,8 @@ pub fn binding_energy(
                 .enumerate()
                 .filter_map(|(i_lig, atom_ligand)| {
                     // Check if both are hydrophobic
-                    if is_hydrophobic(atom_tgt) && is_hydrophobic(atom_ligand) {
-                        let r = (atom_tgt.posit - lig_posits[i_lig]).magnitude() as f32;
+                    if is_hydrophobic(atom_rec) && is_hydrophobic(atom_ligand) {
+                        let r = (atom_rec.posit - lig_posits[i_lig]).magnitude() as f32;
 
                         // If they are within a cutoff, add favorable energy.
                         // (Your real scoring might be more nuanced.)
@@ -401,8 +425,8 @@ pub fn binding_energy(
             };
 
             // This tree is over the target (receptor) charges. This may be more efficient
-            // than over the ligand, as we expect the tgt nearby atoms to be more numerous.
-            let tree = Tree::new(&partial_charges_tgt, bb, &bh_config);
+            // than over the ligand, as we expect the receptor nearby atoms to be more numerous.
+            let tree = Tree::new(&partial_charges_rec, bb, &bh_config);
 
             let mut force = Vec3F32::new_zero();
 
@@ -410,7 +434,7 @@ pub fn binding_energy(
             // with target=protein=receptor; actually, the opposite!
 
             for q_lig in partial_charges_ligand {
-                // let diff: Vec3F32 = (q_tgt.posit - q_lig.posit).into(); // todo: QC dir.
+                // let diff: Vec3F32 = (q_rec.posit - q_lig.posit).into(); // todo: QC dir.
                 // let dist = diff.magnitude();
 
                 let force_fn = |acc_dir, q_src, dist| {
@@ -502,6 +526,9 @@ fn make_posits_orientations(
 }
 
 /// Return best pose, and energy.
+///
+/// Note: We use the term `receptor` here vice `target`, as `target` is also used in terms of
+/// calculating forces between pairs. (These targets may or may not align!)
 pub fn find_optimal_pose(
     target: &Molecule,
     ligand: &mut Ligand,
@@ -524,12 +551,8 @@ pub fn find_optimal_pose(
         num_posits.pow(3) * num_orientations
     );
 
-    // These positions are of the ligand's anchor atom.
-    let (anchor_posits, orientations) =
-        make_posits_orientations(&ligand.docking_init, num_posits, num_orientations);
-
     // Preliminary setup; computations that are not pose-specific, including optimizations.
-    // let tgt_atoms_near_site: Vec<(usize, &_)> = target
+    // let rec_atoms_near_site: Vec<(usize, &_)> = target
     //     .atoms
     //     .iter()
     //     .enumerate()
@@ -565,17 +588,35 @@ pub fn find_optimal_pose(
         .collect();
 
     // Build a list of all candidate poses
-    let poses: Vec<_> = anchor_posits
-        .iter()
-        .flat_map(|anchor_posit| {
-            orientations.iter().map(move |orientation| Pose {
-                anchor_posit: *anchor_posit,
-                conformation_type: ConformationType::Rigid {
-                    orientation: *orientation,
-                },
+    let poses: Vec<_> = {
+        // These positions are of the ligand's anchor atom.
+        let (anchor_posits, orientations) =
+            make_posits_orientations(&ligand.docking_init, num_posits, num_orientations);
+
+        anchor_posits
+            .iter()
+            .flat_map(|anchor_posit| {
+                orientations.iter().map(move |orientation| Pose {
+                    anchor_posit: *anchor_posit,
+                    conformation_type: ConformationType::Rigid {
+                        orientation: *orientation,
+                    },
+                })
             })
-        })
-        .collect();
+            .collect()
+    };
+
+    // todo: Currently an outer/inner dynamic.
+    let lig_atom_count = ligand.molecule.atoms.len();
+    // Set up the ligand atom positions for each pose; that's all that matters re the pose for now.
+    let mut lig_posits = Vec::with_capacity(poses.len());
+    for pose in &poses {
+        let mut posits_this_pose = Vec::with_capacity(lig_atom_count);
+        for i in 0..lig_atom_count {
+            posits_this_pose.push(ligand.position_atom(i, Some(pose)));
+        }
+        lig_posits.push(posits_this_pose);
+    }
 
     // Note: Splitting the partial charges between target and ligand (As opposed to analyzing every pair
     // combination) may give us more useful data, and is likely much more efficient, if one side has substantially
@@ -584,7 +625,7 @@ pub fn find_optimal_pose(
     let partial_charges_lig = create_partial_charges(&ligand.molecule.atoms, 1.);
 
     println!(
-        "Partial charges tgt: {} lig: {}",
+        "Partial charges rec: {} lig: {}",
         partial_charges_tgt.len(),
         partial_charges_lig.len()
     );
@@ -595,13 +636,14 @@ pub fn find_optimal_pose(
     // Now process them in parallel and reduce to the single best pose:
     let (best_energy, best_pose) = poses
         .par_iter()
-        .map(|pose| {
+        .enumerate()
+        .map(|(i_pose, pose)| {
             let energy = binding_energy(
                 &tgt_atoms_near_site,
                 &tgt_atom_indices,
                 &tgt_bonds_near_site,
                 &ligand,
-                pose,
+                &lig_posits[i_pose],
                 lj_lut,
                 &partial_charges_tgt,
                 &partial_charges_lig,

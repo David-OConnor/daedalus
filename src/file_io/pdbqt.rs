@@ -2,6 +2,7 @@
 //! [Unofficial, incomplete spec](https://userguide.mdanalysis.org/2.6.0/formats/reference/pdbqt.html)
 
 use std::{
+    fmt::Display,
     fs::File,
     io,
     io::{ErrorKind, Read, Write},
@@ -15,7 +16,10 @@ use regex::Regex;
 
 use crate::{
     bond_inference::{create_bonds, create_hydrogen_bonds},
-    docking::docking_prep::{DockType, UnitCellDims},
+    docking::{
+        ConformationType,
+        docking_prep::{DockType, UnitCellDims},
+    },
     element::Element,
     molecule::{Atom, AtomRole, Chain, Ligand, Molecule, Residue, ResidueType},
     util::mol_center_size,
@@ -25,6 +29,22 @@ use crate::{
 //     pub atoms: Vec<Atom>,
 //     pub bonds: Vec<Bond>,
 // }
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum TorsionStatus {
+    Active,
+    Inactive,
+}
+
+impl Display for TorsionStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let str = match self {
+            Self::Active => "A".to_string(),
+            Self::Inactive => "I".to_string(),
+        };
+        write!(f, "{}", str)
+    }
+}
 
 /// Helpers for parsing
 fn parse_usize(s: &str) -> io::Result<usize> {
@@ -202,23 +222,26 @@ impl Molecule {
             writeln!(file, "REMARK  Name = {}", self.ident)?;
         }
 
-        if ligand.is_some() {
-            let torsions = &ligand.as_ref().unwrap().torsions;
-            let tor_len = torsions.len();
-            if tor_len > 0 {
-                writeln!(file, "REMARK  {tor_len} active torsions:")?;
-                writeln!(file, "REMARK  status: ('A' for Active; 'I' for Inactive)")?;
-            }
+        if let Some(lig) = ligand {
+            if let ConformationType::Flexible { torsions } = &lig.pose.conformation_type {
+                let tor_len = torsions.len();
+                if tor_len > 0 {
+                    writeln!(file, "REMARK  {tor_len} active torsions:")?;
+                    writeln!(file, "REMARK  status: ('A' for Active; 'I' for Inactive)")?;
+                }
 
-            for (i, torsion) in torsions.iter().enumerate() {
-                writeln!(
-                    file,
-                    "REMARK {:>4}  {:>1}    between atoms: {}  and  {}",
-                    i + 1,
-                    torsion.status,
-                    torsion.atom_0,
-                    torsion.atom_1
-                )?;
+                for (i, torsion) in torsions.iter().enumerate() {
+                    writeln!(
+                        file,
+                        "REMARK {:>4}  {:>1}    between atoms: {}  and  {}",
+                        i + 1,
+                        // torsion.status,
+                        TorsionStatus::Active,
+                        // todo: These are probably not correct mappings to the format.
+                        lig.molecule.bonds[torsion.bond].atom_0,
+                        lig.molecule.bonds[torsion.bond].atom_1,
+                    )?;
+                }
             }
         }
 

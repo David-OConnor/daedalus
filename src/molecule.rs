@@ -11,7 +11,7 @@ use crate::{
     bond_inference::{create_bonds, create_hydrogen_bonds},
     docking::{
         ConformationType, DockingInit, Pose,
-        docking_prep::{DockType, Torsion, UnitCellDims},
+        docking_prep::{DockType, Torsion, UnitCellDims, setup_flexibility},
     },
     element::Element,
     rcsb_api::PdbMetaData,
@@ -71,7 +71,19 @@ impl Molecule {
             ..Default::default()
         };
 
-        result.populate_hydrogens_angles();
+        // todo: Perhaps you still want to calculate dihedral angles if hydrogens are populated already.
+        // todo; For now, you are skipping both. Example when this comes up: Ligands.
+        // Attempt to only populate Hydrogens if there aren't many.
+        if result
+            .atoms
+            .iter()
+            .filter(|a| a.element == Element::Hydrogen)
+            .count()
+            < 4
+        {
+            result.populate_hydrogens_angles();
+        }
+
         result.bonds = create_bonds(&result.atoms);
         result.bonds_hydrogen = create_hydrogen_bonds(&result.atoms, &result.bonds);
 
@@ -157,11 +169,10 @@ impl fmt::Display for AtomRole {
 pub struct Ligand {
     pub molecule: Molecule,
     // pub offset: Vec3,
-    pub anchor_atom: usize, // Index.
+    pub anchor_atom: usize,         // Index.
+    pub flexible_bonds: Vec<usize>, // Index
     pub pose: Pose,
     pub docking_init: DockingInit,
-    // pub orientation: Quaternion, // Assumes rigid.
-    pub torsions: Vec<Torsion>,
     pub unit_cell_dims: UnitCellDims, // todo: Unused
 }
 
@@ -179,6 +190,8 @@ impl Ligand {
             ..Default::default()
         };
         result.set_anchor();
+        result.flexible_bonds = setup_flexibility(&mut result.molecule);
+
         result
     }
 
@@ -220,7 +233,7 @@ impl Ligand {
                 pose_.anchor_posit + orientation.rotate_vec(posit_rel)
                 // self.pose.anchor_posit + posit_rel
             }
-            ConformationType::Flexible { dihedral_angles } => {
+            ConformationType::Flexible { torsions } => {
                 unimplemented!()
             }
         }

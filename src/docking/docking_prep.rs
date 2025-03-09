@@ -21,108 +21,12 @@
 //!
 //! What we will use to start: the OpenBabel CLI program.
 
-use std::{f32::consts::TAU, fmt::Display};
-
-use barnes_hut::BodyModel;
-use lin_alg::{f32::Vec3, f64::Vec3 as Vec3F64};
-use rand::Rng;
+use std::fmt::Display;
 
 use crate::{
     element::Element,
-    molecule::{Atom, Bond, Molecule},
-    util::setup_neighbor_pairs,
+    molecule::{Atom, Bond, BondCount, BondType, Molecule},
 };
-
-const GRID_SIZE: f64 = 1.6; // Slightly larger than the largest... todo: What?
-
-#[derive(Debug)]
-pub struct PartialCharge {
-    pub posit: Vec3,
-    pub charge: f32,
-}
-
-// todo: Ideally, you want f32 here, I believe. Need to modifify barnes_hut lib A/R to support.
-impl BodyModel for PartialCharge {
-    fn posit(&self) -> Vec3F64 {
-        // fn posit(&self) -> Vec3 {
-        self.posit.into()
-    }
-
-    fn mass(&self) -> f64 {
-        // fn mass(&self) -> f32 {
-        self.charge.into()
-    }
-}
-
-/// Create a set of partial charges around atoms. Rough simulation of electronic density imbalances
-/// in charges molecules, and/or at short distances. It places a single positive charge
-/// at the center of each atom, representing its nucleus. It spreads out a number of smaller-charges
-/// to represent electron density, around that nucleus.
-///
-/// `charge_density` is how many partial-charge points to generate per electron;
-/// if 4.0, for instance, you’ll get ~4 negative “points” per electron.
-pub fn create_partial_charges(atoms: &[Atom], charge_density: f32) -> Vec<PartialCharge> {
-    let mut result = Vec::new();
-    let mut rng = rand::rng();
-
-    for atom in atoms {
-        let z = atom.element.atomic_number();
-
-        // If partial_charge is known, interpret it as net formal charge:
-        // e.g., partial_charge = +1 => 1 fewer electron
-        let net_charge = atom.partial_charge.unwrap_or(0.0).round() as i32; // e.g. +1, -1, 0, ...
-        let electron_count = z as i32 - net_charge; // simplistic integer
-
-        // 1) Add nucleus partial charge, +Z or adjusted by net charge if you like.
-        //    For example, if net_charge=+1, you can either keep the nucleus as +Z
-        //    or set it to + (z - net_charge). The usual naive approach is +Z at
-        //    the nucleus, letting the negative electron distribution handle the difference.
-        result.push(PartialCharge {
-            posit: atom.posit.into(),
-            charge: z as f32,
-        });
-
-        // 2) Distribute negative charges around the nucleus
-        if electron_count > 0 {
-            let count_neg_points = (electron_count as f32 * charge_density).round() as i32;
-            if count_neg_points > 0 {
-                let neg_charge_per_point = -(electron_count as f32) / (count_neg_points as f32);
-
-                // Decide on a radius scale
-                // For small molecules, you might pick something like 0.2–0.5 Å for “cloud radius”
-                // or randomize in a band: [0, r_max].
-                let r_max = 0.3;
-
-                for _ in 0..count_neg_points {
-                    // Sample a random direction
-                    // We can do this by sampling spherical coordinates or
-                    // sampling a random vector from a Gaussian, then normalizing
-                    let theta = rng.random_range(0.0..TAU);
-                    let u: f32 = rng.random_range(-1.0..1.0); // for cos(phi)
-
-                    let sqrt_1_minus_u2 = (1.0 - u * u).sqrt();
-                    let dx = sqrt_1_minus_u2 * theta.cos();
-                    let dy = sqrt_1_minus_u2 * theta.sin();
-                    let dz = u;
-
-                    let dir = Vec3::new(dx, dy, dz);
-
-                    // random radius in [0..r_max]
-                    let radius = rng.random_range(0.0..r_max);
-                    let offset = dir * radius;
-
-                    let atom_posit: Vec3 = atom.posit.into();
-                    result.push(PartialCharge {
-                        posit: atom_posit + offset,
-                        charge: neg_charge_per_point,
-                    });
-                }
-            }
-        }
-    }
-
-    result
-}
 
 /// Used to determine if a gasteiger charge is a donar (bonded to at least one H), or accepter (not
 /// bonded to any H).
@@ -342,22 +246,6 @@ impl DockType {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum TorsionStatus {
-    Active,
-    Inactive,
-}
-
-impl Display for TorsionStatus {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let str = match self {
-            Self::Active => "A".to_string(),
-            Self::Inactive => "I".to_string(),
-        };
-        write!(f, "{}", str)
-    }
-}
-
 #[derive(Debug, Default)]
 pub struct UnitCellDims {
     /// Lengths in Angstroms.
@@ -370,108 +258,100 @@ pub struct UnitCellDims {
     pub gamma: f32,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
+/// Bonds that are marked as flexible.
 pub struct Torsion {
-    // todo: Initial hack; add/fix A/R.
-    pub status: TorsionStatus,
-    pub atom_0: String, // todo: Something else, like index.
-    pub atom_1: String, // todo: Something else, like index.
+    // pub status: TorsionStatus,
+    pub bond: usize, // Index.
+    pub dihedral_angle: f32,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum PartialChargeType {
-    Gasteiger,
-    Kollman,
-}
+// Set up which atoms in a ligand are flexible.
+pub fn setup_flexibility(mol: &mut Molecule) -> Vec<usize> {
+    let mut flexible_bonds = Vec::new();
 
-/// Note: Hydrogens must already be added prior to adding charges.
-pub fn setup_partial_charges(atoms: &mut [Atom], charge_type: PartialChargeType) {
-    if charge_type == PartialChargeType::Kollman {
-        unimplemented!()
+    for (i, bond) in mol.bonds.iter().enumerate() {
+        // Only consider single bonds.
+        let bond_count = match bond.bond_type {
+            BondType::Covalent { count, .. } => count,
+            _ => BondCount::Triple,
+        };
+        if bond_count != BondCount::Single {
+            continue;
+        }
+
+        // Exclude bonds that are part of a ring.
+        if is_bond_in_ring(bond, mol) {
+            continue;
+        }
+
+        // Retrieve atoms at each end.
+        let atom0 = &mol.atoms[bond.atom_0];
+        let atom1 = &mol.atoms[bond.atom_1];
+
+        // Check if both atoms are carbon.
+        if atom0.element != Element::Carbon || atom1.element != Element::Carbon {
+            continue;
+        }
+
+        // Exclude terminal bonds (e.g., bonds where an atom only has one connection).
+        if count_bonds(bond.atom_0, mol) <= 1 || count_bonds(bond.atom_1, mol) <= 1 {
+            continue;
+        }
+
+        // Additional heuristics (e.g. hybridization or sterics) could be added here.
+
+        flexible_bonds.push(i);
     }
 
-    // We use spacial partitioning, so as not to copmare every pair of atoms.
-    let posits: Vec<_> = atoms.iter().map(|a| &a.posit).collect();
-    let indices: Vec<_> = (0..atoms.len()).collect();
-    let neighbor_pairs = setup_neighbor_pairs(&posits, &indices, GRID_SIZE);
+    flexible_bonds
+}
 
-    // Run the iterative charge update over all candidate pairs.
-    const ITERATIONS: usize = 6; // More iterations may be needed in practice.
-    for _ in 0..ITERATIONS {
-        let mut charge_updates = vec![0.0; atoms.len()];
+/// Checks if a bond is part of a ring.
+/// This function performs a DFS from one atom to see if the other can be reached without using the bond itself.
+fn is_bond_in_ring(bond: &Bond, mol: &Molecule) -> bool {
+    let start = bond.atom_0;
+    let target = bond.atom_1;
+    let mut visited = vec![false; mol.atoms.len()];
+    let mut stack = vec![start];
 
-        for &(i, j) in &neighbor_pairs {
-            if atoms[i].dock_type.is_none() || atoms[j].dock_type.is_none() {
+    while let Some(current) = stack.pop() {
+        if current == target {
+            return true;
+        }
+        visited[current] = true;
+        for neighbor in get_neighbors(current, mol) {
+            // Skip the edge corresponding to the bond in question.
+            if (current == bond.atom_0 && neighbor == bond.atom_1)
+                || (current == bond.atom_1 && neighbor == bond.atom_0)
+            {
                 continue;
             }
-            let en_i = atoms[i].dock_type.unwrap().gasteiger_electronegativity();
-            let en_j = atoms[j].dock_type.unwrap().gasteiger_electronegativity();
-            // Compute a simple difference-based transfer.
-            let delta = 0.1 * (en_i - en_j);
-            // Transfer charge from atom i to atom j if en_i > en_j.
-            charge_updates[i] -= delta;
-            charge_updates[j] += delta;
-        }
-
-        // Apply the computed updates simultaneously.
-        for (atom, delta) in atoms.iter_mut().zip(charge_updates.iter()) {
-            match &mut atom.partial_charge {
-                Some(c) => *c += delta,
-                None => atom.partial_charge = Some(*delta),
+            if !visited[neighbor] {
+                stack.push(neighbor);
             }
         }
     }
+    false
 }
 
-impl Molecule {
-    /// Adds hydrogens, assigns partial charges etc.
-    pub fn prep_target(&mut self) {}
-
-    /// Indicates which atoms and bonds are flexible, etc.
-    pub fn prep_ligand(&mut self) {}
+/// Returns the list of neighboring atom indices for a given atom.
+fn get_neighbors(atom_index: usize, mol: &Molecule) -> Vec<usize> {
+    let mut neighbors = Vec::new();
+    for bond in &mol.bonds {
+        if bond.atom_0 == atom_index {
+            neighbors.push(bond.atom_1);
+        } else if bond.atom_1 == atom_index {
+            neighbors.push(bond.atom_0);
+        }
+    }
+    neighbors
 }
 
-/// todo: Output string if it's a text-based format.
-pub fn export_pdbqt(target: &Molecule, ligand: &Molecule) -> Vec<u8> {
-    Vec::new()
+/// Counts the number of bonds connected to a given atom.
+fn count_bonds(atom_index: usize, mol: &Molecule) -> usize {
+    mol.bonds
+        .iter()
+        .filter(|bond| bond.atom_0 == atom_index || bond.atom_1 == atom_index)
+        .count()
 }
-
-// // todo: C+P from ChatGPT. I'm low-confidence on it
-// /// This helper function infers the DockType of an atom based on its element
-// /// and its bonding environment. The `atoms` slice is used to examine neighbors.
-// pub fn infer_dock_type(atom: &Atom, atoms: &[Atom]) -> DockType {
-//     match atom.element {
-//         Element::Nitrogen => {
-//             // If any neighbor is hydrogen, assume it’s a donor (N);
-//             // otherwise, treat it as an acceptor (NA).
-//             let has_hydrogen = atom.neighbors.iter()
-//                 .any(|&i| atoms[i].element == Element::Hydrogen);
-//             if has_hydrogen {
-//                 DockType::N
-//             } else {
-//                 DockType::Na
-//             }
-//         }
-//         Element::Oxygen => {
-//             // If oxygen is bonded to a hydrogen, assign it as hydroxyl (Oh);
-//             // otherwise, assign it as acceptor (Oa).
-//             let has_hydrogen = atom.neighbors.iter()
-//                 .any(|&i| atoms[i].element == Element::Hydrogen);
-//             if has_hydrogen {
-//                 DockType::Oh
-//             } else {
-//                 DockType::Oa
-//             }
-//         }
-//         Element::Carbon => {
-//             // Here you could add aromaticity detection.
-//             // For now, we assume a default of aliphatic carbon.
-//             DockType::C
-//         }
-//         Element::Hydrogen => {
-//             // Polar hydrogen donors are typically assigned Hd.
-//             DockType::Hd
-//         }
-//         _ => DockType::Other,
-//     }
-// }

@@ -1,30 +1,22 @@
-use std::{
-    f32::consts::TAU,
-    path::{Path, PathBuf},
-    str::FromStr,
-    time::Instant,
-};
+use std::{f32::consts::TAU, path::Path, time::Instant};
 
 use egui::{Color32, ComboBox, Context, RichText, Slider, TextEdit, TopBottomPanel, Ui};
 use graphics::{Camera, ControlScheme, EngineUpdates, RIGHT_VEC, Scene, UP_VEC};
-use lin_alg::{
-    f32::{Quaternion, Vec3},
-    f64::Quaternion as QuaternionF64,
-};
+use lin_alg::f32::{Quaternion, Vec3};
 use na_seq::AaIdent;
 
 use crate::{
     CamSnapshot, Selection, State, ViewSelLevel,
     docking::{
         docking_external::{check_adv_avail, dock_with_vina},
-        docking_prep::{PartialChargeType, setup_partial_charges},
         docking_prep_external::{prepare_ligand, prepare_target},
         find_optimal_pose,
         find_sites::find_docking_sites,
+        partial_charge::{PartialChargeType, setup_partial_charges},
     },
     download_mols::{load_cif_rcsb, load_sdf_drugbank, load_sdf_pubchem},
     mol_drawing::{MoleculeView, draw_ligand, draw_molecule},
-    molecule::{BondType, Ligand, Molecule, ResidueType},
+    molecule::{Ligand, Molecule, ResidueType},
     rcsb_api::{open_drugbank, open_pdb, open_pubchem},
     render::{CAM_INIT_OFFSET, RENDER_DIST, set_docking_light, set_flashlight},
     util::{cam_look_at, check_prefs_save, cycle_res_selected, orbit_center, select_from_search},

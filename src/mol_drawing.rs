@@ -9,6 +9,7 @@ use lin_alg::f32::{Quaternion, Vec3};
 use crate::{
     Selection, State, ViewSelLevel,
     asa::{get_mesh_points, mesh_from_sas_points},
+    docking::ConformationType,
     element::Element,
     molecule::{Atom, AtomRole, BondCount, BondType, Chain, Residue, ResidueType, aa_color},
     render::{
@@ -21,6 +22,8 @@ use crate::{
 
 const LIGAND_COLOR: Color = (0., 0.4, 1.);
 const LIGAND_COLOR_ANCHOR: Color = (1., 0., 1.);
+// i.e a flexible bond.
+const LIGAND_COLOR_FLEX: Color = (1., 1., 0.);
 const COLOR_AA_NON_RESIDUE: Color = (0., 0.8, 1.0);
 
 const COLOR_SELECTED: Color = (1., 0., 0.);
@@ -29,6 +32,8 @@ const RADIUS_H_BOND: f32 = 0.2; // A scaler relative to covalent sticks.
 
 const COLOR_SFC_DOT: Color = (0.7, 0.7, 0.7);
 const COLOR_DOCKING_BOX: Color = (0.3, 0.3, 0.9);
+
+// todo: For ligands that are flexible, highlight the fleixble bonds in a bright color.
 
 /// Make ligands stand out visually, when colored by atom.
 fn mod_color_for_ligand(color: &Color) -> Color {
@@ -402,7 +407,7 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene, update_cam_lighting: bo
     // }
 
     // todo: C+P from draw_molecule. With some removed, but a lot of repeated.
-    for bond in &mol.bonds {
+    for (i, bond) in mol.bonds.iter().enumerate() {
         let atom_0 = &atoms_positioned[bond.atom_0];
         let atom_1 = &atoms_positioned[bond.atom_1];
 
@@ -432,6 +437,11 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene, update_cam_lighting: bo
 
         color_0 = mod_color_for_ligand(&color_0);
         color_1 = mod_color_for_ligand(&color_1);
+
+        if ligand.flexible_bonds.contains(&i) {
+            color_0 = LIGAND_COLOR_FLEX;
+            color_1 = LIGAND_COLOR_FLEX;
+        }
 
         // Highlight the anchor.
         if bond.atom_0 == ligand.anchor_atom {

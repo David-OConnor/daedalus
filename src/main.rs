@@ -6,7 +6,7 @@ mod bond_inference;
 mod cartoon_mesh;
 mod docking;
 mod download_mols;
-// mod drug_like;
+mod drug_like;
 mod element;
 mod file_io;
 mod inputs;

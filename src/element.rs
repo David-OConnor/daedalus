@@ -67,40 +67,55 @@ impl Element {
         }
     }
 
-    // fn gasteiger_electronegativity(&self) -> f32 {
-    //     match self {
-    //         Element::Hydrogen => 2.20,
-    //         Element::Carbon => 2.55,
-    //         Element::Oxygen => 3.44,
-    //         Element::Nitrogen => 3.04,
-    //         Element::Fluorine => 3.98,
-    //         Element::Sulfur => 2.58,
-    //         Element::Phosphorus => 2.19,
-    //         Element::Iron => 1.83,
-    //         Element::Copper => 1.90,
-    //         Element::Calcium => 1.00,
-    //         Element::Potassium => 0.82,
-    //         Element::Aluminum => 1.61,
-    //         Element::Lead => 2.33,
-    //         Element::Gold => 2.54,
-    //         Element::Silver => 1.93,
-    //         Element::Mercury => 2.00,
-    //         Element::Tin => 1.96,
-    //         Element::Zinc => 1.65,
-    //         Element::Magnesium => 1.31,
-    //         Element::Iodine => 2.66,
-    //         Element::Chlorine => 3.16,
-    //         Element::Tungsten => 2.36,
-    //         Element::Tellurium => 2.10,
-    //         Element::Selenium => 2.55,
-    //         Element::Other => {
-    //             eprintln!(
-    //                 "Error: Attempting to get a Gasteiger electronegativity for an unknown element."
-    //             );
-    //             0.0
-    //         }
-    //     }
-    // }
+    /// For our purposes, we supply a “Kollman charge” lookup.
+    /// In practice these values are determined by RESP fitting to a QM electrostatic potential.
+    /// todo: GPT slop.
+    pub fn kollman_charge(&self) -> f64 {
+        match self {
+            Hydrogen => 0.09, // Example values
+            Carbon => -0.27,
+            Nitrogen => -0.47,
+            Oxygen => -0.50,
+            Chlorine => -0.50,
+            _ => 0.,
+        }
+    }
+
+    pub fn electronegativity(&self) -> f32 {
+        match self {
+            Hydrogen => 2.20,
+            Carbon => 2.55,
+            Oxygen => 3.44,
+            Nitrogen => 3.04,
+            Fluorine => 3.98,
+            Sulfur => 2.58,
+            Phosphorus => 2.19,
+            Iron => 1.83,
+            Copper => 1.90,
+            Calcium => 1.00,
+            Potassium => 0.82,
+            Aluminum => 1.61,
+            Lead => 2.33,
+            Gold => 2.54,
+            Silver => 1.93,
+            Mercury => 2.00,
+            Tin => 1.96,
+            Zinc => 1.65,
+            Magnesium => 1.31,
+            Iodine => 2.66,
+            Chlorine => 3.16,
+            Tungsten => 2.36,
+            Tellurium => 2.10,
+            Selenium => 2.55,
+            Other => {
+                eprintln!(
+                    "Error: Attempting to get a Gasteiger electronegativity for an unknown element."
+                );
+                0.0
+            }
+            _ => 0.,
+        }
+    }
 
     pub fn from_pdb(el: Option<&pdbtbx::Element>) -> Self {
         if let Some(e) = el {
