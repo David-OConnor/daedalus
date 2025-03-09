@@ -34,12 +34,14 @@
 // 4MZI/160355 docking example: https://www.youtube.com/watch?v=vU2aNuP3Y8I
 
 // todo: Temp/feature-gate
-use std::{arch::x86_64::*, collections::HashMap};
+use std::{arch::x86_64::*, collections::HashMap, f32::consts::TAU, time::Instant};
 
 use barnes_hut::{BhConfig, Cube, Tree};
 use lin_alg::{
     f32::{Vec3 as Vec3F32, Vec3S},
     f64::{Quaternion, Vec3},
+    linspace,
+    simd::{f32s_to_simd, vec3s_to_simd},
 };
 use partial_charge::{PartialCharge, create_partial_charges};
 use rand::Rng;
@@ -102,19 +104,12 @@ pub fn acc_elec(
 /// In a real system, you’d want to parameterize \(\sigma\) and \(\epsilon\)
 /// based on the atom types (i.e. from a force field lookup). Here, we’ll
 /// just demonstrate the structure of the calculation with made-up constants.
-pub fn lj_potential(
-    atom_0: &Atom,
-    atom_1: &Atom,
-    atom_1_posit: Vec3,
-    lj_lut: &HashMap<(Element, Element), (f32, f32)>,
-) -> f32 {
-    let r = (atom_0.posit - atom_1_posit).magnitude() as f32;
+pub fn lj_potential(posit_0: Vec3, posit_1: Vec3, sigma: f32, epsilon: f32) -> f32 {
+    let r = (posit_0 - posit_1).magnitude() as f32;
 
     if r < f32::EPSILON {
         return 0.;
     }
-
-    let (sigma, epsilon) = get_lj_params(atom_0.element, atom_1.element, lj_lut);
 
     // Note: Our sigma and eps values are very rough.
     let sr = sigma / r;
@@ -124,28 +119,15 @@ pub fn lj_potential(
 }
 
 /// todo: Experimental
-pub fn lj_potential_simd(
-    atom_0_posit: Vec3S,
-    atom_1_posit: Vec3S,
-    atom_0_els: [Element; 8],
-    atom_1_els: [Element; 8],
-    lj_lut: &HashMap<(Element, Element), (f32, f32)>,
-) -> __m256 {
+pub fn lj_potential_simd(posit_0: Vec3S, posit_1: Vec3S, sigma: [f32; 8], eps: [f32; 8]) -> __m256 {
     unsafe {
-        let r = (atom_0_posit - atom_1_posit).magnitude();
+        let r = (posit_0 - posit_1).magnitude();
 
-        let mut sig = [0.0; 8];
-        let mut eps = [0.0; 8];
-
-        for i in 0..8 {
-            (sig[i], eps[i]) = get_lj_params(atom_0_els[i], atom_1_els[i], lj_lut)
-        }
-
-        let sig_ = _mm256_loadu_ps(sig.as_ptr());
-        let eps_ = _mm256_loadu_ps(eps.as_ptr());
+        let sigma = _mm256_loadu_ps(sigma.as_ptr());
+        let eps = _mm256_loadu_ps(eps.as_ptr());
 
         // Intermediate steps; no SIMD exponent.
-        let sr = _mm256_div_ps(sig_, r);
+        let sr = _mm256_div_ps(sigma, r);
         let sr2 = _mm256_mul_ps(sr, sr);
         let sr4 = _mm256_mul_ps(sr2, sr2);
 
@@ -153,7 +135,7 @@ pub fn lj_potential_simd(
         let sr12 = _mm256_mul_ps(sr6, sr6);
 
         let four = _mm256_set1_ps(4.);
-        _mm256_mul_ps(four, _mm256_mul_ps(eps_, _mm256_div_ps(sr12, sr6)))
+        _mm256_mul_ps(four, _mm256_mul_ps(eps, _mm256_div_ps(sr12, sr6)))
     }
 }
 
@@ -205,8 +187,13 @@ pub struct DockingInit {
 
 #[derive(Clone, Debug)]
 pub enum ConformationType {
-    Rigid { orientation: Quaternion },
-    Flexible { torsions: Vec<Torsion> },
+    Rigid {
+        orientation: Quaternion,
+    },
+    Flexible {
+        orientation: Quaternion,
+        torsions: Vec<Torsion>,
+    },
 }
 
 impl Default for ConformationType {
@@ -277,67 +264,21 @@ pub fn binding_energy(
     rec_indices: &[usize],
     rec_bonds_near_site: &[Bond],
     ligand: &Ligand,
-    // pose: &Pose,
     lig_posits: &[Vec3],
-    lj_lut: &HashMap<(Element, Element), (f32, f32)>,
     partial_charges_rec: &[PartialCharge],
     partial_charges_ligand: &[PartialCharge],
     bh_bounding_box: &Option<Cube>,
+    lj_pairs: &[(Vec3, usize, f32, f32)], // rec pos, lig i, sig, eps
 ) -> BindingEnergy {
     // todo: Integrate CUDA.
 
     // todo: Use a neighbor grid or similar? Set it up so there are two separate sides?
     let vdw: f32 = {
-        // todo: Experimenting with a different apch.
-
-        let pair_count = rec_atoms_near_site.len() * ligand.molecule.atoms.len();
-        let mut atoms_rec_paired = Vec::with_capacity(pair_count);
-        let mut atoms_lig_paired = Vec::with_capacity(pair_count);
-        let mut i_lig_paired = Vec::with_capacity(pair_count);
-
-        for atom_rec in rec_atoms_near_site {
-            for (i_lig, atom_lig) in ligand.molecule.atoms.iter().enumerate() {
-                atoms_rec_paired.push(atom_rec);
-                atoms_lig_paired.push(atom_lig);
-                i_lig_paired.push(i_lig);
-            }
-        }
-
-        let pairs: Vec<(&Atom, &Atom, usize)> = rec_atoms_near_site
-            .iter()
-            .flat_map(|atom_rec| {
-                ligand
-                    .molecule
-                    .atoms
-                    .iter()
-                    .enumerate()
-                    .map(move |(i_lig, atom_ligand)| (atom_rec, atom_ligand, i_lig))
-            })
-            .collect();
-
-        // {
-        //     // this is, for now, just to get you familiar with how SIMD might work.
-        //     // Prepare SIMD Vec3s.
-        //
-        //     // todo: Placeholder, while you have `pairs` set up as a tuple. Avoid the extra iteration
-        //     // todo by directio byilding these vecs.
-        //     let rec_posits_: Vec<Vec3F32> = pairs.iter().map(|a| a.0.posit.into()).collect();
-        //     let lig_posits_: Vec<Vec3F32> = pairs.iter().map(|a| a.1.posit.into()).collect();
-        //
-        //     let rec_posits = vec3s_to_simd(&rec_posits_);
-        // let lig_posits = vec3s_to_simd(&lig_posits_);
-        //
-        //     // todo: You'd use Rayon here too.
-        //     // let mut sum = Vec::new();
-        //     // for i in 0..pairs.len() {
-        //         // sum += lj_potential_simd(rec_posits[i], lig_posits[i], rec_els, lig_els, &lj_lut);
-        //     // }
-        // }
-
-        pairs
+        lj_pairs
             .par_iter()
-            .map(|(atom_rec, atom_ligand, lig_posit_i)| {
-                lj_potential(atom_rec, atom_ligand, lig_posits[*lig_posit_i], lj_lut)
+            .map(|(posit_rec, i_lig, sigma, eps)| {
+                lj_potential(*posit_rec, lig_posits[*i_lig], *sigma, *eps)
+                // lj_potential_simd(*posit_rec, lig_posits[*i_lig], *sigma, *eps)
             })
             .sum()
     };
@@ -464,6 +405,10 @@ pub fn binding_energy(
         }
     };
 
+    // let vdw = 0.;
+    // let electrostatic = 0.;
+    // let hydrophobic_score = 0.;
+
     BindingEnergy::new(vdw, h_bond_count, hydrophobic_score, electrostatic)
 }
 
@@ -525,6 +470,69 @@ fn make_posits_orientations(
     (ligand_posits, orientations)
 }
 
+/// Pre-generate poses, for a naive system.
+fn find_poses(ligand: &Ligand) -> Vec<Pose> {
+    let num_posits: usize = 8; // Gets cubed.
+    let num_orientations = 30;
+
+    // These positions are of the ligand's anchor atom.
+    let (anchor_posits, orientations) =
+        make_posits_orientations(&ligand.docking_init, num_posits, num_orientations);
+
+    // todo: Temp hard-coded here.
+    let angles_per_bond = 4;
+    let angles = linspace(0., TAU, angles_per_bond);
+
+    println!("Num flexible bonds: {:?}", ligand.flexible_bonds.len());
+
+    // let mut p = Vec::with_capacity(
+    //     anchor_posits.len() * orientations.len() * angles.len() * ligand.flexible_bonds.len(),
+    // );
+    let mut result = Vec::new();
+
+    for &anchor_posit in &anchor_posits {
+        for &orientation in &orientations {
+            // Build all angle-combos across all flexible bonds
+            let mut all_combos = vec![Vec::new()]; // start with 1 empty combo
+
+            for &bond_i in &ligand.flexible_bonds {
+                let mut new_combos = Vec::new();
+                for existing_combo in &all_combos {
+                    for &angle in &angles {
+                        let mut extended = existing_combo.clone();
+                        extended.push(Torsion {
+                            bond: bond_i,
+                            dihedral_angle: angle,
+                        });
+                        new_combos.push(extended);
+                    }
+                }
+                all_combos = new_combos;
+            }
+
+            // Produce a Pose for each full combination of angles
+            for torsions in all_combos {
+                result.push(Pose {
+                    anchor_posit,
+                    conformation_type: ConformationType::Flexible {
+                        orientation,
+                        torsions,
+                    },
+                });
+            }
+        }
+    }
+    // println!("POSES LEN: {:?} exp: {}", p.len(), anchor_posits.len() * orientations.len() * angles.len() * ligand.flexible_bonds.len());
+    println!(
+        "POSES LEN: {:?} expected: {}",
+        result.len(),
+        anchor_posits.len()
+            * orientations.len()
+            * angles.len().pow(ligand.flexible_bonds.len() as u32)
+    );
+    result
+}
+
 /// Return best pose, and energy.
 ///
 /// Note: We use the term `receptor` here vice `target`, as `target` is also used in terms of
@@ -534,22 +542,12 @@ pub fn find_optimal_pose(
     ligand: &mut Ligand,
     lj_lut: &HashMap<(Element, Element), (f32, f32)>,
 ) -> (Pose, BindingEnergy) {
-    // todo: Generic algorithm etc. Maybe that goes in the scoring fn?
-    // for _ in 0..params.num_runs {
-    // }
+    println!("Starting docking setup...");
 
     let dist_thresh = ATOM_NEAR_SITE_DIST_THRESH * ligand.docking_init.site_box_size;
 
-    let num_posits: usize = 8; // Gets cubed.
-    let num_orientations = 60;
-
     // For your test, see if you can get a version tha tis flexed correctly.
     // todo: And/or set up a mol angle editing feature, and use it.
-
-    println!(
-        "\nFinding optimal pose... Conformation count: {:?}",
-        num_posits.pow(3) * num_orientations
-    );
 
     // Preliminary setup; computations that are not pose-specific, including optimizations.
     // let rec_atoms_near_site: Vec<(usize, &_)> = target
@@ -562,8 +560,8 @@ pub fn find_optimal_pose(
     //     .collect();
 
     println!("Dist thresh: {:?}", dist_thresh);
-    let mut tgt_atom_indices = Vec::new();
-    let tgt_atoms_near_site: Vec<_> = target
+    let mut rec_atom_indices = Vec::new();
+    let rec_atoms_near_site: Vec<_> = target
         .atoms
         .iter()
         .enumerate()
@@ -571,7 +569,7 @@ pub fn find_optimal_pose(
             let r =
                 (a.posit - ligand.docking_init.site_center).magnitude() < dist_thresh && !a.hetero;
             if r {
-                tgt_atom_indices.push(*i);
+                rec_atom_indices.push(*i);
             }
             r
         })
@@ -583,28 +581,11 @@ pub fn find_optimal_pose(
         .bonds
         .iter()
         // Don't use ||; all atom indices in these bonds must be present in `tgt_atoms_near_site`.
-        .filter(|b| tgt_atom_indices.contains(&b.atom_0) && tgt_atom_indices.contains(&b.atom_1))
+        .filter(|b| rec_atom_indices.contains(&b.atom_0) && rec_atom_indices.contains(&b.atom_1))
         .map(|b| b.clone()) // todo: don't like the clone
         .collect();
 
-    // Build a list of all candidate poses
-    let poses: Vec<_> = {
-        // These positions are of the ligand's anchor atom.
-        let (anchor_posits, orientations) =
-            make_posits_orientations(&ligand.docking_init, num_posits, num_orientations);
-
-        anchor_posits
-            .iter()
-            .flat_map(|anchor_posit| {
-                orientations.iter().map(move |orientation| Pose {
-                    anchor_posit: *anchor_posit,
-                    conformation_type: ConformationType::Rigid {
-                        orientation: *orientation,
-                    },
-                })
-            })
-            .collect()
-    };
+    let poses = find_poses(&ligand);
 
     // todo: Currently an outer/inner dynamic.
     let lig_atom_count = ligand.molecule.atoms.len();
@@ -621,7 +602,7 @@ pub fn find_optimal_pose(
     // Note: Splitting the partial charges between target and ligand (As opposed to analyzing every pair
     // combination) may give us more useful data, and is likely much more efficient, if one side has substantially
     // fewer charges than the other.
-    let partial_charges_tgt = create_partial_charges(&tgt_atoms_near_site, 1.);
+    let partial_charges_tgt = create_partial_charges(&rec_atoms_near_site, 1.);
     let partial_charges_lig = create_partial_charges(&ligand.molecule.atoms, 1.);
 
     println!(
@@ -633,21 +614,63 @@ pub fn find_optimal_pose(
     // For the Barnes Hut electrostatics tree.
     let bh_bounding_box = Cube::from_bodies(&partial_charges_tgt, 0., true);
 
+    // Set up the LJ data that doesn't change with pose.
+    let pair_count = rec_atoms_near_site.len() * ligand.molecule.atoms.len();
+    // Atom rec el, lig el, atom rec posit, lig i. Assumes the only thing that changes with pose
+    // is ligand posit.
+    let mut lj_pairs = Vec::with_capacity(pair_count);
+
+    for atom_rec in &rec_atoms_near_site {
+        for (i_lig, atom_lig) in ligand.molecule.atoms.iter().enumerate() {
+            let (sigma, eps) = get_lj_params(atom_rec.element, atom_lig.element, lj_lut);
+            lj_pairs.push((atom_rec.posit, i_lig, sigma, eps));
+        }
+    }
+
+    // SIMD prep.
+    // {
+    // let mut lj_pairs_simd = Vec::with_capacity(pair_count / 8);
+    //     // todo: Your current algo expects exact...
+    //     let rec_posits_simd = vec3s_to_simd(rec_atoms_near_site.iter().map(|a| a.posit.into()).collect());
+    //     let lig_posits_simd = vec3s_to_simd(ligand.molecule.atoms.iter().map(|a| a.posit.into()).collect());
+    //
+    //     let mut sigmas = Vec::new();
+    //     let mut epsilons = Vec::new();
+    //     for atom_rec in &rec_atoms_near_site {
+    //         for atom_lig in &ligand.molecule.atoms {
+    //             let (sigma, eps) = get_lj_params(atom_rec.element, atom_lig.element, lj_lut);
+    //             sigmas.push(sigma);
+    //             epsilons.push(eps);
+    //         }
+    //     }
+    //     let sigmas_simd = f32s_to_simd(&sigmas);
+    //     let epsilons_simd = f32s_to_simd(&epsilons);
+    //
+    //     for i in 0..rec_posits_simd.len() {
+    //         // todo: This is tricky teh way you do ligand indexing...
+    //         lj_pairs_simd.push(rec_posits_simd[i], lig_posits_simd[i], sigmas_simd[i], epsilons_simd[i]);
+    //     }
+    // }
+
+    println!("Setup complete. iterating through {} poses...", poses.len());
+
+    let start = Instant::now();
+
     // Now process them in parallel and reduce to the single best pose:
     let (best_energy, best_pose) = poses
         .par_iter()
         .enumerate()
         .map(|(i_pose, pose)| {
             let energy = binding_energy(
-                &tgt_atoms_near_site,
-                &tgt_atom_indices,
+                &rec_atoms_near_site,
+                &rec_atom_indices,
                 &tgt_bonds_near_site,
                 &ligand,
                 &lig_posits[i_pose],
-                lj_lut,
                 &partial_charges_tgt,
                 &partial_charges_lig,
                 &bh_bounding_box,
+                &lj_pairs,
             );
             (energy, pose)
         })
@@ -665,6 +688,8 @@ pub fn find_optimal_pose(
 
     ligand.pose = best_pose.clone();
 
+    let elapsed = start.elapsed();
+    println!("Time: {}ms", elapsed.as_millis());
     println!("Complete. \n\nBest pose: {best_pose:?} \n\nScores: {best_energy:.3?}\n\n");
     (best_pose.clone(), best_energy)
 }

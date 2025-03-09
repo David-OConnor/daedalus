@@ -558,6 +558,11 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
     // Draw atoms.
     if [MoleculeView::BallAndStick, MoleculeView::SpaceFill].contains(&ui.mol_view) {
         for (i, atom) in mol.atoms.iter().enumerate() {
+            if atom.hetero {
+                // Don't draw VDW spheres for hetero atoms, at least for now.
+                continue;
+            }
+
             let mut chain_not_sel = false;
             for chain in &chains_invis {
                 if chain.atoms.contains(&i) {

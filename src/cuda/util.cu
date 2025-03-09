@@ -48,7 +48,7 @@ dtype lj_potential(
     dtype3 posit_0,
     dtype3 posit_1,
     dtype sigma,
-    dtype epsilon
+    dtype eps
 ) {
     dtype r = calc_dist(posit_0, posit_1);
 
@@ -56,5 +56,5 @@ dtype lj_potential(
     dtype sr6 = powf(sr, 6.);
     dtype sr12 = sr6 * sr6;
 
-    return 4.0f * epsilon * (sr12 - sr6);
+    return 4.0f * eps * (sr12 - sr6);
 }

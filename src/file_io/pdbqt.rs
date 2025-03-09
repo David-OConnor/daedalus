@@ -223,7 +223,11 @@ impl Molecule {
         }
 
         if let Some(lig) = ligand {
-            if let ConformationType::Flexible { torsions } = &lig.pose.conformation_type {
+            if let ConformationType::Flexible {
+                orientation: _,
+                torsions,
+            } = &lig.pose.conformation_type
+            {
                 let tor_len = torsions.len();
                 if tor_len > 0 {
                     writeln!(file, "REMARK  {tor_len} active torsions:")?;

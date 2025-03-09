@@ -231,10 +231,13 @@ impl Ligand {
                 // Rotate around the anchor atom.
                 let posit_rel = atom - anchor;
                 pose_.anchor_posit + orientation.rotate_vec(posit_rel)
-                // self.pose.anchor_posit + posit_rel
             }
-            ConformationType::Flexible { torsions } => {
-                unimplemented!()
+            ConformationType::Flexible {
+                orientation,
+                torsions,
+            } => {
+                let posit_rel = atom - anchor;
+                pose_.anchor_posit + orientation.rotate_vec(posit_rel)
             }
         }
     }
