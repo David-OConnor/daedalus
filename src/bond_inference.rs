@@ -254,7 +254,7 @@ fn hydrogen_bond_inner(
     };
 
     let modifier = if relaxed_dist_thresh {
-        H_BOND_DIST_THRESH * 10.
+        H_BOND_DIST_THRESH * 2.
     } else {
         H_BOND_DIST_THRESH
     };
@@ -297,8 +297,9 @@ pub fn create_hydrogen_bonds(atoms: &[Atom], bonds: &[Bond]) -> Vec<HydrogenBond
 /// atom types (generally N and O; sometimes S and F), and geometry regarding the hydrogen covalently
 /// bonded to the donor.
 ///
-/// Separates donor from acceptor inputs, use use in cases like bonds between targets and ligands.
-///
+/// Separates donor from acceptor inputs, for use in cases like bonds between targets and ligands.
+/// We indlude indices, in the case where atoms are subsets of molecules; this allows bonds indices
+/// to be preserved.
 pub fn create_hydrogen_bonds_one_way(
     atoms_donor: &[Atom],
     atoms_donor_i: &[usize],

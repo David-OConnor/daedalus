@@ -388,11 +388,10 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene, update_cam_lighting: bo
         ..Default::default()
     });
 
-    // todo: rotate using the orientation relative to the offset. Atoms and bonds.
-
     let mut atoms_positioned = mol.atoms.clone();
+    let atom_posits = ligand.position_atoms(None);
     for (i, atom) in &mut atoms_positioned.iter_mut().enumerate() {
-        atom.posit = ligand.position_atom(i, None);
+        atom.posit = atom_posits[i];
     }
 
     // for atom in &mol.atoms {

@@ -25,6 +25,7 @@
 //! - [Pubchem](https://pubchem.ncbi.nlm.nih.gov/)
 //! - [Available Chemicals Database](https://www.psds.ac.uk/) // todo: Login required?
 //! - Roche compound inventory?
+//! - [Zinc](https://zinc.docking.org/)
 //!
 //!
 //! Docking formats: Autodock Vina uses PDBQT files for both target and ligand. The targets, compared
@@ -43,13 +44,14 @@ use lin_alg::{
     linspace,
     simd::{f32s_to_simd, vec3s_to_simd},
 };
-use partial_charge::{PartialCharge, create_partial_charges};
+use lin_alg::f64::{FORWARD, RIGHT, UP};
+use partial_charge::{EemParams, EemSet, PartialCharge, create_partial_charges};
 use rand::Rng;
 use rayon::prelude::*;
 
 use crate::{
     bond_inference::create_hydrogen_bonds_one_way,
-    docking::docking_prep::Torsion,
+    docking::{docking_prep::Torsion, partial_charge::assign_eem_charges},
     element::{Element, get_lj_params},
     molecule::{Atom, Bond, Ligand, Molecule},
 };
@@ -84,8 +86,7 @@ enum GaCrossoverMode {
 /// The most fundamental part of Newtonian acceleration calculation.
 /// `acc_dir` is a unit vector.
 // todo: F64 A/R.
-// pub fn acc_elec(acc_dir: Vec3F32, src_q: f32, tgt_q: f32, dist: f32, softening_factor_sq: f32) -> Vec3F32 {
-pub fn acc_elec(
+pub fn force_elec(
     acc_dir: Vec3,
     src_q: f64,
     tgt_q: f64,
@@ -93,6 +94,7 @@ pub fn acc_elec(
     softening_factor_sq: f64,
 ) -> Vec3 {
     // Assume the coulomb constant is 1.
+    // println!("AD: {acc_dir}, src: {src_q} tgt: {tgt_q}  dist: {dist}");
     acc_dir * src_q * tgt_q / (dist.powi(2) + softening_factor_sq)
 }
 
@@ -182,7 +184,7 @@ impl Default for GeneticAlgorithmParameters {
 pub struct DockingInit {
     pub site_center: Vec3,
     pub site_box_size: f64, // Assume square. // todo: Allow diff dims
-                            // todo: Num points in each dimension?
+    // todo: Num points in each dimension?
 }
 
 #[derive(Clone, Debug)]
@@ -225,7 +227,7 @@ pub struct BindingEnergy {
 
 impl BindingEnergy {
     pub fn new(vdw: f32, h_bond_count: usize, hydrophobic: f32, electrostatic: f32) -> Self {
-        const E_PER_H_BOND: f32 = -1.; // todo A/R.
+        const E_PER_H_BOND: f32 = -0.7; // todo A/R.
 
         let h_bond = h_bond_count as f32 * E_PER_H_BOND;
 
@@ -233,6 +235,7 @@ impl BindingEnergy {
         let weight_hydrophobic = 1.;
         let weight_electrostatic = 1.;
 
+        // A low score is considered to be a better pose.
         let score = weight_vdw * vdw
             + h_bond
             + weight_hydrophobic * hydrophobic
@@ -266,8 +269,9 @@ pub fn binding_energy(
     ligand: &Ligand,
     lig_posits: &[Vec3],
     partial_charges_rec: &[PartialCharge],
-    partial_charges_ligand: &[PartialCharge],
-    bh_bounding_box: &Option<Cube>,
+    partial_charges_lig: &[PartialCharge],
+    charge_tree: &Tree,
+    bh_config: &BhConfig,
     lj_pairs: &[(Vec3, usize, f32, f32)], // rec pos, lig i, sig, eps
 ) -> BindingEnergy {
     // todo: Integrate CUDA.
@@ -287,6 +291,12 @@ pub fn binding_energy(
         // Calculate hydrogen bonds
         let lig_indices: Vec<usize> = (0..ligand.molecule.atoms.len()).collect();
 
+        // todo: THis is not efficient; work-in for now.
+        let mut lig_atoms_positioned = ligand.molecule.atoms.clone();
+        for (i, atom) in lig_atoms_positioned.iter_mut().enumerate() {
+            atom.posit = lig_posits[i];
+        }
+
         // todo: Given you're using a relaxed distance thresh for H bonds, adjust the score
         // todo based on the actual distance of the bond.
         // We keep these separate, so the bond indices are meaningful.
@@ -294,12 +304,14 @@ pub fn binding_energy(
             rec_atoms_near_site,
             rec_indices,
             rec_bonds_near_site,
-            &ligand.molecule.atoms,
+            // &ligand.molecule.atoms,
+            &lig_atoms_positioned,
             &lig_indices,
             true,
         );
         let h_bonds_lig_donor = create_hydrogen_bonds_one_way(
-            &ligand.molecule.atoms,
+            // &ligand.molecule.atoms,
+            &lig_atoms_positioned,
             &lig_indices,
             &ligand.molecule.bonds,
             rec_atoms_near_site,
@@ -309,10 +321,6 @@ pub fn binding_energy(
 
         h_bonds_rec_donor.len() + h_bonds_lig_donor.len()
     };
-
-    if h_bond_count > 0 {
-        println!("Num H bonds: {:?}", h_bond_count);
-    }
 
     // Calculate Hydrophobic (solvation) interactions
     // -- HYDROPHOBIC INTERACTION TERM -- //
@@ -330,6 +338,7 @@ pub fn binding_energy(
                     // Check if both are hydrophobic
                     if is_hydrophobic(atom_rec) && is_hydrophobic(atom_ligand) {
                         let r = (atom_rec.posit - lig_posits[i_lig]).magnitude() as f32;
+                        // todo: Cache distances upstream, so we are not repeating them?
 
                         // If they are within a cutoff, add favorable energy.
                         // (Your real scoring might be more nuanced.)
@@ -358,56 +367,53 @@ pub fn binding_energy(
 
     // todo: Sort out f32 vs f64 for this.
     let electrostatic = {
-        if let Some(bb) = bh_bounding_box {
-            // todo: Move this struct to state.
-            let bh_config = BhConfig {
-                θ: THETA_BH,
-                ..Default::default()
-            };
+        let mut force = Vec3F32::new_zero();
 
-            // This tree is over the target (receptor) charges. This may be more efficient
-            // than over the ligand, as we expect the receptor nearby atoms to be more numerous.
-            let tree = Tree::new(&partial_charges_rec, bb, &bh_config);
+        // In the barnes_hut etc nomenclature, we are iterating over *target* bodies. (Not associated
+        // with target=protein=receptor; actually, the opposite!
 
-            let mut force = Vec3F32::new_zero();
-
-            // In the barnes_hut etc nomenclature, we are iterating over *target* bodies. (Not associated
-            // with target=protein=receptor; actually, the opposite!
-
-            for q_lig in partial_charges_ligand {
-                // let diff: Vec3F32 = (q_rec.posit - q_lig.posit).into(); // todo: QC dir.
-                // let dist = diff.magnitude();
-
-                let force_fn = |acc_dir, q_src, dist| {
-                    acc_elec(
-                        acc_dir,
-                        q_src,
-                        q_lig.charge.into(),
-                        dist,
-                        SOFTENING_FACTOR_SQ_ELECTROSTATIC,
-                    )
-                };
-
-                force += barnes_hut::run_bh(
-                    q_lig.posit.into(),
-                    999_999, // N/A, since we're comparing separate sets.
-                    &tree,
-                    &bh_config,
-                    &force_fn,
+        // Note: Ligand positions are already positioned for the pose, by the time they enter this function.
+        for q_lig in partial_charges_lig {
+            // todo: Experimenting with non-BH to troubleshoot. BH is currently reporting 0 force.
+            for q_rec in partial_charges_rec {
+                let diff: Vec3F32 = (q_rec.posit - q_lig.posit).into();
+                let dist = diff.magnitude();
+                force += force_elec(
+                    (diff / dist).into(),
+                    q_rec.charge as f64,
+                    q_lig.charge as f64,
+                    dist as f64,
+                    SOFTENING_FACTOR_SQ_ELECTROSTATIC,
                 )
-                .into();
+                    .into();
             }
 
-            // Force magnitude. Closest to 0 is best, indicating stability?
-            force.magnitude()
-        } else {
-            0.
-        }
-    };
+            continue;
 
-    // let vdw = 0.;
-    // let electrostatic = 0.;
-    // let hydrophobic_score = 0.;
+            let force_fn = |acc_dir, q_src, dist| {
+                force_elec(
+                    acc_dir,
+                    q_src,
+                    q_lig.charge.into(),
+                    dist,
+                    SOFTENING_FACTOR_SQ_ELECTROSTATIC,
+                )
+            };
+
+            force += barnes_hut::run_bh(
+                q_lig.posit.into(),
+                999_999, // N/A, since we're comparing separate sets.
+                charge_tree,
+                bh_config,
+                &force_fn,
+            )
+                .into();
+        }
+
+        // println!("FORCE: {force:?}");
+        // Force magnitude. Closest to 0 is best, indicating stability?
+        force.magnitude()
+    };
 
     BindingEnergy::new(vdw, h_bond_count, hydrophobic_score, electrostatic)
 }
@@ -471,19 +477,12 @@ fn make_posits_orientations(
 }
 
 /// Pre-generate poses, for a naive system.
-fn find_poses(ligand: &Ligand) -> Vec<Pose> {
-    let num_posits: usize = 8; // Gets cubed.
-    let num_orientations = 30;
-
+fn init_poses(ligand: &Ligand, init: &DockingInit, num_posits: usize, num_orientations: usize, angles_per_bond: usize) -> Vec<Pose> {
     // These positions are of the ligand's anchor atom.
     let (anchor_posits, orientations) =
-        make_posits_orientations(&ligand.docking_init, num_posits, num_orientations);
+        make_posits_orientations(init, num_posits, num_orientations);
 
-    // todo: Temp hard-coded here.
-    let angles_per_bond = 4;
     let angles = linspace(0., TAU, angles_per_bond);
-
-    println!("Num flexible bonds: {:?}", ligand.flexible_bonds.len());
 
     // let mut p = Vec::with_capacity(
     //     anchor_posits.len() * orientations.len() * angles.len() * ligand.flexible_bonds.len(),
@@ -522,15 +521,72 @@ fn find_poses(ligand: &Ligand) -> Vec<Pose> {
             }
         }
     }
-    // println!("POSES LEN: {:?} exp: {}", p.len(), anchor_posits.len() * orientations.len() * angles.len() * ligand.flexible_bonds.len());
-    println!(
-        "POSES LEN: {:?} expected: {}",
-        result.len(),
-        anchor_posits.len()
-            * orientations.len()
-            * angles.len().pow(ligand.flexible_bonds.len() as u32)
-    );
+
     result
+}
+
+/// Contains code that is specific to a set of poses.
+fn process_poses<'a>(
+    poses: &'a [Pose],
+    rec_atoms_near_site: &[Atom],
+    rec_atom_indices: &[usize],
+    rec_bonds_near_site: &[Bond],
+    ligand: &mut Ligand,
+    partial_charges_rec: &[PartialCharge],
+    charge_tree: &Tree,
+    bh_config: &BhConfig,
+    lj_pairs: &[(Vec3, usize, f32, f32)], // rec pos, lig i, sig, eps
+) -> (&'a Pose, BindingEnergy) {
+    // todo: Currently an outer/inner dynamic.
+    // Set up the ligand atom positions for each pose; that's all that matters re the pose for now.
+    let mut lig_posits = Vec::with_capacity(poses.len());
+    let mut partial_charges_lig = Vec::with_capacity(poses.len());
+    for pose in poses {
+        let posits_this_pose = ligand.position_atoms(Some(pose));
+        partial_charges_lig.push(create_partial_charges(
+            &mut ligand.molecule.atoms,
+            Some(&posits_this_pose),
+        ));
+        lig_posits.push(posits_this_pose);
+    }
+
+    println!(
+        "Partial charges rec: {} lig: {}",
+        partial_charges_rec.len(),
+        partial_charges_lig[0].len()
+    );
+
+    let (best_energy, best_pose) = poses
+        .par_iter()
+        .enumerate()
+        .map(|(i_pose, pose)| {
+            let energy = binding_energy(
+                &rec_atoms_near_site,
+                &rec_atom_indices,
+                &rec_bonds_near_site,
+                &ligand,
+                &lig_posits[i_pose],
+                &partial_charges_rec,
+                &partial_charges_lig[i_pose],
+                &charge_tree,
+                &bh_config,
+                &lj_pairs,
+            );
+            (energy, pose)
+        })
+        // Provide an identity value for reduction; here we use +∞ for energy:
+        .reduce(
+            || (BindingEnergy::default(), &poses[0]),
+            |(energy_a, pose_a), (energy_b, pose_b)| {
+                if energy_b.score < energy_a.score {
+                    (energy_b, pose_b)
+                } else {
+                    (energy_a, pose_a)
+                }
+            },
+        );
+
+    (best_pose, best_energy)
 }
 
 /// Return best pose, and energy.
@@ -538,30 +594,37 @@ fn find_poses(ligand: &Ligand) -> Vec<Pose> {
 /// Note: We use the term `receptor` here vice `target`, as `target` is also used in terms of
 /// calculating forces between pairs. (These targets may or may not align!)
 pub fn find_optimal_pose(
-    target: &Molecule,
+    target: &mut Molecule,
     ligand: &mut Ligand,
     lj_lut: &HashMap<(Element, Element), (f32, f32)>,
 ) -> (Pose, BindingEnergy) {
+    let eem_params = EemParams::new(EemSet::AimB3); // todo: WHich set?
     println!("Starting docking setup...");
+
+    if !ligand.molecule.eem_charges_assigned {
+        println!("Assigning EEM charges for Ligand......");
+        let indices: Vec<usize> = (0..ligand.molecule.atoms.len()).collect();
+        assign_eem_charges(
+            &mut ligand.molecule.atoms,
+            &indices,
+            &ligand.molecule.bonds,
+            &ligand.molecule.adjacency_list,
+            &eem_params,
+            0.,
+        );
+        println!("Complete.");
+        ligand.molecule.eem_charges_assigned = true;
+    }
+
 
     let dist_thresh = ATOM_NEAR_SITE_DIST_THRESH * ligand.docking_init.site_box_size;
 
     // For your test, see if you can get a version tha tis flexed correctly.
     // todo: And/or set up a mol angle editing feature, and use it.
 
-    // Preliminary setup; computations that are not pose-specific, including optimizations.
-    // let rec_atoms_near_site: Vec<(usize, &_)> = target
-    //     .atoms
-    //     .iter()
-    //     .enumerate()
-    //     .filter(|(i, a)| {
-    //         (a.posit - ligand.docking_init.site_center).magnitude() < dist_thresh && !a.hetero
-    //     })
-    //     .collect();
-
     println!("Dist thresh: {:?}", dist_thresh);
     let mut rec_atom_indices = Vec::new();
-    let rec_atoms_near_site: Vec<_> = target
+    let mut rec_atoms_near_site: Vec<_> = target
         .atoms
         .iter()
         .enumerate()
@@ -577,7 +640,7 @@ pub fn find_optimal_pose(
         .collect();
 
     // Bonds here is used for identifying donor heavy and H pairs for hydrogen bonds.
-    let tgt_bonds_near_site: Vec<_> = target
+    let rec_bonds_near_site: Vec<_> = target
         .bonds
         .iter()
         // Don't use ||; all atom indices in these bonds must be present in `tgt_atoms_near_site`.
@@ -585,34 +648,27 @@ pub fn find_optimal_pose(
         .map(|b| b.clone()) // todo: don't like the clone
         .collect();
 
-    let poses = find_poses(&ligand);
+    println!("Assigning EEM charges to receptor atoms...");
+    assign_eem_charges(
+        &mut rec_atoms_near_site,
+        &rec_atom_indices,
+        &target.bonds,
+        &target.adjacency_list,
+        &eem_params,
+        0.,
+    ); // todo: QC what the last param should be.
 
-    // todo: Currently an outer/inner dynamic.
-    let lig_atom_count = ligand.molecule.atoms.len();
-    // Set up the ligand atom positions for each pose; that's all that matters re the pose for now.
-    let mut lig_posits = Vec::with_capacity(poses.len());
-    for pose in &poses {
-        let mut posits_this_pose = Vec::with_capacity(lig_atom_count);
-        for i in 0..lig_atom_count {
-            posits_this_pose.push(ligand.position_atom(i, Some(pose)));
-        }
-        lig_posits.push(posits_this_pose);
+    // Update the parent molecule atoms as well, for other uses, since we're not updating it directly here.
+    for (near_i, global_i) in rec_atom_indices.iter().enumerate() {
+        target.atoms[*global_i].partial_charge = rec_atoms_near_site[near_i].partial_charge;
     }
+
+    println!("Setup complete.");
 
     // Note: Splitting the partial charges between target and ligand (As opposed to analyzing every pair
     // combination) may give us more useful data, and is likely much more efficient, if one side has substantially
     // fewer charges than the other.
-    let partial_charges_tgt = create_partial_charges(&rec_atoms_near_site, 1.);
-    let partial_charges_lig = create_partial_charges(&ligand.molecule.atoms, 1.);
-
-    println!(
-        "Partial charges rec: {} lig: {}",
-        partial_charges_tgt.len(),
-        partial_charges_lig.len()
-    );
-
-    // For the Barnes Hut electrostatics tree.
-    let bh_bounding_box = Cube::from_bodies(&partial_charges_tgt, 0., true);
+    let partial_charges_rec = create_partial_charges(&mut rec_atoms_near_site, None);
 
     // Set up the LJ data that doesn't change with pose.
     let pair_count = rec_atoms_near_site.len() * ligand.molecule.atoms.len();
@@ -652,40 +708,98 @@ pub fn find_optimal_pose(
     //     }
     // }
 
-    println!("Setup complete. iterating through {} poses...", poses.len());
-
     let start = Instant::now();
 
-    // Now process them in parallel and reduce to the single best pose:
-    let (best_energy, best_pose) = poses
-        .par_iter()
-        .enumerate()
-        .map(|(i_pose, pose)| {
-            let energy = binding_energy(
-                &rec_atoms_near_site,
-                &rec_atom_indices,
-                &tgt_bonds_near_site,
-                &ligand,
-                &lig_posits[i_pose],
-                &partial_charges_tgt,
-                &partial_charges_lig,
-                &bh_bounding_box,
-                &lj_pairs,
-            );
-            (energy, pose)
-        })
-        // Provide an identity value for reduction; here we use +∞ for energy:
-        .reduce(
-            || (BindingEnergy::default(), &poses[0]),
-            |(energy_a, pose_a), (energy_b, pose_b)| {
-                if energy_b.score < energy_a.score {
-                    (energy_b, pose_b)
-                } else {
-                    (energy_a, pose_a)
-                }
-            },
-        );
+    // We can set up our tree once for the whole simulation, as for the case of fixed
+    // receptor, one side of the charge pairs doesn't change.
+    let bh_config = BhConfig {
+        θ: THETA_BH,
+        ..Default::default()
+    };
 
+    // This tree is over the target (receptor) charges. This may be more efficient
+    // than over the ligand, as we expect the receptor nearby atoms to be more numerous.
+    let charge_tree = {
+        // For the Barnes Hut electrostatics tree.
+        let bh_bounding_box = Cube::from_bodies(&partial_charges_rec, 0., true);
+
+        Tree::new(&partial_charges_rec, &bh_bounding_box.unwrap(), &bh_config)
+    };
+
+    let num_posits = 6; // Gets cubed.
+    let num_orientations = 50;
+    let angles_per_bond = 8;
+    let poses = init_poses(&ligand, &ligand.docking_init, num_posits, num_orientations, angles_per_bond);
+    println!("Setup complete. iterating through {} poses...", poses.len());
+
+    // Now process them in parallel and reduce to the single best pose:
+    let (best_pose, best_energy) = process_poses(
+        &poses,
+        &rec_atoms_near_site,
+        &rec_atom_indices,
+        &rec_bonds_near_site,
+        ligand,
+        &partial_charges_rec,
+        &charge_tree,
+        &bh_config,
+        &lj_pairs,
+    );
+
+    println!("\nBest initial pose: {best_pose:?} \nScores: {best_energy:.3?}\n");
+
+    // Some ad-hoc tweaking.
+    let mut new_poses_to_try = Vec::new();
+    for i in -30..30 {
+        if let ConformationType::Flexible { orientation, torsions } = &best_pose.conformation_type {
+            let rot_amt = TAU as f64 / 200. * i as f64;
+
+            let rotator_up = Quaternion::from_axis_angle(UP, rot_amt) ;
+            let rotator_right = Quaternion::from_axis_angle(RIGHT, rot_amt) ;
+            let rotator_fwd = Quaternion::from_axis_angle(FORWARD, rot_amt) ;
+
+            // todo: Try combinations of the above.
+
+            for rot_a in &[rotator_up, rotator_right, rotator_fwd] {
+                for rot_b in &[rotator_up, rotator_right, rotator_fwd] {
+                    for rot_c in &[rotator_up, rotator_right, rotator_fwd] {
+                        new_poses_to_try.push(Pose {
+                            anchor_posit: best_pose.anchor_posit,
+                            conformation_type: ConformationType::Flexible {
+                                orientation: *rot_a * *rot_b * *rot_c * *orientation,
+                                torsions: torsions.clone(),
+                            }
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    // Now, refine around this best pose. (Crude, but not as crude as blind iteration through all)
+    let num_posits = 4; // Gets cubed.
+    let num_orientations = 60;
+    let angles_per_bond = 5;
+    // todo: Narrow down orientations and bond flexes too; not just position.
+    let init_modified = DockingInit {
+        site_center: best_pose.anchor_posit,
+        site_box_size: ligand.docking_init.site_box_size / 4.,
+    };
+    // let poses = init_poses(&ligand, &init_modified, num_posits, num_orientations, angles_per_bond);
+    // println!("Setup complete. iterating through {} poses...", poses.len());
+    //
+    // // Now process them in parallel and reduce to the single best pose:
+    let (best_pose, best_energy) = process_poses(
+        // &poses,
+        &new_poses_to_try,
+        &rec_atoms_near_site,
+        &rec_atom_indices,
+        &rec_bonds_near_site,
+        ligand,
+        &partial_charges_rec,
+        &charge_tree,
+        &bh_config,
+        &lj_pairs,
+    );
     ligand.pose = best_pose.clone();
 
     let elapsed = start.elapsed();

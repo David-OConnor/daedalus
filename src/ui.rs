@@ -8,11 +8,12 @@ use na_seq::AaIdent;
 use crate::{
     CamSnapshot, Selection, State, ViewSelLevel,
     docking::{
+        ConformationType,
         docking_external::{check_adv_avail, dock_with_vina},
         docking_prep_external::{prepare_ligand, prepare_target},
         find_optimal_pose,
         find_sites::find_docking_sites,
-        partial_charge::{PartialChargeType, setup_partial_charges},
+        partial_charge::create_partial_charges,
     },
     download_mols::{load_cif_rcsb, load_sdf_drugbank, load_sdf_pubchem},
     mol_drawing::{MoleculeView, draw_ligand, draw_molecule},
@@ -217,7 +218,6 @@ fn cam_controls(
         ui.label("Camera:");
 
         // Preset buttons
-
         if ui.button("Front").clicked() {
             if let Some(mol) = &state.molecule {
                 let center: Vec3 = mol.center.into();
@@ -706,7 +706,7 @@ fn residue_search(
             // if state.docking_ready {
             if ui.button("Dock").clicked() {
                 // let tgt = state.molecule.as_ref().unwrap();
-                let mol = state.molecule.as_ref().unwrap();
+                let mol = state.molecule.as_mut().unwrap();
                 find_optimal_pose(mol, ligand, &state.volatile.lj_lookup_table);
 
                 // Allow the user to select the autodock executable.
@@ -1117,6 +1117,23 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 if ui.button("Close").clicked() {
                     close_ligand = true;
                 }
+
+                ui.add_space(COL_SPACING);
+
+                ui.label("Rotate bonds:");
+                for i in 0..ligand.flexible_bonds.len() {
+                    if let ConformationType::Flexible {
+                        orientation,
+                        torsions,
+                    } = &mut ligand.pose.conformation_type
+                    {
+                        if ui.button(format!("{i}")).clicked() {
+                            torsions[i].dihedral_angle =
+                                (torsions[i].dihedral_angle + TAU / 16.) % TAU;
+                            redraw = true;
+                        }
+                    }
+                }
             });
         }
 
@@ -1193,7 +1210,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 let path = Path::new(path_dir).join(filename);
 
                 // todo: You will likely need to add charges earlier, so you can view their data in the UI.
-                setup_partial_charges(&mut mol.atoms, PartialChargeType::Gasteiger);
+                // setup_partial_charges(&mut mol.atoms, PartialChargeType::Gasteiger);
+                // create_partial_charges(&mut mol.atoms);
 
                 if mol.save_pdbqt(&path, None).is_err() {
                     eprintln!("Error saving PDBQT target");
@@ -1204,7 +1222,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 let filename = format!("{}_ligand.pdbqt", lig.molecule.ident);
                 let path = Path::new(path_dir).join(filename);
 
-                setup_partial_charges(&mut lig.molecule.atoms, PartialChargeType::Gasteiger);
+                // create_partial_charges(&mut lig.molecule.atoms);
+                // setup_partial_charges(&mut lig.molecule.atoms, PartialChargeType::Gasteiger);
 
                 if lig.molecule.save_pdbqt(&path, None).is_err() {
                     eprintln!("Error saving PDBQT ligand");
