@@ -42,7 +42,7 @@ use rayon::iter::ParallelIterator;
 
 use crate::{
     aa_coords::bond_vecs::init_local_bond_vecs,
-    docking::docking_external::check_adv_avail,
+    docking::{BindingEnergy, docking_external::check_adv_avail},
     element::{Element, init_lj_lut},
     file_io::pdbqt::load_pdbqt,
     molecule::Ligand,
@@ -212,6 +212,7 @@ struct StateUi {
     docking_site_size: String,
     /// For the arc/orbit cam only.
     orbit_around_selection: bool,
+    binding_energy_disp: Option<BindingEnergy>,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]

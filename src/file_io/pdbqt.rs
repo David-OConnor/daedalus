@@ -223,11 +223,7 @@ impl Molecule {
         }
 
         if let Some(lig) = ligand {
-            if let ConformationType::Flexible {
-                orientation: _,
-                torsions,
-            } = &lig.pose.conformation_type
-            {
+            if let ConformationType::Flexible { torsions } = &lig.pose.conformation_type {
                 let tor_len = torsions.len();
                 if tor_len > 0 {
                     writeln!(file, "REMARK  {tor_len} active torsions:")?;
@@ -235,15 +231,21 @@ impl Molecule {
                 }
 
                 for (i, torsion) in torsions.iter().enumerate() {
+                    let atom_0_i = lig.molecule.bonds[torsion.bond].atom_0;
+                    let atom_1_i = lig.molecule.bonds[torsion.bond].atom_1;
+                    let atom_0 = &lig.molecule.atoms[atom_0_i];
+                    let atom_1 = &lig.molecule.atoms[atom_1_i];
+
+                    let atom_0_text = format!("{}_{}", atom_0.element.to_letter(), atom_0_i);
+                    let atom_1_text = format!("{}_{}", atom_1.element.to_letter(), atom_1_i);
+
                     writeln!(
                         file,
                         "REMARK {:>4}  {:>1}    between atoms: {}  and  {}",
                         i + 1,
-                        // torsion.status,
                         TorsionStatus::Active,
-                        // todo: These are probably not correct mappings to the format.
-                        lig.molecule.bonds[torsion.bond].atom_0,
-                        lig.molecule.bonds[torsion.bond].atom_1,
+                        atom_0_text,
+                        atom_1_text,
                     )?;
                 }
             }

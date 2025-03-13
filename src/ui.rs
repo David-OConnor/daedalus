@@ -1,5 +1,6 @@
 use std::{f32::consts::TAU, path::Path, time::Instant};
 
+use barnes_hut::{BhConfig, Tree};
 use egui::{Color32, ComboBox, Context, RichText, Slider, TextEdit, TopBottomPanel, Ui};
 use graphics::{Camera, ControlScheme, EngineUpdates, RIGHT_VEC, Scene, UP_VEC};
 use lin_alg::f32::{Quaternion, Vec3};
@@ -13,15 +14,16 @@ use crate::{
         docking_prep_external::{prepare_ligand, prepare_target},
         find_optimal_pose,
         find_sites::find_docking_sites,
-        partial_charge::create_partial_charges,
+        partial_charge::{PartialCharge, create_partial_charges},
     },
     download_mols::{load_cif_rcsb, load_sdf_drugbank, load_sdf_pubchem},
     mol_drawing::{MoleculeView, draw_ligand, draw_molecule},
-    molecule::{Ligand, Molecule, ResidueType},
+    molecule::{Atom, Bond, Ligand, Molecule, ResidueType},
     rcsb_api::{open_drugbank, open_pdb, open_pubchem},
     render::{CAM_INIT_OFFSET, RENDER_DIST, set_docking_light, set_flashlight},
     util::{cam_look_at, check_prefs_save, cycle_res_selected, orbit_center, select_from_search},
 };
+use crate::docking::{binding_energy, setup_docking};
 
 pub const ROW_SPACING: f32 = 10.;
 pub const COL_SPACING: f32 = 30.;
@@ -225,6 +227,7 @@ fn cam_controls(
                     Vec3::new(center.x, center.y, center.z - (mol.size + CAM_INIT_OFFSET));
                 cam.orientation = Quaternion::new_identity();
 
+                state.ui.view_depth = VIEW_DEPTH_MAX;
                 changed = true;
             }
         }
@@ -236,6 +239,7 @@ fn cam_controls(
                     Vec3::new(center.x, center.y + (mol.size + CAM_INIT_OFFSET), center.z);
                 cam.orientation = Quaternion::from_axis_angle(RIGHT_VEC, TAU / 4.);
 
+                state.ui.view_depth = VIEW_DEPTH_MAX;
                 changed = true;
             }
         }
@@ -247,6 +251,7 @@ fn cam_controls(
                     Vec3::new(center.x - (mol.size + CAM_INIT_OFFSET), center.y, center.z);
                 cam.orientation = Quaternion::from_axis_angle(UP_VEC, TAU / 4.);
 
+                state.ui.view_depth = VIEW_DEPTH_MAX;
                 changed = true;
             }
         }
@@ -1122,10 +1127,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
                 ui.label("Rotate bonds:");
                 for i in 0..ligand.flexible_bonds.len() {
-                    if let ConformationType::Flexible {
-                        orientation,
-                        torsions,
-                    } = &mut ligand.pose.conformation_type
+                    if let ConformationType::Flexible { torsions } =
+                        &mut ligand.pose.conformation_type
                     {
                         if ui.button(format!("{i}")).clicked() {
                             torsions[i].dihedral_angle =
@@ -1133,6 +1136,46 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                             redraw = true;
                         }
                     }
+                }
+
+                ui.add_space(COL_SPACING);
+                if let Some(mol) = &mut state.molecule {
+                    if ui.button("Docking energy").clicked() {
+                        let (rec_atoms_near_site, rec_atom_indices, rec_bonds_near_site, partial_charges_rec, lj_pairs) =
+                            setup_docking(mol, ligand, &state.volatile.lj_lookup_table);
+
+
+                        let poses = vec![ligand.pose.clone()];
+                        let mut lig_posits = Vec::with_capacity(poses.len());
+                        let mut partial_charges_lig = Vec::with_capacity(poses.len());
+                        for pose in poses {
+                            let posits_this_pose = ligand.position_atoms(Some(&pose));
+                            partial_charges_lig.push(create_partial_charges(
+                                &mut ligand.molecule.atoms,
+                                Some(&posits_this_pose),
+                            ));
+                            lig_posits.push(posits_this_pose);
+                        }
+
+                        state.ui.binding_energy_disp = Some(
+                            binding_energy(
+                                &rec_atoms_near_site,
+                                &rec_atom_indices,
+                                &rec_bonds_near_site,
+                                &ligand,
+                                &lig_posits[0],
+                                &partial_charges_rec,
+                                &partial_charges_lig[0],
+                                // &charge_tree,
+                                // &bh_config,
+                                &lj_pairs,
+                            )
+                        );
+                    }
+                }
+
+                if let Some(energy) = &state.ui.binding_energy_disp {
+                    ui.label(format!("{:?}", energy)); // todo placeholder.
                 }
             });
         }

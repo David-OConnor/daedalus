@@ -40,11 +40,10 @@ use std::{arch::x86_64::*, collections::HashMap, f32::consts::TAU, time::Instant
 use barnes_hut::{BhConfig, Cube, Tree};
 use lin_alg::{
     f32::{Vec3 as Vec3F32, Vec3S},
-    f64::{Quaternion, Vec3},
+    f64::{FORWARD, Quaternion, RIGHT, UP, Vec3},
     linspace,
     simd::{f32s_to_simd, vec3s_to_simd},
 };
-use lin_alg::f64::{FORWARD, RIGHT, UP};
 use partial_charge::{EemParams, EemSet, PartialCharge, create_partial_charges};
 use rand::Rng;
 use rayon::prelude::*;
@@ -71,7 +70,8 @@ const ATOM_NEAR_SITE_DIST_THRESH: f64 = 1.2;
 
 const HYDROPHOBIC_CUTOFF: f32 = 4.25; // 3.5 - 5 angstrom?
 
-const THETA_BH: f64 = 0.5;
+// const THETA_BH: f64 = 0.5;
+const THETA_BH: f64 = 1.0;
 
 // const SOFTENING_FACTOR_SQ_ELECTROSTATIC: f32 = 1e-6;
 const SOFTENING_FACTOR_SQ_ELECTROSTATIC: f64 = 1e-6;
@@ -184,26 +184,16 @@ impl Default for GeneticAlgorithmParameters {
 pub struct DockingInit {
     pub site_center: Vec3,
     pub site_box_size: f64, // Assume square. // todo: Allow diff dims
-    // todo: Num points in each dimension?
+                            // todo: Num points in each dimension?
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub enum ConformationType {
-    Rigid {
-        orientation: Quaternion,
-    },
+    #[default]
+    Rigid,
     Flexible {
-        orientation: Quaternion,
         torsions: Vec<Torsion>,
     },
-}
-
-impl Default for ConformationType {
-    fn default() -> Self {
-        Self::Rigid {
-            orientation: Quaternion::new_identity(),
-        }
-    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -212,6 +202,7 @@ pub struct Pose {
     /// The offset of the ligand's anchor atom from the docking center.
     /// todo: Consider normalizing positions to be around the origin, for numerical precision issues.
     pub anchor_posit: Vec3,
+    pub orientation: Quaternion,
     pub conformation_type: ConformationType,
 }
 
@@ -270,8 +261,8 @@ pub fn binding_energy(
     lig_posits: &[Vec3],
     partial_charges_rec: &[PartialCharge],
     partial_charges_lig: &[PartialCharge],
-    charge_tree: &Tree,
-    bh_config: &BhConfig,
+    // charge_tree: &Tree,
+    // bh_config: &BhConfig,
     lj_pairs: &[(Vec3, usize, f32, f32)], // rec pos, lig i, sig, eps
 ) -> BindingEnergy {
     // todo: Integrate CUDA.
@@ -370,11 +361,12 @@ pub fn binding_energy(
         let mut force = Vec3F32::new_zero();
 
         // In the barnes_hut etc nomenclature, we are iterating over *target* bodies. (Not associated
-        // with target=protein=receptor; actually, the opposite!
+        // with target=protein=receptor; actually, the opposite!)
 
         // Note: Ligand positions are already positioned for the pose, by the time they enter this function.
         for q_lig in partial_charges_lig {
             // todo: Experimenting with non-BH to troubleshoot. BH is currently reporting 0 force.
+            // todo: Maybe BH isn't suitable here due to local charges summing to 0 ?
             for q_rec in partial_charges_rec {
                 let diff: Vec3F32 = (q_rec.posit - q_lig.posit).into();
                 let dist = diff.magnitude();
@@ -385,29 +377,29 @@ pub fn binding_energy(
                     dist as f64,
                     SOFTENING_FACTOR_SQ_ELECTROSTATIC,
                 )
-                    .into();
+                .into();
             }
 
             continue;
 
-            let force_fn = |acc_dir, q_src, dist| {
-                force_elec(
-                    acc_dir,
-                    q_src,
-                    q_lig.charge.into(),
-                    dist,
-                    SOFTENING_FACTOR_SQ_ELECTROSTATIC,
-                )
-            };
-
-            force += barnes_hut::run_bh(
-                q_lig.posit.into(),
-                999_999, // N/A, since we're comparing separate sets.
-                charge_tree,
-                bh_config,
-                &force_fn,
-            )
-                .into();
+            // let force_fn = |acc_dir, q_src, dist| {
+            //     force_elec(
+            //         acc_dir,
+            //         q_src,
+            //         q_lig.charge.into(),
+            //         dist,
+            //         SOFTENING_FACTOR_SQ_ELECTROSTATIC,
+            //     )
+            // };
+            //
+            // force += barnes_hut::run_bh(
+            //     q_lig.posit.into(),
+            //     999_999, // N/A, since we're comparing separate sets.
+            //     charge_tree,
+            //     bh_config,
+            //     &force_fn,
+            // )
+            // .into();
         }
 
         // println!("FORCE: {force:?}");
@@ -477,7 +469,13 @@ fn make_posits_orientations(
 }
 
 /// Pre-generate poses, for a naive system.
-fn init_poses(ligand: &Ligand, init: &DockingInit, num_posits: usize, num_orientations: usize, angles_per_bond: usize) -> Vec<Pose> {
+fn init_poses(
+    ligand: &Ligand,
+    init: &DockingInit,
+    num_posits: usize,
+    num_orientations: usize,
+    angles_per_bond: usize,
+) -> Vec<Pose> {
     // These positions are of the ligand's anchor atom.
     let (anchor_posits, orientations) =
         make_posits_orientations(init, num_posits, num_orientations);
@@ -513,10 +511,8 @@ fn init_poses(ligand: &Ligand, init: &DockingInit, num_posits: usize, num_orient
             for torsions in all_combos {
                 result.push(Pose {
                     anchor_posit,
-                    conformation_type: ConformationType::Flexible {
-                        orientation,
-                        torsions,
-                    },
+                    orientation,
+                    conformation_type: ConformationType::Flexible { torsions },
                 });
             }
         }
@@ -568,8 +564,8 @@ fn process_poses<'a>(
                 &lig_posits[i_pose],
                 &partial_charges_rec,
                 &partial_charges_lig[i_pose],
-                &charge_tree,
-                &bh_config,
+                // &charge_tree,
+                // &bh_config,
                 &lj_pairs,
             );
             (energy, pose)
@@ -589,18 +585,24 @@ fn process_poses<'a>(
     (best_pose, best_energy)
 }
 
-/// Return best pose, and energy.
-///
-/// Note: We use the term `receptor` here vice `target`, as `target` is also used in terms of
-/// calculating forces between pairs. (These targets may or may not align!)
-pub fn find_optimal_pose(
+/// Prerequisite calculations for docking and binding energy calculations.
+pub fn setup_docking(
     target: &mut Molecule,
     ligand: &mut Ligand,
     lj_lut: &HashMap<(Element, Element), (f32, f32)>,
-) -> (Pose, BindingEnergy) {
-    let eem_params = EemParams::new(EemSet::AimB3); // todo: WHich set?
+) -> (
+    Vec<Atom>,
+    Vec<usize>,
+    Vec<Bond>,
+    Vec<PartialCharge>,
+    Vec<(Vec3, usize, f32, f32)>,
+) {
     println!("Starting docking setup...");
 
+    let eem_params = EemParams::new(EemSet::AimB3); // todo: WHich set?
+
+    // todo: This is problematic given the flexible bonds. Too expensive to do each conformation though.
+    // todo: Let it ride for now?
     if !ligand.molecule.eem_charges_assigned {
         println!("Assigning EEM charges for Ligand......");
         let indices: Vec<usize> = (0..ligand.molecule.atoms.len()).collect();
@@ -615,7 +617,6 @@ pub fn find_optimal_pose(
         println!("Complete.");
         ligand.molecule.eem_charges_assigned = true;
     }
-
 
     let dist_thresh = ATOM_NEAR_SITE_DIST_THRESH * ligand.docking_init.site_box_size;
 
@@ -663,8 +664,6 @@ pub fn find_optimal_pose(
         target.atoms[*global_i].partial_charge = rec_atoms_near_site[near_i].partial_charge;
     }
 
-    println!("Setup complete.");
-
     // Note: Splitting the partial charges between target and ligand (As opposed to analyzing every pair
     // combination) may give us more useful data, and is likely much more efficient, if one side has substantially
     // fewer charges than the other.
@@ -682,6 +681,29 @@ pub fn find_optimal_pose(
             lj_pairs.push((atom_rec.posit, i_lig, sigma, eps));
         }
     }
+
+    (
+        rec_atoms_near_site,
+        rec_atom_indices,
+        rec_bonds_near_site,
+        partial_charges_rec,
+        lj_pairs,
+    )
+}
+
+/// Return best pose, and energy.
+///
+/// Note: We use the term `receptor` here vice `target`, as `target` is also used in terms of
+/// calculating forces between pairs. (These targets may or may not align!)
+pub fn find_optimal_pose(
+    target: &mut Molecule,
+    ligand: &mut Ligand,
+    lj_lut: &HashMap<(Element, Element), (f32, f32)>,
+) -> (Pose, BindingEnergy) {
+    let (rec_atoms_near_site, rec_atom_indices, rec_bonds_near_site, partial_charges_rec, lj_pairs) =
+        setup_docking(target, ligand, lj_lut);
+
+    println!("Setup complete.");
 
     // SIMD prep.
     // {
@@ -726,10 +748,16 @@ pub fn find_optimal_pose(
         Tree::new(&partial_charges_rec, &bh_bounding_box.unwrap(), &bh_config)
     };
 
-    let num_posits = 6; // Gets cubed.
-    let num_orientations = 50;
+    let num_posits = 3; // Gets cubed.
+    let num_orientations = 30;
     let angles_per_bond = 8;
-    let poses = init_poses(&ligand, &ligand.docking_init, num_posits, num_orientations, angles_per_bond);
+    let poses = init_poses(
+        &ligand,
+        &ligand.docking_init,
+        num_posits,
+        num_orientations,
+        angles_per_bond,
+    );
     println!("Setup complete. iterating through {} poses...", poses.len());
 
     // Now process them in parallel and reduce to the single best pose:
@@ -750,12 +778,12 @@ pub fn find_optimal_pose(
     // Some ad-hoc tweaking.
     let mut new_poses_to_try = Vec::new();
     for i in -30..30 {
-        if let ConformationType::Flexible { orientation, torsions } = &best_pose.conformation_type {
+        if let ConformationType::Flexible { torsions } = &best_pose.conformation_type {
             let rot_amt = TAU as f64 / 200. * i as f64;
 
-            let rotator_up = Quaternion::from_axis_angle(UP, rot_amt) ;
-            let rotator_right = Quaternion::from_axis_angle(RIGHT, rot_amt) ;
-            let rotator_fwd = Quaternion::from_axis_angle(FORWARD, rot_amt) ;
+            let rotator_up = Quaternion::from_axis_angle(UP, rot_amt);
+            let rotator_right = Quaternion::from_axis_angle(RIGHT, rot_amt);
+            let rotator_fwd = Quaternion::from_axis_angle(FORWARD, rot_amt);
 
             // todo: Try combinations of the above.
 
@@ -764,10 +792,10 @@ pub fn find_optimal_pose(
                     for rot_c in &[rotator_up, rotator_right, rotator_fwd] {
                         new_poses_to_try.push(Pose {
                             anchor_posit: best_pose.anchor_posit,
+                            orientation: *rot_a * *rot_b * *rot_c * best_pose.orientation,
                             conformation_type: ConformationType::Flexible {
-                                orientation: *rot_a * *rot_b * *rot_c * *orientation,
                                 torsions: torsions.clone(),
-                            }
+                            },
                         });
                     }
                 }

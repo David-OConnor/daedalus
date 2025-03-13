@@ -216,7 +216,6 @@ impl Ligand {
         result.flexible_bonds = setup_flexibility(&mut result.molecule);
 
         result.pose.conformation_type = ConformationType::Flexible {
-            orientation: Quaternion::new_identity(),
             torsions: result
                 .flexible_bonds
                 .iter()
@@ -267,22 +266,19 @@ impl Ligand {
         let mut result = Vec::with_capacity(self.molecule.atoms.len());
 
         match &pose_.conformation_type {
-            ConformationType::Rigid { orientation } => {
+            ConformationType::Rigid => {
                 for atom in &self.molecule.atoms {
                     // Rotate around the anchor atom.
                     let posit_rel = atom.posit - anchor;
-                    result.push(pose_.anchor_posit + orientation.rotate_vec(posit_rel));
+                    result.push(pose_.anchor_posit + pose_.orientation.rotate_vec(posit_rel));
                 }
             }
-            ConformationType::Flexible {
-                orientation,
-                torsions,
-            } => {
+            ConformationType::Flexible { torsions } => {
                 // Initial pass: position and orientation (rigid).
                 for atom in &self.molecule.atoms {
                     // Rotate around the anchor atom.
                     let posit_rel = atom.posit - anchor;
-                    result.push(pose_.anchor_posit + orientation.rotate_vec(posit_rel));
+                    result.push(pose_.anchor_posit + pose_.orientation.rotate_vec(posit_rel));
                 }
 
                 // Second pass: Rotations. For each flexible bond, divide all atoms into two groups:
@@ -297,14 +293,15 @@ impl Ligand {
                     let side1_downstream = self.find_downstream_atoms(bond.atom_0, bond.atom_1);
 
                     // -- Step 2: pick the pivot as the side with a larger subtree
-                    let (pivot_idx, side_idx, downstream_atom_indices) = if side0_downstream.len() > side1_downstream.len() {
-                        // side0_downstream means "downstream from atom_1 ignoring bond to atom_0"
-                        // => so pivot is atom_0, side is atom_1
-                        (bond.atom_0, bond.atom_1, side1_downstream)
-                    } else {
-                        // side1_downstream has equal or more
-                        (bond.atom_1, bond.atom_0, side0_downstream)
-                    };
+                    let (pivot_idx, side_idx, downstream_atom_indices) =
+                        if side0_downstream.len() > side1_downstream.len() {
+                            // side0_downstream means "downstream from atom_1 ignoring bond to atom_0"
+                            // => so pivot is atom_0, side is atom_1
+                            (bond.atom_0, bond.atom_1, side1_downstream)
+                        } else {
+                            // side1_downstream has equal or more
+                            (bond.atom_1, bond.atom_0, side0_downstream)
+                        };
 
                     // pivot and side positions
                     let pivot_pos = result[pivot_idx];
@@ -312,7 +309,8 @@ impl Ligand {
                     let axis_vec = (side_pos - pivot_pos).to_normalized();
 
                     // Build the Quaternion for this rotation
-                    let rotator = Quaternion::from_axis_angle(axis_vec, torsion.dihedral_angle as f64);
+                    let rotator =
+                        Quaternion::from_axis_angle(axis_vec, torsion.dihedral_angle as f64);
 
                     // Now apply the rotation to each downstream atom:
                     for &atom_idx in &downstream_atom_indices {
