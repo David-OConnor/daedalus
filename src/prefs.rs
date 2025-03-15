@@ -71,10 +71,10 @@ impl State {
             let data = PerMolToSave::from_state(self);
 
             self.to_save.per_mol.insert(mol.ident.clone(), data);
+        }
 
-            if let Err(e) = save(&PathBuf::from(DEFAULT_PREFS_FILE), &self.to_save) {
-                eprintln!("Error saving state: {e:?}");
-            }
+        if let Err(e) = save(&PathBuf::from(DEFAULT_PREFS_FILE), &self.to_save) {
+            eprintln!("Error saving state: {e:?}");
         }
     }
 

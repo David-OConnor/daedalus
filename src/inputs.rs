@@ -175,8 +175,7 @@ pub fn event_dev_handler(
                             //     Quaternion::from_axis_angle(FWD_VEC, -10. * dt).into();
                             // lig.orientation = rotation * lig.orientation;
 
-                            // to clear entries; fine for this hack.
-                            mol_drawing::draw_molecule(state_, scene, false);
+                            scene.entities = Vec::new();
                             mol_drawing::draw_ligand(state_, scene, false);
                             updates.entities = true;
                         }
@@ -188,8 +187,7 @@ pub fn event_dev_handler(
                             //     Quaternion::from_axis_angle(FWD_VEC, 10. * dt).into();
                             // lig.orientation = rotation * lig.orientation;
 
-                            // to clear entries; fine for this hack.
-                            mol_drawing::draw_molecule(state_, scene, false);
+                            scene.entities = Vec::new();
                             mol_drawing::draw_ligand(state_, scene, false);
                             updates.entities = true;
                         }
@@ -295,6 +293,7 @@ pub fn event_dev_handler(
     }
 
     if redraw {
+        scene.entities = Vec::new();
         // todo:This is overkill for certain keys. Just change the color of the one[s] in question, and set update.entities = true.
         mol_drawing::draw_molecule(state_, scene, false);
         mol_drawing::draw_ligand(state_, scene, false);

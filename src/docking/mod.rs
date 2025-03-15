@@ -70,8 +70,10 @@ const ATOM_NEAR_SITE_DIST_THRESH: f64 = 1.2;
 
 const HYDROPHOBIC_CUTOFF: f32 = 4.25; // 3.5 - 5 angstrom?
 
-// const THETA_BH: f64 = 0.5;
-const THETA_BH: f64 = 1.0;
+// This must be relatively low (Not much of an approximation): otherwise, the charges
+// will cancel too easily when grouped, due to their nature.
+// todo: Anything about 0 seems to produe no results.
+pub const THETA_BH: f64 = 0.;
 
 // const SOFTENING_FACTOR_SQ_ELECTROSTATIC: f32 = 1e-6;
 const SOFTENING_FACTOR_SQ_ELECTROSTATIC: f64 = 1e-6;
@@ -261,8 +263,8 @@ pub fn binding_energy(
     lig_posits: &[Vec3],
     partial_charges_rec: &[PartialCharge],
     partial_charges_lig: &[PartialCharge],
-    // charge_tree: &Tree,
-    // bh_config: &BhConfig,
+    charge_tree: &Tree,
+    bh_config: &BhConfig,
     lj_pairs: &[(Vec3, usize, f32, f32)], // rec pos, lig i, sig, eps
 ) -> BindingEnergy {
     // todo: Integrate CUDA.
@@ -367,39 +369,39 @@ pub fn binding_energy(
         for q_lig in partial_charges_lig {
             // todo: Experimenting with non-BH to troubleshoot. BH is currently reporting 0 force.
             // todo: Maybe BH isn't suitable here due to local charges summing to 0 ?
-            for q_rec in partial_charges_rec {
-                let diff: Vec3F32 = (q_rec.posit - q_lig.posit).into();
-                let dist = diff.magnitude();
-                force += force_elec(
-                    (diff / dist).into(),
-                    q_rec.charge as f64,
-                    q_lig.charge as f64,
-                    dist as f64,
-                    SOFTENING_FACTOR_SQ_ELECTROSTATIC,
-                )
-                .into();
-            }
-
-            continue;
-
-            // let force_fn = |acc_dir, q_src, dist| {
-            //     force_elec(
-            //         acc_dir,
-            //         q_src,
-            //         q_lig.charge.into(),
-            //         dist,
+            // for q_rec in partial_charges_rec {
+            //     let diff: Vec3F32 = (q_rec.posit - q_lig.posit).into();
+            //     let dist = diff.magnitude();
+            //     force += force_elec(
+            //         (diff / dist).into(),
+            //         q_rec.charge as f64,
+            //         q_lig.charge as f64,
+            //         dist as f64,
             //         SOFTENING_FACTOR_SQ_ELECTROSTATIC,
             //     )
-            // };
+            //     .into();
+            // }
             //
-            // force += barnes_hut::run_bh(
-            //     q_lig.posit.into(),
-            //     999_999, // N/A, since we're comparing separate sets.
-            //     charge_tree,
-            //     bh_config,
-            //     &force_fn,
-            // )
-            // .into();
+            // continue;
+
+            let force_fn = |acc_dir, q_src, dist| {
+                force_elec(
+                    acc_dir,
+                    q_src,
+                    q_lig.charge.into(),
+                    dist,
+                    SOFTENING_FACTOR_SQ_ELECTROSTATIC,
+                )
+            };
+
+            force += barnes_hut::run_bh(
+                q_lig.posit.into(),
+                999_999, // N/A, since we're comparing separate sets.
+                charge_tree,
+                bh_config,
+                &force_fn,
+            )
+            .into();
         }
 
         // println!("FORCE: {force:?}");
@@ -564,8 +566,8 @@ fn process_poses<'a>(
                 &lig_posits[i_pose],
                 &partial_charges_rec,
                 &partial_charges_lig[i_pose],
-                // &charge_tree,
-                // &bh_config,
+                &charge_tree,
+                &bh_config,
                 &lj_pairs,
             );
             (energy, pose)
@@ -699,6 +701,7 @@ pub fn find_optimal_pose(
     target: &mut Molecule,
     ligand: &mut Ligand,
     lj_lut: &HashMap<(Element, Element), (f32, f32)>,
+    bh_config: &BhConfig
 ) -> (Pose, BindingEnergy) {
     let (rec_atoms_near_site, rec_atom_indices, rec_bonds_near_site, partial_charges_rec, lj_pairs) =
         setup_docking(target, ligand, lj_lut);
@@ -732,15 +735,10 @@ pub fn find_optimal_pose(
 
     let start = Instant::now();
 
-    // We can set up our tree once for the whole simulation, as for the case of fixed
-    // receptor, one side of the charge pairs doesn't change.
-    let bh_config = BhConfig {
-        θ: THETA_BH,
-        ..Default::default()
-    };
-
     // This tree is over the target (receptor) charges. This may be more efficient
     // than over the ligand, as we expect the receptor nearby atoms to be more numerous.
+    // We can set up our tree once for the whole simulation, as for the case of fixed
+    // receptor, one side of the charge pairs doesn't change.
     let charge_tree = {
         // For the Barnes Hut electrostatics tree.
         let bh_bounding_box = Cube::from_bodies(&partial_charges_rec, 0., true);
@@ -751,6 +749,8 @@ pub fn find_optimal_pose(
     let num_posits = 3; // Gets cubed.
     let num_orientations = 30;
     let angles_per_bond = 8;
+
+
     let poses = init_poses(
         &ligand,
         &ligand.docking_init,
@@ -807,6 +807,7 @@ pub fn find_optimal_pose(
     let num_posits = 4; // Gets cubed.
     let num_orientations = 60;
     let angles_per_bond = 5;
+
     // todo: Narrow down orientations and bond flexes too; not just position.
     let init_modified = DockingInit {
         site_center: best_pose.anchor_posit,

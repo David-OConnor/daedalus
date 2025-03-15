@@ -29,7 +29,7 @@ use std::{
     str::FromStr,
     sync::Arc,
 };
-
+use barnes_hut::BhConfig;
 use bincode::{Decode, Encode};
 use egui_file_dialog::{FileDialog, FileDialogConfig};
 use file_io::{pdb::load_pdb, sdf::load_sdf};
@@ -51,6 +51,7 @@ use crate::{
     render::render,
     ui::VIEW_DEPTH_MAX,
 };
+use crate::docking::THETA_BH;
 
 // todo: Eventually, implement a system that automatically checks for changes, and don't
 // todo save to disk if there are no changes.
@@ -261,6 +262,7 @@ struct State {
     pub tabs_open: Vec<Tab>,
     pub babel_avail: bool,
     pub docking_ready: bool,
+    pub bh_config: BhConfig,
 }
 
 impl State {
@@ -353,17 +355,21 @@ fn main() {
 
     let mut state = State::default();
 
+    state.bh_config.θ = THETA_BH;
+
     state.ui.view_depth = VIEW_DEPTH_MAX;
 
     state.load_prefs();
 
     let last_opened = state.to_save.last_opened.clone();
     if let Some(path) = &last_opened {
+        println!("LAST IS MOL");
         state.open_molecule(path, false);
     }
 
     let last_ligand_opened = state.to_save.last_ligand_opened.clone();
     if let Some(path) = &last_ligand_opened {
+        println!("LAS LIG");
         state.open_molecule(path, true);
     }
 

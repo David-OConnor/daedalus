@@ -1,6 +1,6 @@
 use std::{f32::consts::TAU, path::Path, time::Instant};
 
-use barnes_hut::{BhConfig, Tree};
+use barnes_hut::{BhConfig, Cube, Tree};
 use egui::{Color32, ComboBox, Context, RichText, Slider, TextEdit, TopBottomPanel, Ui};
 use graphics::{Camera, ControlScheme, EngineUpdates, RIGHT_VEC, Scene, UP_VEC};
 use lin_alg::f32::{Quaternion, Vec3};
@@ -119,7 +119,15 @@ pub fn handle_input(
         // Check for file drop
         if let Some(dropped_files) = ip.raw.dropped_files.first() {
             if let Some(path) = &dropped_files.path {
-                load_file(path, state, redraw, reset_cam, engine_updates, false);
+
+                let ligand_load = path
+                    .extension()
+                    .unwrap_or_default()
+                    .to_ascii_lowercase()
+                    .to_str()
+                    .unwrap_or_default() == "sdf";
+
+                load_file(path, state, redraw, reset_cam, engine_updates, ligand_load);
             }
         }
     });
@@ -712,7 +720,7 @@ fn residue_search(
             if ui.button("Dock").clicked() {
                 // let tgt = state.molecule.as_ref().unwrap();
                 let mol = state.molecule.as_mut().unwrap();
-                find_optimal_pose(mol, ligand, &state.volatile.lj_lookup_table);
+                find_optimal_pose(mol, ligand, &state.volatile.lj_lookup_table, &state.bh_config);
 
                 // Allow the user to select the autodock executable.
                 // if state.to_save.autodock_vina_path.is_none() {
@@ -1017,6 +1025,9 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     state.molecule = None;
                     scene.entities = Vec::new();
                     redraw = true;
+
+                    state.to_save.last_opened = None;
+                    state.update_save_prefs();
                 }
                 ui.add_space(COL_SPACING);
             }
@@ -1047,7 +1058,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             ui.add_space(COL_SPACING);
 
             ui.add_space(COL_SPACING);
-            ui.label("Query RCSB. Ident:");
+            ui.label("Query databases (ident):");
             ui.add(TextEdit::singleline(&mut state.ui.rcsb_input).desired_width(40.));
 
             if !state.ui.rcsb_input.is_empty() {
@@ -1073,10 +1084,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                         Ok(mol) => {
                             // state.pdb = None;
 
-                            state.ligand = Some(Ligand {
-                                molecule: mol,
-                                ..Default::default()
-                            });
+                            state.ligand = Some(Ligand::new(mol));
 
                             state.update_from_prefs();
 
@@ -1095,10 +1103,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                         Ok(mol) => {
                             // state.pdb = None;
 
-                            state.ligand = Some(Ligand {
-                                molecule: mol,
-                                ..Default::default()
-                            });
+                            state.ligand = Some(Ligand::new(mol));
 
                             state.update_from_prefs();
 
@@ -1157,6 +1162,15 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                             lig_posits.push(posits_this_pose);
                         }
 
+                        // This tree is over the target (receptor) charges. This may be more efficient
+                        // than over the ligand, as we expect the receptor nearby atoms to be more numerous.
+                        let charge_tree = {
+                            // For the Barnes Hut electrostatics tree.
+                            let bh_bounding_box = Cube::from_bodies(&partial_charges_rec, 0., true);
+
+                            Tree::new(&partial_charges_rec, &bh_bounding_box.unwrap(), &state.bh_config)
+                        };
+
                         state.ui.binding_energy_disp = Some(
                             binding_energy(
                                 &rec_atoms_near_site,
@@ -1166,8 +1180,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                                 &lig_posits[0],
                                 &partial_charges_rec,
                                 &partial_charges_lig[0],
-                                // &charge_tree,
-                                // &bh_config,
+                                &charge_tree,
+                                &state.bh_config,
                                 &lj_pairs,
                             )
                         );
@@ -1184,6 +1198,9 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             state.ligand = None;
             scene.entities = Vec::new();
             redraw = true;
+
+            state.to_save.last_ligand_opened = None;
+            state.update_save_prefs();
         }
 
         ui.add_space(ROW_SPACING);
@@ -1275,6 +1292,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         }
 
         if redraw {
+            scene.entities = Vec::new();
             draw_molecule(state, scene, reset_cam);
             draw_ligand(state, scene, reset_cam);
 

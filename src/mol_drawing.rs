@@ -494,7 +494,6 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
 
     // todo: Update this capacity A/R as you flesh out your renders.
     // *entities = Vec::with_capacity(molecule.bonds.len());
-    scene.entities = Vec::new();
 
     let ui = &state.ui;
 

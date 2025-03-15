@@ -180,6 +180,7 @@ pub fn render(mut state: State) {
         icon_path: Some("resources/icon.png".to_owned()),
     };
 
+    scene.entities = Vec::new();
     mol_drawing::draw_molecule(&mut state, &mut scene, true);
     mol_drawing::draw_ligand(&mut state, &mut scene, true);
 
