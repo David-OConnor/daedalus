@@ -109,8 +109,9 @@ pub fn force_elec(
 /// In a real system, you’d want to parameterize \(\sigma\) and \(\epsilon\)
 /// based on the atom types (i.e. from a force field lookup). Here, we’ll
 /// just demonstrate the structure of the calculation with made-up constants.
-pub fn lj_potential(posit_0: Vec3, posit_1: Vec3, sigma: f32, epsilon: f32) -> f32 {
-    let r = (posit_0 - posit_1).magnitude() as f32;
+// pub fn lj_potential(posit_0: Vec3, posit_1: Vec3, sigma: f32, epsilon: f32) -> f32 {
+pub fn lj_potential(r: f32, sigma: f32, epsilon: f32) -> f32 {
+    // let r = (posit_0 - posit_1).magnitude() as f32;
 
     if r < f32::EPSILON {
         return 0.;
@@ -123,10 +124,10 @@ pub fn lj_potential(posit_0: Vec3, posit_1: Vec3, sigma: f32, epsilon: f32) -> f
     4. * epsilon * (sr12 - sr6)
 }
 
-/// todo: Experimental
-pub fn lj_potential_simd(posit_0: Vec3S, posit_1: Vec3S, sigma: [f32; 8], eps: [f32; 8]) -> __m256 {
+// pub fn lj_potential_simd(posit_0: Vec3S, posit_1: Vec3S, sigma: [f32; 8], eps: [f32; 8]) -> __m256 {
+pub fn lj_potential_simd(r: __m256, sigma: [f32; 8], eps: [f32; 8]) -> __m256 {
     unsafe {
-        let r = (posit_0 - posit_1).magnitude();
+        // let r = (posit_0 - posit_1).magnitude();
 
         let sigma = _mm256_loadu_ps(sigma.as_ptr());
         let eps = _mm256_loadu_ps(eps.as_ptr());
@@ -266,16 +267,33 @@ pub fn binding_energy(
     partial_charges_lig: &[PartialCharge],
     charge_tree: &Tree,
     bh_config: &BhConfig,
-    lj_pairs: &[(Vec3, usize, f32, f32)], // rec pos, lig i, sig, eps
+    // lj_pairs: &[(Vec3, usize, f32, f32)], // rec pos, lig i, sig, eps
+    lj_pairs: &[(usize, usize, f32, f32)], // rec i (local), lig i, sig, eps
 ) -> BindingEnergy {
     // todo: Integrate CUDA.
+
+    // Pre-compute distances, to prevent repetition later.
+    let mut distances = Vec::new();
+    for rec_atom in rec_atoms_near_site {
+        let mut distances_this_rec = Vec::new();
+        for lig_posit in lig_posits {
+            let rec_posit: Vec3F32 = rec_atom.posit.into();
+            let lig_posit: Vec3F32 = (*lig_posit).into();
+            distances_this_rec.push((lig_posit - rec_posit).magnitude());
+        }
+        distances.push(distances_this_rec);
+    }
+
 
     // todo: Use a neighbor grid or similar? Set it up so there are two separate sides?
     let vdw: f32 = {
         lj_pairs
             .par_iter()
-            .map(|(posit_rec, i_lig, sigma, eps)| {
-                lj_potential(*posit_rec, lig_posits[*i_lig], *sigma, *eps)
+            // .map(|(posit_rec, i_lig, sigma, eps)| {
+            .map(|(i_rec, i_lig, sigma, eps)| {
+                // lj_potential(*posit_rec, lig_posits[*i_lig], *sigma, *eps)
+                let r = distances[*i_rec][*i_lig];
+                lj_potential(r,  *sigma, *eps)
                 // lj_potential_simd(*posit_rec, lig_posits[*i_lig], *sigma, *eps)
             })
             .sum()
@@ -290,6 +308,8 @@ pub fn binding_energy(
         for (i, atom) in lig_atoms_positioned.iter_mut().enumerate() {
             atom.posit = lig_posits[i];
         }
+
+        // todo: Use pre-computed dists in H bonds if able.
 
         // todo: Given you're using a relaxed distance thresh for H bonds, adjust the score
         // todo based on the actual distance of the bond.
@@ -322,7 +342,8 @@ pub fn binding_energy(
     // For a more advanced approach, you might do a distance-based well function, etc.
     let hydrophobic_score: f32 = rec_atoms_near_site
         .par_iter()
-        .map(|atom_rec| {
+        .enumerate()
+        .map(|(i_rec, atom_rec)| {
             ligand
                 .molecule
                 .atoms
@@ -331,7 +352,7 @@ pub fn binding_energy(
                 .filter_map(|(i_lig, atom_ligand)| {
                     // Check if both are hydrophobic
                     if is_hydrophobic(atom_rec) && is_hydrophobic(atom_ligand) {
-                        let r = (atom_rec.posit - lig_posits[i_lig]).magnitude() as f32;
+                        let r = distances[i_rec][i_lig];
                         // todo: Cache distances upstream, so we are not repeating them?
 
                         // If they are within a cutoff, add favorable energy.
@@ -372,7 +393,7 @@ pub fn binding_energy(
             // todo: Maybe BH isn't suitable here due to local charges summing to 0 ?
             // for q_rec in partial_charges_rec {
             //     let diff: Vec3F32 = (q_rec.posit - q_lig.posit).into();
-            //     let dist = diff.magnitude();
+            //     let dist = distances[i_rec][i_lig];
             //     force += force_elec(
             //         (diff / dist).into(),
             //         q_rec.charge as f64,
@@ -534,7 +555,8 @@ fn process_poses<'a>(
     partial_charges_rec: &[PartialCharge],
     charge_tree: &Tree,
     bh_config: &BhConfig,
-    lj_pairs: &[(Vec3, usize, f32, f32)], // rec pos, lig i, sig, eps
+    // lj_pairs: &[(Vec3, usize, f32, f32)], // rec pos, lig i, sig, eps
+    lj_pairs: &[(usize, usize, f32, f32)], // rec i (local), lig i, sig, eps
 ) -> (&'a Pose, BindingEnergy) {
     // todo: Currently an outer/inner dynamic.
     // Set up the ligand atom positions for each pose; that's all that matters re the pose for now.
@@ -552,20 +574,27 @@ fn process_poses<'a>(
 
 
 
+
         // Remove pose that have any ligand atoms *intersecting* the receptor. We could possibly
         // use a surface mesh of some sort for this. For now, use VDW spheres. Crude, and probably good enough.
         // This pose reduction may significantly speed up the algorithm by discarding unsuitable poses
         // early.
         for rec_atom in rec_atoms_near_site {
+            // Optimization.
             if rec_atom.element == Element::Hydrogen {
                 continue;
             }
+
             let mut end_loop = false;
             for lig_pos in &posits_this_pose {
-                // todo: Cache these distances! They're used in at least one place downstream.
-                let dist = (rec_atom.posit - *lig_pos).magnitude();
-                // todo: You may be able to skip H etc here.
-                if (dist as f32) < rec_atom.element.vdw_radius() {
+                let rec_posit: Vec3F32 = rec_atom.posit.into();
+                let lig_posit: Vec3F32 = (*lig_pos).into();
+                let dist = (rec_posit - lig_posit).magnitude();
+
+                // todo: We should probably build an ASA surface, then assess if inside or outside of
+                // todo that instead of this approach.
+
+                if (dist) < rec_atom.element.vdw_radius() * 1.1 {
                     geometry_poses_skip.push(i_pose);
                     end_loop = true;
                     break;
@@ -635,7 +664,8 @@ pub fn setup_docking(
     Vec<usize>,
     Vec<Bond>,
     Vec<PartialCharge>,
-    Vec<(Vec3, usize, f32, f32)>,
+    // Vec<(Vec3, usize, f32, f32)>,
+    Vec<(usize, usize, f32, f32)>,
 ) {
     println!("Starting docking setup...");
 
@@ -715,10 +745,11 @@ pub fn setup_docking(
     // is ligand posit.
     let mut lj_pairs = Vec::with_capacity(pair_count);
 
-    for atom_rec in &rec_atoms_near_site {
+    for (i_rec, atom_rec) in rec_atoms_near_site.iter().enumerate() {
         for (i_lig, atom_lig) in ligand.molecule.atoms.iter().enumerate() {
             let (sigma, eps) = get_lj_params(atom_rec.element, atom_lig.element, lj_lut);
-            lj_pairs.push((atom_rec.posit, i_lig, sigma, eps));
+            // lj_pairs.push((atom_rec.posit, i_lig, sigma, eps));
+            lj_pairs.push((i_rec, i_lig, sigma, eps));
         }
     }
 
@@ -784,7 +815,7 @@ pub fn find_optimal_pose(
         Tree::new(&partial_charges_rec, &bh_bounding_box.unwrap(), &bh_config)
     };
 
-    let num_posits = 5; // Gets cubed.
+    let num_posits = 10; // Gets cubed, although many of these are eliminated.
     let num_orientations = 60;
     let angles_per_bond = 10;
 
