@@ -306,6 +306,7 @@ fn get_eem_params(
 //     // are derived that reproduce the MEP as closely as possible."
 // }
 
+#[allow(non_snake_case)]
 pub fn assign_eem_charges(
     atoms: &mut [Atom],
     atom_indices: &[usize],

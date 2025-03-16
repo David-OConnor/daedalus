@@ -14,8 +14,8 @@ use crate::{
     aa_coords::Dihedral,
     bond_inference::{create_bonds, create_hydrogen_bonds},
     docking::{
-        ConformationType, DockingInit, Pose,
-        docking_prep::{DockType, Torsion, UnitCellDims, setup_flexibility},
+        ConformationType, DockingSite, Pose,
+        prep::{DockType, Torsion, UnitCellDims, setup_flexibility},
     },
     element::Element,
     rcsb_api::PdbMetaData,
@@ -195,13 +195,13 @@ pub struct Ligand {
     pub anchor_atom: usize,         // Index.
     pub flexible_bonds: Vec<usize>, // Index
     pub pose: Pose,
-    pub docking_init: DockingInit,
+    pub docking_site: DockingSite,
     pub unit_cell_dims: UnitCellDims, // todo: Unused
 }
 
 impl Ligand {
     pub fn new(molecule: Molecule) -> Self {
-        let docking_init = DockingInit {
+        let docking_init = DockingSite {
             // site_center: Vec3::new(-18.955, -5.188, 8.617),
             site_center: Vec3::new(38.699, 36.415, 30.815),
             site_box_size: 10.,
@@ -209,7 +209,7 @@ impl Ligand {
 
         let mut result = Self {
             molecule,
-            docking_init,
+            docking_site: docking_init,
             ..Default::default()
         };
         result.set_anchor();

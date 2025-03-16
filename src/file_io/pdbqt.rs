@@ -18,7 +18,7 @@ use crate::{
     bond_inference::{create_bonds, create_hydrogen_bonds},
     docking::{
         ConformationType,
-        docking_prep::{DockType, UnitCellDims},
+        prep::{DockType, UnitCellDims},
     },
     element::Element,
     molecule::{Atom, AtomRole, Chain, Ligand, Molecule, Residue, ResidueType},

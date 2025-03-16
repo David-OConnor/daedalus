@@ -23,10 +23,14 @@
 
 use std::fmt::Display;
 
+use graphics::Mesh;
+
 use crate::{
+    docking::DockingSite,
     element::Element,
     molecule::{Atom, Bond, BondCount, BondType, Molecule},
 };
+
 
 /// Used to determine if a gasteiger charge is a donar (bonded to at least one H), or accepter (not
 /// bonded to any H).
@@ -266,6 +270,15 @@ pub struct Torsion {
     pub dihedral_angle: f32,
 }
 
+
+/// Counts the number of bonds connected to a given atom. Used for flexibility computation.
+fn count_bonds(atom_index: usize, mol: &Molecule) -> usize {
+    mol.bonds
+        .iter()
+        .filter(|bond| bond.atom_0 == atom_index || bond.atom_1 == atom_index)
+        .count()
+}
+
 // Set up which atoms in a ligand are flexible.
 pub fn setup_flexibility(mol: &mut Molecule) -> Vec<usize> {
     let mut flexible_bonds = Vec::new();
@@ -307,6 +320,19 @@ pub fn setup_flexibility(mol: &mut Molecule) -> Vec<usize> {
     flexible_bonds
 }
 
+/// Returns the list of neighboring atom indices for a given atom.
+fn get_neighbors(atom_index: usize, mol: &Molecule) -> Vec<usize> {
+    let mut neighbors = Vec::new();
+    for bond in &mol.bonds {
+        if bond.atom_0 == atom_index {
+            neighbors.push(bond.atom_1);
+        } else if bond.atom_1 == atom_index {
+            neighbors.push(bond.atom_0);
+        }
+    }
+    neighbors
+}
+
 /// Checks if a bond is part of a ring.
 /// This function performs a DFS from one atom to see if the other can be reached without using the bond itself.
 fn is_bond_in_ring(bond: &Bond, mol: &Molecule) -> bool {
@@ -333,25 +359,4 @@ fn is_bond_in_ring(bond: &Bond, mol: &Molecule) -> bool {
         }
     }
     false
-}
-
-/// Returns the list of neighboring atom indices for a given atom.
-fn get_neighbors(atom_index: usize, mol: &Molecule) -> Vec<usize> {
-    let mut neighbors = Vec::new();
-    for bond in &mol.bonds {
-        if bond.atom_0 == atom_index {
-            neighbors.push(bond.atom_1);
-        } else if bond.atom_1 == atom_index {
-            neighbors.push(bond.atom_0);
-        }
-    }
-    neighbors
-}
-
-/// Counts the number of bonds connected to a given atom.
-fn count_bonds(atom_index: usize, mol: &Molecule) -> usize {
-    mol.bonds
-        .iter()
-        .filter(|bond| bond.atom_0 == atom_index || bond.atom_1 == atom_index)
-        .count()
 }

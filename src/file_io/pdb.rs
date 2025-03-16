@@ -12,7 +12,7 @@ use rayon::prelude::*;
 
 use crate::{
     bond_inference::{create_bonds, create_hydrogen_bonds},
-    docking::docking_prep::DockType,
+    docking::prep::DockType,
     element::Element,
     molecule::{Atom, AtomRole, Chain, Molecule, Residue, ResidueType},
     util::mol_center_size,

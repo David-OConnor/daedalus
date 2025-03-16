@@ -9,7 +9,7 @@ use std::{
 };
 
 use crate::{
-    docking::{DockingInit, Pose},
+    docking::{DockingSite, Pose},
     molecule::{Ligand, Molecule},
 };
 
@@ -26,7 +26,7 @@ pub fn check_adv_avail(vina_path: &Path) -> bool {
 /// Run Autodock Vina. `target_path` and `ligand_path` are to the prepared PDBQT files.
 /// https://vina.scripps.edu/manual/#usage (Or run the program with `--help`.)
 fn run_adv(
-    init: &DockingInit,
+    init: &DockingSite,
     vina_path: &Path,
     target_path: &Path,
     ligand_path: &Path,
@@ -78,7 +78,7 @@ fn run_adv(
 pub fn dock_with_vina(mol: &Molecule, ligand: &Ligand, vina_path: &Option<PathBuf>) {
     if let Some(vina_path) = vina_path {
         match run_adv(
-            &ligand.docking_init,
+            &ligand.docking_site,
             vina_path,
             &PathBuf::from_str(&format!("{}_target.pdbqt", mol.ident)).unwrap(),
             &PathBuf::from_str(&format!("{}_ligand.pdbqt", ligand.molecule.ident)).unwrap(),

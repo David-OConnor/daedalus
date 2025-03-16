@@ -3,12 +3,12 @@ use std::collections::VecDeque;
 use lin_alg::f64::Vec3;
 
 use crate::{
-    docking::{DockingInit, GRID_SPACING_SITE_FINDING},
+    docking::{DockingSite, GRID_SPACING_SITE_FINDING},
     molecule::Molecule,
 };
 
 /// Attempt to find docking sites, using cavity detection.
-pub fn find_docking_sites(mol: &Molecule) -> Vec<DockingInit> {
+pub fn find_docking_sites(mol: &Molecule) -> Vec<DockingSite> {
     // todo: Super chatGPT rough!!
 
     let mut result = Vec::new();
@@ -278,7 +278,7 @@ pub fn find_docking_sites(mol: &Molecule) -> Vec<DockingInit> {
         let dz = mxz - mnz;
         let max_dim = dx.max(dy).max(dz);
 
-        result.push(DockingInit {
+        result.push(DockingSite {
             site_center: center,
             site_box_size: max_dim,
         });

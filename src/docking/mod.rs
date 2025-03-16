@@ -50,16 +50,17 @@ use rayon::prelude::*;
 
 use crate::{
     bond_inference::create_hydrogen_bonds_one_way,
-    docking::{docking_prep::Torsion, partial_charge::assign_eem_charges},
+    docking::{partial_charge::assign_eem_charges, prep::Torsion},
     element::{Element, get_lj_params},
     molecule::{Atom, Bond, Ligand, Molecule},
 };
 
-pub mod docking_external;
-pub mod docking_prep;
-pub mod docking_prep_external;
+pub mod external;
 pub mod find_sites;
 pub mod partial_charge;
+pub mod prep;
+pub mod prep_external;
+pub mod site_surface;
 
 const GRID_SPACING_SITE_FINDING: f64 = 5.0;
 
@@ -183,7 +184,7 @@ impl Default for GeneticAlgorithmParameters {
 
 #[derive(Debug, Default)]
 /// Area IVO the docking site.
-pub struct DockingInit {
+pub struct DockingSite {
     pub site_center: Vec3,
     pub site_box_size: f64, // Assume square. // todo: Allow diff dims
                             // todo: Num points in each dimension?
@@ -414,7 +415,7 @@ pub fn binding_energy(
 
 /// Brute-force, naive iteration of combinations. (For now)
 fn make_posits_orientations(
-    init: &DockingInit,
+    init: &DockingSite,
     posit_val: usize,
     num_orientations: usize,
 ) -> (Vec<Vec3>, Vec<Quaternion>) {
@@ -473,7 +474,7 @@ fn make_posits_orientations(
 /// Pre-generate poses, for a naive system.
 fn init_poses(
     ligand: &Ligand,
-    init: &DockingInit,
+    init: &DockingSite,
     num_posits: usize,
     num_orientations: usize,
     angles_per_bond: usize,
@@ -525,7 +526,7 @@ fn init_poses(
 
 /// Contains code that is specific to a set of poses.
 fn process_poses<'a>(
-    poses: &'a [Pose],
+    mut poses: &'a [Pose],
     rec_atoms_near_site: &[Atom],
     rec_atom_indices: &[usize],
     rec_bonds_near_site: &[Bond],
@@ -539,14 +540,48 @@ fn process_poses<'a>(
     // Set up the ligand atom positions for each pose; that's all that matters re the pose for now.
     let mut lig_posits = Vec::with_capacity(poses.len());
     let mut partial_charges_lig = Vec::with_capacity(poses.len());
-    for pose in poses {
+
+    let mut geometry_poses_skip = Vec::new();
+
+    for (i_pose, pose) in poses.iter().enumerate() {
         let posits_this_pose = ligand.position_atoms(Some(pose));
         partial_charges_lig.push(create_partial_charges(
             &mut ligand.molecule.atoms,
             Some(&posits_this_pose),
         ));
+
+
+
+        // Remove pose that have any ligand atoms *intersecting* the receptor. We could possibly
+        // use a surface mesh of some sort for this. For now, use VDW spheres. Crude, and probably good enough.
+        // This pose reduction may significantly speed up the algorithm by discarding unsuitable poses
+        // early.
+        for rec_atom in rec_atoms_near_site {
+            if rec_atom.element == Element::Hydrogen {
+                continue;
+            }
+            let mut end_loop = false;
+            for lig_pos in &posits_this_pose {
+                // todo: Cache these distances! They're used in at least one place downstream.
+                let dist = (rec_atom.posit - *lig_pos).magnitude();
+                // todo: You may be able to skip H etc here.
+                if (dist as f32) < rec_atom.element.vdw_radius() {
+                    geometry_poses_skip.push(i_pose);
+                    end_loop = true;
+                    break;
+                }
+            }
+            if end_loop {
+                break;
+            }
+        }
+
         lig_posits.push(posits_this_pose);
     }
+
+
+
+    println!("Setup complete. iterating through {} poses...", poses.len() - geometry_poses_skip.len());
 
     println!(
         "Partial charges rec: {} lig: {}",
@@ -557,7 +592,10 @@ fn process_poses<'a>(
     let (best_energy, best_pose) = poses
         .par_iter()
         .enumerate()
+        .filter(|(i_pose, pose)| !geometry_poses_skip.contains(i_pose))
         .map(|(i_pose, pose)| {
+
+
             let energy = binding_energy(
                 &rec_atoms_near_site,
                 &rec_atom_indices,
@@ -620,7 +658,7 @@ pub fn setup_docking(
         ligand.molecule.eem_charges_assigned = true;
     }
 
-    let dist_thresh = ATOM_NEAR_SITE_DIST_THRESH * ligand.docking_init.site_box_size;
+    let dist_thresh = ATOM_NEAR_SITE_DIST_THRESH * ligand.docking_site.site_box_size;
 
     // For your test, see if you can get a version tha tis flexed correctly.
     // todo: And/or set up a mol angle editing feature, and use it.
@@ -633,7 +671,7 @@ pub fn setup_docking(
         .enumerate()
         .filter(|(i, a)| {
             let r =
-                (a.posit - ligand.docking_init.site_center).magnitude() < dist_thresh && !a.hetero;
+                (a.posit - ligand.docking_site.site_center).magnitude() < dist_thresh && !a.hetero;
             if r {
                 rec_atom_indices.push(*i);
             }
@@ -701,7 +739,7 @@ pub fn find_optimal_pose(
     target: &mut Molecule,
     ligand: &mut Ligand,
     lj_lut: &HashMap<(Element, Element), (f32, f32)>,
-    bh_config: &BhConfig
+    bh_config: &BhConfig,
 ) -> (Pose, BindingEnergy) {
     let (rec_atoms_near_site, rec_atom_indices, rec_bonds_near_site, partial_charges_rec, lj_pairs) =
         setup_docking(target, ligand, lj_lut);
@@ -746,19 +784,18 @@ pub fn find_optimal_pose(
         Tree::new(&partial_charges_rec, &bh_bounding_box.unwrap(), &bh_config)
     };
 
-    let num_posits = 3; // Gets cubed.
-    let num_orientations = 30;
-    let angles_per_bond = 8;
-
+    let num_posits = 5; // Gets cubed.
+    let num_orientations = 60;
+    let angles_per_bond = 10;
 
     let poses = init_poses(
         &ligand,
-        &ligand.docking_init,
+        &ligand.docking_site,
         num_posits,
         num_orientations,
         angles_per_bond,
     );
-    println!("Setup complete. iterating through {} poses...", poses.len());
+    println!("Initial pose count: {} poses...", poses.len());
 
     // Now process them in parallel and reduce to the single best pose:
     let (best_pose, best_energy) = process_poses(
@@ -809,9 +846,9 @@ pub fn find_optimal_pose(
     let angles_per_bond = 5;
 
     // todo: Narrow down orientations and bond flexes too; not just position.
-    let init_modified = DockingInit {
+    let init_modified = DockingSite {
         site_center: best_pose.anchor_posit,
-        site_box_size: ligand.docking_init.site_box_size / 4.,
+        site_box_size: ligand.docking_site.site_box_size / 4.,
     };
     // let poses = init_poses(&ligand, &init_modified, num_posits, num_orientations, angles_per_bond);
     // println!("Setup complete. iterating through {} poses...", poses.len());

@@ -13,7 +13,7 @@ use lin_alg::f64::Vec3;
 
 use crate::{
     bond_inference::{create_bonds, create_hydrogen_bonds},
-    docking::docking_prep::DockType,
+    docking::prep::DockType,
     element::Element,
     molecule::{Atom, Chain, Molecule, Residue, ResidueType},
     util::mol_center_size,

@@ -29,6 +29,7 @@ use std::{
     str::FromStr,
     sync::Arc,
 };
+
 use barnes_hut::BhConfig;
 use bincode::{Decode, Encode};
 use egui_file_dialog::{FileDialog, FileDialogConfig};
@@ -42,7 +43,7 @@ use rayon::iter::ParallelIterator;
 
 use crate::{
     aa_coords::bond_vecs::init_local_bond_vecs,
-    docking::{BindingEnergy, docking_external::check_adv_avail},
+    docking::{BindingEnergy, THETA_BH, external::check_adv_avail},
     element::{Element, init_lj_lut},
     file_io::pdbqt::load_pdbqt,
     molecule::Ligand,
@@ -51,7 +52,6 @@ use crate::{
     render::render,
     ui::VIEW_DEPTH_MAX,
 };
-use crate::docking::THETA_BH;
 
 // todo: Eventually, implement a system that automatically checks for changes, and don't
 // todo save to disk if there are no changes.
@@ -188,7 +188,7 @@ struct StateUi {
     view_sel_level: ViewSelLevel,
     /// Mouse cursor
     cursor_pos: Option<(f32, f32)>,
-    rcsb_input: String,
+    db_input: String,
     cam_snapshot_name: String,
     residue_search: String,
     /// Experimental.
@@ -314,10 +314,10 @@ impl State {
             Ok(mol) => {
                 if is_ligand {
                     let lig = Ligand::new(mol);
-                    self.ui.docking_site_x = lig.docking_init.site_center.x.to_string();
-                    self.ui.docking_site_y = lig.docking_init.site_center.y.to_string();
-                    self.ui.docking_site_z = lig.docking_init.site_center.z.to_string();
-                    self.ui.docking_site_size = lig.docking_init.site_box_size.to_string();
+                    self.ui.docking_site_x = lig.docking_site.site_center.x.to_string();
+                    self.ui.docking_site_y = lig.docking_site.site_center.y.to_string();
+                    self.ui.docking_site_z = lig.docking_site.site_center.z.to_string();
+                    self.ui.docking_site_size = lig.docking_site.site_box_size.to_string();
 
                     self.ligand = Some(lig);
                 } else {
@@ -363,13 +363,11 @@ fn main() {
 
     let last_opened = state.to_save.last_opened.clone();
     if let Some(path) = &last_opened {
-        println!("LAST IS MOL");
         state.open_molecule(path, false);
     }
 
     let last_ligand_opened = state.to_save.last_ligand_opened.clone();
     if let Some(path) = &last_ligand_opened {
-        println!("LAS LIG");
         state.open_molecule(path, true);
     }
 

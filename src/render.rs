@@ -10,7 +10,7 @@ use lin_alg::f32::{Quaternion, Vec3};
 
 use crate::{
     State,
-    docking::DockingInit,
+    docking::DockingSite,
     inputs,
     inputs::{MOVEMENT_SENS, RUN_FACTOR, SCROLL_MOVE_AMT, SCROLL_ROTATE_AMT},
     mol_drawing,
@@ -34,8 +34,10 @@ pub const MESH_SPHERE: usize = 0;
 pub const MESH_CUBE: usize = 1;
 pub const MESH_BOND: usize = 2;
 pub const MESH_SPHERE_LOWRES: usize = 3;
-pub const MESH_SURFACE: usize = 4; // Van Der Waals surface.
-pub const MESH_BOX: usize = 5;
+pub const MESH_DOCKING_BOX: usize = 4;
+pub const MESH_SOLVENT_SURFACE: usize = 5; // Van Der Waals surface.
+pub const MESH_DOCKING_SURFACE: usize = 6; // Van Der Waals surface.
+
 
 pub const BALL_STICK_RADIUS: f32 = 0.3;
 pub const BALL_STICK_RADIUS_H: f32 = 0.2;
@@ -81,7 +83,7 @@ pub fn set_static_light(scene: &mut Scene, center: Vec3, size: f32) {
 }
 
 /// Set lighting based on the docking location.
-pub fn set_docking_light(scene: &mut Scene, docking_init: Option<&DockingInit>) {
+pub fn set_docking_light(scene: &mut Scene, docking_init: Option<&DockingSite>) {
     let mut light = &mut scene.lighting.point_lights[2];
 
     match docking_init {
@@ -115,8 +117,9 @@ pub fn render(mut state: State) {
             Mesh::new_box(1., 1., 1.),
             Mesh::new_cylinder(1., BOND_RADIUS, 20),
             Mesh::new_sphere(1., 1),   // low-res sphere
-            Mesh::new_box(1., 1., 1.), // Placeholder for a VDW surface; populated later.
             Mesh::new_box(1., 1., 1.),
+            Mesh::new_box(1., 1., 1.), // Placeholder for VDW surface; populated later.
+            Mesh::new_box(1., 1., 1.), // Placeholder for docking site sufrace; populated later.
         ],
         entities: Vec::new(),
         camera: Camera {

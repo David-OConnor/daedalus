@@ -19,6 +19,10 @@ barnes_hut = { path = "../barnes_hut", features = ["encode"]}
 #kifmm = { git = "https://github.com/bempp/kifmm/" }
 #kifmm = { version = "^2.0.0" }
 
+# todo: Qhull is temp until we find a way to generate non-convex meshes.
+# todo: Relies on C FFI. This may complicate compiling.
+qhull = "^0.4.0"
+
 na_seq = "^0.2.7"
 
 # For loading and saving config

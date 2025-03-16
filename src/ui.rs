@@ -2,19 +2,20 @@ use std::{f32::consts::TAU, path::Path, time::Instant};
 
 use barnes_hut::{BhConfig, Cube, Tree};
 use egui::{Color32, ComboBox, Context, RichText, Slider, TextEdit, TopBottomPanel, Ui};
-use graphics::{Camera, ControlScheme, EngineUpdates, RIGHT_VEC, Scene, UP_VEC};
+use graphics::{Camera, ControlScheme, EngineUpdates, RIGHT_VEC, Scene, UP_VEC, Entity};
 use lin_alg::f32::{Quaternion, Vec3};
 use na_seq::AaIdent;
 
 use crate::{
     CamSnapshot, Selection, State, ViewSelLevel,
     docking::{
-        ConformationType,
-        docking_external::{check_adv_avail, dock_with_vina},
-        docking_prep_external::{prepare_ligand, prepare_target},
+        ConformationType, binding_energy,
+        external::{check_adv_avail, dock_with_vina},
         find_optimal_pose,
         find_sites::find_docking_sites,
         partial_charge::{PartialCharge, create_partial_charges},
+        prep_external::{prepare_ligand, prepare_target},
+        setup_docking,
     },
     download_mols::{load_cif_rcsb, load_sdf_drugbank, load_sdf_pubchem},
     mol_drawing::{MoleculeView, draw_ligand, draw_molecule},
@@ -23,7 +24,9 @@ use crate::{
     render::{CAM_INIT_OFFSET, RENDER_DIST, set_docking_light, set_flashlight},
     util::{cam_look_at, check_prefs_save, cycle_res_selected, orbit_center, select_from_search},
 };
-use crate::docking::{binding_energy, setup_docking};
+use crate::docking::site_surface::find_docking_site_surface;
+use crate::mol_drawing::COLOR_DOCKING_SITE_MESH;
+use crate::render::{ATOM_SHINYNESS, MESH_DOCKING_SURFACE, MESH_SPHERE_LOWRES, RADIUS_SFC_DOT};
 
 pub const ROW_SPACING: f32 = 10.;
 pub const COL_SPACING: f32 = 30.;
@@ -119,13 +122,13 @@ pub fn handle_input(
         // Check for file drop
         if let Some(dropped_files) = ip.raw.dropped_files.first() {
             if let Some(path) = &dropped_files.path {
-
                 let ligand_load = path
                     .extension()
                     .unwrap_or_default()
                     .to_ascii_lowercase()
                     .to_str()
-                    .unwrap_or_default() == "sdf";
+                    .unwrap_or_default()
+                    == "sdf";
 
                 load_file(path, state, redraw, reset_cam, engine_updates, ligand_load);
             }
@@ -720,7 +723,12 @@ fn residue_search(
             if ui.button("Dock").clicked() {
                 // let tgt = state.molecule.as_ref().unwrap();
                 let mol = state.molecule.as_mut().unwrap();
-                find_optimal_pose(mol, ligand, &state.volatile.lj_lookup_table, &state.bh_config);
+                find_optimal_pose(
+                    mol,
+                    ligand,
+                    &state.volatile.lj_lookup_table,
+                    &state.bh_config,
+                );
 
                 // Allow the user to select the autodock executable.
                 // if state.to_save.autodock_vina_path.is_none() {
@@ -740,6 +748,30 @@ fn residue_search(
                 *redraw = true;
             }
 
+            // todo: Make this automatic A/R. For not a button
+            if ui.button("Site mesh").clicked() {
+                let mol = state.molecule.as_ref().unwrap();
+                let (mesh, edges) = find_docking_site_surface(mol, &ligand.docking_site);
+
+                scene.meshes[MESH_DOCKING_SURFACE] = mesh;
+
+                // todo: You must remove prev entities of it too! Do you need an entity ID for this? Likely.
+                // todo: Move to the draw module A/R.
+                let mut entity = Entity::new(
+                    MESH_DOCKING_SURFACE,
+                    Vec3::new_zero(),
+                    Quaternion::new_identity(),
+                    1.,
+                    COLOR_DOCKING_SITE_MESH,
+                    0.5,
+                );
+                entity.opacity = 0.8;
+                scene.entities.push(entity);
+
+                engine_updates.meshes = true;
+                engine_updates.entities = true;
+            }
+
             ui.label("Docking site setup:");
             ui.label("Center:");
 
@@ -750,7 +782,7 @@ fn residue_search(
                 .changed()
             {
                 if let Ok(v) = state.ui.docking_site_x.parse::<f64>() {
-                    ligand.docking_init.site_center.x = v;
+                    ligand.docking_site.site_center.x = v;
                     docking_init_changed = true;
                     *redraw = true;
                 }
@@ -760,7 +792,7 @@ fn residue_search(
                 .changed()
             {
                 if let Ok(v) = state.ui.docking_site_y.parse::<f64>() {
-                    ligand.docking_init.site_center.y = v;
+                    ligand.docking_site.site_center.y = v;
                     docking_init_changed = true;
                     *redraw = true;
                 }
@@ -770,7 +802,7 @@ fn residue_search(
                 .changed()
             {
                 if let Ok(v) = state.ui.docking_site_z.parse::<f64>() {
-                    ligand.docking_init.site_center.z = v;
+                    ligand.docking_site.site_center.z = v;
                     docking_init_changed = true;
                     *redraw = true;
                 }
@@ -782,7 +814,7 @@ fn residue_search(
                 .changed()
             {
                 if let Ok(v) = state.ui.docking_site_size.parse::<f64>() {
-                    ligand.docking_init.site_box_size = v;
+                    ligand.docking_site.site_box_size = v;
                     docking_init_changed = true;
                     *redraw = true;
                 }
@@ -790,7 +822,7 @@ fn residue_search(
 
             if docking_init_changed {
                 // todo: Hardcoded as some.
-                set_docking_light(scene, Some(&ligand.docking_init));
+                set_docking_light(scene, Some(&ligand.docking_site));
                 engine_updates.lighting = true;
             }
         }
@@ -1059,11 +1091,11 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
             ui.add_space(COL_SPACING);
             ui.label("Query databases (ident):");
-            ui.add(TextEdit::singleline(&mut state.ui.rcsb_input).desired_width(40.));
+            ui.add(TextEdit::singleline(&mut state.ui.db_input).desired_width(40.));
 
-            if !state.ui.rcsb_input.is_empty() {
+            if !state.ui.db_input.is_empty() {
                 if ui.button("Download from RCSB").clicked() {
-                    match load_cif_rcsb(&state.ui.rcsb_input) {
+                    match load_cif_rcsb(&state.ui.db_input) {
                         Ok(pdb) => {
                             state.pdb = Some(pdb);
                             state.molecule = Some(Molecule::from_pdb(state.pdb.as_ref().unwrap()));
@@ -1078,27 +1110,29 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     }
                 }
 
-                if ui.button("Download from DrugBank").clicked() {
-                    match load_sdf_drugbank(&state.ui.rcsb_input) {
-                        // todo: Load as ligand for now.
-                        Ok(mol) => {
-                            // state.pdb = None;
+                if state.ui.db_input.to_uppercase().starts_with("DB") {
+                    if ui.button("Download from DrugBank").clicked() {
+                        match load_sdf_drugbank(&state.ui.db_input) {
+                            // todo: Load as ligand for now.
+                            Ok(mol) => {
+                                // state.pdb = None;
 
-                            state.ligand = Some(Ligand::new(mol));
+                                state.ligand = Some(Ligand::new(mol));
 
-                            state.update_from_prefs();
+                                state.update_from_prefs();
 
-                            redraw = true;
-                            reset_cam = true;
-                        }
-                        Err(_e) => {
-                            eprintln!("Error loading SDF file");
+                                redraw = true;
+                                reset_cam = true;
+                            }
+                            Err(_e) => {
+                                eprintln!("Error loading SDF file");
+                            }
                         }
                     }
                 }
 
                 if ui.button("Download from PubChem").clicked() {
-                    match load_sdf_pubchem(&state.ui.rcsb_input) {
+                    match load_sdf_pubchem(&state.ui.db_input) {
                         // todo: Load as ligand for now.
                         Ok(mol) => {
                             // state.pdb = None;
@@ -1146,9 +1180,13 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 ui.add_space(COL_SPACING);
                 if let Some(mol) = &mut state.molecule {
                     if ui.button("Docking energy").clicked() {
-                        let (rec_atoms_near_site, rec_atom_indices, rec_bonds_near_site, partial_charges_rec, lj_pairs) =
-                            setup_docking(mol, ligand, &state.volatile.lj_lookup_table);
-
+                        let (
+                            rec_atoms_near_site,
+                            rec_atom_indices,
+                            rec_bonds_near_site,
+                            partial_charges_rec,
+                            lj_pairs,
+                        ) = setup_docking(mol, ligand, &state.volatile.lj_lookup_table);
 
                         let poses = vec![ligand.pose.clone()];
                         let mut lig_posits = Vec::with_capacity(poses.len());
@@ -1168,23 +1206,25 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                             // For the Barnes Hut electrostatics tree.
                             let bh_bounding_box = Cube::from_bodies(&partial_charges_rec, 0., true);
 
-                            Tree::new(&partial_charges_rec, &bh_bounding_box.unwrap(), &state.bh_config)
+                            Tree::new(
+                                &partial_charges_rec,
+                                &bh_bounding_box.unwrap(),
+                                &state.bh_config,
+                            )
                         };
 
-                        state.ui.binding_energy_disp = Some(
-                            binding_energy(
-                                &rec_atoms_near_site,
-                                &rec_atom_indices,
-                                &rec_bonds_near_site,
-                                &ligand,
-                                &lig_posits[0],
-                                &partial_charges_rec,
-                                &partial_charges_lig[0],
-                                &charge_tree,
-                                &state.bh_config,
-                                &lj_pairs,
-                            )
-                        );
+                        state.ui.binding_energy_disp = Some(binding_energy(
+                            &rec_atoms_near_site,
+                            &rec_atom_indices,
+                            &rec_bonds_near_site,
+                            &ligand,
+                            &lig_posits[0],
+                            &partial_charges_rec,
+                            &partial_charges_lig[0],
+                            &charge_tree,
+                            &state.bh_config,
+                            &lj_pairs,
+                        ));
                     }
                 }
 

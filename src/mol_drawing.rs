@@ -14,7 +14,7 @@ use crate::{
     molecule::{Atom, AtomRole, BondCount, BondType, Chain, Residue, ResidueType, aa_color},
     render::{
         ATOM_SHINYNESS, BALL_STICK_RADIUS, BALL_STICK_RADIUS_H, BODY_SHINYNESS, BOND_RADIUS,
-        CAM_INIT_OFFSET, Color, MESH_BOND, MESH_BOX, MESH_SPHERE, MESH_SPHERE_LOWRES, MESH_SURFACE,
+        CAM_INIT_OFFSET, Color, MESH_BOND, MESH_DOCKING_BOX, MESH_SPHERE, MESH_SPHERE_LOWRES, MESH_SOLVENT_SURFACE,
         RADIUS_SFC_DOT, RENDER_DIST, set_docking_light, set_static_light,
     },
     util::orbit_center,
@@ -32,6 +32,7 @@ const RADIUS_H_BOND: f32 = 0.2; // A scaler relative to covalent sticks.
 
 const COLOR_SFC_DOT: Color = (0.7, 0.7, 0.7);
 const COLOR_DOCKING_BOX: Color = (0.3, 0.3, 0.9);
+pub const COLOR_DOCKING_SITE_MESH: Color = (0.5, 0.5, 0.9);
 
 // todo: For ligands that are flexible, highlight the fleixble bonds in a bright color.
 
@@ -379,9 +380,9 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene, update_cam_lighting: bo
 
     // Add a box for the docking site.
     scene.entities.push(Entity {
-        mesh: MESH_BOX,
-        position: ligand.docking_init.site_center.into(),
-        scale: ligand.docking_init.site_box_size as f32,
+        mesh: MESH_DOCKING_BOX,
+        position: ligand.docking_site.site_center.into(),
+        scale: ligand.docking_site.site_box_size as f32,
         color: COLOR_DOCKING_BOX,
         opacity: 0.2,
         shinyness: ATOM_SHINYNESS,
@@ -481,7 +482,7 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene, update_cam_lighting: bo
         }
     }
 
-    set_docking_light(scene, Some(&state.ligand.as_ref().unwrap().docking_init));
+    set_docking_light(scene, Some(&state.ligand.as_ref().unwrap().docking_site));
 }
 
 /// Refreshes entities with the model passed.
@@ -537,14 +538,14 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
 
         if !mol.mesh_created {
             println!("Building surface mesh...");
-            scene.meshes[MESH_SURFACE] =
+            scene.meshes[MESH_SOLVENT_SURFACE] =
                 mesh_from_sas_points(&mol.sa_surface_pts.as_ref().unwrap());
             mol.mesh_created = true;
             println!("Mesh complete");
         }
 
         scene.entities.push(Entity::new(
-            MESH_SURFACE,
+            MESH_SOLVENT_SURFACE,
             Vec3::new_zero(),
             Quaternion::new_identity(),
             1.,
@@ -557,7 +558,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
     if [MoleculeView::BallAndStick, MoleculeView::SpaceFill].contains(&ui.mol_view) {
         for (i, atom) in mol.atoms.iter().enumerate() {
             if atom.hetero {
-                // Don't draw VDW spheres for hetero atoms, at least for now.
+                // Don't draw VDW spheres for hetero atoms; draw as sticks.
                 continue;
             }
 
@@ -637,7 +638,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
     }
 
     // Draw bonds.
-    if ![MoleculeView::SpaceFill].contains(&ui.mol_view) {
+    // if ![MoleculeView::SpaceFill].contains(&ui.mol_view) || atom.hetero {
         for bond in &mol.bonds {
             if ui.mol_view == MoleculeView::Backbone && !bond.is_backbone {
                 continue;
@@ -649,6 +650,11 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
 
             let atom_0 = &mol.atoms[bond.atom_0];
             let atom_1 = &mol.atoms[bond.atom_1];
+
+            // Don't draw bonds if on the spacefill view, and the atoms aren't hetero.
+            if ui.mol_view == MoleculeView::SpaceFill && !atom_0.hetero && !atom_1.hetero {
+                continue
+            }
 
             if ui.show_nearby_only {
                 let atom_sel = mol.get_sel_atom(state.selection);
@@ -776,7 +782,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                 );
             }
         }
-    }
+    // }
 
     if update_cam_lighting {
         let center: Vec3 = mol.center.into();
