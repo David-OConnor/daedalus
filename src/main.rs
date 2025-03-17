@@ -82,12 +82,86 @@ impl ViewSelLevel {
     }
 }
 
+struct FileDialogs {
+    load: FileDialog,
+    load_ligand: FileDialog,
+    save: FileDialog,
+    save_ligand: FileDialog,
+    autodock_path: FileDialog,
+    save_pdbqt: FileDialog,
+}
+
+impl Default for FileDialogs {
+    fn default() -> Self {
+        let cfg_protein = FileDialogConfig {
+            ..Default::default()
+        }
+            .add_file_filter(
+                "PDB/CIF",
+                Arc::new(|p| {
+                    let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
+                    ext == "pdb" || ext == "cif"
+                }),
+            );
+
+        let cfg_small_mol = FileDialogConfig {
+            ..Default::default()
+        }
+            .add_file_filter(
+                "SDF/MOL2/PDBQT",
+                Arc::new(|p| {
+                    let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
+                    ext == "sdf" || ext == "mol2" || ext == "pdbqt"
+                }),
+            );
+
+        let cfg_vina = FileDialogConfig {
+            ..Default::default()
+        }
+            .add_file_filter(
+                "Executables",
+                Arc::new(|p| {
+                    let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
+                    ext == "" || ext == "exe"
+                }),
+            );
+
+        let cfg_save_pdbqt = FileDialogConfig {
+            ..Default::default()
+        };
+        // .add_file_filter(
+        //     "Executables",
+        //     Arc::new(|p| {
+        //         let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
+        //         ext == "" || ext == "exe"
+        //     }),
+        // );
+
+        let load = FileDialog::with_config(cfg_protein.clone()).default_file_filter("PDB/CIF");
+        let load_ligand = FileDialog::with_config(cfg_small_mol.clone()).default_file_filter("SDF/MOL2/PDBQT");
+
+        let save = FileDialog::with_config(cfg_protein).default_file_filter("PDB/CIF");
+        let save_ligand = FileDialog::with_config(cfg_small_mol).default_file_filter("SDF/MOL2/PDBQT");
+
+        let autodock_path =
+            FileDialog::with_config(cfg_vina).default_file_filter("Executables");
+
+        let save_pdbqt = FileDialog::with_config(cfg_save_pdbqt);
+
+        Self {
+            load,
+            load_ligand,
+            save,
+            save_ligand,
+            autodock_path,
+            save_pdbqt,
+        }
+    }
+}
+
 /// Temprary, and generated state.
 struct StateVolatile {
-    load_dialog: FileDialog,
-    load_ligand_dialog: FileDialog,
-    autodock_path_dialog: FileDialog,
-    save_pdbqt_dialog: FileDialog,
+    dialogs: FileDialogs,
     /// We use this for offsetting our cursor selection.
     ui_height: f32,
     // /// Center and size are used for setting the camera. Dependent on the molecule atom positions.
@@ -102,52 +176,8 @@ struct StateVolatile {
 
 impl Default for StateVolatile {
     fn default() -> Self {
-        let cfg = FileDialogConfig {
-            ..Default::default()
-        }
-        .add_file_filter(
-            "PDB/CIF/SDF",
-            Arc::new(|p| {
-                let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
-                ext == "pdb" || ext == "cif" || ext == "sdf" || ext == "pdbqt"
-            }),
-        );
-
-        let cfg_vina = FileDialogConfig {
-            ..Default::default()
-        }
-        .add_file_filter(
-            "Executables",
-            Arc::new(|p| {
-                let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
-                ext == "" || ext == "exe"
-            }),
-        );
-
-        let cfg_save_pdbqt = FileDialogConfig {
-            ..Default::default()
-        };
-        // .add_file_filter(
-        //     "Executables",
-        //     Arc::new(|p| {
-        //         let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
-        //         ext == "" || ext == "exe"
-        //     }),
-        // );
-
-        let load_dialog = FileDialog::with_config(cfg.clone()).default_file_filter("PDB/CIF/SDF");
-        let load_ligand_dialog = FileDialog::with_config(cfg).default_file_filter("PDB/CIF/SDF");
-
-        let autodock_path_dialog =
-            FileDialog::with_config(cfg_vina).default_file_filter("Executables");
-
-        let save_pdbqt_dialog = FileDialog::with_config(cfg_save_pdbqt);
-
         Self {
-            load_dialog,
-            load_ligand_dialog,
-            autodock_path_dialog,
-            save_pdbqt_dialog,
+            dialogs: Default::default(),
             ui_height: 0.,
             inputs_commanded: Default::default(),
             lj_lookup_table: init_lj_lut(),

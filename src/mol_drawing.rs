@@ -384,7 +384,7 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene, update_cam_lighting: bo
         position: ligand.docking_site.site_center.into(),
         scale: ligand.docking_site.site_box_size as f32,
         color: COLOR_DOCKING_BOX,
-        opacity: 0.2,
+        opacity: 0.4,
         shinyness: ATOM_SHINYNESS,
         ..Default::default()
     });

@@ -34,6 +34,8 @@
 
 // 4MZI/160355 docking example: https://www.youtube.com/watch?v=vU2aNuP3Y8I
 
+// todo: Conside
+
 // todo: Temp/feature-gate
 use std::{arch::x86_64::*, collections::HashMap, f32::consts::TAU, time::Instant};
 
@@ -67,7 +69,7 @@ const GRID_SPACING_SITE_FINDING: f64 = 5.0;
 // Don't take into account target atoms that are not within this distance of the docking site center x
 // docking site size. Keep in mind, the difference between side len (e.g. of the box drawn), and dist
 // from center.
-const ATOM_NEAR_SITE_DIST_THRESH: f64 = 1.2;
+const ATOM_NEAR_SITE_DIST_THRESH: f64 = 1.4;
 
 const HYDROPHOBIC_CUTOFF: f32 = 4.25; // 3.5 - 5 angstrom?
 
@@ -267,12 +269,12 @@ pub fn binding_energy(
     partial_charges_lig: &[PartialCharge],
     charge_tree: &Tree,
     bh_config: &BhConfig,
-    // lj_pairs: &[(Vec3, usize, f32, f32)], // rec pos, lig i, sig, eps
     lj_pairs: &[(usize, usize, f32, f32)], // rec i (local), lig i, sig, eps
 ) -> BindingEnergy {
     // todo: Integrate CUDA.
 
     // Pre-compute distances, to prevent repetition later.
+    // todo: Consider CUDA for this.
     let mut distances = Vec::new();
     for rec_atom in rec_atoms_near_site {
         let mut distances_this_rec = Vec::new();
@@ -565,6 +567,10 @@ fn process_poses<'a>(
 
     let mut geometry_poses_skip = Vec::new();
 
+    // Optimization; Hydrogens are always close to another atom, and we have many; we can likely rely
+    // on that other atom, and save ~n^2 computation here.
+    let rec_atoms_non_h: Vec<_> = rec_atoms_near_site.iter().filter(|a| a.element != Element::Hydrogen).collect();
+
     for (i_pose, pose) in poses.iter().enumerate() {
         let posits_this_pose = ligand.position_atoms(Some(pose));
         partial_charges_lig.push(create_partial_charges(
@@ -572,29 +578,30 @@ fn process_poses<'a>(
             Some(&posits_this_pose),
         ));
 
-
-
-
         // Remove pose that have any ligand atoms *intersecting* the receptor. We could possibly
         // use a surface mesh of some sort for this. For now, use VDW spheres. Crude, and probably good enough.
         // This pose reduction may significantly speed up the algorithm by discarding unsuitable poses
         // early.
-        for rec_atom in rec_atoms_near_site {
-            // Optimization.
-            if rec_atom.element == Element::Hydrogen {
-                continue;
-            }
+        // todo: Consider CUDA for this.
+        for rec_atom in &rec_atoms_non_h {
+            let rec_posit: Vec3F32 = rec_atom.posit.into();
+
+            let vdw_radius = rec_atom.element.vdw_radius() * 1.1;
 
             let mut end_loop = false;
-            for lig_pos in &posits_this_pose {
-                let rec_posit: Vec3F32 = rec_atom.posit.into();
+            for (i, lig_pos) in posits_this_pose.iter().enumerate() {
+                let lig_atom =  &ligand.molecule.atoms[i];
+                if lig_atom.element == Element::Hydrogen {
+                    continue;
+                }
+
                 let lig_posit: Vec3F32 = (*lig_pos).into();
                 let dist = (rec_posit - lig_posit).magnitude();
 
                 // todo: We should probably build an ASA surface, then assess if inside or outside of
                 // todo that instead of this approach.
 
-                if (dist) < rec_atom.element.vdw_radius() * 1.1 {
+                if (dist) < vdw_radius {
                     geometry_poses_skip.push(i_pose);
                     end_loop = true;
                     break;
@@ -607,7 +614,6 @@ fn process_poses<'a>(
 
         lig_posits.push(posits_this_pose);
     }
-
 
 
     println!("Setup complete. iterating through {} poses...", poses.len() - geometry_poses_skip.len());
@@ -815,7 +821,7 @@ pub fn find_optimal_pose(
         Tree::new(&partial_charges_rec, &bh_bounding_box.unwrap(), &bh_config)
     };
 
-    let num_posits = 10; // Gets cubed, although many of these are eliminated.
+    let num_posits = 6; // Gets cubed, although many of these are eliminated.
     let num_orientations = 60;
     let angles_per_bond = 10;
 

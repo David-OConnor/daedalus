@@ -708,7 +708,7 @@ fn residue_search(
             }
 
             if ui.button("Save PDBQT").clicked() {
-                state.volatile.save_pdbqt_dialog.pick_directory();
+                state.volatile.dialogs.save_pdbqt.pick_directory();
             }
 
             if ui.button("Find sites").clicked() {
@@ -742,7 +742,7 @@ fn residue_search(
                 let tgt = state.molecule.as_ref().unwrap();
                 // Allow the user to select the autodock executable.
                 if state.to_save.autodock_vina_path.is_none() {
-                    state.volatile.autodock_path_dialog.pick_file();
+                    state.volatile.dialogs.autodock_path.pick_file();
                 }
                 dock_with_vina(tgt, ligand, &state.to_save.autodock_vina_path);
                 *redraw = true;
@@ -1065,12 +1065,19 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             }
 
             if ui.button("Open").clicked() {
-                state.volatile.load_dialog.pick_file();
+                state.volatile.dialogs.load.pick_file();
+            }
+            if ui.button("Save").clicked() {
+                state.volatile.dialogs.save.pick_file();
             }
 
             if ui.button("Open ligand").clicked() {
-                state.volatile.load_ligand_dialog.pick_file();
+                state.volatile.dialogs.load_ligand.pick_file();
             }
+            if ui.button("Save ligand").clicked() {
+                state.volatile.dialogs.save_ligand.pick_file();
+            }
+
 
             // if ui.button("Get RCSB").clicked() {
             //     match load_pdb_metadata(&mol.ident) {
@@ -1274,7 +1281,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         ui.add_space(ROW_SPACING / 2.);
 
-        if let Some(path) = &state.volatile.load_dialog.take_picked() {
+        if let Some(path) = &state.volatile.dialogs.load.take_picked() {
             load_file(
                 path,
                 state,
@@ -1285,7 +1292,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             );
         }
 
-        if let Some(path) = &state.volatile.load_ligand_dialog.take_picked() {
+        if let Some(path) = &state.volatile.dialogs.load_ligand.take_picked() {
             load_file(
                 path,
                 state,
@@ -1296,7 +1303,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             );
         }
 
-        if let Some(path) = &state.volatile.autodock_path_dialog.take_picked() {
+        if let Some(path) = &state.volatile.dialogs.autodock_path.take_picked() {
             state.ui.autodock_path_valid = check_adv_avail(path);
             if state.ui.autodock_path_valid {
                 state.to_save.autodock_vina_path = Some(path.to_owned());
@@ -1304,7 +1311,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             }
         }
 
-        if let Some(path_dir) = &state.volatile.save_pdbqt_dialog.take_picked() {
+        if let Some(path_dir) = &state.volatile.dialogs.save_pdbqt.take_picked() {
             if let Some(mol) = &mut state.molecule {
                 let filename = format!("{}_target.pdbqt", mol.ident);
                 let path = Path::new(path_dir).join(filename);
@@ -1354,10 +1361,12 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         state.volatile.ui_height = ctx.used_size().y;
     }
 
-    state.volatile.load_dialog.update(ctx);
-    state.volatile.load_ligand_dialog.update(ctx);
-    state.volatile.autodock_path_dialog.update(ctx);
-    state.volatile.save_pdbqt_dialog.update(ctx);
+    state.volatile.dialogs.load.update(ctx);
+    state.volatile.dialogs.load_ligand.update(ctx);
+    state.volatile.dialogs.save.update(ctx);
+    state.volatile.dialogs.save_ligand.update(ctx);
+    state.volatile.dialogs.autodock_path.update(ctx);
+    state.volatile.dialogs.save_pdbqt.update(ctx);
 
     // todo: Appropriate place for this?
     if state.volatile.inputs_commanded.inputs_present() {
