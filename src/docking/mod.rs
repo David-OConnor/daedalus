@@ -83,6 +83,9 @@ const SOFTENING_FACTOR_SQ_ELECTROSTATIC: f64 = 1e-6;
 
 const Q: f32 = 1.; // elementary charge.
 
+// The rough Van der Waals (Lennard-Jones) minimum potential value, for two carbon atoms.
+const LJ_MIN_R_CC: f32 = 3.82;
+
 #[derive(Clone, Copy, PartialEq)]
 enum GaCrossoverMode {
     Twopt,
@@ -219,12 +222,15 @@ pub struct BindingEnergy {
     h_bond: f32, // score
     hydrophobic: f32,
     electrostatic: f32,
+    /// An ad-hoc metric of making sure the ligand is close to molecules.
+    /// a geometric method?
+    proximity: f32,
     score: f32,
 }
 
 impl BindingEnergy {
     pub fn new(vdw: f32, h_bond_count: usize, hydrophobic: f32, electrostatic: f32) -> Self {
-        const E_PER_H_BOND: f32 = -0.7; // todo A/R.
+        const E_PER_H_BOND: f32 = -1.2; // todo A/R.
 
         let h_bond = h_bond_count as f32 * E_PER_H_BOND;
 
@@ -238,6 +244,8 @@ impl BindingEnergy {
             + weight_hydrophobic * hydrophobic
             + weight_electrostatic * electrostatic;
 
+        let proximity = 0.; // todo temp
+
         Self {
             vdw,
             h_bond_count,
@@ -245,6 +253,7 @@ impl BindingEnergy {
             hydrophobic,
             electrostatic,
             score,
+            proximity,
         }
     }
 }
@@ -270,7 +279,7 @@ pub fn binding_energy(
     charge_tree: &Tree,
     bh_config: &BhConfig,
     lj_pairs: &[(usize, usize, f32, f32)], // rec i (local), lig i, sig, eps
-) -> BindingEnergy {
+) -> Option<BindingEnergy> {
     // todo: Integrate CUDA.
 
     // Pre-compute distances, to prevent repetition later.
@@ -286,7 +295,6 @@ pub fn binding_energy(
         distances.push(distances_this_rec);
     }
 
-
     // todo: Use a neighbor grid or similar? Set it up so there are two separate sides?
     let vdw: f32 = {
         lj_pairs
@@ -295,7 +303,7 @@ pub fn binding_energy(
             .map(|(i_rec, i_lig, sigma, eps)| {
                 // lj_potential(*posit_rec, lig_posits[*i_lig], *sigma, *eps)
                 let r = distances[*i_rec][*i_lig];
-                lj_potential(r,  *sigma, *eps)
+                lj_potential(r, *sigma, *eps)
                 // lj_potential_simd(*posit_rec, lig_posits[*i_lig], *sigma, *eps)
             })
             .sum()
@@ -433,7 +441,12 @@ pub fn binding_energy(
         force.magnitude()
     };
 
-    BindingEnergy::new(vdw, h_bond_count, hydrophobic_score, electrostatic)
+    Some(BindingEnergy::new(
+        vdw,
+        h_bond_count,
+        hydrophobic_score,
+        electrostatic,
+    ))
 }
 
 /// Brute-force, naive iteration of combinations. (For now)
@@ -547,7 +560,8 @@ fn init_poses(
     result
 }
 
-/// Contains code that is specific to a set of poses.
+/// Contains code that is specific to a set of poses. This includes low-cost filters that reduce
+/// the downstream number of poses to match.
 fn process_poses<'a>(
     mut poses: &'a [Pose],
     rec_atoms_near_site: &[Atom],
@@ -562,14 +576,25 @@ fn process_poses<'a>(
 ) -> (&'a Pose, BindingEnergy) {
     // todo: Currently an outer/inner dynamic.
     // Set up the ligand atom positions for each pose; that's all that matters re the pose for now.
-    let mut lig_posits = Vec::with_capacity(poses.len());
+    let mut lig_posits = Vec::new();
     let mut partial_charges_lig = Vec::with_capacity(poses.len());
 
     let mut geometry_poses_skip = Vec::new();
 
+    // E.g. for certain sample calculations, pick every 4th carbon.
+    let sample_ratio = 4;
+
+    // todo: This approach of skipping atoms during iteration isn't great, as it depends on the order
+    // todo the atoms are in the Vecs.
+
     // Optimization; Hydrogens are always close to another atom, and we have many; we can likely rely
     // on that other atom, and save ~n^2 computation here.
-    let rec_atoms_non_h: Vec<_> = rec_atoms_near_site.iter().filter(|a| a.element != Element::Hydrogen).collect();
+    let rec_atoms_sample: Vec<_> = rec_atoms_near_site
+        .iter()
+        .enumerate()
+        .filter(|(i, a)| a.element == Element::Carbon && i % sample_ratio == 0)
+        .map(|(_, a)| a)
+        .collect();
 
     for (i_pose, pose) in poses.iter().enumerate() {
         let posits_this_pose = ligand.position_atoms(Some(pose));
@@ -578,25 +603,31 @@ fn process_poses<'a>(
             Some(&posits_this_pose),
         ));
 
+        let lig_posits_sample: Vec<Vec3F32> = posits_this_pose
+            .iter()
+            .enumerate()
+            .filter(|(i, a)| {
+                let atom = &ligand.molecule.atoms[*i];
+                atom.element == Element::Carbon && i % sample_ratio == 0
+            })
+            .map(|(i, v)| (*v).into())
+            .collect();
+
+        lig_posits.push(posits_this_pose);
+
         // Remove pose that have any ligand atoms *intersecting* the receptor. We could possibly
         // use a surface mesh of some sort for this. For now, use VDW spheres. Crude, and probably good enough.
         // This pose reduction may significantly speed up the algorithm by discarding unsuitable poses
         // early.
         // todo: Consider CUDA for this.
-        for rec_atom in &rec_atoms_non_h {
+        for rec_atom in &rec_atoms_sample {
             let rec_posit: Vec3F32 = rec_atom.posit.into();
 
             let vdw_radius = rec_atom.element.vdw_radius() * 1.1;
 
             let mut end_loop = false;
-            for (i, lig_pos) in posits_this_pose.iter().enumerate() {
-                let lig_atom =  &ligand.molecule.atoms[i];
-                if lig_atom.element == Element::Hydrogen {
-                    continue;
-                }
-
-                let lig_posit: Vec3F32 = (*lig_pos).into();
-                let dist = (rec_posit - lig_posit).magnitude();
+            for lig_pos in &lig_posits_sample {
+                let dist = (rec_posit - *lig_pos).magnitude();
 
                 // todo: We should probably build an ASA surface, then assess if inside or outside of
                 // todo that instead of this approach.
@@ -611,12 +642,12 @@ fn process_poses<'a>(
                 break;
             }
         }
-
-        lig_posits.push(posits_this_pose);
     }
 
-
-    println!("Setup complete. iterating through {} poses...", poses.len() - geometry_poses_skip.len());
+    println!(
+        "Setup complete. iterating through {} poses...",
+        poses.len() - geometry_poses_skip.len()
+    );
 
     println!(
         "Partial charges rec: {} lig: {}",
@@ -627,11 +658,9 @@ fn process_poses<'a>(
     let (best_energy, best_pose) = poses
         .par_iter()
         .enumerate()
-        .filter(|(i_pose, pose)| !geometry_poses_skip.contains(i_pose))
-        .map(|(i_pose, pose)| {
-
-
-            let energy = binding_energy(
+        .filter(|(i_pose, _pose)| !geometry_poses_skip.contains(i_pose))
+        .filter_map(|(i_pose, pose)| {
+            binding_energy(
                 &rec_atoms_near_site,
                 &rec_atom_indices,
                 &rec_bonds_near_site,
@@ -642,8 +671,8 @@ fn process_poses<'a>(
                 &charge_tree,
                 &bh_config,
                 &lj_pairs,
-            );
-            (energy, pose)
+            )
+            .map(|energy| (energy, pose)) // Only keep values where energy is Some
         })
         // Provide an identity value for reduction; here we use +∞ for energy:
         .reduce(
@@ -821,8 +850,8 @@ pub fn find_optimal_pose(
         Tree::new(&partial_charges_rec, &bh_bounding_box.unwrap(), &bh_config)
     };
 
-    let num_posits = 6; // Gets cubed, although many of these are eliminated.
-    let num_orientations = 60;
+    let num_posits = 4; // Gets cubed, although many of these are eliminated.
+    let num_orientations = 40;
     let angles_per_bond = 10;
 
     let poses = init_poses(
@@ -879,7 +908,7 @@ pub fn find_optimal_pose(
 
     // Now, refine around this best pose. (Crude, but not as crude as blind iteration through all)
     let num_posits = 4; // Gets cubed.
-    let num_orientations = 60;
+    let num_orientations = 50;
     let angles_per_bond = 5;
 
     // todo: Narrow down orientations and bond flexes too; not just position.

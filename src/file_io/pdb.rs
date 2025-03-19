@@ -171,31 +171,6 @@ impl Molecule {
     }
 }
 
-/// From a string of a CIF or PDB text file.
-pub fn read_pdb(pdb_text: &str) -> io::Result<PDB> {
-    let reader = BufReader::new(pdb_text.as_bytes());
-
-    let (pdb, _errors) = ReadOptions::default()
-        .set_level(StrictnessLevel::Loose)
-        .set_format(Format::Mmcif) // Must be set explicitly if  using read_raw.
-        .read_raw(reader)
-        .map_err(|e| io::Error::new(ErrorKind::InvalidData, "Problem reading PDB text"))?;
-
-    Ok(pdb)
-}
-
-pub fn load_pdb(path: &Path) -> io::Result<PDB> {
-    let (pdb, _errors) = ReadOptions::default()
-        // At the default strictness level of Medium, we fail to parse a number of files. Medium and Strict
-        // ensure closer conformance to the PDB and CIF specs, but many files in the wild do not. Setting
-        // loose is required for practical use cases.
-        .set_level(StrictnessLevel::Loose)
-        .read(path.to_str().unwrap())
-        .map_err(|e| io::Error::new(ErrorKind::InvalidData, "Problem opening PDB file"))?;
-
-    Ok(pdb)
-}
-
 impl Residue {
     pub fn from_pdb(res_pdb: &pdbtbx::Residue, atoms_pdb: &[&pdbtbx::Atom]) -> Self {
         let res_name = res_pdb.name().unwrap_or_default();
@@ -221,4 +196,42 @@ impl Residue {
 
         res
     }
+}
+
+/// From a string of a CIF or PDB text file.
+pub fn read_pdb(pdb_text: &str) -> io::Result<PDB> {
+    let reader = BufReader::new(pdb_text.as_bytes());
+
+    let (pdb, _errors) = ReadOptions::default()
+        .set_level(StrictnessLevel::Loose)
+        .set_format(Format::Mmcif) // Must be set explicitly if  using read_raw.
+        .read_raw(reader)
+        .map_err(|e| io::Error::new(ErrorKind::InvalidData, "Problem reading PDB text"))?;
+
+    Ok(pdb)
+}
+
+/// From file
+pub fn load_pdb(path: &Path) -> io::Result<PDB> {
+    let (pdb, _errors) = ReadOptions::default()
+        // At the default strictness level of Medium, we fail to parse a number of files. Medium and Strict
+        // ensure closer conformance to the PDB and CIF specs, but many files in the wild do not. Setting
+        // loose is required for practical use cases.
+        .set_level(StrictnessLevel::Loose)
+        .read(path.to_str().unwrap())
+        .map_err(|e| io::Error::new(ErrorKind::InvalidData, "Problem opening PDB file"))?;
+
+    Ok(pdb)
+}
+
+/// To file
+pub fn save_pdb(mol: &Molecule, pdb: &mut PDB, path: &Path) -> io::Result<()> {
+    // todo: Update the PDB in state with data from the molecule prior to saving.
+
+    pdbtbx::save(
+        &pdb,
+        path.to_str().unwrap_or_default(),
+        StrictnessLevel::Loose,
+    )
+    .map_err(|e| io::Error::new(ErrorKind::InvalidData, "Problem opening PDB file"))
 }

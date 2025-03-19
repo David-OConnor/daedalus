@@ -5,7 +5,7 @@ use std::{
     collections::HashMap,
     fs::File,
     io,
-    io::{ErrorKind, Read},
+    io::{ErrorKind, Read, Write},
     path::Path,
 };
 
@@ -15,7 +15,7 @@ use crate::{
     bond_inference::{create_bonds, create_hydrogen_bonds},
     docking::prep::DockType,
     element::Element,
-    molecule::{Atom, Chain, Molecule, Residue, ResidueType},
+    molecule::{Atom, BondType, Chain, Molecule, Residue, ResidueType},
     util::mol_center_size,
 };
 
@@ -41,6 +41,19 @@ impl Molecule {
                 "Not enough lines to parse an SDF header",
             ));
         }
+
+        // todo: Incorporate more cols A/R.
+        // After element:
+        // Mass difference (0, unless an isotope)
+        // Charge (+1 for cation etc)
+        // Stereo, valence, other flags
+
+        // todo: Do bonds too
+        // first atom index
+        // second atom index
+        // 1 for single, 2 for double etc
+        // 0 for no stereochemistry, 1=up, 6=down etc
+        // Other properties: Bond topology, reaction center flags etc. Usually 0
 
         // This is the "counts" line, e.g. " 50 50  0  0  0  0  0  0  0999 V2000"
         let counts_line = lines[3];
@@ -125,40 +138,29 @@ impl Molecule {
 
         // Look for a molecule identifier in the file. Check for either
         // "> <PUBCHEM_COMPOUND_CID>" or "> <DATABASE_ID>" and take the next nonempty line.
-        let mut pubchem = false;
-        let mut drugbank = false;
         let mut pubchem_cid = None;
         let mut drugbank_id = None;
 
-        let mut ident: Option<String> = None;
         for (i, line) in lines.iter().enumerate() {
             if line.contains("> <PUBCHEM_COMPOUND_CID>") {
-                pubchem = true;
+                if let Some(value_line) = lines.get(i + 1) {
+                    let value = value_line.trim();
+                    if let Ok(v) = value.parse::<u32>() {
+                        pubchem_cid = Some(v);
+                    }
+                }
             }
             if line.contains("> <DATABASE_ID>") {
-                drugbank = true;
-            }
-
-            if pubchem || drugbank {
                 if let Some(value_line) = lines.get(i + 1) {
                     let value = value_line.trim();
                     if !value.is_empty() {
-                        ident = Some(value.to_string());
-                        break;
+                        drugbank_id = Some(value.to_string());
                     }
                 }
             }
         }
 
-        // Fallback: use the first line (often the title) if no identifier field was found.
-        let ident = ident.unwrap_or_else(|| lines[0].trim().to_string());
-
-        if pubchem {
-            pubchem_cid = Some(ident.parse().unwrap_or_default());
-        }
-        if drugbank {
-            drugbank_id = Some(ident.clone());
-        }
+        let ident = lines[0].trim().to_string();
 
         // We could now skip over the bond lines if we want:
         //   let first_bond_line = last_atom_ line;
@@ -199,6 +201,99 @@ impl Molecule {
     }
 
     pub fn save_sdf(&self, path: &Path) -> io::Result<()> {
+        let mut file = File::create(path)?;
+
+        // 1) Title line (often the first line in SDF).
+        //    We use the molecule's name/identifier here:
+        // todo: There is a subtlety here. Add that to your parser as well. There are two values
+        // todo in the files we have; this top ident is not the DB id.
+        writeln!(file, "{}", self.ident)?;
+
+        // 2) Write two blank lines:
+        writeln!(file)?;
+        writeln!(file)?;
+
+        // 3) Counts line:
+        //    Typically "  X  Y  0  0  0  0  0  0  0999 V2000"
+        //    Where X = number of atoms, Y = number of bonds
+        let natoms = self.atoms.len();
+        let nbonds = self.bonds.len();
+
+        // Format the counts line. We loosely mimic typical spacing,
+        // though it's not strictly required to line up exactly.
+        writeln!(
+            file,
+            "{:>3}{:>3}  0  0  0  0           0999 V2000",
+            natoms, nbonds
+        )?;
+
+        // 4) Atom block: each line typically has
+        //      X Y Z Element 0  0  0  0  0  0  0  0  0  0
+        //    We'll just place a few zeros after the element for now.
+        for atom in &self.atoms {
+            let x = atom.posit.x;
+            let y = atom.posit.y;
+            let z = atom.posit.z;
+            let symbol = atom.element.to_letter();
+
+            // MDL v2000 format often uses fixed-width fields,
+            // but for simplicity we use whitespace separation:
+            writeln!(
+                file,
+                "{:>10.4}{:>10.4}{:>10.4} {:<2}  0  0  0  0  0  0  0  0  0  0",
+                x, y, z, symbol
+            )?;
+        }
+
+        // 5) Bond block: if your `Molecule` has bond info, loop it here:
+        for bond in &self.bonds {
+            let start_idx = bond.atom_0 + 1; // 1-based in SDF
+            let end_idx = bond.atom_1 + 1;
+            let bond_count = match bond.bond_type {
+                BondType::Covalent { count } => count.value() as u8,
+                _ => 0,
+            };
+
+            writeln!(
+                file,
+                "{:>3}{:>3}{:>3}  0  0  0  0",
+                start_idx, end_idx, bond_count
+            )?;
+        }
+
+        // 6) MDL “M  END” line:
+        writeln!(file, "M  END")?;
+
+        // 7) Metadata fields:
+        //    If you have anything like PUBCHEM_COMPOUND_CID or DRUGBANK_ID,
+        //    we can write it in the > <FIELD_NAME> format,
+        //    then the value, then a blank line.
+        //
+        //    For example, if you have a pubchem_cid or drugbank_id in the molecule:
+        if let Some(cid) = self.pubchem_cid {
+            writeln!(file, "> <PUBCHEM_COMPOUND_CID>")?;
+            writeln!(file, "{}", cid)?;
+            writeln!(file)?; // blank line
+        }
+        if let Some(ref dbid) = self.drugbank_id {
+            writeln!(file, "> <DATABASE_ID>")?;
+            writeln!(file, "{}", dbid)?;
+            writeln!(file)?; // blank line
+            writeln!(file, "> <DATABASE_NAME>")?;
+            writeln!(file, "drugbank")?;
+            writeln!(file)?; // blank line
+        }
+
+        // If you have a general metadata HashMap, you could do:
+        // for (key, value) in &self.metadata {
+        //     writeln!(file, "> <{}>", key)?;
+        //     writeln!(file, "{}", value)?;
+        //     writeln!(file)?;
+        // }
+
+        // 8) End of this molecule record in SDF
+        writeln!(file, "$$$$")?;
+
         Ok(())
     }
 }

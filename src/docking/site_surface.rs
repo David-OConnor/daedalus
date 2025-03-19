@@ -1,20 +1,17 @@
 use std::collections::HashMap;
-use graphics::{Mesh, Vertex};
-use lin_alg::f64::Vec3;
-use lin_alg::f32::Vec3 as Vec3F32;
 
+use graphics::{Mesh, Vertex};
+use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 use qhull::Qh;
 
 use crate::{docking::DockingSite, molecule::Molecule};
 
 // todo: This currently relies on qhull FFI bindings. Try to get rid of this if you have trouble compiling.
 
-
 // Some algorithms for non-convex surfaces:
 // - Poisson Surface Reconstruction (smooth surfaces)
 // - Ball-pivoting algorithm
 // - Delaunay triangulation and alpha shapes.
-
 
 // todo: Native rust implementation eventually, probably. And, concave! Ball-pivotting or poisson.
 // todo: Apply whatever you come up with to the ASA mesh as well.
@@ -24,7 +21,8 @@ use crate::{docking::DockingSite, molecule::Molecule};
 fn quickhull(points: &[Vec3], molecule_center: Vec3) -> Vec<usize> {
     let qh = Qh::builder()
         .compute(true)
-        .build_from_iter(points.iter().map(|p| p.to_arr())).unwrap();
+        .build_from_iter(points.iter().map(|p| p.to_arr()))
+        .unwrap();
 
     let mut result = Vec::new();
 
@@ -36,7 +34,6 @@ fn quickhull(points: &[Vec3], molecule_center: Vec3) -> Vec<usize> {
             .iter()
             .map(|v| v.index(&qh).unwrap())
             .collect::<Vec<_>>();
-
 
         // We'll assume these are always triangles (3 vertices),
         // though Qhull can produce more complex facets in some modes.
@@ -112,13 +109,16 @@ pub fn find_docking_site_surface(
     let mut relevant_atom_indices = Vec::new();
     for (i, atom) in receptor.atoms.iter().enumerate() {
         if atom.hetero {
-            continue
+            continue;
         }
 
         let p = atom.posit;
-        if p.x >= site_min.x && p.x <= site_max.x
-            && p.y >= site_min.y && p.y <= site_max.y
-            && p.z >= site_min.z && p.z <= site_max.z
+        if p.x >= site_min.x
+            && p.x <= site_max.x
+            && p.y >= site_min.y
+            && p.y <= site_max.y
+            && p.z >= site_min.z
+            && p.z <= site_max.z
         {
             relevant_atom_indices.push(i);
         }
@@ -127,8 +127,8 @@ pub fn find_docking_site_surface(
     // 2) Convert relevant atoms to a list of positions (f32) for hull calculation
     //    Also build a mapping: local_idx -> global atom index
     // let mut vertices = Vec::new();            // final mesh vertices
-    let mut pos_array = Vec::new();           // positions for hull algorithm
-    let mut local_to_global = Vec::new();     // map local -> global
+    let mut pos_array = Vec::new(); // positions for hull algorithm
+    let mut local_to_global = Vec::new(); // map local -> global
 
     for &atom_idx in &relevant_atom_indices {
         let a = &receptor.atoms[atom_idx];
@@ -187,7 +187,9 @@ pub fn find_docking_site_surface(
     //    We'll store them as (min, max) to avoid duplicates.
     let mut edge_set = HashMap::new();
     for face in hull_indices.chunks(3) {
-        if face.len() < 3 { continue; }
+        if face.len() < 3 {
+            continue;
+        }
         let (i, j, k) = (face[0], face[1], face[2]);
         for &(a, b) in &[(i, j), (j, k), (k, i)] {
             let (mn, mx) = if a < b { (a, b) } else { (b, a) };

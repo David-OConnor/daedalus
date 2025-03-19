@@ -1,7 +1,6 @@
 use std::{collections::HashMap, io, io::ErrorKind};
 
 use Element::*;
-use pdbtbx::Element::Ni;
 
 #[derive(Clone, Copy, PartialEq, Debug, Hash, Eq)]
 pub enum Element {
@@ -189,24 +188,24 @@ impl Element {
             Fluorine => "F".into(),
             Sulfur => "S".into(),
             Phosphorus => "P".into(),
-            Iron => "FE".into(),
-            Copper => "CU".into(),
-            Calcium => "CA".into(),
+            Iron => "Fe".into(),
+            Copper => "Cu".into(),
+            Calcium => "Ca".into(),
             Potassium => "K".into(),
-            Aluminum => "AL".into(),
-            Lead => "PB".into(),
-            Gold => "AU".into(),
-            Silver => "AG".into(),
-            Mercury => "HG".into(),
-            Tin => "SN".into(),
-            Zinc => "ZN".into(),
-            Magnesium => "MG".into(),
-            Manganese => "MN".into(),
+            Aluminum => "Al".into(),
+            Lead => "Pb".into(),
+            Gold => "Au".into(),
+            Silver => "Ag".into(),
+            Mercury => "Hg".into(),
+            Tin => "Sn".into(),
+            Zinc => "Zz".into(),
+            Magnesium => "Mg".into(),
+            Manganese => "Mn".into(),
             Iodine => "I".into(),
-            Chlorine => "CL".into(),
+            Chlorine => "Cl".into(),
             Tungsten => "W".into(),
-            Tellurium => "TE".into(),
-            Selenium => "SE".into(),
+            Tellurium => "Te".into(),
+            Selenium => "Se".into(),
             Bromine => "Br".into(),
             Other => "X".into(),
         }
@@ -385,6 +384,20 @@ fn get_lj_params_inner(el_0: Element, el_1: Element) -> (f32, f32) {
     (sigma, epsilon)
 }
 
+fn init_element_lj_data() -> HashMap<Element, (f32, f32)> {
+    // (sigma in Å, epsilon in kJ/mol) - approximate demo values.
+    // todo: Get better, more speicfic values.
+    let mut map = HashMap::new();
+    map.insert(Carbon, (3.40, 0.27));
+    map.insert(Hydrogen, (2.50, 0.13));
+    map.insert(Nitrogen, (3.30, 0.20));
+    map.insert(Oxygen, (3.12, 0.21));
+    map.insert(Sulfur, (3.60, 1.20));
+    map.insert(Fluorine, (3.00, 0.20));
+    map.insert(Chlorine, (3.40, 1.00));
+    map
+}
+
 /// Get Lennard-Jones potential parameters (Sigma, Epsilon), given two elements.
 /// This is essentially a partial LUT. Lorentz-Berthelot combining rule.
 ///
@@ -410,17 +423,35 @@ pub fn get_lj_params(
 pub fn init_lj_lut() -> HashMap<(Element, Element), (f32, f32)> {
     let mut result = HashMap::new();
 
+    let base = init_element_lj_data();
+
     let els = vec![
         Carbon, Hydrogen, Nitrogen, Oxygen, Sulfur, Fluorine, Chlorine,
     ];
 
-    // todo: Prevent duplicates.
-    for (i, el_0) in els.iter().enumerate() {
-        for (j, el_1) in els.iter().enumerate() {
-            // Note: This will allow duplicate orders for same-el combos; acceptible.
-            if i <= j {
-                result.insert((*el_0, *el_1), get_lj_params_inner(*el_0, *el_1));
-            }
+    // for (i, el_0) in els.iter().enumerate() {
+    //     for (j, el_1) in els.iter().enumerate() {
+    //         // Note: This will allow duplicate orders for same-el combos; acceptible.
+    //         if i <= j {
+    //             result.insert((*el_0, *el_1), get_lj_params_inner(*el_0, *el_1));
+    //         }
+    //     }
+    // }
+
+    for (i, &el_0) in els.iter().enumerate() {
+        // Retrieve single-element data for el_0
+        let (sigma_0, eps_0) = base[&el_0];
+
+        for (j, &el_1) in els.iter().enumerate() {
+            let (sigma_1, eps_1) = base[&el_1];
+
+            // Lorentz–Berthelot
+            let sigma = 0.5 * (sigma_0 + sigma_1);
+            let epsilon = (eps_0 * eps_1).sqrt();
+
+            // Insert into the LUT, order: (el_0, el_1)
+            // If you want to avoid duplicates, do if i <= j, etc.
+            result.insert((el_0, el_1), (sigma, epsilon));
         }
     }
 

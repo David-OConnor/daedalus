@@ -38,7 +38,6 @@ pub const MESH_DOCKING_BOX: usize = 4;
 pub const MESH_SOLVENT_SURFACE: usize = 5; // Van Der Waals surface.
 pub const MESH_DOCKING_SURFACE: usize = 6; // Van Der Waals surface.
 
-
 pub const BALL_STICK_RADIUS: f32 = 0.3;
 pub const BALL_STICK_RADIUS_H: f32 = 0.2;
 
@@ -116,7 +115,7 @@ pub fn render(mut state: State) {
             Mesh::new_sphere(1., 3),
             Mesh::new_box(1., 1., 1.),
             Mesh::new_cylinder(1., BOND_RADIUS, 20),
-            Mesh::new_sphere(1., 1),   // low-res sphere
+            Mesh::new_sphere(1., 1), // low-res sphere
             Mesh::new_box(1., 1., 1.),
             Mesh::new_box(1., 1., 1.), // Placeholder for VDW surface; populated later.
             Mesh::new_box(1., 1., 1.), // Placeholder for docking site sufrace; populated later.

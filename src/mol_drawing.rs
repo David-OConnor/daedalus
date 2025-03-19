@@ -14,8 +14,8 @@ use crate::{
     molecule::{Atom, AtomRole, BondCount, BondType, Chain, Residue, ResidueType, aa_color},
     render::{
         ATOM_SHINYNESS, BALL_STICK_RADIUS, BALL_STICK_RADIUS_H, BODY_SHINYNESS, BOND_RADIUS,
-        CAM_INIT_OFFSET, Color, MESH_BOND, MESH_DOCKING_BOX, MESH_SPHERE, MESH_SPHERE_LOWRES, MESH_SOLVENT_SURFACE,
-        RADIUS_SFC_DOT, RENDER_DIST, set_docking_light, set_static_light,
+        CAM_INIT_OFFSET, Color, MESH_BOND, MESH_DOCKING_BOX, MESH_SOLVENT_SURFACE, MESH_SPHERE,
+        MESH_SPHERE_LOWRES, RADIUS_SFC_DOT, RENDER_DIST, set_docking_light, set_static_light,
     },
     util::orbit_center,
 };
@@ -639,53 +639,105 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
 
     // Draw bonds.
     // if ![MoleculeView::SpaceFill].contains(&ui.mol_view) || atom.hetero {
-        for bond in &mol.bonds {
-            if ui.mol_view == MoleculeView::Backbone && !bond.is_backbone {
-                continue;
+    for bond in &mol.bonds {
+        if ui.mol_view == MoleculeView::Backbone && !bond.is_backbone {
+            continue;
+        }
+
+        if bond.bond_type == BondType::Hydrogen && ui.visibility.hide_h_bonds {
+            continue;
+        }
+
+        let atom_0 = &mol.atoms[bond.atom_0];
+        let atom_1 = &mol.atoms[bond.atom_1];
+
+        // Don't draw bonds if on the spacefill view, and the atoms aren't hetero.
+        if ui.mol_view == MoleculeView::SpaceFill && !atom_0.hetero && !atom_1.hetero {
+            continue;
+        }
+
+        if ui.show_nearby_only {
+            let atom_sel = mol.get_sel_atom(state.selection);
+            if let Some(a) = atom_sel {
+                if (atom_0.posit - a.posit).magnitude() as f32 > ui.nearby_dist_thresh as f32 {
+                    continue;
+                }
             }
+        }
 
-            if bond.bond_type == BondType::Hydrogen && ui.visibility.hide_h_bonds {
-                continue;
+        let mut chain_not_sel = false;
+        for chain in &chains_invis {
+            if chain.atoms.contains(&bond.atom_0) {
+                chain_not_sel = true;
+                break;
             }
+        }
+        if chain_not_sel {
+            continue;
+        }
 
-            let atom_0 = &mol.atoms[bond.atom_0];
-            let atom_1 = &mol.atoms[bond.atom_1];
+        if state.ui.visibility.hide_hydrogen
+            && (atom_0.element == Element::Hydrogen || atom_1.element == Element::Hydrogen)
+        {
+            continue;
+        }
 
-            // Don't draw bonds if on the spacefill view, and the atoms aren't hetero.
-            if ui.mol_view == MoleculeView::SpaceFill && !atom_0.hetero && !atom_1.hetero {
-                continue
-            }
-
-            if ui.show_nearby_only {
-                let atom_sel = mol.get_sel_atom(state.selection);
-                if let Some(a) = atom_sel {
-                    if (atom_0.posit - a.posit).magnitude() as f32 > ui.nearby_dist_thresh as f32 {
+        // Assuming water won't be bonded to the main molecule.
+        if state.ui.visibility.hide_sidechains || state.ui.mol_view == MoleculeView::Backbone {
+            if let Some(role_0) = atom_0.role {
+                if let Some(role_1) = atom_1.role {
+                    if role_0 == AtomRole::Sidechain || role_1 == AtomRole::Sidechain {
                         continue;
                     }
                 }
             }
+        }
 
-            let mut chain_not_sel = false;
-            for chain in &chains_invis {
-                if chain.atoms.contains(&bond.atom_0) {
-                    chain_not_sel = true;
-                    break;
-                }
-            }
-            if chain_not_sel {
-                continue;
-            }
+        if state.ui.visibility.hide_hetero && atom_0.hetero && atom_1.hetero {
+            continue;
+        } else if state.ui.visibility.hide_non_hetero && !atom_0.hetero && !atom_1.hetero {
+            continue;
+        }
 
-            if state.ui.visibility.hide_hydrogen
-                && (atom_0.element == Element::Hydrogen || atom_1.element == Element::Hydrogen)
-            {
-                continue;
-            }
+        let posit_0: Vec3 = atom_0.posit.into();
+        let posit_1: Vec3 = atom_1.posit.into();
 
-            // Assuming water won't be bonded to the main molecule.
+        let color_0 = atom_color(
+            atom_0,
+            bond.atom_0,
+            &mol.residues,
+            state.selection,
+            state.ui.view_sel_level,
+        );
+        let color_1 = atom_color(
+            atom_1,
+            bond.atom_1,
+            &mol.residues,
+            state.selection,
+            state.ui.view_sel_level,
+        );
+
+        bond_entities(
+            &mut scene.entities,
+            posit_0,
+            posit_1,
+            color_0,
+            color_1,
+            bond.bond_type,
+        );
+    }
+
+    // todo: DRY with Ligand
+    // todo: This incorrectly hides hetero-only H bonds.
+    if !state.ui.visibility.hide_h_bonds && !state.ui.visibility.hide_non_hetero {
+        for bond in &mol.bonds_hydrogen {
+            let atom_donor = &mol.atoms[bond.donor];
+            let atom_acceptor = &mol.atoms[bond.acceptor];
+
+            // todo: DRY with above.
             if state.ui.visibility.hide_sidechains || state.ui.mol_view == MoleculeView::Backbone {
-                if let Some(role_0) = atom_0.role {
-                    if let Some(role_1) = atom_1.role {
+                if let Some(role_0) = atom_donor.role {
+                    if let Some(role_1) = atom_acceptor.role {
                         if role_0 == AtomRole::Sidechain || role_1 == AtomRole::Sidechain {
                             continue;
                         }
@@ -693,95 +745,41 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                 }
             }
 
-            if state.ui.visibility.hide_hetero && atom_0.hetero && atom_1.hetero {
-                continue;
-            } else if state.ui.visibility.hide_non_hetero && !atom_0.hetero && !atom_1.hetero {
-                continue;
+            // todo: More DRY with cov bonds
+            if ui.show_nearby_only {
+                let atom_sel = mol.get_sel_atom(state.selection);
+                if let Some(a) = atom_sel {
+                    if (atom_donor.posit - a.posit).magnitude() as f32
+                        > ui.nearby_dist_thresh as f32
+                    {
+                        continue;
+                    }
+                }
             }
 
-            let posit_0: Vec3 = atom_0.posit.into();
-            let posit_1: Vec3 = atom_1.posit.into();
-
-            let color_0 = atom_color(
-                atom_0,
-                bond.atom_0,
-                &mol.residues,
-                state.selection,
-                state.ui.view_sel_level,
-            );
-            let color_1 = atom_color(
-                atom_1,
-                bond.atom_1,
-                &mol.residues,
-                state.selection,
-                state.ui.view_sel_level,
-            );
+            if state.ui.visibility.hide_water {
+                if let Some(role) = atom_donor.role {
+                    if role == AtomRole::Water {
+                        continue;
+                    }
+                }
+                if let Some(role) = atom_acceptor.role {
+                    if role == AtomRole::Water {
+                        continue;
+                    }
+                }
+            }
 
             bond_entities(
                 &mut scene.entities,
-                posit_0,
-                posit_1,
-                color_0,
-                color_1,
-                bond.bond_type,
+                atom_donor.posit.into(),
+                atom_acceptor.posit.into(),
+                COLOR_H_BOND,
+                COLOR_H_BOND,
+                BondType::Hydrogen,
             );
         }
-
-        // todo: DRY with Ligand
-        // todo: This incorrectly hides hetero-only H bonds.
-        if !state.ui.visibility.hide_h_bonds && !state.ui.visibility.hide_non_hetero {
-            for bond in &mol.bonds_hydrogen {
-                let atom_donor = &mol.atoms[bond.donor];
-                let atom_acceptor = &mol.atoms[bond.acceptor];
-
-                // todo: DRY with above.
-                if state.ui.visibility.hide_sidechains
-                    || state.ui.mol_view == MoleculeView::Backbone
-                {
-                    if let Some(role_0) = atom_donor.role {
-                        if let Some(role_1) = atom_acceptor.role {
-                            if role_0 == AtomRole::Sidechain || role_1 == AtomRole::Sidechain {
-                                continue;
-                            }
-                        }
-                    }
-                }
-
-                // todo: More DRY with cov bonds
-                if ui.show_nearby_only {
-                    let atom_sel = mol.get_sel_atom(state.selection);
-                    if let Some(a) = atom_sel {
-                        if (atom_donor.posit - a.posit).magnitude() as f32
-                            > ui.nearby_dist_thresh as f32
-                        {
-                            continue;
-                        }
-                    }
-                }
-
-                if state.ui.visibility.hide_water {
-                    if let Some(role) = atom_donor.role {
-                        if role == AtomRole::Water {
-                            continue;
-                        }
-                    }
-                    if let Some(role) = atom_acceptor.role {
-                        if role == AtomRole::Water {
-                            continue;
-                        }
-                    }
-                }
-
-                bond_entities(
-                    &mut scene.entities,
-                    atom_donor.posit.into(),
-                    atom_acceptor.posit.into(),
-                    COLOR_H_BOND,
-                    COLOR_H_BOND,
-                    BondType::Hydrogen,
-                );
-            }
-        }
+    }
     // }
 
     if update_cam_lighting {

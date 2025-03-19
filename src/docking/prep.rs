@@ -31,7 +31,6 @@ use crate::{
     molecule::{Atom, Bond, BondCount, BondType, Molecule},
 };
 
-
 /// Used to determine if a gasteiger charge is a donar (bonded to at least one H), or accepter (not
 /// bonded to any H).
 fn bonded_to_h(bonds: &[Bond], atoms: &[Atom]) -> bool {
@@ -269,7 +268,6 @@ pub struct Torsion {
     pub bond: usize, // Index.
     pub dihedral_angle: f32,
 }
-
 
 /// Counts the number of bonds connected to a given atom. Used for flexibility computation.
 fn count_bonds(atom_index: usize, mol: &Molecule) -> usize {

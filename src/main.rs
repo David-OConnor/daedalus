@@ -96,35 +96,35 @@ impl Default for FileDialogs {
         let cfg_protein = FileDialogConfig {
             ..Default::default()
         }
-            .add_file_filter(
-                "PDB/CIF",
-                Arc::new(|p| {
-                    let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
-                    ext == "pdb" || ext == "cif"
-                }),
-            );
+        .add_file_filter(
+            "PDB/CIF",
+            Arc::new(|p| {
+                let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
+                ext == "pdb" || ext == "cif"
+            }),
+        );
 
         let cfg_small_mol = FileDialogConfig {
             ..Default::default()
         }
-            .add_file_filter(
-                "SDF/MOL2/PDBQT",
-                Arc::new(|p| {
-                    let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
-                    ext == "sdf" || ext == "mol2" || ext == "pdbqt"
-                }),
-            );
+        .add_file_filter(
+            "SDF/MOL2/PDBQT",
+            Arc::new(|p| {
+                let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
+                ext == "sdf" || ext == "mol2" || ext == "pdbqt"
+            }),
+        );
 
         let cfg_vina = FileDialogConfig {
             ..Default::default()
         }
-            .add_file_filter(
-                "Executables",
-                Arc::new(|p| {
-                    let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
-                    ext == "" || ext == "exe"
-                }),
-            );
+        .add_file_filter(
+            "Executables",
+            Arc::new(|p| {
+                let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
+                ext == "" || ext == "exe"
+            }),
+        );
 
         let cfg_save_pdbqt = FileDialogConfig {
             ..Default::default()
@@ -138,13 +138,14 @@ impl Default for FileDialogs {
         // );
 
         let load = FileDialog::with_config(cfg_protein.clone()).default_file_filter("PDB/CIF");
-        let load_ligand = FileDialog::with_config(cfg_small_mol.clone()).default_file_filter("SDF/MOL2/PDBQT");
+        let load_ligand =
+            FileDialog::with_config(cfg_small_mol.clone()).default_file_filter("SDF/MOL2/PDBQT");
 
         let save = FileDialog::with_config(cfg_protein).default_file_filter("PDB/CIF");
-        let save_ligand = FileDialog::with_config(cfg_small_mol).default_file_filter("SDF/MOL2/PDBQT");
+        let save_ligand =
+            FileDialog::with_config(cfg_small_mol).default_file_filter("SDF/MOL2/PDBQT");
 
-        let autodock_path =
-            FileDialog::with_config(cfg_vina).default_file_filter("Executables");
+        let autodock_path = FileDialog::with_config(cfg_vina).default_file_filter("Executables");
 
         let save_pdbqt = FileDialog::with_config(cfg_save_pdbqt);
 

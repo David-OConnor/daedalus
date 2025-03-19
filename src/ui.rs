@@ -1,8 +1,8 @@
-use std::{f32::consts::TAU, path::Path, time::Instant};
+use std::{env, f32::consts::TAU, path::Path, time::Instant};
 
 use barnes_hut::{BhConfig, Cube, Tree};
 use egui::{Color32, ComboBox, Context, RichText, Slider, TextEdit, TopBottomPanel, Ui};
-use graphics::{Camera, ControlScheme, EngineUpdates, RIGHT_VEC, Scene, UP_VEC, Entity};
+use graphics::{Camera, ControlScheme, EngineUpdates, Entity, RIGHT_VEC, Scene, UP_VEC};
 use lin_alg::f32::{Quaternion, Vec3};
 use na_seq::AaIdent;
 
@@ -16,17 +16,19 @@ use crate::{
         partial_charge::{PartialCharge, create_partial_charges},
         prep_external::{prepare_ligand, prepare_target},
         setup_docking,
+        site_surface::find_docking_site_surface,
     },
     download_mols::{load_cif_rcsb, load_sdf_drugbank, load_sdf_pubchem},
-    mol_drawing::{MoleculeView, draw_ligand, draw_molecule},
+    file_io::pdb::save_pdb,
+    mol_drawing::{COLOR_DOCKING_SITE_MESH, MoleculeView, draw_ligand, draw_molecule},
     molecule::{Atom, Bond, Ligand, Molecule, ResidueType},
     rcsb_api::{open_drugbank, open_pdb, open_pubchem},
-    render::{CAM_INIT_OFFSET, RENDER_DIST, set_docking_light, set_flashlight},
+    render::{
+        ATOM_SHINYNESS, CAM_INIT_OFFSET, MESH_DOCKING_SURFACE, MESH_SPHERE_LOWRES, RADIUS_SFC_DOT,
+        RENDER_DIST, set_docking_light, set_flashlight,
+    },
     util::{cam_look_at, check_prefs_save, cycle_res_selected, orbit_center, select_from_search},
 };
-use crate::docking::site_surface::find_docking_site_surface;
-use crate::mol_drawing::COLOR_DOCKING_SITE_MESH;
-use crate::render::{ATOM_SHINYNESS, MESH_DOCKING_SURFACE, MESH_SPHERE_LOWRES, RADIUS_SFC_DOT};
 
 pub const ROW_SPACING: f32 = 10.;
 pub const COL_SPACING: f32 = 30.;
@@ -45,6 +47,7 @@ const CAM_BUTTON_ROT_STEP: f32 = TAU / 3. * 3.;
 
 const COLOR_INACTIVE: Color32 = Color32::GRAY;
 const COLOR_ACTIVE: Color32 = Color32::LIGHT_GREEN;
+const COLOR_HIGHLIGHT: Color32 = Color32::LIGHT_BLUE;
 const COLOR_ACTIVE_RADIO: Color32 = Color32::LIGHT_BLUE;
 
 const MAX_TITLE_LEN: usize = 120; // Number of characters to display.
@@ -721,6 +724,12 @@ fn residue_search(
 
             // if state.docking_ready {
             if ui.button("Dock").clicked() {
+                let pos = ligand.position_atoms(None);
+
+                cam_look_at(&mut scene.camera, pos[ligand.anchor_atom]);
+                engine_updates.camera = true;
+                state.ui.cam_snapshot = None;
+
                 // let tgt = state.molecule.as_ref().unwrap();
                 let mol = state.molecule.as_mut().unwrap();
                 find_optimal_pose(
@@ -888,7 +897,10 @@ fn selection_section(
                 selected_data(mol, state.selection, ui);
 
                 ui.add_space(COL_SPACING / 2.);
-                if ui.button("Move cam to").clicked() {
+                if ui
+                    .button(RichText::new("Move cam to sel").color(COLOR_HIGHLIGHT))
+                    .clicked()
+                {
                     let atom_sel = mol.get_sel_atom(state.selection);
 
                     if let Some(atom) = atom_sel {
@@ -896,6 +908,20 @@ fn selection_section(
                         engine_updates.camera = true;
                         state.ui.cam_snapshot = None;
                     }
+                }
+            }
+
+            if let Some(lig) = &state.ligand {
+                ui.add_space(COL_SPACING / 2.);
+                if ui
+                    .button(RichText::new("Move cam to ligand").color(COLOR_HIGHLIGHT))
+                    .clicked()
+                {
+                    let pos = lig.position_atoms(None);
+
+                    cam_look_at(&mut scene.camera, pos[lig.anchor_atom]);
+                    engine_updates.camera = true;
+                    state.ui.cam_snapshot = None;
                 }
             }
         }
@@ -1067,17 +1093,55 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             if ui.button("Open").clicked() {
                 state.volatile.dialogs.load.pick_file();
             }
-            if ui.button("Save").clicked() {
-                state.volatile.dialogs.save.pick_file();
+
+            if let Some(mol) = &state.molecule {
+                if state.pdb.is_some() {
+                    if ui.button("Save").clicked() {
+                        let extension = "cif";
+
+                        let filename = {
+                            let name = if mol.ident.is_empty() {
+                                "molecule".to_string()
+                            } else {
+                                mol.ident.clone()
+                            };
+                            format!("{name}.{extension}")
+                        };
+
+                        state.volatile.dialogs.save.config_mut().default_file_name =
+                            filename.to_string();
+                        state.volatile.dialogs.save.save_file();
+                    }
+                }
             }
 
             if ui.button("Open ligand").clicked() {
                 state.volatile.dialogs.load_ligand.pick_file();
             }
-            if ui.button("Save ligand").clicked() {
-                state.volatile.dialogs.save_ligand.pick_file();
-            }
 
+            if let Some(lig) = &state.ligand {
+                if ui.button("Save ligand").clicked() {
+                    // todo: Allow saving as SDF, PDBQT, or mol2 here
+                    let extension = "sdf";
+
+                    let filename = {
+                        let name = if lig.molecule.ident.is_empty() {
+                            "molecule".to_string()
+                        } else {
+                            lig.molecule.ident.clone()
+                        };
+                        format!("{name}.{extension}")
+                    };
+
+                    state
+                        .volatile
+                        .dialogs
+                        .save_ligand
+                        .config_mut()
+                        .default_file_name = filename.to_string();
+                    state.volatile.dialogs.save_ligand.save_file();
+                }
+            }
 
             // if ui.button("Get RCSB").clicked() {
             //     match load_pdb_metadata(&mol.ident) {
@@ -1220,7 +1284,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                             )
                         };
 
-                        state.ui.binding_energy_disp = Some(binding_energy(
+                        state.ui.binding_energy_disp = binding_energy(
                             &rec_atoms_near_site,
                             &rec_atom_indices,
                             &rec_bonds_near_site,
@@ -1231,7 +1295,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                             &charge_tree,
                             &state.bh_config,
                             &lj_pairs,
-                        ));
+                        );
                     }
                 }
 
@@ -1290,6 +1354,25 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 &mut engine_updates,
                 false,
             );
+        }
+
+        if let Some(path) = &state.volatile.dialogs.save.take_picked() {
+            if let Some(mol) = &state.molecule {
+                if let Some(pdb) = &mut state.pdb {
+                    if let Err(e) = save_pdb(mol, pdb, path) {
+                        eprintln!("Error saving pdb: {}", e);
+                    }
+                }
+            }
+        }
+
+        if let Some(path) = &state.volatile.dialogs.save_ligand.take_picked() {
+            if let Some(lig) = &state.ligand {
+                // todo: Other formats A/R
+                if let Err(e) = lig.molecule.save_sdf(path) {
+                    eprintln!("Error saving SDF: {}", e);
+                }
+            }
         }
 
         if let Some(path) = &state.volatile.dialogs.load_ligand.take_picked() {
