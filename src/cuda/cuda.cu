@@ -26,13 +26,12 @@
 // charge computations in serial, due to the cumulative addition step. This appears
 // to be much faster in practice, likely due to the addition being offloaded
 // to the CPU in the other approach.
-// C + P from `cuda.cu`
 extern "C" __global__
 void coulomb_kernel(
-    dtype3 *out,
-    dtype3 *posits_src,
-    dtype3 *posits_tgt,
-    dtype *charges,
+    float3 *out,
+    float3 *posits_src,
+    float3 *posits_tgt,
+    float *charges,
     size_t N_srcs,
     size_t N_tgts
 ) {
@@ -44,12 +43,12 @@ void coulomb_kernel(
         // and we may still be saturating GPU cores given the large number of targets.
         // todo: QC that.
         for (size_t i_src = 0; i_src < N_srcs; i_src++) {
-            dtype3 posit_src = posits_src[i_src];
-            dtype3 posit_tgt = posits_tgt[i_tgt];
+            float3 posit_src = posits_src[i_src];
+            float3 posit_tgt = posits_tgt[i_tgt];
 
             if (i_tgt < N_tgts) {
                 // todo: Likely need two sets of charges too.
-                out[i_tgt] = out[i_tgt] + f_coulomb(posit_src, posit_tgt, charges[i_src], charges[i_tgt]);
+                out[i_tgt] = out[i_tgt] + coulomb_force(posit_src, posit_tgt, charges[i_src], charges[i_tgt]);
             }
         }
     }
@@ -57,11 +56,11 @@ void coulomb_kernel(
 
 extern "C" __global__
 void lj_kernel(
-    dtype *out,
-    dtype3 *posits_0,
-    dtype3 *posits_1,
-    dtype *sigmas,
-    dtype *epsilons,
+    float *out,
+    float3 *posits_0,
+    float3 *posits_1,
+    float *sigmas,
+    float *epsilons,
     size_t N_srcs,
     size_t N_tgts
 ) {
@@ -73,12 +72,12 @@ void lj_kernel(
         // and we may still be saturating GPU cores given the large number of tgts.
         // todo: QC that.
         for (size_t i_src = 0; i_src < N_srcs; i_src++) {
-            dtype3 posit_0 = posits_0[i_src];
-            dtype3 posit_1 = posits_1[i_tgt];
+            float3 posit_0 = posits_0[i_src];
+            float3 posit_1 = posits_1[i_tgt];
 
             // todo: Sort out the index here.
-            dtype sigma = sigmas[0];
-            dtype eps = epsilons[0];
+            float sigma = sigmas[0];
+            float eps = epsilons[0];
 
             if (i_tgt < N_tgts) {
                 out[i_tgt] += lj_potential(posit_0, posit_1, sigma, eps);

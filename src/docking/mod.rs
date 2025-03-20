@@ -37,14 +37,13 @@
 // todo: Conside
 
 // todo: Temp/feature-gate
-use std::{arch::x86_64::*, collections::HashMap, f32::consts::TAU, time::Instant};
+use std::{collections::HashMap, f32::consts::TAU, time::Instant};
 
 use barnes_hut::{BhConfig, Cube, Tree};
 use lin_alg::{
-    f32::{Vec3 as Vec3F32, Vec3S},
+    f32::Vec3 as Vec3F32,
     f64::{FORWARD, Quaternion, RIGHT, UP, Vec3},
     linspace,
-    simd::{f32s_to_simd, vec3s_to_simd},
 };
 use partial_charge::{EemParams, EemSet, PartialCharge, create_partial_charges};
 use rand::Rng;
@@ -54,10 +53,11 @@ use crate::{
     bond_inference::create_hydrogen_bonds_one_way,
     docking::{partial_charge::assign_eem_charges, prep::Torsion},
     element::{Element, get_lj_params},
+    forces,
     molecule::{Atom, Bond, Ligand, Molecule},
 };
 
-mod dynamics_playback;
+pub mod dynamics_playback;
 pub mod external;
 pub mod find_sites;
 pub mod partial_charge;
@@ -84,71 +84,9 @@ const SOFTENING_FACTOR_SQ_ELECTROSTATIC: f32 = 1e-6;
 
 const Q: f32 = 1.; // elementary charge.
 
-// The rough Van der Waals (Lennard-Jones) minimum potential value, for two carbon atoms.
-const LJ_MIN_R_CC: f32 = 3.82;
-
 #[derive(Clone, Copy, PartialEq)]
 enum GaCrossoverMode {
     Twopt,
-}
-
-/// The most fundamental part of Newtonian acceleration calculation.
-/// `acc_dir` is a unit vector.
-// todo: f32 A/R.
-pub fn force_coulomb(
-    acc_dir: Vec3F32,
-    src_q: f32,
-    tgt_q: f32,
-    dist: f32,
-    softening_factor_sq: f32,
-) -> Vec3F32 {
-    // Assume the coulomb constant is 1.
-    // println!("AD: {acc_dir}, src: {src_q} tgt: {tgt_q}  dist: {dist}");
-    acc_dir * src_q * tgt_q / (dist.powi(2) + softening_factor_sq)
-}
-
-/// Calculate the Lennard-Jones potential between two atoms.
-///
-/// \[ V_{LJ}(r) = 4 \epsilon \left[\left(\frac{\sigma}{r}\right)^{12}
-///     - \left(\frac{\sigma}{r}\right)^{6}\right] \]
-///
-/// In a real system, you’d want to parameterize \(\sigma\) and \(\epsilon\)
-/// based on the atom types (i.e. from a force field lookup). Here, we’ll
-/// just demonstrate the structure of the calculation with made-up constants.
-// pub fn lj_potential(posit_0: Vec3, posit_1: Vec3, sigma: f32, epsilon: f32) -> f32 {
-pub fn lj_potential(r: f32, sigma: f32, epsilon: f32) -> f32 {
-    // let r = (posit_0 - posit_1).magnitude() as f32;
-
-    if r < f32::EPSILON {
-        return 0.;
-    }
-
-    // Note: Our sigma and eps values are very rough.
-    let sr = sigma / r;
-    let sr6 = sr.powi(6);
-    let sr12 = sr6.powi(2);
-    4. * epsilon * (sr12 - sr6)
-}
-
-// pub fn lj_potential_simd(posit_0: Vec3S, posit_1: Vec3S, sigma: [f32; 8], eps: [f32; 8]) -> __m256 {
-pub fn lj_potential_simd(r: __m256, sigma: [f32; 8], eps: [f32; 8]) -> __m256 {
-    unsafe {
-        // let r = (posit_0 - posit_1).magnitude();
-
-        let sigma = _mm256_loadu_ps(sigma.as_ptr());
-        let eps = _mm256_loadu_ps(eps.as_ptr());
-
-        // Intermediate steps; no SIMD exponent.
-        let sr = _mm256_div_ps(sigma, r);
-        let sr2 = _mm256_mul_ps(sr, sr);
-        let sr4 = _mm256_mul_ps(sr2, sr2);
-
-        let sr6 = _mm256_mul_ps(sr4, sr2);
-        let sr12 = _mm256_mul_ps(sr6, sr6);
-
-        let four = _mm256_set1_ps(4.);
-        _mm256_mul_ps(four, _mm256_mul_ps(eps, _mm256_div_ps(sr12, sr6)))
-    }
 }
 
 /// todo: Figure this out
@@ -274,7 +212,7 @@ pub fn binding_energy(
     rec_indices: &[usize],
     rec_bonds_near_site: &[Bond],
     ligand: &Ligand,
-    lig_posits: &[Vec3],
+    lig_posits: &[Vec3F32],
     partial_charges_rec: &[PartialCharge],
     partial_charges_lig: &[PartialCharge],
     charge_tree: &Tree,
@@ -290,8 +228,7 @@ pub fn binding_energy(
         let mut distances_this_rec = Vec::new();
         for lig_posit in lig_posits {
             let rec_posit: Vec3F32 = rec_atom.posit.into();
-            let lig_posit: Vec3F32 = (*lig_posit).into();
-            distances_this_rec.push((lig_posit - rec_posit).magnitude());
+            distances_this_rec.push((*lig_posit - rec_posit).magnitude());
         }
         distances.push(distances_this_rec);
     }
@@ -304,7 +241,7 @@ pub fn binding_energy(
             .map(|(i_rec, i_lig, sigma, eps)| {
                 // lj_potential(*posit_rec, lig_posits[*i_lig], *sigma, *eps)
                 let r = distances[*i_rec][*i_lig];
-                lj_potential(r, *sigma, *eps)
+                forces::lj_potential(r, *sigma, *eps)
                 // lj_potential_simd(*posit_rec, lig_posits[*i_lig], *sigma, *eps)
             })
             .sum()
@@ -317,7 +254,7 @@ pub fn binding_energy(
         // todo: THis is not efficient; work-in for now.
         let mut lig_atoms_positioned = ligand.molecule.atoms.clone();
         for (i, atom) in lig_atoms_positioned.iter_mut().enumerate() {
-            atom.posit = lig_posits[i];
+            atom.posit = lig_posits[i].into();
         }
 
         // todo: Use pre-computed dists in H bonds if able.
@@ -418,12 +355,12 @@ pub fn binding_energy(
             // continue;
 
             // Our bh algorithm is currently hard-coded to f64.
-            let force_fn = |acc_dir: Vec3, q_src: f64, dist: f64| {
-                force_coulomb(
-                    acc_dir.into(),
+            let force_fn = |dir: Vec3, q_src: f64, dist: f64| {
+                forces::coulomb_force(
+                    dir.into(),
+                    dist as f32,
                     q_src as f32,
                     q_lig.charge,
-                    dist as f32,
                     SOFTENING_FACTOR_SQ_ELECTROSTATIC,
                 )
                 .into()
@@ -600,7 +537,12 @@ fn process_poses<'a>(
         .collect();
 
     for (i_pose, pose) in poses.iter().enumerate() {
-        let posits_this_pose = ligand.position_atoms(Some(pose));
+        let posits_this_pose: Vec<_> = ligand
+            .position_atoms(Some(pose))
+            .iter()
+            .map(|p| (*p).into())
+            .collect();
+
         partial_charges_lig.push(create_partial_charges(
             &mut ligand.molecule.atoms,
             Some(&posits_this_pose),
@@ -702,7 +644,6 @@ pub fn setup_docking(
     Vec<usize>,
     Vec<Bond>,
     Vec<PartialCharge>,
-    // Vec<(Vec3, usize, f32, f32)>,
     Vec<(usize, usize, f32, f32)>,
 ) {
     println!("Starting docking setup...");

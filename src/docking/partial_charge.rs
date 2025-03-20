@@ -396,14 +396,14 @@ fn k_over_r(r: f32) -> f32 {
 }
 
 /// For now, for use with EEM. `posits` is separate for different ligand pooses.
-pub fn create_partial_charges(atoms: &[Atom], posits: Option<&[Vec3F64]>) -> Vec<PartialCharge> {
+pub fn create_partial_charges(atoms: &[Atom], posits: Option<&[Vec3]>) -> Vec<PartialCharge> {
     let mut result = Vec::with_capacity(atoms.len());
 
     for (i, atom) in atoms.iter().enumerate() {
-        let posit = if let Some(p) = &posits {
+        let posit = if let Some(p) = posits {
             p[i]
         } else {
-            atom.posit
+            atom.posit.into()
         }
         .into();
 

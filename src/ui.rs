@@ -10,6 +10,7 @@ use crate::{
     CamSnapshot, Selection, State, ViewSelLevel,
     docking::{
         ConformationType, binding_energy,
+        dynamics_playback::{build_vdw_dynamics, change_snapshot},
         external::{check_adv_avail, dock_with_vina},
         find_optimal_pose,
         find_sites::find_docking_sites,
@@ -1263,8 +1264,14 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                         let poses = vec![ligand.pose.clone()];
                         let mut lig_posits = Vec::with_capacity(poses.len());
                         let mut partial_charges_lig = Vec::with_capacity(poses.len());
+
                         for pose in poses {
-                            let posits_this_pose = ligand.position_atoms(Some(&pose));
+                            let posits_this_pose: Vec<_> = ligand
+                                .position_atoms(Some(&pose))
+                                .iter()
+                                .map(|p| (*p).into())
+                                .collect();
+
                             partial_charges_lig.push(create_partial_charges(
                                 &mut ligand.molecule.atoms,
                                 Some(&posits_this_pose),
@@ -1343,6 +1350,46 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         residue_search(state, scene, &mut redraw, &mut engine_updates, ui);
 
         // todo: Allow switching between chains and secondary-structure features here.
+
+        if let Some(mol) = &mut state.molecule {
+            if let Some(lig) = &mut state.ligand {
+                if ui.button("Build VDW sim").clicked() {
+                    // todo: We don't need to set up the partial charges etc for this.
+                    // todo: This is why mol is mut, for example.
+                    let (rec_atoms_near_site, rec_atom_indices, rec_bonds_near_site, partial_charges_rec, lj_pairs) =
+                        setup_docking(mol, lig, &state.volatile.lj_lookup_table);
+
+                    state.volatile.snapshots =
+                        build_vdw_dynamics(&rec_atoms_near_site, &lig.molecule.atoms, &state.volatile.lj_lookup_table);
+                }
+
+                if !state.volatile.snapshots.is_empty() {
+                    ui.add_space(ROW_SPACING);
+
+                    let mut snapshot_prev = state.ui.current_snapshot;
+                    ui.add(Slider::new(
+                        &mut state.ui.current_snapshot,
+                        0..=state.volatile.snapshots.len(),
+                    ));
+
+                    if state.ui.current_snapshot != snapshot_prev {
+                        change_snapshot(
+                            &mut scene.entities,
+                            &mut lig.molecule,
+                            &Vec::new(),
+                            &state.volatile.snapshots[state.ui.current_snapshot],
+                        );
+                        // todo: Come back to your approach here; definitely don't redraw the main molecule atoms etc.
+
+                        scene.entities = Vec::new();
+                        draw_molecule(state, scene, reset_cam);
+                        draw_ligand(state, scene, reset_cam);
+
+                        engine_updates.entities = true;
+                    }
+                }
+            }
+        }
 
         ui.add_space(ROW_SPACING / 2.);
 

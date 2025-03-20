@@ -51,9 +51,9 @@ fn mod_color_for_ligand(color: &Color) -> Color {
 pub enum MoleculeView {
     Sticks,
     Backbone,
-    #[default]
     BallAndStick,
     /// i.e. Van der Waals radius, or CPK.
+    #[default]
     SpaceFill,
     Cartoon,
     Surface,

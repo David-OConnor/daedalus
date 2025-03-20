@@ -9,6 +9,7 @@ mod download_mols;
 mod drug_like;
 mod element;
 mod file_io;
+mod forces;
 mod inputs;
 mod mol_drawing;
 mod molecule;
@@ -43,7 +44,7 @@ use rayon::iter::ParallelIterator;
 
 use crate::{
     aa_coords::bond_vecs::init_local_bond_vecs,
-    docking::{BindingEnergy, THETA_BH, external::check_adv_avail},
+    docking::{BindingEnergy, THETA_BH, dynamics_playback::Snapshot, external::check_adv_avail},
     element::{Element, init_lj_lut},
     file_io::pdbqt::load_pdbqt,
     molecule::Ligand,
@@ -173,6 +174,7 @@ struct StateVolatile {
     inputs_commanded: InputsCommanded,
     /// (Sigma, Epsilon). Initialize once at startup. Not-quite-static.
     lj_lookup_table: HashMap<(Element, Element), (f32, f32)>,
+    snapshots: Vec<Snapshot>,
 }
 
 impl Default for StateVolatile {
@@ -182,6 +184,7 @@ impl Default for StateVolatile {
             ui_height: 0.,
             inputs_commanded: Default::default(),
             lj_lookup_table: init_lj_lut(),
+            snapshots: Vec::new(),
         }
     }
 }
@@ -245,6 +248,7 @@ struct StateUi {
     /// For the arc/orbit cam only.
     orbit_around_selection: bool,
     binding_energy_disp: Option<BindingEnergy>,
+    current_snapshot: usize,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]
@@ -345,6 +349,7 @@ impl State {
             Ok(mol) => {
                 if is_ligand {
                     let lig = Ligand::new(mol);
+
                     self.ui.docking_site_x = lig.docking_site.site_center.x.to_string();
                     self.ui.docking_site_y = lig.docking_site.site_center.y.to_string();
                     self.ui.docking_site_z = lig.docking_site.site_center.z.to_string();

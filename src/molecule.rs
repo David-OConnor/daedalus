@@ -202,14 +202,19 @@ pub struct Ligand {
 impl Ligand {
     pub fn new(molecule: Molecule) -> Self {
         let docking_init = DockingSite {
-            // site_center: Vec3::new(-18.955, -5.188, 8.617),
             site_center: Vec3::new(38.699, 36.415, 30.815),
             site_box_size: 10.,
+        };
+
+        let pose = Pose {
+            anchor_posit: docking_init.site_center,
+            ..Default::default()
         };
 
         let mut result = Self {
             molecule,
             docking_site: docking_init,
+            pose,
             ..Default::default()
         };
         result.set_anchor();
@@ -225,6 +230,10 @@ impl Ligand {
                 })
                 .collect(),
         };
+
+        for (i, posit) in result.position_atoms(None).iter().enumerate() {
+            result.molecule.atoms[i].posit = *posit;
+        }
 
         result
     }
