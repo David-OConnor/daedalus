@@ -29,7 +29,7 @@
 // C + P from `cuda.cu`
 extern "C" __global__
 void coulomb_kernel(
-    dtype *out,
+    dtype3 *out,
     dtype3 *posits_src,
     dtype3 *posits_tgt,
     dtype *charges,
@@ -41,13 +41,15 @@ void coulomb_kernel(
 
     for (size_t i_tgt = index; i_tgt < N_tgts; i_tgt += stride) {
         // Compute the sum serially, as it may not be possible to naively apply it in parallel,
-        // and we may still be saturating GPU cores given the large number of samples.
+        // and we may still be saturating GPU cores given the large number of targets.
+        // todo: QC that.
         for (size_t i_src = 0; i_src < N_srcs; i_src++) {
             dtype3 posit_src = posits_src[i_src];
             dtype3 posit_tgt = posits_tgt[i_tgt];
 
             if (i_tgt < N_tgts) {
-                out[i_tgt] += coulomb(posit_src, posit_tgt, charges[i_src]);
+                // todo: Likely need two sets of charges too.
+                out[i_tgt] = out[i_tgt] + f_coulomb(posit_src, posit_tgt, charges[i_src], charges[i_tgt]);
             }
         }
     }
@@ -69,6 +71,7 @@ void lj_kernel(
     for (size_t i_tgt = index; i_tgt < N_tgts; i_tgt += stride) {
         // Compute the sum serially, as it may not be possible to naively apply it in parallel,
         // and we may still be saturating GPU cores given the large number of tgts.
+        // todo: QC that.
         for (size_t i_src = 0; i_src < N_srcs; i_src++) {
             dtype3 posit_0 = posits_0[i_src];
             dtype3 posit_1 = posits_1[i_tgt];

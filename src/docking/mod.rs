@@ -57,6 +57,7 @@ use crate::{
     molecule::{Atom, Bond, Ligand, Molecule},
 };
 
+mod dynamics_playback;
 pub mod external;
 pub mod find_sites;
 pub mod partial_charge;
@@ -79,7 +80,7 @@ const HYDROPHOBIC_CUTOFF: f32 = 4.25; // 3.5 - 5 angstrom?
 pub const THETA_BH: f64 = 0.;
 
 // const SOFTENING_FACTOR_SQ_ELECTROSTATIC: f32 = 1e-6;
-const SOFTENING_FACTOR_SQ_ELECTROSTATIC: f64 = 1e-6;
+const SOFTENING_FACTOR_SQ_ELECTROSTATIC: f32 = 1e-6;
 
 const Q: f32 = 1.; // elementary charge.
 
@@ -93,14 +94,14 @@ enum GaCrossoverMode {
 
 /// The most fundamental part of Newtonian acceleration calculation.
 /// `acc_dir` is a unit vector.
-// todo: F64 A/R.
-pub fn force_elec(
-    acc_dir: Vec3,
-    src_q: f64,
-    tgt_q: f64,
-    dist: f64,
-    softening_factor_sq: f64,
-) -> Vec3 {
+// todo: f32 A/R.
+pub fn force_coulomb(
+    acc_dir: Vec3F32,
+    src_q: f32,
+    tgt_q: f32,
+    dist: f32,
+    softening_factor_sq: f32,
+) -> Vec3F32 {
     // Assume the coulomb constant is 1.
     // println!("AD: {acc_dir}, src: {src_q} tgt: {tgt_q}  dist: {dist}");
     acc_dir * src_q * tgt_q / (dist.powi(2) + softening_factor_sq)
@@ -416,14 +417,16 @@ pub fn binding_energy(
             //
             // continue;
 
-            let force_fn = |acc_dir, q_src, dist| {
-                force_elec(
-                    acc_dir,
-                    q_src,
-                    q_lig.charge.into(),
-                    dist,
+            // Our bh algorithm is currently hard-coded to f64.
+            let force_fn = |acc_dir: Vec3, q_src: f64, dist: f64| {
+                force_coulomb(
+                    acc_dir.into(),
+                    q_src as f32,
+                    q_lig.charge,
+                    dist as f32,
                     SOFTENING_FACTOR_SQ_ELECTROSTATIC,
                 )
+                .into()
             };
 
             force += barnes_hut::run_bh(

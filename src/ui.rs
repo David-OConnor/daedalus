@@ -724,11 +724,12 @@ fn residue_search(
 
             // if state.docking_ready {
             if ui.button("Dock").clicked() {
-                let pos = ligand.position_atoms(None);
-
-                cam_look_at(&mut scene.camera, pos[ligand.anchor_atom]);
+                cam_look_at(&mut scene.camera, ligand.docking_site.site_center);
                 engine_updates.camera = true;
                 state.ui.cam_snapshot = None;
+
+                // todo: Ideally move the camera to the docking site prior to docking. You could do this
+                // todo by deferring the docking below to the next frame.
 
                 // let tgt = state.molecule.as_ref().unwrap();
                 let mol = state.molecule.as_mut().unwrap();

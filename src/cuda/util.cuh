@@ -15,8 +15,6 @@ struct double3;
 extern __device__ const dtype SOFTENING_FACTOR_SQ;
 
 
-__device__ dtype calc_dist(dtype3 point0, dtype3 point1);
-__device__ dtype coulomb(dtype3 q0, dtype3 q1, dtype charge);
 __device__ dtype3 f_coulomb(dtype3 acc_dir, dtype src_q, dst_q, dtype dist);
 __device__ dtype lj_potential(dtype3 posit_0, dtype3 posit_1, dtype sigma, dtype epsilon);
 

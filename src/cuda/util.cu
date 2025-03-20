@@ -7,40 +7,38 @@ using dtype3 = float3;
 
 
 __device__
-const dtype SOFTENING_FACTOR_SQ = 0.000000000001f;
+const dtype SOFTENING_FACTOR_SQ = 0.000001f;
 
 // __device__
 // const dtype EPS_DIV0 = 0.00000000001f;
 
-
-__device__
-dtype calc_dist(dtype3 point0, dtype3 point1) {
-    dtype3 diff;
-    diff.x = point0.x - point1.x;
-    diff.y = point0.y - point1.y;
-    diff.z = point0.z - point1.z;
-
-    return std::sqrt(diff.x * diff.x + diff.y * diff.y + diff.z * diff.z);
+// Vector operations for float3
+__device__ inline float3 operator+(const float3 &a, const float3 &b) {
+    return make_float3(a.x + b.x, a.y + b.y, a.z + b.z);
 }
 
+__device__ inline float3 operator-(const float3 &a, const float3 &b) {
+    return make_float3(a.x - b.x, a.y - b.y, a.z - b.z);
+}
 
-__device__
-dtype coulomb(dtype3 q0, dtype3 q1, dtype charge) {
-    float r = calc_dist(q0, q1);
+__device__ inline float3 operator/(const float3 &a, const float b) {
+    return make_float3(a.x / b, a.y / b, a.z / b);
+}
 
-    return 1.f * charge / (r + SOFTENING_FACTOR_SQ);
+__device__ inline float3 operator*(const float3 &a, const float b) {
+    return make_float3(a.x * b, a.y * b, a.z * b);
 }
 
 __device__
-dtype3 f_coulomb(dtype3 acc_dir, dtype src_q, dtype dst_q, dtype dist) {
-    dtype acc_mag = src_q * dst_q / (dist * dist + SOFTENING_FACTOR_SQ);
+dtype3 f_coulomb(dtype3 posit_src, dtype3 posit_tgt, dtype q_src, dtype q_tgt) {
+    dtype3 diff = posit_tgt - posit_src; // todo: QC direction
+    dtype dist = std::sqrt(diff.x * diff.x + diff.y * diff.y + diff.z * diff.z);
 
-    dtype3 result;
-    result.x = acc_dir.x * acc_mag;
-    result.y = acc_dir.y * acc_mag;
-    result.z = acc_dir.z * acc_mag;
+    dtype3 dir = diff / dist;
 
-    return result;
+    dtype magnitude = q_src * q_tgt / (dist * dist + SOFTENING_FACTOR_SQ);
+
+    return dir * magnitude;
 }
 
 __device__
@@ -50,7 +48,8 @@ dtype lj_potential(
     dtype sigma,
     dtype eps
 ) {
-    dtype r = calc_dist(posit_0, posit_1);
+    dtype3 diff = posit_0 - posit_0;
+    dtype r = std::sqrt(diff.x * diff.x + diff.y * diff.y + diff.z * diff.z);
 
     dtype sr = sigma / r;
     dtype sr6 = powf(sr, 6.);
