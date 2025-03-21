@@ -1366,10 +1366,11 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 if !state.volatile.snapshots.is_empty() {
                     ui.add_space(ROW_SPACING);
 
-                    let mut snapshot_prev = state.ui.current_snapshot;
+                    let  snapshot_prev = state.ui.current_snapshot;
+                    ui.spacing_mut().slider_width = ui.available_width() - 280.;
                     ui.add(Slider::new(
                         &mut state.ui.current_snapshot,
-                        0..=state.volatile.snapshots.len(),
+                        0..=state.volatile.snapshots.len() - 1,
                     ));
 
                     if state.ui.current_snapshot != snapshot_prev {

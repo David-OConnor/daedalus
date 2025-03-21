@@ -387,15 +387,17 @@ fn get_lj_params_inner(el_0: Element, el_1: Element) -> (f32, f32) {
 fn init_element_lj_data() -> HashMap<Element, (f32, f32)> {
     // (sigma in Å, epsilon in kJ/mol) - approximate demo values.
     // todo: Get better, more speicfic values.
-    let mut map = HashMap::new();
-    map.insert(Carbon, (3.40, 0.27));
-    map.insert(Hydrogen, (2.50, 0.13));
-    map.insert(Nitrogen, (3.30, 0.20));
-    map.insert(Oxygen, (3.12, 0.21));
-    map.insert(Sulfur, (3.60, 1.20));
-    map.insert(Fluorine, (3.00, 0.20));
-    map.insert(Chlorine, (3.40, 1.00));
-    map
+    let mut result = HashMap::new();
+
+    result.insert(Carbon, (3.40, 0.27));
+    result.insert(Hydrogen, (2.50, 0.13));
+    result.insert(Nitrogen, (3.30, 0.20));
+    result.insert(Oxygen, (3.12, 0.21));
+    result.insert(Sulfur, (3.60, 1.20));
+    result.insert(Fluorine, (3.00, 0.20));
+    result.insert(Chlorine, (3.40, 1.00));
+
+    result
 }
 
 /// Get Lennard-Jones potential parameters (Sigma, Epsilon), given two elements.

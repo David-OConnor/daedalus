@@ -65,9 +65,8 @@ where
 }
 
 /// Runs on a specific target, for all sources.
-fn acc_coulomb(
+fn acc_lj(
     posit_target: Vec3,
-    id_target: usize,
     el_tgt: Element,
     mass_tgt: f32,
     bodies_src: &[BodyVdw],
@@ -78,11 +77,7 @@ fn acc_coulomb(
         .par_iter()
         .enumerate()
         .filter_map(|(i, body_source)| {
-            if i == id_target {
-                return None; // Skip self-interaction.
-            }
-
-            let posit_src = Vec3::new_zero();
+            let posit_src = body_source.posit;
 
             let diff = posit_src - posit_target;
             let dist = diff.magnitude();
@@ -104,9 +99,12 @@ pub fn build_vdw_dynamics(
     lig_atoms: &[Atom],
     lj_lut: &HashMap<(Element, Element), (f32, f32)>,
 ) -> Vec<Snapshot> {
+    println!("Starting vuilding VDW dyanmics...");
+
     let n_steps = 1_000;
-    let dt = 0.001;
-    let snapshot_ratio = 10;
+    // todo: Adaptive timestep.
+    let dt = 0.0001;
+    let snapshot_ratio = 1; // todo
 
     let mut result = Vec::with_capacity(n_steps);
 
@@ -139,10 +137,17 @@ pub fn build_vdw_dynamics(
         })
         .collect();
 
-    let acc = |id_target, posit_target, el_target, mass_tgt| {
-        acc_coulomb(
+    // Initial snapshot
+    result.push(Snapshot {
+        time: time_elapsed,
+        lig_atom_posits: bodies_lig.iter().map(|b| b.posit.into()).collect(),
+        lig_atom_accs: bodies_lig.iter().map(|b| b.accel.into()).collect(),
+        energy: BindingEnergy::default(), // todo
+    });
+
+    let acc = |id_, posit_target, el_target, mass_tgt| {
+        acc_lj(
             posit_target,
-            id_target,
             el_target,
             mass_tgt,
             &bodies_rec,
@@ -154,8 +159,8 @@ pub fn build_vdw_dynamics(
         bodies_lig
             .par_iter_mut()
             .enumerate()
-            .for_each(|(id_lig, body_lig)| {
-                integrate_rk4(body_lig, id_lig, &acc, dt);
+            .for_each(|(_id_lig, body_lig)| {
+                integrate_rk4(body_lig, 0, &acc, dt);
             });
 
         time_elapsed += dt;
@@ -170,6 +175,8 @@ pub fn build_vdw_dynamics(
             });
         }
     }
+
+    println!("Complete.");
     result
 }
 

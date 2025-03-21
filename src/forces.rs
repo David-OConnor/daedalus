@@ -105,10 +105,8 @@ pub fn coulomb_force_simd(
     tgt_q: f32x8,
     softening_factor_sq: f32x8,
 ) -> Vec3x8 {
-    unsafe {
-        let mag = src_q * tgt_q / (dist.powi(2) + softening_factor_sq);
-        dir * mag
-    }
+    let mag = src_q * tgt_q / (dist.powi(2) + softening_factor_sq);
+    dir * mag
 }
 
 /// Calculate the Lennard-Jones potential between two atoms.
@@ -141,6 +139,7 @@ pub fn lj_potential_simd(r: f32x8, sigma: f32x8, eps: f32x8) -> f32x8 {
     f32x8::splat(4.) * eps * (sr12 - sr6)
 }
 
+/// Calculate the Lennard Jones force; a Newtonian force based on the LJ potential.
 pub fn lj_force(dir: Vec3, r: f32, sigma: f32, eps: f32) -> Vec3 {
     let sr = sigma / r;
     let sr6 = sr.powi(6);
@@ -148,5 +147,5 @@ pub fn lj_force(dir: Vec3, r: f32, sigma: f32, eps: f32) -> Vec3 {
 
     // todo: QC this!
     let mag = 24. * eps * (2. * sr12 - sr6) / r.powi(2);
-    dir * mag
+    -dir * mag
 }

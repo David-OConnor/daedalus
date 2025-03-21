@@ -1,11 +1,12 @@
 //! Contains data structures and related code for molecules, atoms, residues, chains, etc.
 use std::{fmt, str::FromStr};
-
+use std::f64::consts::TAU;
 use graphics::FWD_VEC;
 use lin_alg::{
     f32::Vec3 as Vec3F32,
     f64::{Quaternion, Vec3},
 };
+use lin_alg::f64::UP;
 use na_seq::AminoAcid;
 use pdbtbx::SecondaryStructure;
 
@@ -201,15 +202,20 @@ pub struct Ligand {
 
 impl Ligand {
     pub fn new(molecule: Molecule) -> Self {
+        // todo: Temp for testing.
         let docking_init = DockingSite {
             site_center: Vec3::new(38.699, 36.415, 30.815),
             site_box_size: 10.,
         };
 
-        let pose = Pose {
+        let mut pose = Pose {
             anchor_posit: docking_init.site_center,
             ..Default::default()
         };
+
+        // todo: Temp for testing.
+        let rotator = Quaternion::from_axis_angle(Vec3::new(1., 0., 0.), TAU/8.);
+        pose.orientation = rotator;
 
         let mut result = Self {
             molecule,
