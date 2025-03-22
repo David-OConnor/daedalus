@@ -98,7 +98,7 @@ pub fn coulomb_force(
     dir * mag
 }
 
-pub fn coulomb_force_simd(
+pub fn coulomb_forcex8(
     dir: Vec3x8,
     dist: f32x8,
     src_q: f32x8,
@@ -128,7 +128,7 @@ pub fn lj_potential(r: f32, sigma: f32, eps: f32) -> f32 {
     4. * eps * (sr12 - sr6)
 }
 
-pub fn lj_potential_simd(r: f32x8, sigma: f32x8, eps: f32x8) -> f32x8 {
+pub fn lj_potentialx8(r: f32x8, sigma: f32x8, eps: f32x8) -> f32x8 {
     // if r < f32::EPSILON {
     //     return f32x8::splat(0.);
     // }
@@ -147,5 +147,16 @@ pub fn lj_force(dir: Vec3, r: f32, sigma: f32, eps: f32) -> Vec3 {
 
     // todo: QC this!
     let mag = 24. * eps * (2. * sr12 - sr6) / r.powi(2);
+    -dir * mag
+}
+
+/// Calculate the Lennard Jones force; a Newtonian force based on the LJ potential.
+pub fn lj_forcex8(dir: Vec3x8, r: f32x8, sigma: f32x8, eps: f32x8) -> Vec3x8 {
+    let sr = sigma / r;
+    let sr6 = sr.powi(6);
+    let sr12 = sr6.powi(2);
+
+    // todo: QC this!
+    let mag = f32x8::splat(24.) * eps * (f32x8::splat(2.) * sr12 - sr6) / r.powi(2);
     -dir * mag
 }

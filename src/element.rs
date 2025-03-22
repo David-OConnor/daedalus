@@ -2,9 +2,10 @@ use std::{collections::HashMap, io, io::ErrorKind};
 
 use Element::*;
 
-#[derive(Clone, Copy, PartialEq, Debug, Hash, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Default, Hash, Eq)]
 pub enum Element {
     Hydrogen,
+    #[default]
     Carbon,
     Oxygen,
     Nitrogen,

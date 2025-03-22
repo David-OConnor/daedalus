@@ -204,7 +204,7 @@ impl Ligand {
         // todo: Temp for testing.
         let docking_init = DockingSite {
             // site_center: Vec3::new(38.699, 36.415, 30.815),
-            site_center: Vec3::new(42.000, 37.0, 31.5),
+            site_center: Vec3::new(40.000, 37.0, 31.5),
             site_box_size: 10.,
         };
 
@@ -214,7 +214,7 @@ impl Ligand {
         };
 
         // todo: Temp for testing.
-        let rotator = Quaternion::from_axis_angle(Vec3::new(1., 0., 0.), TAU * 2.5/ 16.);
+        let rotator = Quaternion::from_axis_angle(Vec3::new(1., 0., 0.), TAU / 16.);
         pose.orientation = rotator;
 
         let mut result = Self {
@@ -443,6 +443,12 @@ pub enum ResidueType {
     Other(String),
 }
 
+impl Default for ResidueType {
+    fn default() -> Self {
+        Self::Other(String::new())
+    }
+}
+
 impl ResidueType {
     /// Parses from the "name" field in common text-based formats lik CIF, PDB, and PDBQT.
     pub fn from_str(name: &str) -> Self {
@@ -483,7 +489,7 @@ impl Residue {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Atom {
     pub serial_number: usize,
     pub posit: Vec3,

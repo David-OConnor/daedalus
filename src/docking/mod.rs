@@ -52,7 +52,7 @@ use rayon::prelude::*;
 use crate::{
     bond_inference::create_hydrogen_bonds_one_way,
     docking::{partial_charge::assign_eem_charges, prep::Torsion},
-    element::{Element},
+    element::Element,
     forces,
     molecule::{Atom, Bond, Ligand, Molecule},
 };
