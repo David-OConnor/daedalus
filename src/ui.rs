@@ -12,7 +12,7 @@ use crate::{
         ConformationType, binding_energy,
         dynamics_playback::{build_vdw_dynamics, change_snapshot},
         external::{check_adv_avail, dock_with_vina},
-        find_optimal_pose,
+        find_optimal_pose, find_rec_atoms_near_site,
         find_sites::find_docking_sites,
         partial_charge::{PartialCharge, create_partial_charges},
         prep_external::{prepare_ligand, prepare_target},
@@ -1356,18 +1356,29 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 if ui.button("Build VDW sim").clicked() {
                     // todo: We don't need to set up the partial charges etc for this.
                     // todo: This is why mol is mut, for example.
-                    let (rec_atoms_near_site, rec_atom_indices, rec_bonds_near_site, partial_charges_rec, lj_pairs) =
-                        setup_docking(mol, lig, &state.volatile.lj_lookup_table);
+                    // let (
+                    //     rec_atoms_near_site,
+                    //     rec_atom_indices,
+                    //     rec_bonds_near_site,
+                    //     partial_charges_rec,
+                    //     lj_pairs,
+                    // ) = setup_docking(mol, lig, &state.volatile.lj_lookup_table);
 
-                    state.volatile.snapshots =
-                        build_vdw_dynamics(&rec_atoms_near_site, &lig.molecule.atoms, &state.volatile.lj_lookup_table);
+                    let (rec_atoms_near_site, _indices) =
+                        find_rec_atoms_near_site(mol, &lig.docking_site);
+
+                    state.volatile.snapshots = build_vdw_dynamics(
+                        &rec_atoms_near_site,
+                        lig,
+                        &state.volatile.lj_lookup_table,
+                    );
                 }
 
                 if !state.volatile.snapshots.is_empty() {
                     ui.add_space(ROW_SPACING);
 
-                    let  snapshot_prev = state.ui.current_snapshot;
-                    ui.spacing_mut().slider_width = ui.available_width() - 280.;
+                    let snapshot_prev = state.ui.current_snapshot;
+                    ui.spacing_mut().slider_width = ui.available_width() - 100.;
                     ui.add(Slider::new(
                         &mut state.ui.current_snapshot,
                         0..=state.volatile.snapshots.len() - 1,
@@ -1380,11 +1391,11 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                             &Vec::new(),
                             &state.volatile.snapshots[state.ui.current_snapshot],
                         );
-                        // todo: Come back to your approach here; definitely don't redraw the main molecule atoms etc.
 
+                        // todo: Come back to your approach here; definitely don't redraw the main molecule atoms etc.
                         scene.entities = Vec::new();
                         draw_molecule(state, scene, reset_cam);
-                        draw_ligand(state, scene, reset_cam);
+                        draw_ligand(state, scene);
 
                         engine_updates.entities = true;
                     }
@@ -1473,7 +1484,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         if redraw {
             scene.entities = Vec::new();
             draw_molecule(state, scene, reset_cam);
-            draw_ligand(state, scene, reset_cam);
+            draw_ligand(state, scene);
 
             if let Some(mol) = &state.molecule {
                 set_window_title(&mol.ident, scene);

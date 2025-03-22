@@ -367,7 +367,7 @@ fn bond_entities(
 }
 
 // todo: DRY with/subset of draw_molecule?
-pub fn draw_ligand(state: &mut State, scene: &mut Scene, update_cam_lighting: bool) {
+pub fn draw_ligand(state: &mut State, scene: &mut Scene) {
     // Hard-coded for sticks for now.
 
     if state.ligand.is_none() || state.ui.visibility.hide_ligand {
@@ -384,16 +384,12 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene, update_cam_lighting: bo
         position: ligand.docking_site.site_center.into(),
         scale: ligand.docking_site.site_box_size as f32,
         color: COLOR_DOCKING_BOX,
-        opacity: 0.4,
+        opacity: 0.25,
         shinyness: ATOM_SHINYNESS,
         ..Default::default()
     });
 
     let mut atoms_positioned = mol.atoms.clone();
-    let atom_posits = ligand.position_atoms(None);
-    for (i, atom) in &mut atoms_positioned.iter_mut().enumerate() {
-        atom.posit = atom_posits[i];
-    }
 
     // for atom in &mol.atoms {
     //     scene.entities.push(Entity::new(

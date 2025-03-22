@@ -375,15 +375,6 @@ impl Element {
     }
 }
 
-fn get_lj_params_inner(el_0: Element, el_1: Element) -> (f32, f32) {
-    let (sigma_a, epsilon_a) = el_0.lj_params();
-    let (sigma_b, epsilon_b) = el_1.lj_params();
-    let sigma = 0.5 * (sigma_a + sigma_b);
-    let epsilon = (epsilon_a * epsilon_b).sqrt();
-
-    (sigma, epsilon)
-}
-
 fn init_element_lj_data() -> HashMap<Element, (f32, f32)> {
     // (sigma in Å, epsilon in kJ/mol) - approximate demo values.
     // todo: Get better, more speicfic values.
@@ -400,27 +391,6 @@ fn init_element_lj_data() -> HashMap<Element, (f32, f32)> {
     result
 }
 
-/// Get Lennard-Jones potential parameters (Sigma, Epsilon), given two elements.
-/// This is essentially a partial LUT. Lorentz-Berthelot combining rule.
-///
-/// Note: This is a loose approximation.
-pub fn get_lj_params(
-    el_0: Element,
-    el_1: Element,
-    lut: &HashMap<(Element, Element), (f32, f32)>,
-) -> (f32, f32) {
-    // Order doesn't matter.
-    if let Some((sigma, epsilon)) = lut.get(&(el_0, el_1)) {
-        return (*sigma, *epsilon);
-    }
-    if let Some((sigma, epsilon)) = lut.get(&(el_1, el_0)) {
-        return (*sigma, *epsilon);
-    }
-
-    println!("Fallthrough on LJ parans. Els {el_0:?} and {el_1:?}");
-    get_lj_params_inner(el_0, el_1)
-}
-
 /// Note: Order invariant; insert one for each element pair.
 pub fn init_lj_lut() -> HashMap<(Element, Element), (f32, f32)> {
     let mut result = HashMap::new();
@@ -431,20 +401,11 @@ pub fn init_lj_lut() -> HashMap<(Element, Element), (f32, f32)> {
         Carbon, Hydrogen, Nitrogen, Oxygen, Sulfur, Fluorine, Chlorine,
     ];
 
-    // for (i, el_0) in els.iter().enumerate() {
-    //     for (j, el_1) in els.iter().enumerate() {
-    //         // Note: This will allow duplicate orders for same-el combos; acceptible.
-    //         if i <= j {
-    //             result.insert((*el_0, *el_1), get_lj_params_inner(*el_0, *el_1));
-    //         }
-    //     }
-    // }
-
-    for (i, &el_0) in els.iter().enumerate() {
+    for el_0 in &els {
         // Retrieve single-element data for el_0
         let (sigma_0, eps_0) = base[&el_0];
 
-        for (j, &el_1) in els.iter().enumerate() {
+        for el_1 in &els {
             let (sigma_1, eps_1) = base[&el_1];
 
             // Lorentz–Berthelot
@@ -453,7 +414,7 @@ pub fn init_lj_lut() -> HashMap<(Element, Element), (f32, f32)> {
 
             // Insert into the LUT, order: (el_0, el_1)
             // If you want to avoid duplicates, do if i <= j, etc.
-            result.insert((el_0, el_1), (sigma, epsilon));
+            result.insert((*el_0, *el_1), (sigma, epsilon));
         }
     }
 

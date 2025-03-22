@@ -52,7 +52,7 @@ use rayon::prelude::*;
 use crate::{
     bond_inference::create_hydrogen_bonds_one_way,
     docking::{partial_charge::assign_eem_charges, prep::Torsion},
-    element::{Element, get_lj_params},
+    element::{Element},
     forces,
     molecule::{Atom, Bond, Ligand, Molecule},
 };
@@ -634,9 +634,37 @@ fn process_poses<'a>(
     (best_pose, best_energy)
 }
 
+/// Find the subet of receptor atoms near a docking site. Only perform force calculations
+/// between this set and the ligand, to keep computational complexity under control.
+pub fn find_rec_atoms_near_site(
+    receptor: &Molecule,
+    site: &DockingSite,
+) -> (Vec<Atom>, Vec<usize>) {
+    let dist_thresh = ATOM_NEAR_SITE_DIST_THRESH * site.site_box_size;
+    println!("Dist thresh: {:?}", dist_thresh);
+
+    let mut indices = Vec::new();
+
+    let atoms = receptor
+        .atoms
+        .iter()
+        .enumerate()
+        .filter(|(i, a)| {
+            let r = (a.posit - site.site_center).magnitude() < dist_thresh && !a.hetero;
+            if r {
+                indices.push(*i);
+            }
+            r
+        })
+        .map(|(i, a)| a.clone()) // todo: Don't like the clone;
+        .collect();
+
+    (atoms, indices)
+}
+
 /// Prerequisite calculations for docking and binding energy calculations.
 pub fn setup_docking(
-    target: &mut Molecule,
+    receptor: &mut Molecule,
     ligand: &mut Ligand,
     lj_lut: &HashMap<(Element, Element), (f32, f32)>,
 ) -> (
@@ -667,30 +695,11 @@ pub fn setup_docking(
         ligand.molecule.eem_charges_assigned = true;
     }
 
-    let dist_thresh = ATOM_NEAR_SITE_DIST_THRESH * ligand.docking_site.site_box_size;
-
-    // For your test, see if you can get a version tha tis flexed correctly.
-    // todo: And/or set up a mol angle editing feature, and use it.
-
-    println!("Dist thresh: {:?}", dist_thresh);
-    let mut rec_atom_indices = Vec::new();
-    let mut rec_atoms_near_site: Vec<_> = target
-        .atoms
-        .iter()
-        .enumerate()
-        .filter(|(i, a)| {
-            let r =
-                (a.posit - ligand.docking_site.site_center).magnitude() < dist_thresh && !a.hetero;
-            if r {
-                rec_atom_indices.push(*i);
-            }
-            r
-        })
-        .map(|(i, a)| a.clone()) // todo: Don't like the clone;
-        .collect();
+    let (mut rec_atoms_near_site, rec_atom_indices) =
+        find_rec_atoms_near_site(receptor, &ligand.docking_site);
 
     // Bonds here is used for identifying donor heavy and H pairs for hydrogen bonds.
-    let rec_bonds_near_site: Vec<_> = target
+    let rec_bonds_near_site: Vec<_> = receptor
         .bonds
         .iter()
         // Don't use ||; all atom indices in these bonds must be present in `tgt_atoms_near_site`.
@@ -702,15 +711,15 @@ pub fn setup_docking(
     assign_eem_charges(
         &mut rec_atoms_near_site,
         &rec_atom_indices,
-        &target.bonds,
-        &target.adjacency_list,
+        &receptor.bonds,
+        &receptor.adjacency_list,
         &eem_params,
         0.,
     ); // todo: QC what the last param should be.
 
     // Update the parent molecule atoms as well, for other uses, since we're not updating it directly here.
     for (near_i, global_i) in rec_atom_indices.iter().enumerate() {
-        target.atoms[*global_i].partial_charge = rec_atoms_near_site[near_i].partial_charge;
+        receptor.atoms[*global_i].partial_charge = rec_atoms_near_site[near_i].partial_charge;
     }
 
     // Note: Splitting the partial charges between target and ligand (As opposed to analyzing every pair
@@ -726,9 +735,10 @@ pub fn setup_docking(
 
     for (i_rec, atom_rec) in rec_atoms_near_site.iter().enumerate() {
         for (i_lig, atom_lig) in ligand.molecule.atoms.iter().enumerate() {
-            let (sigma, eps) = get_lj_params(atom_rec.element, atom_lig.element, lj_lut);
+            // let (sigma, eps) = get_lj_params(atom_rec.element, atom_lig.element, lj_lut);
+            let (sigma, eps) = lj_lut.get(&(atom_rec.element, atom_lig.element)).unwrap();
             // lj_pairs.push((atom_rec.posit, i_lig, sigma, eps));
-            lj_pairs.push((i_rec, i_lig, sigma, eps));
+            lj_pairs.push((i_rec, i_lig, *sigma, *eps));
         }
     }
 
