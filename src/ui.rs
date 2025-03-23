@@ -1387,7 +1387,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     if state.ui.current_snapshot != snapshot_prev {
                         change_snapshot(
                             &mut scene.entities,
-                            &mut lig.molecule,
+                            lig,
                             &Vec::new(),
                             &state.volatile.snapshots[state.ui.current_snapshot],
                         );

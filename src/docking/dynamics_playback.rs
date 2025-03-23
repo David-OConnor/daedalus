@@ -4,7 +4,7 @@
 use std::{collections::HashMap, time::Instant};
 
 use graphics::Entity;
-use lin_alg::f32::{Quaternion, Quaternionx8, Vec3, Vec3x8, f32x8, unpack_f32, unpack_vec3};
+use lin_alg::f32::{Mat3, Quaternion, Quaternionx8, Vec3, Vec3x8, f32x8, unpack_f32, unpack_vec3};
 use rayon::prelude::*;
 
 use crate::{
@@ -21,8 +21,6 @@ struct BodyVdw {
     pub accel: Vec3,
     pub mass: f32,
     pub element: Element,
-    /// Only relevant for the overall body; not the individuals.
-    pub orientation: Quaternion,
 }
 
 impl BodyVdw {
@@ -33,7 +31,42 @@ impl BodyVdw {
             accel: Default::default(),
             mass: atom.element.atomic_number() as f32,
             element: atom.element,
-            orientation: Default::default(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+/// We use this for integration.
+struct BodyRigid {
+    pub posit: Vec3,
+    pub vel: Vec3,
+    // pub accel: Vec3,
+    pub orientation: Quaternion,
+    pub ω: Vec3,
+    pub mass: f32,
+    /// Inertia tensor in the body frame (if it’s diagonal, can store as Vec3)
+    pub inertia_body: Mat3,
+    pub inertia_body_inv: Mat3,
+}
+
+impl BodyRigid {
+    fn from_ligand(lig: &Ligand) -> Self {
+        let mut mass = 0.;
+        for atom in &lig.molecule.atoms {
+            mass += atom.element.atomic_number() as f32; // Arbitrary mass scale for now.
+        }
+
+        // todo: This assumes no initial bond flexes...?
+        Self {
+            posit: lig.molecule.atoms[lig.anchor_atom].posit.into(),
+            vel: Default::default(),
+            // accel: Default::default(),
+            orientation: lig.pose.orientation.into(),
+            ω: Default::default(),
+            mass,
+            // todo: Set based on atom masses.
+            inertia_body: Mat3::new_identity(),
+            inertia_body_inv: Mat3::new_identity(),
         }
     }
 }
@@ -65,7 +98,6 @@ impl BodyVdwx8 {
             accels[i] = body.accel;
             masses[i] = body.mass;
             elements[i] = body.element;
-            orients[i] = body.orientation;
         }
 
         Self {
@@ -82,10 +114,8 @@ impl BodyVdwx8 {
 #[derive(Debug, Default)]
 pub struct Snapshot {
     pub time: f32,
+    pub pose: Pose, // todo: Experimenting
     pub lig_atom_posits: Vec<Vec3>,
-    // pub lig_atom_accs: Vec<Vec3>,
-    // todo: Velocity?
-    // pub dt: f32,
     pub energy: BindingEnergy,
 }
 
@@ -148,59 +178,145 @@ where
     body_tgt.posit += (k1_pos + k2_pos * 2. + k3_pos * 2. + k4_pos) / 6.;
 }
 
-// todo: We may not use this in practice, as we compute this after the parallel computations are complete, I think.
-pub fn integrate_rk4x8<F>(body_tgt: &mut BodyVdwx8, id_tgt: usize, acc: &F, dt: f32)
+// todo: QC this function.
+/// Integrates position and orientation of a rigid body using RK4.
+pub fn integrate_rk4_rigid<F>(body: &mut BodyRigid, force_torque: &F, dt: f32)
 where
-    F: Fn(usize, Vec3x8, [Element; 8], f32x8) -> Vec3x8,
+    // force_torque(body) should return (net_force, net_torque) in *world* coordinates
+    F: Fn(&BodyRigid) -> (Vec3, Vec3),
 {
-    // Step 1: Calculate the k-values for position and velocity
-    body_tgt.accel = acc(id_tgt, body_tgt.posit, body_tgt.element, body_tgt.mass);
+    // -- k1 --------------------------------------------------------------------
+    let (f1, τ1) = force_torque(body);
+    let acc_lin1 = f1 / body.mass;
+    let acc_ω1 =
+        body.inertia_body_inv.clone() * (τ1 - body.ω.cross(body.inertia_body.clone() * body.ω));
 
-    let k1_v = body_tgt.accel * dt;
-    let k1_pos = body_tgt.vel * dt;
+    let k1_v = acc_lin1 * dt; // change in velocity
+    let k1_pos = body.vel * dt; // change in position
+    let k1_w = acc_ω1 * dt; // change in angular velocity
+    let k1_q = orientation_derivative(body.orientation, body.ω) * dt; // change in orientation
 
-    let body_pos_k2 = body_tgt.posit + k1_pos * 0.5;
-    let k2_v = acc(id_tgt, body_pos_k2, body_tgt.element, body_tgt.mass) * dt;
-    let k2_pos = (body_tgt.vel + k1_v * 0.5) * dt;
+    // -- Prepare body_k2 (the state at t + dt/2) -------------------------------
+    let mut body_k2 = body.clone();
+    body_k2.vel = body.vel + k1_v * 0.5;
+    body_k2.posit = body.posit + k1_pos * 0.5;
+    body_k2.ω = body.ω + k1_w * 0.5;
+    body_k2.orientation = (body.orientation + k1_q * 0.5).to_normalized();
 
-    let body_pos_k3 = body_tgt.posit + k2_pos * 0.5;
-    let k3_v = acc(id_tgt, body_pos_k3, body_tgt.element, body_tgt.mass) * dt;
-    let k3_pos = (body_tgt.vel + k2_v * 0.5) * dt;
+    // -- k2 --------------------------------------------------------------------
+    let (f2, τ2) = force_torque(&body_k2);
+    let acc_lin2 = f2 / body_k2.mass;
+    let acc_ω2 =
+        body_k2.inertia_body_inv * (τ2 - body_k2.ω.cross(body_k2.inertia_body * body_k2.ω));
 
-    let body_pos_k4 = body_tgt.posit + k3_pos;
-    let k4_v = acc(id_tgt, body_pos_k4, body_tgt.element, body_tgt.mass) * dt;
-    let k4_pos = (body_tgt.vel + k3_v) * dt;
+    let k2_v = acc_lin2 * dt;
+    let k2_pos = body_k2.vel * dt;
+    let k2_w = acc_ω2 * dt;
+    let k2_q = orientation_derivative(body_k2.orientation, body_k2.ω) * dt;
 
-    // Step 2: Update position and velocity using weighted average of k-values
-    body_tgt.vel += (k1_v + k2_v * 2. + k3_v * 2. + k4_v) / 6.;
-    body_tgt.posit += (k1_pos + k2_pos * 2. + k3_pos * 2. + k4_pos) / 6.;
+    // -- Prepare body_k3 (the state at t + dt/2) -------------------------------
+    let mut body_k3 = body.clone();
+    body_k3.vel = body.vel + k2_v * 0.5;
+    body_k3.posit = body.posit + k2_pos * 0.5;
+    body_k3.ω = body.ω + k2_w * 0.5;
+    body_k3.orientation = (body.orientation + k2_q * 0.5).to_normalized();
+
+    // -- k3 --------------------------------------------------------------------
+    let (f3, τ3) = force_torque(&body_k3);
+    let acc_lin3 = f3 / body_k3.mass;
+    let acc_ω3 =
+        body_k3.inertia_body_inv * (τ3 - body_k3.ω.cross(body_k3.inertia_body * body_k3.ω));
+
+    let k3_v = acc_lin3 * dt;
+    let k3_pos = body_k3.vel * dt;
+    let k3_w = acc_ω3 * dt;
+    let k3_q = orientation_derivative(body_k3.orientation, body_k3.ω) * dt;
+
+    // -- Prepare body_k4 (the state at t + dt) ---------------------------------
+    let mut body_k4 = body.clone();
+    body_k4.vel = body.vel + k3_v;
+    body_k4.posit = body.posit + k3_pos;
+    body_k4.ω = body.ω + k3_w;
+    body_k4.orientation = (body.orientation + k3_q).to_normalized();
+
+    // -- k4 --------------------------------------------------------------------
+    let (f4, τ4) = force_torque(&body_k4);
+    let acc_lin4 = f4 / body_k4.mass;
+    let acc_ω4 =
+        body_k4.inertia_body_inv * (τ4 - body_k4.ω.cross(body_k4.inertia_body * body_k4.ω));
+
+    let k4_v = acc_lin4 * dt;
+    let k4_pos = body_k4.vel * dt;
+    let k4_w = acc_ω4 * dt;
+    let k4_q = orientation_derivative(body_k4.orientation, body_k4.ω) * dt;
+
+    // -- Combine k1..k4 to get final update -------------------------------------
+    // Final: v(t+dt) = v(t) + 1/6 * (k1_v + 2k2_v + 2k3_v + k4_v)
+    body.vel += (k1_v + k2_v * 2.0 + k3_v * 2.0 + k4_v) / 6.0;
+    body.posit += (k1_pos + k2_pos * 2.0 + k3_pos * 2.0 + k4_pos) / 6.0;
+
+    body.ω += (k1_w + k2_w * 2.0 + k3_w * 2.0 + k4_w) / 6.0;
+
+    // For orientation, do the same weighted average of the "k" changes,
+    // then normalize the result at the end.
+    let orientation_update = (k1_q + k2_q * 2. + k3_q * 2.0 + k4_q) / 6.0;
+    body.orientation = (body.orientation + orientation_update).to_normalized();
 }
 
-fn force_lj(
-    posit_target: Vec3,
-    el_tgt: Element,
-    bodies_src: &[BodyVdw],
-    // distances: &[Vec<f32>],
-    lj_lut: &HashMap<(Element, Element), (f32, f32)>,
-) -> Vec3 {
-    // Compute the result in parallel and then sum the contributions.
-    bodies_src
-        .par_iter()
-        .enumerate()
-        .filter_map(|(i, body_source)| {
-            let posit_src = body_source.posit;
-
-            let diff = posit_src - posit_target;
-            let dist = diff.magnitude();
-
-            let dir = diff / dist; // Unit vec
-
-            let (sigma, eps) = lj_lut.get(&(body_source.element, el_tgt)).unwrap();
-
-            Some(lj_force(dir, dist, *sigma, *eps))
-        })
-        .reduce(Vec3::new_zero, |acc, elem| acc + elem) // Sum the contributions.
-}
+//
+// // todo: We may not use this in practice, as we compute this after the parallel computations are complete, I think.
+// pub fn integrate_rk4x8<F>(body_tgt: &mut BodyVdwx8, id_tgt: usize, acc: &F, dt: f32)
+// where
+//     F: Fn(usize, Vec3x8, [Element; 8], f32x8) -> Vec3x8,
+// {
+//     // Step 1: Calculate the k-values for position and velocity
+//     body_tgt.accel = acc(id_tgt, body_tgt.posit, body_tgt.element, body_tgt.mass);
+//
+//     let k1_v = body_tgt.accel * dt;
+//     let k1_pos = body_tgt.vel * dt;
+//
+//     let body_pos_k2 = body_tgt.posit + k1_pos * 0.5;
+//     let k2_v = acc(id_tgt, body_pos_k2, body_tgt.element, body_tgt.mass) * dt;
+//     let k2_pos = (body_tgt.vel + k1_v * 0.5) * dt;
+//
+//     let body_pos_k3 = body_tgt.posit + k2_pos * 0.5;
+//     let k3_v = acc(id_tgt, body_pos_k3, body_tgt.element, body_tgt.mass) * dt;
+//     let k3_pos = (body_tgt.vel + k2_v * 0.5) * dt;
+//
+//     let body_pos_k4 = body_tgt.posit + k3_pos;
+//     let k4_v = acc(id_tgt, body_pos_k4, body_tgt.element, body_tgt.mass) * dt;
+//     let k4_pos = (body_tgt.vel + k3_v) * dt;
+//
+//     // Step 2: Update position and velocity using weighted average of k-values
+//     body_tgt.vel += (k1_v + k2_v * 2. + k3_v * 2. + k4_v) / 6.;
+//     body_tgt.posit += (k1_pos + k2_pos * 2. + k3_pos * 2. + k4_pos) / 6.;
+// }
+//
+// fn force_lj(
+//     posit_target: Vec3,
+//     el_tgt: Element,
+//     bodies_src: &[BodyVdw],
+//     // distances: &[Vec<f32>],
+//     lj_lut: &HashMap<(Element, Element), (f32, f32)>,
+// ) -> Vec3 {
+//     // Compute the result in parallel and then sum the contributions.
+//     bodies_src
+//         .par_iter()
+//         .enumerate()
+//         .filter_map(|(i, body_source)| {
+//             let posit_src = body_source.posit;
+//
+//             let diff = posit_src - posit_target;
+//             let dist = diff.magnitude();
+//
+//             let dir = diff / dist; // Unit vec
+//
+//             let (sigma, eps) = lj_lut.get(&(body_source.element, el_tgt)).unwrap();
+//
+//             Some(lj_force(dir, dist, *sigma, *eps))
+//         })
+//         .reduce(Vec3::new_zero, |acc, elem| acc + elem) // Sum the contributions.
+// }
 
 fn force_lj_x8(
     posit_target: Vec3x8,
@@ -228,7 +344,7 @@ fn force_lj_x8(
             let mut epss = [0.; 8];
 
             //todo: QC all this lane stuff.
-            let lanes_src =  if i== chunks_src - 1 {
+            let lanes_src = if i == chunks_src - 1 {
                 valid_lanes_src_last
             } else {
                 8
@@ -236,7 +352,8 @@ fn force_lj_x8(
 
             let valid_lanes = lanes_src.min(lanes_tgt);
             for lane in 0..valid_lanes {
-                let (sigma, eps) = lj_lut.get(&(body_source.element[lane], el_tgt[lane]))
+                let (sigma, eps) = lj_lut
+                    .get(&(body_source.element[lane], el_tgt[lane]))
                     .unwrap();
                 sigmas[lane] = *sigma;
                 epss[lane] = *eps;
@@ -249,18 +366,18 @@ fn force_lj_x8(
         })
         .reduce(Vec3x8::new_zero, |acc, elem| acc + elem) // Sum the contributions.
 }
-
-/// Runs on a specific target, for all sources.
-fn acc_lj(
-    posit_target: Vec3,
-    el_tgt: Element,
-    mass_tgt: f32,
-    bodies_src: &[BodyVdw],
-    lj_lut: &HashMap<(Element, Element), (f32, f32)>,
-) -> Vec3 {
-    let f = force_lj(posit_target, el_tgt, bodies_src, lj_lut);
-    f / mass_tgt
-}
+//
+// /// Runs on a specific target, for all sources.
+// fn acc_lj(
+//     posit_target: Vec3,
+//     el_tgt: Element,
+//     mass_tgt: f32,
+//     bodies_src: &[BodyVdw],
+//     lj_lut: &HashMap<(Element, Element), (f32, f32)>,
+// ) -> Vec3 {
+//     let f = force_lj(posit_target, el_tgt, bodies_src, lj_lut);
+//     f / mass_tgt
+// }
 
 fn bodies_from_atoms(atoms: &[Atom]) -> Vec<BodyVdw> {
     atoms.iter().map(|a| BodyVdw::from_atom(a)).collect()
@@ -308,12 +425,19 @@ fn bodies_from_atomsx8(atoms: &[Atom]) -> Vec<BodyVdwx8> {
     result
 }
 
+// todo: QC this
+fn orientation_derivative(orientation: Quaternion, ang_vel_world: Vec3) -> Quaternion {
+    // Represent w in quaternion form: (0, wx, wy, wz)
+    let w_quat = Quaternion::new(0.0, ang_vel_world.x, ang_vel_world.y, ang_vel_world.z);
+    // dq/dt = 0.5 * w_quat * q
+    w_quat * orientation * 0.5
+}
+
 /// Keeps orientation fixed and body rigid, for now.
 pub fn build_vdw_dynamics(
     receptor_atoms: &[Atom],
     lig: &Ligand,
     lj_lut: &HashMap<(Element, Element), (f32, f32)>,
-    // ) -> (Vec<Snapshot>, Pose) {
 ) -> Vec<Snapshot> {
     println!("Starting vuilding VDW dyanmics...");
     let start = Instant::now();
@@ -323,29 +447,27 @@ pub fn build_vdw_dynamics(
 
     // Keeps initial VDW moves from causing very high jumps. This should still accomodate an initial jump
     // away from a nearby atom.
-    let vel_max = 300.;
+    let vel_max = 100.;
 
     let n_steps = 1_000;
     // An adaptive timestep.
-    let dt_max = 0.0001;
+    let dt_max = 0.00001;
 
     let dt_dynamic_scaler = 100.;
-    let dt_dynamic_scaler_x8 = f32x8::splat(dt_max);
+    let dt_dynamic_scaler_x8 = f32x8::splat(dt_dynamic_scaler);
 
     // todo: We're having trouble fitting dy namic DT into our functional code.
     // todo: One alternative is to pre-calculate it, but this has an additional distance step.
 
-    let snapshot_ratio = 10; // todo
+    let snapshot_ratio = 10;
 
     let mut snapshots = Vec::with_capacity(n_steps + 1); // +1 for the initial snapshot.
 
     let mut time_elapsed = 0.;
 
-    // Static
-    let bodies_rec = bodies_from_atoms(receptor_atoms);
     // These move.
     let mut bodies_lig = bodies_from_atoms(&lig.molecule.atoms);
-    let mut body_ligand_rigid = BodyVdw::from_atom(&lig.molecule.atoms[lig.anchor_atom]);
+    let mut body_ligand_rigid = BodyRigid::from_ligand(lig);
 
     // Static
     let bodies_rec_x8 = bodies_from_atomsx8(receptor_atoms);
@@ -357,31 +479,25 @@ pub fn build_vdw_dynamics(
     let chunk_count_lig = bodies_lig_x8.len();
 
     // How many valid lanes there are in the last chunk
-    let rem_rec = bodies_rec.len() % 8;
-    let rem_lig = bodies_lig.len() % 8;
+    let rem_rec = receptor_atoms.len() % 8;
+    let rem_lig = lig.molecule.atoms.len() % 8;
 
     let valid_lanes_rec_last = if rem_rec == 0 { 8 } else { rem_rec };
     let valid_lanes_lig_last = if rem_lig == 0 { 8 } else { rem_lig };
-
-    let mut ligand_mass = 0.;
-    for atom in &lig.molecule.atoms {
-        ligand_mass += atom.element.atomic_number() as f32; // Arbitrary mass scale for now.
-    }
 
     // Initial snapshot
     snapshots.push(Snapshot {
         time: time_elapsed,
         lig_atom_posits: bodies_lig.iter().map(|b| b.posit.into()).collect(),
         energy: BindingEnergy::default(), // todo
+        pose: lig.pose.clone(),
     });
-
-    // let acc_fn = |id_: usize, posit_target, el_target, mass_tgt| {
-    //     acc_lj(posit_target, el_target, mass_tgt, &bodies_rec, &lj_lut)
-    // };
 
     // We use these to avoid performing computations on empty (0ed?) values on the final SIMD value.
     // This causes incorrect results.
     // Number of real bodies:
+
+    // let mut vel_net = Vec3::new_zero();
 
     for t in 0..n_steps {
         let (distances, dt) = {
@@ -390,7 +506,6 @@ pub fn build_vdw_dynamics(
             let mut dt = dt_max;
 
             // Pre-compute distances, and calculate our dynamic DT.
-            // for body_tgt in &bodies_rec {
             for (i_rec, body_rec) in bodies_rec_x8.iter().enumerate() {
                 // Figure out how many lanes are valid in this rec chunk:
                 // (If it's not the last chunk or if remainder is 0, that's 8. Otherwise it's `rec_rem`.)
@@ -401,9 +516,8 @@ pub fn build_vdw_dynamics(
                 };
 
                 let mut distances_tgt = Vec::new();
-                // for body_src in &bodies_lig {
                 for (i_lig, body_lig) in bodies_lig_x8.iter().enumerate() {
-                    let lanes_lig = if i_lig == chunk_count_lig- 1 {
+                    let lanes_lig = if i_lig == chunk_count_lig - 1 {
                         valid_lanes_lig_last
                     } else {
                         8
@@ -419,11 +533,6 @@ pub fn build_vdw_dynamics(
                     // Convert to an array so we can iterate lane by lane:
                     let dt_arr = dt_this.to_array();
 
-                    // let dt_this = dt_dynamic_scaler * dist / rel_velocity;
-                    // if dt_this < dt {
-                    //     dt = dt_this;
-                    // }
-
                     // Only the first `min(valid_rec_lanes, valid_lig_lanes)` lanes are real
                     let valid_lanes = lanes_rec.min(lanes_lig);
                     for lane in 0..valid_lanes {
@@ -432,16 +541,6 @@ pub fn build_vdw_dynamics(
                             dt = dt_lane;
                         }
                     }
-
-                    //
-                    // let rel_velocity = (body_lig.vel - body_rec.vel).magnitude();
-                    //
-                    // let dt_this = dt_dynamic_scaler_x8 * dist / rel_velocity;
-                    // for dt_ in dt_this.to_array() {
-                    //     if dt_ < dt {
-                    //         dt = dt_;
-                    //     }
-                    // }
                 }
                 distances.push(distances_tgt);
             }
@@ -449,98 +548,77 @@ pub fn build_vdw_dynamics(
             (distances, dt)
         };
 
-        // These net values are for our rigid body model.
-        // let mut acc_net = Vec3::new_zero();
-        // bodies_lig
-        //     .par_iter_mut()
-        //     .for_each(|body_lig| {
-        // // todo: You may need force instead of accel.
-        //         integrate_rk4(body_lig, 0, &acc_fn, dt);
-        //     });
-
-        // todo: Now, use these distances downstream.
-
-        // let dt = calc_dt_dynamic(&bodies_rec, &bodies_lig, dt_dynamic_scaler, dt_max);
-
-        let mut vel_net = Vec3::new_zero();
-
-        // let f_net = bodies_lig
-        let f_net = bodies_lig_x8
-            .par_iter_mut()
-            .enumerate()
-            .filter_map(|(i_lig, body_lig)| {
-                let lanes_lig = if i_lig == chunk_count_lig- 1 {
-                    valid_lanes_lig_last
-                } else {
-                    8
-                };
-
-                // force_lj(body_lig.posit, body_lig.element, &bodies_rec, &lj_lut)
-                Some(force_lj_x8(body_lig.posit, body_lig.element, &bodies_rec_x8, &lj_lut, chunk_count_rec, lanes_lig, valid_lanes_rec_last))
-            })
-            // .reduce(Vec3::new_zero, |a, b| a + b);
-            .reduce(Vec3x8::new_zero, |a, b| a + b);
-
-        // Now, unpack the SIMD-calculated acceleration into a single value.
-
-        // Safely unpack: only use the valid lanes of the final sum.
-        let mut f_net_unpacked = Vec3::new_zero();
-
-        // Convert Vec3x8 into an array of Vec3 so we can iterate lane by lane:
-        let lanes = f_net.to_array(); // [Vec3; 8]
-
-        // For the last chunk, only the first valid_lanes_in_last_chunk are truly real
-        for i in 0..valid_lanes_lig_last {
-            f_net_unpacked += lanes[i];
-        }
-
-        // let acc_net = f_net / ligand_mass;
-        let acc_net = f_net_unpacked / ligand_mass;
-
-        vel_net += acc_net * dt;
-
-        let vel_mag = vel_net.magnitude();
-
-        if t % 500 == 0 {
-            // println!("DT: {:?}", dt);
-            // println!("VEL NET: {:?}", vel_mag);
-        }
-
-        if vel_mag > vel_max {
-            vel_net = (vel_net / vel_mag) * vel_max;
-        }
-
-        // for (i, vel) in vel_mag.to_array().iter().enumerate() { {
-        //     if *vel > vel_max {
-        //         let mut vels = vel_net.to_array();
-        //         vels[i] = (vels[i] / *vel) * vel_max;
-        //         vel_net = Vec3x8::from_array(vels);
-        //     }
-        // }}
-
-        // todo: You should use RK4 on the rigid body, somehow. Currently using Euler integration.
-
-        // for body in &mut bodies_lig {
-        for body in &mut bodies_lig_x8 {
-            // body.vel += vel_net;
-            body.vel += Vec3x8::splat(vel_net);
-            // body.posit += vel_net * dt;
-            body.posit += Vec3x8::splat(vel_net * dt);
-        }
+        // vel_net += acc_net * dt;
+        // let vel_mag = vel_net.magnitude();
+        // todo: Put back your vel cap? Or not.
+        // if vel_mag > vel_max {
+        //     vel_net = (vel_net / vel_mag) * vel_max;
+        // }
 
         // Keeps the same signature as individual, but doesn't use parts of it.
         // let acc_fn_net = |id_, posit_target, el_target, mass_tgt| acc_net;
 
         // integrate_rk4(&mut body_ligand_rigid, 0, &acc_fn_net, dt);
-
         // integrate_rk4x8(&mut body_ligand_rigid_x8, 0, &acc_fn_net, dt);
-        //
-        // todo: Return the pose of the final result.
-        // let pose = Pose {
-        //     anchor_posit: 0,
-        //     orientation: 0,
-        //     conformation_type: ConformationType::Flexible {torsions: Vec::new() }
-        // };
+
+        let (f_net, torque_net) = bodies_lig_x8
+            // .par_iter_mut()
+            .par_iter()
+            .enumerate()
+            .map(|(i_lig, body_lig)| {
+                let lanes_lig = if i_lig == chunk_count_lig - 1 {
+                    valid_lanes_lig_last
+                } else {
+                    8
+                };
+
+                let f = force_lj_x8(
+                    body_lig.posit,
+                    body_lig.element,
+                    &bodies_rec_x8,
+                    &lj_lut,
+                    chunk_count_rec,
+                    lanes_lig,
+                    valid_lanes_rec_last,
+                );
+
+                // Torque = (r - R_cm) x F,
+                // where R_cm is the center-of-mass position, and r is this atom's position.
+                // But if you store each body_lig.posit already relative to the COM, then you can just use r x F
+                // let diff = body_lig.posit - body_ligand_rigid.posit;
+                let diff = body_lig.posit - lig.pose.anchor_posit; // todo: Use cached diffs?
+                let torque = diff.cross(f);
+
+                (f, torque)
+            })
+            .reduce(
+                || (Vec3x8::new_zero(), Vec3x8::new_zero()),
+                |a, b| (a.0 + b.0, a.1 + b.1),
+            );
+
+        // Now, unpack the SIMD-calculated acceleration into a single value.
+        let f_net_unpacked: Vec3 = f_net.to_array().into_iter().sum();
+        let acc_net = f_net_unpacked / body_ligand_rigid.mass;
+
+        let torque_net_unpacked: Vec3 = torque_net.to_array().into_iter().sum();
+
+        let force_torque_rigid = |body_rigid| {
+            // todo...
+        };
+
+        integrate_rk4_rigid(&mut body_ligand_rigid, &force_torque_rigid, dt);
+
+        // todo: You should use RK4 on the rigid body, somehow. Currently using Euler integration.
+
+        // for body in &mut bodies_lig_x8 {
+        //     body.vel = Vec3x8::splat(vel_net);
+        //     body.posit += Vec3x8::splat(vel_net * dt);
+        // }
+
+        // if t % 100 == 0 {
+        //     println!("DT: {:?}", dt);
+        //     println!("VEL NET: {:?}", vel_mag);
+        // }
 
         // let pos = lig.position_atoms(None);
 
@@ -550,28 +628,33 @@ pub fn build_vdw_dynamics(
 
         // Unpack bodies for the purposes of saving a snapshot.
         let bodies_lig: Vec<_> = bodies_lig_x8.iter().map(|b| b.posit).collect();
-        let posits_unpacked = unpack_vec3(&bodies_lig);
+        let posits_unpacked = unpack_vec3(&bodies_lig, lig.molecule.atoms.len());
+
+        let pose = Pose {
+            anchor_posit: body_ligand_rigid.posit.into(),
+            orientation: body_ligand_rigid.orientation.into(),
+            conformation_type: lig.pose.conformation_type.clone(), // todo Bond flexes, eventually.
+        };
 
         if t % snapshot_ratio == 0 {
             snapshots.push(Snapshot {
                 time: time_elapsed,
-                // lig_atom_posits: bodies_lig.iter().map(|b| b.posit.into()).collect(),
                 lig_atom_posits: posits_unpacked,
                 energy: BindingEnergy::default(), // todo
+                pose,
             });
         }
     }
 
     let elapsed = start.elapsed().as_millis();
     println!("Complete. Time: {elapsed}ms");
-    // (snapshots, pose)
     snapshots
 }
 
 /// Body masses are separate from the snapshot, since it's invariant.
 pub fn change_snapshot(
     entities: &mut Vec<Entity>,
-    lig_mol: &mut Molecule,
+    lig: &mut Ligand,
     lig_entity_ids: &[usize],
     snapshot: &Snapshot,
 ) {
@@ -582,9 +665,14 @@ pub fn change_snapshot(
     // entities.retain(|e| !lig_entity_ids.contains(&e.id));
     // *entities = Vec::with_capacity(snapshot.lig_atom_posits.len());
 
+    lig.pose = snapshot.pose.clone();
+
+    // Position atoms from pose  here? You could, but the snapshot has them pre-positioned.
+    // This may make changing snapshots faster. But uses more memory from storing each
+
     // todo: You need to enforce rigidity.
     for (i, posit) in snapshot.lig_atom_posits.iter().enumerate() {
-        lig_mol.atoms[i].posit = (*posit).into();
+        lig.molecule.atoms[i].posit = (*posit).into();
     }
 
     //

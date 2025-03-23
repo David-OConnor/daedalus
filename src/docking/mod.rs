@@ -366,7 +366,7 @@ pub fn binding_energy(
                 .into()
             };
 
-            force += barnes_hut::run_bh(
+            let f: Vec3F32 = barnes_hut::run_bh(
                 q_lig.posit.into(),
                 999_999, // N/A, since we're comparing separate sets.
                 charge_tree,
@@ -374,6 +374,17 @@ pub fn binding_energy(
                 &force_fn,
             )
             .into();
+
+            force += f;
+
+            // force += barnes_hut::run_bh(
+            //     q_lig.posit.into(),
+            //     999_999, // N/A, since we're comparing separate sets.
+            //     charge_tree,
+            //     bh_config,
+            //     &force_fn,
+            // )
+            // .into();
         }
 
         // println!("FORCE: {force:?}");
