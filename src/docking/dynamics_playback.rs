@@ -1,16 +1,16 @@
 //! Experimental molecular dynamics, with a playback system. Starting with fixed-ligand position only,
 //! referencing the anchor.
 
-use std::collections::HashMap;
-use std::time::Instant;
+use std::{collections::HashMap, time::Instant};
+
 use graphics::Entity;
-use lin_alg::f32::{Quaternion, Quaternionx8, Vec3, Vec3x8, f32x8, unpack_vec3, unpack_f32};
+use lin_alg::f32::{Quaternion, Quaternionx8, Vec3, Vec3x8, f32x8, unpack_f32, unpack_vec3};
 use rayon::prelude::*;
 
 use crate::{
     docking::{BindingEnergy, ConformationType, Pose, SOFTENING_FACTOR_SQ_ELECTROSTATIC},
     element::Element,
-    forces::{coulomb_force, lj_force, lj_forcex8},
+    forces::{coulomb_force, lj_force, lj_force_x8},
     molecule::{Atom, Ligand, Molecule},
 };
 
@@ -202,12 +202,15 @@ fn force_lj(
         .reduce(Vec3::new_zero, |acc, elem| acc + elem) // Sum the contributions.
 }
 
-fn force_ljx8(
+fn force_lj_x8(
     posit_target: Vec3x8,
     el_tgt: [Element; 8],
     bodies_src: &[BodyVdwx8],
     // distances: &[Vec<f32x8>],
     lj_lut: &HashMap<(Element, Element), (f32, f32)>,
+    chunks_src: usize,
+    lanes_tgt: usize,
+    valid_lanes_src_last: usize,
 ) -> Vec3x8 {
     // Compute the result in parallel and then sum the contributions.
     bodies_src
@@ -223,16 +226,26 @@ fn force_ljx8(
 
             let mut sigmas = [0.; 8];
             let mut epss = [0.; 8];
-            for (j, el) in body_source.element.iter().enumerate() {
-                // todo: QC this indexing.
-                let (sigma, eps) = lj_lut.get(&(*el, el_tgt[j])).unwrap();
-                sigmas[j] = *sigma;
-                epss[j] = *eps;
+
+            //todo: QC all this lane stuff.
+            let lanes_src =  if i== chunks_src - 1 {
+                valid_lanes_src_last
+            } else {
+                8
+            };
+
+            let valid_lanes = lanes_src.min(lanes_tgt);
+            for lane in 0..valid_lanes {
+                let (sigma, eps) = lj_lut.get(&(body_source.element[lane], el_tgt[lane]))
+                    .unwrap();
+                sigmas[lane] = *sigma;
+                epss[lane] = *eps;
             }
+
             let sigma = f32x8::from_array(sigmas);
             let eps = f32x8::from_array(epss);
 
-            Some(lj_forcex8(dir, dist, sigma, eps))
+            Some(lj_force_x8(dir, dist, sigma, eps))
         })
         .reduce(Vec3x8::new_zero, |acc, elem| acc + elem) // Sum the contributions.
 }
@@ -270,7 +283,27 @@ fn bodies_from_atomsx8(atoms: &[Atom]) -> Vec<BodyVdwx8> {
         .map(|chunk| TryInto::<&[Atom; 8]>::try_into(chunk).unwrap().clone())
         .collect();
 
-    // todo: Must insert into the result here!
+    for chunk in &atoms_chunked {
+        let mut body = BodyVdwx8 {
+            posit: Vec3x8::new_zero(),
+            vel: Vec3x8::new_zero(),
+            accel: Vec3x8::new_zero(),
+            mass: f32x8::splat(0.),
+            element: [Element::Carbon; 8],
+            orientation: Quaternionx8::new_identity(),
+        };
+
+        let mut posits = Vec::with_capacity(8);
+        let mut masses = Vec::with_capacity(8);
+        for atom in chunk {
+            posits.push(atom.posit.into());
+            masses.push(atom.element.atomic_number() as f32);
+        }
+        body.posit = Vec3x8::from_slice(&posits);
+        body.mass = f32x8::from_slice(&masses);
+
+        result.push(body);
+    }
 
     result
 }
@@ -280,7 +313,7 @@ pub fn build_vdw_dynamics(
     receptor_atoms: &[Atom],
     lig: &Ligand,
     lj_lut: &HashMap<(Element, Element), (f32, f32)>,
-// ) -> (Vec<Snapshot>, Pose) {
+    // ) -> (Vec<Snapshot>, Pose) {
 ) -> Vec<Snapshot> {
     println!("Starting vuilding VDW dyanmics...");
     let start = Instant::now();
@@ -314,12 +347,21 @@ pub fn build_vdw_dynamics(
     let mut bodies_lig = bodies_from_atoms(&lig.molecule.atoms);
     let mut body_ligand_rigid = BodyVdw::from_atom(&lig.molecule.atoms[lig.anchor_atom]);
 
-    // todo: Experimenting with SIMD
     // Static
     let bodies_rec_x8 = bodies_from_atomsx8(receptor_atoms);
     // These move.
     let mut bodies_lig_x8 = bodies_from_atomsx8(&lig.molecule.atoms);
 
+    // How many 8-wide chunks we have
+    let chunk_count_rec = bodies_rec_x8.len();
+    let chunk_count_lig = bodies_lig_x8.len();
+
+    // How many valid lanes there are in the last chunk
+    let rem_rec = bodies_rec.len() % 8;
+    let rem_lig = bodies_lig.len() % 8;
+
+    let valid_lanes_rec_last = if rem_rec == 0 { 8 } else { rem_rec };
+    let valid_lanes_lig_last = if rem_lig == 0 { 8 } else { rem_lig };
 
     let mut ligand_mass = 0.;
     for atom in &lig.molecule.atoms {
@@ -337,6 +379,10 @@ pub fn build_vdw_dynamics(
     //     acc_lj(posit_target, el_target, mass_tgt, &bodies_rec, &lj_lut)
     // };
 
+    // We use these to avoid performing computations on empty (0ed?) values on the final SIMD value.
+    // This causes incorrect results.
+    // Number of real bodies:
+
     for t in 0..n_steps {
         let (distances, dt) = {
             // todo: This is dramatically increasing computation time. Cache distances, and use in the LJ calc!
@@ -345,27 +391,57 @@ pub fn build_vdw_dynamics(
 
             // Pre-compute distances, and calculate our dynamic DT.
             // for body_tgt in &bodies_rec {
-            for body_tgt in &bodies_rec_x8 {
+            for (i_rec, body_rec) in bodies_rec_x8.iter().enumerate() {
+                // Figure out how many lanes are valid in this rec chunk:
+                // (If it's not the last chunk or if remainder is 0, that's 8. Otherwise it's `rec_rem`.)
+                let lanes_rec = if i_rec == chunk_count_rec - 1 {
+                    valid_lanes_rec_last
+                } else {
+                    8
+                };
+
                 let mut distances_tgt = Vec::new();
                 // for body_src in &bodies_lig {
-                for body_src in &bodies_lig_x8 {
-                    let dist = (body_src.posit - body_tgt.posit).magnitude();
+                for (i_lig, body_lig) in bodies_lig_x8.iter().enumerate() {
+                    let lanes_lig = if i_lig == chunk_count_lig- 1 {
+                        valid_lanes_lig_last
+                    } else {
+                        8
+                    };
+
+                    let dist = (body_lig.posit - body_rec.posit).magnitude();
                     distances_tgt.push(dist);
 
-                    let rel_velocity = (body_src.vel - body_tgt.vel).magnitude();
+                    // Now compute dt_this (8-wide):
+                    let rel_velocity = (body_lig.vel - body_rec.vel).magnitude();
+                    let dt_this = dt_dynamic_scaler_x8 * dist / rel_velocity;
+
+                    // Convert to an array so we can iterate lane by lane:
+                    let dt_arr = dt_this.to_array();
 
                     // let dt_this = dt_dynamic_scaler * dist / rel_velocity;
                     // if dt_this < dt {
                     //     dt = dt_this;
                     // }
 
-                    let dt_this = dt_dynamic_scaler_x8 * dist / rel_velocity;
-                    for dt_ in dt_this.to_array() {
-                        if dt_ < dt {
-                            dt = dt_;
+                    // Only the first `min(valid_rec_lanes, valid_lig_lanes)` lanes are real
+                    let valid_lanes = lanes_rec.min(lanes_lig);
+                    for lane in 0..valid_lanes {
+                        let dt_lane = dt_arr[lane];
+                        if dt_lane < dt {
+                            dt = dt_lane;
                         }
                     }
 
+                    //
+                    // let rel_velocity = (body_lig.vel - body_rec.vel).magnitude();
+                    //
+                    // let dt_this = dt_dynamic_scaler_x8 * dist / rel_velocity;
+                    // for dt_ in dt_this.to_array() {
+                    //     if dt_ < dt {
+                    //         dt = dt_;
+                    //     }
+                    // }
                 }
                 distances.push(distances_tgt);
             }
@@ -391,18 +467,31 @@ pub fn build_vdw_dynamics(
         // let f_net = bodies_lig
         let f_net = bodies_lig_x8
             .par_iter_mut()
-            .map(|body_lig| {
+            .enumerate()
+            .filter_map(|(i_lig, body_lig)| {
+                let lanes_lig = if i_lig == chunk_count_lig- 1 {
+                    valid_lanes_lig_last
+                } else {
+                    8
+                };
+
                 // force_lj(body_lig.posit, body_lig.element, &bodies_rec, &lj_lut)
-                force_ljx8(body_lig.posit, body_lig.element, &bodies_rec_x8, &lj_lut)
+                Some(force_lj_x8(body_lig.posit, body_lig.element, &bodies_rec_x8, &lj_lut, chunk_count_rec, lanes_lig, valid_lanes_rec_last))
             })
             // .reduce(Vec3::new_zero, |a, b| a + b);
             .reduce(Vec3x8::new_zero, |a, b| a + b);
 
-
         // Now, unpack the SIMD-calculated acceleration into a single value.
+
+        // Safely unpack: only use the valid lanes of the final sum.
         let mut f_net_unpacked = Vec3::new_zero();
-        for lane in f_net.to_array() {
-            f_net_unpacked += lane;
+
+        // Convert Vec3x8 into an array of Vec3 so we can iterate lane by lane:
+        let lanes = f_net.to_array(); // [Vec3; 8]
+
+        // For the last chunk, only the first valid_lanes_in_last_chunk are truly real
+        for i in 0..valid_lanes_lig_last {
+            f_net_unpacked += lanes[i];
         }
 
         // let acc_net = f_net / ligand_mass;
@@ -441,7 +530,6 @@ pub fn build_vdw_dynamics(
 
         // Keeps the same signature as individual, but doesn't use parts of it.
         // let acc_fn_net = |id_, posit_target, el_target, mass_tgt| acc_net;
-
 
         // integrate_rk4(&mut body_ligand_rigid, 0, &acc_fn_net, dt);
 

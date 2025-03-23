@@ -151,7 +151,7 @@ pub fn lj_force(dir: Vec3, r: f32, sigma: f32, eps: f32) -> Vec3 {
 }
 
 /// Calculate the Lennard Jones force; a Newtonian force based on the LJ potential.
-pub fn lj_forcex8(dir: Vec3x8, r: f32x8, sigma: f32x8, eps: f32x8) -> Vec3x8 {
+pub fn lj_force_x8(dir: Vec3x8, r: f32x8, sigma: f32x8, eps: f32x8) -> Vec3x8 {
     let sr = sigma / r;
     let sr6 = sr.powi(6);
     let sr12 = sr6.powi(2);
