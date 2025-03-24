@@ -69,6 +69,14 @@ impl BodyRigid {
             inertia_body_inv: Mat3::new_identity(),
         }
     }
+
+    fn as_pose(&self) -> Pose {
+        Pose {
+            anchor_posit: self.posit.into(),
+            orientation: self.orientation.into(),
+            conformation_type: Default::default(),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -465,18 +473,18 @@ pub fn build_vdw_dynamics(
 
     let mut time_elapsed = 0.;
 
-    // These move.
-    let mut bodies_lig = bodies_from_atoms(&lig.molecule.atoms);
-    let mut body_ligand_rigid = BodyRigid::from_ligand(lig);
-
     // Static
     let bodies_rec_x8 = bodies_from_atomsx8(receptor_atoms);
     // These move.
-    let mut bodies_lig_x8 = bodies_from_atomsx8(&lig.molecule.atoms);
+    // let mut bodies_lig_x8 = bodies_from_atomsx8(&lig.molecule.atoms);
 
     // How many 8-wide chunks we have
     let chunk_count_rec = bodies_rec_x8.len();
-    let chunk_count_lig = bodies_lig_x8.len();
+    let chunk_count_lig = {
+        // Overkill, but safe.
+        let bodies = bodies_from_atomsx8(&lig.molecule.atoms);
+        bodies.len()
+    };
 
     // How many valid lanes there are in the last chunk
     let rem_rec = receptor_atoms.len() % 8;
@@ -485,25 +493,38 @@ pub fn build_vdw_dynamics(
     let valid_lanes_rec_last = if rem_rec == 0 { 8 } else { rem_rec };
     let valid_lanes_lig_last = if rem_lig == 0 { 8 } else { rem_lig };
 
+    // End setup.
+
+    // Assume atoms are positioned already?
+
+    // let mut bodies_lig = bodies_from_atoms(&lig.molecule.atoms);
+    let mut body_ligand_rigid = BodyRigid::from_ligand(lig);
+
     // Initial snapshot
     snapshots.push(Snapshot {
         time: time_elapsed,
-        lig_atom_posits: bodies_lig.iter().map(|b| b.posit.into()).collect(),
-        energy: BindingEnergy::default(), // todo
+        lig_atom_posits: lig.molecule.atoms.iter().map(|a| a.posit.into()).collect(),
         pose: lig.pose.clone(),
+        energy: BindingEnergy::default(), // todo
     });
 
-    // We use these to avoid performing computations on empty (0ed?) values on the final SIMD value.
-    // This causes incorrect results.
-    // Number of real bodies:
+    let mut dt = dt_max;
 
-    // let mut vel_net = Vec3::new_zero();
+    let force_torque_fn = |body: &BodyRigid| {
+        // Set up atom positions from the rigid body passed as a parameter.
+        let atom_posits = lig.position_atoms(Some(&body.as_pose()));
+        let mut atoms = lig.molecule.atoms.clone(); // todo: Not a fan of this clone.
+        for (i, posit) in atom_posits.iter().enumerate() {
+            atoms[i].posit = *posit;
+        }
+        let bodies_lig_x8 = bodies_from_atomsx8(&atoms);
 
-    for t in 0..n_steps {
-        let (distances, dt) = {
+        let anchor_posit = Vec3x8::splat(body.posit);
+
+        let (distances, dt_) = {
             // todo: This is dramatically increasing computation time. Cache distances, and use in the LJ calc!
             let mut distances = Vec::new();
-            let mut dt = dt_max;
+            let mut dt_ = dt_max;
 
             // Pre-compute distances, and calculate our dynamic DT.
             for (i_rec, body_rec) in bodies_rec_x8.iter().enumerate() {
@@ -537,29 +558,18 @@ pub fn build_vdw_dynamics(
                     let valid_lanes = lanes_rec.min(lanes_lig);
                     for lane in 0..valid_lanes {
                         let dt_lane = dt_arr[lane];
-                        if dt_lane < dt {
-                            dt = dt_lane;
+                        if dt_lane < dt_ {
+                            dt_ = dt_lane;
                         }
                     }
                 }
                 distances.push(distances_tgt);
             }
 
-            (distances, dt)
+            (distances, dt_)
         };
 
-        // vel_net += acc_net * dt;
-        // let vel_mag = vel_net.magnitude();
-        // todo: Put back your vel cap? Or not.
-        // if vel_mag > vel_max {
-        //     vel_net = (vel_net / vel_mag) * vel_max;
-        // }
-
-        // Keeps the same signature as individual, but doesn't use parts of it.
-        // let acc_fn_net = |id_, posit_target, el_target, mass_tgt| acc_net;
-
-        // integrate_rk4(&mut body_ligand_rigid, 0, &acc_fn_net, dt);
-        // integrate_rk4x8(&mut body_ligand_rigid_x8, 0, &acc_fn_net, dt);
+        dt = dt_;
 
         let (f_net, torque_net) = bodies_lig_x8
             // .par_iter_mut()
@@ -586,7 +596,8 @@ pub fn build_vdw_dynamics(
                 // where R_cm is the center-of-mass position, and r is this atom's position.
                 // But if you store each body_lig.posit already relative to the COM, then you can just use r x F
                 // let diff = body_lig.posit - body_ligand_rigid.posit;
-                let diff = body_lig.posit - lig.pose.anchor_posit; // todo: Use cached diffs?
+
+                let diff = body_lig.posit - anchor_posit; // todo: Use cached diffs?
                 let torque = diff.cross(f);
 
                 (f, torque)
@@ -598,15 +609,18 @@ pub fn build_vdw_dynamics(
 
         // Now, unpack the SIMD-calculated acceleration into a single value.
         let f_net_unpacked: Vec3 = f_net.to_array().into_iter().sum();
-        let acc_net = f_net_unpacked / body_ligand_rigid.mass;
+        // let acc_net = f_net_unpacked / body_ligand_rigid.mass;
 
         let torque_net_unpacked: Vec3 = torque_net.to_array().into_iter().sum();
+        (f_net_unpacked, torque_net_unpacked)
+    };
 
-        let force_torque_rigid = |body_rigid| {
-            // todo...
-        };
+    // We use these to avoid performing computations on empty (0ed?) values on the final SIMD value.
+    // This causes incorrect results.
+    // Number of real bodies:
 
-        integrate_rk4_rigid(&mut body_ligand_rigid, &force_torque_rigid, dt);
+    for t in 0..n_steps {
+        integrate_rk4_rigid(&mut body_ligand_rigid, &force_torque_fn, dt);
 
         // todo: You should use RK4 on the rigid body, somehow. Currently using Euler integration.
 
@@ -627,8 +641,8 @@ pub fn build_vdw_dynamics(
         // Save the current state to a snapshot, for later playback.
 
         // Unpack bodies for the purposes of saving a snapshot.
-        let bodies_lig: Vec<_> = bodies_lig_x8.iter().map(|b| b.posit).collect();
-        let posits_unpacked = unpack_vec3(&bodies_lig, lig.molecule.atoms.len());
+        // let bodies_lig: Vec<_> = bodies_lig_x8.iter().map(|b| b.posit).collect();
+        // let posits_unpacked = unpack_vec3(&bodies_lig, lig.molecule.atoms.len());
 
         let pose = Pose {
             anchor_posit: body_ligand_rigid.posit.into(),
@@ -636,12 +650,18 @@ pub fn build_vdw_dynamics(
             conformation_type: lig.pose.conformation_type.clone(), // todo Bond flexes, eventually.
         };
 
+        let posits = lig
+            .position_atoms(Some(&pose))
+            .iter()
+            .map(|p| (*p).into())
+            .collect();
+
         if t % snapshot_ratio == 0 {
             snapshots.push(Snapshot {
                 time: time_elapsed,
-                lig_atom_posits: posits_unpacked,
-                energy: BindingEnergy::default(), // todo
+                lig_atom_posits: posits,
                 pose,
+                energy: BindingEnergy::default(), // todo
             });
         }
     }
