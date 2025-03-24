@@ -190,7 +190,11 @@ impl fmt::Display for AtomRole {
 
 #[derive(Debug, Default)]
 pub struct Ligand {
+    /// Molecule atom positions remain relative.
     pub molecule: Molecule,
+    /// These positions are derivative of the pose, in conjunction with the molecule atoms' [relative]
+    /// positions.
+    pub atom_posits: Vec<Vec3>,
     // pub offset: Vec3,
     pub anchor_atom: usize,         // Index.
     pub flexible_bonds: Vec<usize>, // Index
@@ -237,10 +241,7 @@ impl Ligand {
                 .collect(),
         };
 
-        for (i, posit) in result.position_atoms(None).iter().enumerate() {
-            result.molecule.atoms[i].posit = *posit;
-        }
-
+        result.atom_posits = result.position_atoms(None);
         result
     }
 

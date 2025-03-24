@@ -14,6 +14,10 @@ use crate::{
     molecule::{Atom, Ligand, Molecule},
 };
 
+// This seems to be how we control rotation vice movement. A higher value means
+// more movement, less rotation for a given dt.
+const ROTATION_INERTIA: f32 = 1_000.;
+
 #[derive(Clone, Debug)]
 struct BodyVdw {
     pub posit: Vec3,
@@ -56,17 +60,19 @@ impl BodyRigid {
             mass += atom.element.atomic_number() as f32; // Arbitrary mass scale for now.
         }
 
+        let inertia_body = Mat3::new_identity() * ROTATION_INERTIA;
+        let inertia_body_inv = inertia_body.inverse().unwrap();
+
         // todo: This assumes no initial bond flexes...?
         Self {
-            posit: lig.molecule.atoms[lig.anchor_atom].posit.into(),
+            posit: lig.pose.anchor_posit.into(),
             vel: Default::default(),
-            // accel: Default::default(),
             orientation: lig.pose.orientation.into(),
             ω: Default::default(),
             mass,
-            // todo: Set based on atom masses.
-            inertia_body: Mat3::new_identity(),
-            inertia_body_inv: Mat3::new_identity(),
+            // todo: Set based on atom masses?
+            inertia_body,
+            inertia_body_inv,
         }
     }
 
@@ -186,7 +192,6 @@ where
     body_tgt.posit += (k1_pos + k2_pos * 2. + k3_pos * 2. + k4_pos) / 6.;
 }
 
-// todo: QC this function.
 /// Integrates position and orientation of a rigid body using RK4.
 pub fn integrate_rk4_rigid<F>(body: &mut BodyRigid, force_torque: &F, dt: f32)
 where
@@ -271,61 +276,6 @@ where
     body.orientation = (body.orientation + orientation_update).to_normalized();
 }
 
-//
-// // todo: We may not use this in practice, as we compute this after the parallel computations are complete, I think.
-// pub fn integrate_rk4x8<F>(body_tgt: &mut BodyVdwx8, id_tgt: usize, acc: &F, dt: f32)
-// where
-//     F: Fn(usize, Vec3x8, [Element; 8], f32x8) -> Vec3x8,
-// {
-//     // Step 1: Calculate the k-values for position and velocity
-//     body_tgt.accel = acc(id_tgt, body_tgt.posit, body_tgt.element, body_tgt.mass);
-//
-//     let k1_v = body_tgt.accel * dt;
-//     let k1_pos = body_tgt.vel * dt;
-//
-//     let body_pos_k2 = body_tgt.posit + k1_pos * 0.5;
-//     let k2_v = acc(id_tgt, body_pos_k2, body_tgt.element, body_tgt.mass) * dt;
-//     let k2_pos = (body_tgt.vel + k1_v * 0.5) * dt;
-//
-//     let body_pos_k3 = body_tgt.posit + k2_pos * 0.5;
-//     let k3_v = acc(id_tgt, body_pos_k3, body_tgt.element, body_tgt.mass) * dt;
-//     let k3_pos = (body_tgt.vel + k2_v * 0.5) * dt;
-//
-//     let body_pos_k4 = body_tgt.posit + k3_pos;
-//     let k4_v = acc(id_tgt, body_pos_k4, body_tgt.element, body_tgt.mass) * dt;
-//     let k4_pos = (body_tgt.vel + k3_v) * dt;
-//
-//     // Step 2: Update position and velocity using weighted average of k-values
-//     body_tgt.vel += (k1_v + k2_v * 2. + k3_v * 2. + k4_v) / 6.;
-//     body_tgt.posit += (k1_pos + k2_pos * 2. + k3_pos * 2. + k4_pos) / 6.;
-// }
-//
-// fn force_lj(
-//     posit_target: Vec3,
-//     el_tgt: Element,
-//     bodies_src: &[BodyVdw],
-//     // distances: &[Vec<f32>],
-//     lj_lut: &HashMap<(Element, Element), (f32, f32)>,
-// ) -> Vec3 {
-//     // Compute the result in parallel and then sum the contributions.
-//     bodies_src
-//         .par_iter()
-//         .enumerate()
-//         .filter_map(|(i, body_source)| {
-//             let posit_src = body_source.posit;
-//
-//             let diff = posit_src - posit_target;
-//             let dist = diff.magnitude();
-//
-//             let dir = diff / dist; // Unit vec
-//
-//             let (sigma, eps) = lj_lut.get(&(body_source.element, el_tgt)).unwrap();
-//
-//             Some(lj_force(dir, dist, *sigma, *eps))
-//         })
-//         .reduce(Vec3::new_zero, |acc, elem| acc + elem) // Sum the contributions.
-// }
-
 fn force_lj_x8(
     posit_target: Vec3x8,
     el_tgt: [Element; 8],
@@ -374,18 +324,6 @@ fn force_lj_x8(
         })
         .reduce(Vec3x8::new_zero, |acc, elem| acc + elem) // Sum the contributions.
 }
-//
-// /// Runs on a specific target, for all sources.
-// fn acc_lj(
-//     posit_target: Vec3,
-//     el_tgt: Element,
-//     mass_tgt: f32,
-//     bodies_src: &[BodyVdw],
-//     lj_lut: &HashMap<(Element, Element), (f32, f32)>,
-// ) -> Vec3 {
-//     let f = force_lj(posit_target, el_tgt, bodies_src, lj_lut);
-//     f / mass_tgt
-// }
 
 fn bodies_from_atoms(atoms: &[Atom]) -> Vec<BodyVdw> {
     atoms.iter().map(|a| BodyVdw::from_atom(a)).collect()
@@ -453,13 +391,10 @@ pub fn build_vdw_dynamics(
     // todo: You should possibly add your pre-computed LJ pairs, instead of looking up each time.
     // todo: See this code from docking.
 
-    // Keeps initial VDW moves from causing very high jumps. This should still accomodate an initial jump
-    // away from a nearby atom.
-    let vel_max = 100.;
-
-    let n_steps = 1_000;
+    let n_steps = 500;
     // An adaptive timestep.
-    let dt_max = 0.00001;
+    // let dt_max = 0.00001;
+    let dt_max = 0.000001;
 
     let dt_dynamic_scaler = 100.;
     let dt_dynamic_scaler_x8 = f32x8::splat(dt_dynamic_scaler);
@@ -503,17 +438,18 @@ pub fn build_vdw_dynamics(
     // Initial snapshot
     snapshots.push(Snapshot {
         time: time_elapsed,
-        lig_atom_posits: lig.molecule.atoms.iter().map(|a| a.posit.into()).collect(),
+        lig_atom_posits: lig.atom_posits.iter().map(|p| (*p).into()).collect(),
         pose: lig.pose.clone(),
         energy: BindingEnergy::default(), // todo
     });
 
-    let mut dt = dt_max;
+    let mut dt = dt_max; // todo: Make adaptive again; you must pull that logic outside
+    // todo of teh torque/force fn.
 
     let force_torque_fn = |body: &BodyRigid| {
         // Set up atom positions from the rigid body passed as a parameter.
         let atom_posits = lig.position_atoms(Some(&body.as_pose()));
-        let mut atoms = lig.molecule.atoms.clone(); // todo: Not a fan of this clone.
+        let mut atoms = lig.molecule.atoms.clone(); // todo: Not a fan of this clone, or these dummy atoms in general.
         for (i, posit) in atom_posits.iter().enumerate() {
             atoms[i].posit = *posit;
         }
@@ -521,55 +457,55 @@ pub fn build_vdw_dynamics(
 
         let anchor_posit = Vec3x8::splat(body.posit);
 
-        let (distances, dt_) = {
-            // todo: This is dramatically increasing computation time. Cache distances, and use in the LJ calc!
-            let mut distances = Vec::new();
-            let mut dt_ = dt_max;
+        // todo: This is dramatically increasing computation time. Cache distances, and use in the LJ calc!
+        // let (distances, dt_) = {
+        // let mut distances = Vec::new();
+        // let mut dt_ = dt_max;
 
-            // Pre-compute distances, and calculate our dynamic DT.
-            for (i_rec, body_rec) in bodies_rec_x8.iter().enumerate() {
-                // Figure out how many lanes are valid in this rec chunk:
-                // (If it's not the last chunk or if remainder is 0, that's 8. Otherwise it's `rec_rem`.)
-                let lanes_rec = if i_rec == chunk_count_rec - 1 {
-                    valid_lanes_rec_last
-                } else {
-                    8
-                };
+        // Pre-compute distances, and calculate our dynamic DT.
+        //     for (i_rec, body_rec) in bodies_rec_x8.iter().enumerate() {
+        //         // Figure out how many lanes are valid in this rec chunk:
+        //         // (If it's not the last chunk or if remainder is 0, that's 8. Otherwise it's `rec_rem`.)
+        //         let lanes_rec = if i_rec == chunk_count_rec - 1 {
+        //             valid_lanes_rec_last
+        //         } else {
+        //             8
+        //         };
+        //
+        //         let mut distances_tgt = Vec::new();
+        //         for (i_lig, body_lig) in bodies_lig_x8.iter().enumerate() {
+        //             let lanes_lig = if i_lig == chunk_count_lig - 1 {
+        //                 valid_lanes_lig_last
+        //             } else {
+        //                 8
+        //             };
+        //
+        //             let dist = (body_lig.posit - body_rec.posit).magnitude();
+        //             distances_tgt.push(dist);
+        //
+        //             // Now compute dt_this (8-wide):
+        //             let rel_velocity = (body_lig.vel - body_rec.vel).magnitude();
+        //             let dt_this = dt_dynamic_scaler_x8 * dist / rel_velocity;
+        //
+        //             // Convert to an array so we can iterate lane by lane:
+        //             let dt_arr = dt_this.to_array();
+        //
+        //             // Only the first `min(valid_rec_lanes, valid_lig_lanes)` lanes are real
+        //             let valid_lanes = lanes_rec.min(lanes_lig);
+        //             for lane in 0..valid_lanes {
+        //                 let dt_lane = dt_arr[lane];
+        //                 if dt_lane < dt_ {
+        //                     dt_ = dt_lane;
+        //                 }
+        //             }
+        //         }
+        //         distances.push(distances_tgt);
+        //     }
+        //
+        //     (distances, dt_)
+        // };
 
-                let mut distances_tgt = Vec::new();
-                for (i_lig, body_lig) in bodies_lig_x8.iter().enumerate() {
-                    let lanes_lig = if i_lig == chunk_count_lig - 1 {
-                        valid_lanes_lig_last
-                    } else {
-                        8
-                    };
-
-                    let dist = (body_lig.posit - body_rec.posit).magnitude();
-                    distances_tgt.push(dist);
-
-                    // Now compute dt_this (8-wide):
-                    let rel_velocity = (body_lig.vel - body_rec.vel).magnitude();
-                    let dt_this = dt_dynamic_scaler_x8 * dist / rel_velocity;
-
-                    // Convert to an array so we can iterate lane by lane:
-                    let dt_arr = dt_this.to_array();
-
-                    // Only the first `min(valid_rec_lanes, valid_lig_lanes)` lanes are real
-                    let valid_lanes = lanes_rec.min(lanes_lig);
-                    for lane in 0..valid_lanes {
-                        let dt_lane = dt_arr[lane];
-                        if dt_lane < dt_ {
-                            dt_ = dt_lane;
-                        }
-                    }
-                }
-                distances.push(distances_tgt);
-            }
-
-            (distances, dt_)
-        };
-
-        dt = dt_;
+        // dt = dt_;
 
         let (f_net, torque_net) = bodies_lig_x8
             // .par_iter_mut()
@@ -621,20 +557,6 @@ pub fn build_vdw_dynamics(
 
     for t in 0..n_steps {
         integrate_rk4_rigid(&mut body_ligand_rigid, &force_torque_fn, dt);
-
-        // todo: You should use RK4 on the rigid body, somehow. Currently using Euler integration.
-
-        // for body in &mut bodies_lig_x8 {
-        //     body.vel = Vec3x8::splat(vel_net);
-        //     body.posit += Vec3x8::splat(vel_net * dt);
-        // }
-
-        // if t % 100 == 0 {
-        //     println!("DT: {:?}", dt);
-        //     println!("VEL NET: {:?}", vel_mag);
-        // }
-
-        // let pos = lig.position_atoms(None);
 
         time_elapsed += dt;
 
@@ -690,10 +612,11 @@ pub fn change_snapshot(
     // Position atoms from pose  here? You could, but the snapshot has them pre-positioned.
     // This may make changing snapshots faster. But uses more memory from storing each
 
-    // todo: You need to enforce rigidity.
-    for (i, posit) in snapshot.lig_atom_posits.iter().enumerate() {
-        lig.molecule.atoms[i].posit = (*posit).into();
-    }
+    lig.atom_posits = snapshot
+        .lig_atom_posits
+        .iter()
+        .map(|p| (*p).into())
+        .collect();
 
     //
     // for (i, posit) in snapshot.body_posits.iter().enumerate() {

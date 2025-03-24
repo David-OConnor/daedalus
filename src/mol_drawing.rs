@@ -404,8 +404,8 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene) {
 
     // todo: C+P from draw_molecule. With some removed, but a lot of repeated.
     for (i, bond) in mol.bonds.iter().enumerate() {
-        let atom_0 = &atoms_positioned[bond.atom_0];
-        let atom_1 = &atoms_positioned[bond.atom_1];
+        let atom_0 = &mol.atoms[bond.atom_0];
+        let atom_1 = &mol.atoms[bond.atom_1];
 
         if state.ui.visibility.hide_hydrogen
             && (atom_0.element == Element::Hydrogen || atom_1.element == Element::Hydrogen)
@@ -413,8 +413,8 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene) {
             continue;
         }
 
-        let posit_0: Vec3 = atom_0.posit.into();
-        let posit_1: Vec3 = atom_1.posit.into();
+        let posit_0: Vec3 = ligand.atom_posits[bond.atom_0].into();
+        let posit_1: Vec3 = ligand.atom_posits[bond.atom_1].into();
 
         let mut color_0 = atom_color(
             atom_0,
