@@ -12,7 +12,7 @@ use crate::{
         ConformationType, calc_binding_energy,
         dynamics_playback::{build_vdw_dynamics, change_snapshot},
         external::{check_adv_avail, dock_with_vina},
-        find_optimal_pose, find_rec_atoms_near_site,
+        find_optimal_pose,
         find_sites::find_docking_sites,
         partial_charge::create_partial_charges,
         prep_external::{prepare_ligand, prepare_target},
@@ -32,6 +32,7 @@ use crate::{
         select_from_search,
     },
 };
+use crate::docking::prep::{find_rec_atoms_near_site, DockingSetup};
 
 pub const ROW_SPACING: f32 = 10.;
 pub const COL_SPACING: f32 = 30.;
@@ -1267,28 +1268,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
                 if let Some(mol) = &state.molecule {
                     if ui.button("Docking energy").clicked() {
-                        let (mut rec_atoms_near_site, rec_atom_indices) =
-                            find_rec_atoms_near_site(mol, &ligand.docking_site);
-
-                        // Bonds here is used for identifying donor heavy and H pairs for hydrogen bonds.
-                        let rec_bonds_near_site: Vec<_> = mol
-                            .bonds
-                            .iter()
-                            // Don't use ||; all atom indices in these bonds must be present in `tgt_atoms_near_site`.
-                            .filter(|b| {
-                                rec_atom_indices.contains(&b.atom_0)
-                                    && rec_atom_indices.contains(&b.atom_1)
-                            })
-                            .map(|b| b.clone()) // todo: don't like the clone
-                            .collect();
-
-                        let (partial_charges_rec, lj_pairs) = setup_eem_charges(
-                            mol,
-                            ligand,
-                            &mut rec_atoms_near_site,
-                            &rec_atom_indices,
-                            &state.volatile.lj_lookup_table,
-                        );
+                        let setup = DockingSetup::new(mol, ligand, &state.volatile.lj_lookup_table, &state.bh_config,);
 
                         let poses = vec![ligand.pose.clone()];
                         let mut lig_posits = Vec::with_capacity(poses.len());
@@ -1308,29 +1288,11 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                             lig_posits.push(posits_this_pose);
                         }
 
-                        // This tree is over the target (receptor) charges. This may be more efficient
-                        // than over the ligand, as we expect the receptor nearby atoms to be more numerous.
-                        let charge_tree = {
-                            // For the Barnes Hut electrostatics tree.
-                            let bh_bounding_box = Cube::from_bodies(&partial_charges_rec, 0., true);
-
-                            Tree::new(
-                                &partial_charges_rec,
-                                &bh_bounding_box.unwrap(),
-                                &state.bh_config,
-                            )
-                        };
-
                         state.ui.binding_energy_disp = calc_binding_energy(
-                            &rec_atoms_near_site,
-                            &rec_atom_indices,
-                            &rec_bonds_near_site,
+                            &setup,
                             &ligand,
                             &lig_posits[0],
                             &partial_charges_lig[0],
-                            &charge_tree,
-                            &state.bh_config,
-                            &lj_pairs,
                         );
                     }
                 }

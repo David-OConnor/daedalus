@@ -21,15 +21,83 @@
 //!
 //! What we will use to start: the OpenBabel CLI program.
 
-use std::fmt::Display;
+use std::{collections::HashMap, fmt::Display};
 
+use barnes_hut::{BhConfig, Cube, Tree};
 use graphics::Mesh;
 
 use crate::{
-    docking::DockingSite,
+    docking::{
+        DockingSite, partial_charge::PartialCharge, setup_eem_charges,
+    },
     element::Element,
-    molecule::{Atom, Bond, BondCount, BondType, Molecule},
+    molecule::{Atom, Bond, BondCount, BondType, Ligand, Molecule},
 };
+use crate::docking::ATOM_NEAR_SITE_DIST_THRESH;
+
+/// This can be used across multiple poses, but is specific to a receptor, ligand, and docking site.
+pub struct DockingSetup {
+    pub rec_atoms_near_site: Vec<Atom>,
+    pub rec_indices: Vec<usize>,
+    /// We omit partial ligand charges, since these include position.
+    pub charges_rec: Vec<PartialCharge>,
+    pub rec_bonds_near_site: Vec<Bond>,
+    pub lj_pairs: Vec<(usize, usize, f32, f32)>,
+    pub charge_tree: Tree,
+    pub bh_config: BhConfig,
+}
+
+impl DockingSetup {
+    pub fn new(
+        receptor: &Molecule,
+        ligand: &mut Ligand,
+        lj_lut: &HashMap<(Element, Element), (f32, f32)>,
+        bh_config: &BhConfig,
+    ) -> Self {
+        let (mut rec_atoms_near_site, rec_indices) =
+            find_rec_atoms_near_site(receptor, &ligand.docking_site);
+
+        // Bonds here is used for identifying donor heavy and H pairs for hydrogen bonds.
+        let rec_bonds_near_site: Vec<_> = receptor
+            .bonds
+            .iter()
+            // Don't use ||; all atom indices in these bonds must be present in `tgt_atoms_near_site`.
+            .filter(|b| {
+                rec_indices.contains(&b.atom_0) && rec_indices.contains(&b.atom_1)
+            })
+            .map(|b| b.clone()) // todo: don't like the clone
+            .collect();
+
+        let (partial_charges_rec, lj_pairs) = setup_eem_charges(
+            receptor,
+            ligand,
+            &mut rec_atoms_near_site,
+            &rec_indices,
+            lj_lut,
+        );
+
+        // This tree is over the target (receptor) charges. This may be more efficient
+        // than over the ligand, as we expect the receptor nearby atoms to be more numerous.
+        // We can set up our tree once for the whole simulation, as for the case of fixed
+        // receptor, one side of the charge pairs doesn't change.
+        let charge_tree = {
+            // For the Barnes Hut electrostatics tree.
+            let bh_bounding_box = Cube::from_bodies(&partial_charges_rec, 0., true);
+
+            Tree::new(&partial_charges_rec, &bh_bounding_box.unwrap(), &bh_config)
+        };
+
+        Self {
+            rec_atoms_near_site,
+            rec_indices,
+            charges_rec: partial_charges_rec,
+            rec_bonds_near_site,
+            lj_pairs,
+            charge_tree,
+            bh_config: bh_config.clone(),
+        }
+    }
+}
 
 /// Used to determine if a gasteiger charge is a donar (bonded to at least one H), or accepter (not
 /// bonded to any H).
@@ -357,4 +425,33 @@ fn is_bond_in_ring(bond: &Bond, mol: &Molecule) -> bool {
         }
     }
     false
+}
+
+
+/// Find the subet of receptor atoms near a docking site. Only perform force calculations
+/// between this set and the ligand, to keep computational complexity under control.
+pub fn find_rec_atoms_near_site(
+    receptor: &Molecule,
+    site: &DockingSite,
+) -> (Vec<Atom>, Vec<usize>) {
+    let dist_thresh = ATOM_NEAR_SITE_DIST_THRESH * site.site_box_size;
+    println!("Dist thresh: {:?}", dist_thresh);
+
+    let mut indices = Vec::new();
+
+    let atoms = receptor
+        .atoms
+        .iter()
+        .enumerate()
+        .filter(|(i, a)| {
+            let r = (a.posit - site.site_center).magnitude() < dist_thresh && !a.hetero;
+            if r {
+                indices.push(*i);
+            }
+            r
+        })
+        .map(|(i, a)| a.clone()) // todo: Don't like the clone;
+        .collect();
+
+    (atoms, indices)
 }
