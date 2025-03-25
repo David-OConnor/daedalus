@@ -14,6 +14,7 @@ use crate::{
 };
 
 const MOVE_TO_TARGET_DIST: f32 = 15.;
+const MOVE_CAM_TO_LIG_DIST: f32 = 30.;
 
 /// Used for cursor selection.
 pub fn points_along_ray(
@@ -172,6 +173,18 @@ pub fn cam_look_at(cam: &mut Camera, target: Vec3) {
     // Slide along the patah between cam and target until close to it.
     let move_dist = dist - MOVE_TO_TARGET_DIST;
     cam.position += dir * move_dist;
+}
+
+pub fn cam_look_at_outside(cam: &mut Camera, target: Vec3F32, mol_center: Vec3F32) {
+    // Note: This is similar to `cam_look_at`, but we don't call that, as we're positioning
+    // with an absolute orientation in mind, vice `cam_look_at`'s use of current cam LOS.
+
+    // Look from the outside in, so our view is unobstructed by the protein. Do this after
+    // the camera is positioned.
+    let look_vec = (target - mol_center).to_normalized();
+
+    cam.position = target + look_vec * MOVE_CAM_TO_LIG_DIST;
+    cam.orientation = Quaternion::from_unit_vecs(FWD_VEC, -look_vec);
 }
 
 pub fn select_from_search(state: &mut State) {

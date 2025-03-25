@@ -1,34 +1,36 @@
-use std::{env, f32::consts::TAU, path::Path, time::Instant};
+use std::{f32::consts::TAU, path::Path, time::Instant};
 
-use barnes_hut::{BhConfig, Cube, Tree};
+use barnes_hut::{Cube, Tree};
 use egui::{Color32, ComboBox, Context, RichText, Slider, TextEdit, TopBottomPanel, Ui};
-use graphics::{Camera, ControlScheme, EngineUpdates, Entity, RIGHT_VEC, Scene, UP_VEC};
+use graphics::{Camera, ControlScheme, EngineUpdates, Entity, FWD_VEC, RIGHT_VEC, Scene, UP_VEC};
 use lin_alg::f32::{Quaternion, Vec3};
 use na_seq::AaIdent;
 
 use crate::{
     CamSnapshot, Selection, State, ViewSelLevel,
     docking::{
-        ConformationType, binding_energy,
+        ConformationType, calc_binding_energy,
         dynamics_playback::{build_vdw_dynamics, change_snapshot},
         external::{check_adv_avail, dock_with_vina},
         find_optimal_pose, find_rec_atoms_near_site,
         find_sites::find_docking_sites,
-        partial_charge::{PartialCharge, create_partial_charges},
+        partial_charge::create_partial_charges,
         prep_external::{prepare_ligand, prepare_target},
-        setup_docking,
+        setup_eem_charges,
         site_surface::find_docking_site_surface,
     },
     download_mols::{load_cif_rcsb, load_sdf_drugbank, load_sdf_pubchem},
     file_io::pdb::save_pdb,
     mol_drawing::{COLOR_DOCKING_SITE_MESH, MoleculeView, draw_ligand, draw_molecule},
-    molecule::{Atom, Bond, Ligand, Molecule, ResidueType},
+    molecule::{Ligand, Molecule, ResidueType},
     rcsb_api::{open_drugbank, open_pdb, open_pubchem},
     render::{
-        ATOM_SHINYNESS, CAM_INIT_OFFSET, MESH_DOCKING_SURFACE, MESH_SPHERE_LOWRES, RADIUS_SFC_DOT,
-        RENDER_DIST, set_docking_light, set_flashlight,
+        CAM_INIT_OFFSET, MESH_DOCKING_SURFACE, RENDER_DIST, set_docking_light, set_flashlight,
     },
-    util::{cam_look_at, check_prefs_save, cycle_res_selected, orbit_center, select_from_search},
+    util::{
+        cam_look_at, cam_look_at_outside, check_prefs_save, cycle_res_selected, orbit_center,
+        select_from_search,
+    },
 };
 
 pub const ROW_SPACING: f32 = 10.;
@@ -725,21 +727,30 @@ fn residue_search(
 
             // if state.docking_ready {
             if ui.button("Dock").clicked() {
-                cam_look_at(&mut scene.camera, ligand.docking_site.site_center);
-                engine_updates.camera = true;
-                state.ui.cam_snapshot = None;
-
                 // todo: Ideally move the camera to the docking site prior to docking. You could do this
                 // todo by deferring the docking below to the next frame.
 
                 // let tgt = state.molecule.as_ref().unwrap();
-                let mol = state.molecule.as_mut().unwrap();
-                find_optimal_pose(
+                let mol = state.molecule.as_ref().unwrap();
+                let (pose, binding_energy) = find_optimal_pose(
                     mol,
                     ligand,
                     &state.volatile.lj_lookup_table,
                     &state.bh_config,
                 );
+
+                ligand.pose = pose;
+                ligand.atom_posits = ligand.position_atoms(None);
+
+                {
+                    let lig_pos: Vec3 = ligand.position_atoms(None)[ligand.anchor_atom].into();
+                    let ctr: Vec3 = state.molecule.as_ref().unwrap().center.into();
+
+                    cam_look_at_outside(&mut scene.camera, lig_pos, ctr);
+
+                    engine_updates.camera = true;
+                    state.ui.cam_snapshot = None;
+                }
 
                 // Allow the user to select the autodock executable.
                 // if state.to_save.autodock_vina_path.is_none() {
@@ -919,9 +930,11 @@ fn selection_section(
                     .button(RichText::new("Move cam to ligand").color(COLOR_HIGHLIGHT))
                     .clicked()
                 {
-                    let pos = lig.position_atoms(None);
+                    let lig_pos: Vec3 = lig.position_atoms(None)[lig.anchor_atom].into();
+                    let ctr: Vec3 = mol.center.into();
 
-                    cam_look_at(&mut scene.camera, pos[lig.anchor_atom]);
+                    cam_look_at_outside(&mut scene.camera, lig_pos, ctr);
+
                     engine_updates.camera = true;
                     state.ui.cam_snapshot = None;
                 }
@@ -1251,15 +1264,31 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 }
 
                 ui.add_space(COL_SPACING);
-                if let Some(mol) = &mut state.molecule {
+
+                if let Some(mol) = &state.molecule {
                     if ui.button("Docking energy").clicked() {
-                        let (
-                            rec_atoms_near_site,
-                            rec_atom_indices,
-                            rec_bonds_near_site,
-                            partial_charges_rec,
-                            lj_pairs,
-                        ) = setup_docking(mol, ligand, &state.volatile.lj_lookup_table);
+                        let (mut rec_atoms_near_site, rec_atom_indices) =
+                            find_rec_atoms_near_site(mol, &ligand.docking_site);
+
+                        // Bonds here is used for identifying donor heavy and H pairs for hydrogen bonds.
+                        let rec_bonds_near_site: Vec<_> = mol
+                            .bonds
+                            .iter()
+                            // Don't use ||; all atom indices in these bonds must be present in `tgt_atoms_near_site`.
+                            .filter(|b| {
+                                rec_atom_indices.contains(&b.atom_0)
+                                    && rec_atom_indices.contains(&b.atom_1)
+                            })
+                            .map(|b| b.clone()) // todo: don't like the clone
+                            .collect();
+
+                        let (partial_charges_rec, lj_pairs) = setup_eem_charges(
+                            mol,
+                            ligand,
+                            &mut rec_atoms_near_site,
+                            &rec_atom_indices,
+                            &state.volatile.lj_lookup_table,
+                        );
 
                         let poses = vec![ligand.pose.clone()];
                         let mut lig_posits = Vec::with_capacity(poses.len());
@@ -1292,13 +1321,12 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                             )
                         };
 
-                        state.ui.binding_energy_disp = binding_energy(
+                        state.ui.binding_energy_disp = calc_binding_energy(
                             &rec_atoms_near_site,
                             &rec_atom_indices,
                             &rec_bonds_near_site,
                             &ligand,
                             &lig_posits[0],
-                            &partial_charges_rec,
                             &partial_charges_lig[0],
                             &charge_tree,
                             &state.bh_config,

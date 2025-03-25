@@ -395,7 +395,7 @@ fn k_over_r(r: f32) -> f32 {
     }
 }
 
-/// For now, for use with EEM. `posits` is separate for different ligand pooses.
+/// For now, for use with EEM. `posits` is separate, for handling different ligand poses.
 pub fn create_partial_charges(atoms: &[Atom], posits: Option<&[Vec3]>) -> Vec<PartialCharge> {
     let mut result = Vec::with_capacity(atoms.len());
 
@@ -415,6 +415,7 @@ pub fn create_partial_charges(atoms: &[Atom], posits: Option<&[Vec3]>) -> Vec<Pa
 
     result
 }
+
 //
 // /// Create a set of partial charges around atoms. Rough simulation of electronic density imbalances
 // /// in charges molecules, and/or at short distances. It places a single positive charge

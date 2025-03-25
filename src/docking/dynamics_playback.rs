@@ -301,7 +301,6 @@ fn force_lj_x8(
             let mut sigmas = [0.; 8];
             let mut epss = [0.; 8];
 
-            //todo: QC all this lane stuff.
             let lanes_src = if i == chunks_src - 1 {
                 valid_lanes_src_last
             } else {
@@ -394,7 +393,7 @@ pub fn build_vdw_dynamics(
     let n_steps = 500;
     // An adaptive timestep.
     // let dt_max = 0.00001;
-    let dt_max = 0.000001;
+    let dt_max = 0.00001;
 
     let dt_dynamic_scaler = 100.;
     let dt_dynamic_scaler_x8 = f32x8::splat(dt_dynamic_scaler);
@@ -457,6 +456,55 @@ pub fn build_vdw_dynamics(
 
         let anchor_posit = Vec3x8::splat(body.posit);
 
+        let (f_net, torque_net) = bodies_lig_x8
+            // .par_iter_mut()
+            .par_iter()
+            .enumerate()
+            .map(|(i_lig, body_lig)| {
+                let lanes_lig = if i_lig == chunk_count_lig - 1 {
+                    valid_lanes_lig_last
+                } else {
+                    8
+                };
+
+                let f = force_lj_x8(
+                    body_lig.posit,
+                    body_lig.element,
+                    &bodies_rec_x8,
+                    &lj_lut,
+                    chunk_count_rec,
+                    lanes_lig,
+                    valid_lanes_rec_last,
+                );
+
+                // Torque = (r - R_cm) x F,
+                // where R_cm is the center-of-mass position, and r is this atom's position.
+                // But if you store each body_lig.posit already relative to the COM, then you can just use r x F
+                // let diff = body_lig.posit - body_ligand_rigid.posit;
+
+                let diff = body_lig.posit - anchor_posit;
+                let torque = diff.cross(f);
+
+                (f, torque)
+            })
+            .reduce(
+                || (Vec3x8::new_zero(), Vec3x8::new_zero()),
+                |a, b| (a.0 + b.0, a.1 + b.1),
+            );
+
+        // Now, unpack the SIMD-calculated acceleration into a single value.
+        let f_net_unpacked: Vec3 = f_net.to_array().into_iter().sum();
+        // let acc_net = f_net_unpacked / body_ligand_rigid.mass;
+
+        let torque_net_unpacked: Vec3 = torque_net.to_array().into_iter().sum();
+        (f_net_unpacked, torque_net_unpacked)
+    };
+
+    // We use these to avoid performing computations on empty (0ed?) values on the final SIMD value.
+    // This causes incorrect results.
+    // Number of real bodies:
+
+    for t in 0..n_steps {
         // todo: This is dramatically increasing computation time. Cache distances, and use in the LJ calc!
         // let (distances, dt_) = {
         // let mut distances = Vec::new();
@@ -507,55 +555,6 @@ pub fn build_vdw_dynamics(
 
         // dt = dt_;
 
-        let (f_net, torque_net) = bodies_lig_x8
-            // .par_iter_mut()
-            .par_iter()
-            .enumerate()
-            .map(|(i_lig, body_lig)| {
-                let lanes_lig = if i_lig == chunk_count_lig - 1 {
-                    valid_lanes_lig_last
-                } else {
-                    8
-                };
-
-                let f = force_lj_x8(
-                    body_lig.posit,
-                    body_lig.element,
-                    &bodies_rec_x8,
-                    &lj_lut,
-                    chunk_count_rec,
-                    lanes_lig,
-                    valid_lanes_rec_last,
-                );
-
-                // Torque = (r - R_cm) x F,
-                // where R_cm is the center-of-mass position, and r is this atom's position.
-                // But if you store each body_lig.posit already relative to the COM, then you can just use r x F
-                // let diff = body_lig.posit - body_ligand_rigid.posit;
-
-                let diff = body_lig.posit - anchor_posit; // todo: Use cached diffs?
-                let torque = diff.cross(f);
-
-                (f, torque)
-            })
-            .reduce(
-                || (Vec3x8::new_zero(), Vec3x8::new_zero()),
-                |a, b| (a.0 + b.0, a.1 + b.1),
-            );
-
-        // Now, unpack the SIMD-calculated acceleration into a single value.
-        let f_net_unpacked: Vec3 = f_net.to_array().into_iter().sum();
-        // let acc_net = f_net_unpacked / body_ligand_rigid.mass;
-
-        let torque_net_unpacked: Vec3 = torque_net.to_array().into_iter().sum();
-        (f_net_unpacked, torque_net_unpacked)
-    };
-
-    // We use these to avoid performing computations on empty (0ed?) values on the final SIMD value.
-    // This causes incorrect results.
-    // Number of real bodies:
-
-    for t in 0..n_steps {
         integrate_rk4_rigid(&mut body_ligand_rigid, &force_torque_fn, dt);
 
         time_elapsed += dt;
