@@ -93,7 +93,7 @@ fn setup_eem_charges(
     println!("Assigning EEM charges to receptor atoms...");
     assign_eem_charges(
         rec_atoms_near_site,
-        &rec_atom_indices,
+        rec_atom_indices,
         &receptor.bonds,
         &receptor.adjacency_list,
         &eem_params,
@@ -132,7 +132,7 @@ impl DockingSetup {
             .iter()
             // Don't use ||; all atom indices in these bonds must be present in `tgt_atoms_near_site`.
             .filter(|b| rec_indices.contains(&b.atom_0) && rec_indices.contains(&b.atom_1))
-            .map(|b| b.clone()) // todo: don't like the clone
+            .cloned()
             .collect();
 
         let partial_charges_rec =
@@ -159,7 +159,7 @@ impl DockingSetup {
             // For the Barnes Hut electrostatics tree.
             let bh_bounding_box = Cube::from_bodies(&partial_charges_rec, 0., true);
 
-            Tree::new(&partial_charges_rec, &bh_bounding_box.unwrap(), &bh_config)
+            Tree::new(&partial_charges_rec, &bh_bounding_box.unwrap(), bh_config)
         };
 
         // SIMD prep
@@ -366,7 +366,7 @@ impl DockType {
         }
     }
 
-    pub fn to_str(&self) -> String {
+    pub fn to_str(self) -> String {
         match self {
             Self::A => "A",
             Self::C => "C",
@@ -462,7 +462,7 @@ fn count_bonds(atom_index: usize, mol: &Molecule) -> usize {
 }
 
 // Set up which atoms in a ligand are flexible.
-pub fn setup_flexibility(mol: &mut Molecule) -> Vec<usize> {
+pub fn setup_flexibility(mol: &Molecule) -> Vec<usize> {
     let mut flexible_bonds = Vec::new();
 
     for (i, bond) in mol.bonds.iter().enumerate() {

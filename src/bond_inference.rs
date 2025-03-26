@@ -350,7 +350,7 @@ pub fn create_hydrogen_bonds_one_way(
 
         if donor_0.is_none() || donor_1.is_none() {
             eprintln!("Error! Can't find atoms from indices when making H bonds");
-            return continue;
+            continue;
         }
         let donor_0 = donor_0.unwrap();
         let donor_1 = donor_1.unwrap();

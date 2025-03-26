@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments)]
+
 mod aa_coords;
 mod add_hydrogens;
 mod amino_acid_coords;
@@ -22,15 +24,7 @@ mod ui;
 mod util;
 mod vibrations;
 
-use std::{
-    collections::HashMap,
-    io,
-    io::{ErrorKind, Read},
-    path::Path,
-    str::FromStr,
-    sync::Arc,
-    time::Instant,
-};
+use std::{collections::HashMap, fmt, io, io::ErrorKind, path::Path, sync::Arc};
 
 use barnes_hut::BhConfig;
 use bincode::{Decode, Encode};
@@ -41,7 +35,6 @@ use lin_alg::f32::{Quaternion, Vec3};
 use mol_drawing::MoleculeView;
 use molecule::Molecule;
 use pdbtbx::{self, PDB};
-use rayon::iter::ParallelIterator;
 
 use crate::{
     aa_coords::bond_vecs::init_local_bond_vecs,
@@ -77,13 +70,12 @@ pub enum ViewSelLevel {
     Residue,
 }
 
-impl ViewSelLevel {
-    pub fn to_string(&self) -> String {
+impl fmt::Display for ViewSelLevel {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Atom => "Atom",
-            Self::Residue => "Residue",
+            Self::Atom => write!(f, "Atom"),
+            Self::Residue => write!(f, "Residue"),
         }
-        .to_owned()
     }
 }
 
@@ -431,7 +423,7 @@ fn main() {
     }
 
     // todo: Not the ideal place, but having double-borrow errors when doing it on-demand.
-    &state.get_make_docking_setup().as_ref().unwrap();
+    state.get_make_docking_setup().as_ref().unwrap();
 
     if let Some(path) = &state.to_save.autodock_vina_path {
         state.ui.autodock_path_valid = check_adv_avail(path);

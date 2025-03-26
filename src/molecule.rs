@@ -1,10 +1,11 @@
-//! Contains data structures and related code for molecules, atoms, residues, chains, etc.
-use std::{f64::consts::TAU, fmt, str::FromStr};
+#![allow(non_camel_case_types)]
 
-use graphics::FWD_VEC;
+//! Contains data structures and related code for molecules, atoms, residues, chains, etc.
+use std::{fmt, str::FromStr};
+
 use lin_alg::{
     f32::Vec3 as Vec3F32,
-    f64::{Quaternion, UP, Vec3},
+    f64::{Quaternion, Vec3},
 };
 use na_seq::AminoAcid;
 use pdbtbx::SecondaryStructure;
@@ -205,30 +206,13 @@ pub struct Ligand {
 
 impl Ligand {
     pub fn new(molecule: Molecule) -> Self {
-        // todo: Temp for testing.
-        let docking_init = DockingSite {
-            // site_center: Vec3::new(38.699, 36.415, 30.815),
-            site_center: Vec3::new(40.000, 37.0, 31.5),
-            site_box_size: 10.,
-        };
-
-        let mut pose = Pose {
-            anchor_posit: docking_init.site_center,
-            ..Default::default()
-        };
-
-        // todo: Temp for testing.
-        let rotator = Quaternion::from_axis_angle(Vec3::new(1., 0., 0.), TAU / 16.);
-        pose.orientation = rotator;
-
         let mut result = Self {
             molecule,
-            docking_site: docking_init,
-            pose,
             ..Default::default()
         };
+
         result.set_anchor();
-        result.flexible_bonds = setup_flexibility(&mut result.molecule);
+        result.flexible_bonds = setup_flexibility(&result.molecule);
 
         result.pose.conformation_type = ConformationType::Flexible {
             torsions: result
@@ -240,6 +224,23 @@ impl Ligand {
                 })
                 .collect(),
         };
+
+
+        println!("Torsions: {:?}", result.pose.conformation_type);
+        // todo: Temp for testing.
+        {
+            result.docking_site = DockingSite {
+                site_center: Vec3::new(40.6807, 36.2017, 28.5526),
+                site_box_size: 10.,
+            };
+            result.pose.anchor_posit = result.docking_site.site_center;
+            result.pose.orientation = Quaternion::new(0.1156, -0.7155, 0.4165, 0.5488);
+
+            if let ConformationType::Flexible{ torsions } = &mut result.pose.conformation_type {
+                torsions[1].dihedral_angle = 0.884;
+                torsions[0].dihedral_angle = 2.553;
+            }
+        }
 
         result.atom_posits = result.position_atoms(None);
         result

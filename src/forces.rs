@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 //! Force, acceleration, and related computations.
 
 #[cfg(feature = "cuda")]
@@ -24,8 +26,8 @@ pub fn coulomb_force_gpu(
     let n_sources = posits_src.len();
     let n_targets = posits_tgt.len();
 
-    let posit_charges_gpus = alloc_vec3s(&dev, posits_src);
-    let posits_sample_gpu = alloc_vec3s(&dev, posits_tgt);
+    let posit_charges_gpus = alloc_vec3s(dev, posits_src);
+    let posits_sample_gpu = alloc_vec3s(dev, posits_tgt);
 
     // Note: This step is not required when using f64ss.
     let charges: Vec<f32> = charges.iter().map(|c| *c as f32).collect();
@@ -37,11 +39,11 @@ pub fn coulomb_force_gpu(
 
     let kernel = dev.get_func("cuda", "coulomb_kernel").unwrap();
 
-    let cfg = LaunchConfig::for_num_elems(n_targets as u32);
+    // let cfg = LaunchConfig::for_num_elems(n_targets as u32);
 
     let cfg = {
         const NUM_THREADS: u32 = 1024;
-        let num_blocks = (n_targets as u32 + NUM_THREADS - 1) / NUM_THREADS;
+        let num_blocks = (n_targets as u32).div_ceil(NUM_THREADS);
 
         // Custom launch config for 2-dimensional data (?)
         LaunchConfig {
@@ -145,7 +147,6 @@ pub fn lj_force(dir: Vec3, r: f32, sigma: f32, eps: f32) -> Vec3 {
     let sr6 = sr.powi(6);
     let sr12 = sr6.powi(2);
 
-    // todo: QC this!
     let mag = 24. * eps * (2. * sr12 - sr6) / r.powi(2);
     -dir * mag
 }
@@ -156,7 +157,6 @@ pub fn lj_force_x8(dir: Vec3x8, r: f32x8, sigma: f32x8, eps: f32x8) -> Vec3x8 {
     let sr6 = sr.powi(6);
     let sr12 = sr6.powi(2);
 
-    // todo: QC this!
     let mag = f32x8::splat(24.) * eps * (f32x8::splat(2.) * sr12 - sr6) / r.powi(2);
     -dir * mag
 }

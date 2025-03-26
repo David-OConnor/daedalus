@@ -1,8 +1,7 @@
 use std::{f32::consts::TAU, path::Path, time::Instant};
 
-use barnes_hut::{Cube, Tree};
 use egui::{Color32, ComboBox, Context, RichText, Slider, TextEdit, TopBottomPanel, Ui};
-use graphics::{Camera, ControlScheme, EngineUpdates, Entity, FWD_VEC, RIGHT_VEC, Scene, UP_VEC};
+use graphics::{Camera, ControlScheme, EngineUpdates, Entity, RIGHT_VEC, Scene, UP_VEC};
 use lin_alg::f32::{Quaternion, Vec3};
 use na_seq::AaIdent;
 
@@ -45,8 +44,8 @@ const NEARBY_THRESH_MAX: u16 = 60;
 // todo: Teese aren't reacting correctly; too slow for the values set.
 // const CAM_BUTTON_POS_STEP: f32 = 30.;
 // const CAM_BUTTON_ROT_STEP: f32 = TAU / 3.;
-const CAM_BUTTON_POS_STEP: f32 = 30. * 3.;
-const CAM_BUTTON_ROT_STEP: f32 = TAU / 3. * 3.;
+// const CAM_BUTTON_POS_STEP: f32 = 30. * 3.;
+// const CAM_BUTTON_ROT_STEP: f32 = TAU / 3. * 3.;
 
 const COLOR_INACTIVE: Color32 = Color32::GRAY;
 const COLOR_ACTIVE: Color32 = Color32::LIGHT_GREEN;
@@ -728,7 +727,7 @@ fn residue_search(
                 // todo by deferring the docking below to the next frame.
 
                 let (pose, binding_energy) =
-                    find_optimal_pose(&state.volatile.docking_setup.as_ref().unwrap(), ligand);
+                    find_optimal_pose(state.volatile.docking_setup.as_ref().unwrap(), ligand);
 
                 ligand.pose = pose;
                 ligand.atom_posits = ligand.position_atoms(None);
@@ -764,15 +763,15 @@ fn residue_search(
                         .collect();
 
                     partial_charges_lig.push(create_partial_charges(
-                        &mut ligand.molecule.atoms,
+                        &ligand.molecule.atoms,
                         Some(&posits_this_pose),
                     ));
                     lig_posits.push(posits_this_pose);
                 }
 
                 state.ui.binding_energy_disp = calc_binding_energy(
-                    &state.volatile.docking_setup.as_ref().unwrap(),
-                    &ligand,
+                    state.volatile.docking_setup.as_ref().unwrap(),
+                    ligand,
                     &lig_posits[0],
                     &partial_charges_lig[0],
                 );
@@ -1116,7 +1115,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         handle_input(state, ui, &mut redraw, &mut reset_cam, &mut engine_updates);
 
         ui.horizontal(|ui| {
-            let mut metadata_loaded = false; // avoids borrow error.
+            let metadata_loaded = false; // avoids borrow error.
             if let Some(mol) = &mut state.molecule {
                 mol_descrip(mol, ui);
 
@@ -1283,7 +1282,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     {
                         if ui.button(format!("{i}")).clicked() {
                             torsions[i].dihedral_angle =
-                                (torsions[i].dihedral_angle + TAU / 16.) % TAU;
+                                (torsions[i].dihedral_angle + TAU / 64.) % TAU;
 
                             ligand.atom_posits = ligand.position_atoms(None);
                             redraw = true;
@@ -1294,7 +1293,16 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 ui.add_space(COL_SPACING);
 
                 if let Some(energy) = &state.ui.binding_energy_disp {
-                    ui.label(format!("{:?}", energy)); // todo placeholder.
+                    ui.label(format!("{:.2?}", energy)); // todo placeholder.
+                }
+
+                // todo: temp, or at least temp here
+                ui.label(format!("Lig pos: {}", ligand.pose.anchor_posit));
+                ui.label(format!("Lig or: {}", ligand.pose.orientation));
+                if let ConformationType::Flexible { torsions } = &ligand.pose.conformation_type {
+                    for torsion in torsions {
+                        ui.label(format!("T: {:.3}", torsion.dihedral_angle));
+                    }
                 }
             });
         }
@@ -1504,6 +1512,28 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
     }
 
     state.ui.dt = start.elapsed().as_secs_f32();
+
+    static mut INIT_COMPLETE: bool = false;
+
+    unsafe {
+        if !INIT_COMPLETE {
+
+            if let Some(mol) = &state.molecule {
+                if let Some(lig) = &state.ligand {
+                    let lig_pos: Vec3 = lig.position_atoms(None)[lig.anchor_atom].into();
+                    let ctr: Vec3 = mol.center.into();
+
+                    cam_look_at_outside(&mut scene.camera, lig_pos, ctr);
+
+                    engine_updates.camera = true;
+                    state.ui.cam_snapshot = None;
+                }
+            }
+
+            INIT_COMPLETE = true;
+        }
+    }
+
 
     engine_updates
 }

@@ -3,7 +3,6 @@ use std::{
     io,
     io::{BufReader, ErrorKind},
     path::Path,
-    str::FromStr,
 };
 
 use lin_alg::f64::Vec3;
@@ -94,7 +93,7 @@ impl Molecule {
                 let atom_pdb = atoms_pdb
                     .iter()
                     .enumerate()
-                    .find(|(i, a)| a.serial_number() == atom_c.serial_number());
+                    .find(|(_i, a)| a.serial_number() == atom_c.serial_number());
                 if let Some((i, _atom)) = atom_pdb {
                     chain.atoms.push(i);
                 }
@@ -188,7 +187,7 @@ impl Residue {
             let atom_pdb = atoms_pdb
                 .iter()
                 .enumerate()
-                .find(|(i, a)| a.serial_number() == atom_c.serial_number());
+                .find(|(_i, a)| a.serial_number() == atom_c.serial_number());
             if let Some((i, _atom)) = atom_pdb {
                 res.atoms.push(i);
             }
@@ -206,7 +205,7 @@ pub fn read_pdb(pdb_text: &str) -> io::Result<PDB> {
         .set_level(StrictnessLevel::Loose)
         .set_format(Format::Mmcif) // Must be set explicitly if  using read_raw.
         .read_raw(reader)
-        .map_err(|e| io::Error::new(ErrorKind::InvalidData, "Problem reading PDB text"))?;
+        .map_err(|_e| io::Error::new(ErrorKind::InvalidData, "Problem reading PDB text"))?;
 
     Ok(pdb)
 }
@@ -229,7 +228,7 @@ pub fn save_pdb(mol: &Molecule, pdb: &mut PDB, path: &Path) -> io::Result<()> {
     // todo: Update the PDB in state with data from the molecule prior to saving.
 
     pdbtbx::save(
-        &pdb,
+        pdb,
         path.to_str().unwrap_or_default(),
         StrictnessLevel::Loose,
     )

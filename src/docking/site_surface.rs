@@ -48,7 +48,7 @@ fn quickhull(points: &[Vec3], molecule_center: Vec3) -> Vec<usize> {
             let p1 = points[v1];
             let p2 = points[v2];
 
-            let normal = Vec3::from_slice(&simplex.normal().unwrap()).unwrap();
+            let normal = Vec3::from_slice(simplex.normal().unwrap()).unwrap();
 
             // Face centroid
             let centroid = (p0 + p1 + p2) / 3.0;
@@ -196,7 +196,7 @@ pub fn find_docking_site_surface(
             edge_set.insert((mn, mx), true);
         }
     }
-    let edges = edge_set.into_iter().map(|(k, _)| k).collect::<Vec<_>>();
+    let edges = edge_set.into_keys().collect::<Vec<_>>();
 
     (mesh, edges)
 }

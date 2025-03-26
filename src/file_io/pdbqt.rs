@@ -7,7 +7,6 @@ use std::{
     io,
     io::{ErrorKind, Read, Write},
     path::Path,
-    str::FromStr,
 };
 
 use lin_alg::f64::Vec3;

@@ -73,7 +73,7 @@ impl AtomGrid {
 
             // Insert this atom index into that cell (and possibly neighbors).
             // But at minimum, insert into the cell of the atom's center:
-            cells.entry((ix, iy, iz)).or_insert_with(Vec::new).push(i);
+            cells.entry((ix, iy, iz)).or_default().push(i);
 
             // Optionally, if you want to handle "large" atoms that might straddle
             // multiple cells, insert them in the neighboring 26 cells:
@@ -216,6 +216,7 @@ pub fn get_mesh_points(atoms: &[Atom]) -> Vec<Vec<Vec3>> {
 /// - Adjacent rings must have the same number of points to form quads/triangles.
 /// - No “closing” of each ring in theta-direction.
 /// - Normals are averaged from adjacent faces; tangents/bitangents are naive placeholders.
+///
 /// todo: Not working: `Index 7638 extends beyond limit 2076. Did you bind the correct index buffer?`
 pub fn mesh_from_sas_points(rings: &[Vec<Vec3>]) -> Mesh {
     let mut vertices = Vec::new();

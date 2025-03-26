@@ -1,3 +1,5 @@
+#![allow(clippy::excessive_precision)]
+
 //! https://acc2.ncbr.muni.cz/
 //! https://github.com/sb-ncbr/eem_parameters/
 
@@ -404,8 +406,7 @@ pub fn create_partial_charges(atoms: &[Atom], posits: Option<&[Vec3]>) -> Vec<Pa
             p[i]
         } else {
             atom.posit.into()
-        }
-        .into();
+        };
 
         result.push(PartialCharge {
             posit,

@@ -4,19 +4,19 @@
 use std::{collections::HashMap, time::Instant};
 
 use graphics::Entity;
-use lin_alg::f32::{Mat3, Quaternion,  Vec3, Vec3x8, f32x8, pack_vec3, pack_slice};
+use lin_alg::f32::{Mat3, Quaternion, Vec3, Vec3x8, f32x8, pack_slice, pack_vec3};
 use rayon::prelude::*;
 
 use crate::{
-    docking::{BindingEnergy,  Pose},
+    docking::{BindingEnergy, Pose},
     element::Element,
-    forces::{lj_force_x8},
+    forces::lj_force_x8,
     molecule::{Atom, Ligand},
 };
 
 // This seems to be how we control rotation vice movement. A higher value means
 // more movement, less rotation for a given dt.
-const ROTATION_INERTIA: f32 = 1_000.;
+const ROTATION_INERTIA: f32 = 5_000.;
 
 #[derive(Clone, Debug)]
 struct BodyVdw {
@@ -290,6 +290,7 @@ fn force_lj_x8(
             let posit_src = body_source.posit;
 
             let diff = posit_src - posit_target;
+
             let dist = diff.magnitude();
 
             let dir = diff / dist; // Unit vec
@@ -321,7 +322,7 @@ fn force_lj_x8(
 }
 
 fn bodies_from_atoms(atoms: &[Atom]) -> Vec<BodyVdw> {
-    atoms.iter().map(|a| BodyVdw::from_atom(a)).collect()
+    atoms.iter().map(BodyVdw::from_atom).collect()
 }
 
 fn bodies_from_atomsx8(atoms: &[Atom]) -> Vec<BodyVdwx8> {
@@ -339,7 +340,10 @@ fn bodies_from_atomsx8(atoms: &[Atom]) -> Vec<BodyVdwx8> {
     let mut result = Vec::with_capacity(posits_x8.len());
 
     for (i, posit) in posits_x8.iter().enumerate() {
-        let masses: Vec<_> = els_x8[i].iter().map(|el| el.atomic_number() as f32).collect();
+        let masses: Vec<_> = els_x8[i]
+            .iter()
+            .map(|el| el.atomic_number() as f32)
+            .collect();
         let mass = f32x8::from_slice(&masses);
 
         result.push(BodyVdwx8 {
@@ -374,10 +378,10 @@ pub fn build_vdw_dynamics(
     // todo: You should possibly add your pre-computed LJ pairs, instead of looking up each time.
     // todo: See this code from docking.
 
-    let n_steps = 500;
+    let n_steps = 1_000;
     // An adaptive timestep.
     // let dt_max = 0.00001;
-    let dt_max = 0.00001;
+    let dt_max = 0.01;
 
     let dt_dynamic_scaler = 100.;
     let dt_dynamic_scaler_x8 = f32x8::splat(dt_dynamic_scaler);
@@ -455,7 +459,7 @@ pub fn build_vdw_dynamics(
                     body_lig.posit,
                     body_lig.element,
                     &bodies_rec_x8,
-                    &lj_lut,
+                    lj_lut,
                     chunk_count_rec,
                     lanes_lig,
                     valid_lanes_rec_last,
@@ -468,6 +472,7 @@ pub fn build_vdw_dynamics(
 
                 let diff = body_lig.posit - anchor_posit;
                 let torque = diff.cross(f);
+                let torque = Vec3x8::new_zero(); // todo temp
 
                 (f, torque)
             })
@@ -541,6 +546,9 @@ pub fn build_vdw_dynamics(
 
         integrate_rk4_rigid(&mut body_ligand_rigid, &force_torque_fn, dt);
 
+        // Experimenting with a drag term to prevent inertia from having too much influence.
+        body_ligand_rigid.vel *= 0.98;
+        body_ligand_rigid.ω *= 0.98;
         time_elapsed += dt;
 
         // Save the current state to a snapshot, for later playback.
@@ -578,7 +586,7 @@ pub fn build_vdw_dynamics(
 
 /// Body masses are separate from the snapshot, since it's invariant.
 pub fn change_snapshot(
-    entities: &mut Vec<Entity>,
+    entities: &mut [Entity],
     lig: &mut Ligand,
     lig_entity_ids: &[usize],
     snapshot: &Snapshot,

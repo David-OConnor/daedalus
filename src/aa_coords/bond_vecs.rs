@@ -1,3 +1,5 @@
+#![allow(non_upper_case_globals)]
+
 //! This module contains code for modelling bond angles as (unit?) vectors. Or perhaps
 //! non-unit vectors including length. It's designed to be explicit and flexible.
 

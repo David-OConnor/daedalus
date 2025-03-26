@@ -9,7 +9,6 @@ use lin_alg::f32::{Quaternion, Vec3};
 use crate::{
     Selection, State, ViewSelLevel,
     asa::{get_mesh_points, mesh_from_sas_points},
-    docking::ConformationType,
     element::Element,
     molecule::{Atom, AtomRole, BondCount, BondType, Chain, Residue, ResidueType, aa_color},
     render::{
@@ -125,11 +124,9 @@ fn atom_color(
 /// atom. Adds optional rounding. `thickness` is relative to BOND_RADIUS.
 fn add_bond(
     entities: &mut Vec<Entity>,
-    posit_0: Vec3,
-    posit_1: Vec3,
+    posits: (Vec3, Vec3),
+    colors: (Color, Color),
     center: Vec3,
-    color_0: Color,
-    color_1: Color,
     orientation: Quaternion,
     dist_half: f32,
     caps: bool,
@@ -137,15 +134,15 @@ fn add_bond(
 ) {
     // Split the bond into two entities, so you can color-code them separately based
     // on which atom the half is closer to.
-    let center_0 = (posit_0 + center) / 2.;
-    let center_1 = (posit_1 + center) / 2.;
+    let center_0 = (posits.0 + center) / 2.;
+    let center_1 = (posits.1 + center) / 2.;
 
     let mut entity_0 = Entity::new(
         MESH_BOND,
         center_0,
         orientation,
         1.,
-        color_0,
+        colors.0,
         BODY_SHINYNESS,
     );
 
@@ -154,7 +151,7 @@ fn add_bond(
         center_1,
         orientation,
         1.,
-        color_1,
+        colors.1,
         BODY_SHINYNESS,
     );
 
@@ -163,18 +160,18 @@ fn add_bond(
         // todo: You only need a dome; performance implications.
         let cap_0 = Entity::new(
             MESH_SPHERE,
-            posit_0,
+            posits.0,
             Quaternion::new_identity(),
             BOND_RADIUS * thickness,
-            color_0,
+            colors.0,
             BODY_SHINYNESS,
         );
         let cap_1 = Entity::new(
             MESH_SPHERE,
-            posit_1,
+            posits.1,
             Quaternion::new_identity(),
             BOND_RADIUS * thickness,
-            color_1,
+            colors.1,
             BODY_SHINYNESS,
         );
 
@@ -235,11 +232,9 @@ fn bond_entities(
 
             add_bond(
                 entities,
-                posit_0,
-                posit_1,
+                (posit_0, posit_1),
+                (color_0, color_1),
                 center,
-                color_0,
-                color_1,
                 orientation,
                 dist_half,
                 caps,
@@ -294,11 +289,9 @@ fn bond_entities(
 
             add_bond(
                 entities,
-                posit_0 + offset_a,
-                posit_1 + offset_a,
+                (posit_0 + offset_a, posit_1 + offset_a),
+                (color_0, color_1),
                 center + offset_a,
-                color_0,
-                color_1,
                 orientation,
                 dist_half,
                 caps,
@@ -306,11 +299,9 @@ fn bond_entities(
             );
             add_bond(
                 entities,
-                posit_0 + offset_b,
-                posit_1 + offset_b,
+                (posit_0 + offset_b, posit_1 + offset_b),
+                (color_0, color_1),
                 center + offset_b,
-                color_0,
-                color_1,
                 orientation,
                 dist_half,
                 caps,
@@ -328,11 +319,9 @@ fn bond_entities(
 
             add_bond(
                 entities,
-                posit_0,
-                posit_1,
+                (posit_0, posit_1),
+                (color_0, color_1),
                 center,
-                color_0,
-                color_1,
                 orientation,
                 dist_half,
                 caps,
@@ -340,11 +329,9 @@ fn bond_entities(
             );
             add_bond(
                 entities,
-                posit_0 + offset_a,
-                posit_1 + offset_a,
+                (posit_0 + offset_a, posit_1 + offset_a),
+                (color_0, color_1),
                 center + offset_a,
-                color_0,
-                color_1,
                 orientation,
                 dist_half,
                 caps,
@@ -352,11 +339,9 @@ fn bond_entities(
             );
             add_bond(
                 entities,
-                posit_0 + offset_b,
-                posit_1 + offset_b,
+                (posit_0 + offset_b, posit_1 + offset_b),
+                (color_0, color_1),
                 center + offset_b,
-                color_0,
-                color_1,
                 orientation,
                 dist_half,
                 caps,
@@ -535,7 +520,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
         if !mol.mesh_created {
             println!("Building surface mesh...");
             scene.meshes[MESH_SOLVENT_SURFACE] =
-                mesh_from_sas_points(&mol.sa_surface_pts.as_ref().unwrap());
+                mesh_from_sas_points(mol.sa_surface_pts.as_ref().unwrap());
             mol.mesh_created = true;
             println!("Mesh complete");
         }
@@ -581,16 +566,16 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                         continue;
                     }
                 }
-                if state.ui.visibility.hide_water || ui.mol_view == MoleculeView::SpaceFill {
-                    if role == AtomRole::Water {
-                        continue;
-                    }
+                if (state.ui.visibility.hide_water || ui.mol_view == MoleculeView::SpaceFill)
+                    && role == AtomRole::Water
+                {
+                    continue;
                 }
             }
 
-            if state.ui.visibility.hide_hetero && atom.hetero {
-                continue;
-            } else if state.ui.visibility.hide_non_hetero && !atom.hetero {
+            if (state.ui.visibility.hide_hetero && atom.hetero)
+                || (state.ui.visibility.hide_non_hetero && !atom.hetero)
+            {
                 continue;
             }
 
@@ -615,7 +600,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
             };
 
             let color_atom = atom_color(
-                &atom,
+                atom,
                 i,
                 &mol.residues,
                 state.selection,
@@ -689,9 +674,9 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
             }
         }
 
-        if state.ui.visibility.hide_hetero && atom_0.hetero && atom_1.hetero {
-            continue;
-        } else if state.ui.visibility.hide_non_hetero && !atom_0.hetero && !atom_1.hetero {
+        if (state.ui.visibility.hide_hetero && atom_0.hetero && atom_1.hetero)
+            || (state.ui.visibility.hide_non_hetero && !atom_0.hetero && !atom_1.hetero)
+        {
             continue;
         }
 

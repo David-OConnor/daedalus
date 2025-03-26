@@ -1,12 +1,13 @@
 //! Handles user inputs, e.g. from keyboard and mouse.
 
 use graphics::{
-    ControlScheme, DeviceEvent, ElementState, EngineUpdates, FWD_VEC, Scene, WindowEvent,
+    ControlScheme, DeviceEvent, ElementState, EngineUpdates, FWD_VEC, RIGHT_VEC, Scene, UP_VEC,
+    WindowEvent,
     winit::keyboard::{KeyCode, PhysicalKey::Code},
 };
 use lin_alg::{
     f32::{Quaternion, Vec3},
-    f64::Quaternion as QuaternionF64,
+    f64::{Quaternion as QuaternionF64, Vec3 as Vec3F64},
     map_linear,
 };
 
@@ -37,9 +38,16 @@ pub fn event_dev_handler(
     _engine_inputs: bool,
     dt: f32,
 ) -> EngineUpdates {
+    let lig_move_amt = 0.05;
+    let lig_rotate_amt = 2.;
+
     let mut updates = EngineUpdates::default();
 
     let mut redraw = false;
+    let mut ligand_changed = false;
+
+    let mut lig_move_dir = None;
+    let mut lig_rot_dir = None;
 
     // todo: Move this logic to the engine (graphics lib)?
     if !state_.ui.mouse_in_window {
@@ -168,29 +176,43 @@ pub fn event_dev_handler(
                         cycle_res_selected(state_, scene, false);
                         redraw = true;
                     }
-                    // todo: Temp to test Ligand rotation
-                    Code(KeyCode::BracketLeft) => {
-                        if let Some(lig) = &mut state_.ligand {
-                            // let rotation: QuaternionF64 =
-                            //     Quaternion::from_axis_angle(FWD_VEC, -10. * dt).into();
-                            // lig.orientation = rotation * lig.orientation;
-
-                            scene.entities = Vec::new();
-                            mol_drawing::draw_ligand(state_, scene);
-                            updates.entities = true;
-                        }
+                    Code(KeyCode::KeyU) => {
+                        lig_rot_dir = Some(FWD_VEC);
                     }
-                    // todo: Temp to test Ligand rotation
+                    Code(KeyCode::KeyO) => {
+                        lig_rot_dir = Some(-FWD_VEC);
+                    }
+                    Code(KeyCode::BracketLeft) => {
+                        lig_rot_dir = Some(-RIGHT_VEC);
+                    }
                     Code(KeyCode::BracketRight) => {
-                        if let Some(lig) = &mut state_.ligand {
-                            // let rotation: QuaternionF64 =
-                            //     Quaternion::from_axis_angle(FWD_VEC, 10. * dt).into();
-                            // lig.orientation = rotation * lig.orientation;
-
-                            scene.entities = Vec::new();
-                            mol_drawing::draw_ligand(state_, scene);
-                            updates.entities = true;
-                        }
+                        lig_rot_dir = Some(RIGHT_VEC);
+                    }
+                    Code(KeyCode::Semicolon) => {
+                        lig_rot_dir = Some(UP_VEC);
+                    }
+                    Code(KeyCode::Quote) => {
+                        lig_rot_dir = Some(-UP_VEC);
+                    }
+                    Code(KeyCode::KeyI) => {
+                        lig_move_dir = Some(FWD_VEC);
+                    }
+                    // Ad-hoc ligand movement. For now, moves in discrete chunks, i.e. doens't respect key
+                    // holding directly. Moves releative to the camera.
+                    Code(KeyCode::KeyK) => {
+                        lig_move_dir = Some(-FWD_VEC);
+                    }
+                    Code(KeyCode::KeyJ) => {
+                        lig_move_dir = Some(-RIGHT_VEC);
+                    }
+                    Code(KeyCode::KeyL) => {
+                        lig_move_dir = Some(RIGHT_VEC);
+                    }
+                    Code(KeyCode::Period) => {
+                        lig_move_dir = Some(-UP_VEC);
+                    }
+                    Code(KeyCode::AltRight) => {
+                        lig_move_dir = Some(UP_VEC);
                     }
                     _ => (),
                 },
@@ -298,6 +320,41 @@ pub fn event_dev_handler(
         mol_drawing::draw_molecule(state_, scene, false);
         mol_drawing::draw_ligand(state_, scene);
         updates.lighting = true; // Ligand docking light. // todo: Not always necessary.
+        updates.entities = true;
+    }
+
+    // todo: Note that lig movements etc don't currently stack.
+    if let Some(dir_) = lig_move_dir {
+        if let Some(lig) = &mut state_.ligand {
+            let dir = scene.camera.orientation.rotate_vec(dir_);
+            let move_amt: Vec3F64 = (dir * lig_move_amt).into();
+            lig.pose.anchor_posit += move_amt;
+
+            ligand_changed = true;
+        }
+    }
+
+    if let Some(dir_) = lig_rot_dir {
+        if let Some(lig) = &mut state_.ligand {
+            let dir = scene.camera.orientation.rotate_vec(dir_);
+
+            let rotation: QuaternionF64 =
+                Quaternion::from_axis_angle(dir, lig_rotate_amt * dt).into();
+            lig.pose.orientation = rotation * lig.pose.orientation;
+
+            ligand_changed = true;
+        }
+    }
+
+    if ligand_changed {
+        if let Some(lig) = &mut state_.ligand {
+            lig.atom_posits = lig.position_atoms(None);
+        }
+
+        scene.entities = Vec::new();
+        mol_drawing::draw_molecule(state_, scene, false);
+        mol_drawing::draw_ligand(state_, scene);
+
         updates.entities = true;
     }
 

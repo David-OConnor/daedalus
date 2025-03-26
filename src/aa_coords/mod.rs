@@ -3,7 +3,6 @@
 use std::{f64::consts::TAU, fmt, fmt::Formatter};
 
 use lin_alg::f64::{Quaternion, Vec3, det_from_cols};
-use na_seq::AminoAcid;
 
 use crate::{
     aa_coords::{
@@ -265,7 +264,7 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
                             });
                         }
                     },
-                    2 => unsafe {
+                    2 => {
                         let mut planar = false;
                         if atoms_bonded[0].1.element == Element::Nitrogen
                             && atoms_bonded[1].1.element == Element::Nitrogen
@@ -350,7 +349,7 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
                                 ..h_default_sc.clone()
                             });
                         }
-                    },
+                    }
                     3 => {
                         if atoms_bonded[0].1.element == Element::Oxygen
                             || atoms_bonded[1].1.element == Element::Oxygen
@@ -575,7 +574,7 @@ fn handle_backbone(
 
         // Note: This will also populate hydrogens on first and last backbones, and potentially
         // on residues that don't have roles marked.
-        add_h_sidechain(hydrogens, atoms, &h_default);
+        add_h_sidechain(hydrogens, atoms, h_default);
         return (dihedral, Some((c_p_posit, c_alpha_posit)));
     }
 
@@ -653,10 +652,10 @@ pub fn aa_data_from_coords(
         if atom_sc.role.is_none() {
             continue;
         }
-        if atom_sc.role.as_ref().unwrap() == &AtomRole::Sidechain {
-            if atom_sc.element == Element::Carbon {
-                posits_sc.push(atom_sc.posit);
-            }
+        if atom_sc.role.as_ref().unwrap() == &AtomRole::Sidechain
+            && atom_sc.element == Element::Carbon
+        {
+            posits_sc.push(atom_sc.posit);
         }
     }
 

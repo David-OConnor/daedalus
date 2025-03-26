@@ -98,5 +98,5 @@ pub fn load_sdf_pubchem(ident: &str) -> Result<Molecule, ReqError> {
         .body_mut()
         .read_to_string()?;
 
-    Molecule::from_sdf(&resp).map_err(|e| ReqError {})
+    Molecule::from_sdf(&resp).map_err(|_e| ReqError {})
 }

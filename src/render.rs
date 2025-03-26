@@ -78,7 +78,7 @@ pub fn set_flashlight(scene: &mut Scene) {
 /// Set lighting based on the center and size of the molecule.
 pub fn set_static_light(scene: &mut Scene, center: Vec3, size: f32) {
     scene.lighting.point_lights[1].position =
-        center + Vec3::new(40., (size + OUTSIDE_LIGHTING_OFFSET), 0.);
+        center + Vec3::new(40., size + OUTSIDE_LIGHTING_OFFSET, 0.);
 }
 
 /// Set lighting based on the docking location.

@@ -180,7 +180,7 @@ impl Element {
         }
     }
 
-    pub fn to_letter(&self) -> String {
+    pub fn to_letter(self) -> String {
         match self {
             Hydrogen => "H".into(),
             Carbon => "C".into(),
@@ -404,10 +404,10 @@ pub fn init_lj_lut() -> HashMap<(Element, Element), (f32, f32)> {
 
     for el_0 in &els {
         // Retrieve single-element data for el_0
-        let (sigma_0, eps_0) = base[&el_0];
+        let (sigma_0, eps_0) = base[el_0];
 
         for el_1 in &els {
-            let (sigma_1, eps_1) = base[&el_1];
+            let (sigma_1, eps_1) = base[el_1];
 
             // Lorentz–Berthelot
             let sigma = 0.5 * (sigma_0 + sigma_1);

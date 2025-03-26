@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 //! This module contains info related to side chains, including their geometry
 
 // Don't show warnings for un`

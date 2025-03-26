@@ -202,10 +202,7 @@ impl BindingEnergy {
 
 /// todo: Improve this.
 fn is_hydrophobic(atom: &Atom) -> bool {
-    match atom.element {
-        Element::Carbon => true,
-        _ => false,
-    }
+    matches!(atom.element, Element::Carbon)
 }
 
 /// Calculate binding energy, in kcal/mol. The result will be negative. The maximum (negative) binding
@@ -231,20 +228,34 @@ pub fn calc_binding_energy(
         distances.push(distances_this_rec);
     }
 
+    // for pair in &setup.lj_pairs {
+    //     println!("{:.3?}", pair);
+    // }
+
     // todo: Use a neighbor grid or similar? Set it up so there are two separate sides?
     let vdw: f32 = {
         setup
             .lj_pairs
             .par_iter()
-            // .map(|(posit_rec, i_lig, sigma, eps)| {
             .map(|(i_rec, i_lig, sigma, eps)| {
-                // lj_potential(*posit_rec, lig_posits[*i_lig], *sigma, *eps)
                 let r = distances[*i_rec][*i_lig];
-                forces::lj_potential(r, *sigma, *eps)
+
+                let mut f= forces::lj_potential(r, *sigma, *eps);
+
+                if f > 50. {
+                    // println!("F high: {:?}, r: {:?}", f, r);
+                    f = 0.; // todo temp!!
+                }
+
+                // println!("F: {:.4?}", f);
+
+                f
                 // lj_potential_simd(*posit_rec, lig_posits[*i_lig], *sigma, *eps)
             })
             .sum()
     };
+
+    println!("VDW: {}", vdw);
 
     let h_bond_count = {
         // Calculate hydrogen bonds
@@ -546,8 +557,6 @@ fn process_poses<'a>(
         (rec, vdw, valid_lanes_rec)
     };
 
-    let start = Instant::now();
-
     for (i_pose, pose) in poses.iter().enumerate() {
         let posits_this_pose: Vec<_> = ligand
             .position_atoms(Some(pose))
@@ -569,7 +578,7 @@ fn process_poses<'a>(
                 let atom = &ligand.molecule.atoms[*i];
                 atom.element == Element::Carbon && i % LIGAND_SAMPLE_RATIO == 0
             })
-            .map(|(i, v)| (*v).into())
+            .map(|(_i, v)| *v)
             .collect();
 
         // let (posits_sample_x8, valid_lanes_lig) = pack_vec3(&lig_posits_sample);
@@ -652,17 +661,14 @@ fn process_poses<'a>(
         poses.len() - geometry_poses_skip.len()
     );
 
-
-
-
     let (best_energy, best_pose) = poses
         .par_iter()
         .enumerate()
         .filter(|(i_pose, _pose)| !geometry_poses_skip.contains(i_pose))
         .filter_map(|(i_pose, pose)| {
             calc_binding_energy(
-                &setup,
-                &ligand,
+                setup,
+                ligand,
                 &lig_posits[i_pose],
                 &partial_charges_lig[i_pose],
             )
@@ -747,7 +753,7 @@ pub fn find_optimal_pose(setup: &DockingSetup, ligand: &Ligand) -> (Pose, Bindin
     println!("Initial pose count: {} poses...", poses.len());
 
     // Now process them in parallel and reduce to the single best pose:
-    let (best_pose, best_energy) = process_poses(&poses, &setup, ligand);
+    let (best_pose, best_energy) = process_poses(&poses, setup, ligand);
 
     println!("\nBest initial pose: {best_pose:?} \nScores: {best_energy:.3?}\n");
 
