@@ -29,6 +29,7 @@ use std::{
     path::Path,
     str::FromStr,
     sync::Arc,
+    time::Instant,
 };
 
 use barnes_hut::BhConfig;
@@ -44,7 +45,10 @@ use rayon::iter::ParallelIterator;
 
 use crate::{
     aa_coords::bond_vecs::init_local_bond_vecs,
-    docking::{BindingEnergy, THETA_BH, dynamics_playback::Snapshot, external::check_adv_avail},
+    docking::{
+        BindingEnergy, THETA_BH, dynamics_playback::Snapshot, external::check_adv_avail,
+        prep::DockingSetup,
+    },
     element::{Element, init_lj_lut},
     file_io::pdbqt::load_pdbqt,
     molecule::Ligand,
@@ -175,6 +179,7 @@ struct StateVolatile {
     /// (Sigma, Epsilon). Initialize once at startup. Not-quite-static.
     lj_lookup_table: HashMap<(Element, Element), (f32, f32)>,
     snapshots: Vec<Snapshot>,
+    docking_setup: Option<DockingSetup>,
 }
 
 impl Default for StateVolatile {
@@ -185,6 +190,7 @@ impl Default for StateVolatile {
             inputs_commanded: Default::default(),
             lj_lookup_table: init_lj_lut(),
             snapshots: Vec::new(),
+            docking_setup: None,
         }
     }
 }
@@ -364,6 +370,23 @@ impl State {
             }
             Err(e) => eprintln!("Error loading file at path {path:?}: {e:?}"),
         }
+    }
+
+    /// Gets the docking setup, creating it if it doesn't exist. Returns `None` if molecule
+    /// or ligand are absent.
+    pub fn get_make_docking_setup(&mut self) -> Option<&DockingSetup> {
+        if self.molecule.is_none() || self.ligand.is_none() {
+            return None;
+        }
+
+        Some(self.volatile.docking_setup.get_or_insert_with(|| {
+            DockingSetup::new(
+                self.molecule.as_ref().unwrap(),
+                self.ligand.as_mut().unwrap(),
+                &self.volatile.lj_lookup_table,
+                &self.bh_config,
+            )
+        }))
     }
 }
 

@@ -25,17 +25,25 @@ use std::{collections::HashMap, fmt::Display};
 
 use barnes_hut::{BhConfig, Cube, Tree};
 use graphics::Mesh;
+use lin_alg::f32::{Vec3, Vec3x8, f32x8, pack_f32, pack_vec3};
 
 use crate::{
     docking::{
-        DockingSite, partial_charge::PartialCharge, setup_eem_charges,
+        ATOM_NEAR_SITE_DIST_THRESH, DockingSite,
+        partial_charge::{
+            EemParams, EemSet, PartialCharge, assign_eem_charges, create_partial_charges,
+        },
     },
     element::Element,
     molecule::{Atom, Bond, BondCount, BondType, Ligand, Molecule},
 };
-use crate::docking::ATOM_NEAR_SITE_DIST_THRESH;
 
-/// This can be used across multiple poses, but is specific to a receptor, ligand, and docking site.
+// Increase this to take fewer receptor atoms when sampling for some cheap computatoins.
+const REC_SAMPLE_RATIO: usize = 6;
+pub const LIGAND_SAMPLE_RATIO: usize = 4;
+
+/// Data to prepare prior to beginning docking. This can be used across multiple ligand poses, but is
+/// specific to a receptor, ligand, and docking site.
 pub struct DockingSetup {
     pub rec_atoms_near_site: Vec<Atom>,
     pub rec_indices: Vec<usize>,
@@ -45,6 +53,67 @@ pub struct DockingSetup {
     pub lj_pairs: Vec<(usize, usize, f32, f32)>,
     pub charge_tree: Tree,
     pub bh_config: BhConfig,
+    pub rec_posits_x8: Vec<Vec3x8>,
+    /// Sigmas and epsilons are Lennard Jones parameters. Flat here, with outer loop receptor.
+    pub sigmas_x8: Vec<f32x8>,
+    pub epsilons_x8: Vec<f32x8>,
+    /// Used for some cheap computations that eliminate poses, for example.
+    pub rec_atoms_sample: Vec<Atom>,
+}
+
+/// Prerequisite calculations for docking and binding energy calculations. This includes finding receptor
+/// atoms near the site, and applying EEM charges to them and the ligand.
+fn setup_eem_charges(
+    receptor: &Molecule,
+    ligand: &mut Ligand,
+    rec_atoms_near_site: &mut [Atom],
+    rec_atom_indices: &[usize], // Indices of the whole molecule. Used for matching with bonds.
+) -> Vec<PartialCharge> {
+    println!("Starting EEM charge setup...");
+
+    let eem_params = EemParams::new(EemSet::AimB3); // todo: WHich set?
+
+    // todo: This is problematic given the flexible bonds. Too expensive to do each conformation though.
+    // todo: Let it ride for now?
+    if !ligand.molecule.eem_charges_assigned {
+        println!("Assigning EEM charges for the Ligand......");
+        let indices: Vec<usize> = (0..ligand.molecule.atoms.len()).collect();
+        assign_eem_charges(
+            &mut ligand.molecule.atoms,
+            &indices,
+            &ligand.molecule.bonds,
+            &ligand.molecule.adjacency_list,
+            &eem_params,
+            0., // todo!
+        );
+        println!("Complete.");
+        ligand.molecule.eem_charges_assigned = true;
+    }
+
+    println!("Assigning EEM charges to receptor atoms...");
+    assign_eem_charges(
+        rec_atoms_near_site,
+        &rec_atom_indices,
+        &receptor.bonds,
+        &receptor.adjacency_list,
+        &eem_params,
+        0., // todo!
+    ); // todo: QC what the last param should be.
+
+    // Update the parent molecule atoms as well, for other uses, since we're not updating it directly here.
+    // todo: Come back to this A/R
+    // for (near_i, global_i) in rec_atom_indices.iter().enumerate() {
+    //     receptor.atoms[*global_i].partial_charge = rec_atoms_near_site[near_i].partial_charge;
+    // }
+
+    // Note: Splitting the partial charges between target and ligand (As opposed to analyzing every pair
+    // combination) may give us more useful data, and is likely much more efficient, if one side has substantially
+    // fewer charges than the other.
+    let partial_charges_rec = create_partial_charges(rec_atoms_near_site, None);
+
+    println!("EEM setup complete.");
+
+    partial_charges_rec
 }
 
 impl DockingSetup {
@@ -62,19 +131,25 @@ impl DockingSetup {
             .bonds
             .iter()
             // Don't use ||; all atom indices in these bonds must be present in `tgt_atoms_near_site`.
-            .filter(|b| {
-                rec_indices.contains(&b.atom_0) && rec_indices.contains(&b.atom_1)
-            })
+            .filter(|b| rec_indices.contains(&b.atom_0) && rec_indices.contains(&b.atom_1))
             .map(|b| b.clone()) // todo: don't like the clone
             .collect();
 
-        let (partial_charges_rec, lj_pairs) = setup_eem_charges(
-            receptor,
-            ligand,
-            &mut rec_atoms_near_site,
-            &rec_indices,
-            lj_lut,
-        );
+        let partial_charges_rec =
+            setup_eem_charges(receptor, ligand, &mut rec_atoms_near_site, &rec_indices);
+
+        // Set up the LJ data that doesn't change with pose.
+        let pair_count = rec_atoms_near_site.len() * ligand.molecule.atoms.len();
+        // Atom rec el, lig el, atom rec posit, lig i. Assumes the only thing that changes with pose
+        // is ligand posit.
+        let mut lj_pairs = Vec::with_capacity(pair_count);
+
+        for (i_rec, atom_rec) in rec_atoms_near_site.iter().enumerate() {
+            for (i_lig, atom_lig) in ligand.molecule.atoms.iter().enumerate() {
+                let (sigma, eps) = lj_lut.get(&(atom_rec.element, atom_lig.element)).unwrap();
+                lj_pairs.push((i_rec, i_lig, *sigma, *eps));
+            }
+        }
 
         // This tree is over the target (receptor) charges. This may be more efficient
         // than over the ligand, as we expect the receptor nearby atoms to be more numerous.
@@ -87,6 +162,43 @@ impl DockingSetup {
             Tree::new(&partial_charges_rec, &bh_bounding_box.unwrap(), &bh_config)
         };
 
+        // SIMD prep
+        // let mut lj_pairs_x8 = Vec::with_capacity(pair_count / 8);
+
+        // todo: Your current algo expects exact...
+        let rec_posits: Vec<Vec3> = rec_atoms_near_site.iter().map(|a| a.posit.into()).collect();
+
+        let (rec_posits_x8, valid_lanes_rec) = pack_vec3(&rec_posits);
+
+        // todo: Lig posits are per-post.
+        // let lig_posits_simd = pack_vec3(ligand.molecule.atoms.iter().map(|a| a.posit.into()).collect());
+
+        let mut sigmas = Vec::new();
+        let mut epsilons = Vec::new();
+
+        // Flattening.
+        for atom_rec in &rec_atoms_near_site {
+            for atom_lig in &ligand.molecule.atoms {
+                let (sigma, eps) = lj_lut.get(&(atom_rec.element, atom_lig.element)).unwrap();
+                sigmas.push(*sigma);
+                epsilons.push(*eps);
+            }
+        }
+        let (sigmas_x8, valid_lanes_sig) = pack_f32(&sigmas);
+        let (epsilons_x8, valid_lanes_eps) = pack_f32(&epsilons);
+
+        // for i in 0..rec_posits_simd.len() {
+        //     // todo: This is tricky teh way you do ligand indexing...
+        //     lj_pairs_x8.push(rec_posits_simd[i], lig_posits_simd[i], sigmas_simd[i], epsilons_simd[i]);
+        // }
+
+        let rec_atoms_sample: Vec<_> = rec_atoms_near_site
+            .iter()
+            .enumerate()
+            .filter(|(i, a)| a.element == Element::Carbon && i % REC_SAMPLE_RATIO == 0)
+            .map(|(_, a)| a.clone())
+            .collect();
+
         Self {
             rec_atoms_near_site,
             rec_indices,
@@ -95,6 +207,10 @@ impl DockingSetup {
             lj_pairs,
             charge_tree,
             bh_config: bh_config.clone(),
+            rec_posits_x8,
+            sigmas_x8,
+            epsilons_x8,
+            rec_atoms_sample,
         }
     }
 }
@@ -426,7 +542,6 @@ fn is_bond_in_ring(bond: &Bond, mol: &Molecule) -> bool {
     }
     false
 }
-
 
 /// Find the subet of receptor atoms near a docking site. Only perform force calculations
 /// between this set and the ligand, to keep computational complexity under control.

@@ -15,8 +15,8 @@ use crate::{
         find_optimal_pose,
         find_sites::find_docking_sites,
         partial_charge::create_partial_charges,
+        prep::find_rec_atoms_near_site,
         prep_external::{prepare_ligand, prepare_target},
-        setup_eem_charges,
         site_surface::find_docking_site_surface,
     },
     download_mols::{load_cif_rcsb, load_sdf_drugbank, load_sdf_pubchem},
@@ -32,7 +32,6 @@ use crate::{
         select_from_search,
     },
 };
-use crate::docking::prep::{find_rec_atoms_near_site, DockingSetup};
 
 pub const ROW_SPACING: f32 = 10.;
 pub const COL_SPACING: f32 = 30.;
@@ -712,10 +711,7 @@ fn residue_search(
                         state.docking_ready = true;
                     }
                 }
-            }
-
-            if ui.button("Save PDBQT").clicked() {
-                state.volatile.dialogs.save_pdbqt.pick_directory();
+                ui.add_space(COL_SPACING);
             }
 
             if ui.button("Find sites").clicked() {
@@ -731,14 +727,8 @@ fn residue_search(
                 // todo: Ideally move the camera to the docking site prior to docking. You could do this
                 // todo by deferring the docking below to the next frame.
 
-                // let tgt = state.molecule.as_ref().unwrap();
-                let mol = state.molecule.as_ref().unwrap();
-                let (pose, binding_energy) = find_optimal_pose(
-                    mol,
-                    ligand,
-                    &state.volatile.lj_lookup_table,
-                    &state.bh_config,
-                );
+                let (pose, binding_energy) =
+                    find_optimal_pose(&state.volatile.docking_setup.as_ref().unwrap(), ligand);
 
                 ligand.pose = pose;
                 ligand.atom_posits = ligand.position_atoms(None);
@@ -759,6 +749,39 @@ fn residue_search(
                 // }
                 // dock_with_vina(mol, ligand, &state.to_save.autodock_vina_path);
                 *redraw = true;
+            }
+
+            if ui.button("Docking energy").clicked() {
+                let poses = vec![ligand.pose.clone()];
+                let mut lig_posits = Vec::with_capacity(poses.len());
+                let mut partial_charges_lig = Vec::with_capacity(poses.len());
+
+                for pose in poses {
+                    let posits_this_pose: Vec<_> = ligand
+                        .position_atoms(Some(&pose))
+                        .iter()
+                        .map(|p| (*p).into())
+                        .collect();
+
+                    partial_charges_lig.push(create_partial_charges(
+                        &mut ligand.molecule.atoms,
+                        Some(&posits_this_pose),
+                    ));
+                    lig_posits.push(posits_this_pose);
+                }
+
+                state.ui.binding_energy_disp = calc_binding_energy(
+                    &state.volatile.docking_setup.as_ref().unwrap(),
+                    &ligand,
+                    &lig_posits[0],
+                    &partial_charges_lig[0],
+                );
+            }
+
+            ui.add_space(COL_SPACING);
+
+            if ui.button("Save PDBQT").clicked() {
+                state.volatile.dialogs.save_pdbqt.pick_directory();
             }
 
             if ui.button("Dock (Vina)").clicked() {
@@ -794,6 +817,8 @@ fn residue_search(
                 engine_updates.meshes = true;
                 engine_updates.entities = true;
             }
+
+            ui.add_space(COL_SPACING);
 
             ui.label("Docking site setup:");
             ui.label("Center:");
@@ -1259,43 +1284,14 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                         if ui.button(format!("{i}")).clicked() {
                             torsions[i].dihedral_angle =
                                 (torsions[i].dihedral_angle + TAU / 16.) % TAU;
+
+                            ligand.atom_posits = ligand.position_atoms(None);
                             redraw = true;
                         }
                     }
                 }
 
                 ui.add_space(COL_SPACING);
-
-                if let Some(mol) = &state.molecule {
-                    if ui.button("Docking energy").clicked() {
-                        let setup = DockingSetup::new(mol, ligand, &state.volatile.lj_lookup_table, &state.bh_config,);
-
-                        let poses = vec![ligand.pose.clone()];
-                        let mut lig_posits = Vec::with_capacity(poses.len());
-                        let mut partial_charges_lig = Vec::with_capacity(poses.len());
-
-                        for pose in poses {
-                            let posits_this_pose: Vec<_> = ligand
-                                .position_atoms(Some(&pose))
-                                .iter()
-                                .map(|p| (*p).into())
-                                .collect();
-
-                            partial_charges_lig.push(create_partial_charges(
-                                &mut ligand.molecule.atoms,
-                                Some(&posits_this_pose),
-                            ));
-                            lig_posits.push(posits_this_pose);
-                        }
-
-                        state.ui.binding_energy_disp = calc_binding_energy(
-                            &setup,
-                            &ligand,
-                            &lig_posits[0],
-                            &partial_charges_lig[0],
-                        );
-                    }
-                }
 
                 if let Some(energy) = &state.ui.binding_energy_disp {
                     ui.label(format!("{:?}", energy)); // todo placeholder.

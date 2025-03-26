@@ -41,7 +41,7 @@ use std::{collections::HashMap, f32::consts::TAU, time::Instant};
 
 use barnes_hut::{BhConfig, Cube, Tree};
 use lin_alg::{
-    f32::{Vec3 as Vec3F32, pack_f32, pack_vec3},
+    f32::{Vec3 as Vec3F32, f32x8, pack_f32, pack_vec3},
     f64::{FORWARD, Quaternion, RIGHT, UP, Vec3},
     linspace,
 };
@@ -53,7 +53,7 @@ use crate::{
     bond_inference::create_hydrogen_bonds_one_way,
     docking::{
         partial_charge::assign_eem_charges,
-        prep::{DockingSetup, Torsion},
+        prep::{DockingSetup, LIGAND_SAMPLE_RATIO, Torsion},
     },
     element::Element,
     forces,
@@ -233,7 +233,8 @@ pub fn calc_binding_energy(
 
     // todo: Use a neighbor grid or similar? Set it up so there are two separate sides?
     let vdw: f32 = {
-        setup.lj_pairs
+        setup
+            .lj_pairs
             .par_iter()
             // .map(|(posit_rec, i_lig, sigma, eps)| {
             .map(|(i_rec, i_lig, sigma, eps)| {
@@ -269,6 +270,7 @@ pub fn calc_binding_energy(
             &lig_indices,
             true,
         );
+
         let h_bonds_lig_donor = create_hydrogen_bonds_one_way(
             &lig_atoms_positioned,
             &lig_indices,
@@ -285,7 +287,8 @@ pub fn calc_binding_energy(
     // -- HYDROPHOBIC INTERACTION TERM -- //
     // Example: We’ll collect a simple sum of energies for hydrophobic pairs.
     // For a more advanced approach, you might do a distance-based well function, etc.
-    let hydrophobic_score: f32 = setup.rec_atoms_near_site
+    let hydrophobic_score: f32 = setup
+        .rec_atoms_near_site
         .par_iter()
         .enumerate()
         .map(|(i_rec, atom_rec)| {
@@ -510,7 +513,7 @@ fn init_poses(
 fn process_poses<'a>(
     mut poses: &'a [Pose],
     setup: &DockingSetup,
-    ligand: &mut Ligand,
+    ligand: &Ligand,
 ) -> (&'a Pose, BindingEnergy) {
     // todo: Currently an outer/inner dynamic.
     // Set up the ligand atom positions for each pose; that's all that matters re the pose for now.
@@ -519,21 +522,31 @@ fn process_poses<'a>(
 
     let mut geometry_poses_skip = Vec::new();
 
-    // E.g. for certain sample calculations, pick every 4th carbon.
-    let sample_ratio = 4;
-
     // todo: This approach of skipping atoms during iteration isn't great, as it depends on the order
     // todo the atoms are in the Vecs.
 
     println!("Eliminating poses with atoms too close together...");
     // Optimization; Hydrogens are always close to another atom, and we have many; we can likely rely
     // on that other atom, and save ~n^2 computation here.
-    let rec_atoms_sample: Vec<_> = setup.rec_atoms_near_site
-        .iter()
-        .enumerate()
-        .filter(|(i, a)| a.element == Element::Carbon && i % sample_ratio == 0)
-        .map(|(_, a)| a)
-        .collect();
+
+    let (rec_posits_sample_x8, rec_vdw_sample_x8, valid_lanes_rec_sample) = {
+        let rec_len_sample = setup.rec_atoms_sample.len();
+
+        let mut rec_posits_sample: Vec<Vec3F32> = Vec::with_capacity(rec_len_sample);
+        let mut rec_vdw_sample = Vec::with_capacity(rec_len_sample);
+
+        for atom in &setup.rec_atoms_sample {
+            rec_posits_sample.push(atom.posit.into());
+            rec_vdw_sample.push(atom.element.vdw_radius() * 1.1);
+        }
+
+        let (rec, valid_lanes_rec) = pack_vec3(&rec_posits_sample);
+        let (vdw, _) = pack_f32(&rec_vdw_sample);
+
+        (rec, vdw, valid_lanes_rec)
+    };
+
+    let start = Instant::now();
 
     for (i_pose, pose) in poses.iter().enumerate() {
         let posits_this_pose: Vec<_> = ligand
@@ -542,8 +555,10 @@ fn process_poses<'a>(
             .map(|p| (*p).into())
             .collect();
 
+        // let posits_this_pose_x8 = pack_vec3(&posits_this_pose);
+
         partial_charges_lig.push(create_partial_charges(
-            &mut ligand.molecule.atoms,
+            &ligand.molecule.atoms,
             Some(&posits_this_pose),
         ));
 
@@ -552,10 +567,12 @@ fn process_poses<'a>(
             .enumerate()
             .filter(|(i, a)| {
                 let atom = &ligand.molecule.atoms[*i];
-                atom.element == Element::Carbon && i % sample_ratio == 0
+                atom.element == Element::Carbon && i % LIGAND_SAMPLE_RATIO == 0
             })
             .map(|(i, v)| (*v).into())
             .collect();
+
+        // let (posits_sample_x8, valid_lanes_lig) = pack_vec3(&lig_posits_sample);
 
         lig_posits.push(posits_this_pose);
 
@@ -563,8 +580,8 @@ fn process_poses<'a>(
         // use a surface mesh of some sort for this. For now, use VDW spheres. Crude, and probably good enough.
         // This pose reduction may significantly speed up the algorithm by discarding unsuitable poses
         // early.
-        // todo: Consider CUDA for this.
-        for rec_atom in &rec_atoms_sample {
+
+        for rec_atom in &setup.rec_atoms_sample {
             let rec_posit: Vec3F32 = rec_atom.posit.into();
 
             let vdw_radius = rec_atom.element.vdw_radius() * 1.1;
@@ -576,7 +593,7 @@ fn process_poses<'a>(
                 // todo: We should probably build an ASA surface, then assess if inside or outside of
                 // todo that instead of this approach.
 
-                if (dist) < vdw_radius {
+                if dist < vdw_radius {
                     geometry_poses_skip.push(i_pose);
                     end_loop = true;
                     break;
@@ -586,17 +603,53 @@ fn process_poses<'a>(
                 break;
             }
         }
+
+        // todo: Not matching scalar results.
+        //     for (i_rec, rec_posit) in rec_posits_sample_x8.iter().enumerate() {
+        //         let vdw_radius = rec_vdw_sample_x8[i_rec];
+        //
+        //         let lanes_rec = if i_rec == rec_posits_sample_x8.len() - 1 {
+        //             valid_lanes_rec_sample
+        //         } else {
+        //             8
+        //         };
+        //
+        //         let mut end_loop = false;
+        //         for (i_lig, lig_pos) in posits_sample_x8.iter().enumerate() {
+        //             let lanes_lig = if i_lig == posits_sample_x8.len() - 1 {
+        //                 valid_lanes_lig
+        //             } else {
+        //                 8
+        //             };
+        //
+        //             let dist = (*rec_posit - *lig_pos).magnitude();
+        //
+        //             // todo: We should probably build an ASA surface, then assess if inside or outside of
+        //             // todo that instead of this approach.
+        //
+        //             // println!("DIST: {:?} d: {:.2?}, v: {:.2?}, ANY: {:?}", dist.lt(f32x8::splat(5.)), dist.to_array(),
+        //                      // vdw_radius.to_array(), dist.lt(f32x8::splat(5.)).any());
+        //
+        //             // We don't use SIMD any compare, to properly handle the last lane.
+        //             let valid_lanes = lanes_rec.min(lanes_lig);
+        //             let vdw = vdw_radius.to_array();
+        //             for (i_d, dist) in dist.to_array()[..valid_lanes].iter().enumerate() {
+        //                 if *dist < vdw[i_d] {
+        //                     geometry_poses_skip.push(i_pose);
+        //                     end_loop = true;
+        //                     break;
+        //                 }
+        //             }
+        //         }
+        //         if end_loop {
+        //             break;
+        //         }
+        //     }
     }
 
     println!(
-        "Setup complete. iterating through {} poses...",
+        "Complete. iterating through {} poses...",
         poses.len() - geometry_poses_skip.len()
-    );
-
-    println!(
-        "Partial charges rec: {} lig: {}",
-        setup.charges_rec.len(),
-        partial_charges_lig[0].len()
     );
 
     let (best_energy, best_pose) = poses
@@ -627,131 +680,59 @@ fn process_poses<'a>(
     (best_pose, best_energy)
 }
 
-/// Prerequisite calculations for docking and binding energy calculations. This includes finding receptor
-/// atoms near the site, and applying EEM charges to them and the ligand.
-pub fn setup_eem_charges(
-    receptor: &Molecule,
-    ligand: &mut Ligand,
-    rec_atoms_near_site: &mut [Atom],
-    rec_atom_indices: &[usize], // Indices of the whole molecule. Used for matching with bonds.
-    lj_lut: &HashMap<(Element, Element), (f32, f32)>,
-) -> (Vec<PartialCharge>, Vec<(usize, usize, f32, f32)>) {
-    println!("Starting EEM charge setup...");
+fn vary_pose(pose: &Pose) -> Vec<Pose> {
+    let mut result = Vec::new();
 
-    let eem_params = EemParams::new(EemSet::AimB3); // todo: WHich set?
+    for i in -30..30 {
+        if let ConformationType::Flexible { torsions } = &pose.conformation_type {
+            let rot_amt = TAU as f64 / 200. * i as f64;
 
-    // todo: This is problematic given the flexible bonds. Too expensive to do each conformation though.
-    // todo: Let it ride for now?
-    if !ligand.molecule.eem_charges_assigned {
-        println!("Assigning EEM charges for the Ligand......");
-        let indices: Vec<usize> = (0..ligand.molecule.atoms.len()).collect();
-        assign_eem_charges(
-            &mut ligand.molecule.atoms,
-            &indices,
-            &ligand.molecule.bonds,
-            &ligand.molecule.adjacency_list,
-            &eem_params,
-            0., // todo!
-        );
-        println!("Complete.");
-        ligand.molecule.eem_charges_assigned = true;
-    }
+            let rotator_up = Quaternion::from_axis_angle(UP, rot_amt);
+            let rotator_right = Quaternion::from_axis_angle(RIGHT, rot_amt);
+            let rotator_fwd = Quaternion::from_axis_angle(FORWARD, rot_amt);
 
-    println!("Assigning EEM charges to receptor atoms...");
-    assign_eem_charges(
-        rec_atoms_near_site,
-        &rec_atom_indices,
-        &receptor.bonds,
-        &receptor.adjacency_list,
-        &eem_params,
-        0., // todo!
-    ); // todo: QC what the last param should be.
+            // todo: Try combinations of the above.
 
-    // Update the parent molecule atoms as well, for other uses, since we're not updating it directly here.
-    // todo: Come back to this A/R
-    // for (near_i, global_i) in rec_atom_indices.iter().enumerate() {
-    //     receptor.atoms[*global_i].partial_charge = rec_atoms_near_site[near_i].partial_charge;
-    // }
-
-    // Note: Splitting the partial charges between target and ligand (As opposed to analyzing every pair
-    // combination) may give us more useful data, and is likely much more efficient, if one side has substantially
-    // fewer charges than the other.
-    let partial_charges_rec = create_partial_charges(rec_atoms_near_site, None);
-
-    // Set up the LJ data that doesn't change with pose.
-    let pair_count = rec_atoms_near_site.len() * ligand.molecule.atoms.len();
-    // Atom rec el, lig el, atom rec posit, lig i. Assumes the only thing that changes with pose
-    // is ligand posit.
-    let mut lj_pairs = Vec::with_capacity(pair_count);
-
-    for (i_rec, atom_rec) in rec_atoms_near_site.iter().enumerate() {
-        for (i_lig, atom_lig) in ligand.molecule.atoms.iter().enumerate() {
-            let (sigma, eps) = lj_lut.get(&(atom_rec.element, atom_lig.element)).unwrap();
-            lj_pairs.push((i_rec, i_lig, *sigma, *eps));
+            for rot_a in &[rotator_up, rotator_right, rotator_fwd] {
+                for rot_b in &[rotator_up, rotator_right, rotator_fwd] {
+                    for rot_c in &[rotator_up, rotator_right, rotator_fwd] {
+                        result.push(Pose {
+                            anchor_posit: pose.anchor_posit,
+                            orientation: *rot_a * *rot_b * *rot_c * pose.orientation,
+                            conformation_type: ConformationType::Flexible {
+                                torsions: torsions.clone(),
+                            },
+                        });
+                    }
+                }
+            }
         }
     }
 
-    println!("EEM setup complete.");
-
-    (partial_charges_rec, lj_pairs)
+    result
 }
 
 /// Return best pose, and energy.
 ///
 /// Note: We use the term `receptor` here vice `target`, as `target` is also used in terms of
 /// calculating forces between pairs. (These targets may or may not align!)
-pub fn find_optimal_pose(
-    receptor: &Molecule,
-    ligand: &mut Ligand,
-    lj_lut: &HashMap<(Element, Element), (f32, f32)>,
-    bh_config: &BhConfig,
-) -> (Pose, BindingEnergy) {
+pub fn find_optimal_pose(setup: &DockingSetup, ligand: &Ligand) -> (Pose, BindingEnergy) {
     // todo: Consider another fn for this part of the setup, so you can re-use it more easily.
-    let setup = DockingSetup::new(receptor, ligand, lj_lut, bh_config);
 
     // todo: Evaluate if you can cache EEM charges. Look into how position-dependent they are between ligand flexible
     // todo bond conformations, and lig/receptor interactions.
 
-    // SIMD prep.
-    {
-        // let mut lj_pairs_x8 = Vec::with_capacity(pair_count / 8);
-
-        // todo: Your current algo expects exact...
-        let rec_posits: Vec<Vec3F32> = setup
-            .rec_atoms_near_site
-            .iter()
-            .map(|a| a.posit.into())
-            .collect();
-        let rec_posits_x8 = pack_vec3(&rec_posits);
-
-        // todo: Lig posits are per-post.
-        // let lig_posits_simd = pack_vec3(ligand.molecule.atoms.iter().map(|a| a.posit.into()).collect());
-
-        let mut sigmas = Vec::new();
-        let mut epsilons = Vec::new();
-
-        // Flattening.
-        for atom_rec in &setup.rec_atoms_near_site {
-            for atom_lig in &ligand.molecule.atoms {
-                let (sigma, eps) = lj_lut.get(&(atom_rec.element, atom_lig.element)).unwrap();
-                sigmas.push(*sigma);
-                epsilons.push(*eps);
-            }
-        }
-        let sigmas_x8 = pack_f32(&sigmas);
-        let epsilons_x8 = pack_f32(&epsilons);
-
-        // for i in 0..rec_posits_simd.len() {
-        //     // todo: This is tricky teh way you do ligand indexing...
-        //     lj_pairs_x8.push(rec_posits_simd[i], lig_posits_simd[i], sigmas_simd[i], epsilons_simd[i]);
-        // }
-    }
+    println!(
+        "Atom counts. Rec: {} Lig: {}",
+        setup.rec_atoms_near_site.len(),
+        ligand.molecule.atoms.len()
+    );
 
     let start = Instant::now();
 
     let num_posits = 4; // Gets cubed, although many of these are eliminated.
-    let num_orientations = 40;
-    let angles_per_bond = 10;
+    let num_orientations = 20;
+    let angles_per_bond = 0;
 
     let poses = init_poses(
         &ligand.docking_site,
@@ -768,32 +749,7 @@ pub fn find_optimal_pose(
     println!("\nBest initial pose: {best_pose:?} \nScores: {best_energy:.3?}\n");
 
     // Some ad-hoc tweaking.
-    let mut new_poses_to_try = Vec::new();
-    for i in -30..30 {
-        if let ConformationType::Flexible { torsions } = &best_pose.conformation_type {
-            let rot_amt = TAU as f64 / 200. * i as f64;
-
-            let rotator_up = Quaternion::from_axis_angle(UP, rot_amt);
-            let rotator_right = Quaternion::from_axis_angle(RIGHT, rot_amt);
-            let rotator_fwd = Quaternion::from_axis_angle(FORWARD, rot_amt);
-
-            // todo: Try combinations of the above.
-
-            for rot_a in &[rotator_up, rotator_right, rotator_fwd] {
-                for rot_b in &[rotator_up, rotator_right, rotator_fwd] {
-                    for rot_c in &[rotator_up, rotator_right, rotator_fwd] {
-                        new_poses_to_try.push(Pose {
-                            anchor_posit: best_pose.anchor_posit,
-                            orientation: *rot_a * *rot_b * *rot_c * best_pose.orientation,
-                            conformation_type: ConformationType::Flexible {
-                                torsions: torsions.clone(),
-                            },
-                        });
-                    }
-                }
-            }
-        }
-    }
+    //let new_poses = vary_pose(best_pose);
 
     let elapsed = start.elapsed();
     println!("Time: {}ms", elapsed.as_millis());
