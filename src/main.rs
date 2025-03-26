@@ -430,6 +430,9 @@ fn main() {
         state.open_molecule(path, true);
     }
 
+    // todo: Not the ideal place, but having double-borrow errors when doing it on-demand.
+    &state.get_make_docking_setup().as_ref().unwrap();
+
     if let Some(path) = &state.to_save.autodock_vina_path {
         state.ui.autodock_path_valid = check_adv_avail(path);
 

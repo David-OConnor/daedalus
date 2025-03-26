@@ -652,6 +652,9 @@ fn process_poses<'a>(
         poses.len() - geometry_poses_skip.len()
     );
 
+
+
+
     let (best_energy, best_pose) = poses
         .par_iter()
         .enumerate()

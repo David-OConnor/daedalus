@@ -4,14 +4,14 @@
 use std::{collections::HashMap, time::Instant};
 
 use graphics::Entity;
-use lin_alg::f32::{Mat3, Quaternion, Quaternionx8, Vec3, Vec3x8, f32x8, unpack_f32, unpack_vec3};
+use lin_alg::f32::{Mat3, Quaternion,  Vec3, Vec3x8, f32x8, pack_vec3, pack_slice};
 use rayon::prelude::*;
 
 use crate::{
-    docking::{BindingEnergy, ConformationType, Pose, SOFTENING_FACTOR_SQ_ELECTROSTATIC},
+    docking::{BindingEnergy,  Pose},
     element::Element,
-    forces::{coulomb_force, lj_force, lj_force_x8},
-    molecule::{Atom, Ligand, Molecule},
+    forces::{lj_force_x8},
+    molecule::{Atom, Ligand},
 };
 
 // This seems to be how we control rotation vice movement. A higher value means
@@ -92,8 +92,6 @@ struct BodyVdwx8 {
     pub accel: Vec3x8,
     pub mass: f32x8,
     pub element: [Element; 8],
-    /// Only relevant for the overall body; not the individuals.
-    pub orientation: Quaternionx8,
 }
 
 impl BodyVdwx8 {
@@ -104,7 +102,6 @@ impl BodyVdwx8 {
         let mut masses = [0.0; 8];
         // Replace `Element::H` (for example) with some valid default for your `Element` type:
         let mut elements = [Element::Hydrogen; 8];
-        let mut orients = [Quaternion::default(); 8];
 
         for (i, body) in bodies.into_iter().enumerate() {
             posits[i] = body.posit;
@@ -120,7 +117,6 @@ impl BodyVdwx8 {
             accel: Vec3x8::from_array(accels),
             mass: f32x8::from_array(masses),
             element: elements,
-            orientation: Quaternionx8::from_array(orients),
         }
     }
 }
@@ -329,42 +325,30 @@ fn bodies_from_atoms(atoms: &[Atom]) -> Vec<BodyVdw> {
 }
 
 fn bodies_from_atomsx8(atoms: &[Atom]) -> Vec<BodyVdwx8> {
-    let mut result = Vec::new();
+    let mut posits: Vec<Vec3> = Vec::with_capacity(atoms.len());
+    let mut els = Vec::with_capacity(atoms.len());
 
-    // DRY with `lin_alg::pack_vec3`:
-    let remainder = atoms.len() % 8;
-    let padding_needed = if remainder == 0 { 0 } else { 8 - remainder };
+    for atom in atoms {
+        posits.push(atom.posit.into());
+        els.push(atom.element);
+    }
 
-    let mut padded = Vec::with_capacity(atoms.len() + padding_needed);
-    padded.extend_from_slice(atoms);
-    padded.extend((0..padding_needed).map(|_| Atom::default()));
+    let (posits_x8, _valid_lanes) = pack_vec3(&posits);
 
-    // Now `padded.len()` is a multiple of 8, so chunks_exact(8) will consume it fully.
-    let atoms_chunked: Vec<[Atom; 8]> = padded
-        .chunks_exact(8)
-        .map(|chunk| TryInto::<&[Atom; 8]>::try_into(chunk).unwrap().clone())
-        .collect();
+    let (els_x8, _) = pack_slice::<_, 8>(&els);
+    let mut result = Vec::with_capacity(posits_x8.len());
 
-    for chunk in &atoms_chunked {
-        let mut body = BodyVdwx8 {
-            posit: Vec3x8::new_zero(),
+    for (i, posit) in posits_x8.iter().enumerate() {
+        let masses: Vec<_> = els_x8[i].iter().map(|el| el.atomic_number() as f32).collect();
+        let mass = f32x8::from_slice(&masses);
+
+        result.push(BodyVdwx8 {
+            posit: *posit,
             vel: Vec3x8::new_zero(),
             accel: Vec3x8::new_zero(),
-            mass: f32x8::splat(0.),
-            element: [Element::Carbon; 8],
-            orientation: Quaternionx8::new_identity(),
-        };
-
-        let mut posits = Vec::with_capacity(8);
-        let mut masses = Vec::with_capacity(8);
-        for atom in chunk {
-            posits.push(atom.posit.into());
-            masses.push(atom.element.atomic_number() as f32);
-        }
-        body.posit = Vec3x8::from_slice(&posits);
-        body.mass = f32x8::from_slice(&masses);
-
-        result.push(body);
+            mass,
+            element: els_x8[i],
+        })
     }
 
     result
