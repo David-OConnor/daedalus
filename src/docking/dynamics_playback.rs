@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 //! Experimental molecular dynamics, with a playback system. Starting with fixed-ligand position only,
 //! referencing the anchor.
 
@@ -5,6 +7,7 @@ use std::{collections::HashMap, time::Instant};
 
 use graphics::Entity;
 use lin_alg::f32::{Mat3, Quaternion, Vec3, Vec3x8, f32x8, pack_slice, pack_vec3};
+use lin_alg::f64::Vec3 as Vec3F64;
 use rayon::prelude::*;
 
 use crate::{
@@ -13,10 +16,18 @@ use crate::{
     forces::lj_force_x8,
     molecule::{Atom, Ligand},
 };
-
+use crate::docking::{calc_binding_energy, ConformationType};
+use crate::docking::partial_charge::create_partial_charges;
+use crate::docking::prep::{DockingSetup, Torsion};
+use crate::forces::{lj_force, lj_potential_x8};
 // This seems to be how we control rotation vice movement. A higher value means
 // more movement, less rotation for a given dt.
-const ROTATION_INERTIA: f32 = 5_000.;
+
+// todo: A/R remove torque calc??
+const ROTATION_INERTIA: f32 = 500_000.;
+
+// For calculating numerical derivatives.
+const DX: f32 =  0.01;
 
 #[derive(Clone, Debug)]
 struct BodyVdw {
@@ -47,6 +58,7 @@ struct BodyRigid {
     // pub accel: Vec3,
     pub orientation: Quaternion,
     pub ω: Vec3,
+    pub torsions: Vec<Torsion>,
     pub mass: f32,
     /// Inertia tensor in the body frame (if it’s diagonal, can store as Vec3)
     pub inertia_body: Mat3,
@@ -63,11 +75,16 @@ impl BodyRigid {
         let inertia_body = Mat3::new_identity() * ROTATION_INERTIA;
         let inertia_body_inv = inertia_body.inverse().unwrap();
 
-        // todo: This assumes no initial bond flexes...?
+        let torsions = match &lig.pose.conformation_type {
+            ConformationType::Flexible { torsions } => torsions.clone(),
+            _ => Vec::new(),
+        };
+
         Self {
             posit: lig.pose.anchor_posit.into(),
             vel: Default::default(),
             orientation: lig.pose.orientation.into(),
+            torsions,
             ω: Default::default(),
             mass,
             // todo: Set based on atom masses?
@@ -80,7 +97,7 @@ impl BodyRigid {
         Pose {
             anchor_posit: self.posit.into(),
             orientation: self.orientation.into(),
-            conformation_type: Default::default(),
+            conformation_type: ConformationType::Flexible { torsions: self.torsions.clone() },
         }
     }
 }
@@ -126,7 +143,7 @@ pub struct Snapshot {
     pub time: f32,
     pub pose: Pose, // todo: Experimenting
     pub lig_atom_posits: Vec<Vec3>,
-    pub energy: BindingEnergy,
+    pub energy: Option<BindingEnergy>,
 }
 
 /// Defaults to `Config::dt_integration`, but becomes more precise when
@@ -272,6 +289,49 @@ where
     body.orientation = (body.orientation + orientation_update).to_normalized();
 }
 
+fn V_lj_x8(
+    posit_target: Vec3x8,
+    el_tgt: [Element; 8],
+    bodies_src: &[BodyVdwx8],
+    lj_lut: &HashMap<(Element, Element), (f32, f32)>,
+    chunks_src: usize,
+    lanes_tgt: usize,
+    valid_lanes_src_last: usize,
+) -> f32x8 {
+    bodies_src
+        .par_iter()
+        .enumerate()
+        .filter_map(|(i, body_source)| {
+            let posit_src = body_source.posit;
+
+            let dist = (posit_src - posit_target).magnitude();
+
+            let lanes_src = if i == chunks_src - 1 {
+                valid_lanes_src_last
+            } else {
+                8
+            };
+
+            let valid_lanes = lanes_src.min(lanes_tgt);
+
+            let mut sigmas = [0.; 8];
+            let mut epss = [0.; 8];
+            for lane in 0..valid_lanes {
+                let (sigma, eps) = lj_lut
+                    .get(&(body_source.element[lane], el_tgt[lane]))
+                    .unwrap();
+                sigmas[lane] = *sigma;
+                epss[lane] = *eps;
+            }
+
+            let sigma = f32x8::from_array(sigmas);
+            let eps = f32x8::from_array(epss);
+
+            Some(lj_potential_x8(dist, sigma, eps))
+        })
+        .reduce(|| f32x8::splat(0.), |f, elem| f + elem) // Sum the contributions.
+}
+
 fn force_lj_x8(
     posit_target: Vec3x8,
     el_tgt: [Element; 8],
@@ -282,7 +342,6 @@ fn force_lj_x8(
     lanes_tgt: usize,
     valid_lanes_src_last: usize,
 ) -> Vec3x8 {
-    // Compute the result in parallel and then sum the contributions.
     bodies_src
         .par_iter()
         .enumerate()
@@ -295,9 +354,6 @@ fn force_lj_x8(
 
             let dir = diff / dist; // Unit vec
 
-            let mut sigmas = [0.; 8];
-            let mut epss = [0.; 8];
-
             let lanes_src = if i == chunks_src - 1 {
                 valid_lanes_src_last
             } else {
@@ -305,6 +361,9 @@ fn force_lj_x8(
             };
 
             let valid_lanes = lanes_src.min(lanes_tgt);
+
+            let mut sigmas = [0.; 8];
+            let mut epss = [0.; 8];
             for lane in 0..valid_lanes {
                 let (sigma, eps) = lj_lut
                     .get(&(body_source.element[lane], el_tgt[lane]))
@@ -318,14 +377,15 @@ fn force_lj_x8(
 
             Some(lj_force_x8(dir, dist, sigma, eps))
         })
-        .reduce(Vec3x8::new_zero, |acc, elem| acc + elem) // Sum the contributions.
+        .reduce(Vec3x8::new_zero, |f, elem| f + elem) // Sum the contributions.
 }
 
 fn bodies_from_atoms(atoms: &[Atom]) -> Vec<BodyVdw> {
     atoms.iter().map(BodyVdw::from_atom).collect()
 }
 
-fn bodies_from_atomsx8(atoms: &[Atom]) -> Vec<BodyVdwx8> {
+/// Also returns valid lanes in the last item.
+fn bodies_from_atoms_x8(atoms: &[Atom]) -> (Vec<BodyVdwx8>, usize) {
     let mut posits: Vec<Vec3> = Vec::with_capacity(atoms.len());
     let mut els = Vec::with_capacity(atoms.len());
 
@@ -334,7 +394,7 @@ fn bodies_from_atomsx8(atoms: &[Atom]) -> Vec<BodyVdwx8> {
         els.push(atom.element);
     }
 
-    let (posits_x8, _valid_lanes) = pack_vec3(&posits);
+    let (posits_x8, valid_lanes) = pack_vec3(&posits);
 
     let (els_x8, _) = pack_slice::<_, 8>(&els);
     let mut result = Vec::with_capacity(posits_x8.len());
@@ -355,7 +415,7 @@ fn bodies_from_atomsx8(atoms: &[Atom]) -> Vec<BodyVdwx8> {
         })
     }
 
-    result
+    (result, valid_lanes)
 }
 
 // todo: QC this
@@ -367,10 +427,15 @@ fn orientation_derivative(orientation: Quaternion, ang_vel_world: Vec3) -> Quate
 }
 
 /// Keeps orientation fixed and body rigid, for now.
+///
+/// Observation: We can use analytic VDW force to position individual atoms, but once we treat
+/// the molecule together, we seem to get bogus results using this approach. Instead, we use a numerical
+/// derivative of the total VDW potential, and use gradient descent.
 pub fn build_vdw_dynamics(
     receptor_atoms: &[Atom],
     lig: &Ligand,
     lj_lut: &HashMap<(Element, Element), (f32, f32)>,
+    docking_setup: &DockingSetup,
 ) -> Vec<Snapshot> {
     println!("Starting vuilding VDW dyanmics...");
     let start = Instant::now();
@@ -389,37 +454,17 @@ pub fn build_vdw_dynamics(
     // todo: We're having trouble fitting dy namic DT into our functional code.
     // todo: One alternative is to pre-calculate it, but this has an additional distance step.
 
-    let snapshot_ratio = 10;
+    // let snapshot_ratio = 10;
+    let snapshot_ratio = 1; // todo temp
 
     let mut snapshots = Vec::with_capacity(n_steps + 1); // +1 for the initial snapshot.
 
     let mut time_elapsed = 0.;
 
     // Static
-    let bodies_rec_x8 = bodies_from_atomsx8(receptor_atoms);
-    // These move.
-    // let mut bodies_lig_x8 = bodies_from_atomsx8(&lig.molecule.atoms);
-
-    // How many 8-wide chunks we have
+    let (bodies_rec_x8, valid_lanes_rec) = bodies_from_atoms_x8(receptor_atoms);
     let chunk_count_rec = bodies_rec_x8.len();
-    let chunk_count_lig = {
-        // Overkill, but safe.
-        let bodies = bodies_from_atomsx8(&lig.molecule.atoms);
-        bodies.len()
-    };
 
-    // How many valid lanes there are in the last chunk
-    let rem_rec = receptor_atoms.len() % 8;
-    let rem_lig = lig.molecule.atoms.len() % 8;
-
-    let valid_lanes_rec_last = if rem_rec == 0 { 8 } else { rem_rec };
-    let valid_lanes_lig_last = if rem_lig == 0 { 8 } else { rem_lig };
-
-    // End setup.
-
-    // Assume atoms are positioned already?
-
-    // let mut bodies_lig = bodies_from_atoms(&lig.molecule.atoms);
     let mut body_ligand_rigid = BodyRigid::from_ligand(lig);
 
     // Initial snapshot
@@ -427,30 +472,39 @@ pub fn build_vdw_dynamics(
         time: time_elapsed,
         lig_atom_posits: lig.atom_posits.iter().map(|p| (*p).into()).collect(),
         pose: lig.pose.clone(),
-        energy: BindingEnergy::default(), // todo
+        energy: None, // todo: Initial energy?
     });
+
+    // todo: Temp: individuaul lig atom sim.
+    let mut atoms = lig.molecule.atoms.clone(); // todo: Not a fan of this clone, or these dummy atoms in general.
+    for (i, posit) in  lig.position_atoms(None).iter().enumerate() {
+        atoms[i].posit = *posit;
+    }
 
     let mut dt = dt_max; // todo: Make adaptive again; you must pull that logic outside
     // todo of teh torque/force fn.
 
+
+
     let force_torque_fn = |body: &BodyRigid| {
-        // Set up atom positions from the rigid body passed as a parameter.
         let atom_posits = lig.position_atoms(Some(&body.as_pose()));
+        // Set up atom positions from the rigid body passed as a parameter.
         let mut atoms = lig.molecule.atoms.clone(); // todo: Not a fan of this clone, or these dummy atoms in general.
         for (i, posit) in atom_posits.iter().enumerate() {
             atoms[i].posit = *posit;
         }
-        let bodies_lig_x8 = bodies_from_atomsx8(&atoms);
+
+        let (bodies_lig_x8, valid_lanes_lig) = bodies_from_atoms_x8(&atoms);
+        let chunk_count_lig = bodies_lig_x8.len();
 
         let anchor_posit = Vec3x8::splat(body.posit);
 
         let (f_net, torque_net) = bodies_lig_x8
-            // .par_iter_mut()
             .par_iter()
             .enumerate()
             .map(|(i_lig, body_lig)| {
                 let lanes_lig = if i_lig == chunk_count_lig - 1 {
-                    valid_lanes_lig_last
+                    valid_lanes_lig
                 } else {
                     8
                 };
@@ -462,7 +516,7 @@ pub fn build_vdw_dynamics(
                     lj_lut,
                     chunk_count_rec,
                     lanes_lig,
-                    valid_lanes_rec_last,
+                    valid_lanes_rec,
                 );
 
                 // Torque = (r - R_cm) x F,
@@ -472,7 +526,7 @@ pub fn build_vdw_dynamics(
 
                 let diff = body_lig.posit - anchor_posit;
                 let torque = diff.cross(f);
-                let torque = Vec3x8::new_zero(); // todo temp
+                // let torque = Vec3x8::new_zero(); // todo temp
 
                 (f, torque)
             })
@@ -486,7 +540,48 @@ pub fn build_vdw_dynamics(
         // let acc_net = f_net_unpacked / body_ligand_rigid.mass;
 
         let torque_net_unpacked: Vec3 = torque_net.to_array().into_iter().sum();
-        (f_net_unpacked, torque_net_unpacked)
+        (f_net_unpacked, torque_net_unpacked, atom_posits)
+    };
+
+    let net_V_fn = |body: &BodyRigid| {
+        // Set up atom positions from the rigid body passed as a parameter.
+        let mut atoms = lig.molecule.atoms.clone(); // todo: Not a fan of this clone, or these dummy atoms in general.
+        for (i, posit) in lig.position_atoms(Some(&body.as_pose())).iter().enumerate() {
+            atoms[i].posit = *posit;
+        }
+
+        let (bodies_lig_x8, valid_lanes_lig) = bodies_from_atoms_x8(&atoms);
+        let chunk_count_lig = bodies_lig_x8.len();
+
+        let anchor_posit = Vec3x8::splat(body.posit);
+
+        let V_net = bodies_lig_x8
+            .par_iter()
+            .enumerate()
+            .map(|(i_lig, body_lig)| {
+                let lanes_lig = if i_lig == chunk_count_lig - 1 {
+                    valid_lanes_lig
+                } else {
+                    8
+                };
+
+                V_lj_x8(
+                    body_lig.posit,
+                    body_lig.element,
+                    &bodies_rec_x8,
+                    lj_lut,
+                    chunk_count_rec,
+                    lanes_lig,
+                    valid_lanes_rec,
+                )
+            })
+            .reduce(
+                || f32x8::splat(0.),
+                |a, b| a + b,
+            );
+
+        // Now, unpack the SIMD-calculated acceleration into a single value.
+        V_net.to_array().into_iter().sum::<f32>()
     };
 
     // We use these to avoid performing computations on empty (0ed?) values on the final SIMD value.
@@ -544,11 +639,46 @@ pub fn build_vdw_dynamics(
 
         // dt = dt_;
 
-        integrate_rk4_rigid(&mut body_ligand_rigid, &force_torque_fn, dt);
+        // integrate_rk4_rigid(&mut body_ligand_rigid, &force_torque_fn, dt);
+
+        // let (f, τ, atom_posits) = force_torque_fn(&body_ligand_rigid);
+
+
+        // Skipping inertia/physics, to just nudge in the *right*? direction.
+        // body_ligand_rigid.posit += f / body_ligand_rigid.mass * dt;
+
+        // todo: Put your F=Ma etc / RK4, and rotations back in once you figure out what tf is going on.
+
+        // todo: Attempting fixed move amt.
+        // body_ligand_rigid.posit += f.to_normalized() * dt;
+
+        // todo temp.
+        // for rec_atom in receptor_atoms {
+        //     for lig_atom in &mut atoms {
+        //         let diff = rec_atom.posit - lig_atom.posit;
+        //         let dist = diff.magnitude();
+        //         let dir = diff / dist;
+        //
+        //         let (σ, ε) = lj_lut.get(&(rec_atom.element, lig_atom.element)).unwrap();
+        //
+        //         let f: Vec3F64 = lj_force(
+        //             dir.into(),
+        //             dist as f32,
+        //             *σ,
+        //             *ε
+        //         ).into();
+        //
+        //         lig_atom.posit += f.to_normalized() * 0.1 *  dt.into();
+        //     }
+        // }
+        // let atom_posits: Vec<Vec3> = atoms.iter().map(|a| a.posit.into()).collect();
+
+
+
 
         // Experimenting with a drag term to prevent inertia from having too much influence.
-        body_ligand_rigid.vel *= 0.98;
-        body_ligand_rigid.ω *= 0.98;
+        body_ligand_rigid.vel *= 0.95;
+        body_ligand_rigid.ω *= 0.95;
         time_elapsed += dt;
 
         // Save the current state to a snapshot, for later playback.
@@ -557,24 +687,29 @@ pub fn build_vdw_dynamics(
         // let bodies_lig: Vec<_> = bodies_lig_x8.iter().map(|b| b.posit).collect();
         // let posits_unpacked = unpack_vec3(&bodies_lig, lig.molecule.atoms.len());
 
-        let pose = Pose {
-            anchor_posit: body_ligand_rigid.posit.into(),
-            orientation: body_ligand_rigid.orientation.into(),
-            conformation_type: lig.pose.conformation_type.clone(), // todo Bond flexes, eventually.
-        };
-
-        let posits = lig
-            .position_atoms(Some(&pose))
-            .iter()
-            .map(|p| (*p).into())
-            .collect();
-
         if t % snapshot_ratio == 0 {
+            let pose = body_ligand_rigid.as_pose();
+            let atom_posits = lig.position_atoms(Some(&pose));
+
+            let posits: Vec<_> = atom_posits
+                .iter()
+                .map(|p| (*p).into())
+                .collect();
+
+
+            let partial_charges = create_partial_charges(&lig.molecule.atoms, Some(&posits));
+            let energy = calc_binding_energy(
+                docking_setup,
+                lig,
+                &posits,
+                &partial_charges,
+            );
+
             snapshots.push(Snapshot {
                 time: time_elapsed,
                 lig_atom_posits: posits,
                 pose,
-                energy: BindingEnergy::default(), // todo
+                energy,
             });
         }
     }
@@ -589,6 +724,7 @@ pub fn change_snapshot(
     entities: &mut [Entity],
     lig: &mut Ligand,
     lig_entity_ids: &[usize],
+    energy_disp: &mut Option<BindingEnergy>,
     snapshot: &Snapshot,
 ) {
     // todo: Initial hack: Get working as individual particles. Then, try to incorporate
@@ -608,6 +744,8 @@ pub fn change_snapshot(
         .iter()
         .map(|p| (*p).into())
         .collect();
+
+    *energy_disp = snapshot.energy.clone();
 
     //
     // for (i, posit) in snapshot.body_posits.iter().enumerate() {

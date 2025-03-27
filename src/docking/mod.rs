@@ -157,7 +157,7 @@ pub struct Pose {
     pub conformation_type: ConformationType,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct BindingEnergy {
     vdw: f32,
     h_bond_count: usize,
@@ -178,7 +178,7 @@ impl BindingEnergy {
 
         let weight_vdw = 1.;
         let weight_hydrophobic = 1.;
-        let weight_electrostatic = 1.;
+        let weight_electrostatic = 10.;
 
         // A low score is considered to be a better pose.
         let score = weight_vdw * vdw
@@ -223,7 +223,7 @@ pub fn calc_binding_energy(
         let mut distances_this_rec = Vec::new();
         for lig_posit in lig_posits {
             let rec_posit: Vec3F32 = rec_atom.posit.into();
-            distances_this_rec.push((*lig_posit - rec_posit).magnitude());
+            distances_this_rec.push((rec_posit - *lig_posit).magnitude());
         }
         distances.push(distances_this_rec);
     }
@@ -254,8 +254,6 @@ pub fn calc_binding_energy(
             })
             .sum()
     };
-
-    println!("VDW: {}", vdw);
 
     let h_bond_count = {
         // Calculate hydrogen bonds

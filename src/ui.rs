@@ -872,13 +872,12 @@ fn residue_search(
                 set_docking_light(scene, Some(&ligand.docking_site));
                 engine_updates.lighting = true;
             }
+
+            ui.add_space(COL_SPACING);
+
+            ui.label(RichText::new("🔘AV").color(active_color(state.ui.autodock_path_valid)))
+                .on_hover_text("Autodock Vina available (Docking)");
         }
-        // }
-
-        ui.add_space(COL_SPACING);
-
-        ui.label(RichText::new("🔘AV").color(active_color(state.ui.autodock_path_valid)))
-            .on_hover_text("Autodock Vina available (Docking)");
     });
 }
 
@@ -925,44 +924,6 @@ fn selection_section(
 
             if state.ui.nearby_dist_thresh != dist_prev {
                 *redraw = true;
-            }
-        }
-
-        ui.add_space(COL_SPACING);
-
-        if let Some(mol) = &state.molecule {
-            if state.selection != Selection::None {
-                selected_data(mol, state.selection, ui);
-
-                ui.add_space(COL_SPACING / 2.);
-                if ui
-                    .button(RichText::new("Move cam to sel").color(COLOR_HIGHLIGHT))
-                    .clicked()
-                {
-                    let atom_sel = mol.get_sel_atom(state.selection);
-
-                    if let Some(atom) = atom_sel {
-                        cam_look_at(&mut scene.camera, atom.posit);
-                        engine_updates.camera = true;
-                        state.ui.cam_snapshot = None;
-                    }
-                }
-            }
-
-            if let Some(lig) = &state.ligand {
-                ui.add_space(COL_SPACING / 2.);
-                if ui
-                    .button(RichText::new("Move cam to ligand").color(COLOR_HIGHLIGHT))
-                    .clicked()
-                {
-                    let lig_pos: Vec3 = lig.position_atoms(None)[lig.anchor_atom].into();
-                    let ctr: Vec3 = mol.center.into();
-
-                    cam_look_at_outside(&mut scene.camera, lig_pos, ctr);
-
-                    engine_updates.camera = true;
-                    state.ui.cam_snapshot = None;
-                }
             }
         }
     });
@@ -1323,7 +1284,47 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         ui.horizontal(|ui| {
             cam_controls(scene, state, &mut engine_updates, ui);
-            // ui.add_space(COL_SPACING * 2.);
+
+            ui.add_space(COL_SPACING);
+
+            if let Some(mol) = &state.molecule {
+                if state.selection != Selection::None {
+                    selected_data(mol, state.selection, ui);
+
+                    ui.add_space(COL_SPACING / 2.);
+                    if ui
+                        .button(RichText::new("Move cam to sel").color(COLOR_HIGHLIGHT))
+                        .clicked()
+                    {
+                        let atom_sel = mol.get_sel_atom(state.selection);
+
+                        if let Some(atom) = atom_sel {
+                            cam_look_at(&mut scene.camera, atom.posit);
+                            engine_updates.camera = true;
+                            state.ui.cam_snapshot = None;
+                        }
+                    }
+                }
+
+                if let Some(lig) = &state.ligand {
+                    ui.add_space(COL_SPACING / 2.);
+                    if ui
+                        .button(RichText::new("Move cam to ligand").color(COLOR_HIGHLIGHT))
+                        .clicked()
+                    {
+                        let lig_pos: Vec3 = lig.position_atoms(None)[lig.anchor_atom].into();
+                        let ctr: Vec3 = mol.center.into();
+
+                        cam_look_at_outside(&mut scene.camera, lig_pos, ctr);
+
+                        engine_updates.camera = true;
+                        state.ui.cam_snapshot = None;
+                    }
+                }
+            }
+
+            ui.add_space(COL_SPACING);
+
             cam_snapshots(&mut scene.camera, state, &mut engine_updates, ui);
         });
 
@@ -1365,7 +1366,10 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                         &rec_atoms_near_site,
                         lig,
                         &state.volatile.lj_lookup_table,
+                        &state.volatile.docking_setup.as_ref().unwrap(),
                     );
+
+                    state.ui.current_snapshot = 0;
                 }
 
                 if !state.volatile.snapshots.is_empty() {
@@ -1383,6 +1387,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                             &mut scene.entities,
                             lig,
                             &Vec::new(),
+                            &mut state.ui.binding_energy_disp,
                             &state.volatile.snapshots[state.ui.current_snapshot],
                         );
 

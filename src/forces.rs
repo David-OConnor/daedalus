@@ -127,10 +127,11 @@ pub fn lj_potential(r: f32, sigma: f32, eps: f32) -> f32 {
     let sr = sigma / r;
     let sr6 = sr.powi(6);
     let sr12 = sr6.powi(2);
+
     4. * eps * (sr12 - sr6)
 }
 
-pub fn lj_potentialx8(r: f32x8, sigma: f32x8, eps: f32x8) -> f32x8 {
+pub fn lj_potential_x8(r: f32x8, sigma: f32x8, eps: f32x8) -> f32x8 {
     // if r < f32::EPSILON {
     //     return f32x8::splat(0.);
     // }
@@ -138,6 +139,7 @@ pub fn lj_potentialx8(r: f32x8, sigma: f32x8, eps: f32x8) -> f32x8 {
     let sr = sigma / r;
     let sr6 = sr.powi(6);
     let sr12 = sr6.powi(2);
+
     f32x8::splat(4.) * eps * (sr12 - sr6)
 }
 
