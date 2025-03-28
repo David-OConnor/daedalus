@@ -753,7 +753,7 @@ fn residue_search(
             if ui.button("Docking energy").clicked() {
                 let poses = vec![ligand.pose.clone()];
                 let mut lig_posits = Vec::with_capacity(poses.len());
-                let mut partial_charges_lig = Vec::with_capacity(poses.len());
+                // let mut partial_charges_lig = Vec::with_capacity(poses.len());
 
                 for pose in poses {
                     let posits_this_pose: Vec<_> = ligand
@@ -762,10 +762,10 @@ fn residue_search(
                         .map(|p| (*p).into())
                         .collect();
 
-                    partial_charges_lig.push(create_partial_charges(
-                        &ligand.molecule.atoms,
-                        Some(&posits_this_pose),
-                    ));
+                    // partial_charges_lig.push(create_partial_charges(
+                    //     &ligand.molecule.atoms,
+                    //     Some(&posits_this_pose),
+                    // ));
                     lig_posits.push(posits_this_pose);
                 }
 
@@ -773,7 +773,6 @@ fn residue_search(
                     state.volatile.docking_setup.as_ref().unwrap(),
                     ligand,
                     &lig_posits[0],
-                    &partial_charges_lig[0],
                 );
             }
 
@@ -1522,7 +1521,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
     unsafe {
         if !INIT_COMPLETE {
-
             if let Some(mol) = &state.molecule {
                 if let Some(lig) = &state.ligand {
                     let lig_pos: Vec3 = lig.position_atoms(None)[lig.anchor_atom].into();
@@ -1538,7 +1536,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             INIT_COMPLETE = true;
         }
     }
-
 
     engine_updates
 }

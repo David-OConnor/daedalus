@@ -225,7 +225,6 @@ impl Ligand {
                 .collect(),
         };
 
-
         println!("Torsions: {:?}", result.pose.conformation_type);
         // todo: Temp for testing.
         {
@@ -236,7 +235,7 @@ impl Ligand {
             result.pose.anchor_posit = result.docking_site.site_center;
             result.pose.orientation = Quaternion::new(0.1156, -0.7155, 0.4165, 0.5488);
 
-            if let ConformationType::Flexible{ torsions } = &mut result.pose.conformation_type {
+            if let ConformationType::Flexible { torsions } = &mut result.pose.conformation_type {
                 torsions[1].dihedral_angle = 0.884;
                 torsions[0].dihedral_angle = 2.553;
             }

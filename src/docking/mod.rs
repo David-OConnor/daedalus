@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 //! Example docking software:
 //!
 //! [Autodock Vina](https://vina.scripps.edu/): Popular CLI tool, integrated into several GUI-based applications.
@@ -211,9 +213,8 @@ pub fn calc_binding_energy(
     setup: &DockingSetup,
     ligand: &Ligand,
     lig_posits: &[Vec3F32],
-    // Note: We don't need `partial_charges_rec` here; it's encoded in the tree.
-    partial_charges_lig: &[PartialCharge],
 ) -> Option<BindingEnergy> {
+    let partial_charges_lig = create_partial_charges(&ligand.molecule.atoms, Some(lig_posits));
     // todo: Integrate CUDA or SIMD.
 
     // Pre-compute distances, to prevent repetition later.
@@ -223,14 +224,11 @@ pub fn calc_binding_energy(
         let mut distances_this_rec = Vec::new();
         for lig_posit in lig_posits {
             let rec_posit: Vec3F32 = rec_atom.posit.into();
+            // todo: Diffs too?
             distances_this_rec.push((rec_posit - *lig_posit).magnitude());
         }
         distances.push(distances_this_rec);
     }
-
-    // for pair in &setup.lj_pairs {
-    //     println!("{:.3?}", pair);
-    // }
 
     // todo: Use a neighbor grid or similar? Set it up so there are two separate sides?
     let vdw: f32 = {
@@ -240,16 +238,16 @@ pub fn calc_binding_energy(
             .map(|(i_rec, i_lig, sigma, eps)| {
                 let r = distances[*i_rec][*i_lig];
 
-                let mut f= forces::lj_potential(r, *sigma, *eps);
+                let mut V = forces::lj_potential(r, *sigma, *eps);
 
-                if f > 50. {
-                    // println!("F high: {:?}, r: {:?}", f, r);
-                    f = 0.; // todo temp!!
-                }
+                // if V > 50. {
+                //     // println!("F high: {:?}, r: {:?}", f, r);
+                //     V = 0.; // todo temp!!
+                // }
 
                 // println!("F: {:.4?}", f);
 
-                f
+                V
                 // lj_potential_simd(*posit_rec, lig_posits[*i_lig], *sigma, *eps)
             })
             .sum()
@@ -527,7 +525,7 @@ fn process_poses<'a>(
     // todo: Currently an outer/inner dynamic.
     // Set up the ligand atom positions for each pose; that's all that matters re the pose for now.
     let mut lig_posits = Vec::new();
-    let mut partial_charges_lig = Vec::with_capacity(poses.len());
+    // let mut partial_charges_lig = Vec::with_capacity(poses.len());
 
     let mut geometry_poses_skip = Vec::new();
 
@@ -564,10 +562,10 @@ fn process_poses<'a>(
 
         // let posits_this_pose_x8 = pack_vec3(&posits_this_pose);
 
-        partial_charges_lig.push(create_partial_charges(
-            &ligand.molecule.atoms,
-            Some(&posits_this_pose),
-        ));
+        // partial_charges_lig.push(create_partial_charges(
+        //     &ligand.molecule.atoms,
+        //     Some(&posits_this_pose),
+        // ));
 
         let lig_posits_sample: Vec<Vec3F32> = posits_this_pose
             .iter()
@@ -668,7 +666,7 @@ fn process_poses<'a>(
                 setup,
                 ligand,
                 &lig_posits[i_pose],
-                &partial_charges_lig[i_pose],
+                // &partial_charges_lig[i_pose],
             )
             .map(|energy| (energy, pose)) // Only keep values where energy is Some
         })
