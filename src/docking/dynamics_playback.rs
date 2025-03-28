@@ -212,7 +212,7 @@ where
 /// Integrates position and orientation of a rigid body using RK4.
 pub fn integrate_rk4_rigid<F>(body: &mut BodyRigid, force_torque: &F, dt: f32)
 where
-    // force_torque(body) should return (net_force, net_torque) in *world* coordinates
+// force_torque(body) should return (net_force, net_torque) in *world* coordinates
     F: Fn(&BodyRigid) -> (Vec3, Vec3),
 {
     // -- k1 --------------------------------------------------------------------
@@ -293,69 +293,6 @@ where
     body.orientation = (body.orientation + orientation_update).to_normalized();
 }
 
-fn V_lj(
-    posit_target: Vec3,
-    el_tgt: Element,
-    bodies_src: &[BodyVdw],
-    lj_lut: &HashMap<(Element, Element), (f32, f32)>,
-) -> f32 {
-    bodies_src
-        .par_iter()
-        .enumerate()
-        .filter_map(|(i, body_source)| {
-            let posit_src = body_source.posit;
-
-            let dist = (posit_src - posit_target).magnitude();
-
-            let (sigma, eps) = lj_lut.get(&(body_source.element, el_tgt)).unwrap();
-
-            Some(lj_potential(dist, *sigma, *eps))
-        })
-        .reduce(|| 0., |f, elem| f + elem) // Sum the contributions.
-}
-
-fn V_lj_x8(
-    posit_target: Vec3x8,
-    el_tgt: [Element; 8],
-    bodies_src: &[BodyVdwx8],
-    lj_lut: &HashMap<(Element, Element), (f32, f32)>,
-    chunks_src: usize,
-    lanes_tgt: usize,
-    valid_lanes_src_last: usize,
-) -> f32x8 {
-    bodies_src
-        .par_iter()
-        .enumerate()
-        .filter_map(|(i, body_source)| {
-            let posit_src = body_source.posit;
-
-            let dist = (posit_src - posit_target).magnitude();
-
-            let lanes_src = if i == chunks_src - 1 {
-                valid_lanes_src_last
-            } else {
-                8
-            };
-
-            let valid_lanes = lanes_src.min(lanes_tgt);
-
-            let mut sigmas = [0.; 8];
-            let mut epss = [0.; 8];
-            for lane in 0..valid_lanes {
-                let (sigma, eps) = lj_lut
-                    .get(&(body_source.element[lane], el_tgt[lane]))
-                    .unwrap();
-                sigmas[lane] = *sigma;
-                epss[lane] = *eps;
-            }
-
-            let sigma = f32x8::from_array(sigmas);
-            let eps = f32x8::from_array(epss);
-
-            Some(lj_potential_x8(dist, sigma, eps))
-        })
-        .reduce(|| f32x8::splat(0.), |f, elem| f + elem) // Sum the contributions.
-}
 
 fn force_lj(
     posit_target: Vec3,
@@ -412,6 +349,7 @@ fn force_lj_x8(
 
             let valid_lanes = lanes_src.min(lanes_tgt);
 
+            // Setting sigma and eps to 0 for invalid lanes makes their contribution 0.
             let mut sigmas = [0.; 8];
             let mut epss = [0.; 8];
             for lane in 0..valid_lanes {
@@ -559,6 +497,10 @@ pub fn build_vdw_dynamics(
     // Static
     let bodies_rec = bodies_from_atoms(receptor_atoms);
     let (bodies_rec_x8, valid_lanes_rec) = bodies_from_atoms_x8(receptor_atoms);
+
+    // println!("\n\n BR: {:?}", &bodies_rec[..20]);
+    // println!("\n\n\n BRx8: {:?}", &bodies_rec_x8[..4]);
+
     let chunk_count_rec = bodies_rec_x8.len();
 
     let mut body_ligand_rigid = BodyRigid::from_ligand(lig);
@@ -673,58 +615,6 @@ pub fn build_vdw_dynamics(
         (f_net_unpacked, torque_net_unpacked, atom_posits)
     };
 
-    let net_V_fn_x8 = |body: &BodyRigid| {
-        // Set up atom positions from the rigid body passed as a parameter.
-        let mut atoms = lig.molecule.atoms.clone(); // todo: Not a fan of this clone, or these dummy atoms in general.
-        for (i, posit) in lig.position_atoms(Some(&body.as_pose())).iter().enumerate() {
-            atoms[i].posit = *posit;
-        }
-
-        let (bodies_lig_x8, valid_lanes_lig) = bodies_from_atoms_x8(&atoms);
-        let chunk_count_lig = bodies_lig_x8.len();
-
-        let V_net = bodies_lig_x8
-            .par_iter()
-            .enumerate()
-            .map(|(i_lig, body_lig)| {
-                let lanes_lig = if i_lig == chunk_count_lig - 1 {
-                    valid_lanes_lig
-                } else {
-                    8
-                };
-
-                V_lj_x8(
-                    body_lig.posit,
-                    body_lig.element,
-                    &bodies_rec_x8,
-                    lj_lut,
-                    chunk_count_rec,
-                    lanes_lig,
-                    valid_lanes_rec,
-                )
-            })
-            .reduce(|| f32x8::splat(0.), |a, b| a + b);
-
-        // Now, unpack the SIMD-calculated acceleration into a single value.
-        V_net.to_array().into_iter().sum::<f32>()
-    };
-
-    let net_V_fn = |body: &BodyRigid| {
-        // Set up atom positions from the rigid body passed as a parameter.
-        let mut atoms = lig.molecule.atoms.clone(); // todo: Not a fan of this clone, or these dummy atoms in general.
-        for (i, posit) in lig.position_atoms(Some(&body.as_pose())).iter().enumerate() {
-            atoms[i].posit = *posit;
-        }
-
-        let bodies_lig = bodies_from_atoms(&atoms);
-
-        bodies_lig
-            .par_iter()
-            .enumerate()
-            .map(|(i_lig, body_lig)| V_lj(body_lig.posit, body_lig.element, &bodies_rec, lj_lut))
-            .reduce(|| 0., |a, b| a + b)
-    };
-
     // We use these to avoid performing computations on empty (0ed?) values on the final SIMD value.
     // This causes incorrect results.
     // Number of real bodies:
@@ -815,8 +705,18 @@ pub fn build_vdw_dynamics(
 
         // todo: The x8 version is bugged!
         let (f, τ, atom_posits) = force_torque_fn(&body_ligand_rigid);
-        // let (f, τ, atom_posits) = force_torque_fn_x8(&body_ligand_rigid);
-        body_ligand_rigid.posit += f * dt * 0.000001;
+        let (fx8, τx8, atom_posits) = force_torque_fn_x8(&body_ligand_rigid);
+
+        // println!("F SC: {f} F x8: {fx8}");
+
+        // This approach of altering position and orientation seems to perform notably better than
+        // combining the two.
+        if t % 2 == 0 {
+            body_ligand_rigid.posit += f * dt * 0.00001;
+        } else {
+            let rotator = Quaternion::from_axis_angle(τ.to_normalized(), τ.magnitude() * dt * 0.00001);
+            body_ligand_rigid.orientation = rotator * body_ligand_rigid.orientation;
+        }
 
         // todo: The x8 version is bugged!
         // let gradient = calc_gradient_posit(&body_ligand_rigid, &net_V_fn);
