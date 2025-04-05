@@ -42,7 +42,7 @@ float3 coulomb_force(float3 posit_src, float3 posit_tgt, float q_src, float q_tg
 }
 
 __device__
-float lj_potential(
+float lj_V(
     float3 posit_0,
     float3 posit_1,
     float sigma,
@@ -56,4 +56,23 @@ float lj_potential(
     float sr12 = sr6 * sr6;
 
     return 4.0f * eps * (sr12 - sr6);
+}
+
+__device__
+float3 lj_force(
+    float3 posit_0,
+    float3 posit_1,
+    float sigma,
+    float eps
+) {
+    float3 diff = posit_0 - posit_0;
+    float r = std::sqrt(diff.x * diff.x + diff.y * diff.y + diff.z * diff.z);
+    float3 dir = diff / r;
+
+    float sr = sigma / r;
+    float sr6 = powf(sr, 6.);
+    float sr12 = sr6 * sr6;
+
+    float mag = -24.0f * eps * (2. * sr12 - sr6) / powf(2, 2.);
+    return dir * mag;
 }

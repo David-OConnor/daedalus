@@ -391,7 +391,7 @@ fn main() {
             .load_ptx(
                 cudarc::nvrtc::Ptx::from_file("./cuda.ptx"),
                 "cuda",
-                &["coulomb_kernel", "lj_kernel"],
+                &["coulomb_kernel", "lj_V_kernel", "lj_force_kernel"],
             )
             .unwrap();
 

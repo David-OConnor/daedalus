@@ -55,7 +55,7 @@ void coulomb_kernel(
 }
 
 extern "C" __global__
-void lj_kernel(
+void lj_V_kernel(
     float *out,
     float3 *posits_0,
     float3 *posits_1,
@@ -80,7 +80,39 @@ void lj_kernel(
             float eps = epsilons[0];
 
             if (i_tgt < N_tgts) {
-                out[i_tgt] += lj_potential(posit_0, posit_1, sigma, eps);
+                out[i_tgt] += lj_V(posit_0, posit_1, sigma, eps);
+            }
+        }
+    }
+}
+
+extern "C" __global__
+void lj_force_kernel(
+    float3 *out,
+    float3 *posits_0,
+    float3 *posits_1,
+    float *sigmas,
+    float *epsilons,
+    size_t N_srcs,
+    size_t N_tgts
+) {
+    size_t index = blockIdx.x * blockDim.x + threadIdx.x;
+    size_t stride = blockDim.x * gridDim.x;
+
+    for (size_t i_tgt = index; i_tgt < N_tgts; i_tgt += stride) {
+        // Compute the sum serially, as it may not be possible to naively apply it in parallel,
+        // and we may still be saturating GPU cores given the large number of tgts.
+        // todo: QC that.
+        for (size_t i_src = 0; i_src < N_srcs; i_src++) {
+            float3 posit_0 = posits_0[i_src];
+            float3 posit_1 = posits_1[i_tgt];
+
+            // todo: Sort out the index here.
+            float sigma = sigmas[0];
+            float eps = epsilons[0];
+
+            if (i_tgt < N_tgts) {
+                out[i_tgt] = out[i_tgt] + lj_force(posit_0, posit_1, sigma, eps);
             }
         }
     }

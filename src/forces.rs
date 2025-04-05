@@ -148,14 +148,6 @@ pub fn lj_force(dir: Vec3, r: f32, sigma: f32, eps: f32) -> Vec3 {
     let sr12 = sr6.powi(2);
 
     let mag = 24. * eps * (2. * sr12 - sr6) / r.powi(2);
-
-    // println!("\nDIR: {:?}", dir);
-    // println!("R: {:?}", r);
-    // println!("sigma: {:?}", sigma);
-    // println!("Eps: {:?}", eps);
-    // println!("mag: {:?}", mag);
-    // println!("d mag: {:?}", (-dir * mag));
-
     -dir * mag
 }
 
