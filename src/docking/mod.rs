@@ -43,10 +43,11 @@ use std::{collections::HashMap, f32::consts::TAU, time::Instant};
 
 use barnes_hut::{BhConfig, Cube, Tree};
 use lin_alg::{
-    f32::{Vec3 as Vec3F32, f32x8, pack_f32, pack_vec3},
+    f32::{Vec3 as Vec3F32, f32x8, pack_float, pack_vec3},
     f64::{FORWARD, Quaternion, RIGHT, UP, Vec3},
     linspace,
 };
+use nalgebra::Bidiagonal;
 use partial_charge::{EemParams, EemSet, PartialCharge, create_partial_charges};
 use rand::Rng;
 use rayon::prelude::*;
@@ -61,6 +62,7 @@ use crate::{
     forces,
     molecule::{Atom, Bond, Ligand, Molecule},
 };
+use crate::docking::dynamics_playback::build_vdw_dynamics;
 
 pub mod dynamics_playback;
 pub mod external;
@@ -132,7 +134,7 @@ impl Default for GeneticAlgorithmParameters {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 /// Area IVO the docking site.
 pub struct DockingSite {
     pub site_center: Vec3,
@@ -363,7 +365,7 @@ pub fn calc_binding_energy(
 
             // Our bh algorithm is currently hard-coded to f64.
             let force_fn = |dir: Vec3, q_src: f64, dist: f64| {
-                forces::coulomb_force(
+                forces::f_coulomb(
                     dir.into(),
                     dist as f32,
                     q_src as f32,
@@ -439,28 +441,37 @@ fn make_posits_orientations(
         }
     }
 
-    // todo: Try without random?
+    let n_lats = ((num_orientations as f32 / 2.).powf(1./3.)) as usize;
+    let n_lons = n_lats * 2;
+    let n_rolls = n_lons;
 
-    let mut rng = rand::rng();
-    let orientations: Vec<Quaternion> = (0..num_orientations)
-        .map(|_| {
-            let u1: f64 = rng.random();
-            let u2: f64 = rng.random();
-            let u3: f64 = rng.random();
+    let n_orientations = n_lats * n_lons * n_rolls;
+    let mut orientations = Vec::with_capacity(n_orientations);
 
-            let sqrt1_minus_u1 = (1.0 - u1).sqrt();
-            let sqrt_u1 = u1.sqrt();
-            let theta1 = 2.0 * std::f64::consts::PI * u2;
-            let theta2 = 2.0 * std::f64::consts::PI * u3;
+    for i_lat in 0..n_lats {
+        let frac = (i_lat as f32 + 0.5) / n_lats as f32;
+        let mu   = -1.0 + 2.0 * frac;
+        let ϕ  = mu.acos();
 
-            Quaternion::new(
-                sqrt1_minus_u1 * theta1.sin(), // w
-                sqrt1_minus_u1 * theta1.cos(), // x
-                sqrt_u1 * theta2.sin(),        // y
-                sqrt_u1 * theta2.cos(),        // z
-            )
-        })
-        .collect();
+        for i_lon in 0..n_lons {
+            let θ = (i_lon as f32 + 0.5) * TAU / (n_lons as f32);
+
+            // Convert spherical to Cartesian
+            let x = ϕ.sin() * θ.cos();
+            let y = ϕ.sin() * θ.sin();
+            let z = mu;
+
+            let lat_lon_vec = Vec3F32::new(x, y, z).to_normalized();
+
+            let or = Quaternion::from_unit_vecs(Vec3::new(0., 0., 1.), lat_lon_vec.into());
+
+            for roll in 0..n_rolls {
+                let angle = roll as f32 * TAU/n_rolls as f32;
+                let rotator = Quaternion::from_axis_angle(lat_lon_vec.into(), angle as f64);
+                orientations.push(rotator * or);
+            }
+        }
+    }
 
     (ligand_posits, orientations)
 }
@@ -521,7 +532,8 @@ fn process_poses<'a>(
     mut poses: &'a [Pose],
     setup: &DockingSetup,
     ligand: &Ligand,
-) -> (&'a Pose, BindingEnergy) {
+) ->Vec<(usize, BindingEnergy)> {
+
     // todo: Currently an outer/inner dynamic.
     // Set up the ligand atom positions for each pose; that's all that matters re the pose for now.
     let mut lig_posits = Vec::new();
@@ -548,7 +560,7 @@ fn process_poses<'a>(
         }
 
         let (rec, valid_lanes_rec) = pack_vec3(&rec_posits_sample);
-        let (vdw, _) = pack_f32(&rec_vdw_sample);
+        let (vdw, _) = pack_float(&rec_vdw_sample);
 
         (rec, vdw, valid_lanes_rec)
     };
@@ -657,32 +669,26 @@ fn process_poses<'a>(
         poses.len() - geometry_poses_skip.len()
     );
 
-    let (best_energy, best_pose) = poses
+    let result: Vec<_> = poses
         .par_iter()
         .enumerate()
-        .filter(|(i_pose, _pose)| !geometry_poses_skip.contains(i_pose))
+        .filter(|(i_pose, _)| !geometry_poses_skip.contains(i_pose))
         .filter_map(|(i_pose, pose)| {
-            calc_binding_energy(
+            let energy = calc_binding_energy(
                 setup,
                 ligand,
                 &lig_posits[i_pose],
-                // &partial_charges_lig[i_pose],
-            )
-            .map(|energy| (energy, pose)) // Only keep values where energy is Some
-        })
-        // Provide an identity value for reduction; here we use +∞ for energy:
-        .reduce(
-            || (BindingEnergy::default(), &poses[0]),
-            |(energy_a, pose_a), (energy_b, pose_b)| {
-                if energy_b.score < energy_a.score {
-                    (energy_b, pose_b)
-                } else {
-                    (energy_a, pose_a)
-                }
-            },
-        );
+            );
+            if let Some(e) = energy {
+                Some((i_pose, e))
+            } else {
+                None
+            }
 
-    (best_pose, best_energy)
+        })
+        .collect();
+
+    result
 }
 
 fn vary_pose(pose: &Pose) -> Vec<Pose> {
@@ -721,7 +727,7 @@ fn vary_pose(pose: &Pose) -> Vec<Pose> {
 ///
 /// Note: We use the term `receptor` here vice `target`, as `target` is also used in terms of
 /// calculating forces between pairs. (These targets may or may not align!)
-pub fn find_optimal_pose(setup: &DockingSetup, ligand: &Ligand) -> (Pose, BindingEnergy) {
+pub fn find_optimal_pose(setup: &DockingSetup, ligand: &Ligand, lj_lut: &HashMap<(Element, Element), (f32, f32)>) -> (Pose, BindingEnergy) {
     // todo: Consider another fn for this part of the setup, so you can re-use it more easily.
 
     // todo: Evaluate if you can cache EEM charges. Look into how position-dependent they are between ligand flexible
@@ -735,9 +741,9 @@ pub fn find_optimal_pose(setup: &DockingSetup, ligand: &Ligand) -> (Pose, Bindin
 
     let start = Instant::now();
 
-    let num_posits = 4; // Gets cubed, although many of these are eliminated.
-    let num_orientations = 20;
-    let angles_per_bond = 0;
+    let num_posits = 8; // Gets cubed, although many of these are eliminated.
+    let num_orientations = 60;
+    let angles_per_bond = 3;
 
     let poses = init_poses(
         &ligand.docking_site,
@@ -748,8 +754,39 @@ pub fn find_optimal_pose(setup: &DockingSetup, ligand: &Ligand) -> (Pose, Bindin
     );
     println!("Initial pose count: {} poses...", poses.len());
 
+    // todo: Increase.
+    let top_pose_count = 10;
+
     // Now process them in parallel and reduce to the single best pose:
-    let (best_pose, best_energy) = process_poses(&poses, setup, ligand);
+    let mut pose_energies = process_poses(&poses, setup, ligand);
+
+    pose_energies.sort_by(|a, b| a.1.score.partial_cmp(&b.1.score).unwrap());
+    let best_pose = &poses[pose_energies[0].0];
+    let best_energy = pose_energies[0].1.clone();
+
+
+
+    // Conduct a molecular dynamics sim on the best poses, refining them further.
+    // todo: This appears to not be doing much.
+    for (pose_i, energy) in &pose_energies[0..top_pose_count] {
+        let mut lig_this = ligand.clone(); //  todo: DOn't like this clone.
+        lig_this.pose = poses[*pose_i].clone();
+
+        let snapshots = build_vdw_dynamics(
+            &lig_this,
+            lj_lut,
+           setup,
+        );
+
+        let final_snap = &snapshots[snapshots.len() - 1];
+        println!("Updated snap: {:?}", final_snap.energy.as_ref().unwrap().score);
+    }
+
+    println!("Complete. \n\nBest pose init: {best_pose:?} \n\nScores: {best_energy:.3?}\n\n");
+
+    // Vary orientations and positiosn of the best poses, pre and/or pose md sim?
+
+
 
     println!("\nBest initial pose: {best_pose:?} \nScores: {best_energy:.3?}\n");
 
@@ -759,7 +796,7 @@ pub fn find_optimal_pose(setup: &DockingSetup, ligand: &Ligand) -> (Pose, Bindin
     let elapsed = start.elapsed();
     println!("Time: {}ms", elapsed.as_millis());
     println!("Complete. \n\nBest pose: {best_pose:?} \n\nScores: {best_energy:.3?}\n\n");
-    (best_pose.clone(), best_energy)
+    (best_pose.clone(), best_energy.clone())
 }
 
 // Find hydrogen bond interaction, hydrophobic interactions between ligand and protein.

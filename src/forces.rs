@@ -87,28 +87,26 @@ pub fn coulomb_force_gpu(
 
 /// The most fundamental part of Newtonian acceleration calculation.
 /// `acc_dir` is a unit vector.
-pub fn coulomb_force(
+pub fn f_coulomb(
     dir: Vec3,
     dist: f32,
-    src_q: f32,
-    tgt_q: f32,
+    q0: f32,
+    q1: f32,
     softening_factor_sq: f32,
 ) -> Vec3 {
     // Assume the coulomb constant is 1.
     // println!("AD: {acc_dir}, src: {src_q} tgt: {tgt_q}  dist: {dist}");
-    let mag = src_q * tgt_q / (dist.powi(2) + softening_factor_sq);
-    dir * mag
+    dir * q0 * q1 / (dist.powi(2) + softening_factor_sq)
 }
 
-pub fn coulomb_forcex8(
+pub fn f_coulomb_x8(
     dir: Vec3x8,
     dist: f32x8,
-    src_q: f32x8,
-    tgt_q: f32x8,
+    q0: f32x8,
+    q1: f32x8,
     softening_factor_sq: f32x8,
 ) -> Vec3x8 {
-    let mag = src_q * tgt_q / (dist.powi(2) + softening_factor_sq);
-    dir * mag
+    dir * q0 * q1 / (dist.powi(2) + softening_factor_sq)
 }
 
 /// Calculate the Lennard-Jones potential between two atoms.

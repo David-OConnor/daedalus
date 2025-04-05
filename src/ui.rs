@@ -727,7 +727,7 @@ fn residue_search(
                 // todo by deferring the docking below to the next frame.
 
                 let (pose, binding_energy) =
-                    find_optimal_pose(state.volatile.docking_setup.as_ref().unwrap(), ligand);
+                    find_optimal_pose(state.volatile.docking_setup.as_ref().unwrap(), ligand, &state.volatile.lj_lookup_table);
 
                 ligand.pose = pose;
                 ligand.atom_posits = ligand.position_atoms(None);
@@ -1362,7 +1362,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                         find_rec_atoms_near_site(mol, &lig.docking_site);
 
                     state.volatile.snapshots = build_vdw_dynamics(
-                        &rec_atoms_near_site,
                         lig,
                         &state.volatile.lj_lookup_table,
                         &state.volatile.docking_setup.as_ref().unwrap(),

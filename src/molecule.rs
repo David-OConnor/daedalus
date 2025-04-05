@@ -189,7 +189,7 @@ impl fmt::Display for AtomRole {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct Ligand {
     /// Molecule atom positions remain relative.
     pub molecule: Molecule,

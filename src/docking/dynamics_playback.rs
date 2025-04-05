@@ -180,7 +180,7 @@ fn calc_dt_dynamic(
 }
 
 /// Compute acceleration, position, and velocity, using RK4.
-/// The acc fn: (id, target posit, target charge) -> Acceleration.
+/// The acc fn: (id, target posit, target element, target charge) -> Acceleration.
 /// todo: C+P from causal grav.
 pub fn integrate_rk4<F>(body_tgt: &mut BodyVdw, id_tgt: usize, acc: &F, dt: f32)
 where
@@ -466,10 +466,9 @@ where
 /// the molecule together, we seem to get bogus results using this approach. Instead, we use a numerical
 /// derivative of the total VDW potential, and use gradient descent.
 pub fn build_vdw_dynamics(
-    receptor_atoms: &[Atom],
     lig: &Ligand,
     lj_lut: &HashMap<(Element, Element), (f32, f32)>,
-    docking_setup: &DockingSetup,
+    setup: &DockingSetup,
 ) -> Vec<Snapshot> {
     println!("Starting vuilding VDW dyanmics...");
     let start = Instant::now();
@@ -495,8 +494,8 @@ pub fn build_vdw_dynamics(
     let mut time_elapsed = 0.;
 
     // Static
-    let bodies_rec = bodies_from_atoms(receptor_atoms);
-    let (bodies_rec_x8, valid_lanes_rec) = bodies_from_atoms_x8(receptor_atoms);
+    let bodies_rec = bodies_from_atoms(&setup.rec_atoms_near_site);
+    let (bodies_rec_x8, valid_lanes_rec) = bodies_from_atoms_x8(&setup.rec_atoms_near_site);
 
     // println!("\n\n BR: {:?}", &bodies_rec[..20]);
     // println!("\n\n\n BRx8: {:?}", &bodies_rec_x8[..4]);
@@ -705,7 +704,7 @@ pub fn build_vdw_dynamics(
 
         // todo: The x8 version is bugged!
         let (f, τ, atom_posits) = force_torque_fn(&body_ligand_rigid);
-        let (fx8, τx8, atom_posits) = force_torque_fn_x8(&body_ligand_rigid);
+        // let (fx8, τx8, atom_posits) = force_torque_fn_x8(&body_ligand_rigid);
 
         // println!("F SC: {f} F x8: {fx8}");
 
@@ -747,7 +746,7 @@ pub fn build_vdw_dynamics(
 
             let posits: Vec<_> = atom_posits.iter().map(|p| (*p).into()).collect();
 
-            let energy = calc_binding_energy(docking_setup, lig, &posits);
+            let energy = calc_binding_energy(setup, lig, &posits);
 
             snapshots.push(Snapshot {
                 time: time_elapsed,
@@ -757,6 +756,21 @@ pub fn build_vdw_dynamics(
             });
         }
     }
+
+    // Final snapshot
+    let pose = body_ligand_rigid.as_pose();
+    let atom_posits = lig.position_atoms(Some(&pose));
+
+    let posits: Vec<_> = atom_posits.iter().map(|p| (*p).into()).collect();
+
+    let energy = calc_binding_energy(setup, lig, &posits);
+
+    snapshots.push(Snapshot {
+        time: time_elapsed,
+        lig_atom_posits: posits,
+        pose,
+        energy,
+    });
 
     let elapsed = start.elapsed().as_millis();
     println!("Complete. Time: {elapsed}ms");

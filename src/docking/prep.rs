@@ -25,7 +25,7 @@ use std::{collections::HashMap, fmt::Display};
 
 use barnes_hut::{BhConfig, Cube, Tree};
 use graphics::Mesh;
-use lin_alg::f32::{Vec3, Vec3x8, f32x8, pack_f32, pack_vec3};
+use lin_alg::f32::{Vec3, Vec3x8, f32x8, pack_float, pack_vec3};
 
 use crate::{
     docking::{
@@ -184,8 +184,8 @@ impl DockingSetup {
                 epsilons.push(*eps);
             }
         }
-        let (sigmas_x8, valid_lanes_sig) = pack_f32(&sigmas);
-        let (epsilons_x8, valid_lanes_eps) = pack_f32(&epsilons);
+        let (sigmas_x8, valid_lanes_sig) = pack_float(&sigmas);
+        let (epsilons_x8, valid_lanes_eps) = pack_float(&epsilons);
 
         // for i in 0..rec_posits_simd.len() {
         //     // todo: This is tricky teh way you do ligand indexing...
@@ -433,7 +433,7 @@ impl DockType {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct UnitCellDims {
     /// Lengths in Angstroms.
     pub a: f32,
