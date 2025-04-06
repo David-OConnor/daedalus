@@ -26,12 +26,12 @@ barnes_hut = { path = "../barnes_hut", features = ["encode"]}
 na_seq = "^0.2.7"
 
 # For loading and saving config
-bincode = "^2.0.0-rc.3"
+bincode = "^2.0.1"
 
 rayon = "^1.10.0"  # Parallel execution on CPU using thread pools.
 
 # Keep this cuda version in sync with what you have installed on the system.
-cudarc = { version = "^0.13.9", optional=true, features=["cuda-12060"] }
+cudarc = { version = "^0.14.0", optional=true, features=["cuda-12060"] }
 
 # For reading PDB and mmCIF files
 pdbtbx = "^0.12.0"
