@@ -8,7 +8,7 @@ use lin_alg::{
     f64::{Quaternion, Vec3},
 };
 use na_seq::AminoAcid;
-use pdbtbx::SecondaryStructure;
+// use pdbtbx::SecondaryStructure;
 
 use crate::{
     Selection,
@@ -43,7 +43,7 @@ pub struct Molecule {
     /// Stored in scene meshes; this variable keeps track if that's populated.
     pub mesh_created: bool,
     pub eem_charges_assigned: bool,
-    pub secondary_structure: Vec<SecondaryStructure>,
+    // pub secondary_structure: Vec<SecondaryStructure>,
     /// Center and size are used for lighting, and for rotating ligands.
     pub center: Vec3,
     pub size: f32,
@@ -59,7 +59,7 @@ impl Molecule {
         atoms: Vec<Atom>,
         chains: Vec<Chain>,
         residues: Vec<Residue>,
-        secondary_structure: Vec<SecondaryStructure>,
+        // secondary_structure: Vec<SecondaryStructure>,
         pubchem_cid: Option<u32>,
         drugbank_id: Option<String>,
     ) -> Self {
@@ -71,7 +71,7 @@ impl Molecule {
             bonds: Vec::new(),
             chains,
             residues,
-            secondary_structure,
+            // secondary_structure,
             center,
             size,
             pubchem_cid,

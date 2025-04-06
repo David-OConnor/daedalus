@@ -208,7 +208,7 @@ impl Molecule {
         }
 
         Ok((
-            Molecule::new(ident, atoms, chains, residues, Vec::new(), None, None),
+            Molecule::new(ident, atoms, chains, residues, None, None),
             ligand,
         ))
     }

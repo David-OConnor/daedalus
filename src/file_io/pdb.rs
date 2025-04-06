@@ -163,7 +163,7 @@ impl Molecule {
             atoms,
             chains,
             residues,
-            pdb.secondary_structure.clone(),
+            // pdb.secondary_structure.clone(),
             None,
             None,
         )

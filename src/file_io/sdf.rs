@@ -194,7 +194,6 @@ impl Molecule {
             atoms,
             chains,
             residues,
-            Vec::new(),
             pubchem_cid,
             drugbank_id,
         ))
