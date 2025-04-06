@@ -62,7 +62,7 @@ pub fn event_dev_handler(
         }
         DeviceEvent::Button { button, state } => {
             #[cfg(target_os = "linux")]
-            let (left_click, right_click) = (1, 2);
+            let (left_click, right_click) = (1, 3);
             #[cfg(not(target_os = "linux"))]
             let (left_click, right_click) = (0, 1);
 
@@ -154,6 +154,7 @@ pub fn event_dev_handler(
                     ElementState::Released => (),
                 }
             }
+            // todo: Confirm this on linux.
             if button == 2 {
                 // Allow mouse movement to move the camera on middle click.
                 state_.ui.middle_click_down = match state {
