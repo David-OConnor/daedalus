@@ -61,21 +61,18 @@ pub fn event_dev_handler(
             updates.lighting = true;
         }
         DeviceEvent::Button { button, state } => {
-            // Workaround for EGUI's built-in way of doing this being broken
-            // todo: This workaround isn't working due to inputs being disabled if mouse is in the GUI.
-            // if button == 0  {
-            //     // todo: Use input settings from below
-            //     println!("IP C: {:?}", &state_.ui.inputs_commanded);
-            //     adjust_camera(&mut scene.camera, &state_.ui.inputs_commanded, &InputSettings::default(), dt);
-            // }
+            #[cfg(target_os = "linux")]
+            let (left_click, right_click) = (1, 2);
+            #[cfg(not(target_os = "linux"))]
+            let (left_click, right_click) = (0, 1);
 
-            if button == 0 {
+            if button == left_click {
                 state_.ui.left_click_down = match state {
                     ElementState::Pressed => true,
                     ElementState::Released => false,
                 }
             }
-            if button == 1 {
+            if button == right_click {
                 // Right click
                 match state {
                     ElementState::Pressed => {

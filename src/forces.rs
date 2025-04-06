@@ -8,7 +8,10 @@ use std::time::Instant;
 
 #[cfg(feature = "cuda")]
 use cudarc::driver::{CudaDevice, LaunchAsync, LaunchConfig};
-use lin_alg::f32::{Vec3, Vec3x8, alloc_vec3s, f32x8};
+use lin_alg::f32::{Vec3, Vec3x8, f32x8};
+
+#[cfg(feature = "cuda")]
+use lin_alg::f32::alloc_vec3s;
 
 // The rough Van der Waals (Lennard-Jones) minimum potential value, for two carbon atoms.
 const LJ_MIN_R_CC: f32 = 3.82;

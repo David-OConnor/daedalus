@@ -16,7 +16,7 @@ use crate::{
         partial_charge::create_partial_charges,
         prep::find_rec_atoms_near_site,
         prep_external::{prepare_ligand, prepare_target},
-        site_surface::find_docking_site_surface,
+        // site_surface::find_docking_site_surface,
     },
     download_mols::{load_cif_rcsb, load_sdf_drugbank, load_sdf_pubchem},
     file_io::pdb::save_pdb,
@@ -795,9 +795,9 @@ fn residue_search(
             // todo: Make this automatic A/R. For not a button
             if ui.button("Site mesh").clicked() {
                 let mol = state.molecule.as_ref().unwrap();
-                let (mesh, edges) = find_docking_site_surface(mol, &ligand.docking_site);
+                // let (mesh, edges) = find_docking_site_surface(mol, &ligand.docking_site);
 
-                scene.meshes[MESH_DOCKING_SURFACE] = mesh;
+                // scene.meshes[MESH_DOCKING_SURFACE] = mesh;
 
                 // todo: You must remove prev entities of it too! Do you need an entity ID for this? Likely.
                 // todo: Move to the draw module A/R.

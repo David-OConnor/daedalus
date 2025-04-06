@@ -21,7 +21,7 @@ barnes_hut = { path = "../barnes_hut", features = ["encode"]}
 
 # todo: Qhull is temp until we find a way to generate non-convex meshes.
 # todo: Relies on C FFI. This may complicate compiling.
-qhull = "^0.4.0"
+#qhull = "^0.4.0"
 
 na_seq = "^0.2.7"
 
@@ -34,8 +34,7 @@ rayon = "^1.10.0"  # Parallel execution on CPU using thread pools.
 cudarc = { version = "^0.13.9", optional=true, features=["cuda-12060"] }
 
 # For reading PDB and mmCIF files
-#pdbtbx = "^0.12.0"
-pdbtbx = { path = "../pdbtbx" }
+pdbtbx = "^0.12.0"
 
 # todo: Eventually, audit this lib; may have some heavy deps?
 #rust-sasa = "^0.2.4"
@@ -62,5 +61,5 @@ cuda_setup = { version = "^0.1.1", optional = true }
 # We feature-gate the CUDA dependency, so this program can be run on computers that don't have a
 # suitable graphics chip.
 [features]
-default = ["cuda"]
+#default = ["cuda"]
 cuda = ["cudarc", "cuda_setup", "lin_alg/cuda-12060"]
