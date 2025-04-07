@@ -738,6 +738,17 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                 }
             }
 
+            let mut chain_not_sel = false;
+            for chain in &chains_invis {
+                if chain.atoms.contains(&bond.donor) || chain.atoms.contains(&bond.acceptor) {
+                    chain_not_sel = true;
+                    break;
+                }
+            }
+            if chain_not_sel {
+                continue;
+            }
+
             if state.ui.visibility.hide_water {
                 if let Some(role) = atom_donor.role {
                     if role == AtomRole::Water {

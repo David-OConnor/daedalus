@@ -154,7 +154,6 @@ pub fn event_dev_handler(
                     ElementState::Released => (),
                 }
             }
-            // todo: Confirm this on linux.
             if button == 2 {
                 // Allow mouse movement to move the camera on middle click.
                 state_.ui.middle_click_down = match state {

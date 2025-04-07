@@ -38,10 +38,11 @@ impl Molecule {
             let (dihedral, hydrogens, this_cp_ca) =
                 aa_data_from_coords(&atoms, &res.res_type, prev_cp_ca, n_next_pos);
 
-            let h_len = hydrogens.len();
             for h in hydrogens {
                 self.atoms.push(h);
                 res.atoms.push(self.atoms.len() - 1);
+
+                // todo: Add to the chains
             }
 
             prev_cp_ca = this_cp_ca;

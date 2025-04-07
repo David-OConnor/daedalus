@@ -609,7 +609,6 @@ fn handle_backbone(
 /// are for use in calculating dihedral angles associated with other  chains.
 pub fn aa_data_from_coords(
     atoms: &[&Atom],
-    // aa: AminoAcid,
     residue_type: &ResidueType,
     prev_cp_ca: Option<(Vec3, Vec3)>,
     next_n: Option<Vec3>,

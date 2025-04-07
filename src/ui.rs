@@ -1413,6 +1413,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 &mut engine_updates,
                 false,
             );
+            set_flashlight(scene);
+            engine_updates.lighting = true;
         }
 
         if let Some(path) = &state.volatile.dialogs.save.take_picked() {
