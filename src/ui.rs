@@ -1174,6 +1174,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
                             redraw = true;
                             reset_cam = true;
+                            set_flashlight(scene);
+                            engine_updates.lighting = true;
                         }
                         Err(_e) => {
                             eprintln!("Error loading CIF file");
