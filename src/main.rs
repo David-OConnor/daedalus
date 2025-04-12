@@ -42,6 +42,8 @@ use mol_drawing::MoleculeView;
 use molecule::Molecule;
 use pdbtbx::{self, PDB};
 
+#[cfg(feature = "cuda")]
+use cudarc::{driver::{CudaContext, CudaStream, CudaModule}, nvrtc::Ptx};
 use crate::{
     aa_coords::bond_vecs::init_local_bond_vecs,
     docking::{
@@ -66,7 +68,7 @@ pub enum ComputationDevice {
     #[default]
     Cpu,
     #[cfg(feature = "cuda")]
-    Gpu(Arc<cudarc::driver::CudaDevice>),
+    Gpu((Arc<CudaStream>, Arc<CudaModule>)),
 }
 
 #[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]
@@ -99,35 +101,35 @@ impl Default for FileDialogs {
         let cfg_protein = FileDialogConfig {
             ..Default::default()
         }
-        .add_file_filter(
-            "PDB/CIF",
-            Arc::new(|p| {
-                let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
-                ext == "pdb" || ext == "cif"
-            }),
-        );
+            .add_file_filter(
+                "PDB/CIF",
+                Arc::new(|p| {
+                    let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
+                    ext == "pdb" || ext == "cif"
+                }),
+            );
 
         let cfg_small_mol = FileDialogConfig {
             ..Default::default()
         }
-        .add_file_filter(
-            "SDF/MOL2/PDBQT",
-            Arc::new(|p| {
-                let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
-                ext == "sdf" || ext == "mol2" || ext == "pdbqt"
-            }),
-        );
+            .add_file_filter(
+                "SDF/MOL2/PDBQT",
+                Arc::new(|p| {
+                    let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
+                    ext == "sdf" || ext == "mol2" || ext == "pdbqt"
+                }),
+            );
 
         let cfg_vina = FileDialogConfig {
             ..Default::default()
         }
-        .add_file_filter(
-            "Executables",
-            Arc::new(|p| {
-                let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
-                ext == "" || ext == "exe"
-            }),
-        );
+            .add_file_filter(
+                "Executables",
+                Arc::new(|p| {
+                    let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
+                    ext == "" || ext == "exe"
+                }),
+            );
 
         let cfg_save_pdbqt = FileDialogConfig {
             ..Default::default()
@@ -392,17 +394,18 @@ fn main() {
     #[cfg(feature = "cuda")]
     let dev = {
         // This is compiled in `build_`.
-        let cuda_dev = cudarc::driver::CudaDevice::new(0).unwrap();
-        cuda_dev
-            .load_ptx(
-                cudarc::nvrtc::Ptx::from_file("./cuda.ptx"),
-                "cuda",
-                &["coulomb_kernel", "lj_V_kernel", "lj_force_kernel"],
-            )
-            .unwrap();
+        let ctx = CudaContext::new(0).unwrap();
+        let stream = ctx.default_stream();
+
+        let module = ctx.load_module(Ptx::from_file("./cuda.ptx")).unwrap();
+
+        // todo: Store/cache these, likely.
+        // let func_coulomb = module.load_function("coulomb_kernel").unwrap();
+        // let func_lj_V = module.load_function("lj_V_kernel").unwrap();
+        // let func_lj_force = module.load_function("lj_force_kernel").unwrap();
 
         // println!("Using the GPU for computations.");
-        ComputationDevice::Gpu(cuda_dev)
+        ComputationDevice::Gpu((stream, module))
     };
 
     #[cfg(not(feature = "cuda"))]

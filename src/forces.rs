@@ -7,7 +7,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 #[cfg(feature = "cuda")]
-use cudarc::driver::{CudaDevice, LaunchAsync, LaunchConfig};
+use cudarc::driver::{CudaStream, CudaModule, LaunchConfig};
+use cudarc::driver::PushKernelArg;
 use lin_alg::f32::{Vec3, Vec3x8, f32x8};
 
 #[cfg(feature = "cuda")]
@@ -18,7 +19,8 @@ const LJ_MIN_R_CC: f32 = 3.82;
 
 #[cfg(feature = "cuda")]
 pub fn coulomb_force_gpu(
-    dev: &Arc<CudaDevice>,
+    stream: &Arc<CudaStream>,
+    module: &Arc<CudaModule>,
     posits_src: &[Vec3],
     posits_tgt: &[Vec3],
     charges: &[f64], // Corresponds 1:1 with `posit_charges`.
@@ -29,18 +31,20 @@ pub fn coulomb_force_gpu(
     let n_sources = posits_src.len();
     let n_targets = posits_tgt.len();
 
-    let posit_charges_gpus = alloc_vec3s(dev, posits_src);
-    let posits_sample_gpu = alloc_vec3s(dev, posits_tgt);
+    let posit_charges_gpus = alloc_vec3s(stream, posits_src);
+    let posits_sample_gpu = alloc_vec3s(stream, posits_tgt);
 
     // Note: This step is not required when using f64ss.
     let charges: Vec<f32> = charges.iter().map(|c| *c as f32).collect();
 
-    let mut charges_gpu = dev.alloc_zeros::<f32>(n_sources).unwrap();
-    dev.htod_sync_copy_into(&charges, &mut charges_gpu).unwrap();
+    let mut charges_gpu = stream.alloc_zeros::<f32>(n_sources).unwrap();
+    stream.memcpy_htod(&charges, &mut charges_gpu).unwrap();
 
-    let mut V_per_sample = dev.alloc_zeros::<f32>(n_targets).unwrap();
+    let mut V_per_sample = stream.alloc_zeros::<f32>(n_targets).unwrap();
 
-    let kernel = dev.get_func("cuda", "coulomb_kernel").unwrap();
+    // let func_coulomb = module.load_function("coulomb_kernel").unwrap();
+    let func_lj_V = module.load_function("lj_V_kernel").unwrap();
+    // let func_lj_force = module.load_function("lj_force_kernel").unwrap();
 
     // let cfg = LaunchConfig::for_num_elems(n_targets as u32);
 
@@ -56,22 +60,19 @@ pub fn coulomb_force_gpu(
         }
     };
 
-    unsafe {
-        kernel.launch(
-            cfg,
-            (
-                &mut V_per_sample,
-                &posit_charges_gpus,
-                &posits_sample_gpu,
-                &charges_gpu,
-                n_sources,
-                n_targets,
-            ),
-        )
-    }
-    .unwrap();
+    let mut launch_args = stream.launch_builder(&func_lj_V);
 
-    let result = dev.dtoh_sync_copy(&V_per_sample).unwrap();
+    launch_args.arg(&mut V_per_sample);
+    launch_args.arg(&posit_charges_gpus);
+    launch_args.arg(&posits_sample_gpu);
+    launch_args.arg(&charges_gpu);
+    launch_args.arg(n_sources,);
+    launch_args.arg(n_targets);
+
+    unsafe { launch_args.launch(cfg)}.unwrap();
+
+
+    let result = stream.memcpy_dtov(&V_per_sample).unwrap();
 
     // Some profiling numbers for certain grid sizes.
     // 2D, f32: 99.144 ms
