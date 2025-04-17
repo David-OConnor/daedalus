@@ -89,10 +89,10 @@ void lj_V_kernel(
 extern "C" __global__
 void lj_force_kernel(
     float3 *out,
-    float3 *posits_0,
-    float3 *posits_1,
+    float3 *posits_src,
+    float3 *posits_tgt,
     float *sigmas,
-    float *epsilons,
+    float *epss,
     size_t N_srcs,
     size_t N_tgts
 ) {
@@ -100,19 +100,18 @@ void lj_force_kernel(
     size_t stride = blockDim.x * gridDim.x;
 
     for (size_t i_tgt = index; i_tgt < N_tgts; i_tgt += stride) {
-        // Compute the sum serially, as it may not be possible to naively apply it in parallel,
-        // and we may still be saturating GPU cores given the large number of tgts.
-        // todo: QC that.
-        for (size_t i_src = 0; i_src < N_srcs; i_src++) {
-            float3 posit_0 = posits_0[i_src];
-            float3 posit_1 = posits_1[i_tgt];
+        float3 posit_tgt = posits_tgt[i_tgt];
 
-            // todo: Sort out the index here.
-            float sigma = sigmas[0];
-            float eps = epsilons[0];
+        for (size_t i_src = 0; i_src < N_srcs; i_src++) {
+            float3 posit_src = posits_src[i_src];
+
+            uint8_t i_sig_eps = i_tgt * N_srcs + i_src;
+            float sigma = sigmas[i_sig_eps];
+            float eps = epss[i_sig_eps];
 
             if (i_tgt < N_tgts) {
-                out[i_tgt] = out[i_tgt] + lj_force(posit_0, posit_1, sigma, eps);
+                // Summing on GPU.
+                out[i_tgt] = out[i_tgt] + lj_force(posit_tgt, posit_src, sigma, eps);
             }
         }
     }

@@ -35,7 +35,7 @@ pub enum Element {
 }
 
 impl Element {
-    pub fn valence_typical(&self) -> usize {
+    pub const fn valence_typical(&self) -> usize {
         match self {
             Hydrogen => 1,
             Carbon => 4,
@@ -213,7 +213,7 @@ impl Element {
     }
 
     /// From [PyMol](https://pymolwiki.org/index.php/Color_Values)
-    pub fn color(&self) -> (f32, f32, f32) {
+    pub const fn color(&self) -> (f32, f32, f32) {
         match self {
             Hydrogen => (0.9, 0.9, 0.9),
             Carbon => (0.2, 1., 0.2),
@@ -249,7 +249,7 @@ impl Element {
     /// Covalent radius, in angstrom.
     /// https://github.com/openbabel/openbabel/blob/master/src/elementtable.h
     /// https://en.wikipedia.org/wiki/Atomic_radii_of_the_elements_(data_page)
-    pub fn covalent_radius(self) -> f64 {
+    pub const fn covalent_radius(self) -> f64 {
         match self {
             Hydrogen   => 0.31,
             Carbon     => 0.76,
@@ -317,7 +317,7 @@ impl Element {
         }
     }
 
-    pub fn atomic_number(&self) -> u8 {
+    pub const fn atomic_number(&self) -> u8 {
         match self {
             Hydrogen => 1,
             Carbon => 6,

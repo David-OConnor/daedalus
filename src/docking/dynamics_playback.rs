@@ -4,12 +4,16 @@
 //! referencing the anchor.
 
 use std::{collections::HashMap, time::Instant};
-
+use std::sync::Arc;
+#[cfg(feature = "cuda")]
+use cudarc::driver::{CudaModule, CudaStream, LaunchConfig, PushKernelArg};
 use graphics::Entity;
 use lin_alg::{
     f32::{Mat3, Quaternion, Vec3, Vec3x8, f32x8, pack_slice, pack_vec3},
     f64::Vec3 as Vec3F64,
 };
+#[cfg(feature = "cuda")]
+use lin_alg::f32::{vec3s_from_dev, vec3s_to_dev};
 use rayon::prelude::*;
 
 use crate::{
@@ -366,6 +370,77 @@ fn force_lj_x8(
             Some(lj_force_x8(dir, dist, sigma, eps))
         })
         .reduce(Vec3x8::new_zero, |f, elem| f + elem) // Sum the contributions.
+}
+
+#[cfg(feature = "cuda")]
+fn force_lj_cuda(
+    stream: &Arc<CudaStream>,
+    module: &Arc<CudaModule>,
+    posits_tgt: &[Vec3],
+    els_tgt: &[Element],
+    bodies_src: &[BodyVdw],
+    lj_lut: &HashMap<(Element, Element), (f32, f32)>,
+) -> Vec<Vec3> { // Out is per target.
+    let start = Instant::now();
+
+    let mut posits_src = Vec::with_capacity(bodies_src.len());
+    for body in bodies_src {
+        posits_src.push(body.posit);
+    }
+
+    // allocate buffers
+    let n_sources = posits_src.len();
+    let n_targets = posits_tgt.len();
+
+    let posit_charges_gpus = vec3s_to_dev(stream, &posits_src);
+    let posits_sample_gpu = vec3s_to_dev(stream, posits_tgt);
+
+    let mut result_buf = {
+        let v = vec![Vec3::new_zero(); n_targets];
+        vec3s_to_dev(stream, &v)
+    };
+
+    // This loop order must match the kernels.
+    let mut sigmas = Vec::new(); // todo: With cap
+    let mut epss = Vec::new();
+
+    // todo: QC this!
+    for el_tgt in els_tgt {
+        for body_src in bodies_src {
+            let (sigma, eps) = lj_lut[&(body_src.element, *el_tgt)];
+            sigmas.push(sigma);
+            epss.push(eps);
+        }
+    }
+
+    let sigmas_gpu = stream.memcpy_stod(&sigmas).unwrap();
+    let epss_gpu = stream.memcpy_stod(&epss).unwrap();
+
+    // todo: Likely load these functions (kernels) at init and pass as a param.
+    let func_lj_force = module.load_function("lj_force_kernel").unwrap();
+
+    let cfg = LaunchConfig::for_num_elems(n_targets as u32);
+
+    let mut launch_args = stream.launch_builder(&func_lj_force);
+
+    launch_args.arg(&mut result_buf);
+    launch_args.arg(&posit_charges_gpus);
+    launch_args.arg(&posits_sample_gpu);
+    launch_args.arg(&sigmas_gpu);
+    launch_args.arg(&epss_gpu);
+    launch_args.arg(&n_sources);
+    launch_args.arg(&n_targets);
+
+    unsafe { launch_args.launch(cfg)}.unwrap();
+
+    // todo: Consider dtoh; passing to an existing vec instead of re-allocating
+    let result = vec3s_from_dev(stream, &mut result_buf);
+
+    let time_diff = Instant::now() - start;
+    println!("GPU LJ force data collected. Time: {:?}", time_diff);
+
+    // This step is not required when using f64.
+    result
 }
 
 fn bodies_from_atoms(atoms: &[Atom]) -> Vec<BodyVdw> {

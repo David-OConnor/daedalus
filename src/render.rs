@@ -121,6 +121,7 @@ pub fn render(mut state: State) {
             Mesh::new_box(1., 1., 1.), // Placeholder for docking site sufrace; populated later.
         ],
         entities: Vec::new(),
+        gaussians: Vec::new(),
         camera: Camera {
             fov_y: TAU / 8.,
             position: Vec3::new(0., 0., -60.),
