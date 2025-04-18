@@ -607,6 +607,15 @@ pub fn build_vdw_dynamics(
         let anchor_posit = body.posit;
 
         let bodies_lig = bodies_from_atoms(&atoms);
+
+
+        // todo
+        // let f_lj_per_tgt = force_lj_cuda(
+        //     stream,
+        //     module,
+        // );
+        //
+
         let (f_net, torque_net) = bodies_lig
             .par_iter()
             .enumerate()

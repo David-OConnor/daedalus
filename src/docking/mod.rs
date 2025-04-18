@@ -47,7 +47,6 @@ use lin_alg::{
     f64::{FORWARD, Quaternion, RIGHT, UP, Vec3},
     linspace,
 };
-use nalgebra::Bidiagonal;
 use partial_charge::{EemParams, EemSet, PartialCharge, create_partial_charges};
 use rand::Rng;
 use rayon::prelude::*;
@@ -242,18 +241,13 @@ pub fn calc_binding_energy(
 
                 let mut V = forces::lj_potential(r, *sigma, *eps);
 
-                // if V > 50. {
-                //     // println!("F high: {:?}, r: {:?}", f, r);
-                //     V = 0.; // todo temp!!
-                // }
-
-                // println!("F: {:.4?}", f);
-
                 V
                 // lj_potential_simd(*posit_rec, lig_posits[*i_lig], *sigma, *eps)
             })
             .sum()
     };
+
+    let vdw =
 
     let h_bond_count = {
         // Calculate hydrogen bonds

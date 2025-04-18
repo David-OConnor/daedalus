@@ -144,6 +144,8 @@ impl DockingSetup {
         // is ligand posit.
         let mut lj_pairs = Vec::with_capacity(pair_count);
 
+        // Observation: This is similar to the array of `epss` and `sigmas` you use in CUDA, but
+        // with explicit indices.
         for (i_rec, atom_rec) in rec_atoms_near_site.iter().enumerate() {
             for (i_lig, atom_lig) in ligand.molecule.atoms.iter().enumerate() {
                 let (sigma, eps) = lj_lut.get(&(atom_rec.element, atom_lig.element)).unwrap();
