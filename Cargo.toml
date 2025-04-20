@@ -63,5 +63,5 @@ cuda_setup = { version = "^0.1.1", optional = true }
 # We feature-gate the CUDA dependency, so this program can be run on computers that don't have a
 # suitable graphics chip.
 [features]
-#default = ["cuda"]
+default = ["cuda"]
 cuda = ["cudarc", "cuda_setup", "lin_alg/cuda-12060"]

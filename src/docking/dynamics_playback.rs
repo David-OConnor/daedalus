@@ -5,11 +5,15 @@
 
 use std::{collections::HashMap, sync::Arc, time::Instant};
 
-#[cfg(feature = "cuda")]
-use cudarc::driver::{CudaModule, CudaStream, LaunchConfig, PushKernelArg};
+cfg_if::cfg_if! {
+    if #[cfg(feature = "cuda")] {
+        use cudarc::driver::{CudaModule, CudaStream, LaunchConfig, PushKernelArg};
+        use lin_alg::f32::{vec3s_from_dev, vec3s_to_dev};
+    }
+}
+
 use graphics::Entity;
-#[cfg(feature = "cuda")]
-use lin_alg::f32::{vec3s_from_dev, vec3s_to_dev};
+
 use lin_alg::{
     f32::{Mat3, Quaternion, Vec3, Vec3x8, f32x8, pack_slice, pack_vec3},
     f64::Vec3 as Vec3F64,
@@ -23,7 +27,7 @@ use crate::{
         prep::{DockingSetup, Torsion},
     },
     element::Element,
-    forces::{lj_force, lj_force_x8, lj_potential, lj_potential_x8},
+    forces::{force_lj, force_lj_x8, V_lj, V_lj_x8, force_lj_outer},
     molecule::{Atom, Ligand},
 };
 // This seems to be how we control rotation vice movement. A higher value means
@@ -111,7 +115,7 @@ impl BodyRigid {
 }
 
 #[derive(Clone, Debug)]
-struct BodyVdwx8 {
+pub(crate) struct BodyVdwx8 {
     pub posit: Vec3x8,
     pub vel: Vec3x8,
     pub accel: Vec3x8,
@@ -297,79 +301,7 @@ where
     body.orientation = (body.orientation + orientation_update).to_normalized();
 }
 
-fn force_lj(
-    posit_target: Vec3,
-    el_tgt: Element,
-    bodies_src: &[BodyVdw],
-    lj_lut: &HashMap<(Element, Element), (f32, f32)>,
-) -> Vec3 {
-    bodies_src
-        .par_iter()
-        .enumerate()
-        .filter_map(|(i, body_source)| {
-            let posit_src = body_source.posit;
 
-            let diff = posit_src - posit_target;
-
-            let dist = diff.magnitude();
-
-            let dir = diff / dist; // Unit vec
-
-            let (sigma, eps) = lj_lut.get(&(body_source.element, el_tgt)).unwrap();
-
-            Some(lj_force(dir, dist, *sigma, *eps))
-        })
-        .reduce(Vec3::new_zero, |f, elem| f + elem) // Sum the contributions.
-}
-
-fn force_lj_x8(
-    posit_target: Vec3x8,
-    el_tgt: [Element; 8],
-    bodies_src: &[BodyVdwx8],
-    // distances: &[Vec<f32x8>],
-    lj_lut: &HashMap<(Element, Element), (f32, f32)>,
-    chunks_src: usize,
-    lanes_tgt: usize,
-    valid_lanes_src_last: usize,
-) -> Vec3x8 {
-    bodies_src
-        .par_iter()
-        .enumerate()
-        .filter_map(|(i, body_source)| {
-            let posit_src = body_source.posit;
-
-            let diff = posit_src - posit_target;
-
-            let dist = diff.magnitude();
-
-            let dir = diff / dist; // Unit vec
-
-            let lanes_src = if i == chunks_src - 1 {
-                valid_lanes_src_last
-            } else {
-                8
-            };
-
-            let valid_lanes = lanes_src.min(lanes_tgt);
-
-            // Setting sigma and eps to 0 for invalid lanes makes their contribution 0.
-            let mut sigmas = [0.; 8];
-            let mut epss = [0.; 8];
-            for lane in 0..valid_lanes {
-                let (sigma, eps) = lj_lut
-                    .get(&(body_source.element[lane], el_tgt[lane]))
-                    .unwrap();
-                sigmas[lane] = *sigma;
-                epss[lane] = *eps;
-            }
-
-            let sigma = f32x8::from_array(sigmas);
-            let eps = f32x8::from_array(epss);
-
-            Some(lj_force_x8(dir, dist, sigma, eps))
-        })
-        .reduce(Vec3x8::new_zero, |f, elem| f + elem) // Sum the contributions.
-}
 
 fn bodies_from_atoms(atoms: &[Atom]) -> Vec<BodyVdw> {
     atoms.iter().map(BodyVdw::from_atom).collect()
@@ -476,21 +408,29 @@ pub fn build_vdw_dynamics(
     println!("Starting vuilding VDW dyanmics...");
     let start = Instant::now();
 
+    let n_steps = 1_500;
+
     // todo: You should possibly add your pre-computed LJ pairs, instead of looking up each time.
     // todo: See this code from docking.
 
-    let n_steps = 1_500;
+
     // An adaptive timestep.
-    // let dt_max = 0.00001;
     let dt_max = 0.01;
+
+    let dt_dynamic_scaler = 100.;
+
+    let dt = dt_max;
+    //             let rel_velocity = (body_lig.vel - body_rec.vel).magnitude();
+    //             let dt_this = dt_dynamic_scaler_x8 * dist / rel_velocity;
+    //
+    //             // Convert to an array so we can iterate lane by lane:
+    //             let dt_arr = dt_this.to_array();
 
     let snapshot_ratio = 10;
     let mut snapshots = Vec::with_capacity(n_steps + 1); // +1 for the initial snapshot.
     let mut time_elapsed = 0.;
 
-    let dt_dynamic_scaler = 100.;
 
-    let dt = dt_max;
 
     // todo: We're having trouble fitting dy namic DT into our functional code.
     // todo: One alternative is to pre-calculate it, but this has an additional distance step.
@@ -514,6 +454,10 @@ pub fn build_vdw_dynamics(
     for (i, posit) in lig.position_atoms(None).iter().enumerate() {
         atoms[i].posit = *posit;
     }
+
+
+    // todo: You may wish to precompute distances, since they are used for both LJ and coulomb. todo
+    // todo but, if you use gaussian coulomb, this is N/A.
 
     // let (force, torque, atom_posits) = if is_x86_feature_detected!("avx") {
     let (force, torque, atom_posits) = if false {
@@ -545,7 +489,7 @@ pub fn build_vdw_dynamics(
                         8
                     };
 
-                    let f = force_lj_x8(
+                    let f = force_lj_x8_outer(
                         body_lig.posit,
                         body_lig.element,
                         &bodies_rec_x8,
@@ -606,7 +550,7 @@ pub fn build_vdw_dynamics(
                 .par_iter()
                 .enumerate()
                 .map(|(i_lig, body_lig)| {
-                    let f = force_lj(body_lig.posit, body_lig.element, &bodies_rec, lj_lut);
+                    let f = force_lj_outer(body_lig.posit, body_lig.element, &bodies_rec, lj_lut);
 
                     // Torque = (r - R_cm) x F,
                     // where R_cm is the center-of-mass position, and r is this atom's position.
@@ -635,90 +579,12 @@ pub fn build_vdw_dynamics(
     // Number of real bodies:
 
     for t in 0..n_steps {
-        // todo: This is dramatically increasing computation time. Cache distances, and use in the LJ calc!
-        // let (distances, dt_) = {
-        // let mut distances = Vec::new();
-        // let mut dt_ = dt_max;
-
-        // Pre-compute distances, and calculate our dynamic DT.
-        //     for (i_rec, body_rec) in bodies_rec_x8.iter().enumerate() {
-        //         // Figure out how many lanes are valid in this rec chunk:
-        //         // (If it's not the last chunk or if remainder is 0, that's 8. Otherwise it's `rec_rem`.)
-        //         let lanes_rec = if i_rec == chunk_count_rec - 1 {
-        //             valid_lanes_rec_last
-        //         } else {
-        //             8
-        //         };
-        //
-        //         let mut distances_tgt = Vec::new();
-        //         for (i_lig, body_lig) in bodies_lig_x8.iter().enumerate() {
-        //             let lanes_lig = if i_lig == chunk_count_lig - 1 {
-        //                 valid_lanes_lig_last
-        //             } else {
-        //                 8
-        //             };
-        //
-        //             let dist = (body_lig.posit - body_rec.posit).magnitude();
-        //             distances_tgt.push(dist);
-        //
-        //             // Now compute dt_this (8-wide):
-        //             let rel_velocity = (body_lig.vel - body_rec.vel).magnitude();
-        //             let dt_this = dt_dynamic_scaler_x8 * dist / rel_velocity;
-        //
-        //             // Convert to an array so we can iterate lane by lane:
-        //             let dt_arr = dt_this.to_array();
-        //
-        //             // Only the first `min(valid_rec_lanes, valid_lig_lanes)` lanes are real
-        //             let valid_lanes = lanes_rec.min(lanes_lig);
-        //             for lane in 0..valid_lanes {
-        //                 let dt_lane = dt_arr[lane];
-        //                 if dt_lane < dt_ {
-        //                     dt_ = dt_lane;
-        //                 }
-        //             }
-        //         }
-        //         distances.push(distances_tgt);
-        //     }
-        //
-        //     (distances, dt_)
-        // };
-
-        // dt = dt_;
-
         // integrate_rk4_rigid(&mut body_ligand_rigid, &force_torque_fn, dt);
 
         // let (f, τ, atom_posits) = force_torque_fn(&body_ligand_rigid);
 
         // Skipping inertia/physics, to just nudge in the *right*? direction.
         // body_ligand_rigid.posit += f / body_ligand_rigid.mass * dt;
-
-        // todo: Put your F=Ma etc / RK4, and rotations back in once you figure out what tf is going on.
-
-        // todo: Attempting fixed move amt.
-        // body_ligand_rigid.posit += f.to_normalized() * dt;
-
-        // todo temp.
-        // for rec_atom in receptor_atoms {
-        //     for lig_atom in &mut atoms {
-        //         let diff = rec_atom.posit - lig_atom.posit;
-        //         let dist = diff.magnitude();
-        //         let dir = diff / dist;
-        //
-        //         let (σ, ε) = lj_lut.get(&(rec_atom.element, lig_atom.element)).unwrap();
-        //
-        //         let f: Vec3F64 = lj_force(
-        //             dir.into(),
-        //             dist as f32,
-        //             *σ,
-        //             *ε
-        //         ).into();
-        //
-        //         lig_atom.posit += f.to_normalized() * 0.1 *  dt.into();
-        //     }
-        // }
-        // let atom_posits: Vec<Vec3> = atoms.iter().map(|a| a.posit.into()).collect();
-
-        // println!("F SC: {f} F x8: {fx8}");
 
         // This approach of altering position and orientation seems to perform notably better than
         // combining the two.
@@ -732,7 +598,6 @@ pub fn build_vdw_dynamics(
             body_ligand_rigid.orientation = rotator * body_ligand_rigid.orientation;
         }
 
-        // todo: The x8 version is bugged!
         // let gradient = calc_gradient_posit(&body_ligand_rigid, &net_V_fn);
         // let gradient = calc_gradient_posit(&body_ligand_rigid, &net_V_fn);
         // let gradient = calc_gradient_posit(&body_ligand_rigid, &net_V_fn_scalar, lig, docking_setup);

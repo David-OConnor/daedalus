@@ -1,31 +1,10 @@
-//! This module prepares molecules for docking, generating PDBQT files and equivalents for
-//! targets and equivalent. Adds hydrogens and charges for targets, and specifies rotatable bonds
-//! for ligands.
-//!
-//! See Meeko (Python package), Open Babel[Open Babel](http://openbabel.org) (GUI + CLI program), ADT etc for examples.
-//!
-//! [Meeko](https://meeko.readthedocs.io/en/release-doc/) use. Install: `pip install meeko`.
-//!
-//! Can use as a python library, or as a CLI application using scripts it includes.
-//! Ligand prep: `mk_prepare_ligand.py -i molecule.sdf -o molecule.pdbqt`
-//! Target prep: `mk_prepare_receptor.py -i nucleic_acid.cif -o my_receptor -j -p -f A:42`
-//! Converting docking results back to PDB and SDF: `mk_export.py vina_results.pdbqt -j my_receptor.json -s lig_docked.sdf -p rec_docked.pdb`
-//!
-//!
-//! MGLTools CLI flow:
-//! `pythonsh prepare_receptor4.py -r myprotein.pdb -o myprotein.pdbqt -A checkhydrogens` (tgt) or
-//! `pythonsh prepare_receptor.py -r myprotein.pdb -o myprotein.pdbqt` (tgt)
-//! `pythonsh prepare_ligand4.py -l myligand.pdb -o myligand.pdbqt` (ligand)
-//!
-//! ADFR: https://ccsb.scripps.edu/adfr/downloads/ : another one. Having errors parsing OpenBabel's output.
-//!
-//! What we will use to start: the OpenBabel CLI program.
+//! This module contains preparatory steps to docking, that are all (or mostly) universal
+//! between ligand orientations. These are performed once per receptor, ligand, and docking site
+//! configuration.
 
 use std::{collections::HashMap, fmt::Display};
 
 use barnes_hut::{BhConfig, Cube, Tree};
-use egui::text::LayoutJob;
-use graphics::Mesh;
 use lin_alg::f32::{Vec3, Vec3x8, f32x8, pack_float, pack_vec3};
 
 use crate::{
@@ -42,28 +21,6 @@ use crate::{
 // Increase this to take fewer receptor atoms when sampling for some cheap computatoins.
 const REC_SAMPLE_RATIO: usize = 6;
 pub const LIGAND_SAMPLE_RATIO: usize = 4;
-
-/// Data to prepare prior to beginning docking. This can be used across multiple ligand poses, but is
-/// specific to a receptor, ligand, and docking site.
-pub struct DockingSetup {
-    pub rec_atoms_near_site: Vec<Atom>,
-    pub rec_indices: Vec<usize>,
-    /// We omit partial ligand charges, since these include position.
-    pub charges_rec: Vec<PartialCharge>,
-    pub rec_bonds_near_site: Vec<Bond>,
-    // Note: DRY with state.volatile
-    pub lj_lut: HashMap<(Element, Element), (f32, f32)>,
-    /// todo: Do we want this?
-    pub lj_pairs: Vec<(usize, usize, f32, f32)>,
-    pub charge_tree: Tree,
-    pub bh_config: BhConfig,
-    pub rec_posits_x8: Vec<Vec3x8>,
-    /// Sigmas and epsilons are Lennard Jones parameters. Flat here, with outer loop receptor.
-    pub sigmas_x8: Vec<f32x8>,
-    pub epsilons_x8: Vec<f32x8>,
-    /// Used for some cheap computations that eliminate poses, for example.
-    pub rec_atoms_sample: Vec<Atom>,
-}
 
 /// Prerequisite calculations for docking and binding energy calculations. This includes finding receptor
 /// atoms near the site, and applying EEM charges to them and the ligand.
@@ -120,6 +77,30 @@ fn setup_eem_charges(
     partial_charges_rec
 }
 
+/// Data to prepare prior to beginning docking. This can be used across all ligand poses, but is
+/// specific to a receptor, ligand, and docking site.
+pub struct DockingSetup {
+    pub rec_atoms_near_site: Vec<Atom>,
+    pub rec_indices: Vec<usize>,
+    /// We omit partial ligand charges, since these include position.
+    pub charges_rec: Vec<PartialCharge>,
+    pub rec_bonds_near_site: Vec<Bond>,
+    // Note: DRY with state.volatile
+    pub lj_lut: HashMap<(Element, Element), (f32, f32)>,
+    /// todo: Do we want this?
+    pub lj_pairs: Vec<(usize, usize, f32, f32)>,
+    pub charge_tree: Tree,
+    pub bh_config: BhConfig,
+    pub rec_posits_x8: Vec<Vec3x8>,
+    pub valid_lanes_rec: usize,
+    /// Sigmas and epsilons are Lennard Jones parameters. Flat here, with outer loop receptor.
+    pub sigmas_x8: Vec<f32x8>,
+    pub epsilons_x8: Vec<f32x8>,
+    pub valid_lanes_sig_eps: usize,
+    /// Used for some cheap computations that eliminate poses, for example.
+    pub rec_atoms_sample: Vec<Atom>,
+}
+
 impl DockingSetup {
     pub fn new(
         receptor: &Molecule,
@@ -168,16 +149,10 @@ impl DockingSetup {
             Tree::new(&partial_charges_rec, &bh_bounding_box.unwrap(), bh_config)
         };
 
-        // SIMD prep
-        // let mut lj_pairs_x8 = Vec::with_capacity(pair_count / 8);
-
-        // todo: Your current algo expects exact...
+        // Ligand positions are per-pose; we can't pre-create them like we do for receptor.
         let rec_posits: Vec<Vec3> = rec_atoms_near_site.iter().map(|a| a.posit.into()).collect();
 
         let (rec_posits_x8, valid_lanes_rec) = pack_vec3(&rec_posits);
-
-        // todo: Lig posits are per-post.
-        // let lig_posits_simd = pack_vec3(ligand.molecule.atoms.iter().map(|a| a.posit.into()).collect());
 
         let mut sigmas = Vec::new();
         let mut epsilons = Vec::new();
@@ -190,13 +165,9 @@ impl DockingSetup {
                 epsilons.push(*eps);
             }
         }
-        let (sigmas_x8, valid_lanes_sig) = pack_float(&sigmas);
-        let (epsilons_x8, valid_lanes_eps) = pack_float(&epsilons);
 
-        // for i in 0..rec_posits_simd.len() {
-        //     // todo: This is tricky teh way you do ligand indexing...
-        //     lj_pairs_x8.push(rec_posits_simd[i], lig_posits_simd[i], sigmas_simd[i], epsilons_simd[i]);
-        // }
+        let (sigmas_x8, valid_lanes_sig_eps) = pack_float(&sigmas);
+        let (epsilons_x8, _) = pack_float(&epsilons);
 
         let rec_atoms_sample: Vec<_> = rec_atoms_near_site
             .iter()
@@ -215,8 +186,10 @@ impl DockingSetup {
             charge_tree,
             bh_config: bh_config.clone(),
             rec_posits_x8,
+            valid_lanes_rec,
             sigmas_x8,
             epsilons_x8,
+            valid_lanes_sig_eps,
             rec_atoms_sample,
         }
     }
@@ -552,12 +525,11 @@ fn is_bond_in_ring(bond: &Bond, mol: &Molecule) -> bool {
 
 /// Find the subet of receptor atoms near a docking site. Only perform force calculations
 /// between this set and the ligand, to keep computational complexity under control.
-pub fn find_rec_atoms_near_site(
+fn find_rec_atoms_near_site(
     receptor: &Molecule,
     site: &DockingSite,
 ) -> (Vec<Atom>, Vec<usize>) {
     let dist_thresh = ATOM_NEAR_SITE_DIST_THRESH * site.site_box_size;
-    println!("Dist thresh: {:?}", dist_thresh);
 
     let mut indices = Vec::new();
 

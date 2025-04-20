@@ -1351,19 +1351,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         if let Some(mol) = &mut state.molecule {
             if let Some(lig) = &mut state.ligand {
                 if ui.button("Build VDW sim").clicked() {
-                    // todo: We don't need to set up the partial charges etc for this.
-                    // todo: This is why mol is mut, for example.
-                    // let (
-                    //     rec_atoms_near_site,
-                    //     rec_atom_indices,
-                    //     rec_bonds_near_site,
-                    //     partial_charges_rec,
-                    //     lj_pairs,
-                    // ) = setup_docking(mol, lig, &state.volatile.lj_lookup_table);
-
-                    let (rec_atoms_near_site, _indices) =
-                        find_rec_atoms_near_site(mol, &lig.docking_site);
-
                     state.volatile.snapshots = build_vdw_dynamics(
                         lig,
                         &state.volatile.lj_lookup_table,

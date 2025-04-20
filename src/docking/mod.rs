@@ -36,18 +36,14 @@
 
 // 4MZI/160355 docking example: https://www.youtube.com/watch?v=vU2aNuP3Y8I
 
-// todo: Conside
+use std::{f32::consts::TAU, time::Instant};
 
-// todo: Temp/feature-gate
-use std::{collections::HashMap, f32::consts::TAU, time::Instant};
-
-use barnes_hut::{BhConfig, Cube, Tree};
 use lin_alg::{
-    f32::{Vec3 as Vec3F32, f32x8, pack_float, pack_vec3},
+    f32::{Vec3 as Vec3F32, pack_float, pack_vec3},
     f64::{FORWARD, Quaternion, RIGHT, UP, Vec3},
     linspace,
 };
-use partial_charge::{EemParams, EemSet, PartialCharge, create_partial_charges};
+use partial_charge::{create_partial_charges};
 use rand::Rng;
 use rayon::prelude::*;
 
@@ -55,12 +51,11 @@ use crate::{
     bond_inference::create_hydrogen_bonds_one_way,
     docking::{
         dynamics_playback::build_vdw_dynamics,
-        partial_charge::assign_eem_charges,
         prep::{DockingSetup, LIGAND_SAMPLE_RATIO, Torsion},
     },
     element::Element,
     forces,
-    molecule::{Atom, Bond, Ligand, Molecule},
+    molecule::{Atom, Ligand},
 };
 
 pub mod dynamics_playback;
@@ -239,7 +234,7 @@ pub fn calc_binding_energy(
             .map(|(i_rec, i_lig, sigma, eps)| {
                 let r = distances[*i_rec][*i_lig];
 
-                let mut V = forces::lj_potential(r, *sigma, *eps);
+                let mut V = forces::V_lj(r, *sigma, *eps);
 
                 V
                 // lj_potential_simd(*posit_rec, lig_posits[*i_lig], *sigma, *eps)
@@ -359,7 +354,7 @@ pub fn calc_binding_energy(
 
             // Our bh algorithm is currently hard-coded to f64.
             let force_fn = |dir: Vec3, q_src: f64, dist: f64| {
-                forces::f_coulomb(
+                forces::force_coulomb(
                     dir.into(),
                     dist as f32,
                     q_src as f32,
@@ -390,7 +385,6 @@ pub fn calc_binding_energy(
             // .into();
         }
 
-        // println!("FORCE: {force:?}");
         // Force magnitude. Closest to 0 is best, indicating stability?
         force.magnitude()
     };
