@@ -24,6 +24,7 @@
 use std::{collections::HashMap, fmt::Display};
 
 use barnes_hut::{BhConfig, Cube, Tree};
+use egui::text::LayoutJob;
 use graphics::Mesh;
 use lin_alg::f32::{Vec3, Vec3x8, f32x8, pack_float, pack_vec3};
 
@@ -50,6 +51,9 @@ pub struct DockingSetup {
     /// We omit partial ligand charges, since these include position.
     pub charges_rec: Vec<PartialCharge>,
     pub rec_bonds_near_site: Vec<Bond>,
+    // Note: DRY with state.volatile
+    pub lj_lut: HashMap<(Element, Element), (f32, f32)>,
+    /// todo: Do we want this?
     pub lj_pairs: Vec<(usize, usize, f32, f32)>,
     pub charge_tree: Tree,
     pub bh_config: BhConfig,
@@ -207,6 +211,7 @@ impl DockingSetup {
             charges_rec: partial_charges_rec,
             rec_bonds_near_site,
             lj_pairs,
+            lj_lut: lj_lut.clone(),
             charge_tree,
             bh_config: bh_config.clone(),
             rec_posits_x8,

@@ -54,6 +54,7 @@ use rayon::prelude::*;
 use crate::{
     bond_inference::create_hydrogen_bonds_one_way,
     docking::{
+        dynamics_playback::build_vdw_dynamics,
         partial_charge::assign_eem_charges,
         prep::{DockingSetup, LIGAND_SAMPLE_RATIO, Torsion},
     },
@@ -61,7 +62,6 @@ use crate::{
     forces,
     molecule::{Atom, Bond, Ligand, Molecule},
 };
-use crate::docking::dynamics_playback::build_vdw_dynamics;
 
 pub mod dynamics_playback;
 pub mod external;
@@ -247,7 +247,7 @@ pub fn calc_binding_energy(
             .sum()
     };
 
-    let vdw =
+    // let vdw =
 
     let h_bond_count = {
         // Calculate hydrogen bonds
@@ -435,7 +435,7 @@ fn make_posits_orientations(
         }
     }
 
-    let n_lats = ((num_orientations as f32 / 2.).powf(1./3.)) as usize;
+    let n_lats = ((num_orientations as f32 / 2.).powf(1. / 3.)) as usize;
     let n_lons = n_lats * 2;
     let n_rolls = n_lons;
 
@@ -444,8 +444,8 @@ fn make_posits_orientations(
 
     for i_lat in 0..n_lats {
         let frac = (i_lat as f32 + 0.5) / n_lats as f32;
-        let mu   = -1.0 + 2.0 * frac;
-        let ϕ  = mu.acos();
+        let mu = -1.0 + 2.0 * frac;
+        let ϕ = mu.acos();
 
         for i_lon in 0..n_lons {
             let θ = (i_lon as f32 + 0.5) * TAU / (n_lons as f32);
@@ -460,7 +460,7 @@ fn make_posits_orientations(
             let or = Quaternion::from_unit_vecs(Vec3::new(0., 0., 1.), lat_lon_vec.into());
 
             for roll in 0..n_rolls {
-                let angle = roll as f32 * TAU/n_rolls as f32;
+                let angle = roll as f32 * TAU / n_rolls as f32;
                 let rotator = Quaternion::from_axis_angle(lat_lon_vec.into(), angle as f64);
                 orientations.push(rotator * or);
             }
@@ -526,8 +526,7 @@ fn process_poses<'a>(
     mut poses: &'a [Pose],
     setup: &DockingSetup,
     ligand: &Ligand,
-) ->Vec<(usize, BindingEnergy)> {
-
+) -> Vec<(usize, BindingEnergy)> {
     // todo: Currently an outer/inner dynamic.
     // Set up the ligand atom positions for each pose; that's all that matters re the pose for now.
     let mut lig_posits = Vec::new();
@@ -668,17 +667,12 @@ fn process_poses<'a>(
         .enumerate()
         .filter(|(i_pose, _)| !geometry_poses_skip.contains(i_pose))
         .filter_map(|(i_pose, pose)| {
-            let energy = calc_binding_energy(
-                setup,
-                ligand,
-                &lig_posits[i_pose],
-            );
+            let energy = calc_binding_energy(setup, ligand, &lig_posits[i_pose]);
             if let Some(e) = energy {
                 Some((i_pose, e))
             } else {
                 None
             }
-
         })
         .collect();
 
@@ -721,7 +715,7 @@ fn vary_pose(pose: &Pose) -> Vec<Pose> {
 ///
 /// Note: We use the term `receptor` here vice `target`, as `target` is also used in terms of
 /// calculating forces between pairs. (These targets may or may not align!)
-pub fn find_optimal_pose(setup: &DockingSetup, ligand: &Ligand, lj_lut: &HashMap<(Element, Element), (f32, f32)>) -> (Pose, BindingEnergy) {
+pub fn find_optimal_pose(setup: &DockingSetup, ligand: &Ligand) -> (Pose, BindingEnergy) {
     // todo: Consider another fn for this part of the setup, so you can re-use it more easily.
 
     // todo: Evaluate if you can cache EEM charges. Look into how position-dependent they are between ligand flexible
@@ -758,29 +752,24 @@ pub fn find_optimal_pose(setup: &DockingSetup, ligand: &Ligand, lj_lut: &HashMap
     let best_pose = &poses[pose_energies[0].0];
     let best_energy = pose_energies[0].1.clone();
 
-
-
     // Conduct a molecular dynamics sim on the best poses, refining them further.
     // todo: This appears to not be doing much.
     for (pose_i, energy) in &pose_energies[0..top_pose_count] {
         let mut lig_this = ligand.clone(); //  todo: DOn't like this clone.
         lig_this.pose = poses[*pose_i].clone();
 
-        let snapshots = build_vdw_dynamics(
-            &lig_this,
-            lj_lut,
-           setup,
-        );
+        let snapshots = build_vdw_dynamics(&lig_this, &setup.lj_lut, setup);
 
         let final_snap = &snapshots[snapshots.len() - 1];
-        println!("Updated snap: {:?}", final_snap.energy.as_ref().unwrap().score);
+        println!(
+            "Updated snap: {:?}",
+            final_snap.energy.as_ref().unwrap().score
+        );
     }
 
     println!("Complete. \n\nBest pose init: {best_pose:?} \n\nScores: {best_energy:.3?}\n\n");
 
     // Vary orientations and positiosn of the best poses, pre and/or pose md sim?
-
-
 
     println!("\nBest initial pose: {best_pose:?} \nScores: {best_energy:.3?}\n");
 

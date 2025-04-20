@@ -8,8 +8,8 @@ use lin_alg::{
     f64::{Quaternion, Vec3},
 };
 use na_seq::AminoAcid;
-// use pdbtbx::SecondaryStructure;
 
+// use pdbtbx::SecondaryStructure;
 use crate::{
     Selection,
     aa_coords::Dihedral,

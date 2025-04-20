@@ -43,7 +43,7 @@ impl BondSpecs {
 
 // If interatomic distance is within this distance of one of our known bond lenghts, consider it to be a bond.
 // Relevant to this is both bond variability under various conditions, and measurement precision.
-const COV_BOND_LEN_THRESH: f64 = 0.04; // todo: Adjust A/R based on performance.
+const COV_BOND_LEN_THRESH: f64 = 0.04; // todo: Adjust A/R based on performannce.
 const COV_DIST_GRID: f64 = 1.6; // Slightly larger than the largest bond distance + thresh.
 
 // Note: Chimera shows H bonds as ranging generally from 2.8 to 3.3.

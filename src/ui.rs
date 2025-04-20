@@ -8,7 +8,8 @@ use na_seq::AaIdent;
 use crate::{
     CamSnapshot, Selection, State, ViewSelLevel,
     docking::{
-        ConformationType, calc_binding_energy,
+        ConformationType,
+        calc_binding_energy,
         dynamics_playback::{build_vdw_dynamics, change_snapshot},
         external::{check_adv_avail, dock_with_vina},
         find_optimal_pose,
@@ -727,7 +728,7 @@ fn residue_search(
                 // todo by deferring the docking below to the next frame.
 
                 let (pose, binding_energy) =
-                    find_optimal_pose(state.volatile.docking_setup.as_ref().unwrap(), ligand, &state.volatile.lj_lookup_table);
+                    find_optimal_pose(state.volatile.docking_setup.as_ref().unwrap(), ligand);
 
                 ligand.pose = pose;
                 ligand.atom_posits = ligand.position_atoms(None);

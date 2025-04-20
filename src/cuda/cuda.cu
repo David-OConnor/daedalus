@@ -27,7 +27,7 @@
 // to be much faster in practice, likely due to the addition being offloaded
 // to the CPU in the other approach.
 extern "C" __global__
-void coulomb_kernel(
+void coulomb_force_kernel(
     float3 *out,
     float3 *posits_src,
     float3 *posits_tgt,

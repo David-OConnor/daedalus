@@ -3,7 +3,6 @@
 //     windows_subsystem = "windows"
 // )]
 
-
 #![allow(clippy::too_many_arguments)]
 
 mod aa_coords;
@@ -34,16 +33,19 @@ use std::{collections::HashMap, fmt, io, io::ErrorKind, path::Path, sync::Arc};
 
 use barnes_hut::BhConfig;
 use bincode::{Decode, Encode};
+#[cfg(feature = "cuda")]
+use cudarc::{
+    driver::{CudaContext, CudaModule, CudaStream},
+    nvrtc::Ptx,
+};
 use egui_file_dialog::{FileDialog, FileDialogConfig};
 use file_io::{pdb::load_pdb, sdf::load_sdf};
 use graphics::{Camera, InputsCommanded};
-use lin_alg::f32::{Quaternion, Vec3};
+use lin_alg::f32::{Quaternion, Vec3, f32x8};
 use mol_drawing::MoleculeView;
 use molecule::Molecule;
 use pdbtbx::{self, PDB};
 
-#[cfg(feature = "cuda")]
-use cudarc::{driver::{CudaContext, CudaStream, CudaModule}, nvrtc::Ptx};
 use crate::{
     aa_coords::bond_vecs::init_local_bond_vecs,
     docking::{
@@ -101,35 +103,35 @@ impl Default for FileDialogs {
         let cfg_protein = FileDialogConfig {
             ..Default::default()
         }
-            .add_file_filter(
-                "PDB/CIF",
-                Arc::new(|p| {
-                    let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
-                    ext == "pdb" || ext == "cif"
-                }),
-            );
+        .add_file_filter(
+            "PDB/CIF",
+            Arc::new(|p| {
+                let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
+                ext == "pdb" || ext == "cif"
+            }),
+        );
 
         let cfg_small_mol = FileDialogConfig {
             ..Default::default()
         }
-            .add_file_filter(
-                "SDF/MOL2/PDBQT",
-                Arc::new(|p| {
-                    let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
-                    ext == "sdf" || ext == "mol2" || ext == "pdbqt"
-                }),
-            );
+        .add_file_filter(
+            "SDF/MOL2/PDBQT",
+            Arc::new(|p| {
+                let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
+                ext == "sdf" || ext == "mol2" || ext == "pdbqt"
+            }),
+        );
 
         let cfg_vina = FileDialogConfig {
             ..Default::default()
         }
-            .add_file_filter(
-                "Executables",
-                Arc::new(|p| {
-                    let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
-                    ext == "" || ext == "exe"
-                }),
-            );
+        .add_file_filter(
+            "Executables",
+            Arc::new(|p| {
+                let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
+                ext == "" || ext == "exe"
+            }),
+        );
 
         let cfg_save_pdbqt = FileDialogConfig {
             ..Default::default()
@@ -397,6 +399,8 @@ fn main() {
         let ctx = CudaContext::new(0).unwrap();
         let stream = ctx.default_stream();
 
+        let runtime_v = cudarc::runtime::get_runtime_version(); // todo: Is this correct?
+
         let module = ctx.load_module(Ptx::from_file("./cuda.ptx")).unwrap();
 
         // todo: Store/cache these, likely.
@@ -410,6 +414,17 @@ fn main() {
 
     #[cfg(not(feature = "cuda"))]
     let dev = ComputationDevice::Cpu;
+
+    #[cfg(target_arch = "x86_64")]
+    {
+        if is_x86_feature_detected!("avx512f") {
+            println!("AVX-512 is available");
+        } else if is_x86_feature_detected!("avx") {
+            println!("AVX (256-bit) is available");
+        } else {
+            println!("AVX is not available.");
+        }
+    }
 
     init_local_bond_vecs();
 

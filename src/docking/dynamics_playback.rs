@@ -3,17 +3,17 @@
 //! Experimental molecular dynamics, with a playback system. Starting with fixed-ligand position only,
 //! referencing the anchor.
 
-use std::{collections::HashMap, time::Instant};
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc, time::Instant};
+
 #[cfg(feature = "cuda")]
 use cudarc::driver::{CudaModule, CudaStream, LaunchConfig, PushKernelArg};
 use graphics::Entity;
+#[cfg(feature = "cuda")]
+use lin_alg::f32::{vec3s_from_dev, vec3s_to_dev};
 use lin_alg::{
     f32::{Mat3, Quaternion, Vec3, Vec3x8, f32x8, pack_slice, pack_vec3},
     f64::Vec3 as Vec3F64,
 };
-#[cfg(feature = "cuda")]
-use lin_alg::f32::{vec3s_from_dev, vec3s_to_dev};
 use rayon::prelude::*;
 
 use crate::{
@@ -36,7 +36,7 @@ const ROTATION_INERTIA: f32 = 500_000.;
 const DX: f32 = 0.1;
 
 #[derive(Clone, Debug)]
-struct BodyVdw {
+pub(crate) struct BodyVdw {
     pub posit: Vec3,
     pub vel: Vec3,
     pub accel: Vec3,
@@ -216,7 +216,7 @@ where
 /// Integrates position and orientation of a rigid body using RK4.
 pub fn integrate_rk4_rigid<F>(body: &mut BodyRigid, force_torque: &F, dt: f32)
 where
-// force_torque(body) should return (net_force, net_torque) in *world* coordinates
+    // force_torque(body) should return (net_force, net_torque) in *world* coordinates
     F: Fn(&BodyRigid) -> (Vec3, Vec3),
 {
     // -- k1 --------------------------------------------------------------------
@@ -297,7 +297,6 @@ where
     body.orientation = (body.orientation + orientation_update).to_normalized();
 }
 
-
 fn force_lj(
     posit_target: Vec3,
     el_tgt: Element,
@@ -370,77 +369,6 @@ fn force_lj_x8(
             Some(lj_force_x8(dir, dist, sigma, eps))
         })
         .reduce(Vec3x8::new_zero, |f, elem| f + elem) // Sum the contributions.
-}
-
-#[cfg(feature = "cuda")]
-fn force_lj_cuda(
-    stream: &Arc<CudaStream>,
-    module: &Arc<CudaModule>,
-    posits_tgt: &[Vec3],
-    els_tgt: &[Element],
-    bodies_src: &[BodyVdw],
-    lj_lut: &HashMap<(Element, Element), (f32, f32)>,
-) -> Vec<Vec3> { // Out is per target.
-    let start = Instant::now();
-
-    let mut posits_src = Vec::with_capacity(bodies_src.len());
-    for body in bodies_src {
-        posits_src.push(body.posit);
-    }
-
-    // allocate buffers
-    let n_sources = posits_src.len();
-    let n_targets = posits_tgt.len();
-
-    let posit_charges_gpus = vec3s_to_dev(stream, &posits_src);
-    let posits_sample_gpu = vec3s_to_dev(stream, posits_tgt);
-
-    let mut result_buf = {
-        let v = vec![Vec3::new_zero(); n_targets];
-        vec3s_to_dev(stream, &v)
-    };
-
-    // This loop order must match the kernels.
-    let mut sigmas = Vec::new(); // todo: With cap
-    let mut epss = Vec::new();
-
-    // todo: QC this!
-    for el_tgt in els_tgt {
-        for body_src in bodies_src {
-            let (sigma, eps) = lj_lut[&(body_src.element, *el_tgt)];
-            sigmas.push(sigma);
-            epss.push(eps);
-        }
-    }
-
-    let sigmas_gpu = stream.memcpy_stod(&sigmas).unwrap();
-    let epss_gpu = stream.memcpy_stod(&epss).unwrap();
-
-    // todo: Likely load these functions (kernels) at init and pass as a param.
-    let func_lj_force = module.load_function("lj_force_kernel").unwrap();
-
-    let cfg = LaunchConfig::for_num_elems(n_targets as u32);
-
-    let mut launch_args = stream.launch_builder(&func_lj_force);
-
-    launch_args.arg(&mut result_buf);
-    launch_args.arg(&posit_charges_gpus);
-    launch_args.arg(&posits_sample_gpu);
-    launch_args.arg(&sigmas_gpu);
-    launch_args.arg(&epss_gpu);
-    launch_args.arg(&n_sources);
-    launch_args.arg(&n_targets);
-
-    unsafe { launch_args.launch(cfg)}.unwrap();
-
-    // todo: Consider dtoh; passing to an existing vec instead of re-allocating
-    let result = vec3s_from_dev(stream, &mut result_buf);
-
-    let time_diff = Instant::now() - start;
-    println!("GPU LJ force data collected. Time: {:?}", time_diff);
-
-    // This step is not required when using f64.
-    result
 }
 
 fn bodies_from_atoms(atoms: &[Atom]) -> Vec<BodyVdw> {
@@ -556,26 +484,20 @@ pub fn build_vdw_dynamics(
     // let dt_max = 0.00001;
     let dt_max = 0.01;
 
+    let snapshot_ratio = 10;
+    let mut snapshots = Vec::with_capacity(n_steps + 1); // +1 for the initial snapshot.
+    let mut time_elapsed = 0.;
+
     let dt_dynamic_scaler = 100.;
-    let dt_dynamic_scaler_x8 = f32x8::splat(dt_dynamic_scaler);
+
+    let dt = dt_max;
 
     // todo: We're having trouble fitting dy namic DT into our functional code.
     // todo: One alternative is to pre-calculate it, but this has an additional distance step.
-
-    let snapshot_ratio = 10;
-
-    let mut snapshots = Vec::with_capacity(n_steps + 1); // +1 for the initial snapshot.
-
-    let mut time_elapsed = 0.;
+    // todo: Make adaptive again; you must pull that logic outside
+    // todo of teh torque/force fn.
 
     // Static
-    let bodies_rec = bodies_from_atoms(&setup.rec_atoms_near_site);
-    let (bodies_rec_x8, valid_lanes_rec) = bodies_from_atoms_x8(&setup.rec_atoms_near_site);
-
-    // println!("\n\n BR: {:?}", &bodies_rec[..20]);
-    // println!("\n\n\n BRx8: {:?}", &bodies_rec_x8[..4]);
-
-    let chunk_count_rec = bodies_rec_x8.len();
 
     let mut body_ligand_rigid = BodyRigid::from_ligand(lig);
 
@@ -593,109 +515,119 @@ pub fn build_vdw_dynamics(
         atoms[i].posit = *posit;
     }
 
-    let mut dt = dt_max; // todo: Make adaptive again; you must pull that logic outside
-    // todo of teh torque/force fn.
+    // let (force, torque, atom_posits) = if is_x86_feature_detected!("avx") {
+    let (force, torque, atom_posits) = if false {
+        let dt_dynamic_scaler_x8 = f32x8::splat(dt_dynamic_scaler);
+        let (bodies_rec_x8, valid_lanes_rec) = bodies_from_atoms_x8(&setup.rec_atoms_near_site);
 
-    let force_torque_fn = |body: &BodyRigid| {
-        let atom_posits = lig.position_atoms(Some(&body.as_pose()));
-        // Set up atom positions from the rigid body passed as a parameter.
-        let mut atoms = lig.molecule.atoms.clone(); // todo: Not a fan of this clone, or these dummy atoms in general.
-        for (i, posit) in atom_posits.iter().enumerate() {
-            atoms[i].posit = *posit;
-        }
+        let chunk_count_rec = bodies_rec_x8.len();
 
-        let anchor_posit = body.posit;
+        let force_torque_fn_x8 = |body: &BodyRigid| {
+            let atom_posits = lig.position_atoms(Some(&body.as_pose()));
+            // Set up atom positions from the rigid body passed as a parameter.
+            let mut atoms = lig.molecule.atoms.clone(); // todo: Not a fan of this clone, or these dummy atoms in general.
+            for (i, posit) in atom_posits.iter().enumerate() {
+                atoms[i].posit = *posit;
+            }
 
-        let bodies_lig = bodies_from_atoms(&atoms);
+            let (bodies_lig_x8, valid_lanes_lig) = bodies_from_atoms_x8(&atoms);
+            let chunk_count_lig = bodies_lig_x8.len();
 
+            let anchor_posit = Vec3x8::splat(body.posit);
 
-        // todo
-        // let f_lj_per_tgt = force_lj_cuda(
-        //     stream,
-        //     module,
-        // );
-        //
+            let (f_net, torque_net) = bodies_lig_x8
+                .par_iter()
+                .enumerate()
+                .map(|(i_lig, body_lig)| {
+                    let lanes_lig = if i_lig == chunk_count_lig - 1 {
+                        valid_lanes_lig
+                    } else {
+                        8
+                    };
 
-        let (f_net, torque_net) = bodies_lig
-            .par_iter()
-            .enumerate()
-            .map(|(i_lig, body_lig)| {
-                let f = force_lj(body_lig.posit, body_lig.element, &bodies_rec, lj_lut);
+                    let f = force_lj_x8(
+                        body_lig.posit,
+                        body_lig.element,
+                        &bodies_rec_x8,
+                        lj_lut,
+                        chunk_count_rec,
+                        lanes_lig,
+                        valid_lanes_rec,
+                    );
 
-                // Torque = (r - R_cm) x F,
-                // where R_cm is the center-of-mass position, and r is this atom's position.
-                // But if you store each body_lig.posit already relative to the COM, then you can just use r x F
-                // let diff = body_lig.posit - body_ligand_rigid.posit;
+                    // Torque = (r - R_cm) x F,
+                    // where R_cm is the center-of-mass position, and r is this atom's position.
+                    // But if you store each body_lig.posit already relative to the COM, then you can just use r x F
+                    // let diff = body_lig.posit - body_ligand_rigid.posit;
 
-                let diff = body_lig.posit - anchor_posit;
-                let torque = diff.cross(f);
-                // let torque = Vec3::new_zero(); // todo temp
+                    let diff = body_lig.posit - anchor_posit;
+                    let torque = diff.cross(f);
+                    // let torque = Vec3x8::new_zero(); // todo temp
 
-                (f, torque)
-            })
-            .reduce(
-                || (Vec3::new_zero(), Vec3::new_zero()),
-                |a, b| (a.0 + b.0, a.1 + b.1),
-            );
-
-        (f_net, torque_net, atom_posits)
-    };
-
-    let force_torque_fn_x8 = |body: &BodyRigid| {
-        let atom_posits = lig.position_atoms(Some(&body.as_pose()));
-        // Set up atom positions from the rigid body passed as a parameter.
-        let mut atoms = lig.molecule.atoms.clone(); // todo: Not a fan of this clone, or these dummy atoms in general.
-        for (i, posit) in atom_posits.iter().enumerate() {
-            atoms[i].posit = *posit;
-        }
-
-        let (bodies_lig_x8, valid_lanes_lig) = bodies_from_atoms_x8(&atoms);
-        let chunk_count_lig = bodies_lig_x8.len();
-
-        let anchor_posit = Vec3x8::splat(body.posit);
-
-        let (f_net, torque_net) = bodies_lig_x8
-            .par_iter()
-            .enumerate()
-            .map(|(i_lig, body_lig)| {
-                let lanes_lig = if i_lig == chunk_count_lig - 1 {
-                    valid_lanes_lig
-                } else {
-                    8
-                };
-
-                let f = force_lj_x8(
-                    body_lig.posit,
-                    body_lig.element,
-                    &bodies_rec_x8,
-                    lj_lut,
-                    chunk_count_rec,
-                    lanes_lig,
-                    valid_lanes_rec,
+                    (f, torque)
+                })
+                .reduce(
+                    || (Vec3x8::new_zero(), Vec3x8::new_zero()),
+                    |a, b| (a.0 + b.0, a.1 + b.1),
                 );
 
-                // Torque = (r - R_cm) x F,
-                // where R_cm is the center-of-mass position, and r is this atom's position.
-                // But if you store each body_lig.posit already relative to the COM, then you can just use r x F
-                // let diff = body_lig.posit - body_ligand_rigid.posit;
+            // Now, unpack the SIMD-calculated acceleration into a single value.
+            let f_net_unpacked: Vec3 = f_net.to_array().into_iter().sum();
+            // let acc_net = f_net_unpacked / body_ligand_rigid.mass;
 
-                let diff = body_lig.posit - anchor_posit;
-                let torque = diff.cross(f);
-                // let torque = Vec3x8::new_zero(); // todo temp
+            let torque_net_unpacked: Vec3 = torque_net.to_array().into_iter().sum();
+            (f_net_unpacked, torque_net_unpacked, atom_posits)
+        };
 
-                (f, torque)
-            })
-            .reduce(
-                || (Vec3x8::new_zero(), Vec3x8::new_zero()),
-                |a, b| (a.0 + b.0, a.1 + b.1),
-            );
+        force_torque_fn_x8(&body_ligand_rigid)
+    } else {
+        let bodies_rec = bodies_from_atoms(&setup.rec_atoms_near_site);
 
-        // Now, unpack the SIMD-calculated acceleration into a single value.
-        let f_net_unpacked: Vec3 = f_net.to_array().into_iter().sum();
-        // let acc_net = f_net_unpacked / body_ligand_rigid.mass;
+        let force_torque_fn = |body: &BodyRigid| {
+            let atom_posits = lig.position_atoms(Some(&body.as_pose()));
+            // Set up atom positions from the rigid body passed as a parameter.
+            let mut atoms = lig.molecule.atoms.clone(); // todo: Not a fan of this clone, or these dummy atoms in general.
+            for (i, posit) in atom_posits.iter().enumerate() {
+                atoms[i].posit = *posit;
+            }
 
-        let torque_net_unpacked: Vec3 = torque_net.to_array().into_iter().sum();
-        (f_net_unpacked, torque_net_unpacked, atom_posits)
+            let anchor_posit = body.posit;
+
+            let bodies_lig = bodies_from_atoms(&atoms);
+
+            // todo
+            // let f_lj_per_tgt = force_lj_cuda(
+            //     stream,
+            //     module,
+            // );
+            //
+
+            let (f_net, torque_net) = bodies_lig
+                .par_iter()
+                .enumerate()
+                .map(|(i_lig, body_lig)| {
+                    let f = force_lj(body_lig.posit, body_lig.element, &bodies_rec, lj_lut);
+
+                    // Torque = (r - R_cm) x F,
+                    // where R_cm is the center-of-mass position, and r is this atom's position.
+                    // But if you store each body_lig.posit already relative to the COM, then you can just use r x F
+                    // let diff = body_lig.posit - body_ligand_rigid.posit;
+
+                    let diff = body_lig.posit - anchor_posit;
+                    let torque = diff.cross(f);
+                    // let torque = Vec3::new_zero(); // todo temp
+
+                    (f, torque)
+                })
+                .reduce(
+                    || (Vec3::new_zero(), Vec3::new_zero()),
+                    |a, b| (a.0 + b.0, a.1 + b.1),
+                );
+
+            (f_net, torque_net, atom_posits)
+        };
+
+        force_torque_fn(&body_ligand_rigid)
     };
 
     // We use these to avoid performing computations on empty (0ed?) values on the final SIMD value.
@@ -786,18 +718,17 @@ pub fn build_vdw_dynamics(
         // }
         // let atom_posits: Vec<Vec3> = atoms.iter().map(|a| a.posit.into()).collect();
 
-        // todo: The x8 version is bugged!
-        let (f, τ, atom_posits) = force_torque_fn(&body_ligand_rigid);
-        // let (fx8, τx8, atom_posits) = force_torque_fn_x8(&body_ligand_rigid);
-
         // println!("F SC: {f} F x8: {fx8}");
 
         // This approach of altering position and orientation seems to perform notably better than
         // combining the two.
         if t % 2 == 0 {
-            body_ligand_rigid.posit += f * dt * 0.00001;
+            body_ligand_rigid.posit += force * dt * 0.00001;
         } else {
-            let rotator = Quaternion::from_axis_angle(τ.to_normalized(), τ.magnitude() * dt * 0.00001);
+            let rotator = Quaternion::from_axis_angle(
+                torque.to_normalized(),
+                torque.magnitude() * dt * 0.00001,
+            );
             body_ligand_rigid.orientation = rotator * body_ligand_rigid.orientation;
         }
 
