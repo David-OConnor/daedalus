@@ -54,14 +54,15 @@ regex = "^1.11.1"
 
 # nalgebra: For solving linear systems of equations when generating partial changes.
 nalgebra = "^0.33.2"
+cuda_setup = { path = "../cuda_setup", optional = true }
 
 [build-dependencies]
-cuda_setup = { version = "^0.1.1", optional = true }
-#cuda_setup = { path = "../cuda_setup", optional = true }
+#cuda_setup = { version = "^0.1.1", optional = true }
+cuda_setup = { path = "../cuda_setup", optional = true }
 
 
 # We feature-gate the CUDA dependency, so this program can be run on computers that don't have a
 # suitable graphics chip.
 [features]
 default = ["cuda"]
-cuda = ["cudarc", "cuda_setup", "lin_alg/cuda-12060"]
+cuda = ["cudarc", "cuda_setup/cuda-12060", "lin_alg/cuda-12060"]

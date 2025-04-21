@@ -13,7 +13,6 @@ cfg_if::cfg_if! {
 }
 
 use graphics::Entity;
-
 use lin_alg::{
     f32::{Mat3, Quaternion, Vec3, Vec3x8, f32x8, pack_slice, pack_vec3},
     f64::Vec3 as Vec3F64,
@@ -27,7 +26,7 @@ use crate::{
         prep::{DockingSetup, Torsion},
     },
     element::Element,
-    forces::{force_lj, force_lj_x8, V_lj, V_lj_x8, force_lj_outer},
+    forces::{V_lj, V_lj_x8, force_lj, force_lj_outer, force_lj_x8, force_lj_x8_outer},
     molecule::{Atom, Ligand},
 };
 // This seems to be how we control rotation vice movement. A higher value means
@@ -301,8 +300,6 @@ where
     body.orientation = (body.orientation + orientation_update).to_normalized();
 }
 
-
-
 fn bodies_from_atoms(atoms: &[Atom]) -> Vec<BodyVdw> {
     atoms.iter().map(BodyVdw::from_atom).collect()
 }
@@ -413,7 +410,6 @@ pub fn build_vdw_dynamics(
     // todo: You should possibly add your pre-computed LJ pairs, instead of looking up each time.
     // todo: See this code from docking.
 
-
     // An adaptive timestep.
     let dt_max = 0.01;
 
@@ -429,8 +425,6 @@ pub fn build_vdw_dynamics(
     let snapshot_ratio = 10;
     let mut snapshots = Vec::with_capacity(n_steps + 1); // +1 for the initial snapshot.
     let mut time_elapsed = 0.;
-
-
 
     // todo: We're having trouble fitting dy namic DT into our functional code.
     // todo: One alternative is to pre-calculate it, but this has an additional distance step.
@@ -454,7 +448,6 @@ pub fn build_vdw_dynamics(
     for (i, posit) in lig.position_atoms(None).iter().enumerate() {
         atoms[i].posit = *posit;
     }
-
 
     // todo: You may wish to precompute distances, since they are used for both LJ and coulomb. todo
     // todo but, if you use gaussian coulomb, this is N/A.

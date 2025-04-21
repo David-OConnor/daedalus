@@ -8,16 +8,13 @@ use na_seq::AaIdent;
 use crate::{
     CamSnapshot, Selection, State, ViewSelLevel,
     docking::{
-        ConformationType,
-        calc_binding_energy,
+        ConformationType, calc_binding_energy,
         dynamics_playback::{build_vdw_dynamics, change_snapshot},
         external::{check_adv_avail, dock_with_vina},
         find_optimal_pose,
         find_sites::find_docking_sites,
         partial_charge::create_partial_charges,
-        prep::find_rec_atoms_near_site,
         prep_external::{prepare_ligand, prepare_target},
-        // site_surface::find_docking_site_surface,
     },
     download_mols::{load_cif_rcsb, load_sdf_drugbank, load_sdf_pubchem},
     file_io::pdb::save_pdb,
@@ -1526,6 +1523,13 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
             INIT_COMPLETE = true;
         }
+    }
+
+    if state.ui.new_mol_loaded {
+        state.ui.new_mol_loaded = false;
+
+        set_flashlight(scene);
+        engine_updates.lighting = true;
     }
 
     engine_updates

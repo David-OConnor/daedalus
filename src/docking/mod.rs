@@ -39,11 +39,11 @@
 use std::{f32::consts::TAU, time::Instant};
 
 use lin_alg::{
-    f32::{Vec3 as Vec3F32, pack_float, pack_vec3},
+    f32::{Vec3 as Vec3F32, f32x8, pack_float, pack_vec3},
     f64::{FORWARD, Quaternion, RIGHT, UP, Vec3},
     linspace,
 };
-use partial_charge::{create_partial_charges};
+use partial_charge::create_partial_charges;
 use rand::Rng;
 use rayon::prelude::*;
 
@@ -55,6 +55,7 @@ use crate::{
     },
     element::Element,
     forces,
+    forces::{V_lj, V_lj_x8, V_lj_x8_outer},
     molecule::{Atom, Ligand},
 };
 
@@ -215,7 +216,8 @@ pub fn calc_binding_energy(
 
     // Pre-compute distances, to prevent repetition later.
     // todo: Consider CUDA for this.
-    let mut distances = Vec::new();
+    let mut distances = Vec::with_capacity(setup.rec_atoms_near_site.len() * lig_posits.len());
+
     for rec_atom in &setup.rec_atoms_near_site {
         let mut distances_this_rec = Vec::new();
         for lig_posit in lig_posits {
@@ -226,23 +228,52 @@ pub fn calc_binding_energy(
         distances.push(distances_this_rec);
     }
 
+    let (lig_posits_x8, valid_lanes_lig) = pack_vec3(&lig_posits);
+
+    let mut distances_x8 = Vec::new();
+
+    for rec_posit in &setup.rec_posits_x8 {
+        let mut distances_this_rec = Vec::new();
+        for lig_posit in &lig_posits_x8 {
+            // todo: Diffs too?
+            distances_this_rec.push((*rec_posit - *lig_posit).magnitude());
+        }
+        distances_x8.push(distances_this_rec);
+    }
+
+    let vdw_start = Instant::now();
     // todo: Use a neighbor grid or similar? Set it up so there are two separate sides?
-    let vdw: f32 = {
-        setup
-            .lj_pairs
-            .par_iter()
-            .map(|(i_rec, i_lig, sigma, eps)| {
-                let r = distances[*i_rec][*i_lig];
+    let vdw = setup
+        .lj_pairs
+        .par_iter()
+        .map(|(i_rec, i_lig, sigma, eps)| {
+            let r = distances[*i_rec][*i_lig];
 
-                let mut V = forces::V_lj(r, *sigma, *eps);
+            V_lj(r, *sigma, *eps)
+        })
+        .sum();
 
-                V
-                // lj_potential_simd(*posit_rec, lig_posits[*i_lig], *sigma, *eps)
-            })
-            .sum()
-    };
+    let vdw_el = vdw_start.elapsed().as_micros();
+    println!("(Normal) VDW val: {vdw}, elapsed: {vdw_el}");
 
-    // let vdw =
+    let vdw_start = Instant::now();
+
+    // todo: Take adv of A/R.
+    // todo: And make it work!!
+    let vdw_x8: f32x8 = setup
+        .lj_pairs_x8
+        .par_iter()
+        .map(|(i_rec, i_lig, sigma, eps)| {
+            let r = distances_x8[*i_rec][*i_lig];
+
+            V_lj_x8(r, *sigma, *eps)
+        })
+        .sum();
+
+    let vdw_x8: f32 = vdw_x8.to_array().iter().sum();
+
+    let vdw_el = vdw_start.elapsed().as_micros();
+    println!("(x8) VDW val: {vdw_x8:?}, elapsed: {vdw_el}");
 
     let h_bond_count = {
         // Calculate hydrogen bonds
@@ -524,33 +555,15 @@ fn process_poses<'a>(
     // todo: Currently an outer/inner dynamic.
     // Set up the ligand atom positions for each pose; that's all that matters re the pose for now.
     let mut lig_posits = Vec::new();
-    // let mut partial_charges_lig = Vec::with_capacity(poses.len());
-
-    let mut geometry_poses_skip = Vec::new();
 
     // todo: This approach of skipping atoms during iteration isn't great, as it depends on the order
     // todo the atoms are in the Vecs.
 
-    println!("Eliminating poses with atoms too close together...");
     // Optimization; Hydrogens are always close to another atom, and we have many; we can likely rely
     // on that other atom, and save ~n^2 computation here.
+    println!("Eliminating poses with atoms too close together...");
 
-    let (rec_posits_sample_x8, rec_vdw_sample_x8, valid_lanes_rec_sample) = {
-        let rec_len_sample = setup.rec_atoms_sample.len();
-
-        let mut rec_posits_sample: Vec<Vec3F32> = Vec::with_capacity(rec_len_sample);
-        let mut rec_vdw_sample = Vec::with_capacity(rec_len_sample);
-
-        for atom in &setup.rec_atoms_sample {
-            rec_posits_sample.push(atom.posit.into());
-            rec_vdw_sample.push(atom.element.vdw_radius() * 1.1);
-        }
-
-        let (rec, valid_lanes_rec) = pack_vec3(&rec_posits_sample);
-        let (vdw, _) = pack_float(&rec_vdw_sample);
-
-        (rec, vdw, valid_lanes_rec)
-    };
+    let mut geometry_poses_skip = Vec::new();
 
     for (i_pose, pose) in poses.iter().enumerate() {
         let posits_this_pose: Vec<_> = ligand
@@ -558,13 +571,6 @@ fn process_poses<'a>(
             .iter()
             .map(|p| (*p).into())
             .collect();
-
-        // let posits_this_pose_x8 = pack_vec3(&posits_this_pose);
-
-        // partial_charges_lig.push(create_partial_charges(
-        //     &ligand.molecule.atoms,
-        //     Some(&posits_this_pose),
-        // ));
 
         let lig_posits_sample: Vec<Vec3F32> = posits_this_pose
             .iter()
@@ -575,8 +581,6 @@ fn process_poses<'a>(
             })
             .map(|(_i, v)| *v)
             .collect();
-
-        // let (posits_sample_x8, valid_lanes_lig) = pack_vec3(&lig_posits_sample);
 
         lig_posits.push(posits_this_pose);
 

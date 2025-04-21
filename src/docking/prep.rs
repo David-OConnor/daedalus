@@ -5,7 +5,10 @@
 use std::{collections::HashMap, fmt::Display};
 
 use barnes_hut::{BhConfig, Cube, Tree};
-use lin_alg::f32::{Vec3, Vec3x8, f32x8, pack_float, pack_vec3};
+use lin_alg::{
+    f32::{Vec3, Vec3x8, f32x8, pack_float, pack_slice_noncopy, pack_vec3},
+    pack_slice,
+};
 
 use crate::{
     docking::{
@@ -17,6 +20,7 @@ use crate::{
     element::Element,
     molecule::{Atom, Bond, BondCount, BondType, Ligand, Molecule},
 };
+use crate::forces::setup_sigma_eps_x8;
 
 // Increase this to take fewer receptor atoms when sampling for some cheap computatoins.
 const REC_SAMPLE_RATIO: usize = 6;
@@ -81,7 +85,9 @@ fn setup_eem_charges(
 /// specific to a receptor, ligand, and docking site.
 pub struct DockingSetup {
     pub rec_atoms_near_site: Vec<Atom>,
+    pub rec_atoms_near_site_x8: Vec<[Atom; 8]>,
     pub rec_indices: Vec<usize>,
+    pub rec_indices_x8: Vec<[usize; 8]>,
     /// We omit partial ligand charges, since these include position.
     pub charges_rec: Vec<PartialCharge>,
     pub rec_bonds_near_site: Vec<Bond>,
@@ -89,14 +95,19 @@ pub struct DockingSetup {
     pub lj_lut: HashMap<(Element, Element), (f32, f32)>,
     /// todo: Do we want this?
     pub lj_pairs: Vec<(usize, usize, f32, f32)>,
+    pub lj_pairs_x8: Vec<(usize, usize, f32x8, f32x8)>,
     pub charge_tree: Tree,
     pub bh_config: BhConfig,
     pub rec_posits_x8: Vec<Vec3x8>,
+    /// For SIMD
     pub valid_lanes_rec: usize,
+    // Lig positions change, but count doesn't.
+    /// For SIMD
+    pub valid_lanes_lig: usize,
     /// Sigmas and epsilons are Lennard Jones parameters. Flat here, with outer loop receptor.
-    pub sigmas_x8: Vec<f32x8>,
-    pub epsilons_x8: Vec<f32x8>,
-    pub valid_lanes_sig_eps: usize,
+    // pub sigmas_x8: Vec<f32x8>,
+    // pub epsilons_x8: Vec<f32x8>,
+    // pub valid_lanes_sig_eps: usize,
     /// Used for some cheap computations that eliminate poses, for example.
     pub rec_atoms_sample: Vec<Atom>,
 }
@@ -111,6 +122,8 @@ impl DockingSetup {
         let (mut rec_atoms_near_site, rec_indices) =
             find_rec_atoms_near_site(receptor, &ligand.docking_site);
 
+        let (rec_indices_x8, _) = pack_slice(&rec_indices);
+
         // Bonds here is used for identifying donor heavy and H pairs for hydrogen bonds.
         let rec_bonds_near_site: Vec<_> = receptor
             .bonds
@@ -124,19 +137,71 @@ impl DockingSetup {
             setup_eem_charges(receptor, ligand, &mut rec_atoms_near_site, &rec_indices);
 
         // Set up the LJ data that doesn't change with pose.
-        let pair_count = rec_atoms_near_site.len() * ligand.molecule.atoms.len();
-        // Atom rec el, lig el, atom rec posit, lig i. Assumes the only thing that changes with pose
-        // is ligand posit.
-        let mut lj_pairs = Vec::with_capacity(pair_count);
+        let lj_pairs = {
+            let pair_count = rec_atoms_near_site.len() * ligand.molecule.atoms.len();
+            // Atom rec el, lig el, atom rec posit, lig i. Assumes the only thing that changes with pose
+            // is ligand posit.
+            let mut pairs = Vec::with_capacity(pair_count);
 
-        // Observation: This is similar to the array of `epss` and `sigmas` you use in CUDA, but
-        // with explicit indices.
-        for (i_rec, atom_rec) in rec_atoms_near_site.iter().enumerate() {
-            for (i_lig, atom_lig) in ligand.molecule.atoms.iter().enumerate() {
-                let (sigma, eps) = lj_lut.get(&(atom_rec.element, atom_lig.element)).unwrap();
-                lj_pairs.push((i_rec, i_lig, *sigma, *eps));
+            // Observation: This is similar to the array of `epss` and `sigmas` you use in CUDA, but
+            // with explicit indices.
+            for (i_rec, atom_rec) in rec_atoms_near_site.iter().enumerate() {
+                for (i_lig, atom_lig) in ligand.molecule.atoms.iter().enumerate() {
+                    let (sigma, eps) = lj_lut.get(&(atom_rec.element, atom_lig.element)).unwrap();
+                    pairs.push((i_rec, i_lig, *sigma, *eps));
+                }
             }
-        }
+
+            pairs
+        };
+
+        let (rec_atoms_near_site_x8, lanes_rec) = pack_slice_noncopy(&rec_atoms_near_site);
+
+        let (lig_atoms_x8, valid_lanes_lig): (Vec<[Atom; 8]>, usize) =
+            pack_slice_noncopy(&ligand.molecule.atoms);
+
+
+        let lj_pairs_x8 = {
+            let valid_lanes = lanes_rec.min(valid_lanes_lig);
+
+            let pair_count = rec_atoms_near_site_x8.len() * lig_atoms_x8.len();
+            let mut pairs = Vec::with_capacity(pair_count);
+
+            for (i_rec, atom_rec) in rec_atoms_near_site_x8.iter().enumerate() {
+                for (i_lig, atom_lig) in lig_atoms_x8.iter().enumerate() {
+
+                    // todo: This instead to prevent repetition.
+                    // let (sigma, eps) = setup_sigma_eps_x8(
+                    //     i,
+                    //     lj_lut,
+                    //     chunks_src,
+                    //     lanes_tgt,
+                    //     valid_lanes_src_last,
+                    //     &el_rec,
+                    //     body_source,
+                    // );
+
+                    // Setting sigma and eps to 0 for invalid lanes makes their contribution 0.
+                    let mut sigmas = [0.; 8];
+                    let mut epss = [0.; 8];
+                    for lane in 0..valid_lanes {
+                        let (sigma, eps) = lj_lut
+                            .get(&(atom_rec[lane].element, atom_lig[lane].element))
+                            .unwrap();
+                        sigmas[lane] = *sigma;
+                        epss[lane] = *eps;
+                    }
+
+                    pairs.push((
+                        i_rec,
+                        i_lig,
+                        f32x8::from_array(sigmas),
+                        f32x8::from_array(epss),
+                    ));
+                }
+            }
+            pairs
+        };
 
         // This tree is over the target (receptor) charges. This may be more efficient
         // than over the ligand, as we expect the receptor nearby atoms to be more numerous.
@@ -154,21 +219,6 @@ impl DockingSetup {
 
         let (rec_posits_x8, valid_lanes_rec) = pack_vec3(&rec_posits);
 
-        let mut sigmas = Vec::new();
-        let mut epsilons = Vec::new();
-
-        // Flattening.
-        for atom_rec in &rec_atoms_near_site {
-            for atom_lig in &ligand.molecule.atoms {
-                let (sigma, eps) = lj_lut.get(&(atom_rec.element, atom_lig.element)).unwrap();
-                sigmas.push(*sigma);
-                epsilons.push(*eps);
-            }
-        }
-
-        let (sigmas_x8, valid_lanes_sig_eps) = pack_float(&sigmas);
-        let (epsilons_x8, _) = pack_float(&epsilons);
-
         let rec_atoms_sample: Vec<_> = rec_atoms_near_site
             .iter()
             .enumerate()
@@ -176,20 +226,27 @@ impl DockingSetup {
             .map(|(_, a)| a.clone())
             .collect();
 
+        println!("Rec I: {:?}", &rec_indices[0..64]);
+        println!("\n\nx8: {:?}", &rec_indices_x8[0..8]);
+
         Self {
             rec_atoms_near_site,
+            rec_atoms_near_site_x8,
             rec_indices,
+            rec_indices_x8,
             charges_rec: partial_charges_rec,
             rec_bonds_near_site,
             lj_pairs,
+            lj_pairs_x8,
             lj_lut: lj_lut.clone(),
             charge_tree,
             bh_config: bh_config.clone(),
             rec_posits_x8,
             valid_lanes_rec,
-            sigmas_x8,
-            epsilons_x8,
-            valid_lanes_sig_eps,
+            valid_lanes_lig,
+            // sigmas_x8,
+            // epsilons_x8,
+            // valid_lanes_sig_eps,
             rec_atoms_sample,
         }
     }
@@ -525,10 +582,7 @@ fn is_bond_in_ring(bond: &Bond, mol: &Molecule) -> bool {
 
 /// Find the subet of receptor atoms near a docking site. Only perform force calculations
 /// between this set and the ligand, to keep computational complexity under control.
-fn find_rec_atoms_near_site(
-    receptor: &Molecule,
-    site: &DockingSite,
-) -> (Vec<Atom>, Vec<usize>) {
+fn find_rec_atoms_near_site(receptor: &Molecule, site: &DockingSite) -> (Vec<Atom>, Vec<usize>) {
     let dist_thresh = ATOM_NEAR_SITE_DIST_THRESH * site.site_box_size;
 
     let mut indices = Vec::new();

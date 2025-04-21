@@ -12,9 +12,12 @@ cfg_if::cfg_if! {
 use std::{collections::HashMap, time::Instant};
 
 use lin_alg::f32::{Vec3, Vec3x8, f32x8};
-use rayon::iter::IntoParallelRefIterator;
-use crate::{docking::dynamics_playback::BodyVdw, element::Element};
-use crate::docking::dynamics_playback::BodyVdwx8;
+use rayon::{iter::IntoParallelRefIterator, prelude::*};
+
+use crate::{
+    docking::dynamics_playback::{BodyVdw, BodyVdwx8},
+    element::Element,
+};
 
 // The rough Van der Waals (Lennard-Jones) minimum potential value, for two carbon atoms.
 const LJ_MIN_R_CC: f32 = 3.82;
@@ -164,8 +167,8 @@ pub fn force_lj_gpu_outer(
 }
 
 pub fn force_lj_outer(
-    posit_target: Vec3,
-    el_tgt: Element,
+    posit_rec: Vec3,
+    el_rec: Element,
     bodies_src: &[BodyVdw],
     lj_lut: &HashMap<(Element, Element), (f32, f32)>,
 ) -> Vec3 {
@@ -175,22 +178,54 @@ pub fn force_lj_outer(
         .filter_map(|(i, body_source)| {
             let posit_src = body_source.posit;
 
-            let diff = posit_src - posit_target;
+            let diff = posit_src - posit_rec;
 
             let dist = diff.magnitude();
-
             let dir = diff / dist; // Unit vec
 
-            let (sigma, eps) = lj_lut.get(&(body_source.element, el_tgt)).unwrap();
+            let (sigma, eps) = lj_lut.get(&(body_source.element, el_rec)).unwrap();
 
-            Some(force_lj_outer(dir, dist, *sigma, *eps))
+            Some(force_lj(dir, dist, *sigma, *eps))
         })
         .reduce(Vec3::new_zero, |f, elem| f + elem) // Sum the contributions.
 }
 
-fn force_lj_x8_outer(
-    posit_target: Vec3x8,
-    el_tgt: [Element; 8],
+pub fn setup_sigma_eps_x8(
+    // todo: THis param list is onerous.
+    i_src: usize,
+    lj_lut: &HashMap<(Element, Element), (f32, f32)>,
+    chunks_src: usize,
+    lanes_tgt: usize,
+    valid_lanes_src_last: usize,
+    el_rec: &[Element],
+    body_source: &BodyVdwx8,
+) -> (f32x8, f32x8) {
+    let lanes_src = if i_src == chunks_src - 1 {
+        valid_lanes_src_last
+    } else {
+        8
+    };
+
+    let valid_lanes = lanes_src.min(lanes_tgt);
+
+    // Setting sigma and eps to 0 for invalid lanes makes their contribution 0.
+    let mut sigmas = [0.; 8];
+    let mut epss = [0.; 8];
+
+    for lane in 0..valid_lanes {
+        let (sigma, eps) = lj_lut
+            .get(&(body_source.element[lane], el_rec[lane]))
+            .unwrap();
+        sigmas[lane] = *sigma;
+        epss[lane] = *eps;
+    }
+
+    (f32x8::from_array(sigmas), f32x8::from_array(epss))
+}
+
+pub fn force_lj_x8_outer(
+    posit_rec: Vec3x8,
+    el_rec: [Element; 8],
     bodies_src: &[BodyVdwx8],
     // distances: &[Vec<f32x8>],
     lj_lut: &HashMap<(Element, Element), (f32, f32)>,
@@ -201,40 +236,63 @@ fn force_lj_x8_outer(
     bodies_src
         .par_iter()
         .enumerate()
-        .filter_map(|(i, body_source)| {
+        .filter_map(|(i_src, body_source)| {
             let posit_src = body_source.posit;
 
-            let diff = posit_src - posit_target;
+            let diff = posit_src - posit_rec;
 
             let dist = diff.magnitude();
-
             let dir = diff / dist; // Unit vec
 
-            let lanes_src = if i == chunks_src - 1 {
-                valid_lanes_src_last
-            } else {
-                8
-            };
-
-            let valid_lanes = lanes_src.min(lanes_tgt);
-
-            // Setting sigma and eps to 0 for invalid lanes makes their contribution 0.
-            let mut sigmas = [0.; 8];
-            let mut epss = [0.; 8];
-            for lane in 0..valid_lanes {
-                let (sigma, eps) = lj_lut
-                    .get(&(body_source.element[lane], el_tgt[lane]))
-                    .unwrap();
-                sigmas[lane] = *sigma;
-                epss[lane] = *eps;
-            }
-
-            let sigma = f32x8::from_array(sigmas);
-            let eps = f32x8::from_array(epss);
+            let (sigma, eps) = setup_sigma_eps_x8(
+                i_src,
+                lj_lut,
+                chunks_src,
+                lanes_tgt,
+                valid_lanes_src_last,
+                &el_rec,
+                body_source,
+            );
 
             Some(force_lj_x8(dir, dist, sigma, eps))
         })
         .reduce(Vec3x8::new_zero, |f, elem| f + elem) // Sum the contributions.
+}
+
+pub fn V_lj_x8_outer(
+    posit_rec: Vec3x8,
+    el_rec: [Element; 8],
+    bodies_src: &[BodyVdwx8],
+    // distances: &[Vec<f32x8>],
+    lj_lut: &HashMap<(Element, Element), (f32, f32)>,
+    chunks_src: usize,
+    lanes_tgt: usize,
+    valid_lanes_src_last: usize,
+) -> f32x8 {
+    // todo: DRY with LJ force.
+    bodies_src
+        .par_iter()
+        .enumerate()
+        .filter_map(|(i_src, body_source)| {
+            let posit_src = body_source.posit;
+
+            let diff = posit_src - posit_rec;
+
+            let dist = diff.magnitude();
+
+            let (sigma, eps) = setup_sigma_eps_x8(
+                i_src,
+                lj_lut,
+                chunks_src,
+                lanes_tgt,
+                valid_lanes_src_last,
+                &el_rec,
+                body_source,
+            );
+
+            Some(V_lj_x8(dist, sigma, eps))
+        })
+        .reduce(|| f32x8::splat(0.), |f, elem| f + elem) // Sum the contributions.
 }
 
 /// The most fundamental part of Newtonian acceleration calculation.
@@ -304,15 +362,6 @@ pub fn force_lj_x8(dir: Vec3x8, r: f32x8, sigma: f32x8, eps: f32x8) -> Vec3x8 {
     let sr12 = sr6.powi(2);
 
     let mag = f32x8::splat(24.) * eps * (f32x8::splat(2.) * sr12 - sr6) / r.powi(2);
-
-    // println!("\n\nsr: {:?}", sr);
-    // println!("r: {:?}", r);
-    // println!("sig: {:?}", sigma);
-    // println!("sr12: {:?}", sr12);
-    //
-    // println!("\nDIR: {:?}", dir);
-    // println!("mag: {:?}", mag);
-    // println!("d mag: {:?}", (-dir * mag));
 
     -dir * mag
 }

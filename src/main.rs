@@ -29,10 +29,15 @@ mod ui;
 mod util;
 mod vibrations;
 
+#[cfg(test)]
+mod tests;
+
 use std::{collections::HashMap, fmt, io, io::ErrorKind, path::Path, sync::Arc};
 
 use barnes_hut::BhConfig;
 use bincode::{Decode, Encode};
+#[cfg(feature = "cuda")]
+use cuda_setup::ComputationDevice;
 #[cfg(feature = "cuda")]
 use cudarc::{
     driver::{CudaContext, CudaModule, CudaStream},
@@ -64,14 +69,6 @@ use crate::{
 // todo: Eventually, implement a system that automatically checks for changes, and don't
 // todo save to disk if there are no changes.
 const PREFS_SAVE_INTERVAL: u64 = 60; // Save user preferences this often, in seconds.
-
-#[derive(Debug, Clone, Default)]
-pub enum ComputationDevice {
-    #[default]
-    Cpu,
-    #[cfg(feature = "cuda")]
-    Gpu((Arc<CudaStream>, Arc<CudaModule>)),
-}
 
 #[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]
 pub enum ViewSelLevel {
@@ -257,6 +254,9 @@ struct StateUi {
     orbit_around_selection: bool,
     binding_energy_disp: Option<BindingEnergy>,
     current_snapshot: usize,
+    /// A flag so we know to update the flashlight upon loading a new model; this should be done within
+    /// a callback.
+    new_mol_loaded: bool
 }
 
 #[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]
@@ -368,7 +368,12 @@ impl State {
                     self.molecule = Some(mol);
                 }
 
+                if self.get_make_docking_setup().is_none() {
+                    eprintln!("Problem making or getting docking setup.");
+                }
+
                 self.update_from_prefs();
+                self.ui.new_mol_loaded = true;
             }
             Err(e) => eprintln!("Error loading file at path {path:?}: {e:?}"),
         }
@@ -393,27 +398,30 @@ impl State {
 }
 
 fn main() {
-    #[cfg(feature = "cuda")]
-    let dev = {
-        // This is compiled in `build_`.
-        let ctx = CudaContext::new(0).unwrap();
-        let stream = ctx.default_stream();
+    // #[cfg(feature = "cuda")]
+    // let dev = {
+    //     // This is compiled in `build_`.
+    //     let ctx = CudaContext::new(0).unwrap();
+    //     let stream = ctx.default_stream();
+    //
+    //     let module = ctx.load_module(Ptx::from_file("./cuda.ptx")).unwrap();
+    //
+    //     // todo: Store/cache these, likely.
+    //     // let func_coulomb = module.load_function("coulomb_kernel").unwrap();
+    //     // let func_lj_V = module.load_function("lj_V_kernel").unwrap();
+    //     // let func_lj_force = module.load_function("lj_force_kernel").unwrap();
+    //
+    //     // println!("Using the GPU for computations.");
+    //     ComputationDevice::Gpu((stream, module))
+    // };
 
-        let runtime_v = cudarc::runtime::get_runtime_version(); // todo: Is this correct?
-
-        let module = ctx.load_module(Ptx::from_file("./cuda.ptx")).unwrap();
-
-        // todo: Store/cache these, likely.
-        // let func_coulomb = module.load_function("coulomb_kernel").unwrap();
-        // let func_lj_V = module.load_function("lj_V_kernel").unwrap();
-        // let func_lj_force = module.load_function("lj_force_kernel").unwrap();
-
-        // println!("Using the GPU for computations.");
-        ComputationDevice::Gpu((stream, module))
-    };
-
-    #[cfg(not(feature = "cuda"))]
+    // #[cfg(not(feature = "cuda"))]
     let dev = ComputationDevice::Cpu;
+
+    // let runtime_v = cudarc::runtime::result::version::get_runtime_version();
+    // let driver_v = cudarc::runtime::result::version::get_driver_version();
+    // println!("CUDA runtime: {runtime_v:?}");
+    // println!("CUDA driver: {driver_v:?}");
 
     #[cfg(target_arch = "x86_64")]
     {
@@ -432,7 +440,9 @@ fn main() {
 
     state.bh_config.θ = THETA_BH;
 
+    // todo: Consider a custom default impl.
     state.ui.view_depth = VIEW_DEPTH_MAX;
+    state.ui.new_mol_loaded = true;
 
     state.load_prefs();
 
@@ -448,7 +458,7 @@ fn main() {
 
     // todo: Not the ideal place, but having double-borrow errors when doing it on-demand.
     if state.get_make_docking_setup().is_none() {
-        // eprintln!("Una")
+        eprintln!("Problem making or getting docking setup.");
     }
 
     if let Some(path) = &state.to_save.autodock_vina_path {
