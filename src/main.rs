@@ -256,7 +256,7 @@ struct StateUi {
     current_snapshot: usize,
     /// A flag so we know to update the flashlight upon loading a new model; this should be done within
     /// a callback.
-    new_mol_loaded: bool
+    new_mol_loaded: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]

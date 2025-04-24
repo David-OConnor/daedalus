@@ -38,6 +38,7 @@
 
 use std::{f32::consts::TAU, time::Instant};
 
+use cudarc::runtime::result::device::set;
 use lin_alg::{
     f32::{Vec3 as Vec3F32, f32x8, pack_float, pack_vec3},
     f64::{FORWARD, Quaternion, RIGHT, UP, Vec3},
@@ -211,60 +212,63 @@ pub fn calc_binding_energy(
     ligand: &Ligand,
     lig_posits: &[Vec3F32],
 ) -> Option<BindingEnergy> {
-    let partial_charges_lig = create_partial_charges(&ligand.molecule.atoms, Some(lig_posits));
-    // todo: Integrate CUDA or SIMD.
+    // todo: Integrate CUDA
+
+    let len_rec = setup.rec_atoms_near_site.len();
+    let len_lig = lig_posits.len();
 
     // Cache distances.
-    let mut distances =  Vec::with_capacity(setup.rec_atoms_near_site.len() * lig_posits.len());
-
-    for i_rec in 0..setup.rec_atoms_near_site.len() {
-        for i_lig in 0..lig_posits.len() {
-            let posit_rec =  setup.rec_atoms_near_site[i_rec].posit;
-            let posit_lig =  lig_posits[i_lig];
+    let mut distances = Vec::with_capacity(len_rec * len_lig);
+    for i_rec in 0..len_rec {
+        for i_lig in 0..len_lig {
+            let posit_rec: Vec3F32 = setup.rec_atoms_near_site[i_rec].posit.into();
+            let posit_lig = lig_posits[i_lig];
 
             distances.push((posit_rec - posit_lig).magnitude());
         }
     }
-    // todo: I think the move is ditch LJ pairs, and make a flat list.
 
-    let (distances_x8, distances_last) = pack_float(&distances);
+    let (distances_x8, valid_lanes_last_dist) = pack_float(&distances);
 
-    let vdw_start = Instant::now();
-    // todo: Use a neighbor grid or similar? Set it up so there are two separate sides?
-    let vdw = setup
-        .lj_sigma_eps
-        .par_iter()
-        .map(|(i_rec, i_lig, sigma, eps)| {
-            let r = distances[lig_posits.len() * i_rec + i_lig];
+    let vdw = if !is_x86_feature_detected!("avx") {
+        // let vdw_start = Instant::now();
+        // todo: Use a neighbor grid or similar? Set it up so there are two separate sides?
+        let vdw = distances
+            .par_iter()
+            .enumerate()
+            .map(|(i, r)| {
+                let (sigma, eps) = setup.lj_sigma_eps[i];
+                V_lj(*r, sigma, eps)
+            })
+            .sum();
 
-            V_lj(r, *sigma, *eps)
-        })
-        .sum();
+        // let vdw_el = vdw_start.elapsed().as_micros();
+        // println!("\n(Normal) VDW val: {vdw}, elapsed: {vdw_el}");
 
-    let vdw_el = vdw_start.elapsed().as_micros();
-    println!("(Normal) VDW val: {vdw}, elapsed: {vdw_el}");
+        vdw
+    } else {
+        // let vdw_start = Instant::now();
 
-    let vdw_start = Instant::now();
+        let vdw_x8: f32x8 = distances_x8
+            .par_iter()
+            .enumerate()
+            .map(|(i, r)| {
+                let sigma = setup.lj_sigma_x8[i];
+                let eps = setup.lj_eps_x8[i];
+                V_lj_x8(*r, sigma, eps)
+            })
+            .sum();
 
-    // todo: Think this one through.
-    let vdw_x8: f32x8 = setup
-        .lj_sigma_eps_x8
-        .par_iter()
-        .map(|(i_rec, i_lig, sigma, eps)| {
-            let r = distances_x8[lig_posits.len() * i_rec + i_lig];
+        let vdw_x8: f32 = vdw_x8.to_array().iter().sum();
 
-            V_lj_x8(r, *sigma, *eps)
-        })
-        .sum();
-
-    let vdw_x8: f32 = vdw_x8.to_array().iter().sum();
-
-    let vdw_el = vdw_start.elapsed().as_micros();
-    println!("(x8) VDW val: {vdw_x8:?}, elapsed: {vdw_el}");
+        // let vdw_el = vdw_start.elapsed().as_micros();
+        // println!("(x8) VDW val: {vdw_x8:?}, elapsed: {vdw_el}");
+        vdw_x8
+    };
 
     let h_bond_count = {
         // Calculate hydrogen bonds
-        let lig_indices: Vec<usize> = (0..ligand.molecule.atoms.len()).collect();
+        let lig_indices: Vec<usize> = (0..len_lig).collect();
 
         // todo: THis is not efficient; work-in for now.
         let mut lig_atoms_positioned = ligand.molecule.atoms.clone();
@@ -303,36 +307,21 @@ pub fn calc_binding_energy(
     // -- HYDROPHOBIC INTERACTION TERM -- //
     // Example: We’ll collect a simple sum of energies for hydrophobic pairs.
     // For a more advanced approach, you might do a distance-based well function, etc.
-    let hydrophobic_score: f32 = setup
-        .rec_atoms_near_site
+    let hydrophobic_score = distances
         .par_iter()
         .enumerate()
-        .map(|(i_rec, atom_rec)| {
-            ligand
-                .molecule
-                .atoms
-                .iter()
-                .enumerate()
-                .filter_map(|(i_lig, atom_ligand)| {
-                    // Check if both are hydrophobic
-                    if is_hydrophobic(atom_rec) && is_hydrophobic(atom_ligand) {
-                        let r = distances[i_rec][i_lig];
-                        // todo: Cache distances upstream, so we are not repeating them?
-
-                        // If they are within a cutoff, add favorable energy.
-                        // (Your real scoring might be more nuanced.)
-                        if r < HYDROPHOBIC_CUTOFF {
-                            // Simple approach: add a small negative (favorable) energy
-                            // or some distance-dependent function:
-                            // E = -k * (1 - r/CUTOFF) for example
-                            let k = 0.2; // scale factor in kcal/mol
-                            let scaled = 1.0 - (r / HYDROPHOBIC_CUTOFF);
-                            return Some(-k * scaled.max(0.0));
-                        }
-                    }
-                    None
-                })
-                .sum::<f32>()
+        .filter_map(|(i, &r)| {
+            if setup.hydrophobic[i] {
+                if r < HYDROPHOBIC_CUTOFF {
+                    // Simple approach: add a small negative (favorable) energy
+                    // or some distance-dependent function:
+                    // E = -k * (1 - r/CUTOFF) for example
+                    let k = 0.2; // scale factor in kcal/mol
+                    let scaled = 1.0 - (r / HYDROPHOBIC_CUTOFF);
+                    return Some(-k * scaled.max(0.0));
+                }
+            }
+            None
         })
         .sum();
 
@@ -347,6 +336,7 @@ pub fn calc_binding_energy(
     // todo: Sort out f32 vs f64 for this.
     let electrostatic = {
         let mut force = Vec3F32::new_zero();
+        let partial_charges_lig = create_partial_charges(&ligand.molecule.atoms, Some(lig_posits));
 
         // In the barnes_hut etc nomenclature, we are iterating over *target* bodies. (Not associated
         // with target=protein=receptor; actually, the opposite!)
@@ -483,7 +473,7 @@ fn make_posits_orientations(
 }
 
 /// Pre-generate poses, for a naive system.
-fn init_poses(
+pub(crate) fn init_poses(
     site: &DockingSite,
     flexible_bonds: &[usize],
     num_posits: usize,
@@ -661,7 +651,8 @@ fn process_poses<'a>(
     );
 
     let result: Vec<_> = poses
-        .par_iter()
+        // .par_iter() // todo
+        .iter() // todo
         .enumerate()
         .filter(|(i_pose, _)| !geometry_poses_skip.contains(i_pose))
         .filter_map(|(i_pose, _pose)| {
