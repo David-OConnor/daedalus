@@ -214,40 +214,28 @@ pub fn calc_binding_energy(
     let partial_charges_lig = create_partial_charges(&ligand.molecule.atoms, Some(lig_posits));
     // todo: Integrate CUDA or SIMD.
 
-    // Pre-compute distances, to prevent repetition later.
-    // todo: Consider CUDA for this.
-    let mut distances = Vec::with_capacity(setup.rec_atoms_near_site.len() * lig_posits.len());
+    // Cache distances.
+    let mut distances =  Vec::with_capacity(setup.rec_atoms_near_site.len() * lig_posits.len());
 
-    for rec_atom in &setup.rec_atoms_near_site {
-        let mut distances_this_rec = Vec::new();
-        for lig_posit in lig_posits {
-            let rec_posit: Vec3F32 = rec_atom.posit.into();
-            // todo: Diffs too?
-            distances_this_rec.push((rec_posit - *lig_posit).magnitude());
+    for i_rec in 0..setup.rec_atoms_near_site.len() {
+        for i_lig in 0..lig_posits.len() {
+            let posit_rec =  setup.rec_atoms_near_site[i_rec].posit;
+            let posit_lig =  lig_posits[i_lig];
+
+            distances.push((posit_rec - posit_lig).magnitude());
         }
-        distances.push(distances_this_rec);
     }
+    // todo: I think the move is ditch LJ pairs, and make a flat list.
 
-    let (lig_posits_x8, valid_lanes_lig) = pack_vec3(&lig_posits);
-
-    let mut distances_x8 = Vec::new();
-
-    for rec_posit in &setup.rec_posits_x8 {
-        let mut distances_this_rec = Vec::new();
-        for lig_posit in &lig_posits_x8 {
-            // todo: Diffs too?
-            distances_this_rec.push((*rec_posit - *lig_posit).magnitude());
-        }
-        distances_x8.push(distances_this_rec);
-    }
+    let (distances_x8, distances_last) = pack_float(&distances);
 
     let vdw_start = Instant::now();
     // todo: Use a neighbor grid or similar? Set it up so there are two separate sides?
     let vdw = setup
-        .lj_pairs
+        .lj_sigma_eps
         .par_iter()
         .map(|(i_rec, i_lig, sigma, eps)| {
-            let r = distances[*i_rec][*i_lig];
+            let r = distances[lig_posits.len() * i_rec + i_lig];
 
             V_lj(r, *sigma, *eps)
         })
@@ -258,13 +246,12 @@ pub fn calc_binding_energy(
 
     let vdw_start = Instant::now();
 
-    // todo: Take adv of A/R.
-    // todo: And make it work!!
+    // todo: Think this one through.
     let vdw_x8: f32x8 = setup
-        .lj_pairs_x8
+        .lj_sigma_eps_x8
         .par_iter()
         .map(|(i_rec, i_lig, sigma, eps)| {
-            let r = distances_x8[*i_rec][*i_lig];
+            let r = distances_x8[lig_posits.len() * i_rec + i_lig];
 
             V_lj_x8(r, *sigma, *eps)
         })
@@ -548,7 +535,7 @@ fn init_poses(
 /// Contains code that is specific to a set of poses. This includes low-cost filters that reduce
 /// the downstream number of poses to match.
 fn process_poses<'a>(
-    mut poses: &'a [Pose],
+    poses: &'a [Pose],
     setup: &DockingSetup,
     ligand: &Ligand,
 ) -> Vec<(usize, BindingEnergy)> {
@@ -566,12 +553,14 @@ fn process_poses<'a>(
     let mut geometry_poses_skip = Vec::new();
 
     for (i_pose, pose) in poses.iter().enumerate() {
+        // todo: Cache distances here?
         let posits_this_pose: Vec<_> = ligand
             .position_atoms(Some(pose))
             .iter()
             .map(|p| (*p).into())
             .collect();
 
+        // A smaller subset, used for some processes to improve performance.
         let lig_posits_sample: Vec<Vec3F32> = posits_this_pose
             .iter()
             .enumerate()
@@ -653,6 +642,17 @@ fn process_poses<'a>(
         //             break;
         //         }
         //     }
+
+        // We use distances in multiple locations; cache here.
+        // todo: Note that above, we compute distances, but for sample only.
+        // todo: Put this back when ready.
+        // let mut distances = Vec::with_capacity(&setup.rec_atoms_sample.len() * lig_posits[i_pose].len());
+        // for (i_rec, posit_rec) in &setup.rec_atoms_sample.iter().enumerate() {
+        //     for (i_lig, posit_lig) in lig_posits[i_pose].iter().enumerate() {
+        //         let dist = (*posit_rec - *posit_lig).magnitude();
+        //         distances.push((i_rec, i_lig, dist));
+        //     }
+        // }
     }
 
     println!(
@@ -664,7 +664,7 @@ fn process_poses<'a>(
         .par_iter()
         .enumerate()
         .filter(|(i_pose, _)| !geometry_poses_skip.contains(i_pose))
-        .filter_map(|(i_pose, pose)| {
+        .filter_map(|(i_pose, _pose)| {
             let energy = calc_binding_energy(setup, ligand, &lig_posits[i_pose]);
             if let Some(e) = energy {
                 Some((i_pose, e))

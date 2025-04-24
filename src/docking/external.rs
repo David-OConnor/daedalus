@@ -83,7 +83,7 @@ pub fn dock_with_vina(mol: &Molecule, ligand: &Ligand, vina_path: &Option<PathBu
             &PathBuf::from_str(&format!("{}_target.pdbqt", mol.ident)).unwrap(),
             &PathBuf::from_str(&format!("{}_ligand.pdbqt", ligand.molecule.ident)).unwrap(),
         ) {
-            Ok(r) => println!("Docking successful"),
+            Ok(_r) => println!("Docking successful"),
             Err(e) => eprintln!("Docking failed: {e:?}"),
         }
     } else {
