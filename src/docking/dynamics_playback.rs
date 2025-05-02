@@ -395,10 +395,11 @@ where
 /// derivative of the total VDW potential, and use gradient descent.
 pub fn build_vdw_dynamics(
     lig: &Ligand,
-    lj_lut: &HashMap<(Element, Element), (f32, f32)>,
     setup: &DockingSetup,
+    // Integrate velocity, position.
+    intertial: bool
 ) -> Vec<Snapshot> {
-    println!("Starting vuilding VDW dyanmics...");
+    println!("Starting Building VDW dyanmics...");
     let start = Instant::now();
 
     let n_steps = 1_500;
@@ -407,7 +408,7 @@ pub fn build_vdw_dynamics(
     // todo: See this code from docking.
 
     // An adaptive timestep.
-    let dt_max = 0.01;
+    let dt_max = 0.0001;
 
     let dt_dynamic_scaler = 100.;
 
@@ -463,9 +464,6 @@ pub fn build_vdw_dynamics(
             }
         }
 
-        let (diffs_x8, valid_lanes_last_diff) = pack_vec3(&diffs);
-        let (lig_posits_by_diff_x8, _) = pack_vec3(&lig_posits_by_diff);
-
         // todo
         // let f_lj_per_tgt = force_lj_cuda(
         //     stream,
@@ -474,6 +472,7 @@ pub fn build_vdw_dynamics(
         //
 
         let anchor_posit = body_ligand_rigid.posit;
+
 
         // let start = Instant::now();
         // todo: x8 isn't saving time here, and is causing invalid results. (not matching scalar)
@@ -503,6 +502,11 @@ pub fn build_vdw_dynamics(
                     |a, b| (a.0 + b.0, a.1 + b.1),
                 )
         } else {
+            let (diffs_x8, valid_lanes_last_diff) = pack_vec3(&diffs);
+            let (lig_posits_by_diff_x8, _) = pack_vec3(&lig_posits_by_diff);
+
+            let anchor_posit_x8 = Vec3x8::splat(anchor_posit);
+
             let (f, t) = diffs_x8
                 .par_iter()
                 .enumerate()
@@ -514,7 +518,7 @@ pub fn build_vdw_dynamics(
 
                     let f = force_lj_x8(dir, r, sigma, eps);
 
-                    let diff = lig_posits_by_diff_x8[i] - Vec3x8::splat(anchor_posit);
+                    let diff = lig_posits_by_diff_x8[i] - anchor_posit_x8;
                     let torque = diff.cross(f);
 
                     (f, torque)
@@ -537,31 +541,9 @@ pub fn build_vdw_dynamics(
             (f_, t_)
         };
 
-        // todo: No, if any speedup, for vdw.
+
         // let el = start.elapsed().as_micros();
         // println!("\nElapsed: {el}");
-
-        // let (force, torque) = bodies_lig
-        //     .par_iter()
-        //     .enumerate()
-        //     .map(|(i_lig, body_lig)| {
-        //         let f = force_lj_outer(body_lig.posit, body_lig.element, &bodies_rec, lj_lut);
-        //
-        //         // Torque = (r - R_cm) x F,
-        //         // where R_cm is the center-of-mass position, and r is this atom's position.
-        //         // But if you store each body_lig.posit already relative to the COM, then you can just use r x F
-        //         // let diff = body_lig.posit - body_ligand_rigid.posit;
-        //
-        //         let diff = body_lig.posit - anchor_posit;
-        //         let torque = diff.cross(f);
-        //         // let torque = Vec3::new_zero(); // todo temp
-        //
-        //         (f, torque)
-        //     })
-        //     .reduce(
-        //         || (Vec3::new_zero(), Vec3::new_zero()),
-        //         |a, b| (a.0 + b.0, a.1 + b.1),
-        //     );
 
         // We use these to avoid performing computations on empty (0ed?) values on the final SIMD value.
         // This causes incorrect results.
@@ -576,14 +558,45 @@ pub fn build_vdw_dynamics(
 
         // This approach of altering position and orientation seems to perform notably better than
         // combining the two.
-        if t % 2 == 0 {
-            body_ligand_rigid.posit += force * dt * 0.00001;
+        // todo: If this is how you do it, you can half computation time by alternating computation for torque
+        // todo and force as well.
+
+        // todo: RK4; once you are ready to make an acc fn again.
+        if intertial {
+            if t % 2 == 0 {
+                let acc = force * dt;
+                body_ligand_rigid.vel += acc * dt;
+                body_ligand_rigid.posit += body_ligand_rigid.vel * dt;
+            } else {
+                // let rotator = Quaternion::from_axis_angle(
+                //     torque.to_normalized(),
+                //     torque.magnitude() * dt * 0.00001,
+                // );
+                //
+                // todo: QC this approach.
+                body_ligand_rigid.ω += torque * dt;
+
+                // let ω_mag = body_ligand_rigid.ω.magnitude();
+                // if ω_mag > 0.0 {
+                //     let axis = body_ligand_rigid.ω / ω_mag;
+                //     let delta_q = Quaternion::from_axis_angle(axis, ω_mag * dt);
+                //     // semi‐implicit Euler: apply rotation *after* updating ω
+                //     body_ligand_rigid.orientation = (delta_q * body_ligand_rigid.orientation).to_normalized();
+                // }
+                let ω_q = Quaternion::new(0.0, body_ligand_rigid.ω.x, body_ligand_rigid.ω.y, body_ligand_rigid.ω.z);
+                let q_dot = ω_q * body_ligand_rigid.orientation * 0.5;
+                body_ligand_rigid.orientation = (body_ligand_rigid.orientation + q_dot * dt).to_normalized();
+            }
         } else {
-            let rotator = Quaternion::from_axis_angle(
-                torque.to_normalized(),
-                torque.magnitude() * dt * 0.00001,
-            );
-            body_ligand_rigid.orientation = rotator * body_ligand_rigid.orientation;
+            if t % 2 == 0 {
+                body_ligand_rigid.posit += force * dt * 0.00001;
+            } else {
+                let rotator = Quaternion::from_axis_angle(
+                    torque.to_normalized(),
+                    torque.magnitude() * dt * 0.00001,
+                );
+                body_ligand_rigid.orientation = rotator * body_ligand_rigid.orientation;
+            }
         }
 
         // let gradient = calc_gradient_posit(&body_ligand_rigid, &net_V_fn);
@@ -598,8 +611,10 @@ pub fn build_vdw_dynamics(
         // todo with RK4.
 
         // Experimenting with a drag term to prevent inertia from having too much influence.
-        body_ligand_rigid.vel *= 0.90;
+        // body_ligand_rigid.vel *= 0.90;
         body_ligand_rigid.ω *= 0.90;
+
+
         time_elapsed += dt;
 
         // Save the current state to a snapshot, for later playback.

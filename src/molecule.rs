@@ -236,8 +236,10 @@ impl Ligand {
             result.pose.orientation = Quaternion::new(0.1156, -0.7155, 0.4165, 0.5488);
 
             if let ConformationType::Flexible { torsions } = &mut result.pose.conformation_type {
-                torsions[1].dihedral_angle = 0.884;
-                torsions[0].dihedral_angle = 2.553;
+                // torsions[1].dihedral_angle = 0.884;
+                // torsions[0].dihedral_angle = 2.553;
+                torsions[0].dihedral_angle = 0.884;
+                torsions[1].dihedral_angle = 2.553;
             }
         }
 
@@ -343,7 +345,8 @@ impl Ligand {
     }
 
     /// We use this to rotate flexible molecules around torsion (e.g. dihedral) angles.
-    fn find_downstream_atoms(&self, pivot: usize, side: usize) -> Vec<usize> {
+    /// `pivot` and `side` are atom indices in the molecule.
+    pub fn find_downstream_atoms(&self, pivot: usize, side: usize) -> Vec<usize> {
         // adjacency_list[atom] -> list of neighbors
         // We want all atoms reachable from `side` when we remove the edge (side->pivot).
         let mut visited = vec![false; self.molecule.atoms.len()];

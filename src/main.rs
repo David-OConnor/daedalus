@@ -434,6 +434,7 @@ fn main() {
         }
     }
 
+    // Sets up write-once static muts.
     init_local_bond_vecs();
 
     let mut state = State::default();

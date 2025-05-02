@@ -1350,8 +1350,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 if ui.button("Build VDW sim").clicked() {
                     state.volatile.snapshots = build_vdw_dynamics(
                         lig,
-                        &state.volatile.lj_lookup_table,
                         &state.volatile.docking_setup.as_ref().unwrap(),
+                        true,
                     );
 
                     state.ui.current_snapshot = 0;

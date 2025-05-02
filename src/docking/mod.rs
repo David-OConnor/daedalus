@@ -34,6 +34,10 @@
 //! to PDB and mmCIF files, have hydrogens added and charges computed. The ligands define which bonds
 //! are rotatable. This format is specialized for docking operations.
 
+
+// todo: Shower thought: Shoot ligands at the dockign site from various angles, in various conformations
+// todo etc.
+
 // 4MZI/160355 docking example: https://www.youtube.com/watch?v=vU2aNuP3Y8I
 
 use std::{f32::consts::TAU, time::Instant};
@@ -231,24 +235,16 @@ pub fn calc_binding_energy(
     let (distances_x8, valid_lanes_last_dist) = pack_float(&distances);
 
     let vdw = if !is_x86_feature_detected!("avx") {
-        // let vdw_start = Instant::now();
         // todo: Use a neighbor grid or similar? Set it up so there are two separate sides?
-        let vdw = distances
+        distances
             .par_iter()
             .enumerate()
             .map(|(i, r)| {
                 let (sigma, eps) = setup.lj_sigma_eps[i];
                 V_lj(*r, sigma, eps)
             })
-            .sum();
-
-        // let vdw_el = vdw_start.elapsed().as_micros();
-        // println!("\n(Normal) VDW val: {vdw}, elapsed: {vdw_el}");
-
-        vdw
+            .sum()
     } else {
-        // let vdw_start = Instant::now();
-
         let vdw_x8: f32x8 = distances_x8
             .par_iter()
             .enumerate()
@@ -259,11 +255,7 @@ pub fn calc_binding_energy(
             })
             .sum();
 
-        let vdw_x8: f32 = vdw_x8.to_array().iter().sum();
-
-        // let vdw_el = vdw_start.elapsed().as_micros();
-        // println!("(x8) VDW val: {vdw_x8:?}, elapsed: {vdw_el}");
-        vdw_x8
+        vdw_x8.to_array().iter().sum()
     };
 
     let h_bond_count = {
@@ -651,8 +643,7 @@ fn process_poses<'a>(
     );
 
     let result: Vec<_> = poses
-        // .par_iter() // todo
-        .iter() // todo
+        .par_iter()
         .enumerate()
         .filter(|(i_pose, _)| !geometry_poses_skip.contains(i_pose))
         .filter_map(|(i_pose, _pose)| {
@@ -744,10 +735,12 @@ pub fn find_optimal_pose(setup: &DockingSetup, ligand: &Ligand) -> (Pose, Bindin
     // Conduct a molecular dynamics sim on the best poses, refining them further.
     // todo: This appears to not be doing much.
     for (pose_i, energy) in &pose_energies[0..top_pose_count] {
+        continue; // todo: Put back when ready.
+
         let mut lig_this = ligand.clone(); //  todo: DOn't like this clone.
         lig_this.pose = poses[*pose_i].clone();
 
-        let snapshots = build_vdw_dynamics(&lig_this, &setup.lj_lut, setup);
+        let snapshots = build_vdw_dynamics(&lig_this, setup, false);
 
         let final_snap = &snapshots[snapshots.len() - 1];
         println!(
