@@ -65,6 +65,15 @@ fn active_color_sel(val: bool) -> Color32 {
     }
 }
 
+/// A checkbox to show or hide a category.
+fn vis_check(val:  &mut bool, text: &str, ui: &mut Ui, redraw: &mut bool) {
+    let color = active_color(!*val);
+    if ui.button(RichText::new(text).color(color)).clicked() {
+        *val = !*val;
+        *redraw = true;
+    }
+}
+
 /// Update the tilebar to reflect the current molecule
 fn set_window_title(title: &str, scene: &mut Scene) {
     scene.window_title = title.to_owned();
@@ -147,8 +156,8 @@ fn get_snap_name(snap: Option<usize>, snaps: &[CamSnapshot]) -> String {
 }
 
 fn cam_snapshots(
-    cam: &mut Camera,
     state: &mut State,
+    scene: &mut Scene,
     engine_updates: &mut EngineUpdates,
     ui: &mut Ui,
 ) {
@@ -162,7 +171,7 @@ fn cam_snapshots(
             format!("Scene {}", state.cam_snapshots.len() + 1)
         };
 
-        state.cam_snapshots.push(CamSnapshot::from_cam(cam, name));
+        state.cam_snapshots.push(CamSnapshot::from_cam(&scene.camera, name));
         state.ui.cam_snapshot_name = String::new();
 
         state.ui.cam_snapshot = Some(state.cam_snapshots.len() - 1);
@@ -202,12 +211,15 @@ fn cam_snapshots(
         if let Some(snap_i) = state.ui.cam_snapshot {
             match state.cam_snapshots.get(snap_i) {
                 Some(snap) => {
-                    cam.position = snap.position;
-                    cam.orientation = snap.orientation;
-                    cam.far = snap.far;
+                    scene.camera.position = snap.position;
+                    scene.camera.orientation = snap.orientation;
+                    scene.camera.far = snap.far;
 
-                    cam.update_proj_mat(); // In case `far` etc changed.
+                    scene.camera.update_proj_mat(); // In case `far` etc changed.
                     engine_updates.camera = true;
+
+                    set_flashlight(scene);
+                    engine_updates.lighting = true;
                 }
                 None => {
                     eprintln!("Error: Could not find snapshot {}", snap_i);
@@ -474,7 +486,7 @@ fn residue_selector(state: &mut State, scene: &mut Scene, redraw: &mut bool, ui:
 fn chain_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
     // todo: For now, DRY with res selec
     ui.horizontal(|ui| {
-        ui.label("Chain visibility:");
+        ui.label("Chain vis:");
         if let Some(mol) = &mut state.molecule {
             for chain in &mut mol.chains {
                 let color = active_color(chain.visible);
@@ -863,10 +875,6 @@ fn selection_section(
                         state.ui.cam_snapshot = None;
                     }
                 }
-
-                ui.add_space(COL_SPACING / 2.);
-
-                selected_data(mol, state.selection, ui);
             }
 
             if let Some(lig) = &state.ligand {
@@ -884,6 +892,9 @@ fn selection_section(
                     state.ui.cam_snapshot = None;
                 }
             }
+
+            ui.add_space(COL_SPACING / 2.);
+            selected_data(mol, state.selection, ui);
         }
     });
 }
@@ -958,58 +969,34 @@ fn view_settings(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
 
         ui.label("Vis:");
 
-        let color = active_color(!state.ui.visibility.hide_non_hetero);
-        if ui.button(RichText::new("Peptide").color(color)).clicked() {
-            state.ui.visibility.hide_non_hetero = !state.ui.visibility.hide_non_hetero;
-            *redraw = true;
-        }
-
-        let color = active_color(!state.ui.visibility.hide_hetero);
-        if ui.button(RichText::new("Hetero").color(color)).clicked() {
-            state.ui.visibility.hide_hetero = !state.ui.visibility.hide_hetero;
-            *redraw = true;
-        }
+        vis_check(&mut state.ui.visibility.hide_non_hetero, "Peptide", ui, redraw);
+        vis_check(&mut state.ui.visibility.hide_hetero, "Hetero", ui, redraw);
 
         ui.add_space(COL_SPACING / 2.);
 
         if !state.ui.visibility.hide_non_hetero {
             // Subset of peptide.
-            let color = active_color(!state.ui.visibility.hide_sidechains);
-            if ui
-                .button(RichText::new("Sidechains").color(color))
-                .clicked()
-            {
-                state.ui.visibility.hide_sidechains = !state.ui.visibility.hide_sidechains;
-                *redraw = true;
-            }
+            vis_check(&mut state.ui.visibility.hide_sidechains, "Sidechains", ui, redraw);
         }
 
-        let color = active_color(!state.ui.visibility.hide_hydrogen);
-        if ui.button(RichText::new("H").color(color)).clicked() {
-            state.ui.visibility.hide_hydrogen = !state.ui.visibility.hide_hydrogen;
-            *redraw = true;
-        }
+        vis_check(&mut state.ui.visibility.hide_hydrogen, "H", ui, redraw);
 
         if !state.ui.visibility.hide_hetero {
             // Subset of hetero.
-            let color = active_color(!state.ui.visibility.hide_water);
-            if ui.button(RichText::new("Water").color(color)).clicked() {
-                state.ui.visibility.hide_water = !state.ui.visibility.hide_water;
-                *redraw = true;
-            }
+            vis_check(&mut state.ui.visibility.hide_water, "Water", ui, redraw);
         }
 
         if state.ligand.is_some() {
-            let color = active_color(!state.ui.visibility.hide_ligand);
-            if ui.button(RichText::new("Ligand").color(color)).clicked() {
-                state.ui.visibility.hide_ligand = !state.ui.visibility.hide_ligand;
-                *redraw = true;
-            }
+            vis_check(&mut state.ui.visibility.hide_ligand, "Lig", ui, redraw);
         }
 
-        let color = active_color(!state.ui.visibility.hide_h_bonds);
-        if ui.button(RichText::new("H bonds").color(color)).clicked() {
-            state.ui.visibility.hide_h_bonds = !state.ui.visibility.hide_h_bonds;
+        vis_check(&mut state.ui.visibility.hide_h_bonds, "H bonds", ui, redraw);
+        // vis_check(&mut state.ui.visibility.dim_peptide, "Dim peptide", ui, redraw);
+
+        // Not using `vis_check` for this because its semantics are inverted.
+        let color = active_color(state.ui.visibility.dim_peptide);
+        if ui.button(RichText::new("Dim peptide").color(color)).clicked() {
+            state.ui.visibility.dim_peptide = !state.ui.visibility.dim_peptide;
             *redraw = true;
         }
     });
@@ -1050,7 +1037,12 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 ui.add_space(COL_SPACING);
             }
 
-            if ui.button("Open").clicked() {
+            let color_open_tools = if state.molecule.is_none() {
+                Color32::GOLD
+            } else {
+                COLOR_INACTIVE
+            };
+            if ui.button(RichText::new("Open").color(color_open_tools)).clicked() {
                 state.volatile.dialogs.load.pick_file();
             }
 
@@ -1121,7 +1113,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             ui.add_space(COL_SPACING);
 
             ui.add_space(COL_SPACING);
-            ui.label("Query databases (ident):");
+            ui.label(RichText::new("Query databases (ident):").color(color_open_tools));
             ui.add(TextEdit::singleline(&mut state.ui.db_input).desired_width(40.));
 
             if !state.ui.db_input.is_empty() {
@@ -1248,7 +1240,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
             ui.add_space(COL_SPACING);
 
-            cam_snapshots(&mut scene.camera, state, &mut engine_updates, ui);
+            cam_snapshots(state, scene, &mut engine_updates, ui);
         });
 
         ui.add_space(ROW_SPACING);

@@ -16,13 +16,14 @@ use crate::{
     mol_drawing,
     ui::ui_handler,
 };
+use crate::mol_drawing::{BOND_RADIUS};
 
 pub type Color = (f32, f32, f32);
 
 const WINDOW_TITLE: &str = "Bio Chem View";
 const WINDOW_SIZE_X: f32 = 1_400.;
 const WINDOW_SIZE_Y: f32 = 1_000.;
-const BACKGROUND_COLOR: Color = (0., 0., 0.);
+pub const BACKGROUND_COLOR: Color = (0., 0., 0.);
 pub const RENDER_DIST: f32 = 1_000.;
 
 // todo: Shinyness broken?
@@ -33,6 +34,7 @@ pub const BODY_SHINYNESS: f32 = 0.9;
 pub const MESH_SPHERE: usize = 0;
 pub const MESH_CUBE: usize = 1;
 pub const MESH_BOND: usize = 2;
+// pub const MESH_BOND_LIGAND: usize = 3;
 pub const MESH_SPHERE_LOWRES: usize = 3;
 pub const MESH_DOCKING_BOX: usize = 4;
 pub const MESH_SOLVENT_SURFACE: usize = 5; // Van Der Waals surface.
@@ -40,12 +42,6 @@ pub const MESH_DOCKING_SURFACE: usize = 6; // Van Der Waals surface.
 
 pub const BALL_STICK_RADIUS: f32 = 0.3;
 pub const BALL_STICK_RADIUS_H: f32 = 0.2;
-
-pub const BOND_RADIUS: f32 = 0.12;
-// const BOND_CAP_RADIUS: f32 = 1./BOND_RADIUS;
-pub const BOND_RADIUS_DOUBLE: f32 = 0.07;
-
-pub const RADIUS_SFC_DOT: f32 = 0.05;
 
 pub const SHELL_OPACITY: f32 = 0.01;
 
@@ -114,7 +110,9 @@ pub fn render(mut state: State) {
         meshes: vec![
             Mesh::new_sphere(1., 3),
             Mesh::new_box(1., 1., 1.),
-            Mesh::new_cylinder(1., BOND_RADIUS, 20),
+            Mesh::new_cylinder(1., BOND_RADIUS, 14),
+            // todo: Consider using scale instead of having two separate meshes.
+            // Mesh::new_cylinder(1., BOND_RADIUS_LIGAND, 20),
             Mesh::new_sphere(1., 1), // low-res sphere
             Mesh::new_box(1., 1., 1.),
             Mesh::new_box(1., 1., 1.), // Placeholder for VDW surface; populated later.

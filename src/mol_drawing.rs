@@ -5,19 +5,20 @@ use std::fmt;
 use bincode::{Decode, Encode};
 use graphics::{ControlScheme, Entity, FWD_VEC, RIGHT_VEC, Scene, UP_VEC};
 use lin_alg::f32::{Quaternion, Vec3};
-
+use lin_alg::map_linear;
 use crate::{
     Selection, State, ViewSelLevel,
     asa::{get_mesh_points, mesh_from_sas_points},
     element::Element,
     molecule::{Atom, AtomRole, BondCount, BondType, Chain, Residue, ResidueType, aa_color},
     render::{
-        ATOM_SHINYNESS, BALL_STICK_RADIUS, BALL_STICK_RADIUS_H, BODY_SHINYNESS, BOND_RADIUS,
-        CAM_INIT_OFFSET, Color, MESH_BOND, MESH_DOCKING_BOX, MESH_SOLVENT_SURFACE, MESH_SPHERE,
-        MESH_SPHERE_LOWRES, RADIUS_SFC_DOT, RENDER_DIST, set_docking_light, set_static_light,
+        ATOM_SHINYNESS, BALL_STICK_RADIUS, BALL_STICK_RADIUS_H, BODY_SHINYNESS,
+        CAM_INIT_OFFSET, Color, MESH_DOCKING_BOX, MESH_SOLVENT_SURFACE, MESH_SPHERE,
+        MESH_SPHERE_LOWRES, RENDER_DIST, set_docking_light, set_static_light,
     },
     util::orbit_center,
 };
+use crate::render::{BACKGROUND_COLOR, MESH_BOND};
 
 const LIGAND_COLOR: Color = (0., 0.4, 1.);
 const LIGAND_COLOR_ANCHOR: Color = (1., 0., 1.);
@@ -33,17 +34,29 @@ const COLOR_SFC_DOT: Color = (0.7, 0.7, 0.7);
 const COLOR_DOCKING_BOX: Color = (0.3, 0.3, 0.9);
 pub const COLOR_DOCKING_SITE_MESH: Color = (0.5, 0.5, 0.9);
 
+pub const BOND_RADIUS: f32 = 0.10;
+pub const BOND_RADIUS_LIGAND_RATIO: f32 = 1.3; // Of bond radius.
+// const BOND_CAP_RADIUS: f32 = 1./BOND_RADIUS;
+pub const BOND_RADIUS_DOUBLE: f32 = 0.07;
+
+pub const RADIUS_SFC_DOT: f32 = 0.05;
+
+const DIMMED_PEPTIDE_AMT: f32 = 0.9; // Higher value means more dim.
+
 // todo: For ligands that are flexible, highlight the fleixble bonds in a bright color.
+
+fn blend_color(color_0: Color, color_1: Color, portion: f32) -> Color {
+    (
+        map_linear(portion, (0., 1.), (color_0.0, color_1.0)),
+        map_linear(portion, (0., 1.),(color_0.1, color_1.1)),
+        map_linear(portion, (0., 1.),(color_0.2, color_1.2)),
+    )
+}
 
 /// Make ligands stand out visually, when colored by atom.
 fn mod_color_for_ligand(color: &Color) -> Color {
     let blend = (0., 0.3, 1.);
-
-    (
-        (color.0 + blend.0) / 2.,
-        (color.1 + blend.1) / 2.,
-        (color.2 + blend.2) / 2.,
-    )
+    blend_color(*color, blend, 0.5)
 }
 
 #[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]
@@ -67,7 +80,8 @@ impl fmt::Display for MoleculeView {
             Self::Sticks => "Sticks",
             Self::BallAndStick => "Ball and stick",
             Self::Cartoon => "Cartoon",
-            Self::SpaceFill => "Spacefill (Van der Waals / CPK)",
+            // Self::SpaceFill => "Spacefill (Van der Waals / CPK)",
+            Self::SpaceFill => "Spacefill",
             Self::Surface => "Surface (Van der Waals)",
             Self::Mesh => "Mesh (Van der Waals)",
             Self::Dots => "Dots (Van der Waals)",
@@ -83,6 +97,7 @@ fn atom_color(
     residues: &[Residue],
     selection: Selection,
     view_sel_level: ViewSelLevel,
+    dimmed: bool,
 ) -> Color {
     let mut result = match view_sel_level {
         ViewSelLevel::Atom => atom.element.color(),
@@ -115,6 +130,12 @@ fn atom_color(
             }
         }
         Selection::None => (),
+    }
+
+    if dimmed {
+        // Desaturate first; otherwise the more saturated initial colors will be relatively visible, while unsaturated
+        // ones will appear blackish.
+        result = blend_color(result, BACKGROUND_COLOR, DIMMED_PEPTIDE_AMT)
     }
 
     result
@@ -194,6 +215,7 @@ fn bond_entities(
     mut color_0: Color,
     mut color_1: Color,
     bond_type: BondType,
+    ligand: bool,
 ) {
     // todo: You probably need to update this to display double bonds correctly.
 
@@ -227,7 +249,7 @@ fn bond_entities(
             let thickness = if bond_type == BondType::Hydrogen {
                 RADIUS_H_BOND
             } else {
-                1.
+                if ligand { BOND_RADIUS_LIGAND_RATIO } else { 1. }
             };
 
             add_bond(
@@ -407,6 +429,7 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene) {
             &mol.residues,
             Selection::None,
             state.ui.view_sel_level,
+            false,
         );
         let mut color_1 = atom_color(
             atom_1,
@@ -414,6 +437,7 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene) {
             &mol.residues,
             Selection::None,
             state.ui.view_sel_level,
+            false,
         );
 
         color_0 = mod_color_for_ligand(&color_0);
@@ -440,6 +464,7 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene) {
             color_0,
             color_1,
             bond.bond_type,
+            true,
         );
     }
 
@@ -459,6 +484,7 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene) {
                 COLOR_H_BOND,
                 COLOR_H_BOND,
                 BondType::Hydrogen,
+                true,
             );
         }
     }
@@ -605,6 +631,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                 &mol.residues,
                 state.selection,
                 state.ui.view_sel_level,
+                state.ui.visibility.dim_peptide,
             );
 
             scene.entities.push(Entity::new(
@@ -689,6 +716,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
             &mol.residues,
             state.selection,
             state.ui.view_sel_level,
+            state.ui.visibility.dim_peptide,
         );
         let color_1 = atom_color(
             atom_1,
@@ -696,6 +724,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
             &mol.residues,
             state.selection,
             state.ui.view_sel_level,
+            state.ui.visibility.dim_peptide,
         );
 
         bond_entities(
@@ -705,6 +734,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
             color_0,
             color_1,
             bond.bond_type,
+            false,
         );
     }
 
@@ -769,6 +799,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                 COLOR_H_BOND,
                 COLOR_H_BOND,
                 BondType::Hydrogen,
+                false,
             );
         }
     }

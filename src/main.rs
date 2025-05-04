@@ -204,6 +204,7 @@ struct Visibility {
     hide_ligand: bool,
     hide_hydrogen: bool,
     hide_h_bonds: bool,
+    dim_peptide: bool,
 }
 
 impl Default for Visibility {
@@ -216,6 +217,7 @@ impl Default for Visibility {
             hide_ligand: false,
             hide_hydrogen: true,
             hide_h_bonds: false,
+            dim_peptide: false,
         }
     }
 }
