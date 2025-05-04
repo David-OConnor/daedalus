@@ -24,7 +24,9 @@ const WINDOW_TITLE: &str = "Bio Chem View";
 const WINDOW_SIZE_X: f32 = 1_400.;
 const WINDOW_SIZE_Y: f32 = 1_000.;
 pub const BACKGROUND_COLOR: Color = (0., 0., 0.);
-pub const RENDER_DIST: f32 = 1_000.;
+
+pub const RENDER_DIST_NEAR: f32 = 0.2;
+pub const RENDER_DIST_FAR: f32 = 1_000.;
 
 // todo: Shinyness broken?
 pub const ATOM_SHINYNESS: f32 = 0.9;
@@ -123,8 +125,8 @@ pub fn render(mut state: State) {
         camera: Camera {
             fov_y: TAU / 8.,
             position: Vec3::new(0., 0., -60.),
-            far: RENDER_DIST,
-            near: 0.2, // todo: Adjust A/R
+            far: RENDER_DIST_FAR,
+            near: RENDER_DIST_NEAR,
             // orientation: Quaternion::from_axis_angle(Vec3::new(1., 0., 0.), TAU / 16.),
             orientation: Quaternion::from_axis_angle(RIGHT_VEC, 0.),
             ..Default::default()

@@ -22,19 +22,24 @@ use crate::{
     molecule::{Ligand, Molecule, ResidueType},
     rcsb_api::{open_drugbank, open_pdb, open_pubchem},
     render::{
-        CAM_INIT_OFFSET, MESH_DOCKING_SURFACE, RENDER_DIST, set_docking_light, set_flashlight,
+        CAM_INIT_OFFSET, MESH_DOCKING_SURFACE, RENDER_DIST_FAR, set_docking_light, set_flashlight,
     },
     util::{
         cam_look_at, cam_look_at_outside, check_prefs_save, cycle_res_selected, orbit_center,
         select_from_search,
     },
 };
+use crate::render::RENDER_DIST_NEAR;
 
 pub const ROW_SPACING: f32 = 10.;
 pub const COL_SPACING: f32 = 30.;
 
-const VIEW_DEPTH_MIN: u16 = 10;
-pub const VIEW_DEPTH_MAX: u16 = 50;
+// These are divided by 10.
+pub const VIEW_DEPTH_NEAR_MIN: u16 = 2;
+pub const VIEW_DEPTH_NEAR_MAX: u16 = 300;
+
+pub const VIEW_DEPTH_FAR_MIN: u16 = 10;
+pub const VIEW_DEPTH_FAR_MAX: u16 = 60;
 
 const NEARBY_THRESH_MIN: u16 = 5;
 const NEARBY_THRESH_MAX: u16 = 60;
@@ -253,7 +258,7 @@ fn cam_controls(
                     Vec3::new(center.x, center.y, center.z - (mol.size + CAM_INIT_OFFSET));
                 cam.orientation = Quaternion::new_identity();
 
-                state.ui.view_depth = VIEW_DEPTH_MAX;
+                state.ui.view_depth = (VIEW_DEPTH_NEAR_MIN, VIEW_DEPTH_FAR_MAX);
                 changed = true;
             }
         }
@@ -265,7 +270,7 @@ fn cam_controls(
                     Vec3::new(center.x, center.y + (mol.size + CAM_INIT_OFFSET), center.z);
                 cam.orientation = Quaternion::from_axis_angle(RIGHT_VEC, TAU / 4.);
 
-                state.ui.view_depth = VIEW_DEPTH_MAX;
+                state.ui.view_depth = (VIEW_DEPTH_NEAR_MIN, VIEW_DEPTH_FAR_MAX);
                 changed = true;
             }
         }
@@ -277,7 +282,7 @@ fn cam_controls(
                     Vec3::new(center.x - (mol.size + CAM_INIT_OFFSET), center.y, center.z);
                 cam.orientation = Quaternion::from_axis_angle(UP_VEC, TAU / 4.);
 
-                state.ui.view_depth = VIEW_DEPTH_MAX;
+                state.ui.view_depth = (VIEW_DEPTH_NEAR_MIN, VIEW_DEPTH_FAR_MAX);
                 changed = true;
             }
         }
@@ -324,20 +329,34 @@ fn cam_controls(
         ui.add_space(COL_SPACING);
 
         // todo: Grey-out, instead of setting render dist. (e.g. fog)
-        ui.label("Depth:");
         let depth_prev = state.ui.view_depth;
+
+        ui.label("Near(x10):");
         ui.add(Slider::new(
-            &mut state.ui.view_depth,
-            VIEW_DEPTH_MIN..=VIEW_DEPTH_MAX,
+            &mut state.ui.view_depth.0,
+            VIEW_DEPTH_NEAR_MIN..=VIEW_DEPTH_NEAR_MAX,
+        ));
+
+        ui.label("Far:");
+        ui.add(Slider::new(
+            &mut state.ui.view_depth.1,
+            VIEW_DEPTH_FAR_MIN..=VIEW_DEPTH_FAR_MAX,
         ));
 
         if state.ui.view_depth != depth_prev {
-            // Interpret the slider being at max position to mean (effectively) unlimited.
-            cam.far = if state.ui.view_depth == VIEW_DEPTH_MAX {
-                RENDER_DIST
+            // Interpret the slider being at min or max position to mean (effectively) unlimited.
+            cam.near = if state.ui.view_depth.0 == VIEW_DEPTH_NEAR_MIN {
+                RENDER_DIST_NEAR
             } else {
-                state.ui.view_depth as f32
+                state.ui.view_depth.0 as f32 / 10.
             };
+
+            cam.far = if state.ui.view_depth.1 == VIEW_DEPTH_FAR_MAX {
+                RENDER_DIST_FAR
+            } else {
+                state.ui.view_depth.1 as f32
+            };
+
             cam.update_proj_mat();
             changed = true;
         }
@@ -993,11 +1012,13 @@ fn view_settings(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
         vis_check(&mut state.ui.visibility.hide_h_bonds, "H bonds", ui, redraw);
         // vis_check(&mut state.ui.visibility.dim_peptide, "Dim peptide", ui, redraw);
 
-        // Not using `vis_check` for this because its semantics are inverted.
-        let color = active_color(state.ui.visibility.dim_peptide);
-        if ui.button(RichText::new("Dim peptide").color(color)).clicked() {
-            state.ui.visibility.dim_peptide = !state.ui.visibility.dim_peptide;
-            *redraw = true;
+        if state.ligand.is_some() {
+            // Not using `vis_check` for this because its semantics are inverted.
+            let color = active_color(state.ui.visibility.dim_peptide);
+            if ui.button(RichText::new("Dim peptide").color(color)).clicked() {
+                state.ui.visibility.dim_peptide = !state.ui.visibility.dim_peptide;
+                *redraw = true;
+            }
         }
     });
 }

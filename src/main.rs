@@ -63,8 +63,9 @@ use crate::{
     navigation::Tab,
     prefs::ToSave,
     render::render,
-    ui::VIEW_DEPTH_MAX,
+    ui::VIEW_DEPTH_FAR_MAX,
 };
+use crate::ui::VIEW_DEPTH_NEAR_MIN;
 
 // todo: Eventually, implement a system that automatically checks for changes, and don't
 // todo save to disk if there are no changes.
@@ -236,7 +237,7 @@ struct StateUi {
     show_nearby_only: bool,
     /// Angstrom. For selections.
     nearby_dist_thresh: u16,
-    view_depth: u16, // angstrom
+    view_depth: (u16, u16), // angstrom. min, max.
     cam_snapshot: Option<usize>,
     dt: f32, // seconds.
     // For selecting residues from the GUI.
@@ -445,7 +446,7 @@ fn main() {
     state.bh_config.θ = THETA_BH;
 
     // todo: Consider a custom default impl.
-    state.ui.view_depth = VIEW_DEPTH_MAX;
+    state.ui.view_depth = (VIEW_DEPTH_NEAR_MIN, VIEW_DEPTH_FAR_MAX);
     state.ui.new_mol_loaded = true;
 
     state.load_prefs();

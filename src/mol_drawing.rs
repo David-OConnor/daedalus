@@ -14,7 +14,7 @@ use crate::{
     render::{
         ATOM_SHINYNESS, BALL_STICK_RADIUS, BALL_STICK_RADIUS_H, BODY_SHINYNESS,
         CAM_INIT_OFFSET, Color, MESH_DOCKING_BOX, MESH_SOLVENT_SURFACE, MESH_SPHERE,
-        MESH_SPHERE_LOWRES, RENDER_DIST, set_docking_light, set_static_light,
+        MESH_SPHERE_LOWRES, RENDER_DIST_FAR, set_docking_light, set_static_light,
     },
     util::orbit_center,
 };
@@ -41,7 +41,7 @@ pub const BOND_RADIUS_DOUBLE: f32 = 0.07;
 
 pub const RADIUS_SFC_DOT: f32 = 0.05;
 
-const DIMMED_PEPTIDE_AMT: f32 = 0.9; // Higher value means more dim.
+const DIMMED_PEPTIDE_AMT: f32 = 0.92; // Higher value means more dim.
 
 // todo: For ligands that are flexible, highlight the fleixble bonds in a bright color.
 
@@ -625,13 +625,19 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                 },
             };
 
+            let dim_peptide = if state.ligand.is_some() {
+                state.ui.visibility.dim_peptide
+            } else {
+                false
+            };
+
             let color_atom = atom_color(
                 atom,
                 i,
                 &mol.residues,
                 state.selection,
                 state.ui.view_sel_level,
-                state.ui.visibility.dim_peptide,
+                dim_peptide,
             );
 
             scene.entities.push(Entity::new(
@@ -710,13 +716,19 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
         let posit_0: Vec3 = atom_0.posit.into();
         let posit_1: Vec3 = atom_1.posit.into();
 
+        let dim_peptide = if state.ligand.is_some() {
+            state.ui.visibility.dim_peptide
+        } else {
+            false
+        };
+
         let color_0 = atom_color(
             atom_0,
             bond.atom_0,
             &mol.residues,
             state.selection,
             state.ui.view_sel_level,
-            state.ui.visibility.dim_peptide,
+            dim_peptide,
         );
         let color_1 = atom_color(
             atom_1,
@@ -724,7 +736,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
             &mol.residues,
             state.selection,
             state.ui.view_sel_level,
-            state.ui.visibility.dim_peptide,
+            dim_peptide,
         );
 
         bond_entities(
@@ -810,7 +822,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
         scene.camera.position =
             Vec3::new(center.x, center.y, center.z - (mol.size + CAM_INIT_OFFSET));
         scene.camera.orientation = Quaternion::from_axis_angle(RIGHT_VEC, 0.);
-        scene.camera.far = RENDER_DIST;
+        scene.camera.far = RENDER_DIST_FAR;
         scene.camera.update_proj_mat();
 
         // Update lighting based on the new molecule center and dims.
