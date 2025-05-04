@@ -34,7 +34,6 @@
 //! to PDB and mmCIF files, have hydrogens added and charges computed. The ligands define which bonds
 //! are rotatable. This format is specialized for docking operations.
 
-
 // todo: Shower thought: Shoot ligands at the dockign site from various angles, in various conformations
 // todo etc.
 

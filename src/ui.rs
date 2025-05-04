@@ -331,110 +331,6 @@ fn cam_controls(
         }
 
         ui.add_space(COL_SPACING);
-
-        // let mut movement_vec = None;
-        // let mut rotation = None;
-
-        // state.ui.inputs_commanded = Default::default();
-
-        // Workaround for .is_pointer_button_down() stopping after 1s.
-        // let pointer_down = {
-        //     let input = ui.input(|i| i.clone());
-        //     println!("Pointer: {:?}", input.pointer);
-        //     input.pointer.button_down(PointerButton::Primary)
-        // };
-
-        //     if ui
-        //         .button("⬅")
-        //         .on_hover_text("Hotkey: A")
-        //         // `is_pointer_button_down_on()` is ideal, but stops after ~1s. Using hover +
-        //         // pointer.button_down check fails too. (Bug in EGUI?)
-        //         .is_pointer_button_down_on()
-        //     {
-        //         // state.ui.inputs_commanded.left = true;
-        //         movement_vec = Some(Vec3::new(-CAM_BUTTON_POS_STEP * state.ui.dt, 0., 0.));
-        //     }
-        //     if ui
-        //         .button("➡")
-        //         .on_hover_text("Hotkey: D")
-        //         .is_pointer_button_down_on()
-        //     {
-        //         // state.ui.inputs_commanded.right = true;
-        //         movement_vec = Some(Vec3::new(CAM_BUTTON_POS_STEP * state.ui.dt, 0., 0.));
-        //     }
-        //     if ui
-        //         .button("⬇")
-        //         .on_hover_text("Hotkey: C")
-        //         .is_pointer_button_down_on()
-        //     {
-        //         // state.ui.inputs_commanded.down = true;
-        //         movement_vec = Some(Vec3::new(0., -CAM_BUTTON_POS_STEP * state.ui.dt, 0.));
-        //     }
-        //     if ui
-        //         .button("⬆")
-        //         .on_hover_text("Hotkey: Space")
-        //         .is_pointer_button_down_on()
-        //     {
-        //         // state.ui.inputs_commanded.up = true;
-        //         movement_vec = Some(Vec3::new(0., CAM_BUTTON_POS_STEP * state.ui.dt, 0.));
-        //     }
-        //     if ui
-        //         .button("⬋")
-        //         .on_hover_text("Hotkey: S")
-        //         .is_pointer_button_down_on()
-        //     {
-        //         // state.ui.inputs_commanded.back = true;
-        //         movement_vec = Some(Vec3::new(0., 0., -CAM_BUTTON_POS_STEP * state.ui.dt));
-        //     }
-        //
-        //     if ui
-        //         .button("⬈")
-        //         .on_hover_text("Hotkey: W")
-        //         .is_pointer_button_down_on()
-        //     {
-        //         // println!("Flats: {:?}", fwd_btn.flags);
-        //         // if fwd_btn.is_pointer_button_down_on() {
-        //         // if fwd_btn.hovered() && pointer_down {
-        //         // if fwd_btn.contains_pointer() && fwd_btn.clicked() {
-        //         // state.ui.inputs_commanded.fwd = true;
-        //         movement_vec = Some(Vec3::new(0., 0., CAM_BUTTON_POS_STEP * state.ui.dt));
-        //     }
-        //
-        //     // Rotation (Alternative to keyboard)
-        //     if ui
-        //         .button("⟲")
-        //         .on_hover_text("Hotkey: Q")
-        //         .is_pointer_button_down_on()
-        //     {
-        //         // state.ui.inputs_commanded.roll_ccw = true;
-        //         let fwd = cam.orientation.rotate_vec(FWD_VEC);
-        //         rotation = Some(Quaternion::from_axis_angle(
-        //             fwd,
-        //             CAM_BUTTON_ROT_STEP * state.ui.dt,
-        //         ));
-        //     }
-        //     if ui
-        //         .button("⟳")
-        //         .on_hover_text("Hotkey: R")
-        //         .is_pointer_button_down_on()
-        //     {
-        //         // state.ui.inputs_commanded.roll_ccw = true;
-        //         let fwd = cam.orientation.rotate_vec(FWD_VEC);
-        //         rotation = Some(Quaternion::from_axis_angle(
-        //             fwd,
-        //             -CAM_BUTTON_ROT_STEP * state.ui.dt,
-        //         ));
-        //     }
-        //
-        //     if let Some(m) = movement_vec {
-        //         cam.position += cam.orientation.rotate_vec(m);
-        //         changed = true;
-        //     }
-        //
-        //     if let Some(r) = rotation {
-        //         cam.orientation = r * cam.orientation;
-        //         changed = true;
-        //     }
     });
 
     if changed {
@@ -472,18 +368,33 @@ fn selected_data(mol: &Molecule, selection: Selection, ui: &mut Ui) {
                 "|{:.3}, {:.3}, {:.3}|",
                 atom.posit.x, atom.posit.y, atom.posit.z
             );
-            let mut text = format!(
-                "{}  {}  El: {:?}  {aa}  {role}",
-                posit_txt, atom.serial_number, atom.element
-            );
+            // todo: Color code the el by atom, using the same scheme you use elsewhere.
+            // let mut text = format!(
+            //     "{}  {}  El: {}  {aa}  {role}",
+            //     posit_txt, atom.serial_number, atom.element.to_letter()
+            // );
+
+            // Split so we can color-code by element.
+            let text_a = format!("{}  {}  El:", posit_txt, atom.serial_number);
+
+            let text_b = format!("{}", atom.element.to_letter());
+
+            let mut text_c = format!("{aa}  {role}",);
 
             // todo: Helper fn for this, and find otehr places in the code where we need it.
             let res = &mol.residues.iter().find(|r| r.atoms.contains(&sel_i));
             if let Some(r) = res {
-                text += &format!("  {}", r.descrip());
+                text_c += &format!("  {}", r.descrip());
             }
 
-            ui.label(RichText::new(text).color(Color32::GOLD));
+            ui.label(RichText::new(text_a).color(Color32::GOLD));
+            let (r, g, b) = atom.element.color();
+            ui.label(RichText::new(text_b).color(Color32::from_rgb(
+                (r * 255.) as u8,
+                (g * 255.) as u8,
+                (b * 255.) as u8,
+            )));
+            ui.label(RichText::new(text_c).color(Color32::GOLD));
         }
         Selection::Residue(sel_i) => {
             if sel_i >= mol.residues.len() {
@@ -776,19 +687,19 @@ fn residue_search(
 
             ui.add_space(COL_SPACING);
 
-            if ui.button("Save PDBQT").clicked() {
-                state.volatile.dialogs.save_pdbqt.pick_directory();
-            }
+            // if ui.button("Save PDBQT").clicked() {
+            //     state.volatile.dialogs.save_pdbqt.pick_directory();
+            // }
 
-            if ui.button("Dock (Vina)").clicked() {
-                let tgt = state.molecule.as_ref().unwrap();
-                // Allow the user to select the autodock executable.
-                if state.to_save.autodock_vina_path.is_none() {
-                    state.volatile.dialogs.autodock_path.pick_file();
-                }
-                dock_with_vina(tgt, ligand, &state.to_save.autodock_vina_path);
-                *redraw = true;
-            }
+            // if ui.button("Dock (Vina)").clicked() {
+            //     let tgt = state.molecule.as_ref().unwrap();
+            //     // Allow the user to select the autodock executable.
+            //     if state.to_save.autodock_vina_path.is_none() {
+            //         state.volatile.dialogs.autodock_path.pick_file();
+            //     }
+            //     dock_with_vina(tgt, ligand, &state.to_save.autodock_vina_path);
+            //     *redraw = true;
+            // }
 
             // todo: Make this automatic A/R. For not a button
             if ui.button("Site mesh").clicked() {
@@ -870,10 +781,10 @@ fn residue_search(
                 engine_updates.lighting = true;
             }
 
-            ui.add_space(COL_SPACING);
+            // ui.add_space(COL_SPACING);
 
-            ui.label(RichText::new("🔘AV").color(active_color(state.ui.autodock_path_valid)))
-                .on_hover_text("Autodock Vina available (Docking)");
+            // ui.label(RichText::new("🔘AV").color(active_color(state.ui.autodock_path_valid)))
+            //     .on_hover_text("Autodock Vina available (Docking)");
         }
     });
 }
@@ -1072,7 +983,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         handle_input(state, ui, &mut redraw, &mut reset_cam, &mut engine_updates);
 
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             let metadata_loaded = false; // avoids borrow error.
             if let Some(mol) = &mut state.molecule {
                 mol_descrip(mol, ui);
@@ -1113,12 +1024,12 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 }
             }
 
-            if ui.button("Open ligand").clicked() {
+            if ui.button("Open lig").clicked() {
                 state.volatile.dialogs.load_ligand.pick_file();
             }
 
             if let Some(lig) = &state.ligand {
-                if ui.button("Save ligand").clicked() {
+                if ui.button("Save lig").clicked() {
                     // todo: Allow saving as SDF, PDBQT, or mol2 here
                     let extension = "sdf";
 
@@ -1281,7 +1192,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         ui.add_space(ROW_SPACING);
 
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             cam_controls(scene, state, &mut engine_updates, ui);
 
             ui.add_space(COL_SPACING);
@@ -1308,7 +1219,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 if let Some(lig) = &state.ligand {
                     ui.add_space(COL_SPACING / 2.);
                     if ui
-                        .button(RichText::new("Move cam to ligand").color(COLOR_HIGHLIGHT))
+                        .button(RichText::new("Move cam to lig").color(COLOR_HIGHLIGHT))
                         .clicked()
                     {
                         let lig_pos: Vec3 = lig.position_atoms(None)[lig.anchor_atom].into();

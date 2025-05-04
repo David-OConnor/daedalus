@@ -12,7 +12,7 @@ use lin_alg::{
 };
 
 use crate::{
-    State, mol_drawing,
+    Selection, State, mol_drawing,
     mol_drawing::MoleculeView,
     render::set_flashlight,
     util::{cycle_res_selected, find_selected_atom, orbit_center, points_along_ray},
@@ -109,7 +109,7 @@ pub fn event_dev_handler(
                                 let atoms_along_ray =
                                     points_along_ray(selected_ray, &mol.atoms, dist_thresh);
 
-                                state_.selection = find_selected_atom(
+                                let selection = find_selected_atom(
                                     &atoms_along_ray,
                                     &mol.atoms,
                                     &mol.residues,
@@ -117,6 +117,13 @@ pub fn event_dev_handler(
                                     &state_.ui,
                                     &mol.chains,
                                 );
+
+                                if selection == state_.selection {
+                                    // Toggle.
+                                    state_.selection = Selection::None;
+                                } else {
+                                    state_.selection = selection;
+                                }
 
                                 if let ControlScheme::Arc { center } =
                                     &mut scene.input_settings.control_scheme

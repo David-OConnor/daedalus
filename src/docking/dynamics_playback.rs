@@ -397,7 +397,7 @@ pub fn build_vdw_dynamics(
     lig: &Ligand,
     setup: &DockingSetup,
     // Integrate velocity, position.
-    intertial: bool
+    intertial: bool,
 ) -> Vec<Snapshot> {
     println!("Starting Building VDW dyanmics...");
     let start = Instant::now();
@@ -473,7 +473,6 @@ pub fn build_vdw_dynamics(
 
         let anchor_posit = body_ligand_rigid.posit;
 
-
         // let start = Instant::now();
         // todo: x8 isn't saving time here, and is causing invalid results. (not matching scalar)
         // let (force, torque) = if !is_x86_feature_detected!("avx") {
@@ -541,7 +540,6 @@ pub fn build_vdw_dynamics(
             (f_, t_)
         };
 
-
         // let el = start.elapsed().as_micros();
         // println!("\nElapsed: {el}");
 
@@ -583,9 +581,15 @@ pub fn build_vdw_dynamics(
                 //     // semi‐implicit Euler: apply rotation *after* updating ω
                 //     body_ligand_rigid.orientation = (delta_q * body_ligand_rigid.orientation).to_normalized();
                 // }
-                let ω_q = Quaternion::new(0.0, body_ligand_rigid.ω.x, body_ligand_rigid.ω.y, body_ligand_rigid.ω.z);
+                let ω_q = Quaternion::new(
+                    0.0,
+                    body_ligand_rigid.ω.x,
+                    body_ligand_rigid.ω.y,
+                    body_ligand_rigid.ω.z,
+                );
                 let q_dot = ω_q * body_ligand_rigid.orientation * 0.5;
-                body_ligand_rigid.orientation = (body_ligand_rigid.orientation + q_dot * dt).to_normalized();
+                body_ligand_rigid.orientation =
+                    (body_ligand_rigid.orientation + q_dot * dt).to_normalized();
             }
         } else {
             if t % 2 == 0 {
@@ -613,7 +617,6 @@ pub fn build_vdw_dynamics(
         // Experimenting with a drag term to prevent inertia from having too much influence.
         // body_ligand_rigid.vel *= 0.90;
         body_ligand_rigid.ω *= 0.90;
-
 
         time_elapsed += dt;
 
