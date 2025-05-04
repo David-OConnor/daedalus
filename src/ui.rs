@@ -368,11 +368,6 @@ fn selected_data(mol: &Molecule, selection: Selection, ui: &mut Ui) {
                 "|{:.3}, {:.3}, {:.3}|",
                 atom.posit.x, atom.posit.y, atom.posit.z
             );
-            // todo: Color code the el by atom, using the same scheme you use elsewhere.
-            // let mut text = format!(
-            //     "{}  {}  El: {}  {aa}  {role}",
-            //     posit_txt, atom.serial_number, atom.element.to_letter()
-            // );
 
             // Split so we can color-code by element.
             let text_a = format!("{}  {}  El:", posit_txt, atom.serial_number);
@@ -532,13 +527,227 @@ fn chain_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
     });
 }
 
-fn residue_search(
+fn docking(
     state: &mut State,
     scene: &mut Scene,
     redraw: &mut bool,
+    reset_cam: bool,
     engine_updates: &mut EngineUpdates,
     ui: &mut Ui,
 ) {
+    if state.molecule.is_none() || state.ligand.is_none() {
+        return;
+    }
+
+    ui.horizontal(|ui| {
+        let ligand = &mut state.ligand.as_mut().unwrap();
+
+        if ui.button("Find sites").clicked() {
+            let mol = state.molecule.as_ref().unwrap();
+            let sites = find_docking_sites(mol);
+            for site in sites {
+                println!("Docking site: {:?}", site);
+            }
+        }
+
+        // if state.docking_ready {
+        if ui.button("Dock").clicked() {
+            // todo: Ideally move the camera to the docking site prior to docking. You could do this
+            // todo by deferring the docking below to the next frame.
+
+            let (pose, binding_energy) =
+                find_optimal_pose(state.volatile.docking_setup.as_ref().unwrap(), ligand);
+
+            ligand.pose = pose;
+            ligand.atom_posits = ligand.position_atoms(None);
+
+            {
+                let lig_pos: Vec3 = ligand.position_atoms(None)[ligand.anchor_atom].into();
+                let ctr: Vec3 = state.molecule.as_ref().unwrap().center.into();
+
+                cam_look_at_outside(&mut scene.camera, lig_pos, ctr);
+
+                engine_updates.camera = true;
+                state.ui.cam_snapshot = None;
+            }
+
+            // Allow the user to select the autodock executable.
+            // if state.to_save.autodock_vina_path.is_none() {
+            //     state.volatile.autodock_path_dialog.pick_file();
+            // }
+            // dock_with_vina(mol, ligand, &state.to_save.autodock_vina_path);
+            *redraw = true;
+        }
+
+        if ui.button("Docking energy").clicked() {
+            let poses = vec![ligand.pose.clone()];
+            let mut lig_posits = Vec::with_capacity(poses.len());
+            // let mut partial_charges_lig = Vec::with_capacity(poses.len());
+
+            for pose in poses {
+                let posits_this_pose: Vec<_> = ligand
+                    .position_atoms(Some(&pose))
+                    .iter()
+                    .map(|p| (*p).into())
+                    .collect();
+
+                // partial_charges_lig.push(create_partial_charges(
+                //     &ligand.molecule.atoms,
+                //     Some(&posits_this_pose),
+                // ));
+                lig_posits.push(posits_this_pose);
+            }
+
+            state.ui.binding_energy_disp = calc_binding_energy(
+                state.volatile.docking_setup.as_ref().unwrap(),
+                ligand,
+                &lig_posits[0],
+            );
+        }
+
+        ui.add_space(COL_SPACING);
+
+        // if ui.button("Save PDBQT").clicked() {
+        //     state.volatile.dialogs.save_pdbqt.pick_directory();
+        // }
+
+        // if ui.button("Dock (Vina)").clicked() {
+        //     let tgt = state.molecule.as_ref().unwrap();
+        //     // Allow the user to select the autodock executable.
+        //     if state.to_save.autodock_vina_path.is_none() {
+        //         state.volatile.dialogs.autodock_path.pick_file();
+        //     }
+        //     dock_with_vina(tgt, ligand, &state.to_save.autodock_vina_path);
+        //     *redraw = true;
+        // }
+
+        // todo: Make this automatic A/R. For not a button
+        if ui.button("Site mesh").clicked() {
+            let mol = state.molecule.as_ref().unwrap();
+            // let (mesh, edges) = find_docking_site_surface(mol, &ligand.docking_site);
+
+            // scene.meshes[MESH_DOCKING_SURFACE] = mesh;
+
+            // todo: You must remove prev entities of it too! Do you need an entity ID for this? Likely.
+            // todo: Move to the draw module A/R.
+            let mut entity = Entity::new(
+                MESH_DOCKING_SURFACE,
+                Vec3::new_zero(),
+                Quaternion::new_identity(),
+                1.,
+                COLOR_DOCKING_SITE_MESH,
+                0.5,
+            );
+            entity.opacity = 0.8;
+            scene.entities.push(entity);
+
+            engine_updates.meshes = true;
+            engine_updates.entities = true;
+        }
+
+        ui.add_space(COL_SPACING);
+
+        ui.label("Docking site setup:");
+        ui.label("Center:");
+
+        let mut docking_init_changed = false;
+
+        if ui
+            .add(TextEdit::singleline(&mut state.ui.docking_site_x).desired_width(30.))
+            .changed()
+        {
+            if let Ok(v) = state.ui.docking_site_x.parse::<f64>() {
+                ligand.docking_site.site_center.x = v;
+                docking_init_changed = true;
+                *redraw = true;
+            }
+        }
+        if ui
+            .add(TextEdit::singleline(&mut state.ui.docking_site_y).desired_width(30.))
+            .changed()
+        {
+            if let Ok(v) = state.ui.docking_site_y.parse::<f64>() {
+                ligand.docking_site.site_center.y = v;
+                docking_init_changed = true;
+                *redraw = true;
+            }
+        }
+        if ui
+            .add(TextEdit::singleline(&mut state.ui.docking_site_z).desired_width(30.))
+            .changed()
+        {
+            if let Ok(v) = state.ui.docking_site_z.parse::<f64>() {
+                ligand.docking_site.site_center.z = v;
+                docking_init_changed = true;
+                *redraw = true;
+            }
+        }
+
+        ui.label("Size:");
+        if ui
+            .add(TextEdit::singleline(&mut state.ui.docking_site_size).desired_width(30.))
+            .changed()
+        {
+            if let Ok(v) = state.ui.docking_site_size.parse::<f64>() {
+                ligand.docking_site.site_box_size = v;
+                docking_init_changed = true;
+                *redraw = true;
+            }
+        }
+
+        if docking_init_changed {
+            // todo: Hardcoded as some.
+            set_docking_light(scene, Some(&ligand.docking_site));
+            engine_updates.lighting = true;
+        }
+
+        // ui.add_space(COL_SPACING);
+
+        // ui.label(RichText::new("🔘AV").color(active_color(state.ui.autodock_path_valid)))
+        //     .on_hover_text("Autodock Vina available (Docking)");
+    });
+
+    ui.horizontal(|ui| {
+        if let Some(lig) = &mut state.ligand {
+            if ui.button("Build VDW sim").clicked() {
+                state.volatile.snapshots =
+                    build_vdw_dynamics(lig, &state.volatile.docking_setup.as_ref().unwrap(), true);
+
+                state.ui.current_snapshot = 0;
+            }
+
+            if !state.volatile.snapshots.is_empty() {
+                ui.add_space(ROW_SPACING);
+
+                let snapshot_prev = state.ui.current_snapshot;
+                ui.spacing_mut().slider_width = ui.available_width() - 100.;
+                ui.add(Slider::new(
+                    &mut state.ui.current_snapshot,
+                    0..=state.volatile.snapshots.len() - 1,
+                ));
+
+                if state.ui.current_snapshot != snapshot_prev {
+                    change_snapshot(
+                        &mut scene.entities,
+                        lig,
+                        &Vec::new(),
+                        &mut state.ui.binding_energy_disp,
+                        &state.volatile.snapshots[state.ui.current_snapshot],
+                    );
+
+                    // todo: Come back to your approach here; definitely don't redraw the main molecule atoms etc.
+                    scene.entities = Vec::new();
+                    draw_molecule(state, scene, reset_cam);
+                    draw_ligand(state, scene);
+
+                    engine_updates.entities = true;
+                }
+            }
+        }
+    });
+}
+
+fn residue_search(state: &mut State, scene: &mut Scene, redraw: &mut bool, ui: &mut Ui) {
     ui.horizontal(|ui| {
         let sel_prev = state.selection;
         ui.label("Find residue:");
@@ -575,216 +784,19 @@ fn residue_search(
                 cycle_res_selected(state, scene, false);
                 *redraw = true;
             }
-        }
 
-        ui.add_space(COL_SPACING);
+            ui.add_space(COL_SPACING * 2.);
 
-        // todo: Consider removing, and doing automatically on load.
-        // if let Some(mol) = &mut state.molecule {
-        //     if ui.button(RichText::new("Add H")).clicked() {
-        //         mol.populate_hydrogens();
-        //         *redraw = true;
-        //     }
-        // }
+            let dock_tools_text = if state.ui.show_docking_tools {
+                "Hide docking tools"
+            } else {
+                "Show docking tools"
+            };
 
-        // todo: Delegate to a docking fn.
-        if state.molecule.is_some() && state.ligand.is_some() {
-            let ligand = &mut state.ligand.as_mut().unwrap();
-
-            if state.babel_avail {
-                if ui.button("Prepare (Babel)").clicked() {
-                    let mut success_tgt = false;
-                    let mut success_ligand = false;
-                    // todo: We may need to save path with the molecule and ligand.
-                    if let Some(path) = &state.to_save.last_opened {
-                        if let Err(e) =
-                            prepare_target(path, &state.molecule.as_ref().unwrap().ident)
-                        {
-                            eprintln!("Error: Unable to process target molecule: {e:?}");
-                        } else {
-                            success_tgt = true;
-                        }
-                    }
-
-                    if let Some(path) = &state.to_save.last_ligand_opened {
-                        if let Err(e) = prepare_ligand(path, &ligand.molecule.ident, false) {
-                            eprintln!("Error: Unable to process ligand molecule: {e:?}");
-                        } else {
-                            success_ligand = true;
-                        }
-                    }
-
-                    // This is a loose proxy.
-                    if success_tgt && success_ligand {
-                        state.docking_ready = true;
-                    }
-                }
-                ui.add_space(COL_SPACING);
+            if ui.button(RichText::new(dock_tools_text)).clicked() {
+                state.ui.show_docking_tools = !state.ui.show_docking_tools;
             }
 
-            if ui.button("Find sites").clicked() {
-                let mol = state.molecule.as_ref().unwrap();
-                let sites = find_docking_sites(mol);
-                for site in sites {
-                    println!("Docking site: {:?}", site);
-                }
-            }
-
-            // if state.docking_ready {
-            if ui.button("Dock").clicked() {
-                // todo: Ideally move the camera to the docking site prior to docking. You could do this
-                // todo by deferring the docking below to the next frame.
-
-                let (pose, binding_energy) =
-                    find_optimal_pose(state.volatile.docking_setup.as_ref().unwrap(), ligand);
-
-                ligand.pose = pose;
-                ligand.atom_posits = ligand.position_atoms(None);
-
-                {
-                    let lig_pos: Vec3 = ligand.position_atoms(None)[ligand.anchor_atom].into();
-                    let ctr: Vec3 = state.molecule.as_ref().unwrap().center.into();
-
-                    cam_look_at_outside(&mut scene.camera, lig_pos, ctr);
-
-                    engine_updates.camera = true;
-                    state.ui.cam_snapshot = None;
-                }
-
-                // Allow the user to select the autodock executable.
-                // if state.to_save.autodock_vina_path.is_none() {
-                //     state.volatile.autodock_path_dialog.pick_file();
-                // }
-                // dock_with_vina(mol, ligand, &state.to_save.autodock_vina_path);
-                *redraw = true;
-            }
-
-            if ui.button("Docking energy").clicked() {
-                let poses = vec![ligand.pose.clone()];
-                let mut lig_posits = Vec::with_capacity(poses.len());
-                // let mut partial_charges_lig = Vec::with_capacity(poses.len());
-
-                for pose in poses {
-                    let posits_this_pose: Vec<_> = ligand
-                        .position_atoms(Some(&pose))
-                        .iter()
-                        .map(|p| (*p).into())
-                        .collect();
-
-                    // partial_charges_lig.push(create_partial_charges(
-                    //     &ligand.molecule.atoms,
-                    //     Some(&posits_this_pose),
-                    // ));
-                    lig_posits.push(posits_this_pose);
-                }
-
-                state.ui.binding_energy_disp = calc_binding_energy(
-                    state.volatile.docking_setup.as_ref().unwrap(),
-                    ligand,
-                    &lig_posits[0],
-                );
-            }
-
-            ui.add_space(COL_SPACING);
-
-            // if ui.button("Save PDBQT").clicked() {
-            //     state.volatile.dialogs.save_pdbqt.pick_directory();
-            // }
-
-            // if ui.button("Dock (Vina)").clicked() {
-            //     let tgt = state.molecule.as_ref().unwrap();
-            //     // Allow the user to select the autodock executable.
-            //     if state.to_save.autodock_vina_path.is_none() {
-            //         state.volatile.dialogs.autodock_path.pick_file();
-            //     }
-            //     dock_with_vina(tgt, ligand, &state.to_save.autodock_vina_path);
-            //     *redraw = true;
-            // }
-
-            // todo: Make this automatic A/R. For not a button
-            if ui.button("Site mesh").clicked() {
-                let mol = state.molecule.as_ref().unwrap();
-                // let (mesh, edges) = find_docking_site_surface(mol, &ligand.docking_site);
-
-                // scene.meshes[MESH_DOCKING_SURFACE] = mesh;
-
-                // todo: You must remove prev entities of it too! Do you need an entity ID for this? Likely.
-                // todo: Move to the draw module A/R.
-                let mut entity = Entity::new(
-                    MESH_DOCKING_SURFACE,
-                    Vec3::new_zero(),
-                    Quaternion::new_identity(),
-                    1.,
-                    COLOR_DOCKING_SITE_MESH,
-                    0.5,
-                );
-                entity.opacity = 0.8;
-                scene.entities.push(entity);
-
-                engine_updates.meshes = true;
-                engine_updates.entities = true;
-            }
-
-            ui.add_space(COL_SPACING);
-
-            ui.label("Docking site setup:");
-            ui.label("Center:");
-
-            let mut docking_init_changed = false;
-
-            if ui
-                .add(TextEdit::singleline(&mut state.ui.docking_site_x).desired_width(30.))
-                .changed()
-            {
-                if let Ok(v) = state.ui.docking_site_x.parse::<f64>() {
-                    ligand.docking_site.site_center.x = v;
-                    docking_init_changed = true;
-                    *redraw = true;
-                }
-            }
-            if ui
-                .add(TextEdit::singleline(&mut state.ui.docking_site_y).desired_width(30.))
-                .changed()
-            {
-                if let Ok(v) = state.ui.docking_site_y.parse::<f64>() {
-                    ligand.docking_site.site_center.y = v;
-                    docking_init_changed = true;
-                    *redraw = true;
-                }
-            }
-            if ui
-                .add(TextEdit::singleline(&mut state.ui.docking_site_z).desired_width(30.))
-                .changed()
-            {
-                if let Ok(v) = state.ui.docking_site_z.parse::<f64>() {
-                    ligand.docking_site.site_center.z = v;
-                    docking_init_changed = true;
-                    *redraw = true;
-                }
-            }
-
-            ui.label("Size:");
-            if ui
-                .add(TextEdit::singleline(&mut state.ui.docking_site_size).desired_width(30.))
-                .changed()
-            {
-                if let Ok(v) = state.ui.docking_site_size.parse::<f64>() {
-                    ligand.docking_site.site_box_size = v;
-                    docking_init_changed = true;
-                    *redraw = true;
-                }
-            }
-
-            if docking_init_changed {
-                // todo: Hardcoded as some.
-                set_docking_light(scene, Some(&ligand.docking_site));
-                engine_updates.lighting = true;
-            }
-
-            // ui.add_space(COL_SPACING);
-
-            // ui.label(RichText::new("🔘AV").color(active_color(state.ui.autodock_path_valid)))
-            //     .on_hover_text("Autodock Vina available (Docking)");
         }
     });
 }
@@ -832,6 +844,45 @@ fn selection_section(
 
             if state.ui.nearby_dist_thresh != dist_prev {
                 *redraw = true;
+            }
+        }
+
+        if let Some(mol) = &state.molecule {
+            ui.add_space(COL_SPACING);
+
+            if state.selection != Selection::None {
+                if ui
+                    .button(RichText::new("Move cam to sel").color(COLOR_HIGHLIGHT))
+                    .clicked()
+                {
+                    let atom_sel = mol.get_sel_atom(state.selection);
+
+                    if let Some(atom) = atom_sel {
+                        cam_look_at(&mut scene.camera, atom.posit);
+                        engine_updates.camera = true;
+                        state.ui.cam_snapshot = None;
+                    }
+                }
+
+                ui.add_space(COL_SPACING / 2.);
+
+                selected_data(mol, state.selection, ui);
+            }
+
+            if let Some(lig) = &state.ligand {
+                ui.add_space(COL_SPACING / 2.);
+                if ui
+                    .button(RichText::new("Move cam to lig").color(COLOR_HIGHLIGHT))
+                    .clicked()
+                {
+                    let lig_pos: Vec3 = lig.position_atoms(None)[lig.anchor_atom].into();
+                    let ctr: Vec3 = mol.center.into();
+
+                    cam_look_at_outside(&mut scene.camera, lig_pos, ctr);
+
+                    engine_updates.camera = true;
+                    state.ui.cam_snapshot = None;
+                }
             }
         }
     });
@@ -1197,44 +1248,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
             ui.add_space(COL_SPACING);
 
-            if let Some(mol) = &state.molecule {
-                if state.selection != Selection::None {
-                    selected_data(mol, state.selection, ui);
-
-                    ui.add_space(COL_SPACING / 2.);
-                    if ui
-                        .button(RichText::new("Move cam to sel").color(COLOR_HIGHLIGHT))
-                        .clicked()
-                    {
-                        let atom_sel = mol.get_sel_atom(state.selection);
-
-                        if let Some(atom) = atom_sel {
-                            cam_look_at(&mut scene.camera, atom.posit);
-                            engine_updates.camera = true;
-                            state.ui.cam_snapshot = None;
-                        }
-                    }
-                }
-
-                if let Some(lig) = &state.ligand {
-                    ui.add_space(COL_SPACING / 2.);
-                    if ui
-                        .button(RichText::new("Move cam to lig").color(COLOR_HIGHLIGHT))
-                        .clicked()
-                    {
-                        let lig_pos: Vec3 = lig.position_atoms(None)[lig.anchor_atom].into();
-                        let ctr: Vec3 = mol.center.into();
-
-                        cam_look_at_outside(&mut scene.camera, lig_pos, ctr);
-
-                        engine_updates.camera = true;
-                        state.ui.cam_snapshot = None;
-                    }
-                }
-            }
-
-            ui.add_space(COL_SPACING);
-
             cam_snapshots(&mut scene.camera, state, &mut engine_updates, ui);
         });
 
@@ -1252,51 +1265,22 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         ui.add_space(ROW_SPACING);
 
-        residue_search(state, scene, &mut redraw, &mut engine_updates, ui);
+        residue_search(state, scene, &mut redraw, ui);
+
+        if state.ui.show_docking_tools {
+            ui.add_space(ROW_SPACING);
+
+            docking(
+                state,
+                scene,
+                &mut redraw,
+                reset_cam,
+                &mut engine_updates,
+                ui,
+            );
+        }
 
         // todo: Allow switching between chains and secondary-structure features here.
-
-        if let Some(mol) = &mut state.molecule {
-            if let Some(lig) = &mut state.ligand {
-                if ui.button("Build VDW sim").clicked() {
-                    state.volatile.snapshots = build_vdw_dynamics(
-                        lig,
-                        &state.volatile.docking_setup.as_ref().unwrap(),
-                        true,
-                    );
-
-                    state.ui.current_snapshot = 0;
-                }
-
-                if !state.volatile.snapshots.is_empty() {
-                    ui.add_space(ROW_SPACING);
-
-                    let snapshot_prev = state.ui.current_snapshot;
-                    ui.spacing_mut().slider_width = ui.available_width() - 100.;
-                    ui.add(Slider::new(
-                        &mut state.ui.current_snapshot,
-                        0..=state.volatile.snapshots.len() - 1,
-                    ));
-
-                    if state.ui.current_snapshot != snapshot_prev {
-                        change_snapshot(
-                            &mut scene.entities,
-                            lig,
-                            &Vec::new(),
-                            &mut state.ui.binding_energy_disp,
-                            &state.volatile.snapshots[state.ui.current_snapshot],
-                        );
-
-                        // todo: Come back to your approach here; definitely don't redraw the main molecule atoms etc.
-                        scene.entities = Vec::new();
-                        draw_molecule(state, scene, reset_cam);
-                        draw_ligand(state, scene);
-
-                        engine_updates.entities = true;
-                    }
-                }
-            }
-        }
 
         ui.add_space(ROW_SPACING / 2.);
 

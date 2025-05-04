@@ -257,6 +257,7 @@ struct StateUi {
     /// A flag so we know to update the flashlight upon loading a new model; this should be done within
     /// a callback.
     new_mol_loaded: bool,
+    show_docking_tools: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]
