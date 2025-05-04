@@ -54,7 +54,7 @@ impl PerMolToSave {
             cam_snapshots: state.cam_snapshots.clone(),
             mol_view: state.ui.mol_view,
             view_sel_level: state.ui.view_sel_level,
-            show_nearby_only: state.ui.show_nearby_only,
+            show_nearby_only: state.ui.show_near_sel_only,
             nearby_dist_thresh: state.ui.nearby_dist_thresh,
             chain_vis,
             chain_to_pick_res: state.ui.chain_to_pick_res,
@@ -90,7 +90,7 @@ impl State {
                 self.cam_snapshots = data.cam_snapshots.clone();
                 self.ui.mol_view = data.mol_view;
                 self.ui.view_sel_level = data.view_sel_level;
-                self.ui.show_nearby_only = data.show_nearby_only;
+                self.ui.show_near_sel_only = data.show_nearby_only;
                 self.ui.nearby_dist_thresh = data.nearby_dist_thresh;
                 self.ui.chain_to_pick_res = data.chain_to_pick_res;
                 self.ui.visibility = data.visibility.clone();

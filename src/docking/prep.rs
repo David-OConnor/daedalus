@@ -533,7 +533,7 @@ fn is_bond_in_ring(bond: &Bond, mol: &Molecule) -> bool {
 /// Find the subet of receptor atoms near a docking site. Only perform force calculations
 /// between this set and the ligand, to keep computational complexity under control.
 fn find_rec_atoms_near_site(receptor: &Molecule, site: &DockingSite) -> (Vec<Atom>, Vec<usize>) {
-    let dist_thresh = ATOM_NEAR_SITE_DIST_THRESH * site.site_box_size;
+    let dist_thresh = ATOM_NEAR_SITE_DIST_THRESH * site.site_radius;
 
     let mut indices = Vec::new();
 

@@ -233,9 +233,10 @@ struct StateUi {
     db_input: String,
     cam_snapshot_name: String,
     residue_search: String,
-    /// Experimental.
-    show_nearby_only: bool,
-    /// Angstrom. For selections.
+    /// To selection.
+    show_near_sel_only: bool,
+    show_near_lig_only: bool,
+    /// Angstrom. For selections, or ligand.
     nearby_dist_thresh: u16,
     view_depth: (u16, u16), // angstrom. min, max.
     cam_snapshot: Option<usize>,
@@ -365,7 +366,7 @@ impl State {
                     self.ui.docking_site_x = lig.docking_site.site_center.x.to_string();
                     self.ui.docking_site_y = lig.docking_site.site_center.y.to_string();
                     self.ui.docking_site_z = lig.docking_site.site_center.z.to_string();
-                    self.ui.docking_site_size = lig.docking_site.site_box_size.to_string();
+                    self.ui.docking_site_size = lig.docking_site.site_radius.to_string();
 
                     self.ligand = Some(lig);
                 } else {

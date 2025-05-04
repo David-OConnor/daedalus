@@ -230,7 +230,7 @@ impl Ligand {
         {
             result.docking_site = DockingSite {
                 site_center: Vec3::new(40.6807, 36.2017, 28.5526),
-                site_box_size: 10.,
+                site_radius: 10.,
             };
             result.pose.anchor_posit = result.docking_site.site_center;
             result.pose.orientation = Quaternion::new(0.1156, -0.7155, 0.4165, 0.5488);

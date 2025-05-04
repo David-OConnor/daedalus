@@ -331,7 +331,7 @@ fn cam_controls(
         // todo: Grey-out, instead of setting render dist. (e.g. fog)
         let depth_prev = state.ui.view_depth;
 
-        ui.label("Near(x10):");
+        ui.label("Depth. Near(x10):");
         ui.add(Slider::new(
             &mut state.ui.view_depth.0,
             VIEW_DEPTH_NEAR_MIN..=VIEW_DEPTH_NEAR_MAX,
@@ -720,7 +720,7 @@ fn docking(
             .changed()
         {
             if let Ok(v) = state.ui.docking_site_size.parse::<f64>() {
-                ligand.docking_site.site_box_size = v;
+                ligand.docking_site.site_radius = v;
                 docking_init_changed = true;
                 *redraw = true;
             }
@@ -860,12 +860,29 @@ fn selection_section(
 
         ui.add_space(COL_SPACING);
 
-        ui.label("Filter nearby:");
-        if ui.checkbox(&mut state.ui.show_nearby_only, "").changed() {
+        ui.label("Nearby sel only:");
+        if ui.checkbox(&mut state.ui.show_near_sel_only, "").changed() {
             *redraw = true;
+
+            // todo: For now, only allow one of near sel/lig
+            if state.ui.show_near_sel_only {
+                state.ui.show_near_lig_only = false
+            }
         }
 
-        if state.ui.show_nearby_only {
+        if state.ligand.is_some() {
+            ui.label("Nearby lig only:");
+            if ui.checkbox(&mut state.ui.show_near_lig_only, "").changed() {
+                *redraw = true;
+
+                // todo: For now, only allow one of near sel/lig
+                if state.ui.show_near_lig_only {
+                    state.ui.show_near_sel_only = false
+                }
+            }
+        }
+
+        if state.ui.show_near_sel_only || state.ui.show_near_lig_only {
             ui.label("Dist:");
             let dist_prev = state.ui.nearby_dist_thresh;
             ui.add(Slider::new(
@@ -1013,6 +1030,7 @@ fn view_settings(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
         // vis_check(&mut state.ui.visibility.dim_peptide, "Dim peptide", ui, redraw);
 
         if state.ligand.is_some() {
+            ui.add_space(COL_SPACING / 2.);
             // Not using `vis_check` for this because its semantics are inverted.
             let color = active_color(state.ui.visibility.dim_peptide);
             if ui.button(RichText::new("Dim peptide").color(color)).clicked() {

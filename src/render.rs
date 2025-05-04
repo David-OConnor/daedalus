@@ -38,9 +38,10 @@ pub const MESH_CUBE: usize = 1;
 pub const MESH_BOND: usize = 2;
 // pub const MESH_BOND_LIGAND: usize = 3;
 pub const MESH_SPHERE_LOWRES: usize = 3;
-pub const MESH_DOCKING_BOX: usize = 4;
-pub const MESH_SOLVENT_SURFACE: usize = 5; // Van Der Waals surface.
-pub const MESH_DOCKING_SURFACE: usize = 6; // Van Der Waals surface.
+pub const MESH_SPHERE_MEDRES: usize = 4;
+pub const MESH_DOCKING_BOX: usize = 5;
+pub const MESH_SOLVENT_SURFACE: usize = 6; // Van Der Waals surface.
+pub const MESH_DOCKING_SURFACE: usize = 7; // Van Der Waals surface.
 
 pub const BALL_STICK_RADIUS: f32 = 0.3;
 pub const BALL_STICK_RADIUS_H: f32 = 0.2;
@@ -85,7 +86,7 @@ pub fn set_docking_light(scene: &mut Scene, docking_init: Option<&DockingSite>) 
 
     match docking_init {
         Some(docking_init) => {
-            let intensity = DOCKING_LIGHT_INTENSITY * docking_init.site_box_size as f32;
+            let intensity = DOCKING_LIGHT_INTENSITY * docking_init.site_radius as f32;
 
             light.position = docking_init.site_center.into();
             light.diffuse_intensity = intensity;
@@ -116,6 +117,7 @@ pub fn render(mut state: State) {
             // todo: Consider using scale instead of having two separate meshes.
             // Mesh::new_cylinder(1., BOND_RADIUS_LIGAND, 20),
             Mesh::new_sphere(1., 1), // low-res sphere
+            Mesh::new_sphere(1., 2), // med-res sphere
             Mesh::new_box(1., 1., 1.),
             Mesh::new_box(1., 1., 1.), // Placeholder for VDW surface; populated later.
             Mesh::new_box(1., 1., 1.), // Placeholder for docking site sufrace; populated later.

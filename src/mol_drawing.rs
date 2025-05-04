@@ -18,7 +18,7 @@ use crate::{
     },
     util::orbit_center,
 };
-use crate::render::{BACKGROUND_COLOR, MESH_BOND};
+use crate::render::{BACKGROUND_COLOR, MESH_BOND, MESH_SPHERE_MEDRES};
 
 const LIGAND_COLOR: Color = (0., 0.4, 1.);
 const LIGAND_COLOR_ANCHOR: Color = (1., 0., 1.);
@@ -40,6 +40,8 @@ pub const BOND_RADIUS_LIGAND_RATIO: f32 = 1.3; // Of bond radius.
 pub const BOND_RADIUS_DOUBLE: f32 = 0.07;
 
 pub const RADIUS_SFC_DOT: f32 = 0.05;
+
+const DOCKING_SITE_OPACITY: f32 = 0.35;
 
 const DIMMED_PEPTIDE_AMT: f32 = 0.92; // Higher value means more dim.
 
@@ -385,13 +387,15 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene) {
     let ligand = state.ligand.as_ref().unwrap();
     let mol = &ligand.molecule;
 
-    // Add a box for the docking site.
+    // Add a visual indicator for the docking site.
     scene.entities.push(Entity {
-        mesh: MESH_DOCKING_BOX,
+        // todo: High-res spheres are blocking bonds inside them. Likely engine problem.
+        // mesh: MESH_SPHERE,
+        mesh: MESH_SPHERE_MEDRES,
         position: ligand.docking_site.site_center.into(),
-        scale: ligand.docking_site.site_box_size as f32,
+        scale: ligand.docking_site.site_radius as f32,
         color: COLOR_DOCKING_BOX,
-        opacity: 0.25,
+        opacity: DOCKING_SITE_OPACITY,
         shinyness: ATOM_SHINYNESS,
         ..Default::default()
     });
@@ -605,14 +609,22 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                 continue;
             }
 
-            if ui.show_nearby_only {
-                if ui.show_nearby_only {
-                    let atom_sel = mol.get_sel_atom(state.selection);
-                    if let Some(a) = atom_sel {
-                        if (atom.posit - a.posit).magnitude() as f32 > ui.nearby_dist_thresh as f32
-                        {
-                            continue;
-                        }
+            // We assume only one of near sel, near lig is selectable at a time.
+            if ui.show_near_sel_only {
+                let atom_sel = mol.get_sel_atom(state.selection);
+                if let Some(a) = atom_sel {
+                    if (atom.posit - a.posit).magnitude() as f32 > ui.nearby_dist_thresh as f32
+                    {
+                        continue;
+                    }
+                }
+            }
+            if let Some(lig) = &state.ligand {
+                if ui.show_near_lig_only {
+                    let atom_sel = lig.atom_posits[lig.anchor_atom];
+                    if (atom.posit - atom_sel).magnitude() as f32 > ui.nearby_dist_thresh as f32
+                    {
+                        continue;
                     }
                 }
             }
@@ -670,10 +682,19 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
             continue;
         }
 
-        if ui.show_nearby_only {
+        if ui.show_near_sel_only {
             let atom_sel = mol.get_sel_atom(state.selection);
             if let Some(a) = atom_sel {
                 if (atom_0.posit - a.posit).magnitude() as f32 > ui.nearby_dist_thresh as f32 {
+                    continue;
+                }
+            }
+        }
+        if let Some(lig) = &state.ligand {
+            if ui.show_near_lig_only {
+                let atom_sel = lig.atom_posits[lig.anchor_atom];
+                if (atom_0.posit - atom_sel).magnitude() as f32 > ui.nearby_dist_thresh as f32
+                {
                     continue;
                 }
             }
@@ -769,11 +790,20 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
             }
 
             // todo: More DRY with cov bonds
-            if ui.show_nearby_only {
+            if ui.show_near_sel_only {
                 let atom_sel = mol.get_sel_atom(state.selection);
                 if let Some(a) = atom_sel {
                     if (atom_donor.posit - a.posit).magnitude() as f32
                         > ui.nearby_dist_thresh as f32
+                    {
+                        continue;
+                    }
+                }
+            }
+            if let Some(lig) = &state.ligand {
+                if ui.show_near_lig_only {
+                    let atom_sel = lig.atom_posits[lig.anchor_atom];
+                    if (atom_donor.posit - atom_sel).magnitude() as f32 > ui.nearby_dist_thresh as f32
                     {
                         continue;
                     }

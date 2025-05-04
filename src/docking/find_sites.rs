@@ -280,7 +280,7 @@ pub fn find_docking_sites(mol: &Molecule) -> Vec<DockingSite> {
 
         result.push(DockingSite {
             site_center: center,
-            site_box_size: max_dim,
+            site_radius: max_dim,
         });
     }
 

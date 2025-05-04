@@ -26,7 +26,7 @@ fn test_docking_setup() {
     {
         ligand.docking_site = DockingSite {
             site_center: lin_alg::f64::Vec3::new(40.6807, 36.2017, 28.5526),
-            site_box_size: 10.,
+            site_radius: 10.,
         };
         ligand.pose.anchor_posit = ligand.docking_site.site_center;
         ligand.pose.orientation = lin_alg::f64::Quaternion::new(0.1156, -0.7155, 0.4165, 0.5488);

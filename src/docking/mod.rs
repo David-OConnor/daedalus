@@ -137,8 +137,7 @@ impl Default for GeneticAlgorithmParameters {
 /// Area IVO the docking site.
 pub struct DockingSite {
     pub site_center: Vec3,
-    pub site_box_size: f64, // Assume square. // todo: Allow diff dims
-                            // todo: Num points in each dimension?
+    pub site_radius: f64,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -409,9 +408,9 @@ fn make_posits_orientations(
 
     // The total extent along each axis is 2*site_box_size.
     // We'll divide that into nx, ny, nz intervals respectively.
-    let dx = (2.0 * init.site_box_size) / nx as f64;
-    let dy = (2.0 * init.site_box_size) / ny as f64;
-    let dz = (2.0 * init.site_box_size) / nz as f64;
+    let dx = (2.0 * init.site_radius) / nx as f64;
+    let dy = (2.0 * init.site_radius) / ny as f64;
+    let dz = (2.0 * init.site_radius) / nz as f64;
 
     // Pre-allocate for efficiency
     let mut ligand_posits = Vec::with_capacity(num_posits);
@@ -420,9 +419,9 @@ fn make_posits_orientations(
     for i in 0..nx {
         for j in 0..ny {
             for k in 0..nz {
-                let x = init.site_center.x - init.site_box_size + (i as f64 + 0.5) * dx;
-                let y = init.site_center.y - init.site_box_size + (j as f64 + 0.5) * dy;
-                let z = init.site_center.z - init.site_box_size + (k as f64 + 0.5) * dz;
+                let x = init.site_center.x - init.site_radius + (i as f64 + 0.5) * dx;
+                let y = init.site_center.y - init.site_radius + (j as f64 + 0.5) * dy;
+                let z = init.site_center.z - init.site_radius + (k as f64 + 0.5) * dz;
                 ligand_posits.push(Vec3::new(x, y, z));
             }
         }
