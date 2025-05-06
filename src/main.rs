@@ -360,12 +360,15 @@ impl State {
         match molecule {
             Ok(mol) => {
                 if is_ligand {
-                    let lig = Ligand::new(mol);
+                    let mut lig = Ligand::new(mol);
 
                     self.ui.docking_site_x = lig.docking_site.site_center.x.to_string();
                     self.ui.docking_site_y = lig.docking_site.site_center.y.to_string();
                     self.ui.docking_site_z = lig.docking_site.site_center.z.to_string();
                     self.ui.docking_site_size = lig.docking_site.site_radius.to_string();
+
+                    lig.pose.anchor_posit = lig.docking_site.site_center;
+                    lig.atom_posits = lig.position_atoms(None);
 
                     self.ligand = Some(lig);
                 } else {

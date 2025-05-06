@@ -40,7 +40,7 @@
 // 4MZI/160355 docking example: https://www.youtube.com/watch?v=vU2aNuP3Y8I
 
 use std::{f32::consts::TAU, time::Instant};
-
+use bincode::{Decode, Encode};
 use cudarc::runtime::result::device::set;
 use lin_alg::{
     f32::{Vec3 as Vec3F32, f32x8, pack_float, pack_vec3},
@@ -133,11 +133,20 @@ impl Default for GeneticAlgorithmParameters {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Encode, Decode)]
 /// Area IVO the docking site.
 pub struct DockingSite {
     pub site_center: Vec3,
     pub site_radius: f64,
+}
+
+impl Default for DockingSite {
+    fn default() -> Self {
+        Self {
+            site_center: Vec3::new_zero(),
+            site_radius: 8.,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default)]

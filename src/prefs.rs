@@ -13,6 +13,7 @@ use crate::{
     mol_drawing::MoleculeView,
     rcsb_api::{PdbMetaData, load_pdb_metadata},
 };
+use crate::docking::DockingSite;
 
 pub const DEFAULT_PREFS_FILE: &str = "bcv_prefs.bcv";
 
@@ -37,6 +38,7 @@ pub struct PerMolToSave {
     chain_to_pick_res: Option<usize>,
     visibility: Visibility,
     metadata: Option<PdbMetaData>,
+    docking_site: DockingSite,
 }
 
 impl PerMolToSave {
@@ -47,6 +49,11 @@ impl PerMolToSave {
         if let Some(mol) = &state.molecule {
             chain_vis = mol.chains.iter().map(|c| c.visible).collect();
             metadata = mol.metadata.clone();
+        }
+
+        let mut docking_site = Default::default();
+        if let Some(lig) = &state.ligand {
+            docking_site = lig.docking_site.clone();
         }
 
         Self {
@@ -60,6 +67,7 @@ impl PerMolToSave {
             chain_to_pick_res: state.ui.chain_to_pick_res,
             visibility: state.ui.visibility.clone(),
             metadata,
+            docking_site,
         }
     }
 }
@@ -97,6 +105,10 @@ impl State {
 
                 if let Some(md) = &data.metadata {
                     mol.metadata = Some(md.clone())
+                }
+
+                if let Some(lig) = &mut self.ligand {
+                    lig.docking_site = data.docking_site.clone();
                 }
 
                 for (i, chain) in mol.chains.iter_mut().enumerate() {

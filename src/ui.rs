@@ -572,8 +572,9 @@ fn docking(
         return;
     }
 
+    let mut updated_docking_site = false; // To avoid a double-borrow error.
     ui.horizontal(|ui| {
-        let ligand = &mut state.ligand.as_mut().unwrap();
+        let lig = &mut state.ligand.as_mut().unwrap();
 
         if ui.button("Find sites").clicked() {
             let mol = state.molecule.as_ref().unwrap();
@@ -589,13 +590,13 @@ fn docking(
             // todo by deferring the docking below to the next frame.
 
             let (pose, binding_energy) =
-                find_optimal_pose(state.volatile.docking_setup.as_ref().unwrap(), ligand);
+                find_optimal_pose(state.volatile.docking_setup.as_ref().unwrap(), lig);
 
-            ligand.pose = pose;
-            ligand.atom_posits = ligand.position_atoms(None);
+            lig.pose = pose;
+            lig.atom_posits = lig.position_atoms(None);
 
             {
-                let lig_pos: Vec3 = ligand.position_atoms(None)[ligand.anchor_atom].into();
+                let lig_pos: Vec3 = lig.position_atoms(None)[lig.anchor_atom].into();
                 let ctr: Vec3 = state.molecule.as_ref().unwrap().center.into();
 
                 cam_look_at_outside(&mut scene.camera, lig_pos, ctr);
@@ -613,12 +614,12 @@ fn docking(
         }
 
         if ui.button("Docking energy").clicked() {
-            let poses = vec![ligand.pose.clone()];
+            let poses = vec![lig.pose.clone()];
             let mut lig_posits = Vec::with_capacity(poses.len());
             // let mut partial_charges_lig = Vec::with_capacity(poses.len());
 
             for pose in poses {
-                let posits_this_pose: Vec<_> = ligand
+                let posits_this_pose: Vec<_> = lig
                     .position_atoms(Some(&pose))
                     .iter()
                     .map(|p| (*p).into())
@@ -633,7 +634,7 @@ fn docking(
 
             state.ui.binding_energy_disp = calc_binding_energy(
                 state.volatile.docking_setup.as_ref().unwrap(),
-                ligand,
+                lig,
                 &lig_posits[0],
             );
         }
@@ -690,7 +691,7 @@ fn docking(
             .changed()
         {
             if let Ok(v) = state.ui.docking_site_x.parse::<f64>() {
-                ligand.docking_site.site_center.x = v;
+                lig.docking_site.site_center.x = v;
                 docking_init_changed = true;
             }
         }
@@ -699,7 +700,7 @@ fn docking(
             .changed()
         {
             if let Ok(v) = state.ui.docking_site_y.parse::<f64>() {
-                ligand.docking_site.site_center.y = v;
+                lig.docking_site.site_center.y = v;
                 docking_init_changed = true;
             }
         }
@@ -708,7 +709,7 @@ fn docking(
             .changed()
         {
             if let Ok(v) = state.ui.docking_site_z.parse::<f64>() {
-                ligand.docking_site.site_center.z = v;
+                lig.docking_site.site_center.z = v;
                 docking_init_changed = true;
             }
         }
@@ -720,12 +721,14 @@ fn docking(
             .changed()
         {
             if let Ok(v) = state.ui.docking_site_size.parse::<f64>() {
-                ligand.docking_site.site_radius = v;
+                lig.docking_site.site_radius = v;
                 docking_init_changed = true;
             }
         }
 
         if state.selection != Selection::None {
+            ui.add_space(COL_SPACING);
+
             if ui
                 .button(RichText::new("Center on sel").color(COLOR_HIGHLIGHT))
                 .clicked()
@@ -737,15 +740,22 @@ fn docking(
                     .get_sel_atom(state.selection);
 
                 if let Some(atom) = atom_sel {
-                    ligand.docking_site.site_center = atom.posit;
+                    lig.docking_site.site_center = atom.posit;
+                    lig.pose.anchor_posit = lig.docking_site.site_center;
+                    lig.atom_posits = lig.position_atoms(None);
+
+                    state.ui.docking_site_x = lig.docking_site.site_center.x.to_string();
+                    state.ui.docking_site_y = lig.docking_site.site_center.y.to_string();
+                    state.ui.docking_site_z = lig.docking_site.site_center.z.to_string();
+
                     docking_init_changed = true;
+                    updated_docking_site = true;
                 }
             }
         }
-
         if docking_init_changed {
             *redraw = true;
-            set_docking_light(scene, Some(&ligand.docking_site));
+            set_docking_light(scene, Some(&lig.docking_site));
             // todo: Hardcoded as some.
             engine_updates.lighting = true;
         }
@@ -755,6 +765,10 @@ fn docking(
         // ui.label(RichText::new("🔘AV").color(active_color(state.ui.autodock_path_valid)))
         //     .on_hover_text("Autodock Vina available (Docking)");
     });
+
+    if updated_docking_site {
+        state.update_save_prefs();
+    }
 
     ui.horizontal(|ui| {
         if let Some(lig) = &mut state.ligand {

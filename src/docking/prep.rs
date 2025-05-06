@@ -180,8 +180,7 @@ impl DockingSetup {
 
         // Ligand positions are per-pose; we can't pre-create them like we do for receptor.
         let rec_posits: Vec<Vec3> = rec_atoms_near_site.iter().map(|a| a.posit.into()).collect();
-
-        let (rec_posits_x8, valid_lanes_rec) = pack_vec3(&rec_posits);
+        // let (rec_posits_x8, valid_lanes_rec) = pack_vec3(&rec_posits);
 
         let rec_atoms_sample: Vec<_> = rec_atoms_near_site
             .iter()

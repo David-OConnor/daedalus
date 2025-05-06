@@ -227,21 +227,21 @@ impl Ligand {
 
         println!("Torsions: {:?}", result.pose.conformation_type);
         // todo: Temp for testing.
-        {
-            result.docking_site = DockingSite {
-                site_center: Vec3::new(40.6807, 36.2017, 28.5526),
-                site_radius: 10.,
-            };
-            result.pose.anchor_posit = result.docking_site.site_center;
-            result.pose.orientation = Quaternion::new(0.1156, -0.7155, 0.4165, 0.5488);
-
-            if let ConformationType::Flexible { torsions } = &mut result.pose.conformation_type {
-                // torsions[1].dihedral_angle = 0.884;
-                // torsions[0].dihedral_angle = 2.553;
-                torsions[0].dihedral_angle = 0.884;
-                torsions[1].dihedral_angle = 2.553;
-            }
-        }
+        // {
+        //     result.docking_site = DockingSite {
+        //         site_center: Vec3::new(40.6807, 36.2017, 28.5526),
+        //         site_radius: 10.,
+        //     };
+        //     result.pose.anchor_posit = result.docking_site.site_center;
+        //     result.pose.orientation = Quaternion::new(0.1156, -0.7155, 0.4165, 0.5488);
+        //
+        //     if let ConformationType::Flexible { torsions } = &mut result.pose.conformation_type {
+        //         // torsions[1].dihedral_angle = 0.884;
+        //         // torsions[0].dihedral_angle = 2.553;
+        //         torsions[0].dihedral_angle = 0.884;
+        //         torsions[1].dihedral_angle = 2.553;
+        //     }
+        // }
 
         result.atom_posits = result.position_atoms(None);
         result
