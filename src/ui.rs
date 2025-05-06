@@ -22,14 +22,14 @@ use crate::{
     molecule::{Ligand, Molecule, ResidueType},
     rcsb_api::{open_drugbank, open_pdb, open_pubchem},
     render::{
-        CAM_INIT_OFFSET, MESH_DOCKING_SURFACE, RENDER_DIST_FAR, set_docking_light, set_flashlight,
+        CAM_INIT_OFFSET, MESH_DOCKING_SURFACE, RENDER_DIST_FAR, RENDER_DIST_NEAR,
+        set_docking_light, set_flashlight,
     },
     util::{
         cam_look_at, cam_look_at_outside, check_prefs_save, cycle_res_selected, orbit_center,
         select_from_search,
     },
 };
-use crate::render::RENDER_DIST_NEAR;
 
 pub const ROW_SPACING: f32 = 10.;
 pub const COL_SPACING: f32 = 30.;
@@ -71,7 +71,7 @@ fn active_color_sel(val: bool) -> Color32 {
 }
 
 /// A checkbox to show or hide a category.
-fn vis_check(val:  &mut bool, text: &str, ui: &mut Ui, redraw: &mut bool) {
+fn vis_check(val: &mut bool, text: &str, ui: &mut Ui, redraw: &mut bool) {
     let color = active_color(!*val);
     if ui.button(RichText::new(text).color(color)).clicked() {
         *val = !*val;
@@ -176,7 +176,9 @@ fn cam_snapshots(
             format!("Scene {}", state.cam_snapshots.len() + 1)
         };
 
-        state.cam_snapshots.push(CamSnapshot::from_cam(&scene.camera, name));
+        state
+            .cam_snapshots
+            .push(CamSnapshot::from_cam(&scene.camera, name));
         state.ui.cam_snapshot_name = String::new();
 
         state.ui.cam_snapshot = Some(state.cam_snapshots.len() - 1);
@@ -690,7 +692,6 @@ fn docking(
             if let Ok(v) = state.ui.docking_site_x.parse::<f64>() {
                 ligand.docking_site.site_center.x = v;
                 docking_init_changed = true;
-                *redraw = true;
             }
         }
         if ui
@@ -700,7 +701,6 @@ fn docking(
             if let Ok(v) = state.ui.docking_site_y.parse::<f64>() {
                 ligand.docking_site.site_center.y = v;
                 docking_init_changed = true;
-                *redraw = true;
             }
         }
         if ui
@@ -710,10 +710,10 @@ fn docking(
             if let Ok(v) = state.ui.docking_site_z.parse::<f64>() {
                 ligand.docking_site.site_center.z = v;
                 docking_init_changed = true;
-                *redraw = true;
             }
         }
 
+        // todo: Consider a slider.
         ui.label("Size:");
         if ui
             .add(TextEdit::singleline(&mut state.ui.docking_site_size).desired_width(30.))
@@ -722,13 +722,31 @@ fn docking(
             if let Ok(v) = state.ui.docking_site_size.parse::<f64>() {
                 ligand.docking_site.site_radius = v;
                 docking_init_changed = true;
-                *redraw = true;
+            }
+        }
+
+        if state.selection != Selection::None {
+            if ui
+                .button(RichText::new("Center on sel").color(COLOR_HIGHLIGHT))
+                .clicked()
+            {
+                let atom_sel = state
+                    .molecule
+                    .as_ref()
+                    .unwrap()
+                    .get_sel_atom(state.selection);
+
+                if let Some(atom) = atom_sel {
+                    ligand.docking_site.site_center = atom.posit;
+                    docking_init_changed = true;
+                }
             }
         }
 
         if docking_init_changed {
-            // todo: Hardcoded as some.
+            *redraw = true;
             set_docking_light(scene, Some(&ligand.docking_site));
+            // todo: Hardcoded as some.
             engine_updates.lighting = true;
         }
 
@@ -821,13 +839,12 @@ fn residue_search(state: &mut State, scene: &mut Scene, redraw: &mut bool, ui: &
             let dock_tools_text = if state.ui.show_docking_tools {
                 "Hide docking tools"
             } else {
-                "Show docking tools"
+                "Show docking tools (Broken/WIP)"
             };
 
             if ui.button(RichText::new(dock_tools_text)).clicked() {
                 state.ui.show_docking_tools = !state.ui.show_docking_tools;
             }
-
         }
     });
 }
@@ -1005,14 +1022,24 @@ fn view_settings(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
 
         ui.label("Vis:");
 
-        vis_check(&mut state.ui.visibility.hide_non_hetero, "Peptide", ui, redraw);
+        vis_check(
+            &mut state.ui.visibility.hide_non_hetero,
+            "Peptide",
+            ui,
+            redraw,
+        );
         vis_check(&mut state.ui.visibility.hide_hetero, "Hetero", ui, redraw);
 
         ui.add_space(COL_SPACING / 2.);
 
         if !state.ui.visibility.hide_non_hetero {
             // Subset of peptide.
-            vis_check(&mut state.ui.visibility.hide_sidechains, "Sidechains", ui, redraw);
+            vis_check(
+                &mut state.ui.visibility.hide_sidechains,
+                "Sidechains",
+                ui,
+                redraw,
+            );
         }
 
         vis_check(&mut state.ui.visibility.hide_hydrogen, "H", ui, redraw);
@@ -1033,7 +1060,10 @@ fn view_settings(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
             ui.add_space(COL_SPACING / 2.);
             // Not using `vis_check` for this because its semantics are inverted.
             let color = active_color(state.ui.visibility.dim_peptide);
-            if ui.button(RichText::new("Dim peptide").color(color)).clicked() {
+            if ui
+                .button(RichText::new("Dim peptide").color(color))
+                .clicked()
+            {
                 state.ui.visibility.dim_peptide = !state.ui.visibility.dim_peptide;
                 *redraw = true;
             }
@@ -1081,7 +1111,10 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             } else {
                 COLOR_INACTIVE
             };
-            if ui.button(RichText::new("Open").color(color_open_tools)).clicked() {
+            if ui
+                .button(RichText::new("Open").color(color_open_tools))
+                .clicked()
+            {
                 state.volatile.dialogs.load.pick_file();
             }
 
@@ -1333,6 +1366,9 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 if let Some(pdb) = &mut state.pdb {
                     if let Err(e) = save_pdb(mol, pdb, path) {
                         eprintln!("Error saving pdb: {}", e);
+                    } else {
+                        state.to_save.last_opened = Some(path.to_owned());
+                        state.update_save_prefs()
                     }
                 }
             }
@@ -1343,6 +1379,9 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 // todo: Other formats A/R
                 if let Err(e) = lig.molecule.save_sdf(path) {
                     eprintln!("Error saving SDF: {}", e);
+                } else {
+                    state.to_save.last_ligand_opened = Some(path.to_owned());
+                    state.update_save_prefs()
                 }
             }
         }

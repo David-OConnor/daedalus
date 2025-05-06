@@ -168,7 +168,14 @@ impl DockingSetup {
             // For the Barnes Hut electrostatics tree.
             let bh_bounding_box = Cube::from_bodies(&partial_charges_rec, 0., true);
 
-            Tree::new(&partial_charges_rec, &bh_bounding_box.unwrap(), bh_config)
+            match &bh_bounding_box {
+                Some(bb) => Tree::new(&partial_charges_rec, bb, bh_config),
+                None => {
+                    eprintln!("Error while setting up BH tree: Unable to create a bounding box.");
+                    Default::default()
+                }
+            }
+
         };
 
         // Ligand positions are per-pose; we can't pre-create them like we do for receptor.

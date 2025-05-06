@@ -14,9 +14,9 @@ use crate::{
     inputs,
     inputs::{MOVEMENT_SENS, RUN_FACTOR, SCROLL_MOVE_AMT, SCROLL_ROTATE_AMT},
     mol_drawing,
+    mol_drawing::BOND_RADIUS,
     ui::ui_handler,
 };
-use crate::mol_drawing::{BOND_RADIUS};
 
 pub type Color = (f32, f32, f32);
 

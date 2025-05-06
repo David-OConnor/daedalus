@@ -4,21 +4,24 @@ use std::fmt;
 
 use bincode::{Decode, Encode};
 use graphics::{ControlScheme, Entity, FWD_VEC, RIGHT_VEC, Scene, UP_VEC};
-use lin_alg::f32::{Quaternion, Vec3};
-use lin_alg::map_linear;
+use lin_alg::{
+    f32::{Quaternion, Vec3},
+    map_linear,
+};
+
 use crate::{
     Selection, State, ViewSelLevel,
     asa::{get_mesh_points, mesh_from_sas_points},
     element::Element,
     molecule::{Atom, AtomRole, BondCount, BondType, Chain, Residue, ResidueType, aa_color},
     render::{
-        ATOM_SHINYNESS, BALL_STICK_RADIUS, BALL_STICK_RADIUS_H, BODY_SHINYNESS,
-        CAM_INIT_OFFSET, Color, MESH_DOCKING_BOX, MESH_SOLVENT_SURFACE, MESH_SPHERE,
-        MESH_SPHERE_LOWRES, RENDER_DIST_FAR, set_docking_light, set_static_light,
+        ATOM_SHINYNESS, BACKGROUND_COLOR, BALL_STICK_RADIUS, BALL_STICK_RADIUS_H, BODY_SHINYNESS,
+        CAM_INIT_OFFSET, Color, MESH_BOND, MESH_DOCKING_BOX, MESH_SOLVENT_SURFACE, MESH_SPHERE,
+        MESH_SPHERE_LOWRES, MESH_SPHERE_MEDRES, RENDER_DIST_FAR, set_docking_light,
+        set_static_light,
     },
     util::orbit_center,
 };
-use crate::render::{BACKGROUND_COLOR, MESH_BOND, MESH_SPHERE_MEDRES};
 
 const LIGAND_COLOR: Color = (0., 0.4, 1.);
 const LIGAND_COLOR_ANCHOR: Color = (1., 0., 1.);
@@ -50,8 +53,8 @@ const DIMMED_PEPTIDE_AMT: f32 = 0.92; // Higher value means more dim.
 fn blend_color(color_0: Color, color_1: Color, portion: f32) -> Color {
     (
         map_linear(portion, (0., 1.), (color_0.0, color_1.0)),
-        map_linear(portion, (0., 1.),(color_0.1, color_1.1)),
-        map_linear(portion, (0., 1.),(color_0.2, color_1.2)),
+        map_linear(portion, (0., 1.), (color_0.1, color_1.1)),
+        map_linear(portion, (0., 1.), (color_0.2, color_1.2)),
     )
 }
 
@@ -613,8 +616,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
             if ui.show_near_sel_only {
                 let atom_sel = mol.get_sel_atom(state.selection);
                 if let Some(a) = atom_sel {
-                    if (atom.posit - a.posit).magnitude() as f32 > ui.nearby_dist_thresh as f32
-                    {
+                    if (atom.posit - a.posit).magnitude() as f32 > ui.nearby_dist_thresh as f32 {
                         continue;
                     }
                 }
@@ -622,8 +624,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
             if let Some(lig) = &state.ligand {
                 if ui.show_near_lig_only {
                     let atom_sel = lig.atom_posits[lig.anchor_atom];
-                    if (atom.posit - atom_sel).magnitude() as f32 > ui.nearby_dist_thresh as f32
-                    {
+                    if (atom.posit - atom_sel).magnitude() as f32 > ui.nearby_dist_thresh as f32 {
                         continue;
                     }
                 }
@@ -693,8 +694,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
         if let Some(lig) = &state.ligand {
             if ui.show_near_lig_only {
                 let atom_sel = lig.atom_posits[lig.anchor_atom];
-                if (atom_0.posit - atom_sel).magnitude() as f32 > ui.nearby_dist_thresh as f32
-                {
+                if (atom_0.posit - atom_sel).magnitude() as f32 > ui.nearby_dist_thresh as f32 {
                     continue;
                 }
             }
@@ -803,7 +803,8 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
             if let Some(lig) = &state.ligand {
                 if ui.show_near_lig_only {
                     let atom_sel = lig.atom_posits[lig.anchor_atom];
-                    if (atom_donor.posit - atom_sel).magnitude() as f32 > ui.nearby_dist_thresh as f32
+                    if (atom_donor.posit - atom_sel).magnitude() as f32
+                        > ui.nearby_dist_thresh as f32
                     {
                         continue;
                     }

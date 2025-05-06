@@ -63,9 +63,8 @@ use crate::{
     navigation::Tab,
     prefs::ToSave,
     render::render,
-    ui::VIEW_DEPTH_FAR_MAX,
+    ui::{VIEW_DEPTH_FAR_MAX, VIEW_DEPTH_NEAR_MIN},
 };
-use crate::ui::VIEW_DEPTH_NEAR_MIN;
 
 // todo: Eventually, implement a system that automatically checks for changes, and don't
 // todo save to disk if there are no changes.
@@ -446,9 +445,10 @@ fn main() {
 
     state.bh_config.θ = THETA_BH;
 
-    // todo: Consider a custom default impl.
+    // todo: Consider a custom default impl. This is a substitute.
     state.ui.view_depth = (VIEW_DEPTH_NEAR_MIN, VIEW_DEPTH_FAR_MAX);
     state.ui.new_mol_loaded = true;
+    state.ui.nearby_dist_thresh = 15;
 
     state.load_prefs();
 
