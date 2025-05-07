@@ -40,7 +40,9 @@
 // 4MZI/160355 docking example: https://www.youtube.com/watch?v=vU2aNuP3Y8I
 
 use std::{f32::consts::TAU, time::Instant};
+
 use bincode::{Decode, Encode};
+use cuda_setup::ComputationDevice;
 use cudarc::runtime::result::device::set;
 use lin_alg::{
     f32::{Vec3 as Vec3F32, f32x8, pack_float, pack_vec3},
@@ -59,7 +61,7 @@ use crate::{
     },
     element::Element,
     forces,
-    forces::{V_lj, V_lj_x8, V_lj_x8_outer},
+    forces::{V_lj, V_lj_x8},
     molecule::{Atom, Ligand},
 };
 
@@ -702,7 +704,7 @@ fn vary_pose(pose: &Pose) -> Vec<Pose> {
 ///
 /// Note: We use the term `receptor` here vice `target`, as `target` is also used in terms of
 /// calculating forces between pairs. (These targets may or may not align!)
-pub fn find_optimal_pose(setup: &DockingSetup, ligand: &Ligand) -> (Pose, BindingEnergy) {
+pub fn find_optimal_pose(dev: &ComputationDevice, setup: &DockingSetup, ligand: &Ligand) -> (Pose, BindingEnergy) {
     // todo: Consider another fn for this part of the setup, so you can re-use it more easily.
 
     // todo: Evaluate if you can cache EEM charges. Look into how position-dependent they are between ligand flexible
@@ -747,7 +749,7 @@ pub fn find_optimal_pose(setup: &DockingSetup, ligand: &Ligand) -> (Pose, Bindin
         let mut lig_this = ligand.clone(); //  todo: DOn't like this clone.
         lig_this.pose = poses[*pose_i].clone();
 
-        let snapshots = build_vdw_dynamics(&lig_this, setup, false);
+        let snapshots = build_vdw_dynamics(dev, &lig_this, setup, false);
 
         let final_snap = &snapshots[snapshots.len() - 1];
         println!(

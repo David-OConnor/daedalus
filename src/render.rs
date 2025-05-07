@@ -21,7 +21,7 @@ use crate::{
 pub type Color = (f32, f32, f32);
 
 const WINDOW_TITLE: &str = "Bio Chem View";
-const WINDOW_SIZE_X: f32 = 1_400.;
+const WINDOW_SIZE_X: f32 = 1_600.;
 const WINDOW_SIZE_Y: f32 = 1_000.;
 pub const BACKGROUND_COLOR: Color = (0., 0., 0.);
 

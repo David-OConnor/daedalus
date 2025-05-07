@@ -310,6 +310,7 @@ struct State {
     pub babel_avail: bool,
     pub docking_ready: bool,
     pub bh_config: BhConfig,
+    pub dev: ComputationDevice,
 }
 
 impl State {
@@ -333,11 +334,11 @@ impl State {
         {
             "sdf" => load_sdf(path),
             "pdbqt" => {
-                load_pdbqt(path).map(|(molecule, mut ligand_)| {
-                    if ligand_.is_some() {
-                        ligand_.as_mut().unwrap().molecule = molecule.clone(); // sloppy
+                load_pdbqt(path).map(|(molecule, mut lig_loaded)| {
+                    if lig_loaded.is_some() {
+                        lig_loaded.as_mut().unwrap().molecule = molecule.clone(); // sloppy
                     }
-                    ligand = ligand_;
+                    ligand = lig_loaded;
                     molecule
                 })
             } // todo: Handle the ligand part.
@@ -375,11 +376,12 @@ impl State {
                     self.molecule = Some(mol);
                 }
 
+                self.update_from_prefs();
+
                 if self.get_make_docking_setup().is_none() {
                     eprintln!("Problem making or getting docking setup.");
                 }
 
-                self.update_from_prefs();
                 self.ui.new_mol_loaded = true;
             }
             Err(e) => eprintln!("Error loading file at path {path:?}: {e:?}"),
@@ -405,30 +407,35 @@ impl State {
 }
 
 fn main() {
-    // #[cfg(feature = "cuda")]
-    // let dev = {
-    //     // This is compiled in `build_`.
-    //     let ctx = CudaContext::new(0).unwrap();
-    //     let stream = ctx.default_stream();
-    //
-    //     let module = ctx.load_module(Ptx::from_file("./cuda.ptx")).unwrap();
-    //
-    //     // todo: Store/cache these, likely.
-    //     // let func_coulomb = module.load_function("coulomb_kernel").unwrap();
-    //     // let func_lj_V = module.load_function("lj_V_kernel").unwrap();
-    //     // let func_lj_force = module.load_function("lj_force_kernel").unwrap();
-    //
-    //     // println!("Using the GPU for computations.");
-    //     ComputationDevice::Gpu((stream, module))
-    // };
+    #[cfg(feature = "cuda")]
+    let dev = {
+        let runtime_v = cudarc::runtime::result::version::get_runtime_version();
+        let driver_v = cudarc::runtime::result::version::get_driver_version();
+        println!("CUDA runtime: {runtime_v:?}");
+        println!("CUDA driver: {driver_v:?}");
 
-    // #[cfg(not(feature = "cuda"))]
+        if runtime_v.is_ok() && driver_v.is_ok() {
+            // This is compiled in `build_`.
+            let ctx = CudaContext::new(0).unwrap();
+            let stream = ctx.default_stream();
+
+            let module = ctx.load_module(Ptx::from_file("./cuda.ptx")).unwrap();
+
+            // todo: Store/cache these, likely.
+            // let func_coulomb = module.load_function("coulomb_kernel").unwrap();
+            // let func_lj_V = module.load_function("lj_V_kernel").unwrap();
+            // let func_lj_force = module.load_function("lj_force_kernel").unwrap();
+
+            ComputationDevice::Gpu((stream, module))
+        } else {
+            ComputationDevice::Cpu
+        }
+
+        // println!("Using the GPU for computations.");
+    };
+
+    #[cfg(not(feature = "cuda"))]
     let dev = ComputationDevice::Cpu;
-
-    // let runtime_v = cudarc::runtime::result::version::get_runtime_version();
-    // let driver_v = cudarc::runtime::result::version::get_driver_version();
-    // println!("CUDA runtime: {runtime_v:?}");
-    // println!("CUDA driver: {driver_v:?}");
 
     #[cfg(target_arch = "x86_64")]
     {
@@ -446,6 +453,7 @@ fn main() {
 
     let mut state = State::default();
 
+    state.dev = dev;
     state.bh_config.θ = THETA_BH;
 
     // todo: Consider a custom default impl. This is a substitute.
@@ -455,29 +463,27 @@ fn main() {
 
     state.load_prefs();
 
+    if let Some(lig) = &mut state.ligand {
+        println!("Center 1: {:?}", lig.docking_site.site_center);
+    }
+
     let last_opened = state.to_save.last_opened.clone();
     if let Some(path) = &last_opened {
         state.open_molecule(path, false);
     }
 
+    if let Some(lig) = &mut state.ligand {
+        println!("Center 2: {:?}", lig.docking_site.site_center);
+    }
     let last_ligand_opened = state.to_save.last_ligand_opened.clone();
     if let Some(path) = &last_ligand_opened {
         state.open_molecule(path, true);
     }
 
-    // todo: Not the ideal place, but having double-borrow errors when doing it on-demand.
-    if state.get_make_docking_setup().is_none() {
-        eprintln!("Problem making or getting docking setup.");
-    }
-
-    if let Some(path) = &state.to_save.autodock_vina_path {
-        state.ui.autodock_path_valid = check_adv_avail(path);
-
-        // If the saved path fails our check, leave it blank so the user can re-attempt.
-        if !state.ui.autodock_path_valid {
-            state.to_save.autodock_vina_path = None;
-            state.update_save_prefs();
-        }
+    // Update ligand positions, e.g. from the docking position site center loaded from prefs.
+    if let Some(lig) = &mut state.ligand {
+        lig.pose.anchor_posit = lig.docking_site.site_center;
+        lig.atom_posits = lig.position_atoms(None);
     }
 
     render(state);

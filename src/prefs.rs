@@ -10,10 +10,10 @@ use graphics::{
 
 use crate::{
     CamSnapshot, Selection, State, ViewSelLevel, Visibility,
+    docking::DockingSite,
     mol_drawing::MoleculeView,
     rcsb_api::{PdbMetaData, load_pdb_metadata},
 };
-use crate::docking::DockingSite;
 
 pub const DEFAULT_PREFS_FILE: &str = "bcv_prefs.bcv";
 
@@ -32,7 +32,8 @@ pub struct PerMolToSave {
     cam_snapshots: Vec<CamSnapshot>,
     mol_view: MoleculeView,
     view_sel_level: ViewSelLevel,
-    show_nearby_only: bool,
+    near_sel_only: bool,
+    near_lig_only: bool,
     nearby_dist_thresh: u16,
     chain_vis: Vec<bool>,
     chain_to_pick_res: Option<usize>,
@@ -61,7 +62,8 @@ impl PerMolToSave {
             cam_snapshots: state.cam_snapshots.clone(),
             mol_view: state.ui.mol_view,
             view_sel_level: state.ui.view_sel_level,
-            show_nearby_only: state.ui.show_near_sel_only,
+            near_sel_only: state.ui.show_near_sel_only,
+            near_lig_only: state.ui.show_near_lig_only,
             nearby_dist_thresh: state.ui.nearby_dist_thresh,
             chain_vis,
             chain_to_pick_res: state.ui.chain_to_pick_res,
@@ -98,7 +100,8 @@ impl State {
                 self.cam_snapshots = data.cam_snapshots.clone();
                 self.ui.mol_view = data.mol_view;
                 self.ui.view_sel_level = data.view_sel_level;
-                self.ui.show_near_sel_only = data.show_nearby_only;
+                self.ui.show_near_sel_only = data.near_sel_only;
+                self.ui.show_near_lig_only = data.near_lig_only;
                 self.ui.nearby_dist_thresh = data.nearby_dist_thresh;
                 self.ui.chain_to_pick_res = data.chain_to_pick_res;
                 self.ui.visibility = data.visibility.clone();
@@ -108,7 +111,14 @@ impl State {
                 }
 
                 if let Some(lig) = &mut self.ligand {
+                    self.ui.docking_site_x = data.docking_site.site_center.x.to_string();
+                    self.ui.docking_site_y = data.docking_site.site_center.y.to_string();
+                    self.ui.docking_site_z = data.docking_site.site_center.z.to_string();
+                    self.ui.docking_site_size = data.docking_site.site_radius.to_string();
+
                     lig.docking_site = data.docking_site.clone();
+                    lig.pose.anchor_posit = data.docking_site.site_center;
+                    lig.atom_posits = lig.position_atoms(None);
                 }
 
                 for (i, chain) in mol.chains.iter_mut().enumerate() {

@@ -96,6 +96,9 @@ pub struct DockingSetup {
     /// Sigmas and epsilons are Lennard Jones parameters. Flat here, with outer loop receptor.
     /// Flattened.
     pub lj_sigma_eps: Vec<(f32, f32)>,
+    /// Unpacked versions of `lj_sigma-eps`; for use with CUDA.
+    pub lj_sigma: Vec<f32>,
+    pub lj_eps: Vec<f32>,
     pub lj_sigma_x8: Vec<f32x8>,
     pub lj_eps_x8: Vec<f32x8>,
     /// Flattened, as above. (Outer loop receptor). If both lig and receptor atoms are considered "hydrophobic", e.g. carbon.
@@ -137,6 +140,13 @@ impl DockingSetup {
         let mut lj_sigma_eps = Vec::with_capacity(pair_count);
         let mut hydrophobic = Vec::with_capacity(pair_count);
 
+        let mut sigmas = Vec::with_capacity(lj_sigma_eps.len());
+        let mut epss = Vec::with_capacity(lj_sigma_eps.len());
+        for (sigma, eps) in &lj_sigma_eps {
+            sigmas.push(*sigma);
+            epss.push(*eps);
+        }
+
         // Observation: This is similar to the array of `epss` and `sigmas` you use in CUDA, but
         // with explicit indices.
         for atom_rec in &rec_atoms_near_site {
@@ -175,7 +185,6 @@ impl DockingSetup {
                     Default::default()
                 }
             }
-
         };
 
         // Ligand positions are per-pose; we can't pre-create them like we do for receptor.
@@ -197,6 +206,8 @@ impl DockingSetup {
             charges_rec: partial_charges_rec,
             rec_bonds_near_site,
             lj_sigma_eps,
+            lj_sigma: sigmas,
+            lj_eps: epss,
             lj_sigma_x8,
             lj_eps_x8,
             hydrophobic,

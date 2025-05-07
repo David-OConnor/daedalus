@@ -10,11 +10,9 @@ use crate::{
     docking::{
         ConformationType, calc_binding_energy,
         dynamics_playback::{build_vdw_dynamics, change_snapshot},
-        external::{check_adv_avail, dock_with_vina},
+        external::check_adv_avail,
         find_optimal_pose,
         find_sites::find_docking_sites,
-        partial_charge::create_partial_charges,
-        prep_external::{prepare_ligand, prepare_target},
     },
     download_mols::{load_cif_rcsb, load_sdf_drugbank, load_sdf_pubchem},
     file_io::pdb::save_pdb,
@@ -590,7 +588,7 @@ fn docking(
             // todo by deferring the docking below to the next frame.
 
             let (pose, binding_energy) =
-                find_optimal_pose(state.volatile.docking_setup.as_ref().unwrap(), lig);
+                find_optimal_pose(&state.dev, state.volatile.docking_setup.as_ref().unwrap(), lig);
 
             lig.pose = pose;
             lig.atom_posits = lig.position_atoms(None);
@@ -773,8 +771,12 @@ fn docking(
     ui.horizontal(|ui| {
         if let Some(lig) = &mut state.ligand {
             if ui.button("Build VDW sim").clicked() {
-                state.volatile.snapshots =
-                    build_vdw_dynamics(lig, &state.volatile.docking_setup.as_ref().unwrap(), true);
+                state.volatile.snapshots = build_vdw_dynamics(
+                    &state.dev,
+                    lig,
+                    &state.volatile.docking_setup.as_ref().unwrap(),
+                    false,
+                );
 
                 state.ui.current_snapshot = 0;
             }

@@ -5,6 +5,8 @@
 
 use std::{collections::HashMap, time::Instant};
 
+use cuda_setup::ComputationDevice;
+
 cfg_if::cfg_if! {
     if #[cfg(feature = "cuda")] {
         use cudarc::driver::{CudaModule, CudaStream, LaunchConfig, PushKernelArg};
@@ -22,7 +24,7 @@ use crate::{
         prep::{DockingSetup, Torsion},
     },
     element::Element,
-    forces::{force_lj, force_lj_outer, force_lj_x8, force_lj_x8_outer},
+    forces::{force_lj, force_lj_gpu_outer, force_lj_x8},
     molecule::{Atom, Ligand},
 };
 // This seems to be how we control rotation vice movement. A higher value means
@@ -394,12 +396,13 @@ where
 /// the molecule together, we seem to get bogus results using this approach. Instead, we use a numerical
 /// derivative of the total VDW potential, and use gradient descent.
 pub fn build_vdw_dynamics(
+    dev: &ComputationDevice,
     lig: &Ligand,
     setup: &DockingSetup,
     // Integrate velocity, position.
     intertial: bool,
 ) -> Vec<Snapshot> {
-    println!("Starting Building VDW dyanmics...");
+    println!("Building VDW dyanmics...");
     let start = Instant::now();
 
     let n_steps = 1_500;
@@ -440,10 +443,15 @@ pub fn build_vdw_dynamics(
         energy: None, // todo: Initial energy?
     });
 
-    let bodies_rec = bodies_from_atoms(&setup.rec_atoms_near_site);
-
     let len_rec = setup.rec_atoms_near_site.len();
     let len_lig = lig.atom_posits.len();
+
+    // todo: CUDA only. setup struct?
+    let posits_rec: Vec<Vec3> = setup
+        .rec_atoms_near_site
+        .iter()
+        .map(|r| r.posit.into())
+        .collect();
 
     for t in 0..n_steps {
         let lig_posits = lig.position_atoms(Some(&body_ligand_rigid.as_pose()));
@@ -464,84 +472,105 @@ pub fn build_vdw_dynamics(
             }
         }
 
-        // todo
-        // let f_lj_per_tgt = force_lj_cuda(
-        //     stream,
-        //     module,
-        // );
-        //
-
         let anchor_posit = body_ligand_rigid.posit;
 
-        // let start = Instant::now();
-        // todo: x8 isn't saving time here, and is causing invalid results. (not matching scalar)
-        // let (force, torque) = if !is_x86_feature_detected!("avx") {
-        let (force, torque) = if true {
-            diffs
-                .par_iter()
-                .enumerate()
-                .map(|(i, &diff)| {
-                    let r = diff.magnitude();
-                    let dir = diff / r;
-                    let (sigma, eps) = setup.lj_sigma_eps[i];
+        let start = Instant::now();
 
-                    let f = force_lj(dir, r, sigma, eps);
+        let (force, torque) = match dev {
+            ComputationDevice::Gpu((stream, module)) => {
+                let lig_posits_f32: Vec<Vec3> = lig_posits.iter().map(|r| (*r).into()).collect();
 
-                    // Torque = (r - R_cm) x F,
-                    // where R_cm is the center-of-mass position, and r is this atom's position.
-                    // But if you store each body_lig.posit already relative to the COM, then you can just use r x F
-
-                    let diff = lig_posits_by_diff[i] - anchor_posit;
-                    let torque = diff.cross(f);
-
-                    (f, torque)
-                })
-                .reduce(
-                    || (Vec3::new_zero(), Vec3::new_zero()),
-                    |a, b| (a.0 + b.0, a.1 + b.1),
-                )
-        } else {
-            let (diffs_x8, valid_lanes_last_diff) = pack_vec3(&diffs);
-            let (lig_posits_by_diff_x8, _) = pack_vec3(&lig_posits_by_diff);
-
-            let anchor_posit_x8 = Vec3x8::splat(anchor_posit);
-
-            let (f, t) = diffs_x8
-                .par_iter()
-                .enumerate()
-                .map(|(i, &diff)| {
-                    let r = diff.magnitude();
-                    let dir = diff / r;
-                    let sigma = setup.lj_sigma_x8[i];
-                    let eps = setup.lj_eps_x8[i];
-
-                    let f = force_lj_x8(dir, r, sigma, eps);
-
-                    let diff = lig_posits_by_diff_x8[i] - anchor_posit_x8;
-                    let torque = diff.cross(f);
-
-                    (f, torque)
-                })
-                .reduce(
-                    || (Vec3x8::new_zero(), Vec3x8::new_zero()),
-                    |a, b| (a.0 + b.0, a.1 + b.1),
+                let f_lj_per_tgt = force_lj_gpu_outer(
+                    &stream,
+                    &module,
+                    &lig_posits_f32,
+                    &posits_rec,
+                    &setup.lj_sigma,
+                    &setup.lj_eps,
                 );
 
-            // todo: Impl sum.
-            let mut f_ = Vec3::new_zero();
-            let mut t_ = Vec3::new_zero();
-            let f_arr = f.to_array();
-            let t_arr = t.to_array();
-            for i in 0..8 {
-                f_ += f_arr[i];
-                t_ += t_arr[i];
+                let mut f = Vec3::new_zero();
+                for f_ in &f_lj_per_tgt {
+                    f += *f_;
+                }
+                // let f = f_lj_per_tgt.iter().sum(); // todo: Impl sum.
+                // todo: Torque: Need in kernel.
+                let t = Vec3::new_zero(); // todo temp!
+                (f, t)
             }
+            ComputationDevice::Cpu => {
+                // todo: x8 isn't saving time here, and is causing invalid results. (not matching scalar)
+                // let (force, torque) = if !is_x86_feature_detected!("avx") {
+                if true {
+                    diffs
+                        .par_iter()
+                        .enumerate()
+                        .map(|(i, &diff)| {
+                            let r = diff.magnitude();
+                            let dir = diff / r;
+                            let (sigma, eps) = setup.lj_sigma_eps[i];
 
-            (f_, t_)
+                            let f = force_lj(dir, r, sigma, eps);
+
+                            // Torque = (r - R_cm) x F,
+                            // where R_cm is the center-of-mass position, and r is this atom's position.
+                            // But if you store each body_lig.posit already relative to the COM, then you can just use r x F
+
+                            let diff = lig_posits_by_diff[i] - anchor_posit;
+                            let torque = diff.cross(f);
+
+                            // todo: NaNs in some cases.
+                            // println!("F: {:?}", f);
+                            (f, torque)
+                        })
+                        .reduce(
+                            || (Vec3::new_zero(), Vec3::new_zero()),
+                            |a, b| (a.0 + b.0, a.1 + b.1),
+                        )
+                } else {
+                    let (diffs_x8, valid_lanes_last_diff) = pack_vec3(&diffs);
+                    let (lig_posits_by_diff_x8, _) = pack_vec3(&lig_posits_by_diff);
+
+                    let anchor_posit_x8 = Vec3x8::splat(anchor_posit);
+
+                    let (f, t) = diffs_x8
+                        .par_iter()
+                        .enumerate()
+                        .map(|(i, &diff)| {
+                            let r = diff.magnitude();
+                            let dir = diff / r;
+                            let sigma = setup.lj_sigma_x8[i];
+                            let eps = setup.lj_eps_x8[i];
+
+                            let f = force_lj_x8(dir, r, sigma, eps);
+
+                            let diff = lig_posits_by_diff_x8[i] - anchor_posit_x8;
+                            let torque = diff.cross(f);
+
+                            (f, torque)
+                        })
+                        .reduce(
+                            || (Vec3x8::new_zero(), Vec3x8::new_zero()),
+                            |a, b| (a.0 + b.0, a.1 + b.1),
+                        );
+
+                    // todo: Impl sum.
+                    let mut f_ = Vec3::new_zero();
+                    let mut t_ = Vec3::new_zero();
+                    let f_arr = f.to_array();
+                    let t_arr = t.to_array();
+                    for i in 0..8 {
+                        f_ += f_arr[i];
+                        t_ += t_arr[i];
+                    }
+
+                    (f_, t_)
+                }
+            }
         };
 
-        // let el = start.elapsed().as_micros();
-        // println!("\nElapsed: {el}");
+        let el = start.elapsed().as_micros();
+        println!("\nElapsed: {el}");
 
         // We use these to avoid performing computations on empty (0ed?) values on the final SIMD value.
         // This causes incorrect results.
@@ -593,12 +622,17 @@ pub fn build_vdw_dynamics(
             }
         } else {
             if t % 2 == 0 {
-                body_ligand_rigid.posit += force * dt * 0.00001;
+                let mut posit_change = force * dt;
+                // Clamp.
+                let mag = posit_change.magnitude();
+                let max_dist = 0.5;
+                if mag > max_dist {
+                    posit_change = posit_change.to_normalized() * max_dist;
+                }
+                body_ligand_rigid.posit += posit_change;
             } else {
-                let rotator = Quaternion::from_axis_angle(
-                    torque.to_normalized(),
-                    torque.magnitude() * dt * 0.00001,
-                );
+                let rotator =
+                    Quaternion::from_axis_angle(torque.to_normalized(), torque.magnitude() * dt);
                 body_ligand_rigid.orientation = rotator * body_ligand_rigid.orientation;
             }
         }
