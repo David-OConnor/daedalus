@@ -419,14 +419,23 @@ fn main() {
             let ctx = CudaContext::new(0).unwrap();
             let stream = ctx.default_stream();
 
-            let module = ctx.load_module(Ptx::from_file("./cuda.ptx")).unwrap();
+            let ptx_file = "./cuda.ptx";
+            let module = ctx.load_module(Ptx::from_file(ptx_file));
 
-            // todo: Store/cache these, likely.
-            // let func_coulomb = module.load_function("coulomb_kernel").unwrap();
-            // let func_lj_V = module.load_function("lj_V_kernel").unwrap();
-            // let func_lj_force = module.load_function("lj_force_kernel").unwrap();
+            match module {
+                Ok(m) => {
+                    // todo: Store/cache these, likely.
+                    // let func_coulomb = module.load_function("coulomb_kernel").unwrap();
+                    // let func_lj_V = module.load_function("lj_V_kernel").unwrap();
+                    // let func_lj_force = module.load_function("lj_force_kernel").unwrap();
 
-            ComputationDevice::Gpu((stream, module))
+                    ComputationDevice::Gpu((stream, m))
+                }
+                Err(e) => {
+                    eprintln!("Error loading CUDA module: {ptx_file}; not using CUDA. Error: {e}");
+                    ComputationDevice::Cpu
+                }
+            }
         } else {
             ComputationDevice::Cpu
         }
@@ -435,6 +444,9 @@ fn main() {
     };
 
     #[cfg(not(feature = "cuda"))]
+    let dev = ComputationDevice::Cpu;
+
+    // todo For now. GPU currently is going slower than CPU for VDW.
     let dev = ComputationDevice::Cpu;
 
     #[cfg(target_arch = "x86_64")]

@@ -140,13 +140,6 @@ impl DockingSetup {
         let mut lj_sigma_eps = Vec::with_capacity(pair_count);
         let mut hydrophobic = Vec::with_capacity(pair_count);
 
-        let mut sigmas = Vec::with_capacity(lj_sigma_eps.len());
-        let mut epss = Vec::with_capacity(lj_sigma_eps.len());
-        for (sigma, eps) in &lj_sigma_eps {
-            sigmas.push(*sigma);
-            epss.push(*eps);
-        }
-
         // Observation: This is similar to the array of `epss` and `sigmas` you use in CUDA, but
         // with explicit indices.
         for atom_rec in &rec_atoms_near_site {
@@ -156,6 +149,13 @@ impl DockingSetup {
 
                 hydrophobic.push(is_hydrophobic(atom_rec) && is_hydrophobic(atom_lig));
             }
+        }
+
+        let mut sigmas = Vec::with_capacity(lj_sigma_eps.len());
+        let mut epss = Vec::with_capacity(lj_sigma_eps.len());
+        for (sigma, eps) in &lj_sigma_eps {
+            sigmas.push(*sigma);
+            epss.push(*eps);
         }
 
         // todo: Handle remainder? seems not req

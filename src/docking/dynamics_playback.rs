@@ -24,7 +24,7 @@ use crate::{
         prep::{DockingSetup, Torsion},
     },
     element::Element,
-    forces::{force_lj, force_lj_gpu_outer, force_lj_x8},
+    forces::{force_lj, force_lj_gpu, force_lj_x8},
     molecule::{Atom, Ligand},
 };
 // This seems to be how we control rotation vice movement. A higher value means
@@ -477,10 +477,11 @@ pub fn build_vdw_dynamics(
         let start = Instant::now();
 
         let (force, torque) = match dev {
+            // todo: So... CUDA is taking about 1.5x the speed of CPU...
             ComputationDevice::Gpu((stream, module)) => {
                 let lig_posits_f32: Vec<Vec3> = lig_posits.iter().map(|r| (*r).into()).collect();
 
-                let f_lj_per_tgt = force_lj_gpu_outer(
+                let f_lj_per_tgt = force_lj_gpu(
                     &stream,
                     &module,
                     &lig_posits_f32,
@@ -569,8 +570,8 @@ pub fn build_vdw_dynamics(
             }
         };
 
-        let el = start.elapsed().as_micros();
-        println!("\nElapsed: {el}");
+        // let el = start.elapsed().as_micros();
+        // println!("\nElapsed: {el}");
 
         // We use these to avoid performing computations on empty (0ed?) values on the final SIMD value.
         // This causes incorrect results.

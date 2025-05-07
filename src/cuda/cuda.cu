@@ -105,7 +105,7 @@ void lj_force_kernel(
         for (size_t i_src = 0; i_src < N_srcs; i_src++) {
             float3 posit_src = posits_src[i_src];
 
-            uint8_t i_sig_eps = i_tgt * N_srcs + i_src;
+            size_t i_sig_eps = i_tgt * N_srcs + i_src;
             float sigma = sigmas[i_sig_eps];
             float eps = epss[i_sig_eps];
 

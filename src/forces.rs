@@ -95,7 +95,7 @@ pub fn force_coulomb_gpu_outer(
 }
 
 #[cfg(feature = "cuda")]
-pub fn force_lj_gpu_outer(
+pub fn force_lj_gpu(
     stream: &Arc<CudaStream>,
     module: &Arc<CudaModule>,
     posits_tgt: &[Vec3],
@@ -110,8 +110,8 @@ pub fn force_lj_gpu_outer(
     let n_sources = posits_src.len();
     let n_targets = posits_tgt.len();
 
-    let posit_charges_gpus = vec3s_to_dev(stream, &posits_src);
-    let posits_sample_gpu = vec3s_to_dev(stream, posits_tgt);
+    let posits_src_gpu = vec3s_to_dev(stream, &posits_src);
+    let posits_tgt_gpu = vec3s_to_dev(stream, posits_tgt);
 
     let mut result_buf = {
         let v = vec![Vec3::new_zero(); n_targets];
@@ -129,8 +129,8 @@ pub fn force_lj_gpu_outer(
     let mut launch_args = stream.launch_builder(&func_lj_force);
 
     launch_args.arg(&mut result_buf);
-    launch_args.arg(&posit_charges_gpus);
-    launch_args.arg(&posits_sample_gpu);
+    launch_args.arg(&posits_src_gpu);
+    launch_args.arg(&posits_tgt_gpu);
     launch_args.arg(&sigmas_gpu);
     launch_args.arg(&epss_gpu);
     launch_args.arg(&n_sources);
@@ -141,8 +141,8 @@ pub fn force_lj_gpu_outer(
     // todo: Consider dtoh; passing to an existing vec instead of re-allocating
     let result = vec3s_from_dev(stream, &mut result_buf);
 
-    let time_diff = Instant::now() - start;
-    println!("GPU LJ force data collected. Time: {:?}", time_diff);
+    // let time_diff = Instant::now() - start;
+    // println!("GPU LJ force data collected. Time: {:?}", time_diff);
 
     // This step is not required when using f64.
     result
