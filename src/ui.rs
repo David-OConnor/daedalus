@@ -570,7 +570,8 @@ fn docking(
         return;
     }
 
-    let mut updated_docking_site = false; // To avoid a double-borrow error.
+    let mut docking_posit_update = None;
+
     ui.horizontal(|ui| {
         let lig = &mut state.ligand.as_mut().unwrap();
 
@@ -747,18 +748,8 @@ fn docking(
                     {
                         // todo: Pick center-of-mass atom, or better yet, match it to the anchor atom.
                         let posit = mol.atoms[res.atoms[0]].posit;
-
-                        // todo: YOu need a helper function; this is repeated in too many places
-                        lig.docking_site.site_center = posit;
-                        lig.pose.anchor_posit = lig.docking_site.site_center;
-                        lig.atom_posits = lig.position_atoms(None);
-
-                        state.ui.docking_site_x = lig.docking_site.site_center.x.to_string();
-                        state.ui.docking_site_y = lig.docking_site.site_center.y.to_string();
-                        state.ui.docking_site_z = lig.docking_site.site_center.z.to_string();
-
+                        docking_posit_update = Some(posit);
                         docking_init_changed = true;
-                        updated_docking_site = true;
                     }
                 }
             }
@@ -778,16 +769,8 @@ fn docking(
                     .get_sel_atom(state.selection);
 
                 if let Some(atom) = atom_sel {
-                    lig.docking_site.site_center = atom.posit;
-                    lig.pose.anchor_posit = lig.docking_site.site_center;
-                    lig.atom_posits = lig.position_atoms(None);
-
-                    state.ui.docking_site_x = lig.docking_site.site_center.x.to_string();
-                    state.ui.docking_site_y = lig.docking_site.site_center.y.to_string();
-                    state.ui.docking_site_z = lig.docking_site.site_center.z.to_string();
-
+                    docking_posit_update = Some(atom.posit);
                     docking_init_changed = true;
-                    updated_docking_site = true;
                 }
             }
         }
@@ -804,7 +787,8 @@ fn docking(
         //     .on_hover_text("Autodock Vina available (Docking)");
     });
 
-    if updated_docking_site {
+    if let Some(posit) = docking_posit_update {
+        state.update_docking_site(posit);
         state.update_save_prefs();
     }
 

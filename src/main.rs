@@ -47,6 +47,7 @@ use egui_file_dialog::{FileDialog, FileDialogConfig};
 use file_io::{pdb::load_pdb, sdf::load_sdf};
 use graphics::{Camera, InputsCommanded};
 use lin_alg::f32::{Quaternion, Vec3, f32x8};
+use lin_alg::f64::Vec3 as Vec3F64;
 use mol_drawing::MoleculeView;
 use molecule::Molecule;
 use pdbtbx::{self, PDB};
@@ -100,35 +101,35 @@ impl Default for FileDialogs {
         let cfg_protein = FileDialogConfig {
             ..Default::default()
         }
-        .add_file_filter(
-            "PDB/CIF",
-            Arc::new(|p| {
-                let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
-                ext == "pdb" || ext == "cif"
-            }),
-        );
+            .add_file_filter(
+                "PDB/CIF",
+                Arc::new(|p| {
+                    let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
+                    ext == "pdb" || ext == "cif"
+                }),
+            );
 
         let cfg_small_mol = FileDialogConfig {
             ..Default::default()
         }
-        .add_file_filter(
-            "SDF/MOL2/PDBQT",
-            Arc::new(|p| {
-                let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
-                ext == "sdf" || ext == "mol2" || ext == "pdbqt"
-            }),
-        );
+            .add_file_filter(
+                "SDF/MOL2/PDBQT",
+                Arc::new(|p| {
+                    let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
+                    ext == "sdf" || ext == "mol2" || ext == "pdbqt"
+                }),
+            );
 
         let cfg_vina = FileDialogConfig {
             ..Default::default()
         }
-        .add_file_filter(
-            "Executables",
-            Arc::new(|p| {
-                let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
-                ext == "" || ext == "exe"
-            }),
-        );
+            .add_file_filter(
+                "Executables",
+                Arc::new(|p| {
+                    let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
+                    ext == "" || ext == "exe"
+                }),
+            );
 
         let cfg_save_pdbqt = FileDialogConfig {
             ..Default::default()
@@ -362,16 +363,9 @@ impl State {
             Ok(mol) => {
                 if is_ligand {
                     let mut lig = Ligand::new(mol);
-
-                    self.ui.docking_site_x = lig.docking_site.site_center.x.to_string();
-                    self.ui.docking_site_y = lig.docking_site.site_center.y.to_string();
-                    self.ui.docking_site_z = lig.docking_site.site_center.z.to_string();
-                    self.ui.docking_site_size = lig.docking_site.site_radius.to_string();
-
-                    lig.pose.anchor_posit = lig.docking_site.site_center;
-                    lig.atom_posits = lig.position_atoms(None);
-
+                    // let center = lig.docking_site.site_center;
                     self.ligand = Some(lig);
+                    self.update_docking_site(Vec3F64::new_zero());
                 } else {
                     self.molecule = Some(mol);
                 }
@@ -404,99 +398,111 @@ impl State {
             )
         }))
     }
+
+    pub fn update_docking_site(&mut self, posit: Vec3F64) {
+        if let Some(lig) = &mut self.ligand {
+            lig.docking_site.site_center = posit;
+            lig.pose.anchor_posit = lig.docking_site.site_center;
+            lig.atom_posits = lig.position_atoms(None);
+
+            self.ui.docking_site_x = posit.x.to_string();
+            self.ui.docking_site_y = posit.y.to_string();
+            self.ui.docking_site_z = posit.z.to_string();
+        }
+    }
 }
 
 fn main() {
-    #[cfg(feature = "cuda")]
-    let dev = {
-        let runtime_v = cudarc::runtime::result::version::get_runtime_version();
-        let driver_v = cudarc::runtime::result::version::get_driver_version();
-        println!("CUDA runtime: {runtime_v:?}");
-        println!("CUDA driver: {driver_v:?}");
+        #[cfg(feature = "cuda")]
+        let dev = {
+            let runtime_v = cudarc::runtime::result::version::get_runtime_version();
+            let driver_v = cudarc::runtime::result::version::get_driver_version();
+            println!("CUDA runtime: {runtime_v:?}");
+            println!("CUDA driver: {driver_v:?}");
 
-        if runtime_v.is_ok() && driver_v.is_ok() {
-            // This is compiled in `build_`.
-            let ctx = CudaContext::new(0).unwrap();
-            let stream = ctx.default_stream();
+            if runtime_v.is_ok() && driver_v.is_ok() {
+                // This is compiled in `build_`.
+                let ctx = CudaContext::new(0).unwrap();
+                let stream = ctx.default_stream();
 
-            let ptx_file = "./cuda.ptx";
-            let module = ctx.load_module(Ptx::from_file(ptx_file));
+                let ptx_file = "./cuda.ptx";
+                let module = ctx.load_module(Ptx::from_file(ptx_file));
 
-            match module {
-                Ok(m) => {
-                    // todo: Store/cache these, likely.
-                    // let func_coulomb = module.load_function("coulomb_kernel").unwrap();
-                    // let func_lj_V = module.load_function("lj_V_kernel").unwrap();
-                    // let func_lj_force = module.load_function("lj_force_kernel").unwrap();
+                match module {
+                    Ok(m) => {
+                        // todo: Store/cache these, likely.
+                        // let func_coulomb = module.load_function("coulomb_kernel").unwrap();
+                        // let func_lj_V = module.load_function("lj_V_kernel").unwrap();
+                        // let func_lj_force = module.load_function("lj_force_kernel").unwrap();
 
-                    ComputationDevice::Gpu((stream, m))
+                        ComputationDevice::Gpu((stream, m))
+                    }
+                    Err(e) => {
+                        eprintln!("Error loading CUDA module: {ptx_file}; not using CUDA. Error: {e}");
+                        ComputationDevice::Cpu
+                    }
                 }
-                Err(e) => {
-                    eprintln!("Error loading CUDA module: {ptx_file}; not using CUDA. Error: {e}");
-                    ComputationDevice::Cpu
-                }
+            } else {
+                ComputationDevice::Cpu
             }
-        } else {
-            ComputationDevice::Cpu
+
+            // println!("Using the GPU for computations.");
+        };
+
+        #[cfg(not(feature = "cuda"))]
+        let dev = ComputationDevice::Cpu;
+
+        // todo For now. GPU currently is going slower than CPU for VDW.
+        let dev = ComputationDevice::Cpu;
+
+        #[cfg(target_arch = "x86_64")]
+        {
+            if is_x86_feature_detected!("avx512f") {
+                println!("AVX-512 is available");
+            } else if is_x86_feature_detected!("avx") {
+                println!("AVX (256-bit) is available");
+            } else {
+                println!("AVX is not available.");
+            }
         }
 
-        // println!("Using the GPU for computations.");
-    };
+        // Sets up write-once static muts.
+        init_local_bond_vecs();
 
-    #[cfg(not(feature = "cuda"))]
-    let dev = ComputationDevice::Cpu;
+        let mut state = State::default();
 
-    // todo For now. GPU currently is going slower than CPU for VDW.
-    let dev = ComputationDevice::Cpu;
+        state.dev = dev;
+        state.bh_config.θ = THETA_BH;
 
-    #[cfg(target_arch = "x86_64")]
-    {
-        if is_x86_feature_detected!("avx512f") {
-            println!("AVX-512 is available");
-        } else if is_x86_feature_detected!("avx") {
-            println!("AVX (256-bit) is available");
-        } else {
-            println!("AVX is not available.");
+        // todo: Consider a custom default impl. This is a substitute.
+        state.ui.view_depth = (VIEW_DEPTH_NEAR_MIN, VIEW_DEPTH_FAR_MAX);
+        state.ui.new_mol_loaded = true;
+        state.ui.nearby_dist_thresh = 15;
+
+        state.load_prefs();
+
+        if let Some(lig) = &mut state.ligand {
+            println!("Center 1: {:?}", lig.docking_site.site_center);
         }
+
+        let last_opened = state.to_save.last_opened.clone();
+        if let Some(path) = &last_opened {
+            state.open_molecule(path, false);
+        }
+
+        if let Some(lig) = &mut state.ligand {
+            println!("Center 2: {:?}", lig.docking_site.site_center);
+        }
+        let last_ligand_opened = state.to_save.last_ligand_opened.clone();
+        if let Some(path) = &last_ligand_opened {
+            state.open_molecule(path, true);
+        }
+
+        // Update ligand positions, e.g. from the docking position site center loaded from prefs.
+        if let Some(lig) = &mut state.ligand {
+            lig.pose.anchor_posit = lig.docking_site.site_center;
+            lig.atom_posits = lig.position_atoms(None);
+        }
+
+        render(state);
     }
-
-    // Sets up write-once static muts.
-    init_local_bond_vecs();
-
-    let mut state = State::default();
-
-    state.dev = dev;
-    state.bh_config.θ = THETA_BH;
-
-    // todo: Consider a custom default impl. This is a substitute.
-    state.ui.view_depth = (VIEW_DEPTH_NEAR_MIN, VIEW_DEPTH_FAR_MAX);
-    state.ui.new_mol_loaded = true;
-    state.ui.nearby_dist_thresh = 15;
-
-    state.load_prefs();
-
-    if let Some(lig) = &mut state.ligand {
-        println!("Center 1: {:?}", lig.docking_site.site_center);
-    }
-
-    let last_opened = state.to_save.last_opened.clone();
-    if let Some(path) = &last_opened {
-        state.open_molecule(path, false);
-    }
-
-    if let Some(lig) = &mut state.ligand {
-        println!("Center 2: {:?}", lig.docking_site.site_center);
-    }
-    let last_ligand_opened = state.to_save.last_ligand_opened.clone();
-    if let Some(path) = &last_ligand_opened {
-        state.open_molecule(path, true);
-    }
-
-    // Update ligand positions, e.g. from the docking position site center loaded from prefs.
-    if let Some(lig) = &mut state.ligand {
-        lig.pose.anchor_posit = lig.docking_site.site_center;
-        lig.atom_posits = lig.position_atoms(None);
-    }
-
-    render(state);
-}

@@ -7,7 +7,7 @@ use graphics::{
     ControlScheme,
     app_utils::{load, save},
 };
-
+use lin_alg::f32::Vec3;
 use crate::{
     CamSnapshot, Selection, State, ViewSelLevel, Visibility,
     docking::DockingSite,
@@ -94,6 +94,8 @@ impl State {
     pub fn update_from_prefs(&mut self) {
         self.reset_selections();
 
+        let mut center = lin_alg::f64::Vec3::new_zero();
+
         if let Some(mol) = &mut self.molecule {
             if self.to_save.per_mol.contains_key(&mol.ident) {
                 let data = &self.to_save.per_mol[&mol.ident];
@@ -113,22 +115,13 @@ impl State {
                     mol.metadata = Some(md.clone())
                 }
 
-                if let Some(lig) = &mut self.ligand {
-                    self.ui.docking_site_x = data.docking_site.site_center.x.to_string();
-                    self.ui.docking_site_y = data.docking_site.site_center.y.to_string();
-                    self.ui.docking_site_z = data.docking_site.site_center.z.to_string();
-                    self.ui.docking_site_size = data.docking_site.site_radius.to_string();
-
-                    lig.docking_site = data.docking_site.clone();
-                    lig.pose.anchor_posit = data.docking_site.site_center;
-                    lig.atom_posits = lig.position_atoms(None);
-                }
-
                 for (i, chain) in mol.chains.iter_mut().enumerate() {
                     if i < data.chain_vis.len() {
                         chain.visible = data.chain_vis[i];
                     }
                 }
+
+                center = data.docking_site.site_center;
             }
 
             // If loaded from file or not.
@@ -139,7 +132,11 @@ impl State {
                     Err(_) => eprintln!("Error loading metadata for: {}", mol.ident),
                 }
             }
+
+
         }
+
+        self.update_docking_site(center);
     }
 
     pub fn load_prefs(&mut self) {
