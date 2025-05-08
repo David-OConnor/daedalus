@@ -49,6 +49,9 @@ pub struct Molecule {
     pub size: f32,
     pub pubchem_cid: Option<u32>,
     pub drugbank_id: Option<String>,
+    /// We currently use this for aligning ligands to CIF etc data, where they may already be included
+    /// in a protein/ligand complex as hetero atoms.
+    pub het_residues: Vec<Residue>,
 }
 
 impl Molecule {
@@ -95,6 +98,14 @@ impl Molecule {
         result.bonds = create_bonds(&result.atoms);
         result.bonds_hydrogen = create_hydrogen_bonds(&result.atoms, &result.bonds);
         result.adjacency_list = result.build_adjacency_list();
+
+        for res in &result.residues {
+            if let ResidueType::Other(_) = &res.res_type {
+                if res.atoms.len() >= 10 {
+                    result.het_residues.push(res.clone());
+                }
+            }
+        }
 
         // todo: Don't like this clone.
         let atoms_clone = result.atoms.clone();

@@ -94,9 +94,7 @@ pub struct DockingSetup {
     // Note: DRY with state.volatile
     pub lj_lut: HashMap<(Element, Element), (f32, f32)>,
     /// Sigmas and epsilons are Lennard Jones parameters. Flat here, with outer loop receptor.
-    /// Flattened.
-    pub lj_sigma_eps: Vec<(f32, f32)>,
-    /// Unpacked versions of `lj_sigma-eps`; for use with CUDA.
+    /// Flattened. Separate single-value array facilitate use in CUDA and SIMD, vice a tuple.
     pub lj_sigma: Vec<f32>,
     pub lj_eps: Vec<f32>,
     pub lj_sigma_x8: Vec<f32x8>,
@@ -137,36 +135,25 @@ impl DockingSetup {
         let pair_count = rec_atoms_near_site.len() * ligand.molecule.atoms.len();
         // Atom rec el, lig el, atom rec posit, lig i. Assumes the only thing that changes with pose
         // is ligand posit.
-        let mut lj_sigma_eps = Vec::with_capacity(pair_count);
         let mut hydrophobic = Vec::with_capacity(pair_count);
+        let mut sigmas = Vec::with_capacity(pair_count);
+        let mut epss = Vec::with_capacity(pair_count);
 
         // Observation: This is similar to the array of `epss` and `sigmas` you use in CUDA, but
         // with explicit indices.
         for atom_rec in &rec_atoms_near_site {
             for atom_lig in &ligand.molecule.atoms {
                 let (sigma, eps) = lj_lut.get(&(atom_rec.element, atom_lig.element)).unwrap();
-                lj_sigma_eps.push((*sigma, *eps));
+                sigmas.push(*sigma);
+                epss.push(*eps);
 
                 hydrophobic.push(is_hydrophobic(atom_rec) && is_hydrophobic(atom_lig));
             }
         }
 
-        let mut sigmas = Vec::with_capacity(lj_sigma_eps.len());
-        let mut epss = Vec::with_capacity(lj_sigma_eps.len());
-        for (sigma, eps) in &lj_sigma_eps {
-            sigmas.push(*sigma);
-            epss.push(*eps);
-        }
-
         // todo: Handle remainder? seems not req
-        let (lj_sigma_x8, _) = pack_float(
-            &lj_sigma_eps
-                .iter()
-                .map(|(sigma, _)| *sigma)
-                .collect::<Vec<_>>(),
-        );
-        let (lj_eps_x8, _) =
-            pack_float(&lj_sigma_eps.iter().map(|(_, eps)| *eps).collect::<Vec<_>>());
+        let (lj_sigma_x8, _) = pack_float(&sigmas);
+        let (lj_eps_x8, _) = pack_float(&epss);
 
         // let (rec_atoms_near_site_x8, lanes_rec) = pack_slice_noncopy(&rec_atoms_near_site);
 
@@ -205,7 +192,6 @@ impl DockingSetup {
             // rec_indices_x8,
             charges_rec: partial_charges_rec,
             rec_bonds_near_site,
-            lj_sigma_eps,
             lj_sigma: sigmas,
             lj_eps: epss,
             lj_sigma_x8,

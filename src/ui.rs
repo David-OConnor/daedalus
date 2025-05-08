@@ -587,8 +587,11 @@ fn docking(
             // todo: Ideally move the camera to the docking site prior to docking. You could do this
             // todo by deferring the docking below to the next frame.
 
-            let (pose, binding_energy) =
-                find_optimal_pose(&state.dev, state.volatile.docking_setup.as_ref().unwrap(), lig);
+            let (pose, binding_energy) = find_optimal_pose(
+                &state.dev,
+                state.volatile.docking_setup.as_ref().unwrap(),
+                lig,
+            );
 
             lig.pose = pose;
             lig.atom_posits = lig.position_atoms(None);
@@ -724,8 +727,45 @@ fn docking(
             }
         }
 
+        if let Some(mol) = &state.molecule {
+            for res in &mol.het_residues {
+                // Note: This is crude.
+                // todo: You have this very wide thresh because you are missing H on hetero; add those!
+                // todo: Match the orientation.
+                // if (res.atoms.len() - lig.molecule.atoms.len()) < 5 {
+                if (res.atoms.len() as i16 - lig.molecule.atoms.len() as i16).abs() < 22 {
+                    // todo: Don't list multiple; pick teh closest, at least in len.
+                    let name = match &res.res_type {
+                        ResidueType::Other(name) => name,
+                        _ => "hetero residue",
+                    };
+                    ui.add_space(COL_SPACING / 2.);
+
+                    if ui
+                        .button(RichText::new(format!("Center on {name}")).color(COLOR_HIGHLIGHT))
+                        .clicked()
+                    {
+                        // todo: Pick center-of-mass atom, or better yet, match it to the anchor atom.
+                        let posit = mol.atoms[res.atoms[0]].posit;
+
+                        // todo: YOu need a helper function; this is repeated in too many places
+                        lig.docking_site.site_center = posit;
+                        lig.pose.anchor_posit = lig.docking_site.site_center;
+                        lig.atom_posits = lig.position_atoms(None);
+
+                        state.ui.docking_site_x = lig.docking_site.site_center.x.to_string();
+                        state.ui.docking_site_y = lig.docking_site.site_center.y.to_string();
+                        state.ui.docking_site_z = lig.docking_site.site_center.z.to_string();
+
+                        docking_init_changed = true;
+                        updated_docking_site = true;
+                    }
+                }
+            }
+        }
+
         if state.selection != Selection::None {
-            ui.add_space(COL_SPACING);
+            ui.add_space(COL_SPACING / 2.);
 
             if ui
                 .button(RichText::new("Center on sel").color(COLOR_HIGHLIGHT))
@@ -776,6 +816,7 @@ fn docking(
                     lig,
                     &state.volatile.docking_setup.as_ref().unwrap(),
                     false,
+                    1_500,
                 );
 
                 state.ui.current_snapshot = 0;

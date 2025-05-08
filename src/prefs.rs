@@ -40,6 +40,7 @@ pub struct PerMolToSave {
     visibility: Visibility,
     metadata: Option<PdbMetaData>,
     docking_site: DockingSite,
+    show_docking_tools: bool,
 }
 
 impl PerMolToSave {
@@ -70,6 +71,7 @@ impl PerMolToSave {
             visibility: state.ui.visibility.clone(),
             metadata,
             docking_site,
+            show_docking_tools: state.ui.show_docking_tools,
         }
     }
 }
@@ -105,6 +107,7 @@ impl State {
                 self.ui.nearby_dist_thresh = data.nearby_dist_thresh;
                 self.ui.chain_to_pick_res = data.chain_to_pick_res;
                 self.ui.visibility = data.visibility.clone();
+                self.ui.show_docking_tools = data.show_docking_tools;
 
                 if let Some(md) = &data.metadata {
                     mol.metadata = Some(md.clone())

@@ -401,11 +401,10 @@ pub fn build_vdw_dynamics(
     setup: &DockingSetup,
     // Integrate velocity, position.
     intertial: bool,
+    n_steps: usize,
 ) -> Vec<Snapshot> {
     println!("Building VDW dyanmics...");
     let start = Instant::now();
-
-    let n_steps = 1_500;
 
     // todo: You should possibly add your pre-computed LJ pairs, instead of looking up each time.
     // todo: See this code from docking.
@@ -509,7 +508,9 @@ pub fn build_vdw_dynamics(
                         .map(|(i, &diff)| {
                             let r = diff.magnitude();
                             let dir = diff / r;
-                            let (sigma, eps) = setup.lj_sigma_eps[i];
+
+                            let sigma = setup.lj_sigma[i];
+                            let eps = setup.lj_eps[i];
 
                             let f = force_lj(dir, r, sigma, eps);
 

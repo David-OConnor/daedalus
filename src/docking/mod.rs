@@ -249,7 +249,8 @@ pub fn calc_binding_energy(
             .par_iter()
             .enumerate()
             .map(|(i, r)| {
-                let (sigma, eps) = setup.lj_sigma_eps[i];
+                let sigma = setup.lj_sigma[i];
+                let eps = setup.lj_eps[i];
                 V_lj(*r, sigma, eps)
             })
             .sum()
@@ -704,7 +705,11 @@ fn vary_pose(pose: &Pose) -> Vec<Pose> {
 ///
 /// Note: We use the term `receptor` here vice `target`, as `target` is also used in terms of
 /// calculating forces between pairs. (These targets may or may not align!)
-pub fn find_optimal_pose(dev: &ComputationDevice, setup: &DockingSetup, ligand: &Ligand) -> (Pose, BindingEnergy) {
+pub fn find_optimal_pose(
+    dev: &ComputationDevice,
+    setup: &DockingSetup,
+    ligand: &Ligand,
+) -> (Pose, BindingEnergy) {
     // todo: Consider another fn for this part of the setup, so you can re-use it more easily.
 
     // todo: Evaluate if you can cache EEM charges. Look into how position-dependent they are between ligand flexible
@@ -741,15 +746,17 @@ pub fn find_optimal_pose(dev: &ComputationDevice, setup: &DockingSetup, ligand: 
     let best_pose = &poses[pose_energies[0].0];
     let best_energy = pose_energies[0].1.clone();
 
+    let num_vdw_steps = 30;
+
     // Conduct a molecular dynamics sim on the best poses, refining them further.
     // todo: This appears to not be doing much.
     for (pose_i, energy) in &pose_energies[0..top_pose_count] {
-        continue; // todo: Put back when ready.
+        // continue; // todo: Put back when ready.
 
         let mut lig_this = ligand.clone(); //  todo: DOn't like this clone.
         lig_this.pose = poses[*pose_i].clone();
 
-        let snapshots = build_vdw_dynamics(dev, &lig_this, setup, false);
+        let snapshots = build_vdw_dynamics(dev, &lig_this, setup, false, num_vdw_steps);
 
         let final_snap = &snapshots[snapshots.len() - 1];
         println!(
