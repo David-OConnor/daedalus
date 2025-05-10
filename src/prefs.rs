@@ -8,6 +8,7 @@ use graphics::{
     app_utils::{load, save},
 };
 use lin_alg::f32::Vec3;
+
 use crate::{
     CamSnapshot, Selection, State, ViewSelLevel, Visibility,
     docking::DockingSite,
@@ -132,8 +133,6 @@ impl State {
                     Err(_) => eprintln!("Error loading metadata for: {}", mol.ident),
                 }
             }
-
-
         }
 
         self.update_docking_site(center);

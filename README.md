@@ -1,12 +1,15 @@
-# Bio Chem Viewer
+# Daedelus molecular viewer
 
 For viewing and performing minor edits on moleculars; espsecially proteins and nucleic acids.
 
-Conceptually similar to [PyMol](https://www.pymol.org/), Discovery Studio, Chimera etc.
+Conceptually similar to [PyMol](https://www.pymol.org/), [Chimera](https://www.cgl.ucsf.edu/chimera/), and Discovery Studio.
+Designed to be as easy to use as possible.
 
 ## Functionality
 
-- Viewing proteins and other molecules' 3D structure.
+- View the 3D structure of proteins and small molecules
+- Visualize ligand docking
+- WIP: This software is a platform for molecular docking, and ab-initio simulations.
 
 
 ## Goals
@@ -17,7 +20,8 @@ Conceptually similar to [PyMol](https://www.pymol.org/), Discovery Studio, Chime
 
 
 ## File formats
-This application can load data from mmCIF and PDB files.
+- Proteins: mmCIF and PDB
+- Small molecules: SDF, Mol2, and PDBQT
 
 
 ## The camera
@@ -61,7 +65,6 @@ If *orbit sel* is set in the GUI, the orbit center will be the selected atom or 
 
 ### Erratta
 - Cartoon view (Showing helices and sheets) is currently unavailable.
-- The only van der Waals surface view currently available is *dots*. No mesh yet.
-- The GUI buttons for movement and rotation stop working after 1 second of movement.
+- The only van der Waals surface view currently available is *dots*, and it's slow to build. Mesh WIP
 
 

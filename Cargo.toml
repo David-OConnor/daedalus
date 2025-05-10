@@ -1,5 +1,5 @@
 [package]
-name = "biochem_view"
+name = "daedelus"
 version = "0.1.0"
 edition = "2024"
 
