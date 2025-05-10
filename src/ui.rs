@@ -18,7 +18,7 @@ use crate::{
     file_io::pdb::save_pdb,
     mol_drawing::{COLOR_DOCKING_SITE_MESH, MoleculeView, draw_ligand, draw_molecule},
     molecule::{Ligand, Molecule, ResidueType},
-    rcsb_api::{open_drugbank, open_pdb, open_pubchem},
+    rcsb_api::{get_newly_released, open_drugbank, open_pdb, open_pubchem},
     render::{
         CAM_INIT_OFFSET, MESH_DOCKING_SURFACE, RENDER_DIST_FAR, RENDER_DIST_NEAR,
         set_docking_light, set_flashlight,
@@ -330,6 +330,7 @@ fn cam_controls(
 
         // todo: Grey-out, instead of setting render dist. (e.g. fog)
         let depth_prev = state.ui.view_depth;
+        ui.spacing_mut().slider_width = 60.;
 
         ui.label("Depth. Near(x10):");
         ui.add(Slider::new(
@@ -1284,6 +1285,34 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                         }
                         Err(_e) => {
                             eprintln!("Error loading SDF file");
+                        }
+                    }
+                }
+            }
+
+            if state.molecule.is_none() && state.ligand.is_none() {
+                ui.add_space(COL_SPACING / 2.);
+                if ui
+                    .button(RichText::new("I'm feeling lucky 🍀").color(color_open_tools))
+                    .clicked()
+                {
+                    if let Ok(ident) = get_newly_released() {
+                        println!("Random ident: {:?}", ident);
+                        match load_cif_rcsb(&ident) {
+                            Ok(pdb) => {
+                                state.pdb = Some(pdb);
+                                state.molecule =
+                                    Some(Molecule::from_pdb(state.pdb.as_ref().unwrap()));
+                                state.update_from_prefs();
+
+                                redraw = true;
+                                reset_cam = true;
+                                set_flashlight(scene);
+                                engine_updates.lighting = true;
+                            }
+                            Err(_e) => {
+                                eprintln!("Error loading CIF file");
+                            }
                         }
                     }
                 }

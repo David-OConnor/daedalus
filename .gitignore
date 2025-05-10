@@ -16,10 +16,8 @@ Cargo.lock
 *.bcif
 *.gz
 *.sdf
+*.mol2
 *.pdbqt
 
 # Our prefs format.
 *.bcv
-
-# temp?
-sphere.obj

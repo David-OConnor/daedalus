@@ -11,7 +11,6 @@ use lin_alg::{
 
 use crate::{
     Selection, State, ViewSelLevel,
-    asa::{get_mesh_points, mesh_from_sas_points},
     element::Element,
     molecule::{Atom, AtomRole, BondCount, BondType, Chain, Residue, ResidueType, aa_color},
     render::{
@@ -20,6 +19,7 @@ use crate::{
         MESH_SPHERE_LOWRES, MESH_SPHERE_MEDRES, RENDER_DIST_FAR, set_docking_light,
         set_static_light,
     },
+    surface::{get_mesh_points, mesh_from_sas_points},
     util::orbit_center,
 };
 

@@ -31,7 +31,6 @@ na_seq = "^0.2.7"
 bincode = "^2.0.1"
 
 rayon = "^1.10.0"  # Parallel execution on CPU using thread pools.
-
 # Keep this cuda version in sync with what you have installed on the system.
 cudarc = { version = "^0.16.4", optional=true, features=["cuda-12060"] }
 
@@ -49,7 +48,7 @@ url = "^2.5.4"
 webbrowser = "^1.0.1"
 
 # todo: Perhaps temporary; for quaternion orientation generating for rigid docking
-rand = "^0.9.0"
+rand = "^0.9.1"
 regex = "^1.11.1"
 
 # nalgebra: For solving linear systems of equations when generating partial changes.

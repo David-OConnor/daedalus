@@ -1,5 +1,4 @@
 //! For loading data from the RSCB website's API.
-//! C+P from PlasCAD
 
 //! For opening the browser to NCBI BLAST, PDB etc.
 //!
@@ -9,7 +8,8 @@
 use std::{io, time::Duration};
 
 use bincode::{Decode, Encode};
-use serde::{Deserialize, Serialize};
+use na_seq::{AminoAcid, seq_aa_to_str};
+use serde::{Deserialize, Serialize, Serializer};
 use serde_json::{self};
 use ureq::{self, Agent};
 
@@ -28,30 +28,199 @@ const MAX_PDB_RESULTS: usize = 8;
 
 const HTTP_TIMEOUT: u64 = 4; // In seconds
 
-#[derive(Default, Serialize)]
-struct PdbSearchParams {
-    value: String,
-    sequence_type: String,
-    evalue_cutoff: u8,
-    identity_cutoff: f32,
+// Workraound for not being able to construct ureq's errors.
+pub struct ReqError {}
+
+impl From<ureq::Error> for ReqError {
+    fn from(_err: ureq::Error) -> Self {
+        Self {}
+    }
+}
+
+impl From<io::Error> for ReqError {
+    fn from(_err: io::Error) -> Self {
+        Self {}
+    }
 }
 
 #[derive(Default, Serialize)]
-struct PdbSearchQuery {
+struct PdbSearchParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    value: Option<String>,
+    /// "protein". Not sure what other values are authorized.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sequence_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    evalue_cutoff: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    identity_cutoff: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    operator: Option<Operator>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ///https://search.rcsb.org/structure-search-attributes.html
+    attribute: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pattern: Option<String>,
+}
+/// "greater", "exact_match", "in", "range", etc. (todo: enum)
+///
+
+/// https://search.rcsb.org/#return-type
+#[derive(Clone, Copy, Default)]
+pub enum Operator {
+    #[default]
+    ExactMatch,
+    Exists,
+    Greater,
+    Less,
+    GreaterOrEqual,
+    LessOrEqual,
+    Equals,
+    ContainsPhrase,
+    ContainsWords,
+    Range,
+    In,
+}
+
+impl Serialize for Operator {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let str = match self {
+            Self::ExactMatch => "exact_match",
+            Self::Exists => "exists",
+            Self::Greater => "greater",
+            Self::Less => "less",
+            Self::GreaterOrEqual => "greater_or_equal",
+            Self::LessOrEqual => "less_or_equal",
+            Self::Equals => "equals",
+            Self::ContainsPhrase => "contains_phrase",
+            Self::ContainsWords => "contains_words",
+            Self::Range => "range",
+            Self::In => "in",
+        };
+
+        serializer.serialize_str(str)
+    }
+}
+
+/// https://search.rcsb.org/#return-type
+#[derive(Clone, Copy, Default)]
+pub enum ReturnType {
+    #[default]
+    Entry,
+    Assembly,
+    PolymerEntity,
+    NonPolymerEntity,
+    PolymerInstance,
+    MolDefinition,
+}
+
+impl Serialize for ReturnType {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let str = match self {
+            Self::Entry => "entry",
+            Self::Assembly => "assembly",
+            Self::PolymerEntity => "polymer_entity",
+            Self::NonPolymerEntity => "non_polymer-entity",
+            Self::PolymerInstance => "polymer_instance",
+            Self::MolDefinition => "mol_definition",
+        };
+
+        serializer.serialize_str(str)
+    }
+}
+
+#[derive(Clone, Copy, Default)]
+pub enum RcsbType {
+    #[default]
+    Terminal,
+    Group,
+}
+
+impl Serialize for RcsbType {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let str = match self {
+            Self::Terminal => "terminal",
+            Self::Group => "group",
+        };
+
+        serializer.serialize_str(str)
+    }
+}
+
+#[derive(Clone, Copy, Default)]
+pub enum Service {
+    #[default]
+    Text,
+    FullText,
+    TextChem,
+    Structure,
+    StrucMotif,
+    Sequence,
+    SeqMotif,
+    Chemical,
+}
+
+impl Serialize for Service {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let str = match self {
+            Self::Text => "text",
+            Self::FullText => "full_text",
+            Self::TextChem => "text_chem",
+            Self::Structure => "structure",
+            Self::StrucMotif => "strucmotif",
+            Self::Sequence => "sequence",
+            Self::SeqMotif => "seqmotif",
+            Self::Chemical => "chemical",
+        };
+
+        serializer.serialize_str(str)
+    }
+}
+
+#[derive(Default, Serialize)]
+pub struct PdbSearchQuery {
+    /// "terminal", or "group"
     #[serde(rename = "type")]
-    type_: String,
-    service: String,
+    type_: RcsbType,
+    service: Service,
     parameters: PdbSearchParams,
 }
 
 #[derive(Default, Serialize)]
-struct SearchRequestOptions {
-    scoring_strategy: String,
+pub struct Sort {
+    sort_by: String,
+    direction: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    random_seed: Option<u32>,
 }
 
 #[derive(Default, Serialize)]
-struct PdbPayloadSearch {
-    return_type: String,
+pub struct SearchRequestOptions {
+    /// "sequence", "seqmotif", "structmotif", "structure", "chemical", or "text".
+    /// Only for sequences?
+    // todo: Enum
+    #[serde(skip_serializing_if = "Option::is_none")]
+    scoring_strategy: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sort: Option<Vec<Sort>>,
+    // todo: Paginate
+}
+
+#[derive(Default, Serialize)]
+pub struct PdbPayloadSearch {
+    return_type: ReturnType,
     query: PdbSearchQuery,
     #[serde(skip_serializing_if = "Option::is_none")]
     request_options: Option<SearchRequestOptions>,
@@ -72,7 +241,7 @@ pub struct PdbMetaData {
 }
 
 #[derive(Default, Debug, Deserialize)]
-struct PdbSearchResults {
+pub struct PdbSearchResults {
     query_id: String,
     result_type: String,
     total_count: u32,
@@ -80,23 +249,23 @@ struct PdbSearchResults {
 }
 
 #[derive(Default, Debug, Deserialize)]
-struct PdbStruct {
+pub struct PdbStruct {
     title: String,
 }
 
 #[derive(Default, Debug, Deserialize)]
-struct PdbDataResults {
+pub struct PdbDataResults {
     #[serde(rename = "struct")]
     struct_: PdbStruct,
 }
 
 #[derive(Default, Debug, Deserialize)]
-struct PrimaryCitation {
+pub struct PrimaryCitation {
     title: String,
 }
 
 #[derive(Default, Debug, Deserialize)]
-struct PdbMetaDataResults {
+pub struct PdbMetaDataResults {
     rcsb_primary_citation: PrimaryCitation,
 }
 
@@ -107,42 +276,67 @@ pub struct PdbData {
     pub title: String,
 }
 
-// Workraound for not being able to construct ureq's errors in a way I've found.
-pub struct ReqError {}
+/// https://search.rcsb.org/#search-example-12
+pub fn get_newly_released() -> Result<String, ReqError> {
+    let payload_search = PdbPayloadSearch {
+        return_type: ReturnType::Entry,
+        query: PdbSearchQuery {
+            type_: RcsbType::Terminal,
+            service: Service::Text,
+            parameters: PdbSearchParams {
+                attribute: Some("rcsb_accession_info.initial_release_date".to_owned()),
+                operator: Some(Operator::Greater),
+                value: Some("now-1w".to_owned()),
+                ..Default::default()
+            },
+        },
+        ..Default::default()
+    };
 
-impl From<ureq::Error> for ReqError {
-    fn from(_err: ureq::Error) -> Self {
-        Self {}
-    }
-}
+    let payload_json = serde_json::to_string(&payload_search).unwrap();
 
-impl From<io::Error> for ReqError {
-    fn from(_err: io::Error) -> Self {
-        Self {}
+    let config = Agent::config_builder()
+        .timeout_global(Some(Duration::from_secs(HTTP_TIMEOUT)))
+        .build();
+
+    let agent: Agent = config.into();
+
+    let resp: String = agent
+        .post(PDB_SEARCH_API_URL)
+        .header("Content-Type", "application/json")
+        .send(&payload_json)?
+        .body_mut()
+        .read_to_string()?;
+
+    let search_data: PdbSearchResults = serde_json::from_str(&resp).map_err(|_| ReqError {})?;
+
+    if search_data.result_set.is_empty() {
+        Err(ReqError {})
+    } else {
+        Ok(search_data.result_set[0].identifier.clone())
     }
 }
 
 /// Load PDB data using [its API](https://search.rcsRb.org/#search-api)
 /// Returns the set of PDB ID matches, with scores.
-pub fn load_pdb_data() -> Result<Vec<PdbData>, ReqError> {
+pub fn pdb_data_from_seq(aa_seq: &[AminoAcid]) -> Result<Vec<PdbData>, ReqError> {
     let payload_search = PdbPayloadSearch {
-        return_type: "entry".to_string(),
+        return_type: ReturnType::Entry,
         query: PdbSearchQuery {
-            type_: "terminal".to_owned(),
-            service: "sequence".to_owned(),
+            type_: RcsbType::Terminal,
+            service: Service::Sequence,
             parameters: PdbSearchParams {
-                // value: seq_aa_to_str(&protein.aa_seq),
-                value: "".to_string(),
-                sequence_type: "protein".to_owned(),
-                evalue_cutoff: 1,
-                identity_cutoff: 0.9,
+                value: Some(seq_aa_to_str(&aa_seq)),
+                sequence_type: Some("protein".to_owned()),
+                evalue_cutoff: Some(1),
+                identity_cutoff: Some(0.9),
+                ..Default::default()
             },
         },
         request_options: Some(SearchRequestOptions {
-            scoring_strategy: "sequence".to_owned(),
+            scoring_strategy: Some("sequence".to_owned()),
+            ..Default::default()
         }),
-
-        // return_type: "assembly".to_string(), // todo: Experiment.
         ..Default::default()
     };
 
@@ -236,8 +430,6 @@ pub fn load_pdb_structure(pdb_id: &str) {
 }
 
 pub fn load_pdb_metadata(pdb_id: &str) -> Result<PdbMetaData, ReqError> {
-    // let pdb_id = pdb_id.to_owned().to_lowercase();
-
     let config = Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(HTTP_TIMEOUT)))
         .build();

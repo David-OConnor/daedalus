@@ -1,4 +1,4 @@
-//! For calculating the accessible surface area (ASA), a proxy for acccessibility of solvents
+//! For calculating the accessible surface (AS), a proxy for acccessibility of solvents
 //! to a molecule. Used for drawing *surface*, *dots*, and related meshes. Related to the van der Waals
 //! radius.
 //!

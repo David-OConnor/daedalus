@@ -8,7 +8,6 @@
 mod aa_coords;
 mod add_hydrogens;
 mod amino_acid_coords;
-mod asa;
 mod bond_inference;
 mod cartoon_mesh;
 mod docking;
@@ -25,6 +24,7 @@ mod prefs;
 mod rcsb_api;
 mod render;
 mod save_load;
+mod surface;
 mod ui;
 mod util;
 mod vibrations;
@@ -43,11 +43,14 @@ use cudarc::{
     driver::{CudaContext, CudaModule, CudaStream},
     nvrtc::Ptx,
 };
+use egui::RichText;
 use egui_file_dialog::{FileDialog, FileDialogConfig};
 use file_io::{pdb::load_pdb, sdf::load_sdf};
 use graphics::{Camera, InputsCommanded};
-use lin_alg::f32::{Quaternion, Vec3, f32x8};
-use lin_alg::f64::Vec3 as Vec3F64;
+use lin_alg::{
+    f32::{Quaternion, Vec3, f32x8},
+    f64::Vec3 as Vec3F64,
+};
 use mol_drawing::MoleculeView;
 use molecule::Molecule;
 use pdbtbx::{self, PDB};
@@ -60,11 +63,11 @@ use crate::{
     },
     element::{Element, init_lj_lut},
     file_io::pdbqt::load_pdbqt,
-    molecule::Ligand,
+    molecule::{Ligand, ResidueType},
     navigation::Tab,
     prefs::ToSave,
     render::render,
-    ui::{VIEW_DEPTH_FAR_MAX, VIEW_DEPTH_NEAR_MIN},
+    ui::{COL_SPACING, VIEW_DEPTH_FAR_MAX, VIEW_DEPTH_NEAR_MIN},
 };
 
 // todo: Eventually, implement a system that automatically checks for changes, and don't
@@ -101,35 +104,35 @@ impl Default for FileDialogs {
         let cfg_protein = FileDialogConfig {
             ..Default::default()
         }
-            .add_file_filter(
-                "PDB/CIF",
-                Arc::new(|p| {
-                    let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
-                    ext == "pdb" || ext == "cif"
-                }),
-            );
+        .add_file_filter(
+            "PDB/CIF",
+            Arc::new(|p| {
+                let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
+                ext == "pdb" || ext == "cif"
+            }),
+        );
 
         let cfg_small_mol = FileDialogConfig {
             ..Default::default()
         }
-            .add_file_filter(
-                "SDF/MOL2/PDBQT",
-                Arc::new(|p| {
-                    let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
-                    ext == "sdf" || ext == "mol2" || ext == "pdbqt"
-                }),
-            );
+        .add_file_filter(
+            "SDF/MOL2/PDBQT",
+            Arc::new(|p| {
+                let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
+                ext == "sdf" || ext == "mol2" || ext == "pdbqt"
+            }),
+        );
 
         let cfg_vina = FileDialogConfig {
             ..Default::default()
         }
-            .add_file_filter(
-                "Executables",
-                Arc::new(|p| {
-                    let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
-                    ext == "" || ext == "exe"
-                }),
-            );
+        .add_file_filter(
+            "Executables",
+            Arc::new(|p| {
+                let ext = p.extension().unwrap_or_default().to_ascii_lowercase();
+                ext == "" || ext == "exe"
+            }),
+        );
 
         let cfg_save_pdbqt = FileDialogConfig {
             ..Default::default()
@@ -362,10 +365,25 @@ impl State {
         match molecule {
             Ok(mol) => {
                 if is_ligand {
-                    let mut lig = Ligand::new(mol);
-                    // let center = lig.docking_site.site_center;
-                    self.ligand = Some(lig);
-                    self.update_docking_site(Vec3F64::new_zero());
+                    let het_residues = mol.het_residues.clone();
+                    let mol_atoms = mol.atoms.clone();
+                    self.ligand = Some(Ligand::new(mol));
+
+                    let mut init_posit = Vec3F64::new_zero();
+
+                    // Align to a hetero residue in the open molecule, if there is a match.
+                    // todo: Keep this in sync with the UI button-based code; this will have updated.
+                    for res in het_residues {
+                        if (res.atoms.len() as i16
+                            - self.ligand.as_ref().unwrap().molecule.atoms.len() as i16)
+                            .abs()
+                            < 22
+                        {
+                            init_posit = mol_atoms[res.atoms[0]].posit;
+                        }
+                    }
+
+                    self.update_docking_site(init_posit);
                 } else {
                     self.molecule = Some(mol);
                 }
@@ -413,96 +431,89 @@ impl State {
 }
 
 fn main() {
-        #[cfg(feature = "cuda")]
-        let dev = {
-            let runtime_v = cudarc::runtime::result::version::get_runtime_version();
-            let driver_v = cudarc::runtime::result::version::get_driver_version();
-            println!("CUDA runtime: {runtime_v:?}");
-            println!("CUDA driver: {driver_v:?}");
+    #[cfg(feature = "cuda")]
+    let dev = {
+        let runtime_v = cudarc::runtime::result::version::get_runtime_version();
+        let driver_v = cudarc::runtime::result::version::get_driver_version();
+        println!("CUDA runtime: {runtime_v:?}");
+        println!("CUDA driver: {driver_v:?}");
 
-            if runtime_v.is_ok() && driver_v.is_ok() {
-                // This is compiled in `build_`.
-                let ctx = CudaContext::new(0).unwrap();
-                let stream = ctx.default_stream();
+        if runtime_v.is_ok() && driver_v.is_ok() {
+            // This is compiled in `build_`.
+            let ctx = CudaContext::new(0).unwrap();
+            let stream = ctx.default_stream();
 
-                let ptx_file = "./cuda.ptx";
-                let module = ctx.load_module(Ptx::from_file(ptx_file));
+            let ptx_file = "./cuda.ptx";
+            let module = ctx.load_module(Ptx::from_file(ptx_file));
 
-                match module {
-                    Ok(m) => {
-                        // todo: Store/cache these, likely.
-                        // let func_coulomb = module.load_function("coulomb_kernel").unwrap();
-                        // let func_lj_V = module.load_function("lj_V_kernel").unwrap();
-                        // let func_lj_force = module.load_function("lj_force_kernel").unwrap();
+            match module {
+                Ok(m) => {
+                    // todo: Store/cache these, likely.
+                    // let func_coulomb = module.load_function("coulomb_kernel").unwrap();
+                    // let func_lj_V = module.load_function("lj_V_kernel").unwrap();
+                    // let func_lj_force = module.load_function("lj_force_kernel").unwrap();
 
-                        ComputationDevice::Gpu((stream, m))
-                    }
-                    Err(e) => {
-                        eprintln!("Error loading CUDA module: {ptx_file}; not using CUDA. Error: {e}");
-                        ComputationDevice::Cpu
-                    }
+                    ComputationDevice::Gpu((stream, m))
                 }
-            } else {
-                ComputationDevice::Cpu
+                Err(e) => {
+                    eprintln!("Error loading CUDA module: {ptx_file}; not using CUDA. Error: {e}");
+                    ComputationDevice::Cpu
+                }
             }
-
-            // println!("Using the GPU for computations.");
-        };
-
-        #[cfg(not(feature = "cuda"))]
-        let dev = ComputationDevice::Cpu;
-
-        // todo For now. GPU currently is going slower than CPU for VDW.
-        let dev = ComputationDevice::Cpu;
-
-        #[cfg(target_arch = "x86_64")]
-        {
-            if is_x86_feature_detected!("avx512f") {
-                println!("AVX-512 is available");
-            } else if is_x86_feature_detected!("avx") {
-                println!("AVX (256-bit) is available");
-            } else {
-                println!("AVX is not available.");
-            }
+        } else {
+            ComputationDevice::Cpu
         }
 
-        // Sets up write-once static muts.
-        init_local_bond_vecs();
+        // println!("Using the GPU for computations.");
+    };
 
-        let mut state = State::default();
+    #[cfg(not(feature = "cuda"))]
+    let dev = ComputationDevice::Cpu;
 
-        state.dev = dev;
-        state.bh_config.θ = THETA_BH;
+    // todo For now. GPU currently is going slower than CPU for VDW.
+    let dev = ComputationDevice::Cpu;
 
-        // todo: Consider a custom default impl. This is a substitute.
-        state.ui.view_depth = (VIEW_DEPTH_NEAR_MIN, VIEW_DEPTH_FAR_MAX);
-        state.ui.new_mol_loaded = true;
-        state.ui.nearby_dist_thresh = 15;
-
-        state.load_prefs();
-
-        if let Some(lig) = &mut state.ligand {
-            println!("Center 1: {:?}", lig.docking_site.site_center);
+    #[cfg(target_arch = "x86_64")]
+    {
+        if is_x86_feature_detected!("avx512f") {
+            println!("AVX-512 is available");
+        } else if is_x86_feature_detected!("avx") {
+            println!("AVX (256-bit) is available");
+        } else {
+            println!("AVX is not available.");
         }
-
-        let last_opened = state.to_save.last_opened.clone();
-        if let Some(path) = &last_opened {
-            state.open_molecule(path, false);
-        }
-
-        if let Some(lig) = &mut state.ligand {
-            println!("Center 2: {:?}", lig.docking_site.site_center);
-        }
-        let last_ligand_opened = state.to_save.last_ligand_opened.clone();
-        if let Some(path) = &last_ligand_opened {
-            state.open_molecule(path, true);
-        }
-
-        // Update ligand positions, e.g. from the docking position site center loaded from prefs.
-        if let Some(lig) = &mut state.ligand {
-            lig.pose.anchor_posit = lig.docking_site.site_center;
-            lig.atom_posits = lig.position_atoms(None);
-        }
-
-        render(state);
     }
+
+    // Sets up write-once static muts.
+    init_local_bond_vecs();
+
+    let mut state = State::default();
+
+    state.dev = dev;
+    state.bh_config.θ = THETA_BH;
+
+    // todo: Consider a custom default impl. This is a substitute.
+    state.ui.view_depth = (VIEW_DEPTH_NEAR_MIN, VIEW_DEPTH_FAR_MAX);
+    state.ui.new_mol_loaded = true;
+    state.ui.nearby_dist_thresh = 15;
+
+    state.load_prefs();
+
+    let last_opened = state.to_save.last_opened.clone();
+    if let Some(path) = &last_opened {
+        state.open_molecule(path, false);
+    }
+
+    let last_ligand_opened = state.to_save.last_ligand_opened.clone();
+    if let Some(path) = &last_ligand_opened {
+        state.open_molecule(path, true);
+    }
+
+    // Update ligand positions, e.g. from the docking position site center loaded from prefs.
+    if let Some(lig) = &mut state.ligand {
+        lig.pose.anchor_posit = lig.docking_site.site_center;
+        lig.atom_posits = lig.position_atoms(None);
+    }
+
+    render(state);
+}
