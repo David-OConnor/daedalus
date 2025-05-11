@@ -205,7 +205,12 @@ pub fn read_pdb(pdb_text: &str) -> io::Result<PDB> {
         .set_level(StrictnessLevel::Loose)
         .set_format(Format::Mmcif) // Must be set explicitly if  using read_raw.
         .read_raw(reader)
-        .map_err(|_e| io::Error::new(ErrorKind::InvalidData, "Problem reading PDB text"))?;
+        .map_err(|e| {
+            io::Error::new(
+                ErrorKind::InvalidData,
+                format!("Problem parsing PDB or CIF text: {e:?}"),
+            )
+        })?;
 
     Ok(pdb)
 }
@@ -218,7 +223,12 @@ pub fn load_pdb(path: &Path) -> io::Result<PDB> {
         // loose is required for practical use cases.
         .set_level(StrictnessLevel::Loose)
         .read(path.to_str().unwrap())
-        .map_err(|e| io::Error::new(ErrorKind::InvalidData, "Problem opening PDB file"))?;
+        .map_err(|e| {
+            io::Error::new(
+                ErrorKind::InvalidData,
+                format!("Problem opening a PDB or CIF file: {e:?}"),
+            )
+        })?;
 
     Ok(pdb)
 }
@@ -232,5 +242,10 @@ pub fn save_pdb(mol: &Molecule, pdb: &mut PDB, path: &Path) -> io::Result<()> {
         path.to_str().unwrap_or_default(),
         StrictnessLevel::Loose,
     )
-    .map_err(|e| io::Error::new(ErrorKind::InvalidData, "Problem opening PDB file"))
+    .map_err(|e| {
+        io::Error::new(
+            ErrorKind::InvalidData,
+            format!("Problem saving a PDB or CIF file: {e:?}"),
+        )
+    })
 }

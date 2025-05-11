@@ -72,7 +72,10 @@ pub fn load_cif_rcsb(ident: &str) -> Result<PDB, ReqError> {
         .body_mut()
         .read_to_string()?;
 
-    read_pdb(&resp).map_err(|e| ReqError {})
+    read_pdb(&resp).map_err(|e| {
+        eprintln!("Error parsing CIF file: {e}");
+        ReqError {}
+    })
 }
 
 /// Download an SDF file from DrugBank, and parse as a molecule.

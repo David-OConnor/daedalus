@@ -9,6 +9,7 @@ use std::{io, time::Duration};
 
 use bincode::{Decode, Encode};
 use na_seq::{AminoAcid, seq_aa_to_str};
+use rand::{self, Rng};
 use serde::{Deserialize, Serialize, Serializer};
 use serde_json::{self};
 use ureq::{self, Agent};
@@ -276,6 +277,7 @@ pub struct PdbData {
     pub title: String,
 }
 
+/// Get a semi-random protein released within the past week.
 /// https://search.rcsb.org/#search-example-12
 pub fn get_newly_released() -> Result<String, ReqError> {
     let payload_search = PdbPayloadSearch {
@@ -313,7 +315,10 @@ pub fn get_newly_released() -> Result<String, ReqError> {
     if search_data.result_set.is_empty() {
         Err(ReqError {})
     } else {
-        Ok(search_data.result_set[0].identifier.clone())
+        let mut rng = rand::rng();
+        let i = rng.random_range(0..search_data.result_set.len());
+
+        Ok(search_data.result_set[i].identifier.clone())
     }
 }
 

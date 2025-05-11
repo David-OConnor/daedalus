@@ -14,20 +14,13 @@ use na_seq::AaIdent;
 use regex::Regex;
 
 use crate::{
-    bond_inference::{create_bonds, create_hydrogen_bonds},
     docking::{
         ConformationType,
         prep::{DockType, UnitCellDims},
     },
     element::Element,
     molecule::{Atom, AtomRole, Chain, Ligand, Molecule, Residue, ResidueType},
-    util::mol_center_size,
 };
-// #[derive(Debug, Default)]
-// pub struct PdbQt {
-//     pub atoms: Vec<Atom>,
-//     pub bonds: Vec<Bond>,
-// }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum TorsionStatus {
@@ -277,7 +270,6 @@ impl Molecule {
             // Decide record type
             let record_name = if atom.hetero { "HETATM" } else { "ATOM" };
 
-            // Typically we might put:
             // - columns 1..6:   record name
             // - columns 7..11:  serial number
             // - columns 13..16: atom name (we might guess from element or autodock_type)
@@ -285,13 +277,6 @@ impl Molecule {
             // - columns 31..38, 39..46, 47..54: coords
             // - columns 71..76: partial charge
             // - columns 77..78: autodock type
-
-            // For demonstration, let's assume:
-            // * "C" as the atom name if unknown
-            // * "LIG" as the residue
-            // * 'A' chain
-            // * serial_number for residue sequence too
-            // * occupancy and tempFactor set to 0.00
 
             let mut res_num = 1;
 
@@ -317,16 +302,10 @@ impl Molecule {
                 None => 'A',
             };
 
-            // autodock_type or fallback
             let mut dock_type = String::new();
             if let Some(dt) = atom.dock_type {
                 dock_type = dt.to_str();
             }
-
-            // We'll format columns carefully with fixed widths:
-            // (This uses a typical PDB-like fixed column approach.)
-            // The example below is one possible format spec. Tweak spacing as needed.
-            // Indices are approximate; watch alignment carefully.
 
             writeln!(
                 file,
@@ -347,7 +326,7 @@ impl Molecule {
             )?;
         }
 
-        // If your PDBQT format typically has "ENDROOT" after the atoms:
+        // todo?
         // writeln!(file, "ENDROOT")?;
         // writeln!(file, "END")?;
 
