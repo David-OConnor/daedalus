@@ -5,7 +5,7 @@
 
 use std::{collections::HashMap, time::Instant};
 
-use cuda_setup::ComputationDevice;
+use crate::ComputationDevice;
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "cuda")] {
@@ -24,9 +24,12 @@ use crate::{
         prep::{DockingSetup, Torsion},
     },
     element::Element,
-    forces::{force_lj, force_lj_gpu, force_lj_x8},
+    forces::{force_lj, force_lj_x8},
     molecule::{Atom, Ligand},
 };
+
+#[cfg(feature = "cuda")]
+use crate::forces::force_lj_gpu;
 // This seems to be how we control rotation vice movement. A higher value means
 // more movement, less rotation for a given dt.
 
@@ -476,6 +479,7 @@ pub fn build_vdw_dynamics(
         let start = Instant::now();
 
         let (force, torque) = match dev {
+            #[cfg(feature = "cuda")]
             // todo: So... CUDA is taking about 1.5x the speed of CPU...
             ComputationDevice::Gpu((stream, module)) => {
                 let lig_posits_f32: Vec<Vec3> = lig_posits.iter().map(|r| (*r).into()).collect();

@@ -36,8 +36,8 @@ use std::{collections::HashMap, fmt, io, io::ErrorKind, path::Path, sync::Arc};
 
 use barnes_hut::BhConfig;
 use bincode::{Decode, Encode};
-#[cfg(feature = "cuda")]
-use cuda_setup::ComputationDevice;
+// #[cfg(feature = "cuda")]
+// use cuda_setup::ComputationDevice;
 #[cfg(feature = "cuda")]
 use cudarc::{
     driver::{CudaContext, CudaModule, CudaStream},
@@ -73,6 +73,14 @@ use crate::{
 // todo: Eventually, implement a system that automatically checks for changes, and don't
 // todo save to disk if there are no changes.
 const PREFS_SAVE_INTERVAL: u64 = 60; // Save user preferences this often, in seconds.
+
+#[derive(Debug, Clone, Default)]
+pub enum ComputationDevice {
+    #[default]
+    Cpu,
+    #[cfg(feature = "cuda")]
+    Gpu((Arc<CudaStream>, Arc<CudaModule>)),
+}
 
 #[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]
 pub enum ViewSelLevel {

@@ -42,8 +42,6 @@
 use std::{f32::consts::TAU, time::Instant};
 
 use bincode::{Decode, Encode};
-use cuda_setup::ComputationDevice;
-use cudarc::runtime::result::device::set;
 use lin_alg::{
     f32::{Vec3 as Vec3F32, f32x8, pack_float, pack_vec3},
     f64::{FORWARD, Quaternion, RIGHT, UP, Vec3},
@@ -54,6 +52,7 @@ use rand::Rng;
 use rayon::prelude::*;
 
 use crate::{
+    ComputationDevice,
     bond_inference::create_hydrogen_bonds_one_way,
     docking::{
         dynamics_playback::build_vdw_dynamics,
