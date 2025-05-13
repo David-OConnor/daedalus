@@ -1022,10 +1022,6 @@ fn mol_descrip(mol: &Molecule, ui: &mut Ui) {
 
 fn view_settings(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
     ui.horizontal(|ui| {
-        chain_selector(state, redraw, ui);
-
-        ui.add_space(COL_SPACING);
-
         ui.label("View:");
         let prev_view = state.ui.mol_view;
         ComboBox::from_id_salt(0)
@@ -1432,6 +1428,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
                 view_settings(state, &mut redraw, ui);
+                ui.add_space(ROW_SPACING);
+                chain_selector(state, &mut redraw, ui);
 
                 // todo: Show hide based on AaCategory? i.e. residue.amino_acid.category(). Hydrophilic, acidic etc.
 

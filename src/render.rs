@@ -42,6 +42,7 @@ pub const MESH_DOCKING_SURFACE: usize = 7; // Van Der Waals surface.
 
 pub const BALL_STICK_RADIUS: f32 = 0.3;
 pub const BALL_STICK_RADIUS_H: f32 = 0.2;
+pub const BALL_RADIUS_WATER: f32 = 0.15;
 
 pub const SHELL_OPACITY: f32 = 0.01;
 

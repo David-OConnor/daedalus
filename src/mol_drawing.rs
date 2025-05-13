@@ -22,6 +22,7 @@ use crate::{
     surface::{get_mesh_points, mesh_from_sas_points},
     util::orbit_center,
 };
+use crate::render::BALL_RADIUS_WATER;
 
 const LIGAND_COLOR: Color = (0., 0.4, 1.);
 const LIGAND_COLOR_ANCHOR: Color = (1., 0., 1.);
@@ -568,12 +569,48 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
         ));
     }
 
+    // If sticks view, draw water molecules as balls.
+    if ui.mol_view == MoleculeView::Sticks && !state.ui.visibility.hide_water {
+        for (i, atom) in mol.atoms.iter().enumerate() {
+            if atom.hetero {
+                // todo: Excessive nesting.
+                if let Some(role) = atom.role {
+                    if role == AtomRole::Water {
+                        let color_atom = atom_color(
+                            atom,
+                            i,
+                            &mol.residues,
+                            state.selection,
+                            state.ui.view_sel_level,
+                            false,
+                        );
+
+                        scene.entities.push(Entity::new(
+                            MESH_SPHERE,
+                            atom.posit.into(),
+                            Quaternion::new_identity(),
+                            BALL_RADIUS_WATER,
+                            color_atom,
+                            ATOM_SHINYNESS,
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
     // Draw atoms.
     if [MoleculeView::BallAndStick, MoleculeView::SpaceFill].contains(&ui.mol_view) {
         for (i, atom) in mol.atoms.iter().enumerate() {
-            if atom.hetero {
-                // Don't draw VDW spheres for hetero atoms; draw as sticks.
-                continue;
+            if atom.hetero  {
+                let mut water = false;
+                if let Some(role) = atom.role {
+                    water = role == AtomRole::Water;
+                }
+                if !water {
+                    // Don't draw VDW spheres for hetero atoms; draw as sticks.
+                    continue;
+                }
             }
 
             let mut chain_not_sel = false;
@@ -630,13 +667,20 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                 }
             }
 
-            let radius = match ui.mol_view {
+            let mut radius = match ui.mol_view {
                 MoleculeView::SpaceFill => atom.element.vdw_radius(),
                 _ => match atom.element {
                     Element::Hydrogen => BALL_STICK_RADIUS_H,
                     _ => BALL_STICK_RADIUS,
                 },
             };
+
+            if let Some(role) = atom.role {
+                if role == AtomRole::Water {
+                    radius = BALL_RADIUS_WATER
+                }
+            }
+
 
             let dim_peptide = if state.ligand.is_some() {
                 state.ui.visibility.dim_peptide
