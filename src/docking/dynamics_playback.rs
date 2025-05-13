@@ -18,6 +18,8 @@ use graphics::Entity;
 use lin_alg::f32::{Mat3, Quaternion, Vec3, Vec3x8, f32x8, pack_float, pack_slice, pack_vec3};
 use rayon::prelude::*;
 
+#[cfg(feature = "cuda")]
+use crate::forces::force_lj_gpu;
 use crate::{
     docking::{
         BindingEnergy, ConformationType, Pose, calc_binding_energy,
@@ -27,9 +29,6 @@ use crate::{
     forces::{force_lj, force_lj_x8},
     molecule::{Atom, Ligand},
 };
-
-#[cfg(feature = "cuda")]
-use crate::forces::force_lj_gpu;
 // This seems to be how we control rotation vice movement. A higher value means
 // more movement, less rotation for a given dt.
 

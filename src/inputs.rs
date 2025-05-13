@@ -18,7 +18,9 @@ use crate::{
     util::{cycle_res_selected, find_selected_atom, orbit_center, points_along_ray},
 };
 
+// These are defaults; overridden by the user A/R, and saved to prefs.
 pub const MOVEMENT_SENS: f32 = 12.;
+pub const ROTATE_SENS: f32 = 0.45;
 pub const RUN_FACTOR: f32 = 6.; // i.e. shift key multiplier
 
 pub const SCROLL_MOVE_AMT: f32 = 4.;
@@ -180,6 +182,11 @@ pub fn event_dev_handler(
                         cycle_res_selected(state_, scene, false);
                         redraw = true;
                     }
+                    Code(KeyCode::Escape) => {
+                        state_.selection = Selection::None;
+                        redraw = true;
+                    }
+                    // These lig rotations are temporary.
                     Code(KeyCode::KeyU) => {
                         lig_rot_dir = Some(FWD_VEC);
                     }

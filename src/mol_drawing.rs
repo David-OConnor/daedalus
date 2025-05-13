@@ -14,15 +14,14 @@ use crate::{
     element::Element,
     molecule::{Atom, AtomRole, BondCount, BondType, Chain, Residue, ResidueType, aa_color},
     render::{
-        ATOM_SHINYNESS, BACKGROUND_COLOR, BALL_STICK_RADIUS, BALL_STICK_RADIUS_H, BODY_SHINYNESS,
-        CAM_INIT_OFFSET, Color, MESH_BOND, MESH_DOCKING_BOX, MESH_SOLVENT_SURFACE, MESH_SPHERE,
-        MESH_SPHERE_LOWRES, MESH_SPHERE_MEDRES, RENDER_DIST_FAR, set_docking_light,
-        set_static_light,
+        ATOM_SHINYNESS, BACKGROUND_COLOR, BALL_RADIUS_WATER, BALL_STICK_RADIUS,
+        BALL_STICK_RADIUS_H, BODY_SHINYNESS, CAM_INIT_OFFSET, Color, MESH_BOND, MESH_DOCKING_BOX,
+        MESH_SOLVENT_SURFACE, MESH_SPHERE, MESH_SPHERE_LOWRES, MESH_SPHERE_MEDRES, RENDER_DIST_FAR,
+        set_docking_light, set_static_light,
     },
     surface::{get_mesh_points, mesh_from_sas_points},
     util::orbit_center,
 };
-use crate::render::BALL_RADIUS_WATER;
 
 const LIGAND_COLOR: Color = (0., 0.4, 1.);
 const LIGAND_COLOR_ANCHOR: Color = (1., 0., 1.);
@@ -383,21 +382,24 @@ fn bond_entities(
 pub fn draw_ligand(state: &mut State, scene: &mut Scene) {
     // Hard-coded for sticks for now.
 
-    if state.ligand.is_none() || state.ui.visibility.hide_ligand {
+    let Some(lig) = state.ligand.as_ref() else {
         set_docking_light(scene, None);
+        return;
+    };
+
+    if state.ui.visibility.hide_ligand {
         return;
     }
 
-    let ligand = state.ligand.as_ref().unwrap();
-    let mol = &ligand.molecule;
+    let mol = &lig.molecule;
 
     // Add a visual indicator for the docking site.
     scene.entities.push(Entity {
         // todo: High-res spheres are blocking bonds inside them. Likely engine problem.
         // mesh: MESH_SPHERE,
         mesh: MESH_SPHERE_MEDRES,
-        position: ligand.docking_site.site_center.into(),
-        scale: ligand.docking_site.site_radius as f32,
+        position: lig.docking_site.site_center.into(),
+        scale: lig.docking_site.site_radius as f32,
         color: COLOR_DOCKING_BOX,
         opacity: DOCKING_SITE_OPACITY,
         shinyness: ATOM_SHINYNESS,
@@ -428,8 +430,8 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene) {
             continue;
         }
 
-        let posit_0: Vec3 = ligand.atom_posits[bond.atom_0].into();
-        let posit_1: Vec3 = ligand.atom_posits[bond.atom_1].into();
+        let posit_0: Vec3 = lig.atom_posits[bond.atom_0].into();
+        let posit_1: Vec3 = lig.atom_posits[bond.atom_1].into();
 
         let mut color_0 = atom_color(
             atom_0,
@@ -451,17 +453,17 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene) {
         color_0 = mod_color_for_ligand(&color_0);
         color_1 = mod_color_for_ligand(&color_1);
 
-        if ligand.flexible_bonds.contains(&i) {
+        if lig.flexible_bonds.contains(&i) {
             color_0 = LIGAND_COLOR_FLEX;
             color_1 = LIGAND_COLOR_FLEX;
         }
 
         // Highlight the anchor.
-        if bond.atom_0 == ligand.anchor_atom {
+        if bond.atom_0 == lig.anchor_atom {
             color_0 = LIGAND_COLOR_ANCHOR;
         }
 
-        if bond.atom_1 == ligand.anchor_atom {
+        if bond.atom_1 == lig.anchor_atom {
             color_1 = LIGAND_COLOR_ANCHOR;
         }
 
@@ -602,7 +604,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
     // Draw atoms.
     if [MoleculeView::BallAndStick, MoleculeView::SpaceFill].contains(&ui.mol_view) {
         for (i, atom) in mol.atoms.iter().enumerate() {
-            if atom.hetero  {
+            if atom.hetero {
                 let mut water = false;
                 if let Some(role) = atom.role {
                     water = role == AtomRole::Water;
@@ -680,7 +682,6 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                     radius = BALL_RADIUS_WATER
                 }
             }
-
 
             let dim_peptide = if state.ligand.is_some() {
                 state.ui.visibility.dim_peptide

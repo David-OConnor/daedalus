@@ -65,4 +65,4 @@ cuda_setup = { version = "0.1.3", optional = true }
 # suitable graphics chip.
 [features]
 default = ["cuda"]
-cuda = ["cudarc", "cuda_setup/cuda-12060", "lin_alg/cuda-12060"]
+cuda = ["cudarc", "cuda_setup", "lin_alg/cuda-12060"]

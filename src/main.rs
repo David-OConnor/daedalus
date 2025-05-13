@@ -249,7 +249,8 @@ impl MsaaSetting {
             Self::None => "None",
             // Self::Two => "2×",
             Self::Four => "4×",
-        }.to_owned()
+        }
+        .to_owned()
     }
 }
 
@@ -293,7 +294,6 @@ struct StateUi {
     new_mol_loaded: bool,
     show_docking_tools: bool,
     show_settings: bool,
-    /// todo: Document how this and rotation sens map to our internal f32 values.
     movement_speed_input: String,
     rotation_sens_input: String,
 }

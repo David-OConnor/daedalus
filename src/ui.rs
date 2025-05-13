@@ -5,19 +5,30 @@ use graphics::{Camera, ControlScheme, EngineUpdates, Entity, RIGHT_VEC, Scene, U
 use lin_alg::f32::{Quaternion, Vec3};
 use na_seq::AaIdent;
 
-use crate::{CamSnapshot, Selection, State, ViewSelLevel, docking::{
-    ConformationType, calc_binding_energy,
-    dynamics_playback::{build_vdw_dynamics, change_snapshot},
-    external::check_adv_avail,
-    find_optimal_pose,
-    find_sites::find_docking_sites,
-}, download_mols::{load_cif_rcsb, load_sdf_drugbank, load_sdf_pubchem}, file_io::pdb::save_pdb, mol_drawing::{COLOR_DOCKING_SITE_MESH, MoleculeView, draw_ligand, draw_molecule}, molecule::{Ligand, Molecule, ResidueType}, rcsb_api::{get_newly_released, open_drugbank, open_pdb, open_pubchem}, render::{
-    CAM_INIT_OFFSET, MESH_DOCKING_SURFACE, RENDER_DIST_FAR, RENDER_DIST_NEAR,
-    set_docking_light, set_flashlight,
-}, util::{
-    cam_look_at, cam_look_at_outside, check_prefs_save, cycle_res_selected, orbit_center,
-    select_from_search,
-}, MsaaSetting};
+use crate::{
+    CamSnapshot, MsaaSetting, Selection, State, ViewSelLevel,
+    docking::{
+        ConformationType, calc_binding_energy,
+        dynamics_playback::{build_vdw_dynamics, change_snapshot},
+        external::check_adv_avail,
+        find_optimal_pose,
+        find_sites::find_docking_sites,
+    },
+    download_mols::{load_cif_rcsb, load_sdf_drugbank, load_sdf_pubchem},
+    file_io::pdb::save_pdb,
+    inputs::{MOVEMENT_SENS, ROTATE_SENS},
+    mol_drawing::{COLOR_DOCKING_SITE_MESH, MoleculeView, draw_ligand, draw_molecule},
+    molecule::{Ligand, Molecule, ResidueType},
+    rcsb_api::{get_newly_released, open_drugbank, open_pdb, open_pubchem},
+    render::{
+        CAM_INIT_OFFSET, MESH_DOCKING_SURFACE, RENDER_DIST_FAR, RENDER_DIST_NEAR,
+        set_docking_light, set_flashlight,
+    },
+    util::{
+        cam_look_at, cam_look_at_outside, check_prefs_save, cycle_res_selected, orbit_center,
+        select_from_search,
+    },
+};
 
 pub const ROW_SPACING: f32 = 10.;
 pub const COL_SPACING: f32 = 30.;
@@ -238,7 +249,7 @@ fn cam_controls(
     let cam = &mut scene.camera;
 
     ui.horizontal(|ui| {
-        ui.label("Camera:");
+        ui.label("Cam:");
 
         // Preset buttons
         if ui.button("Front").clicked() {
@@ -557,17 +568,18 @@ fn docking(
     engine_updates: &mut EngineUpdates,
     ui: &mut Ui,
 ) {
-    if state.molecule.is_none() || state.ligand.is_none() {
+    let Some(lig) = state.ligand.as_mut() else {
         return;
-    }
+    };
+
+    let Some(mol) = state.molecule.as_ref() else {
+        return;
+    };
 
     let mut docking_posit_update = None;
 
     ui.horizontal(|ui| {
-        let lig = &mut state.ligand.as_mut().unwrap();
-
         if ui.button("Find sites").clicked() {
-            let mol = state.molecule.as_ref().unwrap();
             let sites = find_docking_sites(mol);
             for site in sites {
                 println!("Docking site: {:?}", site);
@@ -590,7 +602,7 @@ fn docking(
 
             {
                 let lig_pos: Vec3 = lig.position_atoms(None)[lig.anchor_atom].into();
-                let ctr: Vec3 = state.molecule.as_ref().unwrap().center.into();
+                let ctr: Vec3 = mol.center.into();
 
                 cam_look_at_outside(&mut scene.camera, lig_pos, ctr);
 
@@ -650,7 +662,6 @@ fn docking(
 
         // todo: Make this automatic A/R. For not a button
         if ui.button("Site mesh").clicked() {
-            let mol = state.molecule.as_ref().unwrap();
             // let (mesh, edges) = find_docking_site_surface(mol, &ligand.docking_site);
 
             // scene.meshes[MESH_DOCKING_SURFACE] = mesh;
@@ -1130,32 +1141,69 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     .width(40.)
                     .selected_text(state.to_save.msaa.to_str())
                     .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut state.to_save.msaa, MsaaSetting::None, MsaaSetting::None.to_str());
-                        ui.selectable_value(&mut state.to_save.msaa, MsaaSetting::Four, MsaaSetting::Four.to_str());
+                        ui.selectable_value(
+                            &mut state.to_save.msaa,
+                            MsaaSetting::None,
+                            MsaaSetting::None.to_str(),
+                        );
+                        ui.selectable_value(
+                            &mut state.to_save.msaa,
+                            MsaaSetting::Four,
+                            MsaaSetting::Four.to_str(),
+                        );
                     });
 
                 if state.to_save.msaa != msaa_prev {
                     state.update_save_prefs();
                 }
 
-                // todo: Take acction.
-
                 ui.add_space(COL_SPACING);
                 ui.label("Movement speed:");
-                if ui.add(TextEdit::singleline(&mut state.ui.movement_speed_input).desired_width(32.)).changed() {
+                if ui
+                    .add(
+                        TextEdit::singleline(&mut state.ui.movement_speed_input).desired_width(32.),
+                    )
+                    .changed()
+                {
                     if let Ok(v) = &mut state.ui.movement_speed_input.parse::<u8>() {
                         state.to_save.movement_speed = *v;
+                        scene.input_settings.move_sens = *v as f32;
+
                         state.update_save_prefs();
+                    } else {
+                        // reset
+                        state.ui.movement_speed_input = state.to_save.movement_speed.to_string();
                     }
                 }
 
-                ui.add_space(COL_SPACING);
+                ui.add_space(COL_SPACING / 2.);
                 ui.label("Rotation sensitivity:");
-                if ui.add(TextEdit::singleline(&mut state.ui.rotation_sens_input).desired_width(32.)).changed() {
+                if ui
+                    .add(TextEdit::singleline(&mut state.ui.rotation_sens_input).desired_width(32.))
+                    .changed()
+                {
                     if let Ok(v) = &mut state.ui.rotation_sens_input.parse::<u8>() {
                         state.to_save.rotation_sens = *v;
+                        scene.input_settings.rotate_sens = *v as f32 / 100.;
+
                         state.update_save_prefs();
+                    } else {
+                        // reset
+                        state.ui.rotation_sens_input = state.to_save.rotation_sens.to_string();
                     }
+                }
+
+                ui.add_space(COL_SPACING / 2.);
+                if ui.button("Reset sensitivities").clicked() {
+                    state.to_save.movement_speed = MOVEMENT_SENS as u8;
+                    state.ui.movement_speed_input = state.to_save.movement_speed.to_string();
+                    scene.input_settings.move_sens = MOVEMENT_SENS;
+
+                    state.to_save.rotation_sens = (ROTATE_SENS * 100.) as u8;
+                    state.ui.rotation_sens_input = state.to_save.rotation_sens.to_string();
+                    scene.input_settings.rotate_sens = ROTATE_SENS;
+
+                    state.update_save_prefs();
                 }
             });
             ui.add_space(ROW_SPACING * 2.);
@@ -1167,7 +1215,10 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             } else {
                 Color32::GRAY
             };
-            if ui.button(RichText::new("⚙").color(color_settings)).clicked() {
+            if ui
+                .button(RichText::new("⚙").color(color_settings))
+                .clicked()
+            {
                 state.ui.show_settings = !state.ui.show_settings;
             }
 

@@ -8,11 +8,17 @@ use graphics::{
     app_utils::{load, save},
 };
 
-use crate::{CamSnapshot, Selection, State, ViewSelLevel, Visibility, docking::DockingSite, mol_drawing::MoleculeView, rcsb_api::{PdbMetaData, load_pdb_metadata}, MsaaSetting};
+use crate::{
+    CamSnapshot, MsaaSetting, Selection, State, ViewSelLevel, Visibility,
+    docking::DockingSite,
+    inputs::{MOVEMENT_SENS, ROTATE_SENS},
+    mol_drawing::MoleculeView,
+    rcsb_api::{PdbMetaData, load_pdb_metadata},
+};
 
 pub const DEFAULT_PREFS_FILE: &str = "daedelus_prefs.bcv";
 
-#[derive(Debug, Default, Encode, Decode)]
+#[derive(Debug, Encode, Decode)]
 pub struct ToSave {
     pub per_mol: HashMap<String, PerMolToSave>,
     pub last_opened: Option<PathBuf>,
@@ -20,8 +26,25 @@ pub struct ToSave {
     pub autodock_vina_path: Option<PathBuf>,
     pub control_scheme: ControlScheme,
     pub msaa: MsaaSetting,
+    /// Direct conversion from engine standard
     pub movement_speed: u8,
+    /// Divide this by 100 to get engine standard.
     pub rotation_sens: u8,
+}
+
+impl Default for ToSave {
+    fn default() -> Self {
+        Self {
+            per_mol: Default::default(),
+            last_opened: Default::default(),
+            last_ligand_opened: Default::default(),
+            autodock_vina_path: Default::default(),
+            control_scheme: Default::default(),
+            msaa: Default::default(),
+            movement_speed: MOVEMENT_SENS as u8,
+            rotation_sens: (ROTATE_SENS * 100.) as u8,
+        }
+    }
 }
 
 #[derive(Debug, Encode, Decode)]
@@ -108,8 +131,6 @@ impl State {
                 self.ui.chain_to_pick_res = data.chain_to_pick_res;
                 self.ui.visibility = data.visibility.clone();
                 self.ui.show_docking_tools = data.show_docking_tools;
-                self.ui.movement_speed_input = self.to_save.movement_speed.to_string();
-                self.ui.rotation_sens_input = self.to_save.rotation_sens.to_string();
 
                 if let Some(md) = &data.metadata {
                     mol.metadata = Some(md.clone())
@@ -133,6 +154,9 @@ impl State {
                 }
             }
         }
+
+        self.ui.movement_speed_input = self.to_save.movement_speed.to_string();
+        self.ui.rotation_sens_input = self.to_save.rotation_sens.to_string();
 
         self.update_docking_site(center);
     }

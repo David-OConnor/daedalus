@@ -51,7 +51,10 @@ pub fn points_along_ray(
     result
 }
 
-/// From under the cursor; pick the one near the ray, closest to the camera.
+/// From under the cursor; pick the one near the ray, closest to the camera. This function is
+/// run after the ray geometry is calculated, and is responsible for determing which atoms, residues, etc
+/// are available for selection. It takes into account graphical filters, so only visible items
+/// are selected.
 pub fn find_selected_atom(
     atoms_along_ray: &[usize],
     atoms: &[Atom],
@@ -71,20 +74,33 @@ pub fn find_selected_atom(
     let mut near_dist = 99_999.;
 
     for atom_i in atoms_along_ray {
-        let chains_this_atom: Vec<&Chain> =
-            chains.iter().filter(|c| c.atoms.contains(atom_i)).collect();
-        let mut chain_hidden = false;
-        for chain in &chains_this_atom {
-            if !chain.visible {
-                chain_hidden = true;
-                break;
+        let chain_hidden = {
+            let chains_this_atom: Vec<&Chain> =
+                chains.iter().filter(|c| c.atoms.contains(atom_i)).collect();
+
+            let mut hidden = false;
+            for chain in &chains_this_atom {
+                if !chain.visible {
+                    hidden = true;
+                    break;
+                }
             }
-        }
+            hidden
+        };
+
         if chain_hidden {
             continue;
         }
 
         let atom = &atoms[*atom_i];
+
+        if ui.visibility.hide_sidechains {
+            if let Some(role) = atom.role {
+                if role == AtomRole::Sidechain || role == AtomRole::H_Sidechain {
+                    continue;
+                }
+            }
+        }
 
         if let Some(role) = atom.role {
             if ui.visibility.hide_sidechains && role == AtomRole::Sidechain {
