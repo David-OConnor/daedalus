@@ -2,10 +2,7 @@
 
 use std::f32::consts::TAU;
 
-use graphics::{
-    Camera, ControlScheme, EngineUpdates, FWD_VEC, InputSettings, LightType, Lighting, Mesh,
-    PointLight, RIGHT_VEC, Scene, ScrollBehavior, UiLayout, UiSettings,
-};
+use graphics::{Camera, ControlScheme, EngineUpdates, FWD_VEC, InputSettings, LightType, Lighting, Mesh, PointLight, RIGHT_VEC, Scene, ScrollBehavior, UiLayout, UiSettings, GraphicsSettings};
 use lin_alg::f32::{Quaternion, Vec3};
 
 use crate::{
@@ -191,11 +188,15 @@ pub fn render(mut state: State) {
 
     set_flashlight(&mut scene);
 
+    let msaa_samples = state.to_save.msaa as u8 as u32;
+
     graphics::run(
         state,
         scene,
         ui_settings,
-        Default::default(),
+        GraphicsSettings {
+            msaa_samples
+        },
         render_handler,
         inputs::event_dev_handler,
         inputs::event_win_handler,

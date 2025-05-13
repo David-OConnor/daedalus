@@ -234,6 +234,25 @@ impl Default for Visibility {
     }
 }
 
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Default, Encode, Decode)]
+enum MsaaSetting {
+    None = 1,
+    // Two = 2, // todo: Not supported on this depth texture, but we could switch to a different one.
+    #[default]
+    Four = 4,
+}
+
+impl MsaaSetting {
+    pub fn to_str(&self) -> String {
+        match self {
+            Self::None => "None",
+            // Self::Two => "2×",
+            Self::Four => "4×",
+        }.to_owned()
+    }
+}
+
 /// Ui text fields and similar.
 #[derive(Default)]
 struct StateUi {
@@ -273,6 +292,10 @@ struct StateUi {
     /// a callback.
     new_mol_loaded: bool,
     show_docking_tools: bool,
+    show_settings: bool,
+    /// todo: Document how this and rotation sens map to our internal f32 values.
+    movement_speed_input: String,
+    rotation_sens_input: String,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]

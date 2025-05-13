@@ -264,9 +264,6 @@ impl Molecule {
                 }
             }
 
-            // We'll just do a minimal line. Fill in placeholders for
-            // residue name, chain, etc. as you like.
-
             // Decide record type
             let record_name = if atom.hetero { "HETATM" } else { "ATOM" };
 

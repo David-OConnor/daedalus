@@ -11,6 +11,7 @@ Designed to be as easy to use as possible.
 - Visualize ligand docking
 - WIP: This software is a platform for molecular docking, and ab-initio simulations.
 
+![Screenshot A](screenshots/screenshot_a.png)
 
 ## Goals
 - Fast
@@ -23,6 +24,7 @@ Designed to be as easy to use as possible.
 - Proteins: mmCIF and PDB
 - Small molecules: SDF, Mol2, and PDBQT
 
+![Screenshot B](screenshots/screenshot_b.png)
 
 ## The camera
 
@@ -32,6 +34,8 @@ There are two camera control schemes, selectable using buttons in the *camera* s
 The free camera controls is intended to be used with a keyboard and mouse together. They operate on the perspective of 
 the viewer, vice the molecule. You can move and rotate and move the camera
 in 6 degrees of freedom, allowing you to easily view the molecule from any perspective.
+
+![Screenshot C](screenshots/screenshot_c.png)
 
 #### Mouse controls:
 - Hold the **left mouse button while dragging** to rotate the camera in pitch and yaw.

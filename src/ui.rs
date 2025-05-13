@@ -5,29 +5,19 @@ use graphics::{Camera, ControlScheme, EngineUpdates, Entity, RIGHT_VEC, Scene, U
 use lin_alg::f32::{Quaternion, Vec3};
 use na_seq::AaIdent;
 
-use crate::{
-    CamSnapshot, Selection, State, ViewSelLevel,
-    docking::{
-        ConformationType, calc_binding_energy,
-        dynamics_playback::{build_vdw_dynamics, change_snapshot},
-        external::check_adv_avail,
-        find_optimal_pose,
-        find_sites::find_docking_sites,
-    },
-    download_mols::{load_cif_rcsb, load_sdf_drugbank, load_sdf_pubchem},
-    file_io::pdb::save_pdb,
-    mol_drawing::{COLOR_DOCKING_SITE_MESH, MoleculeView, draw_ligand, draw_molecule},
-    molecule::{Ligand, Molecule, ResidueType},
-    rcsb_api::{get_newly_released, open_drugbank, open_pdb, open_pubchem},
-    render::{
-        CAM_INIT_OFFSET, MESH_DOCKING_SURFACE, RENDER_DIST_FAR, RENDER_DIST_NEAR,
-        set_docking_light, set_flashlight,
-    },
-    util::{
-        cam_look_at, cam_look_at_outside, check_prefs_save, cycle_res_selected, orbit_center,
-        select_from_search,
-    },
-};
+use crate::{CamSnapshot, Selection, State, ViewSelLevel, docking::{
+    ConformationType, calc_binding_energy,
+    dynamics_playback::{build_vdw_dynamics, change_snapshot},
+    external::check_adv_avail,
+    find_optimal_pose,
+    find_sites::find_docking_sites,
+}, download_mols::{load_cif_rcsb, load_sdf_drugbank, load_sdf_pubchem}, file_io::pdb::save_pdb, mol_drawing::{COLOR_DOCKING_SITE_MESH, MoleculeView, draw_ligand, draw_molecule}, molecule::{Ligand, Molecule, ResidueType}, rcsb_api::{get_newly_released, open_drugbank, open_pdb, open_pubchem}, render::{
+    CAM_INIT_OFFSET, MESH_DOCKING_SURFACE, RENDER_DIST_FAR, RENDER_DIST_NEAR,
+    set_docking_light, set_flashlight,
+}, util::{
+    cam_look_at, cam_look_at_outside, check_prefs_save, cycle_res_selected, orbit_center,
+    select_from_search,
+}, MsaaSetting};
 
 pub const ROW_SPACING: f32 = 10.;
 pub const COL_SPACING: f32 = 30.;
@@ -1132,7 +1122,59 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         handle_input(state, ui, &mut redraw, &mut reset_cam, &mut engine_updates);
 
+        if state.ui.show_settings {
+            ui.horizontal(|ui| {
+                ui.heading("Settings");
+                ui.add_space(COL_SPACING);
+                // todo: Make this consistent with your other controls.
+                ui.label("MSAA (Restart the program to take effect):");
+
+                let msaa_prev = state.to_save.msaa;
+                ComboBox::from_id_salt(10)
+                    .width(40.)
+                    .selected_text(state.to_save.msaa.to_str())
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut state.to_save.msaa, MsaaSetting::None, MsaaSetting::None.to_str());
+                        ui.selectable_value(&mut state.to_save.msaa, MsaaSetting::Four, MsaaSetting::Four.to_str());
+                    });
+
+                if state.to_save.msaa != msaa_prev {
+                    state.update_save_prefs();
+                }
+
+                // todo: Take acction.
+
+                ui.add_space(COL_SPACING);
+                ui.label("Movement speed:");
+                if ui.add(TextEdit::singleline(&mut state.ui.movement_speed_input).desired_width(32.)).changed() {
+                    if let Ok(v) = &mut state.ui.movement_speed_input.parse::<u8>() {
+                        state.to_save.movement_speed = *v;
+                        state.update_save_prefs();
+                    }
+                }
+
+                ui.add_space(COL_SPACING);
+                ui.label("Rotation sensitivity:");
+                if ui.add(TextEdit::singleline(&mut state.ui.rotation_sens_input).desired_width(32.)).changed() {
+                    if let Ok(v) = &mut state.ui.rotation_sens_input.parse::<u8>() {
+                        state.to_save.rotation_sens = *v;
+                        state.update_save_prefs();
+                    }
+                }
+            });
+            ui.add_space(ROW_SPACING * 2.);
+        }
+
         ui.horizontal_wrapped(|ui| {
+            let color_settings = if state.ui.show_settings {
+                Color32::LIGHT_RED
+            } else {
+                Color32::GRAY
+            };
+            if ui.button(RichText::new("⚙").color(color_settings)).clicked() {
+                state.ui.show_settings = !state.ui.show_settings;
+            }
+
             let metadata_loaded = false; // avoids borrow error.
             if let Some(mol) = &mut state.molecule {
                 mol_descrip(mol, ui);

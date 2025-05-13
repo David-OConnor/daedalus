@@ -8,14 +8,9 @@ use graphics::{
     app_utils::{load, save},
 };
 
-use crate::{
-    CamSnapshot, Selection, State, ViewSelLevel, Visibility,
-    docking::DockingSite,
-    mol_drawing::MoleculeView,
-    rcsb_api::{PdbMetaData, load_pdb_metadata},
-};
+use crate::{CamSnapshot, Selection, State, ViewSelLevel, Visibility, docking::DockingSite, mol_drawing::MoleculeView, rcsb_api::{PdbMetaData, load_pdb_metadata}, MsaaSetting};
 
-pub const DEFAULT_PREFS_FILE: &str = "bcv_prefs.bcv";
+pub const DEFAULT_PREFS_FILE: &str = "daedelus_prefs.bcv";
 
 #[derive(Debug, Default, Encode, Decode)]
 pub struct ToSave {
@@ -24,6 +19,9 @@ pub struct ToSave {
     pub last_ligand_opened: Option<PathBuf>,
     pub autodock_vina_path: Option<PathBuf>,
     pub control_scheme: ControlScheme,
+    pub msaa: MsaaSetting,
+    pub movement_speed: u8,
+    pub rotation_sens: u8,
 }
 
 #[derive(Debug, Encode, Decode)]
@@ -110,6 +108,8 @@ impl State {
                 self.ui.chain_to_pick_res = data.chain_to_pick_res;
                 self.ui.visibility = data.visibility.clone();
                 self.ui.show_docking_tools = data.show_docking_tools;
+                self.ui.movement_speed_input = self.to_save.movement_speed.to_string();
+                self.ui.rotation_sens_input = self.to_save.rotation_sens.to_string();
 
                 if let Some(md) = &data.metadata {
                     mol.metadata = Some(md.clone())
