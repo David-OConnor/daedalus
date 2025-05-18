@@ -1,7 +1,8 @@
 use std::{f32::consts::TAU, path::Path, time::Instant};
 
+use bio_apis::{drugbank, pubchem, rcsb};
 use egui::{Color32, ComboBox, Context, RichText, Slider, TextEdit, TopBottomPanel, Ui};
-use graphics::{Camera, ControlScheme, EngineUpdates, Entity, RIGHT_VEC, Scene, UP_VEC};
+use graphics::{ControlScheme, EngineUpdates, Entity, RIGHT_VEC, Scene, UP_VEC};
 use lin_alg::f32::{Quaternion, Vec3};
 use na_seq::AaIdent;
 
@@ -19,7 +20,6 @@ use crate::{
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
     mol_drawing::{COLOR_DOCKING_SITE_MESH, MoleculeView, draw_ligand, draw_molecule},
     molecule::{Ligand, Molecule, ResidueType},
-    rcsb_api::{get_newly_released, open_drugbank, open_pdb, open_pubchem},
     render::{
         CAM_INIT_OFFSET, MESH_DOCKING_SURFACE, RENDER_DIST_FAR, RENDER_DIST_NEAR,
         set_docking_light, set_flashlight,
@@ -137,6 +137,7 @@ pub fn handle_input(
     ui.ctx().input(|ip| {
         // Check for file drop
         if let Some(dropped_files) = ip.raw.dropped_files.first() {
+            println!("Drop check A");
             if let Some(path) = &dropped_files.path {
                 let ligand_load = path
                     .extension()
@@ -146,7 +147,9 @@ pub fn handle_input(
                     .unwrap_or_default()
                     == "sdf";
 
+                println!("DC B");
                 load_file(path, state, redraw, reset_cam, engine_updates, ligand_load);
+                println!("DC C");
             }
         }
     });
@@ -1014,19 +1017,19 @@ fn mol_descrip(mol: &Molecule, ui: &mut Ui) {
     if mol.ident.len() <= 5 {
         // todo: You likely need a better approach.
         if ui.button("View on RCSB").clicked() {
-            open_pdb(&mol.ident);
+            rcsb::open_overview(&mol.ident);
         }
     }
 
     if let Some(id) = &mol.drugbank_id {
         if ui.button("View on Drugbank").clicked() {
-            open_drugbank(id);
+            drugbank::open_overview(id);
         }
     }
 
     if let Some(id) = mol.pubchem_cid {
         if ui.button("View on PubChem").clicked() {
-            open_pubchem(id);
+            pubchem::open_overview(id);
         }
     }
 }
@@ -1385,7 +1388,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     .button(RichText::new("I'm feeling lucky 🍀").color(color_open_tools))
                     .clicked()
                 {
-                    if let Ok(ident) = get_newly_released() {
+                    if let Ok(ident) = rcsb::get_newly_released() {
                         println!("Random ident: {:?}", ident);
                         match load_cif_rcsb(&ident) {
                             Ok(pdb) => {

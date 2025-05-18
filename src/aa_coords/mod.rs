@@ -218,12 +218,11 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
     };
 
     for (i, atom) in atoms.iter().enumerate() {
-        if atom.role.is_none() {
-            continue;
-        }
+        let Some(role) = atom.role else { continue };
+
         // todo: Experimenting with the first/last residues, to get
         // if role != AtomRole::Sidechain && prev_cp_ca.is_some() && next_n.is_some() {
-        if atom.role.as_ref().unwrap() != &AtomRole::Sidechain {
+        if role != AtomRole::Sidechain {
             continue;
         }
 

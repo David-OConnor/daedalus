@@ -3,6 +3,7 @@
 use std::{collections::HashMap, path::PathBuf};
 
 use bincode::{Decode, Encode};
+use bio_apis::rcsb::{PdbMetaData, load_metadata};
 use graphics::{
     ControlScheme,
     app_utils::{load, save},
@@ -13,10 +14,9 @@ use crate::{
     docking::DockingSite,
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
     mol_drawing::MoleculeView,
-    rcsb_api::{PdbMetaData, load_pdb_metadata},
 };
 
-pub const DEFAULT_PREFS_FILE: &str = "daedelus_prefs.bcv";
+pub const DEFAULT_PREFS_FILE: &str = "daedalus_prefs.bcv";
 
 #[derive(Debug, Encode, Decode)]
 pub struct ToSave {
@@ -48,6 +48,11 @@ impl Default for ToSave {
 }
 
 #[derive(Debug, Encode, Decode)]
+pub struct MolMetaData {
+    prim_cit_title: String,
+}
+
+#[derive(Debug, Encode, Decode)]
 pub struct PerMolToSave {
     selection: Selection,
     cam_snapshots: Vec<CamSnapshot>,
@@ -59,7 +64,7 @@ pub struct PerMolToSave {
     chain_vis: Vec<bool>,
     chain_to_pick_res: Option<usize>,
     visibility: Visibility,
-    metadata: Option<PdbMetaData>,
+    metadata: Option<MolMetaData>,
     docking_site: DockingSite,
     show_docking_tools: bool,
 }
@@ -71,7 +76,12 @@ impl PerMolToSave {
 
         if let Some(mol) = &state.molecule {
             chain_vis = mol.chains.iter().map(|c| c.visible).collect();
-            metadata = mol.metadata.clone();
+
+            if let Some(md) = &mol.metadata {
+                metadata = Some(MolMetaData {
+                    prim_cit_title: md.prim_cit_title.clone(),
+                });
+            }
         }
 
         let mut docking_site = Default::default();
@@ -133,7 +143,9 @@ impl State {
                 self.ui.show_docking_tools = data.show_docking_tools;
 
                 if let Some(md) = &data.metadata {
-                    mol.metadata = Some(md.clone())
+                    mol.metadata = Some(PdbMetaData {
+                        prim_cit_title: md.prim_cit_title.clone(),
+                    })
                 }
 
                 for (i, chain) in mol.chains.iter_mut().enumerate() {
@@ -148,7 +160,7 @@ impl State {
             // If loaded from file or not.
             if mol.metadata.is_none() {
                 println!("Getting MD");
-                match load_pdb_metadata(&mol.ident) {
+                match load_metadata(&mol.ident) {
                     Ok(md) => mol.metadata = Some(md),
                     Err(_) => eprintln!("Error loading metadata for: {}", mol.ident),
                 }

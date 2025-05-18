@@ -3,6 +3,7 @@
 //! Contains data structures and related code for molecules, atoms, residues, chains, etc.
 use std::{fmt, str::FromStr};
 
+use bio_apis::rcsb::PdbMetaData;
 use lin_alg::{
     f32::Vec3 as Vec3F32,
     f64::{Quaternion, Vec3},
@@ -19,7 +20,6 @@ use crate::{
         prep::{DockType, Torsion, UnitCellDims, setup_flexibility},
     },
     element::Element,
-    rcsb_api::PdbMetaData,
     util::mol_center_size,
 };
 

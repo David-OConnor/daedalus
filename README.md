@@ -1,4 +1,4 @@
-# Daedelus molecular viewer
+# Daedalus molecular viewer
 
 For viewing and performing minor edits on moleculars; espsecially proteins and nucleic acids.
 
