@@ -818,7 +818,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
 
     // todo: DRY with Ligand
     // todo: This incorrectly hides hetero-only H bonds.
-    if !state.ui.visibility.hide_h_bonds && !state.ui.visibility.hide_non_hetero {
+    if !state.ui.visibility.hide_h_bonds && !state.ui.visibility.hide_non_hetero && state.ui.mol_view != MoleculeView::SpaceFill {
         for bond in &mol.bonds_hydrogen {
             let atom_donor = &mol.atoms[bond.donor];
             let atom_acceptor = &mol.atoms[bond.acceptor];
