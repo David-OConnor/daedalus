@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Daedalus
+Exec=~/daedalus/daedalus
+Icon=~/daedalus/icon.png
+Type=Application
+Terminal=false
+Categories=Development;Science;Biology;
+Comment=Molecule and protein viewers

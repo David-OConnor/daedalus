@@ -1,9 +1,29 @@
 # Daedalus molecular viewer
 
+[//]: # ([![Crate]&#40;https://img.shields.io/crates/v/daedalus.svg&#41;]&#40;https://crates.io/crates/daedalus&#41;)
+
 For viewing and performing minor edits on moleculars; espsecially proteins and nucleic acids.
 
 Conceptually similar to [PyMol](https://www.pymol.org/), [Chimera](https://www.cgl.ucsf.edu/chimera/), and Discovery Studio.
-Designed to be as easy to use as possible.
+Designed to be as easy to use, and fast as possible.
+
+
+## Installation
+
+### Windows and Linux
+[Download, unzip, and run](https://github.com/David-OConnor/daedalus/releases).
+
+
+Notes:
+- On some Linux distros (eg Ubuntu), run `setup_linux_desktop.sh`, included in the zip, to create a Desktop GUI entry.
+- On Windows, the first time you run the program, you may get the message *"Microsoft Defender prevented an unrecognized app from starting"*. To bypass this, click *More info*, then *Run Anyway*.
+
+### Mac
+
+[//]: # (Compile from source by [downloading and installing Rust]&#40;https://www.rust-lang.org/tools/install&#41;, then running `cargo install daedalus` from a CLI.)
+Compile from source by [downloading and installing Rust](https://www.rust-lang.org/tools/install), then running `cargo build --release` from a CLI
+in the project directory.
+
 
 ## Functionality
 
@@ -11,7 +31,14 @@ Designed to be as easy to use as possible.
 - Visualize ligand docking
 - WIP: This software is a platform for molecular docking, and ab-initio simulations.
 
-![Screenshot A](screenshots/screenshot_a.png)
+![Protein B](screenshots/protein_b.png)
+
+
+## Getting started
+Launch the program. Either open a molecule using the "Open" or "Open Lig" buttons, drag the file into the program window,
+enter a protein identifier in the *Query databases* field, or click *I'm feeling lucky*, to load a recently-uploaded protein
+from the [RCSB PDB](https://www.rcsb.org/).
+
 
 ## Goals
 - Fast
@@ -24,7 +51,7 @@ Designed to be as easy to use as possible.
 - Proteins: mmCIF and PDB
 - Small molecules: SDF, Mol2, and PDBQT
 
-![Screenshot B](screenshots/screenshot_b.png)
+![Docking A](screenshots/docking_a.png)
 
 ## The camera
 
@@ -35,7 +62,7 @@ The free camera controls is intended to be used with a keyboard and mouse togeth
 the viewer, vice the molecule. You can move and rotate and move the camera
 in 6 degrees of freedom, allowing you to easily view the molecule from any perspective.
 
-![Screenshot C](screenshots/screenshot_c.png)
+![Protein A](screenshots/protein_a.png)
 
 #### Mouse controls:
 - Hold the **left mouse button while dragging** to rotate the camera in pitch and yaw.

@@ -10,10 +10,9 @@ use na_seq::AaIdent;
 use crate::{
     PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel,
     element::Element,
-    molecule::{Atom, AtomRole, Bond, Chain, Residue, ResidueType},
+    mol_drawing::MoleculeView,
+    molecule::{Atom, AtomRole, Bond, Chain, Molecule, Residue, ResidueType},
 };
-use crate::mol_drawing::MoleculeView;
-use crate::molecule::Molecule;
 
 const MOVE_TO_TARGET_DIST: f32 = 15.;
 const MOVE_CAM_TO_LIG_DIST: f32 = 30.;
@@ -108,7 +107,9 @@ pub fn find_selected_atom(
             if ui.visibility.hide_sidechains && role == AtomRole::Sidechain {
                 continue;
             }
-            if role == AtomRole::Water && (ui.visibility.hide_water || ui.mol_view == MoleculeView::SpaceFill) {
+            if role == AtomRole::Water
+                && (ui.visibility.hide_water || ui.mol_view == MoleculeView::SpaceFill)
+            {
                 continue;
             }
         }

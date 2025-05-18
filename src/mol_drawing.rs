@@ -137,7 +137,7 @@ fn atom_color(
         Selection::None => (),
     }
 
-    if dimmed {
+    if dimmed && result != COLOR_SELECTED {
         // Desaturate first; otherwise the more saturated initial colors will be relatively visible, while unsaturated
         // ones will appear blackish.
         result = blend_color(result, BACKGROUND_COLOR, DIMMED_PEPTIDE_AMT)
@@ -782,7 +782,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
         let posit_0: Vec3 = atom_0.posit.into();
         let posit_1: Vec3 = atom_1.posit.into();
 
-        let dim_peptide = if state.ligand.is_some() {
+        let dim_peptide = if state.ligand.is_some() && !&mol.atoms[bond.atom_0].hetero {
             state.ui.visibility.dim_peptide
         } else {
             false
@@ -818,7 +818,10 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
 
     // todo: DRY with Ligand
     // todo: This incorrectly hides hetero-only H bonds.
-    if !state.ui.visibility.hide_h_bonds && !state.ui.visibility.hide_non_hetero && state.ui.mol_view != MoleculeView::SpaceFill {
+    if !state.ui.visibility.hide_h_bonds
+        && !state.ui.visibility.hide_non_hetero
+        && state.ui.mol_view != MoleculeView::SpaceFill
+    {
         for bond in &mol.bonds_hydrogen {
             let atom_donor = &mol.atoms[bond.donor];
             let atom_acceptor = &mol.atoms[bond.acceptor];
