@@ -83,6 +83,7 @@ in 6 degrees of freedom, allowing you to easily view the molecule from any persp
 - **R**: Roll clockwise
 
 - **Shift** (left): Hold to increase camera movement and rotation speed.
+- **Scroll whlie holding left mouse**: Roll (Alternative to Q/R)
 
 - **Left arrow**: Select previous residue
 - **Right arrow**: Select next residue

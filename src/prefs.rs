@@ -176,7 +176,7 @@ impl State {
     pub fn load_prefs(&mut self) {
         match load(&PathBuf::from(DEFAULT_PREFS_FILE)) {
             Ok(p) => self.to_save = p,
-            Err(e) => eprintln!("Error loading preferences on init: {e:?}"),
+            Err(_) => eprintln!("Unable to load save file; possibly the first time running."),
         }
 
         self.update_from_prefs();

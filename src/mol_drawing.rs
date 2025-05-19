@@ -16,8 +16,8 @@ use crate::{
     render::{
         ATOM_SHINYNESS, BACKGROUND_COLOR, BALL_RADIUS_WATER, BALL_STICK_RADIUS,
         BALL_STICK_RADIUS_H, BODY_SHINYNESS, CAM_INIT_OFFSET, Color, MESH_BOND, MESH_DOCKING_BOX,
-        MESH_SOLVENT_SURFACE, MESH_SPHERE, MESH_SPHERE_LOWRES, MESH_SPHERE_MEDRES, RENDER_DIST_FAR,
-        set_docking_light, set_static_light,
+        MESH_SOLVENT_SURFACE, MESH_SPHERE_HIGHRES, MESH_SPHERE_LOWRES, MESH_SPHERE_MEDRES,
+        RENDER_DIST_FAR, set_docking_light, set_static_light,
     },
     surface::{get_mesh_points, mesh_from_sas_points},
     util::orbit_center,
@@ -48,6 +48,19 @@ const DOCKING_SITE_OPACITY: f32 = 0.35;
 
 const DIMMED_PEPTIDE_AMT: f32 = 0.92; // Higher value means more dim.
 
+// This allows us to more easily customize sphere mesh resolution.
+const MESH_BALL_STICK_SPHERE: usize = MESH_SPHERE_MEDRES;
+// todo: I believe this causes performance problems on many machines. But looks
+// todo much nicer.
+const MESH_SPACEFILL_SPHERE: usize = MESH_SPHERE_HIGHRES;
+const MESH_WATER_SPHERE: usize = MESH_SPHERE_MEDRES;
+const MESH_BOND_CAP: usize = MESH_SPHERE_MEDRES;
+// This should ideally be high res, but we experience anomolies on viewing items inside it, while
+// the cam is outside.
+// const MESH_DOCKING_SITE: usize = MESH_SPHERE_HIGHRES;
+const MESH_DOCKING_SITE: usize = MESH_DOCKING_BOX;
+const MESH_SURFACE_DOT: usize = MESH_SPHERE_LOWRES;
+
 // todo: For ligands that are flexible, highlight the fleixble bonds in a bright color.
 
 fn blend_color(color_0: Color, color_1: Color, portion: f32) -> Color {
@@ -67,10 +80,10 @@ fn mod_color_for_ligand(color: &Color) -> Color {
 #[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]
 pub enum MoleculeView {
     Sticks,
+    #[default]
     Backbone,
     BallAndStick,
     /// i.e. Van der Waals radius, or CPK.
-    #[default]
     SpaceFill,
     Cartoon,
     Surface,
@@ -85,7 +98,6 @@ impl fmt::Display for MoleculeView {
             Self::Sticks => "Sticks",
             Self::BallAndStick => "Ball and stick",
             Self::Cartoon => "Cartoon",
-            // Self::SpaceFill => "Spacefill (Van der Waals / CPK)",
             Self::SpaceFill => "Spacefill",
             Self::Surface => "Surface (Van der Waals)",
             Self::Mesh => "Mesh (Van der Waals)",
@@ -185,7 +197,7 @@ fn add_bond(
         // These spheres are to put a rounded cap on each bond.
         // todo: You only need a dome; performance implications.
         let cap_0 = Entity::new(
-            MESH_SPHERE,
+            MESH_BOND_CAP,
             posits.0,
             Quaternion::new_identity(),
             BOND_RADIUS * thickness,
@@ -193,7 +205,7 @@ fn add_bond(
             BODY_SHINYNESS,
         );
         let cap_1 = Entity::new(
-            MESH_SPHERE,
+            MESH_BOND_CAP,
             posits.1,
             Quaternion::new_identity(),
             BOND_RADIUS * thickness,
@@ -396,8 +408,7 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene) {
     // Add a visual indicator for the docking site.
     scene.entities.push(Entity {
         // todo: High-res spheres are blocking bonds inside them. Likely engine problem.
-        // mesh: MESH_SPHERE,
-        mesh: MESH_SPHERE_MEDRES,
+        mesh: MESH_DOCKING_SITE,
         position: lig.docking_site.site_center.into(),
         scale: lig.docking_site.site_radius as f32,
         color: COLOR_DOCKING_BOX,
@@ -530,7 +541,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
         for ring in mol.sa_surface_pts.as_ref().unwrap() {
             for sfc_pt in ring {
                 scene.entities.push(Entity::new(
-                    MESH_SPHERE_LOWRES,
+                    MESH_SURFACE_DOT,
                     *sfc_pt,
                     Quaternion::new_identity(),
                     RADIUS_SFC_DOT,
@@ -588,7 +599,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                         );
 
                         scene.entities.push(Entity::new(
-                            MESH_SPHERE,
+                            MESH_WATER_SPHERE,
                             atom.posit.into(),
                             Quaternion::new_identity(),
                             BALL_RADIUS_WATER,
@@ -669,11 +680,11 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                 }
             }
 
-            let mut radius = match ui.mol_view {
-                MoleculeView::SpaceFill => atom.element.vdw_radius(),
+            let (mut radius, mesh) = match ui.mol_view {
+                MoleculeView::SpaceFill => (atom.element.vdw_radius(), MESH_SPACEFILL_SPHERE),
                 _ => match atom.element {
-                    Element::Hydrogen => BALL_STICK_RADIUS_H,
-                    _ => BALL_STICK_RADIUS,
+                    Element::Hydrogen => (BALL_STICK_RADIUS_H, MESH_BALL_STICK_SPHERE),
+                    _ => (BALL_STICK_RADIUS, MESH_BALL_STICK_SPHERE),
                 },
             };
 
@@ -699,7 +710,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
             );
 
             scene.entities.push(Entity::new(
-                MESH_SPHERE,
+                mesh,
                 atom.posit.into(),
                 Quaternion::new_identity(),
                 radius,

@@ -1389,7 +1389,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     .clicked()
                 {
                     if let Ok(ident) = rcsb::get_newly_released() {
-                        println!("Random ident: {:?}", ident);
                         match load_cif_rcsb(&ident) {
                             Ok(pdb) => {
                                 state.pdb = Some(pdb);

@@ -33,7 +33,7 @@ pub const ATOM_SHINYNESS: f32 = 0.9;
 pub const BODY_SHINYNESS: f32 = 0.9;
 
 // Keep this in sync with mesh init.
-pub const MESH_SPHERE: usize = 0;
+pub const MESH_SPHERE_HIGHRES: usize = 0;
 pub const MESH_CUBE: usize = 1;
 pub const MESH_BOND: usize = 2;
 // pub const MESH_BOND_LIGAND: usize = 3;
