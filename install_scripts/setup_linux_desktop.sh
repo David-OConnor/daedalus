@@ -14,4 +14,4 @@ cp icon.png ~/daedalus/icon.png
 # Update the desktop entry with the absolute path.
 sed "s|~|$HOME|g" daedalus.desktop > ~/.local/share/applications/daedalus.desktop
 
-printf "\nComplete. You can launch PlasCAD through the GUI, eg search "Daedalus", and/or add to favorites."\n"
+printf "\nComplete. You can launch Daedalus through the GUI, eg search \"Daedalus\", and/or add to favorites.\n"
