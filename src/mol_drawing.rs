@@ -54,7 +54,7 @@ const MESH_BALL_STICK_SPHERE: usize = MESH_SPHERE_MEDRES;
 // todo much nicer.
 const MESH_SPACEFILL_SPHERE: usize = MESH_SPHERE_HIGHRES;
 const MESH_WATER_SPHERE: usize = MESH_SPHERE_MEDRES;
-const MESH_BOND_CAP: usize = MESH_SPHERE_MEDRES;
+const MESH_BOND_CAP: usize = MESH_SPHERE_LOWRES;
 // This should ideally be high res, but we experience anomolies on viewing items inside it, while
 // the cam is outside.
 // const MESH_DOCKING_SITE: usize = MESH_SPHERE_HIGHRES;

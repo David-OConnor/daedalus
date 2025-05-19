@@ -232,16 +232,15 @@ pub fn select_from_search(state: &mut State) {
 }
 
 pub fn cycle_res_selected(state: &mut State, scene: &mut Scene, reverse: bool) {
-    if let Some(mol) = &state.molecule {
-        state.ui.view_sel_level = ViewSelLevel::Residue;
+    let Some(mol) = &state.molecule else { return };
 
-        match state.selection {
-            Selection::Residue(res_i) => {
-                // todo: Consider using the chain the current selection is on instead, if applicable.
-                // todo: E.g. if a residue is selected, but "Select Residues From" is None.
-                if let Some(ch_i) = state.ui.chain_to_pick_res {
-                    // Only cycle to a residue in the selected chain.
-                    let chain = &mol.chains[ch_i];
+    state.ui.view_sel_level = ViewSelLevel::Residue;
+
+    match state.selection {
+        Selection::Residue(res_i) => {
+            for chain in &mol.chains {
+                if chain.residues.contains(&res_i) {
+                    // Pick a residue from the chain the current selection is on.
                     let mut new_res_i = res_i as isize;
 
                     let dir = if reverse { -1 } else { 1 };
@@ -254,12 +253,13 @@ pub fn cycle_res_selected(state: &mut State, scene: &mut Scene, reverse: bool) {
                             break;
                         }
                     }
+                    break;
                 }
             }
-            _ => {
-                if !mol.residues.is_empty() {
-                    state.selection = Selection::Residue(0);
-                }
+        }
+        _ => {
+            if !mol.residues.is_empty() {
+                state.selection = Selection::Residue(0);
             }
         }
     }
