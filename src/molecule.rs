@@ -23,6 +23,8 @@ use crate::{
     util::mol_center_size,
 };
 
+use rayon::prelude::*;
+
 pub const ATOM_NEIGHBOR_DIST_THRESH: f64 = 5.; // todo: Adjust A/R.
 
 #[derive(Debug, Default, Clone)]
@@ -292,62 +294,52 @@ impl Ligand {
             None => &self.pose,
         };
 
-        let mut result = Vec::with_capacity(self.molecule.atoms.len());
+        let mut result: Vec<_> = self.molecule.atoms
+            .par_iter()
+            .map(|atom| {
+                let posit_rel = atom.posit - anchor;
+                pose_.anchor_posit + pose_.orientation.rotate_vec(posit_rel)
+            })
+            .collect();
 
-        match &pose_.conformation_type {
-            ConformationType::Rigid => {
-                for atom in &self.molecule.atoms {
-                    // Rotate around the anchor atom.
-                    let posit_rel = atom.posit - anchor;
-                    result.push(pose_.anchor_posit + pose_.orientation.rotate_vec(posit_rel));
-                }
-            }
-            ConformationType::Flexible { torsions } => {
-                // Initial pass: position and orientation (rigid).
-                for atom in &self.molecule.atoms {
-                    // Rotate around the anchor atom.
-                    let posit_rel = atom.posit - anchor;
-                    result.push(pose_.anchor_posit + pose_.orientation.rotate_vec(posit_rel));
-                }
+        if let ConformationType::Flexible { torsions } = &pose_.conformation_type {
+            // Second pass: Rotations. For each flexible bond, divide all atoms into two groups:
+            // those upstream of this bond, and those downstream. For all downstream atoms, rotate
+            // by `torsions[i]`: The dihedral angle along this bond. If there are ambiguities in this
+            // process, it may mean the bond should not have been marked as flexible.
+            for torsion in torsions {
+                let bond = &self.molecule.bonds[torsion.bond];
 
-                // Second pass: Rotations. For each flexible bond, divide all atoms into two groups:
-                // those upstream of this bond, and those downstream. For all downstream atoms, rotate
-                // by `torsions[i]`: The dihedral angle along this bond. If there are ambiguities in this
-                // process, it may mean the bond should not have been marked as flexible.
-                for torsion in torsions {
-                    let bond = &self.molecule.bonds[torsion.bond];
+                // -- Step 1: measure how many atoms would be "downstream" from each side
+                let side0_downstream = self.find_downstream_atoms(bond.atom_1, bond.atom_0);
+                let side1_downstream = self.find_downstream_atoms(bond.atom_0, bond.atom_1);
 
-                    // -- Step 1: measure how many atoms would be "downstream" from each side
-                    let side0_downstream = self.find_downstream_atoms(bond.atom_1, bond.atom_0);
-                    let side1_downstream = self.find_downstream_atoms(bond.atom_0, bond.atom_1);
+                // -- Step 2: pick the pivot as the side with a larger subtree
+                let (pivot_idx, side_idx, downstream_atom_indices) =
+                    if side0_downstream.len() > side1_downstream.len() {
+                        // side0_downstream means "downstream from atom_1 ignoring bond to atom_0"
+                        // => so pivot is atom_0, side is atom_1
+                        (bond.atom_0, bond.atom_1, side1_downstream)
+                    } else {
+                        // side1_downstream has equal or more
+                        (bond.atom_1, bond.atom_0, side0_downstream)
+                    };
 
-                    // -- Step 2: pick the pivot as the side with a larger subtree
-                    let (pivot_idx, side_idx, downstream_atom_indices) =
-                        if side0_downstream.len() > side1_downstream.len() {
-                            // side0_downstream means "downstream from atom_1 ignoring bond to atom_0"
-                            // => so pivot is atom_0, side is atom_1
-                            (bond.atom_0, bond.atom_1, side1_downstream)
-                        } else {
-                            // side1_downstream has equal or more
-                            (bond.atom_1, bond.atom_0, side0_downstream)
-                        };
+                // pivot and side positions
+                let pivot_pos = result[pivot_idx];
+                let side_pos = result[side_idx];
+                let axis_vec = (side_pos - pivot_pos).to_normalized();
 
-                    // pivot and side positions
-                    let pivot_pos = result[pivot_idx];
-                    let side_pos = result[side_idx];
-                    let axis_vec = (side_pos - pivot_pos).to_normalized();
+                // Build the Quaternion for this rotation
+                let rotator =
+                    Quaternion::from_axis_angle(axis_vec, torsion.dihedral_angle as f64);
 
-                    // Build the Quaternion for this rotation
-                    let rotator =
-                        Quaternion::from_axis_angle(axis_vec, torsion.dihedral_angle as f64);
-
-                    // Now apply the rotation to each downstream atom:
-                    for &atom_idx in &downstream_atom_indices {
-                        let old_pos = result[atom_idx];
-                        let relative = old_pos - pivot_pos;
-                        let new_pos = pivot_pos + rotator.rotate_vec(relative);
-                        result[atom_idx] = new_pos;
-                    }
+                // Now apply the rotation to each downstream atom:
+                for &atom_idx in &downstream_atom_indices {
+                    let old_pos = result[atom_idx];
+                    let relative = old_pos - pivot_pos;
+                    let new_pos = pivot_pos + rotator.rotate_vec(relative);
+                    result[atom_idx] = new_pos;
                 }
             }
         }
@@ -534,7 +526,7 @@ impl Atom {
                 AtomRole::C_Prime,
                 AtomRole::O_Backbone,
             ]
-            .contains(&r),
+                .contains(&r),
             None => false,
         }
     }
