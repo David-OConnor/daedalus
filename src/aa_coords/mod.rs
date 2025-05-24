@@ -498,10 +498,9 @@ fn handle_backbone(
     let mut c_p_posit = None;
 
     for atom in atoms {
-        if atom.role.is_none() {
-            continue;
-        }
-        match atom.role.as_ref().unwrap() {
+        let Some(role) = atom.role else { continue };
+
+        match role {
             AtomRole::N_Backbone => {
                 n_posit = Some(atom.posit);
             }
@@ -515,14 +514,11 @@ fn handle_backbone(
         }
     }
 
-    if c_alpha_posit.is_none() || c_p_posit.is_none() || n_posit.is_none() {
+    let (Some(c_alpha_posit), Some(c_p_posit), Some(n_posit)) = (c_alpha_posit, c_p_posit, n_posit)
+    else {
         eprintln!("Error: Missing backbone atoms in coords.");
         return (dihedral, None);
-    }
-
-    let c_alpha_posit = c_alpha_posit.unwrap();
-    let c_p_posit = c_p_posit.unwrap();
-    let n_posit = n_posit.unwrap();
+    };
 
     // /// Dihedral angle between C' and N
     // /// Tor (Cα, C', N, Cα) is the ω torsion angle
@@ -647,12 +643,10 @@ pub fn aa_data_from_coords(
     // todo: Another step required using sidechain carbon?
     let mut posits_sc = Vec::new();
     for atom_sc in atoms {
-        if atom_sc.role.is_none() {
+        let Some(role) = atom_sc.role else {
             continue;
-        }
-        if atom_sc.role.as_ref().unwrap() == &AtomRole::Sidechain
-            && atom_sc.element == Element::Carbon
-        {
+        };
+        if role == AtomRole::Sidechain && atom_sc.element == Element::Carbon {
             posits_sc.push(atom_sc.posit);
         }
     }

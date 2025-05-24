@@ -137,7 +137,6 @@ pub fn handle_input(
     ui.ctx().input(|ip| {
         // Check for file drop
         if let Some(dropped_files) = ip.raw.dropped_files.first() {
-            println!("Drop check A");
             if let Some(path) = &dropped_files.path {
                 let ligand_load = path
                     .extension()
@@ -147,9 +146,7 @@ pub fn handle_input(
                     .unwrap_or_default()
                     == "sdf";
 
-                println!("DC B");
                 load_file(path, state, redraw, reset_cam, engine_updates, ligand_load);
-                println!("DC C");
             }
         }
     });
@@ -571,11 +568,7 @@ fn docking(
     engine_updates: &mut EngineUpdates,
     ui: &mut Ui,
 ) {
-    let Some(lig) = state.ligand.as_mut() else {
-        return;
-    };
-
-    let Some(mol) = state.molecule.as_ref() else {
+    let (Some(mol), Some(lig)) = (&state.molecule, &mut state.ligand) else {
         return;
     };
 
@@ -589,7 +582,6 @@ fn docking(
             }
         }
 
-        // if state.docking_ready {
         if ui.button("Dock").clicked() {
             // todo: Ideally move the camera to the docking site prior to docking. You could do this
             // todo by deferring the docking below to the next frame.
@@ -767,11 +759,7 @@ fn docking(
                 .button(RichText::new("Center on sel").color(COLOR_HIGHLIGHT))
                 .clicked()
             {
-                let atom_sel = state
-                    .molecule
-                    .as_ref()
-                    .unwrap()
-                    .get_sel_atom(state.selection);
+                let atom_sel = mol.get_sel_atom(state.selection);
 
                 if let Some(atom) = atom_sel {
                     docking_posit_update = Some(atom.posit);
@@ -1000,6 +988,8 @@ fn selection_section(
 
 fn mol_descrip(mol: &Molecule, ui: &mut Ui) {
     ui.heading(RichText::new(mol.ident.clone()).color(Color32::GOLD));
+
+    ui.label(format!("{} atoms", mol.atoms.len()));
 
     if let Some(metadata) = &mol.metadata {
         // Limit size to prevent UI problems.
@@ -1271,6 +1261,31 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                         state.volatile.dialogs.save.save_file();
                     }
                 }
+
+                // todo: Move these A/R. LIkely in a sub menu.
+                if let Some(data) = &mol.rcsb_data_avail {
+                    if data.structure_factors {
+                        if ui.button(RichText::new("SF").color(COLOR_HIGHLIGHT)).clicked() {
+                            match rcsb::load_structure_factors_cif(&mol.ident) {
+                                Ok(data) => {
+                                    // println!("SF data: {:?}", data);
+                                }
+                                Err(_) =>  eprintln!("Error loading RCSB structure factors for {:?}", &mol.ident),
+                            }
+                        }
+                    }
+
+                    if data.validation {
+                        if ui.button(RichText::new("Val").color(COLOR_HIGHLIGHT)).clicked() {
+                            match rcsb::load_validation_cif(&mol.ident) {
+                                Ok(data) => {
+                                    // println!("VAL DATA: {:?}", data);
+                                }
+                                Err(_) =>  eprintln!("Error loading RCSB validation for {:?}", &mol.ident),
+                            }
+                        }
+                    }
+                }
             }
 
             if ui.button("Open lig").clicked() {
@@ -1325,10 +1340,13 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             if !state.ui.db_input.is_empty() {
                 if ui.button("Download from RCSB").clicked() {
                     match load_cif_rcsb(&state.ui.db_input) {
+                        // tood: For organization purposes, move thi scode out of the UI.
                         Ok(pdb) => {
                             state.pdb = Some(pdb);
                             state.molecule = Some(Molecule::from_pdb(state.pdb.as_ref().unwrap()));
                             state.update_from_prefs();
+                            // Only after updating from prefs (to prevent unecesasary loading) do we update data avail.
+                            state.molecule.as_mut().unwrap().update_data_avail();
 
                             redraw = true;
                             reset_cam = true;
@@ -1391,9 +1409,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     if let Ok(ident) = rcsb::get_newly_released() {
                         match load_cif_rcsb(&ident) {
                             Ok(pdb) => {
+                                state.molecule = Some(Molecule::from_pdb(&pdb));
                                 state.pdb = Some(pdb);
-                                state.molecule =
-                                    Some(Molecule::from_pdb(state.pdb.as_ref().unwrap()));
                                 state.update_from_prefs();
 
                                 redraw = true;

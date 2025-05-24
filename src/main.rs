@@ -30,6 +30,7 @@ mod vibrations;
 
 #[cfg(test)]
 mod tests;
+mod reflection_density;
 
 use std::{collections::HashMap, fmt, io, io::ErrorKind, path::Path, sync::Arc};
 
@@ -104,6 +105,7 @@ struct FileDialogs {
     save_ligand: FileDialog,
     autodock_path: FileDialog,
     save_pdbqt: FileDialog,
+    load_mdx: FileDialog,
 }
 
 impl Default for FileDialogs {
@@ -135,6 +137,11 @@ impl Default for FileDialogs {
         }
         .add_save_extension("PDBQT", "pdbqt");
 
+        let cfg_load_mdx = FileDialogConfig {
+            ..Default::default()
+        }
+            .add_file_filter_extensions("MDX", vec!["mdx"]);
+
         let load = FileDialog::with_config(cfg_protein.clone()).default_file_filter("PDB/CIF");
         let load_ligand =
             FileDialog::with_config(cfg_small_mol.clone()).default_file_filter("SDF/MOL2/PDBQT");
@@ -144,10 +151,9 @@ impl Default for FileDialogs {
             .default_save_extension("CIF");
 
         let save_ligand = FileDialog::with_config(cfg_save_small_mol).default_save_extension("SDF");
-
         let autodock_path = FileDialog::with_config(cfg_vina).default_file_filter("Executables");
-
         let save_pdbqt = FileDialog::with_config(cfg_save_pdbqt).default_save_extension("PDBQT");
+        let load_mdx = FileDialog::with_config(cfg_load_mdx).default_file_filter("MDX");
 
         Self {
             load,
@@ -156,6 +162,7 @@ impl Default for FileDialogs {
             save_ligand,
             autodock_path,
             save_pdbqt,
+            load_mdx,
         }
     }
 }
@@ -360,13 +367,14 @@ impl State {
                     ligand = lig_loaded;
                     molecule
                 })
-            } // todo: Handle the ligand part.
+            }
             "pdb" | "cif" => {
                 let pdb = load_pdb(path);
                 match pdb {
                     Ok(p) => {
+                        let mol = Molecule::from_pdb(&p);
                         self.pdb = Some(p);
-                        Ok(Molecule::from_pdb(self.pdb.as_ref().unwrap()))
+                        Ok(mol)
                     }
                     Err(e) => Err(e),
                 }
@@ -382,21 +390,20 @@ impl State {
                 if is_ligand {
                     let het_residues = mol.het_residues.clone();
                     let mol_atoms = mol.atoms.clone();
-                    self.ligand = Some(Ligand::new(mol));
 
                     let mut init_posit = Vec3F64::new_zero();
+
+                    let lig = Ligand::new(mol);
 
                     // Align to a hetero residue in the open molecule, if there is a match.
                     // todo: Keep this in sync with the UI button-based code; this will have updated.
                     for res in het_residues {
-                        if (res.atoms.len() as i16
-                            - self.ligand.as_ref().unwrap().molecule.atoms.len() as i16)
-                            .abs()
-                            < 22
-                        {
+                        if (res.atoms.len() as i16 - lig.molecule.atoms.len() as i16).abs() < 22 {
                             init_posit = mol_atoms[res.atoms[0]].posit;
                         }
                     }
+
+                    self.ligand = Some(lig);
 
                     self.update_docking_site(init_posit);
                 } else {
@@ -404,6 +411,9 @@ impl State {
                 }
 
                 self.update_from_prefs();
+
+                // Only after updating from prefs (to prevent unecesasary loading) do we update data avail.
+                self.molecule.as_mut().unwrap().update_data_avail();
 
                 if self.get_make_docking_setup().is_none() {
                     eprintln!("Problem making or getting docking setup.");
@@ -418,17 +428,12 @@ impl State {
     /// Gets the docking setup, creating it if it doesn't exist. Returns `None` if molecule
     /// or ligand are absent.
     pub fn get_make_docking_setup(&mut self) -> Option<&DockingSetup> {
-        if self.molecule.is_none() || self.ligand.is_none() {
+        let (Some(mol), Some(lig)) = (&self.molecule, &mut self.ligand) else {
             return None;
-        }
+        };
 
         Some(self.volatile.docking_setup.get_or_insert_with(|| {
-            DockingSetup::new(
-                self.molecule.as_ref().unwrap(),
-                self.ligand.as_mut().unwrap(),
-                &self.volatile.lj_lookup_table,
-                &self.bh_config,
-            )
+            DockingSetup::new(mol, lig, &self.volatile.lj_lookup_table, &self.bh_config)
         }))
     }
 

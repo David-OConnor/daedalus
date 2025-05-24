@@ -1,17 +1,35 @@
-# This file sets up a Linux desktop entry, and moves Daedalus to the home directory.
+# This file sets up a Linux desktop entry, and moves the application to the home directory.
 
-printf "Moving the Daedalus executable and icon to ~/daedalus..."
+NAME_UPPER="Daedalus"
+NAME="daedalus"
 
-chmod +x daedalus
+APP_DIR="$HOME/${NAME}"
+DESKTOP_PATH="$HOME/.local/share/applications/${NAME}.desktop"
 
-if [ ! -d ~/daedalus ]; then
-  mkdir ~/daedalus
+
+printf "Moving the ${NAME_UPPER} executable and icon to ${APP_DIR}..."
+
+chmod +x $NAME
+
+if [ ! -d "$APP_DIR" ]; then
+  mkdir "$APP_DIR"
 fi
 
-cp daedalus ~/daedalus
-cp icon.png ~/daedalus/icon.png
+cp "$NAME" "$APP_DIR"
+cp icon.png "$APP_DIR/icon.png"
 
-# Update the desktop entry with the absolute path.
-sed "s|~|$HOME|g" daedalus.desktop > ~/.local/share/applications/daedalus.desktop
+# We create a .desktop file dynamically here; one fewer file to manage.
+cat > "$DESKTOP_PATH" <<EOF
+[Desktop Entry]
+Name=${NAME_UPPER}
+Exec=${APP_DIR}/${NAME}
+Icon=${APP_DIR}/icon.png
+Type=Application
+Terminal=false
+Categories=Development;Science;Biology;
+Comment=Molecule and protein viewer
+EOF
 
-printf "\nComplete. You can launch Daedalus through the GUI, eg search \"Daedalus\", and/or add to favorites.\n"
+chmod +x "$DESKTOP_PATH"
+
+printf "\nComplete. You can launch ${NAME_UPPER} through the GUI (e.g., search \"${NAME_UPPER}\") and/or add it to favorites.\n"

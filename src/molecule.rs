@@ -2,13 +2,17 @@
 
 //! Contains data structures and related code for molecules, atoms, residues, chains, etc.
 use std::{fmt, str::FromStr};
-
+use std::collections::HashMap;
 use bio_apis::rcsb::PdbMetaData;
 use lin_alg::{
     f32::Vec3 as Vec3F32,
     f64::{Quaternion, Vec3},
 };
 use na_seq::AminoAcid;
+use rayon::prelude::*;
+
+use bio_apis::rcsb::DataAvailable;
+use bio_apis::rcsb;
 
 // use pdbtbx::SecondaryStructure;
 use crate::{
@@ -22,8 +26,7 @@ use crate::{
     element::Element,
     util::mol_center_size,
 };
-
-use rayon::prelude::*;
+use crate::prefs::PerMolToSave;
 
 pub const ATOM_NEIGHBOR_DIST_THRESH: f64 = 5.; // todo: Adjust A/R.
 
@@ -54,6 +57,7 @@ pub struct Molecule {
     /// We currently use this for aligning ligands to CIF etc data, where they may already be included
     /// in a protein/ligand complex as hetero atoms.
     pub het_residues: Vec<Residue>,
+    pub rcsb_data_avail: Option<DataAvailable>,
 }
 
 impl Molecule {
@@ -156,6 +160,23 @@ impl Molecule {
                 }
             }
             Selection::None => None,
+        }
+    }
+
+    pub fn update_data_avail(&mut self) {
+        println!("Updating data avail...");
+        if self.rcsb_data_avail.is_none() {
+            println!("Getting web data avail for {:?}", self.ident);
+            match rcsb::get_data_avail(&self.ident) {
+                Ok(d) => {
+                    println!("Data available loaded: {:?}", d);
+                    self.rcsb_data_avail = Some(d);
+                }
+                Err(_) => eprintln!("Error getting RCSB data availability for {}", self.ident),
+            }
+        } else {
+            // todo temp
+            println!("Already have data available: {:?}", &self.rcsb_data_avail.as_ref().unwrap());
         }
     }
 }
@@ -294,7 +315,9 @@ impl Ligand {
             None => &self.pose,
         };
 
-        let mut result: Vec<_> = self.molecule.atoms
+        let mut result: Vec<_> = self
+            .molecule
+            .atoms
             .par_iter()
             .map(|atom| {
                 let posit_rel = atom.posit - anchor;
@@ -331,8 +354,7 @@ impl Ligand {
                 let axis_vec = (side_pos - pivot_pos).to_normalized();
 
                 // Build the Quaternion for this rotation
-                let rotator =
-                    Quaternion::from_axis_angle(axis_vec, torsion.dihedral_angle as f64);
+                let rotator = Quaternion::from_axis_angle(axis_vec, torsion.dihedral_angle as f64);
 
                 // Now apply the rotation to each downstream atom:
                 for &atom_idx in &downstream_atom_indices {
@@ -526,7 +548,7 @@ impl Atom {
                 AtomRole::C_Prime,
                 AtomRole::O_Backbone,
             ]
-                .contains(&r),
+            .contains(&r),
             None => false,
         }
     }

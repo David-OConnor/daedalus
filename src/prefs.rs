@@ -3,7 +3,7 @@
 use std::{collections::HashMap, path::PathBuf};
 
 use bincode::{Decode, Encode};
-use bio_apis::rcsb::{PdbMetaData, load_metadata};
+use bio_apis::rcsb::{PdbMetaData, load_metadata, DataAvailable};
 use graphics::{
     ControlScheme,
     app_utils::{load, save},
@@ -16,7 +16,7 @@ use crate::{
     mol_drawing::MoleculeView,
 };
 
-pub const DEFAULT_PREFS_FILE: &str = "daedalus_prefs.bcv";
+pub const DEFAULT_PREFS_FILE: &str = "daedalus_prefs.dae";
 
 #[derive(Debug, Encode, Decode)]
 pub struct ToSave {
@@ -67,12 +67,14 @@ pub struct PerMolToSave {
     metadata: Option<MolMetaData>,
     docking_site: DockingSite,
     show_docking_tools: bool,
+    rcsb_data_avail: Option<DataAvailable>,
 }
 
 impl PerMolToSave {
     pub fn from_state(state: &State) -> Self {
         let mut chain_vis = Vec::new();
         let mut metadata = None;
+        let mut rcsb_data_avail = None;
 
         if let Some(mol) = &state.molecule {
             chain_vis = mol.chains.iter().map(|c| c.visible).collect();
@@ -82,6 +84,8 @@ impl PerMolToSave {
                     prim_cit_title: md.prim_cit_title.clone(),
                 });
             }
+
+            rcsb_data_avail = mol.rcsb_data_avail.clone();
         }
 
         let mut docking_site = Default::default();
@@ -103,6 +107,7 @@ impl PerMolToSave {
             metadata,
             docking_site,
             show_docking_tools: state.ui.show_docking_tools,
+            rcsb_data_avail,
         }
     }
 }
@@ -155,6 +160,8 @@ impl State {
                 }
 
                 center = data.docking_site.site_center;
+
+                mol.rcsb_data_avail = data.rcsb_data_avail.clone();
             }
 
             // If loaded from file or not.

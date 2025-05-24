@@ -1,8 +1,8 @@
-/target
-Cargo.lock
-
 # IDE
 *.iws
+
+/target
+Cargo.lock
 
 # CUDA
 *.exe
@@ -18,6 +18,9 @@ Cargo.lock
 *.sdf
 *.mol2
 *.pdbqt
+*.mtz
 
 # Our prefs format.
+# todo: Old fmt; delete bcv
 *.bcv
+*.dae

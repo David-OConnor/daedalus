@@ -18,13 +18,13 @@ barnes_hut = { version = "1.0.8"}  # enc temp rem
 # todo: Relies on C FFI. This may complicate compiling.
 #qhull = "0.4.0"
 na_seq = "0.2.7"
-bio_apis = "0.1.0"
+bio_apis = {  version = "0.1.0", features = ["encode"] }
 
 # For loading and saving config
 bincode = "2.0.1"
 rayon = "1.10.0"  # Parallel execution on CPU using thread pools.
 # Keep this cuda version in sync with what you have installed on the system.
-cudarc = { version = "0.16.4", optional=true, features=["cuda-12060"] }
+cudarc = { version = "0.16.4", optional=true }
 # For reading PDB and mmCIF files
 pdbtbx = "0.12.0"
 rand = "0.9.1"
@@ -38,21 +38,24 @@ nalgebra = "0.33.2"
 # We use these when developing locally to reduce friction.
 [patch.crates-io]
 #graphics = { path = "../../graphics" }
-#lin_alg = { path = "../../lin_alg" }
+lin_alg = { path = "../../lin_alg" }
 #cuda_setup = { path = "../../cuda_setup", optional = true }
 pdbtbx = { path = "../../pdbtbx" }
 #barnes_hut = { path = "../../barnes_hut" }
 #na_seq = { path = "../na_seq" }
-#bio_apis = { path = "../bio_apis" }
+bio_apis = { path = "../bio_apis" }
 
 
 [build-dependencies]
 cuda_setup = { version = "0.1.4", optional = true }
 
-
-
 # We feature-gate the CUDA dependency, so this program can be run on computers that don't have a
 # suitable graphics chip.
 [features]
-default = ["cuda"]
-cuda = ["cudarc", "cuda_setup", "lin_alg/cuda-12060"]
+default = ["cuda-12060"]
+
+cuda = ["cuda_setup"]
+cuda-12050 = ["cuda", "cudarc/cuda-12050", "lin_alg/cuda-12050"]
+cuda-12060 = ["cuda", "cudarc/cuda-12060", "lin_alg/cuda-12060"]
+cuda-12080 = ["cuda", "cudarc/cuda-12080", "lin_alg/cuda-12080"]
+cuda-12090 = ["cuda", "cudarc/cuda-12090", "lin_alg/cuda-12090"]

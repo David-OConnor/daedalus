@@ -318,14 +318,12 @@ pub fn create_hydrogen_bonds_one_way(
             let atom_0 = find_atom(atoms_donor, atoms_donor_i, b.atom_0);
             let atom_1 = find_atom(atoms_donor, atoms_donor_i, b.atom_1);
 
-            if atom_0.is_none() || atom_1.is_none() {
+            let (Some(atom_0), Some(atom_1)) = (atom_0, atom_1) else {
                 eprintln!(
                     "Error! Can't find atoms from indices when making H bonds (Donor finding)"
                 );
                 return false;
-            }
-            let atom_0 = atom_0.unwrap();
-            let atom_1 = atom_1.unwrap();
+            };
 
             let cfg_0_valid = h_bond_candidate_el(atom_0) && atom_1.element == Hydrogen;
             let cfg_1_valid = h_bond_candidate_el(atom_1) && atom_0.element == Hydrogen;
@@ -342,18 +340,13 @@ pub fn create_hydrogen_bonds_one_way(
         .collect();
 
     for donor_bond in potential_donor_bonds {
-        // let donor_0 = &atoms_donor[donor_bond.atom_0];
-        // let donor_1 = &atoms_donor[donor_bond.atom_1];
-
         let donor_0 = find_atom(atoms_donor, atoms_donor_i, donor_bond.atom_0);
         let donor_1 = find_atom(atoms_donor, atoms_donor_i, donor_bond.atom_1);
 
-        if donor_0.is_none() || donor_1.is_none() {
+        let (Some(donor_0), Some(donor_1)) = (donor_0, donor_1) else {
             eprintln!("Error! Can't find atoms from indices when making H bonds");
             continue;
-        }
-        let donor_0 = donor_0.unwrap();
-        let donor_1 = donor_1.unwrap();
+        };
 
         let (donor_heavy, donor_h, donor_heavy_i, donor_h_i) = if donor_0.element == Hydrogen {
             (donor_1, donor_0, donor_bond.atom_1, donor_bond.atom_0)
