@@ -1,18 +1,24 @@
 #![allow(non_camel_case_types)]
 
 //! Contains data structures and related code for molecules, atoms, residues, chains, etc.
-use std::{fmt, str::FromStr};
-use std::collections::HashMap;
-use bio_apis::rcsb::PdbMetaData;
+use std::{
+    collections::HashMap,
+    fmt,
+    str::FromStr,
+    sync::mpsc::{self, Receiver},
+    thread,
+};
+
+use bio_apis::{
+    ReqError, rcsb,
+    rcsb::{DataAvailable, PdbMetaData},
+};
 use lin_alg::{
     f32::Vec3 as Vec3F32,
     f64::{Quaternion, Vec3},
 };
 use na_seq::AminoAcid;
 use rayon::prelude::*;
-
-use bio_apis::rcsb::DataAvailable;
-use bio_apis::rcsb;
 
 // use pdbtbx::SecondaryStructure;
 use crate::{
@@ -26,7 +32,7 @@ use crate::{
     element::Element,
     util::mol_center_size,
 };
-use crate::prefs::PerMolToSave;
+use crate::{prefs::PerMolToSave, reflection::ReflectionsData};
 
 pub const ATOM_NEIGHBOR_DIST_THRESH: f64 = 5.; // todo: Adjust A/R.
 
@@ -58,6 +64,7 @@ pub struct Molecule {
     /// in a protein/ligand complex as hetero atoms.
     pub het_residues: Vec<Residue>,
     pub rcsb_data_avail: Option<DataAvailable>,
+    pub reflections_data: Option<ReflectionsData>,
 }
 
 impl Molecule {
@@ -163,8 +170,35 @@ impl Molecule {
         }
     }
 
-    pub fn update_data_avail(&mut self) {
+    /// Load which (beyond coordinates) data items are available from the PDB. We do this
+    /// in a new thread, to prevent blocking the UI, or delaying a molecule's loading.
+    pub fn update_data_avail(
+        &mut self,
+        pending_data_avail: &mut Option<Receiver<Result<DataAvailable, ReqError>>>,
+    ) {
         println!("Updating data avail...");
+
+        // todo
+        if self.rcsb_data_avail.is_some() || pending_data_avail.is_some() {
+            return;
+        }
+
+        println!(
+            "Spawning worker thread to fetch data-avail for {}",
+            self.ident
+        );
+
+        let ident = self.ident.clone(); // data the worker needs
+        let (tx, rx) = mpsc::channel(); // one-shot channel
+
+        thread::spawn(move || {
+            let res = rcsb::get_data_avail(&ident);
+            // it’s fine if the send fails (e.g. the app closed)
+            let _ = tx.send(res);
+        });
+
+        *pending_data_avail = Some(rx);
+
         if self.rcsb_data_avail.is_none() {
             println!("Getting web data avail for {:?}", self.ident);
             match rcsb::get_data_avail(&self.ident) {
@@ -176,7 +210,38 @@ impl Molecule {
             }
         } else {
             // todo temp
-            println!("Already have data available: {:?}", &self.rcsb_data_avail.as_ref().unwrap());
+            println!(
+                "Already have data available: {:?}",
+                &self.rcsb_data_avail.as_ref().unwrap()
+            );
+        }
+    }
+
+    /// Call this periodically from the UI/event loop; it’s non-blocking.
+    pub fn poll_data_avail(
+        &mut self,
+        pending_data_avail: &mut Option<Receiver<Result<DataAvailable, ReqError>>>,
+    ) {
+        if let Some(rx) = pending_data_avail {
+            // `try_recv` returns immediately
+            match rx.try_recv() {
+                Ok(Ok(d)) => {
+                    println!("Data-avail ready for {}: {:?}", self.ident, d);
+                    self.rcsb_data_avail = Some(d);
+                    *pending_data_avail = None; // finished
+                }
+                Ok(Err(e)) => {
+                    eprintln!("Failed to fetch data-avail for {}: {e:?}", self.ident);
+                    *pending_data_avail = None;
+                }
+                Err(mpsc::TryRecvError::Empty) => {
+                    // Still working – do nothing this frame
+                }
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    eprintln!("Worker thread died before sending result");
+                    *pending_data_avail = None;
+                }
+            }
         }
     }
 }

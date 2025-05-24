@@ -28,14 +28,21 @@ mod ui;
 mod util;
 mod vibrations;
 
+mod reflection;
 #[cfg(test)]
 mod tests;
-mod reflection_density;
 
-use std::{collections::HashMap, fmt, io, io::ErrorKind, path::Path, sync::Arc};
+use std::{
+    collections::HashMap,
+    fmt, io,
+    io::ErrorKind,
+    path::Path,
+    sync::{Arc, mpsc::Receiver},
+};
 
 use barnes_hut::BhConfig;
 use bincode::{Decode, Encode};
+use bio_apis::{ReqError, rcsb::DataAvailable};
 // #[cfg(feature = "cuda")]
 // use cuda_setup::ComputationDevice;
 #[cfg(feature = "cuda")]
@@ -140,7 +147,7 @@ impl Default for FileDialogs {
         let cfg_load_mdx = FileDialogConfig {
             ..Default::default()
         }
-            .add_file_filter_extensions("MDX", vec!["mdx"]);
+        .add_file_filter_extensions("MDX", vec!["mdx"]);
 
         let load = FileDialog::with_config(cfg_protein.clone()).default_file_filter("PDB/CIF");
         let load_ligand =
@@ -182,17 +189,20 @@ struct StateVolatile {
     lj_lookup_table: HashMap<(Element, Element), (f32, f32)>,
     snapshots: Vec<Snapshot>,
     docking_setup: Option<DockingSetup>,
+    /// e.g. waiting for the data avail thread to return
+    mol_pending_data_avail: Option<Receiver<Result<DataAvailable, ReqError>>>,
 }
 
 impl Default for StateVolatile {
     fn default() -> Self {
         Self {
             dialogs: Default::default(),
-            ui_height: 0.,
+            ui_height: Default::default(),
             inputs_commanded: Default::default(),
             lj_lookup_table: init_lj_lut(),
-            snapshots: Vec::new(),
-            docking_setup: None,
+            snapshots: Default::default(),
+            docking_setup: Default::default(),
+            mol_pending_data_avail: Default::default(),
         }
     }
 }
@@ -413,7 +423,10 @@ impl State {
                 self.update_from_prefs();
 
                 // Only after updating from prefs (to prevent unecesasary loading) do we update data avail.
-                self.molecule.as_mut().unwrap().update_data_avail();
+                self.molecule
+                    .as_mut()
+                    .unwrap()
+                    .update_data_avail(&mut self.volatile.mol_pending_data_avail);
 
                 if self.get_make_docking_setup().is_none() {
                     eprintln!("Problem making or getting docking setup.");
