@@ -1294,7 +1294,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
                                     let density = compute_density_grid(&d);
 
-                                    for d in &density {
+                                    for d in &density[0..1000] {
                                         println!("Dens: {:?}", d);
                                     }
 

@@ -13,7 +13,7 @@ use rayon::prelude::*;
 use crate::molecule::Molecule;
 
 #[derive(Clone, Copy, PartialEq, Debug, Default)]
-enum MapType {
+enum MapStatus {
     // M2FOFC,
     /// Ordinary, or observed
     Observed,
@@ -28,18 +28,18 @@ enum MapType {
     UnreliableMeasurement,
 }
 
-impl MapType {
-    pub fn from_str(val: &str) -> Option<MapType> {
+impl MapStatus {
+    pub fn from_str(val: &str) -> Option<MapStatus> {
         match val.to_lowercase().as_ref() {
-            "o" => Some(MapType::Observed),
+            "o" => Some(MapStatus::Observed),
             // "o" => Some(MapType::M2FOFC),
             // "d" => Some(MapType::DifferenceMap),
-            "f" => Some(MapType::FreeSet),
-            "-" => Some(MapType::SystematicallyAbsent),
-            "<" => Some(MapType::OutsideHighResLimit),
-            "h" => Some(MapType::HigherThanResCutoff),
-            "l" => Some(MapType::LowerThanResCutoff),
-            "x" => Some(MapType::UnreliableMeasurement),
+            "f" => Some(MapStatus::FreeSet),
+            "-" => Some(MapStatus::SystematicallyAbsent),
+            "<" => Some(MapStatus::OutsideHighResLimit),
+            "h" => Some(MapStatus::HigherThanResCutoff),
+            "l" => Some(MapStatus::LowerThanResCutoff),
+            "x" => Some(MapStatus::UnreliableMeasurement),
             _ => {
                 eprintln!("Fallthrough on map type: {val}");
                 None
@@ -56,7 +56,7 @@ struct Reflection {
     pub h: i32,
     pub k: i32,
     pub l: i32,
-    pub status: MapType,
+    pub status: MapStatus,
     /// Amplitude. i.e. F_meas. From SF.
     pub amp: f64,
     /// Standard uncertainty (σ) of amplitude. i.e. F_meas_sigma_au. From SF.
@@ -194,7 +194,7 @@ impl ReflectionsData {
 
                 /* status (safe) */
                 if let Some(i) = col("_refln.status") {
-                    rec.status = MapType::from_str(cols[i]).unwrap_or_default();
+                    rec.status = MapStatus::from_str(cols[i]).unwrap_or_default();
                 }
 
                 /* amplitude & sigma */
@@ -302,39 +302,56 @@ impl ReflectionsData {
     }
 
     /// 1. Make a regular fractional grid that spans 0–1 along a, b, c.
-    /// `step_real` is the desired spacing in Å.
-    pub fn regular_fractional_grid(&self, grid_size: usize) -> Vec<Vec3> {
-        let mut pts = Vec::with_capacity(grid_size.pow(3));
-        let grid_size_f = grid_size as f32;
+    /// We use this grid for computing electron densitites; it must be converted to real space,
+    /// e.g. in angstroms, prior to display.
+    pub fn regular_fractional_grid(&self, n: usize) -> Vec<Vec3> {
+        let mut pts = Vec::with_capacity(n.pow(3));
+        let grid_size_f = n as f32;
+        let step = 1. / n as f64;
 
-        let dx = self.cell_len_a / grid_size_f;
-        let dy = self.cell_len_b / grid_size_f;
-        let dz = self.cell_len_c / grid_size_f;
+        // let dx = self.cell_len_a / grid_size_f;
+        // let dy = self.cell_len_b / grid_size_f;
+        // let dz = self.cell_len_c / grid_size_f;
 
-        for i_a in 0..grid_size {
-            for i_b in 0..grid_size {
-                for i_c in 0..grid_size {
-                    // todo: Confirm symmetrical around the origin, and that the origin matches the atom coords origin.
+        // for i_a in 0..grid_size {
+        //     for i_b in 0..grid_size {
+        //         for i_c in 0..grid_size {
+        //             // todo: Confirm symmetrical around the origin, and that the origin matches the atom coords origin.
+        //
+        //             pts.push(Vec3 {
+        //                 x: (-self.cell_len_a / 2. + i_a as f32 * dx) as f64,
+        //                 y: (-self.cell_len_b / 2. + i_b as f32 * dy) as f64,
+        //                 z: (-self.cell_len_c / 2. + i_c as f32 * dz) as f64,
+        //             });
+        //         }
+        //     }
+        // }
 
+        for i in 0..n {
+            for j in 0..n {
+                for k in 0..n {
                     pts.push(Vec3 {
-                        x: (-self.cell_len_a / 2. + i_a as f32 * dx) as f64,
-                        y: (-self.cell_len_b / 2. + i_b as f32 * dy) as f64,
-                        z: (-self.cell_len_c / 2. + i_c as f32 * dz) as f64,
+                        x: i as f64 * step,
+                        y: j as f64 * step,
+                        z: k as f64 * step,
                     });
                 }
             }
         }
+
         pts
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct ElectronDensity {
+    /// In Å
     pub coords: Vec3,
+    /// Noramlized, using the unit cell volume, as reported in the reflection data.
     pub density: f64,
 }
 
-fn compute_density(reflections: &[Reflection], posit: Vec3) -> f64 {
+fn compute_density(reflections: &[Reflection], posit: Vec3, unit_cell_vol: f32) -> f64 {
     // todo: Use SIMD or GPU for this.
 
     // reflections
@@ -355,29 +372,40 @@ fn compute_density(reflections: &[Reflection], posit: Vec3) -> f64 {
     //     })
     //     .sum()
 
+    const EPS: f64 = 0.0000001;
     let mut rho = 0.0;
 
     for r in reflections {
-        let amp = r.amp_weighted.unwrap_or(r.amp);
-        if amp == 0.0 {
+        if r.status != MapStatus::Observed {
             continue;
         }
 
-        let phase = r.phase_weighted.unwrap_or(0.0).to_radians();
+        let amp = r.amp_weighted.unwrap_or(r.amp);
+        if amp.abs() < EPS {
+            continue;
+        }
+
+        let Some(phase) = r.phase_weighted else {
+            continue;
+        };
 
         //  2π(hx + ky + lz)  (negative sign because CCP4/Coot convention)
-        let arg = -TAU * (r.h as f64 * posit.x + r.k as f64 * posit.y + r.l as f64 * posit.z);
-
+        let arg = TAU * (r.h as f64 * posit.x + r.k as f64 * posit.y + r.l as f64 * posit.z);
         //  real part of  F · e^{iφ} · e^{iarg} = amp·cos(φ+arg)
-        rho += amp * (phase + arg).cos();
+
+        // todo: Which sign/order?
+        rho += amp * (arg + phase.to_radians()).cos();
+        // rho += amp * (arg - phase.to_radians()).cos();
     }
 
-    rho
+    // Normalize.
+    rho  / unit_cell_vol as f64
 }
 
 /// Compute electron density from reflection data.
 pub fn compute_density_grid(data: &ReflectionsData) -> Vec<ElectronDensity> {
-    let grid = data.regular_fractional_grid(50);
+    let grid = data.regular_fractional_grid(90);
+    let unit_cell_vol = data.cell_len_a * data.cell_len_b * data.cell_len_c;
 
     println!(
         "Computing electron density from refletions onver {} points...",
@@ -386,12 +414,26 @@ pub fn compute_density_grid(data: &ReflectionsData) -> Vec<ElectronDensity> {
 
     let start = Instant::now();
 
+    let len_a = data.cell_len_a as f64;
+    let len_b = data.cell_len_b as f64;
+    let len_c = data.cell_len_c as f64;
+    // todo: STore the div2 variant.
+
     let result = grid
         .par_iter()
-        // .iter()
         .map(|p| ElectronDensity {
-            coords: *p,
-            density: compute_density(&data.points, *p),
+            // coords: *p,
+            // Convert coords to real space, in angstroms.
+            coords: Vec3 {
+                // x: p.x * len_a,
+                // y: p.y * len_b,
+                // z: p.z * len_c,
+
+                x: p.x * len_a - len_a / 2.,
+                y: p.y * len_b - len_b / 2.,
+                z: p.z * len_c - len_c / 2.,
+            },
+            density: compute_density(&data.points, *p, unit_cell_vol),
         })
         .collect();
 

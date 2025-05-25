@@ -22,6 +22,7 @@ use crate::{
     surface::{get_mesh_points, mesh_from_sas_points},
     util::orbit_center,
 };
+use crate::render::MESH_CUBE;
 
 const LIGAND_COLOR: Color = (0., 0.4, 1.);
 const LIGAND_COLOR_ANCHOR: Color = (1., 0., 1.);
@@ -909,14 +910,23 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
     // todo: A temporary visualization.
     if let Some(elec) = &mol.elec_density {
         for point in elec {
-            scene.entities.push(Entity::new(
-                MESH_SPHERE_MEDRES,
+            let mut ent = Entity::new(
+                MESH_SPHERE_LOWRES,
+                // MESH_CUBE,
                 point.coords.into(),
                 Quaternion::new_identity(),
-                0.00001 * point.density as f32,
-                (1., 0.5, 0.5),
+                1. * point.density.powf(1.2) as f32,
+                // 0.5,
+                // (point.density as f32 * 10., 0.0, 1. - point.density as f32),
+                // (point.density as f32 * 10., 0.0, 0.),
+                (1., 0.7, 0.5),
                 ATOM_SHINYNESS,
-            ));
+            );
+
+            // ent.opacity =point.density as f32 * 10.;
+
+
+            scene.entities.push(ent);
         }
     }
 
