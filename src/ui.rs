@@ -1294,7 +1294,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
                                     let density = compute_density_grid(&d);
 
-                                    for d in &density[0..1000] {
+                                    for d in &density[10_000..11_000] {
                                         println!("Dens: {:?}", d);
                                     }
 
@@ -1722,6 +1722,14 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         set_flashlight(scene);
         engine_updates.lighting = true;
+    }
+
+    if let Some(mol) = &mut state.molecule {
+        if state.volatile.mol_pending_data_avail.is_some() {
+            if mol.poll_data_avail(&mut state.volatile.mol_pending_data_avail) {
+                state.update_save_prefs();
+            }
+        }
     }
 
     engine_updates

@@ -918,8 +918,8 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                 1. * point.density.powf(1.2) as f32,
                 // 0.5,
                 // (point.density as f32 * 10., 0.0, 1. - point.density as f32),
-                // (point.density as f32 * 10., 0.0, 0.),
-                (1., 0.7, 0.5),
+                (point.density as f32 * 2., 0.0, 0.2),
+                // (1., 0.7, 0.5),
                 ATOM_SHINYNESS,
             );
 

@@ -181,15 +181,12 @@ impl Molecule {
         &mut self,
         pending_data_avail: &mut Option<Receiver<Result<DataAvailable, ReqError>>>,
     ) {
-        println!("Updating data avail...");
-
-        // todo
         if self.rcsb_data_avail.is_some() || pending_data_avail.is_some() {
             return;
         }
 
         println!(
-            "Spawning worker thread to fetch data-avail for {}",
+            "Spawning tread to fetch data-avail for {}",
             self.ident
         );
 
@@ -198,35 +195,20 @@ impl Molecule {
 
         thread::spawn(move || {
             let res = rcsb::get_data_avail(&ident);
+            println!("Getting data avail...");
             // it’s fine if the send fails (e.g. the app closed)
             let _ = tx.send(res);
         });
 
         *pending_data_avail = Some(rx);
-
-        if self.rcsb_data_avail.is_none() {
-            println!("Getting web data avail for {:?}", self.ident);
-            match rcsb::get_data_avail(&self.ident) {
-                Ok(d) => {
-                    println!("Data available loaded: {:?}", d);
-                    self.rcsb_data_avail = Some(d);
-                }
-                Err(_) => eprintln!("Error getting RCSB data availability for {}", self.ident),
-            }
-        } else {
-            // todo temp
-            println!(
-                "Already have data available: {:?}",
-                &self.rcsb_data_avail.as_ref().unwrap()
-            );
-        }
     }
 
     /// Call this periodically from the UI/event loop; it’s non-blocking.
+    /// Returns if it updated, e.g. so we can update prefs.
     pub fn poll_data_avail(
         &mut self,
         pending_data_avail: &mut Option<Receiver<Result<DataAvailable, ReqError>>>,
-    ) {
+    ) -> bool {
         if let Some(rx) = pending_data_avail {
             // `try_recv` returns immediately
             match rx.try_recv() {
@@ -234,6 +216,7 @@ impl Molecule {
                     println!("Data-avail ready for {}: {:?}", self.ident, d);
                     self.rcsb_data_avail = Some(d);
                     *pending_data_avail = None; // finished
+                    return true;
                 }
                 Ok(Err(e)) => {
                     eprintln!("Failed to fetch data-avail for {}: {e:?}", self.ident);
@@ -248,6 +231,7 @@ impl Molecule {
                 }
             }
         }
+        false
     }
 }
 
