@@ -9,6 +9,9 @@ using dtype3 = float3;
 __device__
 const float SOFTENING_FACTOR_SQ = 0.000001f;
 
+__device__
+const float TAU = 6.283185307179586f;
+
 // __device__
 // const float EPS_DIV0 = 0.00000000001f;
 

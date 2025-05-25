@@ -29,9 +29,9 @@
 extern "C" __global__
 void coulomb_force_kernel(
     float3 *out,
-    float3 *posits_src,
-    float3 *posits_tgt,
-    float *charges,
+    const float3 *posits_src,
+    const float3 *posits_tgt,
+    const float *charges,
     size_t N_srcs,
     size_t N_tgts
 ) {
@@ -57,10 +57,10 @@ void coulomb_force_kernel(
 extern "C" __global__
 void lj_V_kernel(
     float *out,
-    float3 *posits_0,
-    float3 *posits_1,
-    float *sigmas,
-    float *epsilons,
+    const float3 *posits_0,
+    const float3 *posits_1,
+    const float *sigmas,
+    const float *epsilons,
     size_t N_srcs,
     size_t N_tgts
 ) {
@@ -89,10 +89,10 @@ void lj_V_kernel(
 extern "C" __global__
 void lj_force_kernel(
     float3 *out,
-    float3 *posits_src,
-    float3 *posits_tgt,
-    float *sigmas,
-    float *epss,
+    const float3 *posits_src,
+    const float3 *posits_tgt,
+    const float *sigmas,
+    const float *epss,
     size_t N_srcs,
     size_t N_tgts
 ) {
@@ -114,5 +114,39 @@ void lj_force_kernel(
                 out[i_tgt] = out[i_tgt] + lj_force(posit_tgt, posit_src, sigma, eps);
             }
         }
+    }
+}
+
+// Perform the fourier transform required to compute electron density from reflection data.
+// todo: f32 ok?
+
+extern "C" __global__
+void reflection_transform_kernel(
+    float *out,
+    const float3 *posits,
+    const float *h,
+    const float *k,
+    const float *l,
+    const float *phase,
+    // pre-chosen amplitude (weighted or unweighted).
+    const float *amp,
+    size_t N
+) {
+    size_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    size_t stride = blockDim.x * gridDim.x;
+
+//      for (size_t i = index; i< N; i += stride) {
+     for ( ; i < N; i += stride) {
+         if (amp[i] == 0.0f) continue;
+
+        //  2π(hx + ky + lz)  (negative sign because CCP4/Coot convention)
+        float arg = -TAU * (
+            h[i] * posits[i].x +
+            k[i] * posits[i].y +
+            l[i] * posits[i].z
+        );
+
+        //  real part of  F · e^{iφ} · e^{iarg} = amp·cos(φ+arg)
+        out[i] += amp[i]* cosf(phase[i] + arg);
     }
 }

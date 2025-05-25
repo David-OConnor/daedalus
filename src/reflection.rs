@@ -1,13 +1,14 @@
 //! For displaying electron density as measured by crytalographics reflection data. From precomputed
 //! data, or from Miller indices.
 
-use std::{collections::HashMap, f64::consts::TAU, io};
+use std::{collections::HashMap, f64::consts::TAU, io, time::Instant};
 
 use bio_apis::{ReqError, rcsb};
 use lin_alg::{
     complex_nums::{Cplx, IM},
     f64::Vec3,
 };
+use rayon::prelude::*;
 
 use crate::molecule::Molecule;
 
@@ -47,10 +48,11 @@ impl MapType {
     }
 }
 
-/// Reflectdion data for a single Miller index set. Pieced together from 3 formats of CIF
-/// file, or an MTZ.
+/// Reflection data for a single Miller index set. Pieced together from 3 formats of CIF
+/// file (Structure factors, map 2fo-fc, and map fo-fc), or an MTZ.
 #[derive(Clone, Default, Debug)]
 struct Reflection {
+    /// Miller indices.
     pub h: i32,
     pub k: i32,
     pub l: i32,
@@ -95,124 +97,39 @@ impl ReflectionsData {
     /// * `map_2fo_fc` – optional contents of `*2fo-fc_map_coef.cif`
     /// * `map_fo_fc` – optional contents of `*fo-fc_map_coef.cif`
     pub fn new(sf: &str, map_2fo_fc: Option<&str>, map_fo_fc: Option<&str>) -> Self {
+        use std::{collections::HashMap, str::FromStr}; // brings MapType::from_str into scope
+
+        let mut reflections: HashMap<(i32, i32, i32), Reflection> = HashMap::new();
+
         let mut space_group = String::new();
-        let mut cell_len_a = 0.;
-        let mut cell_len_b = 0.;
-        let mut cell_len_c = 0.;
-        let mut cell_angle_alpha = 0.;
-        let mut cell_angle_beta = 0.;
-        let mut cell_angle_gamma = 0.;
+        let mut a = 0.0_f32;
+        let mut b = 0.0_f32;
+        let mut c = 0.0_f32;
+        let mut α = 0.0_f32;
+        let mut β = 0.0_f32;
+        let mut γ = 0.0_f32;
 
-        for line in sf.lines().map(str::trim) {
-            if line.starts_with("_space_group.name_H-M_full")
-                || line.starts_with("_symmetry.space_group_name_H-M")
-            {
-                if let Some(val) = line.split_whitespace().nth(1) {
-                    space_group = val.trim_matches(&['\'', '"'][..]).to_string();
-                }
-            } else if line.starts_with("_cell.length_a") {
-                if let Some(val) = line.split_whitespace().nth(1) {
-                    cell_len_a = val.parse().unwrap_or(0.0);
-                }
-            } else if line.starts_with("_cell.length_b") {
-                if let Some(val) = line.split_whitespace().nth(1) {
-                    cell_len_b = val.parse().unwrap_or(0.0);
-                }
-            } else if line.starts_with("_cell.length_c") {
-                if let Some(val) = line.split_whitespace().nth(1) {
-                    cell_len_c = val.parse().unwrap_or(0.0);
-                }
-            } else if line.starts_with("_cell.angle_alpha") {
-                if let Some(val) = line.split_whitespace().nth(1) {
-                    cell_angle_alpha = val.parse().unwrap_or(0.0);
-                }
-            } else if line.starts_with("_cell.angle_beta") {
-                if let Some(val) = line.split_whitespace().nth(1) {
-                    cell_angle_beta = val.parse().unwrap_or(0.0);
-                }
-            } else if line.starts_with("_cell.angle_gamma") {
-                if let Some(val) = line.split_whitespace().nth(1) {
-                    cell_angle_gamma = val.parse().unwrap_or(0.0);
-                }
-            }
-        }
-
-        let mut reflections = Vec::<Reflection>::new();
-        let mut column_tags = Vec::<String>::new();
-        let mut in_loop = false;
-
-        for line in sf.lines().map(str::trim) {
-            if line == "loop_" {
-                in_loop = true;
-                column_tags.clear();
-                continue;
-            }
-
-            if !in_loop {
-                continue;
-            }
-
-            // Header lines inside the loop
-            if line.starts_with('_') {
-                column_tags.push(line.split_whitespace().next().unwrap().to_string());
-                continue;
-            }
-
-            // Once the first data row appears, we know whether this is *the*
-            // reflection loop (it contains _refln.index_h)
-            if !column_tags.iter().any(|t| t == "_refln.index_h") {
-                in_loop = false; // some other loop – skip it
-                continue;
-            }
-
-            let vals: Vec<&str> = line.split_whitespace().collect();
-            if vals.len() != column_tags.len() {
-                in_loop = false; // loop ended
-                continue;
-            }
-
-            let idx = |tag: &str| column_tags.iter().position(|t| t == tag).unwrap();
-
-            let h = vals[idx("_refln.index_h")].parse().unwrap_or(0);
-            let k = vals[idx("_refln.index_k")].parse().unwrap_or(0);
-            let l = vals[idx("_refln.index_l")].parse().unwrap_or(0);
-            let stat = MapType::from_str(vals[idx("_refln.status")]).unwrap_or_default();
-            let amp = vals[idx("_refln.F_meas_au")].parse().unwrap_or(0.0);
-            let sig = vals[idx("_refln.F_meas_sigma_au")].parse().unwrap_or(0.0);
-
-            reflections.push(Reflection {
-                h,
-                k,
-                l,
-                status: stat,
-                amp,
-                amp_uncertainty: sig,
-                amp_weighted: None,
-                phase_weighted: None,
-                phase_figure_of_merit: None,
-                delta_amp_weighted: None,
-                delta_phase_weighted: None,
-                delta_figure_of_merit: None,
-            });
-        }
-
-        let mut lookup: HashMap<(i32, i32, i32), usize> = HashMap::new();
-        for (i, r) in reflections.iter().enumerate() {
-            lookup.insert((r.h, r.k, r.l), i);
-        }
-
-        fn merge_map(
-            map_text: &str,
-            reflections: &mut [Reflection],
-            lookup: &HashMap<(i32, i32, i32), usize>,
-            amp_tag: &str,
-            phase_tag: &str,
-            fom_tag: &str,
+        /* === 1. generic one-file parser ====================================== */
+        fn parse_file(
+            text: &str,
+            store: &mut HashMap<(i32, i32, i32), Reflection>,
+            precedence: u8, // 0 = lowest, 2 = highest (SF)
+            is_sf: bool,
+            header_sink: &mut dyn FnMut(&str, &str),
         ) {
             let mut in_loop = false;
-            let mut tags = Vec::<String>::new();
+            let mut tags: Vec<String> = Vec::new();
 
-            for line in map_text.lines().map(str::trim) {
+            for raw in text.lines() {
+                let line = raw.trim();
+
+                /* ---- harvest header (cell, space group) --------------------- */
+                if line.starts_with('_') && !line.starts_with("_refln.") {
+                    if let Some((tag, val)) = line.split_once(char::is_whitespace) {
+                        header_sink(tag, val.trim());
+                    }
+                }
+
                 if line == "loop_" {
                     in_loop = true;
                     tags.clear();
@@ -223,94 +140,137 @@ impl ReflectionsData {
                 }
 
                 if line.starts_with('_') {
-                    tags.push(line.split_whitespace().next().unwrap().to_string());
+                    tags.push(line.split_whitespace().next().unwrap().to_owned());
                     continue;
                 }
 
+                /* ensure this loop is a reflection loop */
                 if !tags.iter().any(|t| t == "_refln.index_h") {
                     in_loop = false;
                     continue;
                 }
 
-                let vals: Vec<&str> = line.split_whitespace().collect();
-                if vals.len() != tags.len() {
+                let cols: Vec<&str> = line.split_whitespace().collect();
+                if cols.len() != tags.len() {
                     in_loop = false;
                     continue;
                 }
 
-                let idx = |tag: &str| tags.iter().position(|t| t == tag).unwrap();
+                let col = |tag: &str| tags.iter().position(|t| t == tag);
 
-                let h = vals[idx("_refln.index_h")].parse().unwrap_or(0);
-                let k = vals[idx("_refln.index_k")].parse().unwrap_or(0);
-                let l = vals[idx("_refln.index_l")].parse().unwrap_or(0);
+                let h = cols[col("_refln.index_h").unwrap()]
+                    .parse::<i32>()
+                    .unwrap_or(0);
+                let k = cols[col("_refln.index_k").unwrap()]
+                    .parse::<i32>()
+                    .unwrap_or(0);
+                let l = cols[col("_refln.index_l").unwrap()]
+                    .parse::<i32>()
+                    .unwrap_or(0);
+                let key = (h, k, l);
 
-                if let Some(&pos) = lookup.get(&(h, k, l)) {
-                    let rec = &mut reflections[pos];
+                let rec = store.entry(key).or_insert_with(|| Reflection {
+                    h,
+                    k,
+                    l,
+                    ..Default::default()
+                });
 
-                    let parse_opt = |s: &str| {
-                        if s == "?" || s == "." {
-                            None
-                        } else {
-                            s.parse::<f64>().ok()
-                        }
-                    };
-
-                    if let Some(col) = tags.iter().position(|t| t == amp_tag) {
-                        rec.amp_weighted = parse_opt(vals[col]);
-                    }
-                    if let Some(col) = tags.iter().position(|t| t == phase_tag) {
-                        rec.phase_weighted = parse_opt(vals[col]);
-                    }
-                    if let Some(col) = tags.iter().position(|t| t == fom_tag) {
-                        rec.phase_figure_of_merit = parse_opt(vals[col]);
-                    }
-
-                    // Special case for Fo–Fc maps
-                    if amp_tag == "_refln.pdbx_DELFWT" {
-                        if let Some(col) = tags.iter().position(|t| t == amp_tag) {
-                            rec.delta_amp_weighted = parse_opt(vals[col]);
-                        }
-                        if let Some(col) = tags.iter().position(|t| t == phase_tag) {
-                            rec.delta_phase_weighted = parse_opt(vals[col]);
-                        }
-                        if let Some(col) = tags.iter().position(|t| t == fom_tag) {
-                            rec.delta_figure_of_merit = parse_opt(vals[col]);
+                /* precedence helpers */
+                let overwrite_f64 = |dst: &mut f64, src: Option<f64>| {
+                    if let Some(v) = src {
+                        if is_sf || *dst == 0.0 {
+                            *dst = v;
                         }
                     }
+                };
+                let overwrite_opt = |dst: &mut Option<f64>, src: Option<f64>| {
+                    if let Some(v) = src {
+                        if dst.is_none() || is_sf {
+                            *dst = Some(v);
+                        }
+                    }
+                };
+
+                /* status (safe) */
+                if let Some(i) = col("_refln.status") {
+                    rec.status = MapType::from_str(cols[i]).unwrap_or_default();
                 }
+
+                /* amplitude & sigma */
+                overwrite_f64(
+                    &mut rec.amp,
+                    col("_refln.F_meas_au").and_then(|i| cols[i].parse().ok()),
+                );
+                overwrite_f64(
+                    &mut rec.amp_uncertainty,
+                    col("_refln.F_meas_sigma_au").and_then(|i| cols[i].parse().ok()),
+                );
+
+                /* 2Fo-Fc coeffs */
+                overwrite_opt(
+                    &mut rec.amp_weighted,
+                    col("_refln.pdbx_FWT").and_then(|i| cols[i].parse().ok()),
+                );
+                overwrite_opt(
+                    &mut rec.phase_weighted,
+                    col("_refln.pdbx_PHWT").and_then(|i| cols[i].parse().ok()),
+                );
+                overwrite_opt(
+                    &mut rec.phase_figure_of_merit,
+                    col("_refln.fom").and_then(|i| cols[i].parse().ok()),
+                );
+
+                /* Fo-Fc coeffs */
+                overwrite_opt(
+                    &mut rec.delta_amp_weighted,
+                    col("_refln.pdbx_DELFWT").and_then(|i| cols[i].parse().ok()),
+                );
+                overwrite_opt(
+                    &mut rec.delta_phase_weighted,
+                    col("_refln.pdbx_DELPHWT").and_then(|i| cols[i].parse().ok()),
+                );
+                overwrite_opt(
+                    &mut rec.delta_figure_of_merit,
+                    col("_refln.fom").and_then(|i| cols[i].parse().ok()),
+                );
             }
         }
 
-        if let Some(txt) = map_2fo_fc {
-            merge_map(
-                txt,
-                &mut reflections,
-                &lookup,
-                "_refln.pdbx_FWT",
-                "_refln.pdbx_PHWT",
-                "_refln.fom",
-            );
-        }
-        if let Some(txt) = map_fo_fc {
-            merge_map(
-                txt,
-                &mut reflections,
-                &lookup,
-                "_refln.pdbx_DELFWT",
-                "_refln.pdbx_DELPHWT",
-                "_refln.fom",
-            );
-        }
+        let mut header = |tag: &str, val: &str| match tag {
+            "_space_group.name_H-M_full" | "_symmetry.space_group_name_H-M" => {
+                if space_group.is_empty() {
+                    space_group = val.trim_matches(&['"', '\''][..]).to_owned();
+                }
+            }
+            "_cell.length_a" => a = val.parse().unwrap_or(0.0),
+            "_cell.length_b" => b = val.parse().unwrap_or(0.0),
+            "_cell.length_c" => c = val.parse().unwrap_or(0.0),
+            "_cell.angle_alpha" => α = val.parse().unwrap_or(0.0),
+            "_cell.angle_beta" => β = val.parse().unwrap_or(0.0),
+            "_cell.angle_gamma" => γ = val.parse().unwrap_or(0.0),
+            _ => {}
+        };
 
+        /* === 3. parse files in ascending precedence ========================== */
+        if let Some(txt) = map_fo_fc {
+            parse_file(txt, &mut reflections, 0, false, &mut header);
+        }
+        if let Some(txt) = map_2fo_fc {
+            parse_file(txt, &mut reflections, 1, false, &mut header);
+        }
+        parse_file(sf, &mut reflections, 2, true, &mut header); // SF wins ties
+
+        /* === 4. assemble result ============================================== */
         Self {
             space_group,
-            cell_len_a,
-            cell_len_b,
-            cell_len_c,
-            cell_angle_alpha,
-            cell_angle_beta,
-            cell_angle_gamma,
-            points: reflections,
+            cell_len_a: a,
+            cell_len_b: b,
+            cell_len_c: c,
+            cell_angle_alpha: α,
+            cell_angle_beta: β,
+            cell_angle_gamma: γ,
+            points: reflections.into_values().collect(),
         }
     }
 
@@ -320,6 +280,7 @@ impl ReflectionsData {
 
         // todo: Only attempt these maps if we've established as available?
 
+        println!("Downloading reflections data for {ident}...");
         let map_2fo_fc = match rcsb::load_validation_2fo_fc_cif(ident) {
             Ok(m) => Some(m),
             Err(_) => {
@@ -336,36 +297,106 @@ impl ReflectionsData {
             }
         };
 
+        println!("Download complete. Parsing...");
         Ok(Self::new(&sf, map_2fo_fc.as_deref(), map_fo_fc.as_deref()))
+    }
+
+    /// 1. Make a regular fractional grid that spans 0–1 along a, b, c.
+    /// `step_real` is the desired spacing in Å.
+    pub fn regular_fractional_grid(&self, grid_size: usize) -> Vec<Vec3> {
+        let mut pts = Vec::with_capacity(grid_size.pow(3));
+        let grid_size_f = grid_size as f32;
+
+        let dx = self.cell_len_a / grid_size_f;
+        let dy = self.cell_len_b / grid_size_f;
+        let dz = self.cell_len_c / grid_size_f;
+
+        for i_a in 0..grid_size {
+            for i_b in 0..grid_size {
+                for i_c in 0..grid_size {
+                    // todo: Confirm symmetrical around the origin, and that the origin matches the atom coords origin.
+
+                    pts.push(Vec3 {
+                        x: (-self.cell_len_a / 2. + i_a as f32 * dx) as f64,
+                        y: (-self.cell_len_b / 2. + i_b as f32 * dy) as f64,
+                        z: (-self.cell_len_c / 2. + i_c as f32 * dz) as f64,
+                    });
+                }
+            }
+        }
+        pts
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct ElectronDensity {
     pub coords: Vec3,
     pub density: f64,
 }
 
-// /// Compute electron density at fractional coordinate (x, y, z), from Miller indices.
-// fn compute_density(reflections: &[Reflection], posit: Vec3) -> f64 {
-//     let mut real = 0.0;
-//     let mut imag = 0.0;
-//
-//     for r in reflections {
-//         let phase_rad = r.phase_weighted.to_radians();
-//         let arg = -TAU * (r.h as f64 * posit.x + r.k as f64 * posit.y + r.l as f64 * posit.z);
-//         let exp = Cplx::from_mag_phase(1.0, arg);
-//         let contrib = Cplx::from_mag_phase(1.0, phase_rad) * r.amp * exp;
-//
-//         real += contrib.real;
-//         imag += contrib.im;
-//     }
-//
-//     // Return the real part (imaginary part should ideally cancel)
-//     real
-// }
+fn compute_density(reflections: &[Reflection], posit: Vec3) -> f64 {
+    // todo: Use SIMD or GPU for this.
 
-pub fn compute_density_grid(data: &ReflectionsData, points: &[Vec3]) -> Vec<f64> {
-    let mut result = Vec::new();
+    // reflections
+    //     .par_iter()
+    //     .map(|r| {
+    //         let amp = r.amp_weighted.unwrap_or(r.amp);
+    //         if amp == 0.0 {
+    //             0.
+    //         } else {
+    //             let phase = r.phase_weighted.unwrap_or(0.0).to_radians();
+    //
+    //             //  2π(hx + ky + lz)  (negative sign because CCP4/Coot convention)
+    //             let arg = -TAU * (r.h as f64 * posit.x + r.k as f64 * posit.y + r.l as f64 * posit.z);
+    //
+    //             //  real part of  F · e^{iφ} · e^{iarg} = amp·cos(φ+arg)
+    //             amp * (phase + arg).cos()
+    //         }
+    //     })
+    //     .sum()
 
+    let mut rho = 0.0;
+
+    for r in reflections {
+        let amp = r.amp_weighted.unwrap_or(r.amp);
+        if amp == 0.0 {
+            continue;
+        }
+
+        let phase = r.phase_weighted.unwrap_or(0.0).to_radians();
+
+        //  2π(hx + ky + lz)  (negative sign because CCP4/Coot convention)
+        let arg = -TAU * (r.h as f64 * posit.x + r.k as f64 * posit.y + r.l as f64 * posit.z);
+
+        //  real part of  F · e^{iφ} · e^{iarg} = amp·cos(φ+arg)
+        rho += amp * (phase + arg).cos();
+    }
+
+    rho
+}
+
+/// Compute electron density from reflection data.
+pub fn compute_density_grid(data: &ReflectionsData) -> Vec<ElectronDensity> {
+    let grid = data.regular_fractional_grid(50);
+
+    println!(
+        "Computing electron density from refletions onver {} points...",
+        grid.len()
+    );
+
+    let start = Instant::now();
+
+    let result = grid
+        .par_iter()
+        // .iter()
+        .map(|p| ElectronDensity {
+            coords: *p,
+            density: compute_density(&data.points, *p),
+        })
+        .collect();
+
+    let elapsed = start.elapsed().as_millis();
+
+    println!("Complete. Time: {:?}ms", elapsed);
     result
 }

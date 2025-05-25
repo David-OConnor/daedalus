@@ -32,7 +32,10 @@ use crate::{
     element::Element,
     util::mol_center_size,
 };
-use crate::{prefs::PerMolToSave, reflection::ReflectionsData};
+use crate::{
+    prefs::PerMolToSave,
+    reflection::{ElectronDensity, ReflectionsData},
+};
 
 pub const ATOM_NEIGHBOR_DIST_THRESH: f64 = 5.; // todo: Adjust A/R.
 
@@ -65,6 +68,8 @@ pub struct Molecule {
     pub het_residues: Vec<Residue>,
     pub rcsb_data_avail: Option<DataAvailable>,
     pub reflections_data: Option<ReflectionsData>,
+    /// From reflections
+    pub elec_density: Option<Vec<ElectronDensity>>,
 }
 
 impl Molecule {

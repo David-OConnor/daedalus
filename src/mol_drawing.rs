@@ -516,10 +516,9 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene) {
 /// Refreshes entities with the model passed.
 /// Sensitive to various view configuration parameters.
 pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: bool) {
-    if state.molecule.is_none() {
+    let Some(mol) = state.molecule.as_mut() else {
         return;
-    }
-    let mol = state.molecule.as_mut().unwrap();
+    };
 
     // todo: Update this capacity A/R as you flesh out your renders.
     // *entities = Vec::with_capacity(molecule.bonds.len());
@@ -827,6 +826,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
         );
     }
 
+    // Draw H bonds.
     // todo: DRY with Ligand
     // todo: This incorrectly hides hetero-only H bonds.
     if !state.ui.visibility.hide_h_bonds
@@ -905,8 +905,22 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
             );
         }
     }
-    // }
 
+    // todo: A temporary visualization.
+    if let Some(elec) = &mol.elec_density {
+        for point in elec {
+            scene.entities.push(Entity::new(
+                MESH_SPHERE_MEDRES,
+                point.coords.into(),
+                Quaternion::new_identity(),
+                0.00001 * point.density as f32,
+                (1., 0.5, 0.5),
+                ATOM_SHINYNESS,
+            ));
+        }
+    }
+
+    // Perform cleanup.
     if update_cam_lighting {
         let center: Vec3 = mol.center.into();
         scene.camera.position =

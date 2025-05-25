@@ -20,7 +20,7 @@ use crate::{
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
     mol_drawing::{COLOR_DOCKING_SITE_MESH, MoleculeView, draw_ligand, draw_molecule},
     molecule::{Ligand, Molecule, ResidueType},
-    reflection::ReflectionsData,
+    reflection::{ReflectionsData, compute_density_grid},
     render::{
         CAM_INIT_OFFSET, MESH_DOCKING_SURFACE, RENDER_DIST_FAR, RENDER_DIST_NEAR,
         set_docking_light, set_flashlight,
@@ -1289,8 +1289,20 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                         {
                             match ReflectionsData::load(&mol.ident) {
                                 Ok(d) => {
+                                    // println!("Successfully loaded reflections data: \n{d:?}");
+                                    println!("Successfully loaded reflections data");
+
+                                    let density = compute_density_grid(&d);
+
+                                    for d in &density {
+                                        println!("Dens: {:?}", d);
+                                    }
+
                                     mol.reflections_data = Some(d);
-                                    println!("Successfully loaded reflectiosn data.")
+                                    mol.elec_density = Some(density);
+
+                                    // todo: Update A/R based on how we visualize this.
+                                    redraw = true;
                                 }
                                 Err(e) => {
                                     eprintln!("Error loading reflections data: {e:?}");
