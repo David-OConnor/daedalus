@@ -14,15 +14,14 @@ use crate::{
     element::Element,
     molecule::{Atom, AtomRole, BondCount, BondType, Chain, Residue, ResidueType, aa_color},
     render::{
-        ATOM_SHINYNESS, BACKGROUND_COLOR, BALL_RADIUS_WATER, BALL_STICK_RADIUS,
-        BALL_STICK_RADIUS_H, BODY_SHINYNESS, CAM_INIT_OFFSET, Color, MESH_BOND, MESH_DOCKING_BOX,
-        MESH_SOLVENT_SURFACE, MESH_SPHERE_HIGHRES, MESH_SPHERE_LOWRES, MESH_SPHERE_MEDRES,
-        RENDER_DIST_FAR, set_docking_light, set_static_light,
+        ATOM_SHININESS, BACKGROUND_COLOR, BALL_RADIUS_WATER, BALL_STICK_RADIUS,
+        BALL_STICK_RADIUS_H, BODY_SHINYNESS, CAM_INIT_OFFSET, Color, MESH_BOND, MESH_CUBE,
+        MESH_DOCKING_BOX, MESH_SOLVENT_SURFACE, MESH_SPHERE_HIGHRES, MESH_SPHERE_LOWRES,
+        MESH_SPHERE_MEDRES, RENDER_DIST_FAR, set_docking_light, set_static_light,
     },
     surface::{get_mesh_points, mesh_from_sas_points},
     util::orbit_center,
 };
-use crate::render::MESH_CUBE;
 
 const LIGAND_COLOR: Color = (0., 0.4, 1.);
 const LIGAND_COLOR_ANCHOR: Color = (1., 0., 1.);
@@ -414,7 +413,7 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene) {
         scale: lig.docking_site.site_radius as f32,
         color: COLOR_DOCKING_BOX,
         opacity: DOCKING_SITE_OPACITY,
-        shinyness: ATOM_SHINYNESS,
+        shinyness: ATOM_SHININESS,
         ..Default::default()
     });
 
@@ -546,7 +545,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                     Quaternion::new_identity(),
                     RADIUS_SFC_DOT,
                     COLOR_SFC_DOT,
-                    ATOM_SHINYNESS,
+                    ATOM_SHININESS,
                 ));
             }
             // i += 1;
@@ -578,7 +577,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
             Quaternion::new_identity(),
             1.,
             COLOR_SFC_DOT,  // todo
-            ATOM_SHINYNESS, // todo
+            ATOM_SHININESS, // todo
         ));
     }
 
@@ -604,7 +603,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                             Quaternion::new_identity(),
                             BALL_RADIUS_WATER,
                             color_atom,
-                            ATOM_SHINYNESS,
+                            ATOM_SHININESS,
                         ));
                     }
                 }
@@ -715,7 +714,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                 Quaternion::new_identity(),
                 radius,
                 color_atom,
-                ATOM_SHINYNESS,
+                ATOM_SHININESS,
             ));
         }
     }
@@ -920,11 +919,10 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                 // (point.density as f32 * 10., 0.0, 1. - point.density as f32),
                 (point.density as f32 * 2., 0.0, 0.2),
                 // (1., 0.7, 0.5),
-                ATOM_SHINYNESS,
+                ATOM_SHININESS,
             );
 
             // ent.opacity =point.density as f32 * 10.;
-
 
             scene.entities.push(ent);
         }

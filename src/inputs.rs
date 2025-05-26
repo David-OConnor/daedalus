@@ -15,6 +15,7 @@ use crate::{
     Selection, State, mol_drawing,
     mol_drawing::MoleculeView,
     render::set_flashlight,
+    util,
     util::{cycle_res_selected, find_selected_atom, orbit_center, points_along_ray},
 };
 
@@ -50,6 +51,42 @@ pub fn event_dev_handler(
 
     let mut lig_move_dir = None;
     let mut lig_rot_dir = None;
+
+    // This is separate from the below matches, as it allows input when mouse is in the GUI.
+    match &event {
+        DeviceEvent::Key(key) => {
+            match key.state {
+                ElementState::Pressed => match key.physical_key {
+                    Code(KeyCode::Enter) => {
+                        // if state_.ui.query_db_active
+                        if state_.ui.db_input.len() >= 4 {
+                            println!("LOAINDG");
+                            let mut reset_cam = false;
+                            util::query_rcsb(
+                                state_,
+                                scene,
+                                &mut updates,
+                                &mut redraw,
+                                &mut reset_cam, // not required here.
+                            );
+
+                            // Dupe of "redraw" below, but before the early return.
+
+                            scene.entities = Vec::new();
+                            // todo:This is overkill for certain keys. Just change the color of the one[s] in question, and set update.entities = true.
+                            mol_drawing::draw_molecule(state_, scene, false);
+                            mol_drawing::draw_ligand(state_, scene);
+                            updates.lighting = true; // Ligand docking light. // todo: Not always necessary.
+                            updates.entities = true;
+                        }
+                    }
+                    _ => (),
+                },
+                _ => (),
+            }
+        }
+        _ => (),
+    }
 
     // todo: Move this logic to the engine (graphics lib)?
     if !state_.ui.mouse_in_window {

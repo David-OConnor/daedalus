@@ -1,7 +1,7 @@
 use std::{f32::consts::TAU, path::Path, time::Instant};
 
 use bio_apis::{drugbank, pubchem, rcsb};
-use egui::{Color32, ComboBox, Context, RichText, Slider, TextEdit, TopBottomPanel, Ui};
+use egui::{Color32, ComboBox, Context, Key, RichText, Slider, TextEdit, TopBottomPanel, Ui};
 use graphics::{ControlScheme, EngineUpdates, Entity, RIGHT_VEC, Scene, UP_VEC};
 use lin_alg::f32::{Quaternion, Vec3};
 use na_seq::AaIdent;
@@ -25,6 +25,7 @@ use crate::{
         CAM_INIT_OFFSET, MESH_DOCKING_SURFACE, RENDER_DIST_FAR, RENDER_DIST_NEAR,
         set_docking_light, set_flashlight,
     },
+    util,
     util::{
         cam_look_at, cam_look_at_outside, check_prefs_save, cycle_res_selected, orbit_center,
         select_from_search,
@@ -1287,7 +1288,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                             .button(RichText::new("Load reflections").color(COLOR_HIGHLIGHT))
                             .clicked()
                         {
-                            match ReflectionsData::load(&mol.ident) {
+                            match ReflectionsData::load_from_rcsb(&mol.ident) {
                                 Ok(d) => {
                                     // println!("Successfully loaded reflections data: \n{d:?}");
                                     println!("Successfully loaded reflections data");
@@ -1376,34 +1377,29 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
             ui.add_space(COL_SPACING);
             ui.label(RichText::new("Query databases (ident):").color(color_open_tools));
-            ui.add(TextEdit::singleline(&mut state.ui.db_input).desired_width(40.));
+            let response = ui.add(TextEdit::singleline(&mut state.ui.db_input).desired_width(40.));
 
-            if !state.ui.db_input.is_empty() {
+            let enter_pressed = ui.input(|i| i.key_pressed(Key::Enter));
+
+            if response.lost_focus() && enter_pressed && state.ui.db_input.len() >= 4 {
+                util::query_rcsb(
+                    state,
+                    scene,
+                    &mut engine_updates,
+                    &mut redraw,
+                    &mut reset_cam,
+                );
+            }
+
+            if state.ui.db_input.len() >= 4 {
                 if ui.button("Download from RCSB").clicked() {
-                    match load_cif_rcsb(&state.ui.db_input) {
-                        // tood: For organization purposes, move thi scode out of the UI.
-                        Ok(pdb) => {
-                            state.pdb = Some(pdb);
-                            state.molecule = Some(Molecule::from_pdb(state.pdb.as_ref().unwrap()));
-                            state.update_from_prefs();
-
-                            redraw = true;
-                            reset_cam = true;
-                            set_flashlight(scene);
-                            engine_updates.lighting = true;
-
-                            // todo: async
-                            // Only after updating from prefs (to prevent unecesasary loading) do we update data avail.
-                            state
-                                .molecule
-                                .as_mut()
-                                .unwrap()
-                                .update_data_avail(&mut state.volatile.mol_pending_data_avail);
-                        }
-                        Err(_e) => {
-                            eprintln!("Error loading CIF file");
-                        }
-                    }
+                    util::query_rcsb(
+                        state,
+                        scene,
+                        &mut engine_updates,
+                        &mut redraw,
+                        &mut reset_cam,
+                    );
                 }
 
                 if state.ui.db_input.to_uppercase().starts_with("DB") {

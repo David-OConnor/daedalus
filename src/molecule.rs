@@ -185,10 +185,7 @@ impl Molecule {
             return;
         }
 
-        println!(
-            "Spawning tread to fetch data-avail for {}",
-            self.ident
-        );
+        println!("Spawning tread to fetch data-avail for {}", self.ident);
 
         let ident = self.ident.clone(); // data the worker needs
         let (tx, rx) = mpsc::channel(); // one-shot channel

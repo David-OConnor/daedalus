@@ -29,7 +29,7 @@ pub const RENDER_DIST_NEAR: f32 = 0.2;
 pub const RENDER_DIST_FAR: f32 = 1_000.;
 
 // todo: Shinyness broken?
-pub const ATOM_SHINYNESS: f32 = 0.9;
+pub const ATOM_SHININESS: f32 = 0.9;
 pub const BODY_SHINYNESS: f32 = 0.9;
 
 // Keep this in sync with mesh init.

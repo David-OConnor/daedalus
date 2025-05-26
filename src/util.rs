@@ -1,6 +1,6 @@
 use std::{collections::HashMap, time::Instant};
 
-use graphics::{Camera, ControlScheme, FWD_VEC, Scene};
+use graphics::{Camera, ControlScheme, EngineUpdates, FWD_VEC, Scene};
 use lin_alg::{
     f32::{Quaternion, Vec3 as Vec3F32},
     f64::Vec3,
@@ -9,9 +9,11 @@ use na_seq::AaIdent;
 
 use crate::{
     PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel,
+    download_mols::load_cif_rcsb,
     element::Element,
     mol_drawing::MoleculeView,
     molecule::{Atom, AtomRole, Bond, Chain, Molecule, Residue, ResidueType},
+    render::set_flashlight,
 };
 
 const MOVE_TO_TARGET_DIST: f32 = 15.;
@@ -426,4 +428,37 @@ pub fn find_atom<'a>(atoms: &'a [Atom], indices: &[usize], i_to_find: usize) -> 
     }
 
     None
+}
+
+pub fn query_rcsb(
+    state: &mut State,
+    scene: &mut Scene,
+    engine_updates: &mut EngineUpdates,
+    redraw: &mut bool,
+    reset_cam: &mut bool,
+) {
+    match load_cif_rcsb(&state.ui.db_input) {
+        // tood: For organization purposes, move thi scode out of the UI.
+        Ok(pdb) => {
+            state.pdb = Some(pdb);
+            state.molecule = Some(Molecule::from_pdb(state.pdb.as_ref().unwrap()));
+            state.update_from_prefs();
+
+            *redraw = true;
+            *reset_cam = true;
+            set_flashlight(scene);
+            engine_updates.lighting = true;
+
+            // todo: async
+            // Only after updating from prefs (to prevent unecesasary loading) do we update data avail.
+            state
+                .molecule
+                .as_mut()
+                .unwrap()
+                .update_data_avail(&mut state.volatile.mol_pending_data_avail);
+        }
+        Err(_e) => {
+            eprintln!("Error loading CIF file");
+        }
+    }
 }
