@@ -5,6 +5,16 @@
 
 #![allow(clippy::too_many_arguments)]
 
+// Note: To test if it compiles on ARM:
+// `rustup target add aarch64-pc-windows-msvc`
+// `cargo check --target aarch64-pc-windows-msvc`
+
+// todo: Features to add:
+// - qvina2/qvina-w/gpuvina implementations too along with stuff like haddock for affinity-based
+// protein-protein.
+// - CLI interface or scripting, like PyMol
+// - mol2 support
+
 mod aa_coords;
 mod add_hydrogens;
 mod amino_acid_coords;

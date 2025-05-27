@@ -42,8 +42,10 @@
 use std::{f32::consts::TAU, time::Instant};
 
 use bincode::{Decode, Encode};
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+use lin_alg::f32::{f32x8, pack_float, pack_vec3};
 use lin_alg::{
-    f32::{Vec3 as Vec3F32, f32x8, pack_float, pack_vec3},
+    f32::Vec3 as Vec3F32,
     f64::{FORWARD, Quaternion, RIGHT, UP, Vec3},
     linspace,
 };
@@ -240,8 +242,10 @@ pub fn calc_binding_energy(
         }
     }
 
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     let (distances_x8, valid_lanes_last_dist) = pack_float(&distances);
 
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     let vdw = if !is_x86_feature_detected!("avx") {
         // todo: Use a neighbor grid or similar? Set it up so there are two separate sides?
         distances
@@ -254,17 +258,20 @@ pub fn calc_binding_energy(
             })
             .sum()
     } else {
-        let vdw_x8: f32x8 = distances_x8
-            .par_iter()
-            .enumerate()
-            .map(|(i, r)| {
-                let sigma = setup.lj_sigma_x8[i];
-                let eps = setup.lj_eps_x8[i];
-                V_lj_x8(*r, sigma, eps)
-            })
-            .sum();
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        {
+            let vdw_x8: f32x8 = distances_x8
+                .par_iter()
+                .enumerate()
+                .map(|(i, r)| {
+                    let sigma = setup.lj_sigma_x8[i];
+                    let eps = setup.lj_eps_x8[i];
+                    V_lj_x8(*r, sigma, eps)
+                })
+                .sum();
 
-        vdw_x8.to_array().iter().sum()
+            vdw_x8.to_array().iter().sum()
+        }
     };
 
     let h_bond_count = {

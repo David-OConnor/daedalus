@@ -15,7 +15,9 @@ cfg_if::cfg_if! {
 }
 
 use graphics::Entity;
-use lin_alg::f32::{Mat3, Quaternion, Vec3, Vec3x8, f32x8, pack_float, pack_slice, pack_vec3};
+use lin_alg::f32::{Mat3, Quaternion, Vec3};
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+use lin_alg::f32::{Vec3x8, f32x8, pack_float, pack_slice, pack_vec3};
 use rayon::prelude::*;
 
 #[cfg(feature = "cuda")]
@@ -113,6 +115,7 @@ impl BodyRigid {
     }
 }
 
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[derive(Clone, Debug)]
 pub(crate) struct BodyVdwx8 {
     pub posit: Vec3x8,
@@ -122,6 +125,7 @@ pub(crate) struct BodyVdwx8 {
     pub element: [Element; 8],
 }
 
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 impl BodyVdwx8 {
     pub fn from_array(bodies: [BodyVdw; 8]) -> Self {
         let mut posits = [Vec3::new_zero(); 8];
@@ -304,6 +308,7 @@ fn bodies_from_atoms(atoms: &[Atom]) -> Vec<BodyVdw> {
     atoms.iter().map(BodyVdw::from_atom).collect()
 }
 
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 /// Also returns valid lanes in the last item.
 fn bodies_from_atoms_x8(atoms: &[Atom]) -> (Vec<BodyVdwx8>, usize) {
     let mut posits: Vec<Vec3> = Vec::with_capacity(atoms.len());
@@ -533,43 +538,46 @@ pub fn build_vdw_dynamics(
                             |a, b| (a.0 + b.0, a.1 + b.1),
                         )
                 } else {
-                    let (diffs_x8, valid_lanes_last_diff) = pack_vec3(&diffs);
-                    let (lig_posits_by_diff_x8, _) = pack_vec3(&lig_posits_by_diff);
+                    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+                    {
+                        let (diffs_x8, valid_lanes_last_diff) = pack_vec3(&diffs);
+                        let (lig_posits_by_diff_x8, _) = pack_vec3(&lig_posits_by_diff);
 
-                    let anchor_posit_x8 = Vec3x8::splat(anchor_posit);
+                        let anchor_posit_x8 = Vec3x8::splat(anchor_posit);
 
-                    let (f, t) = diffs_x8
-                        .par_iter()
-                        .enumerate()
-                        .map(|(i, &diff)| {
-                            let r = diff.magnitude();
-                            let dir = diff / r;
-                            let sigma = setup.lj_sigma_x8[i];
-                            let eps = setup.lj_eps_x8[i];
+                        let (f, t) = diffs_x8
+                            .par_iter()
+                            .enumerate()
+                            .map(|(i, &diff)| {
+                                let r = diff.magnitude();
+                                let dir = diff / r;
+                                let sigma = setup.lj_sigma_x8[i];
+                                let eps = setup.lj_eps_x8[i];
 
-                            let f = force_lj_x8(dir, r, sigma, eps);
+                                let f = force_lj_x8(dir, r, sigma, eps);
 
-                            let diff = lig_posits_by_diff_x8[i] - anchor_posit_x8;
-                            let torque = diff.cross(f);
+                                let diff = lig_posits_by_diff_x8[i] - anchor_posit_x8;
+                                let torque = diff.cross(f);
 
-                            (f, torque)
-                        })
-                        .reduce(
-                            || (Vec3x8::new_zero(), Vec3x8::new_zero()),
-                            |a, b| (a.0 + b.0, a.1 + b.1),
-                        );
+                                (f, torque)
+                            })
+                            .reduce(
+                                || (Vec3x8::new_zero(), Vec3x8::new_zero()),
+                                |a, b| (a.0 + b.0, a.1 + b.1),
+                            );
 
-                    // todo: Impl sum.
-                    let mut f_ = Vec3::new_zero();
-                    let mut t_ = Vec3::new_zero();
-                    let f_arr = f.to_array();
-                    let t_arr = t.to_array();
-                    for i in 0..8 {
-                        f_ += f_arr[i];
-                        t_ += t_arr[i];
+                        // todo: Impl sum.
+                        let mut f_ = Vec3::new_zero();
+                        let mut t_ = Vec3::new_zero();
+                        let f_arr = f.to_array();
+                        let t_arr = t.to_array();
+                        for i in 0..8 {
+                            f_ += f_arr[i];
+                            t_ += t_arr[i];
+                        }
+
+                        (f_, t_)
                     }
-
-                    (f_, t_)
                 }
             }
         };

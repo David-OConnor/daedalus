@@ -11,13 +11,14 @@ cfg_if::cfg_if! {
 }
 use std::{collections::HashMap, time::Instant};
 
-use lin_alg::f32::{Vec3, Vec3x8, f32x8};
+use lin_alg::f32::Vec3;
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+use lin_alg::f32::{Vec3x8, f32x8};
 use rayon::{iter::IntoParallelRefIterator, prelude::*};
 
-use crate::{
-    docking::dynamics_playback::{BodyVdw, BodyVdwx8},
-    element::Element,
-};
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+use crate::docking::dynamics_playback::BodyVdwx8;
+use crate::{docking::dynamics_playback::BodyVdw, element::Element};
 
 // The rough Van der Waals (Lennard-Jones) minimum potential value, for two carbon atoms.
 const LJ_MIN_R_CC: f32 = 3.82;
@@ -141,6 +142,7 @@ pub fn force_lj_gpu(
     result
 }
 
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub fn setup_sigma_eps_x8(
     // todo: THis param list is onerous.
     i_src: usize,
@@ -182,6 +184,7 @@ pub fn force_coulomb(dir: Vec3, dist: f32, q0: f32, q1: f32, softening_factor_sq
     dir * q0 * q1 / (dist.powi(2) + softening_factor_sq)
 }
 
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub fn force_coulomb_x8(
     dir: Vec3x8,
     dist: f32x8,
@@ -212,6 +215,7 @@ pub fn V_lj(r: f32, sigma: f32, eps: f32) -> f32 {
     4. * eps * (sr12 - sr6)
 }
 
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub fn V_lj_x8(r: f32x8, sigma: f32x8, eps: f32x8) -> f32x8 {
     // if r < f32::EPSILON {
     //     return f32x8::splat(0.);
@@ -234,6 +238,7 @@ pub fn force_lj(dir: Vec3, r: f32, sigma: f32, eps: f32) -> Vec3 {
     -dir * mag
 }
 
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 /// Calculate the Lennard Jones force; a Newtonian force based on the LJ potential.
 pub fn force_lj_x8(dir: Vec3x8, r: f32x8, sigma: f32x8, eps: f32x8) -> Vec3x8 {
     let sr = sigma / r;

@@ -5,10 +5,9 @@
 use std::{collections::HashMap, fmt::Display};
 
 use barnes_hut::{BhConfig, Cube, Tree};
-use lin_alg::{
-    f32::{Vec3, Vec3x8, f32x8, pack_float, pack_slice_noncopy, pack_vec3},
-    pack_slice,
-};
+use lin_alg::f32::Vec3;
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+use lin_alg::f32::{Vec3x8, f32x8, pack_float};
 
 use crate::{
     docking::{
@@ -97,7 +96,9 @@ pub struct DockingSetup {
     /// Flattened. Separate single-value array facilitate use in CUDA and SIMD, vice a tuple.
     pub lj_sigma: Vec<f32>,
     pub lj_eps: Vec<f32>,
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     pub lj_sigma_x8: Vec<f32x8>,
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     pub lj_eps_x8: Vec<f32x8>,
     /// Flattened, as above. (Outer loop receptor). If both lig and receptor atoms are considered "hydrophobic", e.g. carbon.
     pub hydrophobic: Vec<bool>,
@@ -152,7 +153,9 @@ impl DockingSetup {
         }
 
         // todo: Handle remainder? seems not req
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         let (lj_sigma_x8, _) = pack_float(&sigmas);
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         let (lj_eps_x8, _) = pack_float(&epss);
 
         // let (rec_atoms_near_site_x8, lanes_rec) = pack_slice_noncopy(&rec_atoms_near_site);
@@ -194,7 +197,9 @@ impl DockingSetup {
             rec_bonds_near_site,
             lj_sigma: sigmas,
             lj_eps: epss,
+            #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
             lj_sigma_x8,
+            #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
             lj_eps_x8,
             hydrophobic,
             lj_lut: lj_lut.clone(),
