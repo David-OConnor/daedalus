@@ -8,12 +8,14 @@
 // Note: To test if it compiles on ARM:
 // `rustup target add aarch64-pc-windows-msvc`
 // `cargo check --target aarch64-pc-windows-msvc`
+// note: Currently getting Clang errors when I attempt htis.
 
 // todo: Features to add:
 // - qvina2/qvina-w/gpuvina implementations too along with stuff like haddock for affinity-based
 // protein-protein.
 // - CLI interface or scripting, like PyMol
 // - mol2 support
+// - Better color scheme for residues?
 
 mod aa_coords;
 mod add_hydrogens;

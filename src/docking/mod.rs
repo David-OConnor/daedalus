@@ -245,34 +245,35 @@ pub fn calc_binding_energy(
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     let (distances_x8, valid_lanes_last_dist) = pack_float(&distances);
 
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    let vdw = if !is_x86_feature_detected!("avx") {
-        // todo: Use a neighbor grid or similar? Set it up so there are two separate sides?
+    // Prevents duplicates between compile-time, and runtime SIMD missing code.
+    fn scalar_vdw(distances: &[f32], sigma: &[f32], eps: &[f32]) -> f32 {
         distances
             .par_iter()
             .enumerate()
-            .map(|(i, r)| {
-                let sigma = setup.lj_sigma[i];
-                let eps = setup.lj_eps[i];
-                V_lj(*r, sigma, eps)
-            })
+            .map(|(i, &r)| V_lj(r, sigma[i], eps[i]))
             .sum()
-    } else {
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        {
-            let vdw_x8: f32x8 = distances_x8
-                .par_iter()
-                .enumerate()
-                .map(|(i, r)| {
-                    let sigma = setup.lj_sigma_x8[i];
-                    let eps = setup.lj_eps_x8[i];
-                    V_lj_x8(*r, sigma, eps)
-                })
-                .sum();
+    }
 
-            vdw_x8.to_array().iter().sum()
-        }
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    let vdw = if !is_x86_feature_detected!("avx") {
+        // todo: Use a neighbor grid or similar? Set it up so there are two separate sides?
+        scalar_vdw(&distances, &setup.lj_sigma, &setup.lj_eps)
+    } else {
+        let vdw_x8: f32x8 = distances_x8
+            .par_iter()
+            .enumerate()
+            .map(|(i, r)| {
+                let sigma = setup.lj_sigma_x8[i];
+                let eps = setup.lj_eps_x8[i];
+                V_lj_x8(*r, sigma, eps)
+            })
+            .sum();
+
+        vdw_x8.to_array().iter().sum()
     };
+
+    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+    let vdw = scalar_vdw(&distances, &setup.lj_sigma, &setup.lj_eps);
 
     let h_bond_count = {
         // Calculate hydrogen bonds

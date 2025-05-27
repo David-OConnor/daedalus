@@ -17,20 +17,23 @@ cfg_if::cfg_if! {
 use graphics::Entity;
 use lin_alg::f32::{Mat3, Quaternion, Vec3};
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-use lin_alg::f32::{Vec3x8, f32x8, pack_float, pack_slice, pack_vec3};
+use lin_alg::f32::{Vec3x8, f32x8, pack_slice, pack_vec3};
 use rayon::prelude::*;
 
 #[cfg(feature = "cuda")]
 use crate::forces::force_lj_gpu;
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+use crate::forces::force_lj_x8;
 use crate::{
     docking::{
         BindingEnergy, ConformationType, Pose, calc_binding_energy,
         prep::{DockingSetup, Torsion},
     },
     element::Element,
-    forces::{force_lj, force_lj_x8},
+    forces::force_lj,
     molecule::{Atom, Ligand},
 };
+
 // This seems to be how we control rotation vice movement. A higher value means
 // more movement, less rotation for a given dt.
 
@@ -397,6 +400,42 @@ where
     )
 }
 
+// Prevents DRY between runtime and compile-time SIMD absent.
+fn scalar_f_t(
+    diffs: &[Vec3],
+    setup: &DockingSetup,
+    lig_posits_by_diff: &[Vec3],
+    anchor_posit: Vec3,
+) -> (Vec3, Vec3) {
+    diffs
+        .par_iter()
+        .enumerate()
+        .map(|(i, &diff)| {
+            let r = diff.magnitude();
+            let dir = diff / r;
+
+            let sigma = setup.lj_sigma[i];
+            let eps = setup.lj_eps[i];
+
+            let f = force_lj(dir, r, sigma, eps);
+
+            // Torque = (r - R_cm) x F,
+            // where R_cm is the center-of-mass position, and r is this atom's position.
+            // But if you store each body_lig.posit already relative to the COM, then you can just use r x F
+
+            let diff = lig_posits_by_diff[i] - anchor_posit;
+            let torque = diff.cross(f);
+
+            // todo: NaNs in some cases.
+            // println!("F: {:?}", f);
+            (f, torque)
+        })
+        .reduce(
+            || (Vec3::new_zero(), Vec3::new_zero()),
+            |a, b| (a.0 + b.0, a.1 + b.1),
+        )
+}
+
 /// Keeps orientation fixed and body rigid, for now.
 ///
 /// Observation: We can use analytic VDW force to position individual atoms, but once we treat
@@ -508,77 +547,52 @@ pub fn build_vdw_dynamics(
             }
             ComputationDevice::Cpu => {
                 // todo: x8 isn't saving time here, and is causing invalid results. (not matching scalar)
-                // let (force, torque) = if !is_x86_feature_detected!("avx") {
+                #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+                // if !is_x86_feature_detected!("avx") {
                 if true {
-                    diffs
+                    scalar_f_t(&diffs, setup, &lig_posits_by_diff, anchor_posit)
+                } else {
+                    let (diffs_x8, valid_lanes_last_diff) = pack_vec3(&diffs);
+                    let (lig_posits_by_diff_x8, _) = pack_vec3(&lig_posits_by_diff);
+
+                    let anchor_posit_x8 = Vec3x8::splat(anchor_posit);
+
+                    let (f, t) = diffs_x8
                         .par_iter()
                         .enumerate()
                         .map(|(i, &diff)| {
                             let r = diff.magnitude();
                             let dir = diff / r;
+                            let sigma = setup.lj_sigma_x8[i];
+                            let eps = setup.lj_eps_x8[i];
 
-                            let sigma = setup.lj_sigma[i];
-                            let eps = setup.lj_eps[i];
+                            let f = force_lj_x8(dir, r, sigma, eps);
 
-                            let f = force_lj(dir, r, sigma, eps);
-
-                            // Torque = (r - R_cm) x F,
-                            // where R_cm is the center-of-mass position, and r is this atom's position.
-                            // But if you store each body_lig.posit already relative to the COM, then you can just use r x F
-
-                            let diff = lig_posits_by_diff[i] - anchor_posit;
+                            let diff = lig_posits_by_diff_x8[i] - anchor_posit_x8;
                             let torque = diff.cross(f);
 
-                            // todo: NaNs in some cases.
-                            // println!("F: {:?}", f);
                             (f, torque)
                         })
                         .reduce(
-                            || (Vec3::new_zero(), Vec3::new_zero()),
+                            || (Vec3x8::new_zero(), Vec3x8::new_zero()),
                             |a, b| (a.0 + b.0, a.1 + b.1),
-                        )
-                } else {
-                    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-                    {
-                        let (diffs_x8, valid_lanes_last_diff) = pack_vec3(&diffs);
-                        let (lig_posits_by_diff_x8, _) = pack_vec3(&lig_posits_by_diff);
+                        );
 
-                        let anchor_posit_x8 = Vec3x8::splat(anchor_posit);
-
-                        let (f, t) = diffs_x8
-                            .par_iter()
-                            .enumerate()
-                            .map(|(i, &diff)| {
-                                let r = diff.magnitude();
-                                let dir = diff / r;
-                                let sigma = setup.lj_sigma_x8[i];
-                                let eps = setup.lj_eps_x8[i];
-
-                                let f = force_lj_x8(dir, r, sigma, eps);
-
-                                let diff = lig_posits_by_diff_x8[i] - anchor_posit_x8;
-                                let torque = diff.cross(f);
-
-                                (f, torque)
-                            })
-                            .reduce(
-                                || (Vec3x8::new_zero(), Vec3x8::new_zero()),
-                                |a, b| (a.0 + b.0, a.1 + b.1),
-                            );
-
-                        // todo: Impl sum.
-                        let mut f_ = Vec3::new_zero();
-                        let mut t_ = Vec3::new_zero();
-                        let f_arr = f.to_array();
-                        let t_arr = t.to_array();
-                        for i in 0..8 {
-                            f_ += f_arr[i];
-                            t_ += t_arr[i];
-                        }
-
-                        (f_, t_)
+                    // todo: Impl sum.
+                    let mut f_ = Vec3::new_zero();
+                    let mut t_ = Vec3::new_zero();
+                    let f_arr = f.to_array();
+                    let t_arr = t.to_array();
+                    for i in 0..8 {
+                        f_ += f_arr[i];
+                        t_ += t_arr[i];
                     }
+
+                    (f_, t_)
                 }
+
+                #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+                scalar_f_t(&diffs, setup, &lig_posits_by_diff, anchor_posit)
             }
         };
 
