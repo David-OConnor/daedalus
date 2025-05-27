@@ -11,14 +11,14 @@ egui-file-dialog = "0.10.0" #  For file dialogs.
 
 cfg-if = "1.0.0"
 
-lin_alg = { version = "1.1.8", features = ["encode"] }
+lin_alg = { version = "1.1.9", features = ["encode"] }
 # todo: Use https://github.com/bempp/kifmm when ready. Adapt for Windows.
 barnes_hut = { version = "1.0.8"}  # enc temp rem
 # todo: Qhull is temp until we find a way to generate non-convex meshes.
 # todo: Relies on C FFI. This may complicate compiling.
 #qhull = "0.4.0"
 na_seq = "0.2.7"
-bio_apis = {  version = "0.1.0", features = ["encode"] }
+bio_apis = {  version = "0.1.2", features = ["encode"] }
 
 # For loading and saving config
 bincode = "2.0.1"
@@ -38,12 +38,13 @@ nalgebra = "0.33.2"
 # We use these when developing locally to reduce friction.
 [patch.crates-io]
 #graphics = { path = "../../graphics" }
-lin_alg = { path = "../../lin_alg" }
+#lin_alg = { path = "../../lin_alg" }
 #cuda_setup = { path = "../../cuda_setup", optional = true }
-pdbtbx = { path = "../../pdbtbx" }
+#pdbtbx = { path = "../../pdbtbx" }
+pdbtbx = { git = "https://github.com/David-OConnor/pdbtbx" }
 #barnes_hut = { path = "../../barnes_hut" }
 #na_seq = { path = "../na_seq" }
-bio_apis = { path = "../bio_apis" }
+#bio_apis = { path = "../bio_apis" }
 
 
 [build-dependencies]

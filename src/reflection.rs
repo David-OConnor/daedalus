@@ -253,6 +253,7 @@ pub fn compute_density_grid(data: &ReflectionsData) -> Vec<ElectronDensity> {
     result
 }
 
+/// Convert from fractical coordinates, as used in reflections, to real space in Angstroms.
 fn frac_to_cart(fr: Vec3, a: f64, b: f64, c: f64, α: f64, β: f64, γ: f64) -> Vec3 {
     // Angles in radians
     let (ca, cb, cg) = (α.cos(), β.cos(), γ.cos());
