@@ -1600,7 +1600,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         if let Some(path) = &state.volatile.dialogs.save_ligand.take_picked() {
             if let Some(lig) = &state.ligand {
                 // todo: Other formats A/R
-                if let Err(e) = lig.molecule.save_sdf(path) {
+                if let Err(e) = lig.molecule.save_mol2(path) {
                     eprintln!("Error saving SDF: {}", e);
                 } else {
                     state.to_save.last_ligand_opened = Some(path.to_owned());

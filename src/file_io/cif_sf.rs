@@ -12,7 +12,6 @@ const EPS: f64 = 0.0000001;
 fn parse_file(
     reflections: &mut HashMap<(i32, i32, i32), Reflection>,
     text: &str,
-    is_sf: bool,
     header_sink: &mut dyn FnMut(&str, &str),
 ) {
     let mut in_loop = false;
@@ -57,6 +56,7 @@ fn parse_file(
         let h = cols[col("_refln.index_h").unwrap()]
             .parse::<i32>()
             .unwrap_or(0);
+
         let k = cols[col("_refln.index_k").unwrap()]
             .parse::<i32>()
             .unwrap_or(0);
@@ -74,14 +74,14 @@ fn parse_file(
 
         let overwrite_f64 = |dst: &mut f64, src: Option<f64>| {
             if let Some(v) = src {
-                if is_sf || dst.abs() < EPS {
+                if dst.abs() < EPS {
                     *dst = v;
                 }
             }
         };
         let overwrite_opt = |dst: &mut Option<f64>, src: Option<f64>| {
             if let Some(v) = src {
-                if dst.is_none() || is_sf {
+                if dst.is_none() {
                     *dst = Some(v);
                 }
             }
@@ -168,12 +168,15 @@ impl ReflectionsData {
 
         // Parse files in ascending precedence.
         if let Some(txt) = map_fo_fc {
-            parse_file(&mut reflections, txt, false, &mut header);
+            // todo: Temp removed
+            parse_file(&mut reflections, txt, &mut header);
         }
         if let Some(txt) = map_2fo_fc {
-            parse_file(&mut reflections, txt, false, &mut header);
+            parse_file(&mut reflections, txt, &mut header);
         }
-        parse_file(&mut reflections, sf, true, &mut header); // SF wins ties
+
+        // todo: Temp removed
+        // parse_file(&mut reflections, sf, &mut header); // SF wins ties
 
         Self {
             space_group,

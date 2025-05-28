@@ -530,6 +530,12 @@ fn is_bond_in_ring(bond: &Bond, mol: &Molecule) -> bool {
             {
                 continue;
             }
+
+            if neighbor >= visited.len() {
+                eprintln!("Error checking if bond is in a ring: neighbor > visited len");
+                return false;
+            }
+
             if !visited[neighbor] {
                 stack.push(neighbor);
             }

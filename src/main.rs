@@ -81,7 +81,7 @@ use crate::{
         prep::DockingSetup,
     },
     element::{Element, init_lj_lut},
-    file_io::pdbqt::load_pdbqt,
+    file_io::{mol2::load_mol2, pdbqt::load_pdbqt},
     molecule::{Ligand, ResidueType},
     navigation::Tab,
     prefs::ToSave,
@@ -370,7 +370,6 @@ impl State {
         self.ui.chain_to_pick_res = None;
     }
 
-    // todo: Consider how you handle loading and storing of ligands vs targets.
     pub fn open_molecule(&mut self, path: &Path, is_ligand: bool) {
         let mut ligand = None;
         let molecule = match path
@@ -381,6 +380,7 @@ impl State {
             .unwrap_or_default()
         {
             "sdf" => load_sdf(path),
+            "mol2" => load_mol2(path),
             "pdbqt" => {
                 load_pdbqt(path).map(|(molecule, mut lig_loaded)| {
                     if lig_loaded.is_some() {

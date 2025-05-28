@@ -19,12 +19,12 @@ pub fn load_cif_rcsb(ident: &str) -> Result<PDB, ReqError> {
 pub fn load_sdf_drugbank(ident: &str) -> Result<Molecule, ReqError> {
     let sdf_data = drugbank::load_sdf(ident)?;
 
-    Molecule::from_sdf(&sdf_data).map_err(|e| ReqError {})
+    Molecule::from_mol2(&sdf_data).map_err(|e| ReqError {})
 }
 
 /// Download an SDF file from DrugBank, and parse as a molecule.
 pub fn load_sdf_pubchem(ident: &str) -> Result<Molecule, ReqError> {
     let sdf_data = pubchem::load_sdf(ident)?;
 
-    Molecule::from_sdf(&sdf_data).map_err(|_e| ReqError {})
+    Molecule::from_mol2(&sdf_data).map_err(|_e| ReqError {})
 }

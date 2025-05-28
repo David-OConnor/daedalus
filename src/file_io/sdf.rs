@@ -12,11 +12,8 @@ use std::{
 use lin_alg::f64::Vec3;
 
 use crate::{
-    bond_inference::{create_bonds, create_hydrogen_bonds},
-    docking::prep::DockType,
     element::Element,
     molecule::{Atom, BondType, Chain, Molecule, Residue, ResidueType},
-    util::mol_center_size,
 };
 
 struct Sdf {
@@ -114,12 +111,7 @@ impl Molecule {
             })?;
             let element = cols[3];
 
-            // Now build your Atom struct.
-            // (This assumes you have something like `pub struct Atom { ... }`
-            // that can hold these values.)
-            //
-            // For example:
-            let atom = Atom {
+            atoms.push(Atom {
                 serial_number: i - first_atom_line + 1,
                 posit: Vec3 { x, y, z }, // or however you store coordinates
                 element: Element::from_letter(element)?,
@@ -131,9 +123,7 @@ impl Molecule {
                 temperature_factor: None,
                 partial_charge: None,
                 dock_type: None,
-            };
-
-            atoms.push(atom);
+            });
         }
 
         // Look for a molecule identifier in the file. Check for either
@@ -305,5 +295,5 @@ pub fn load_sdf(path: &Path) -> io::Result<Molecule> {
     let data_str: String = String::from_utf8(buffer)
         .map_err(|_| io::Error::new(ErrorKind::InvalidData, "Invalid UTF8"))?;
 
-    Molecule::from_sdf(&data_str)
+    Molecule::from_mol2(&data_str)
 }

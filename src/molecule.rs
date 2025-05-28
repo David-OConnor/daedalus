@@ -135,7 +135,7 @@ impl Molecule {
     }
 
     /// We use this as part of our flexible-bond conformation algorithm.
-    fn build_adjacency_list(&self) -> Vec<Vec<usize>> {
+    pub fn build_adjacency_list(&self) -> Vec<Vec<usize>> {
         let n_atoms = self.atoms.len();
         // Start with empty neighbors for each atom
         let mut adjacency_list = vec![Vec::new(); n_atoms];
@@ -359,6 +359,13 @@ impl Ligand {
     /// has fewer atoms; the intent is to minimize the overall position changes for these flexible bond angle
     /// changes.
     pub fn position_atoms(&self, pose: Option<&Pose>) -> Vec<Vec3> {
+        if self.anchor_atom >= self.molecule.atoms.len() {
+            eprintln!(
+                "Error positioning ligand atoms: Anchor outside atom count. Atom cound: {:?}",
+                self.molecule.atoms.len()
+            );
+            return Vec::new();
+        }
         let anchor = self.molecule.atoms[self.anchor_atom].posit;
 
         let pose_ = match pose {
@@ -468,8 +475,9 @@ pub enum BondType {
     CovalentModificationNucleotidePhosphate,
 }
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, Default)]
 pub enum BondCount {
+    #[default]
     Single,
     SingleDoubleHybrid,
     Double,
@@ -483,6 +491,18 @@ impl BondCount {
             Self::SingleDoubleHybrid => 1.5,
             Self::Double => 2.0,
             Self::Triple => 3.0,
+        }
+    }
+
+    pub fn from_count(count: u8) -> Self {
+        match count {
+            1 => Self::Single,
+            2 => Self::Double,
+            3 => Self::Triple,
+            _ => {
+                eprintln!("Error: Invalid count value: {}", count);
+                Self::Single
+            }
         }
     }
 }
