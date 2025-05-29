@@ -431,13 +431,14 @@ pub fn find_atom<'a>(atoms: &'a [Atom], indices: &[usize], i_to_find: usize) -> 
 }
 
 pub fn query_rcsb(
+    ident: &str,
     state: &mut State,
     scene: &mut Scene,
     engine_updates: &mut EngineUpdates,
     redraw: &mut bool,
     reset_cam: &mut bool,
 ) {
-    match load_cif_rcsb(&state.ui.db_input) {
+    match load_cif_rcsb(&ident) {
         // tood: For organization purposes, move thi scode out of the UI.
         Ok(pdb) => {
             state.pdb = Some(pdb);

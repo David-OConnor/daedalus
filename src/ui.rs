@@ -1,4 +1,9 @@
-use std::{f32::consts::TAU, path::Path, time::Instant};
+use std::{
+    f32::consts::TAU,
+    path::Path,
+    sync::atomic::{AtomicBool, Ordering},
+    time::Instant,
+};
 
 use bio_apis::{drugbank, pubchem, rcsb};
 use egui::{Color32, ComboBox, Context, Key, RichText, Slider, TextEdit, TopBottomPanel, Ui};
@@ -6,8 +11,10 @@ use graphics::{ControlScheme, EngineUpdates, Entity, RIGHT_VEC, Scene, UP_VEC};
 use lin_alg::f32::{Quaternion, Vec3};
 use na_seq::AaIdent;
 
+static INIT_COMPLETE: AtomicBool = AtomicBool::new(false);
+
 use crate::{
-    CamSnapshot, MsaaSetting, Selection, State, ViewSelLevel,
+    CamSnapshot, MsaaSetting, Selection, State, ViewSelLevel, cli,
     docking::{
         ConformationType, calc_binding_energy,
         dynamics_playback::{build_vdw_dynamics, change_snapshot},
@@ -86,7 +93,7 @@ fn set_window_title(title: &str, scene: &mut Scene) {
     // ui.ctx().send_viewport_cmd(ViewportCommand::Title(title.to_string()));
 }
 
-fn load_file(
+pub fn load_file(
     path: &Path,
     state: &mut State,
     redraw: &mut bool,
@@ -140,13 +147,14 @@ pub fn handle_input(
         // Check for file drop
         if let Some(dropped_files) = ip.raw.dropped_files.first() {
             if let Some(path) = &dropped_files.path {
-                let ligand_load = path
-                    .extension()
-                    .unwrap_or_default()
-                    .to_ascii_lowercase()
-                    .to_str()
-                    .unwrap_or_default()
-                    == "sdf";
+                let ligand_load = matches!(
+                    path.extension()
+                        .unwrap_or_default()
+                        .to_ascii_lowercase()
+                        .to_str()
+                        .unwrap_or_default(),
+                    "sdf" | "mol2"
+                );
 
                 load_file(path, state, redraw, reset_cam, engine_updates, ligand_load);
             }
@@ -558,6 +566,46 @@ fn chain_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
                     state.volatile.ui_height = ui.ctx().used_size().y;
                 }
             }
+        }
+    });
+}
+
+// todo: Update params A/R
+fn draw_cli(
+    state: &mut State,
+    scene: &mut Scene,
+    engine_updates: &mut EngineUpdates,
+    redraw: &mut bool,
+    reset_cam: &mut bool,
+    ui: &mut Ui,
+) {
+    ui.label(format!("Out: {}", state.ui.cmd_line_output)); // todo: A/R
+
+    ui.horizontal(|ui| {
+        ui.label("In: ");
+        if ui
+            .add(TextEdit::singleline(&mut state.ui.cmd_line_input).desired_width(140.))
+            .changed()
+        {
+            // todo: Validate input and color-code?
+        }
+
+        ui.add_space(COL_SPACING / 2.);
+
+        let button_clicked = ui.button(RichText::new("Submit")).clicked();
+        let enter_pressed = ui.input(|i| i.key_pressed(Key::Enter));
+
+        if (button_clicked || enter_pressed) && state.ui.cmd_line_input.len() >= 4 {
+            // todo: Error color
+            state.ui.cmd_line_output =
+                cli::handle_cmd(state, scene, engine_updates, redraw, reset_cam).unwrap_or_else(
+                    |e| {
+                        eprintln!("Error processing command");
+                        format!("{:?}", e)
+                    },
+                );
+
+            state.ui.cmd_line_input = String::new();
         }
     });
 }
@@ -1283,6 +1331,22 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                                 ),
                             }
                         }
+                    }
+                    if data.validation_2fo_fc {
+                        if ui
+                            .button(RichText::new("2fo-fc").color(COLOR_HIGHLIGHT))
+                            .clicked()
+                        {
+                            match rcsb::load_validation_2fo_fc_cif(&mol.ident) {
+                                Ok(data) => {
+                                    // println!("SF data: {:?}", data);
+                                }
+                                Err(_) => eprintln!(
+                                    "Error loading RCSB structure factors for {:?}",
+                                    &mol.ident
+                                ),
+                            }
+                        }
 
                         if ui
                             .button(RichText::new("Load reflections").color(COLOR_HIGHLIGHT))
@@ -1290,14 +1354,9 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                         {
                             match ReflectionsData::load_from_rcsb(&mol.ident) {
                                 Ok(d) => {
-                                    // println!("Successfully loaded reflections data: \n{d:?}");
                                     println!("Successfully loaded reflections data");
 
                                     let density = compute_density_grid(&d);
-
-                                    for d in &density[10_000..11_000] {
-                                        println!("Dens: {:?}", d);
-                                    }
 
                                     mol.reflections_data = Some(d);
                                     mol.elec_density = Some(density);
@@ -1379,21 +1438,15 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             ui.label(RichText::new("Query databases (ident):").color(color_open_tools));
             let response = ui.add(TextEdit::singleline(&mut state.ui.db_input).desired_width(40.));
 
-            let enter_pressed = ui.input(|i| i.key_pressed(Key::Enter));
-
-            if response.lost_focus() && enter_pressed && state.ui.db_input.len() >= 4 {
-                util::query_rcsb(
-                    state,
-                    scene,
-                    &mut engine_updates,
-                    &mut redraw,
-                    &mut reset_cam,
-                );
-            }
-
             if state.ui.db_input.len() >= 4 {
-                if ui.button("Download from RCSB").clicked() {
+                let enter_pressed = ui.input(|i| i.key_pressed(Key::Enter));
+                let button_clicked = ui.button("Download from RCSB").clicked();
+
+                // if response.lost_focus() && (button_clicked || enter_pressed)
+                if (button_clicked || enter_pressed) && state.ui.db_input.trim().len() == 4 {
+                    let ident = state.ui.db_input.clone().trim().to_owned();
                     util::query_rcsb(
+                        &ident,
                         state,
                         scene,
                         &mut engine_updates,
@@ -1476,7 +1529,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             ui.horizontal(|ui| {
                 mol_descrip(&ligand.molecule, ui);
 
-                if ui.button("Close").clicked() {
+                if ui.button("Close lig").clicked() {
                     close_ligand = true;
                 }
 
@@ -1587,8 +1640,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         if let Some(path) = &state.volatile.dialogs.save.take_picked() {
             if let Some(mol) = &state.molecule {
                 if let Some(pdb) = &mut state.pdb {
-                    if let Err(e) = save_pdb(mol, pdb, path) {
-                        eprintln!("Error saving pdb: {}", e);
+                    if let Err(e) = save_pdb(pdb, path) {
+                        eprintln!("Error saving molecule (PDB/CIF): {}", e);
                     } else {
                         state.to_save.last_opened = Some(path.to_owned());
                         state.update_save_prefs()
@@ -1655,6 +1708,18 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             }
         }
 
+        // todo: Move A/r.
+        draw_cli(
+            state,
+            scene,
+            &mut engine_updates,
+            &mut redraw,
+            &mut reset_cam,
+            ui,
+        );
+
+        // -------UI above; clean-up items (based on flags) below
+
         if redraw {
             scene.entities = Vec::new();
             draw_molecule(state, scene, reset_cam);
@@ -1673,11 +1738,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         }
     });
 
-    // At init only.
-    if state.volatile.ui_height < f32::EPSILON {
-        state.volatile.ui_height = ctx.used_size().y;
-    }
-
     state.volatile.dialogs.load.update(ctx);
     state.volatile.dialogs.load_ligand.update(ctx);
     state.volatile.dialogs.save.update(ctx);
@@ -1693,23 +1753,21 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
     state.ui.dt = start.elapsed().as_secs_f32();
 
-    static mut INIT_COMPLETE: bool = false;
+    if !INIT_COMPLETE.swap(true, Ordering::AcqRel) {
+        if state.volatile.ui_height < f32::EPSILON {
+            state.volatile.ui_height = ctx.used_size().y;
+        }
 
-    unsafe {
-        if !INIT_COMPLETE {
-            if let Some(mol) = &state.molecule {
-                if let Some(lig) = &state.ligand {
-                    let lig_pos: Vec3 = lig.position_atoms(None)[lig.anchor_atom].into();
-                    let ctr: Vec3 = mol.center.into();
+        if let Some(mol) = &state.molecule {
+            if let Some(lig) = &state.ligand {
+                let lig_pos: Vec3 = lig.position_atoms(None)[lig.anchor_atom].into();
+                let ctr: Vec3 = mol.center.into();
 
-                    cam_look_at_outside(&mut scene.camera, lig_pos, ctr);
+                cam_look_at_outside(&mut scene.camera, lig_pos, ctr);
 
-                    engine_updates.camera = true;
-                    state.ui.cam_snapshot = None;
-                }
+                engine_updates.camera = true;
+                state.ui.cam_snapshot = None;
             }
-
-            INIT_COMPLETE = true;
         }
     }
 

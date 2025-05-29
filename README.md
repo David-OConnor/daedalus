@@ -100,6 +100,14 @@ If *orbit sel* is set in the GUI, the orbit center will be the selected atom or 
 - **Left arrow**: select previous residue
 - **Right arrow**: select next residue
 
+
+## PyMol-like Command line interface
+Daedalus supports a very limited subset of PyMol's CLI interface. Supported commands:
+- `fetch`: Loads a protein from the RCSB PDB.
+- `save`
+- `load`
+
+
 ### Erratta
 - Cartoon view (Showing helices and sheets) is currently unavailable.
 - The only van der Waals surface view currently available is *dots*, and it's slow to build. Mesh WIP.

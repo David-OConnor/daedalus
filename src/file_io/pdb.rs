@@ -233,8 +233,8 @@ pub fn load_pdb(path: &Path) -> io::Result<PDB> {
     Ok(pdb)
 }
 
-/// To file
-pub fn save_pdb(mol: &Molecule, pdb: &mut PDB, path: &Path) -> io::Result<()> {
+/// Save as PDB or CIF format.
+pub fn save_pdb(pdb: &mut PDB, path: &Path) -> io::Result<()> {
     // todo: Update the PDB in state with data from the molecule prior to saving.
 
     pdbtbx::save(

@@ -405,17 +405,19 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene) {
 
     let mol = &lig.molecule;
 
-    // Add a visual indicator for the docking site.
-    scene.entities.push(Entity {
-        // todo: High-res spheres are blocking bonds inside them. Likely engine problem.
-        mesh: MESH_DOCKING_SITE,
-        position: lig.docking_site.site_center.into(),
-        scale: lig.docking_site.site_radius as f32,
-        color: COLOR_DOCKING_BOX,
-        opacity: DOCKING_SITE_OPACITY,
-        shinyness: ATOM_SHININESS,
-        ..Default::default()
-    });
+    if state.ui.show_docking_tools {
+        // Add a visual indicator for the docking site.
+        scene.entities.push(Entity {
+            // todo: High-res spheres are blocking bonds inside them. Likely engine problem.
+            mesh: MESH_DOCKING_SITE,
+            position: lig.docking_site.site_center.into(),
+            scale: lig.docking_site.site_radius as f32,
+            color: COLOR_DOCKING_BOX,
+            opacity: DOCKING_SITE_OPACITY,
+            shinyness: ATOM_SHININESS,
+            ..Default::default()
+        });
+    }
 
     let mut atoms_positioned = mol.atoms.clone();
 

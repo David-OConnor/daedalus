@@ -1,4 +1,6 @@
 //! For opening Mol2 files. These are common molecular descriptions for ligands.
+//! [This unofficial resource](https://chemicbook.com/2021/02/20/mol2-file-format-explained-for-beginners-part-2.html)
+//! descripts the format.
 
 use std::{
     collections::HashMap,
@@ -14,6 +16,64 @@ use crate::{
     element::Element,
     molecule::{Atom, Bond, BondCount, BondType, Chain, Molecule, Residue, ResidueType},
 };
+
+#[derive(Clone, Copy, PartialEq)]
+enum MolType {
+    Small,
+    Bipolymer,
+    Protein,
+    NucleicAcid,
+    Saccharide,
+}
+
+impl MolType {
+    pub fn to_str(&self) -> String {
+        match self {
+            Self::Small => "SMALL",
+            Self::Bipolymer => "BIPOLYMER",
+            Self::Protein => "PROTEIN",
+            Self::NucleicAcid => "NUCLEIC_ACID",
+            Self::Saccharide => "SACCHARIDE",
+        }
+        .to_owned()
+    }
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum ChargeType {
+    None,
+    DelRe,
+    Gasteiger,
+    GastHuck,
+    Huckel,
+    Pullman,
+    Gauss80,
+    Ampac,
+    Mulliken,
+    Dict,
+    MmFf94,
+    User,
+}
+
+impl ChargeType {
+    pub fn to_str(&self) -> String {
+        match self {
+            Self::None => "NO_CHARGES",
+            Self::DelRe => "DEL_RE",
+            Self::Gasteiger => "GASTEIGER",
+            Self::GastHuck => "GAST_HUCK",
+            Self::Huckel => "HUCKEL",
+            Self::Pullman => "PULLMAN",
+            Self::Gauss80 => "GAUSS80_CHARGES",
+            Self::Ampac => "AMPAC_CHARGES",
+            Self::Mulliken => "MULLIKEN_CHARGES",
+            Self::Dict => "DICT_CHARGES",
+            Self::MmFf94 => "MMFF94_CHARGES",
+            Self::User => "USER_CHARGES",
+        }
+        .to_owned()
+    }
+}
 
 struct Mol2 {
     pub molecule: Molecule,
@@ -38,7 +98,7 @@ impl Molecule {
         // @<TRIPOS>ATOM
         // "
 
-        if lines.len() < 4 {
+        if lines.len() < 5 {
             return Err(io::Error::new(
                 ErrorKind::InvalidData,
                 "Not enough lines to parse a MOL2 header",
@@ -64,6 +124,20 @@ impl Molecule {
                 continue;
             }
 
+            // atom_id atom_name x y z atom_type [subst_id[subst_name [charge [status_bit]]]]
+            // Where:
+            //
+            // atom_id (integer): The ID number of the atom at the time the file was created. This is provided for reference only and is not used when the .mol2 file is read into any mol2 parser software
+            // atom_name (string): The name of the atom
+            // x (real): The x coordinate of the atom
+            // y (real): The y coordinate of the atom
+            // z (real): The z coordinate of the atom
+            // atom_type (string): The SYBYL atom type for the atom
+            // subst_id (integer): The ID number of the substructure containing the atom
+            // subst_name (string): The name of the substructure containing the atom
+            // charge (real): The charge associated with the atom
+            // status_bit (string): The internal SYBYL status bits associated with the atom. These should never be set by the user. Valid status bits are DSPMOD, TYPECOL, CAP, BACKBONE, DICT, ESSENTIAL, WATER, and DIRECT
+
             if in_atom_section {
                 let cols: Vec<&str> = line.split_whitespace().collect();
 
@@ -71,7 +145,6 @@ impl Molecule {
                     io::Error::new(ErrorKind::InvalidData, "Could not parse serial number")
                 })?;
 
-                // todo: THis, or col 5?
                 let element = Element::from_letter(cols[1])?;
 
                 let x = cols[2].parse::<f64>().map_err(|_| {
@@ -83,6 +156,15 @@ impl Molecule {
                 let z = cols[4].parse::<f64>().map_err(|_| {
                     io::Error::new(ErrorKind::InvalidData, "Could not parse Z coordinate")
                 })?;
+
+                let charge = cols[8].parse::<f32>().unwrap_or_default();
+
+                // todo: ALso, parse the charge type at line 4.
+                let partial_charge = if charge.abs() < 0.000001 {
+                    None
+                } else {
+                    Some(charge)
+                };
 
                 // todo: More columns, including partial charge.
 
@@ -96,7 +178,7 @@ impl Molecule {
                     hetero: false,
                     occupancy: None,
                     temperature_factor: None,
-                    partial_charge: None,
+                    partial_charge,
                     dock_type: None,
                 });
             }
@@ -115,6 +197,17 @@ impl Molecule {
                 let count_num = cols[3].parse::<u8>().map_err(|_| {
                     io::Error::new(ErrorKind::InvalidData, "Could not parse atom 1 in bond")
                 })?;
+
+                // For bond types: You are not handling all of these:
+
+                // 1 = single
+                // 2 = double
+                // 3 = triple
+                // am = amide
+                // ar = aromatic
+                // du = dummy
+                // un = unknown (cannot be determined from the parameter tables)
+                // nc = not connected
 
                 bonds.push(Bond {
                     bond_type: BondType::Covalent {
@@ -144,53 +237,41 @@ impl Molecule {
     }
 
     pub fn save_mol2(&self, path: &Path) -> io::Result<()> {
+        //todo: Fix this so it outputs mol2 instead of sdf.
         let mut file = File::create(path)?;
 
-        // 1) Title line (often the first line in SDF).
-        //    We use the molecule's name/identifier here:
-        // todo: There is a subtlety here. Add that to your parser as well. There are two values
+        // There is a subtlety here. Add that to your parser as well. There are two values
         // todo in the files we have; this top ident is not the DB id.
+        writeln!(file, "@<TRIPOS>MOLECULE")?;
         writeln!(file, "{}", self.ident)?;
+        writeln!(file, "{} {}", self.atoms.len(), self.bonds.len())?;
+        writeln!(file, "{}", MolType::Small.to_str())?;
+        writeln!(file, "{}", ChargeType::None.to_str())?;
 
-        // 2) Write two blank lines:
-        writeln!(file)?;
-        writeln!(file)?;
+        // **** Means a non-optional field is empty.
+        writeln!(file, "****")?;
+        // Optional line (comments, molecule weight, etc.)
 
-        // 3) Counts line:
-        //    Typically "  X  Y  0  0  0  0  0  0  0999 V2000"
-        //    Where X = number of atoms, Y = number of bonds
-        let natoms = self.atoms.len();
-        let nbonds = self.bonds.len();
-
-        // Format the counts line. We loosely mimic typical spacing,
-        // though it's not strictly required to line up exactly.
-        writeln!(
-            file,
-            "{:>3}{:>3}  0  0  0  0           0999 V2000",
-            natoms, nbonds
-        )?;
-
-        // 4) Atom block: each line typically has
-        //      X Y Z Element 0  0  0  0  0  0  0  0  0  0
-        //    We'll just place a few zeros after the element for now.
-        for atom in &self.atoms {
-            let x = atom.posit.x;
-            let y = atom.posit.y;
-            let z = atom.posit.z;
-            let symbol = atom.element.to_letter();
-
-            // MDL v2000 format often uses fixed-width fields,
-            // but for simplicity we use whitespace separation:
+        writeln!(file, "@<TRIPOS>ATOM")?;
+        for (i, atom) in self.atoms.iter().enumerate() {
             writeln!(
                 file,
-                "{:>10.4}{:>10.4}{:>10.4} {:<2}  0  0  0  0  0  0  0  0  0  0",
-                x, y, z, symbol
+                "{:>5} {:<2} {:>12.3} {:>8.3} {:>8.3} {:<2} {:>6} {:<3} {:>6.3}",
+                i + 1,
+                atom.element.to_letter(),
+                atom.posit.x,
+                atom.posit.y,
+                atom.posit.z,
+                atom.element.to_letter(),
+                0,
+                "UNL",
+                atom.partial_charge.unwrap_or_default()
             )?;
         }
 
-        // 5) Bond block: if your `Molecule` has bond info, loop it here:
-        for bond in &self.bonds {
-            let start_idx = bond.atom_0 + 1; // 1-based in SDF
+        writeln!(file, "@<TRIPOS>BOND")?;
+        for (i, bond) in self.bonds.iter().enumerate() {
+            let start_idx = bond.atom_0 + 1; // 1-based indexing
             let end_idx = bond.atom_1 + 1;
             let bond_count = match bond.bond_type {
                 BondType::Covalent { count } => count.value() as u8,
@@ -199,43 +280,13 @@ impl Molecule {
 
             writeln!(
                 file,
-                "{:>3}{:>3}{:>3}  0  0  0  0",
-                start_idx, end_idx, bond_count
+                "{:>5}{:>6}{:>6}{:>3}",
+                i + 1,
+                start_idx,
+                end_idx,
+                bond_count
             )?;
         }
-
-        // 6) MDL “M  END” line:
-        writeln!(file, "M  END")?;
-
-        // 7) Metadata fields:
-        //    If you have anything like PUBCHEM_COMPOUND_CID or DRUGBANK_ID,
-        //    we can write it in the > <FIELD_NAME> format,
-        //    then the value, then a blank line.
-        //
-        //    For example, if you have a pubchem_cid or drugbank_id in the molecule:
-        if let Some(cid) = self.pubchem_cid {
-            writeln!(file, "> <PUBCHEM_COMPOUND_CID>")?;
-            writeln!(file, "{}", cid)?;
-            writeln!(file)?; // blank line
-        }
-        if let Some(ref dbid) = self.drugbank_id {
-            writeln!(file, "> <DATABASE_ID>")?;
-            writeln!(file, "{}", dbid)?;
-            writeln!(file)?; // blank line
-            writeln!(file, "> <DATABASE_NAME>")?;
-            writeln!(file, "drugbank")?;
-            writeln!(file)?; // blank line
-        }
-
-        // If you have a general metadata HashMap, you could do:
-        // for (key, value) in &self.metadata {
-        //     writeln!(file, "> <{}>", key)?;
-        //     writeln!(file, "{}", value)?;
-        //     writeln!(file)?;
-        // }
-
-        // 8) End of this molecule record in SDF
-        writeln!(file, "$$$$")?;
 
         Ok(())
     }

@@ -40,6 +40,7 @@ mod ui;
 mod util;
 mod vibrations;
 
+mod cli;
 mod reflection;
 #[cfg(test)]
 mod tests;
@@ -48,7 +49,8 @@ use std::{
     collections::HashMap,
     fmt, io,
     io::ErrorKind,
-    path::Path,
+    path::{Path, PathBuf},
+    str::FromStr,
     sync::{Arc, mpsc::Receiver},
 };
 
@@ -81,7 +83,7 @@ use crate::{
         prep::DockingSetup,
     },
     element::{Element, init_lj_lut},
-    file_io::{mol2::load_mol2, pdbqt::load_pdbqt},
+    file_io::{mol2::load_mol2, mtz::load_mtz, pdbqt::load_pdbqt},
     molecule::{Ligand, ResidueType},
     navigation::Tab,
     prefs::ToSave,
@@ -125,6 +127,7 @@ struct FileDialogs {
     autodock_path: FileDialog,
     save_pdbqt: FileDialog,
     load_mdx: FileDialog,
+    load_crystallography: FileDialog,
 }
 
 impl Default for FileDialogs {
@@ -143,8 +146,18 @@ impl Default for FileDialogs {
             ..Default::default()
         }
         .add_save_extension("SDF", "sdf")
-        // todo: Allow saving as MOL2
-        .add_save_extension("MOL2", "mol2");
+        .add_save_extension("Mol2", "mol2");
+
+        let cfg_crystallography = FileDialogConfig {
+            ..Default::default()
+        }
+        .add_file_filter_extensions("Map/MTZ", vec!["map", "mtz"]);
+
+        let cfg_save_crystallography = FileDialogConfig {
+            ..Default::default()
+        }
+        .add_save_extension("Map", "map")
+        .add_save_extension("MTZ", "mtz");
 
         let cfg_vina = FileDialogConfig {
             ..Default::default()
@@ -165,6 +178,9 @@ impl Default for FileDialogs {
         let load_ligand =
             FileDialog::with_config(cfg_small_mol.clone()).default_file_filter("SDF/MOL2/PDBQT");
 
+        let load_crystallography =
+            FileDialog::with_config(cfg_crystallography).default_file_filter("Map/MTZ");
+
         let save = FileDialog::with_config(cfg_protein)
             .add_save_extension("CIF", "cif")
             .default_save_extension("CIF");
@@ -172,6 +188,8 @@ impl Default for FileDialogs {
         let save_ligand = FileDialog::with_config(cfg_save_small_mol).default_save_extension("SDF");
         let autodock_path = FileDialog::with_config(cfg_vina).default_file_filter("Executables");
         let save_pdbqt = FileDialog::with_config(cfg_save_pdbqt).default_save_extension("PDBQT");
+
+        // todo: What is this?
         let load_mdx = FileDialog::with_config(cfg_load_mdx).default_file_filter("MDX");
 
         Self {
@@ -182,6 +200,7 @@ impl Default for FileDialogs {
             autodock_path,
             save_pdbqt,
             load_mdx,
+            load_crystallography,
         }
     }
 }
@@ -309,6 +328,8 @@ struct StateUi {
     show_settings: bool,
     movement_speed_input: String,
     rotation_sens_input: String,
+    cmd_line_input: String,
+    cmd_line_output: String,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]
@@ -434,11 +455,10 @@ impl State {
 
                 self.update_from_prefs();
 
-                // Only after updating from prefs (to prevent unecesasary loading) do we update data avail.
-                self.molecule
-                    .as_mut()
-                    .unwrap()
-                    .update_data_avail(&mut self.volatile.mol_pending_data_avail);
+                if let Some(mol) = &mut self.molecule {
+                    // Only after updating from prefs (to prevent unecesasary loading) do we update data avail.
+                    mol.update_data_avail(&mut self.volatile.mol_pending_data_avail);
+                }
 
                 if self.get_make_docking_setup().is_none() {
                     eprintln!("Problem making or getting docking setup.");
@@ -558,6 +578,25 @@ fn main() {
     if let Some(lig) = &mut state.ligand {
         lig.pose.anchor_posit = lig.docking_site.site_center;
         lig.atom_posits = lig.position_atoms(None);
+    }
+
+    // todo temp
+    // let mtz = load_mtz(&PathBuf::from_str("../../../Desktop/1fat_2fo.mtz").unwrap());
+    // println!("MTZ: {:?}", mtz);
+
+    {
+        // let map_path = PathBuf::from_str("../../../Desktop/reflections/1fat_2fo.map").unwrap();
+        let map_path = PathBuf::from_str("../../../Desktop/reflections/2f67_2fo.map").unwrap();
+        let (hdr, dens) = file_io::map::read_map_data(&map_path).unwrap();
+
+        println!("Map header: {:#?}", hdr);
+
+        // for pt in &dens[0..100] {
+        //     println!("{:.2?}", pt);
+        // }
+        if let Some(mol) = &mut state.molecule {
+            mol.elec_density = Some(dens);
+        }
     }
 
     render(state);

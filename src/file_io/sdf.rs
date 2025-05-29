@@ -202,9 +202,6 @@ impl Molecule {
         writeln!(file)?;
         writeln!(file)?;
 
-        // 3) Counts line:
-        //    Typically "  X  Y  0  0  0  0  0  0  0999 V2000"
-        //    Where X = number of atoms, Y = number of bonds
         let natoms = self.atoms.len();
         let nbonds = self.bonds.len();
 
@@ -216,9 +213,6 @@ impl Molecule {
             natoms, nbonds
         )?;
 
-        // 4) Atom block: each line typically has
-        //      X Y Z Element 0  0  0  0  0  0  0  0  0  0
-        //    We'll just place a few zeros after the element for now.
         for atom in &self.atoms {
             let x = atom.posit.x;
             let y = atom.posit.y;
@@ -234,7 +228,6 @@ impl Molecule {
             )?;
         }
 
-        // 5) Bond block: if your `Molecule` has bond info, loop it here:
         for bond in &self.bonds {
             let start_idx = bond.atom_0 + 1; // 1-based in SDF
             let end_idx = bond.atom_1 + 1;
@@ -250,15 +243,9 @@ impl Molecule {
             )?;
         }
 
-        // 6) MDL “M  END” line:
         writeln!(file, "M  END")?;
 
-        // 7) Metadata fields:
-        //    If you have anything like PUBCHEM_COMPOUND_CID or DRUGBANK_ID,
-        //    we can write it in the > <FIELD_NAME> format,
-        //    then the value, then a blank line.
-        //
-        //    For example, if you have a pubchem_cid or drugbank_id in the molecule:
+        // Metadata
         if let Some(cid) = self.pubchem_cid {
             writeln!(file, "> <PUBCHEM_COMPOUND_CID>")?;
             writeln!(file, "{}", cid)?;

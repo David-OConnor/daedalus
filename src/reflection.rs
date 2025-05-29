@@ -222,27 +222,26 @@ pub fn compute_density_grid(data: &ReflectionsData) -> Vec<ElectronDensity> {
     let len_a = data.cell_len_a as f64;
     let len_b = data.cell_len_b as f64;
     let len_c = data.cell_len_c as f64;
-    // todo: STore the div2 variant.
 
     let result = grid
         .par_iter()
         .map(|p| ElectronDensity {
             // coords: *p,
             // Convert coords to real space, in angstroms.
-            // coords: Vec3 {
-            //     x: p.x * len_a,
-            //     y: p.y * len_b,
-            //     z: p.z * len_c,
-            // },
-            coords: frac_to_cart(
-                *p,
-                len_a,
-                len_b,
-                len_c,
-                (data.cell_angle_alpha as f64).to_radians(),
-                (data.cell_angle_beta as f64).to_radians(),
-                (data.cell_angle_gamma as f64).to_radians(),
-            ),
+            coords: Vec3 {
+                x: p.x * len_a,
+                y: p.y * len_b,
+                z: p.z * len_c,
+            },
+            // coords: frac_to_cart(
+            //     *p,
+            //     len_a,
+            //     len_b,
+            //     len_c,
+            //     (data.cell_angle_alpha as f64).to_radians(),
+            //     (data.cell_angle_beta as f64).to_radians(),
+            //     (data.cell_angle_gamma as f64).to_radians(),
+            // ),
             density: compute_density(&data.points, *p, unit_cell_vol),
         })
         .collect();

@@ -13,8 +13,18 @@ use crate::{
     molecule::{Ligand, Molecule},
 };
 
-pub fn check_adv_avail(vina_path: &Path) -> bool {
-    let status = Command::new(vina_path)
+pub fn check_adv_avail(path: &Path) -> bool {
+    let status = Command::new(path)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .args(["--version"])
+        .status();
+
+    status.is_ok()
+}
+
+pub fn gemmi_avail(path: &Path) -> bool {
+    let status = Command::new(path)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .args(["--version"])

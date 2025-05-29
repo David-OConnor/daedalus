@@ -166,17 +166,18 @@ impl ReflectionsData {
             _ => {}
         };
 
-        // Parse files in ascending precedence.
-        if let Some(txt) = map_fo_fc {
-            // todo: Temp removed
-            parse_file(&mut reflections, txt, &mut header);
-        }
         if let Some(txt) = map_2fo_fc {
+            println!("2fo-fc map available.");
             parse_file(&mut reflections, txt, &mut header);
+        } else {
+            // Parse files in ascending precedence.
+            if let Some(txt) = map_fo_fc {
+                // println!("2fo-fc map available. Using fo-fc");
+                // parse_file(&mut reflections, txt, &mut header);
+            }
+            println!("2fo-fc map available. Using SF");
+            parse_file(&mut reflections, sf, &mut header);
         }
-
-        // todo: Temp removed
-        // parse_file(&mut reflections, sf, &mut header); // SF wins ties
 
         Self {
             space_group,
