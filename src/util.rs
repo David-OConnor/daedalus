@@ -7,14 +7,7 @@ use lin_alg::{
 };
 use na_seq::AaIdent;
 
-use crate::{
-    PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel,
-    download_mols::load_cif_rcsb,
-    element::Element,
-    mol_drawing::MoleculeView,
-    molecule::{Atom, AtomRole, Bond, Chain, Molecule, Residue, ResidueType},
-    render::set_flashlight,
-};
+use crate::{PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel, download_mols::load_cif_rcsb, element::Element, mol_drawing::MoleculeView, molecule::{Atom, AtomRole, Bond, Chain, Molecule, Residue, ResidueType}, render::set_flashlight, CamSnapshot};
 
 const MOVE_TO_TARGET_DIST: f32 = 15.;
 const MOVE_CAM_TO_LIG_DIST: f32 = 30.;
@@ -460,6 +453,39 @@ pub fn query_rcsb(
         }
         Err(_e) => {
             eprintln!("Error loading CIF file");
+        }
+    }
+}
+
+pub fn save_snap(state: &mut State, cam: &Camera, name: &str) {
+    state
+        .cam_snapshots
+        .push(CamSnapshot::from_cam(cam, name.to_owned()));
+    state.ui.cam_snapshot_name = String::new();
+
+    state.ui.cam_snapshot = Some(state.cam_snapshots.len() - 1);
+
+    state.update_save_prefs();
+}
+
+// The snap must be set in state.ui.cam_snapshot ahead of calling this.
+pub fn load_snap(state: &mut State, scene:  &mut Scene, engine_updates: &mut EngineUpdates) {
+    if let Some(snap_i) = state.ui.cam_snapshot {
+        match state.cam_snapshots.get(snap_i) {
+            Some(snap) => {
+                scene.camera.position = snap.position;
+                scene.camera.orientation = snap.orientation;
+                scene.camera.far = snap.far;
+
+                scene.camera.update_proj_mat(); // In case `far` etc changed.
+                engine_updates.camera = true;
+
+                set_flashlight(scene);
+                engine_updates.lighting = true;
+            }
+            None => {
+                eprintln!("Error: Could not find snapshot {}", snap_i);
+            }
         }
     }
 }

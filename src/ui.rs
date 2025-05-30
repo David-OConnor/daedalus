@@ -101,6 +101,7 @@ pub fn load_file(
     engine_updates: &mut EngineUpdates,
     ligand_load: bool,
 ) {
+    // todo: This needs to be fallible, e.g. for your use in CLI.
     state.open_molecule(path, ligand_load);
 
     // todo: These only if successful.
@@ -169,6 +170,7 @@ fn get_snap_name(snap: Option<usize>, snaps: &[CamSnapshot]) -> String {
     }
 }
 
+
 fn cam_snapshots(
     state: &mut State,
     scene: &mut Scene,
@@ -178,6 +180,7 @@ fn cam_snapshots(
     ui.heading("Scenes:");
     ui.label("Label:");
     ui.add(TextEdit::singleline(&mut state.ui.cam_snapshot_name).desired_width(60.));
+
     if ui.button("Save").clicked() {
         let name = if !state.ui.cam_snapshot_name.is_empty() {
             state.ui.cam_snapshot_name.clone()
@@ -185,14 +188,7 @@ fn cam_snapshots(
             format!("Scene {}", state.cam_snapshots.len() + 1)
         };
 
-        state
-            .cam_snapshots
-            .push(CamSnapshot::from_cam(&scene.camera, name));
-        state.ui.cam_snapshot_name = String::new();
-
-        state.ui.cam_snapshot = Some(state.cam_snapshots.len() - 1);
-
-        state.update_save_prefs();
+        util::save_snap(state, &scene.camera, &name);
     }
 
     let prev_snap = state.ui.cam_snapshot;
@@ -213,7 +209,6 @@ fn cam_snapshots(
         });
 
     if let Some(i) = state.ui.cam_snapshot {
-        // ui.add_space(COL_SPACING);
         if ui.button(RichText::new("❌").color(Color32::RED)).clicked() {
             if i < state.cam_snapshots.len() {
                 state.cam_snapshots.remove(i);
@@ -224,24 +219,7 @@ fn cam_snapshots(
     }
 
     if state.ui.cam_snapshot != prev_snap {
-        if let Some(snap_i) = state.ui.cam_snapshot {
-            match state.cam_snapshots.get(snap_i) {
-                Some(snap) => {
-                    scene.camera.position = snap.position;
-                    scene.camera.orientation = snap.orientation;
-                    scene.camera.far = snap.far;
-
-                    scene.camera.update_proj_mat(); // In case `far` etc changed.
-                    engine_updates.camera = true;
-
-                    set_flashlight(scene);
-                    engine_updates.lighting = true;
-                }
-                None => {
-                    eprintln!("Error: Could not find snapshot {}", snap_i);
-                }
-            }
-        }
+        util::load_snap(state, scene, engine_updates);
     }
 }
 

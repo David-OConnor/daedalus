@@ -6,10 +6,7 @@ use std::{io, path::PathBuf, str::FromStr};
 use graphics::{EngineUpdates, Scene};
 use regex::Regex;
 
-use crate::{
-    State, file_io::pdb::save_pdb, mol_drawing::MoleculeView, render::set_flashlight,
-    ui::load_file, util,
-};
+use crate::{State, file_io::pdb::save_pdb, mol_drawing::MoleculeView, render::set_flashlight, ui::load_file, util, CamSnapshot};
 
 /// Process a raw CLI command from the user. Return the CLI output from the entered command.
 pub fn handle_cmd(
@@ -21,16 +18,19 @@ pub fn handle_cmd(
 ) -> io::Result<String> {
     let input = state.ui.cmd_line_input.trim().to_string();
 
-    let re_help = Regex::new(r"(?i)^help$").expect("invalid regex");
-    let re_fetch = Regex::new(r"(?i)^fetch\s+([A-Za-z0-9]{4})$").expect("invalid regex");
-    let re_save = Regex::new(r"(?i)^save\s+([A-Za-z0-9./]+)$").expect("invalid regex");
-    let re_load = Regex::new(r"(?i)^load\s+([A-Za-z0-9./]+)$").expect("invalid regex");
-    let re_show = Regex::new(r"(?i)^(show|show_as)\s+([A-Za-z0-9./]+)$").expect("invalid regex");
+
+    let re_help = Regex::new(r"(?i)^help$").unwrap();
+    let re_fetch = Regex::new(r"(?i)^fetch\s+([A-Za-z0-9]{4})$").unwrap();
+    let re_save = Regex::new(r"(?i)^save\s+([A-Za-z0-9./]+)$").unwrap();
+    let re_load = Regex::new(r"(?i)^load\s+([A-Za-z0-9./]+)$").unwrap();
+    let re_show = Regex::new(r"(?i)^(show|show_as)\s+([A-Za-z0-9./]+)$").unwrap();
+    let re_view = Regex::new(r"(?i)^view\s+([^,\s]+)(?:\s*,\s*(store|recall))?\s*$")
+        .unwrap();
 
     if let Some(_caps) = re_help.captures(&input) {
         // todo: Multiline, once you set that up.
         return Ok(String::from(
-            "The following commands are available: fetch, save, load, show",
+            "The following commands are available: fetch, save, load, show, view",
         ));
     }
 
@@ -83,6 +83,36 @@ pub fn handle_cmd(
 
         state.ui.mol_view = mode.parse()?;
         *redraw = true;
+    }
+
+    if let Some(caps) = re_view.captures(&input) {
+        let name = &caps[1];
+
+        let mut recall = false;
+        match caps.get(2) {
+            Some(action)  => {
+                if action.as_str().eq_ignore_ascii_case("store") {
+                    util::save_snap(state, &scene.camera, &name);
+                } else {
+                    recall = true;
+                }
+            }
+            None => recall = true,
+        }
+
+        if recall {
+            let mut found = false; // Avoids borrow error.
+            for (i, snap) in state.cam_snapshots.iter().enumerate() {
+                if snap.name.to_lowercase().trim() == name.to_lowercase().trim() {
+                    state.ui.cam_snapshot = Some(i);
+                    found = true;
+                    break;
+                }
+            }
+            if found {
+                util::load_snap(state, scene, engine_updates);
+            }
+        }
     }
 
     Ok(String::from("Command succeeded"))

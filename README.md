@@ -108,6 +108,7 @@ Daedalus supports a very limited subset of PyMol's CLI interface. Supported comm
 - `save`: Save the opened protein or small molecule to disk. e.g. `save molecules/1htm.cif`
 - `load`: Load a protein or small molecule from disk. e.g. `load ../1htm.cif`
 - `show`: Set the view mode. e.g. `show sticks`
+- `view`: Save and load scenes. e.g. `view v1`, `view v1 store`, `view v2 recall`
 
 
 ### Erratta
