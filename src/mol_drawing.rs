@@ -1,6 +1,6 @@
 //! Handles drawing molecules, bonds etc.
 
-use std::fmt;
+use std::{fmt, io, io::ErrorKind, str::FromStr};
 
 use bincode::{Decode, Encode};
 use graphics::{ControlScheme, Entity, FWD_VEC, RIGHT_VEC, Scene, UP_VEC};
@@ -89,6 +89,28 @@ pub enum MoleculeView {
     Surface,
     Mesh,
     Dots,
+}
+
+impl FromStr for MoleculeView {
+    type Err = io::Error;
+
+    /// This includes some PyMol standard names, which map to the closest visualization we have.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "sticks" | "lines" => Ok(MoleculeView::Sticks),
+            "backbone" => Ok(MoleculeView::Backbone),
+            "ballandstick" | "ball_and_stick" | "ball-and-stick" => Ok(MoleculeView::BallAndStick),
+            "spacefill" | "space_fill" | "space-fill" | "spheres" => Ok(MoleculeView::SpaceFill),
+            "cartoon" | "ribbon" => Ok(MoleculeView::Cartoon),
+            "surface" => Ok(MoleculeView::Surface),
+            "mesh" => Ok(MoleculeView::Mesh),
+            "dots" => Ok(MoleculeView::Dots),
+            other => Err(io::Error::new(
+                ErrorKind::InvalidData,
+                format!("invalid MoleculeView: '{}'", other),
+            )),
+        }
+    }
 }
 
 impl fmt::Display for MoleculeView {

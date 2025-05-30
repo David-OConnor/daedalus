@@ -103,9 +103,11 @@ If *orbit sel* is set in the GUI, the orbit center will be the selected atom or 
 
 ## PyMol-like Command line interface
 Daedalus supports a very limited subset of PyMol's CLI interface. Supported commands:
-- `fetch`: Loads a protein from the RCSB PDB.
-- `save`
-- `load`
+- `help`: Lists commands
+- `fetch`: Loads a protein from the RCSB PDB. e.g. `fetch 1C8K`
+- `save`: Save the opened protein or small molecule to disk. e.g. `save molecules/1htm.cif`
+- `load`: Load a protein or small molecule from disk. e.g. `load ../1htm.cif`
+- `show`: Set the view mode. e.g. `show sticks`
 
 
 ### Erratta
