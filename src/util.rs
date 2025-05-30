@@ -1,13 +1,21 @@
-use std::{collections::HashMap, time::Instant};
+use std::{collections::HashMap, f32::consts::TAU, time::Instant};
 
-use graphics::{Camera, ControlScheme, EngineUpdates, FWD_VEC, Scene};
+use graphics::{Camera, ControlScheme, EngineUpdates, FWD_VEC, RIGHT_VEC, Scene};
 use lin_alg::{
     f32::{Quaternion, Vec3 as Vec3F32},
     f64::Vec3,
 };
 use na_seq::AaIdent;
 
-use crate::{PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel, download_mols::load_cif_rcsb, element::Element, mol_drawing::MoleculeView, molecule::{Atom, AtomRole, Bond, Chain, Molecule, Residue, ResidueType}, render::set_flashlight, CamSnapshot};
+use crate::{
+    CamSnapshot, PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel,
+    download_mols::load_cif_rcsb,
+    element::Element,
+    mol_drawing::MoleculeView,
+    molecule::{Atom, AtomRole, Bond, Chain, Molecule, Residue, ResidueType},
+    render::{CAM_INIT_OFFSET, set_flashlight},
+    ui::{VIEW_DEPTH_FAR_MAX, VIEW_DEPTH_NEAR_MIN},
+};
 
 const MOVE_TO_TARGET_DIST: f32 = 15.;
 const MOVE_CAM_TO_LIG_DIST: f32 = 30.;
@@ -469,7 +477,7 @@ pub fn save_snap(state: &mut State, cam: &Camera, name: &str) {
 }
 
 // The snap must be set in state.ui.cam_snapshot ahead of calling this.
-pub fn load_snap(state: &mut State, scene:  &mut Scene, engine_updates: &mut EngineUpdates) {
+pub fn load_snap(state: &mut State, scene: &mut Scene, engine_updates: &mut EngineUpdates) {
     if let Some(snap_i) = state.ui.cam_snapshot {
         match state.cam_snapshots.get(snap_i) {
             Some(snap) => {
@@ -488,4 +496,13 @@ pub fn load_snap(state: &mut State, scene:  &mut Scene, engine_updates: &mut Eng
             }
         }
     }
+}
+
+pub fn reset_camera(cam: &mut Camera, view_depth: &mut (u16, u16), mol: &Molecule) {
+    let center: lin_alg::f32::Vec3 = mol.center.into();
+    cam.position =
+        lin_alg::f32::Vec3::new(center.x, center.y + (mol.size + CAM_INIT_OFFSET), center.z);
+    cam.orientation = Quaternion::from_axis_angle(RIGHT_VEC, TAU / 4.);
+
+    *view_depth = (VIEW_DEPTH_NEAR_MIN, VIEW_DEPTH_FAR_MAX);
 }

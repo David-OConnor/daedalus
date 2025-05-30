@@ -109,6 +109,13 @@ Daedalus supports a very limited subset of PyMol's CLI interface. Supported comm
 - `load`: Load a protein or small molecule from disk. e.g. `load ../1htm.cif`
 - `show`: Set the view mode. e.g. `show sticks`
 - `view`: Save and load scenes. e.g. `view v1`, `view v1 store`, `view v2 recall`
+- `hide`: Limited options available, e.g. `resn HOH`, `hydro`, `chain`, `hetatm` etc.
+- `remove`: Limited options available, e.g. `resn HOH`, `hydro`, `chain`, `hetatm` etc.
+- `roll`
+- `turn`
+- `move`
+- `orient`
+- `reset`
 
 
 ### Erratta

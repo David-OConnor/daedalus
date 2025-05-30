@@ -7,7 +7,7 @@ use std::{
 
 use bio_apis::{drugbank, pubchem, rcsb};
 use egui::{Color32, ComboBox, Context, Key, RichText, Slider, TextEdit, TopBottomPanel, Ui};
-use graphics::{ControlScheme, EngineUpdates, Entity, RIGHT_VEC, Scene, UP_VEC};
+use graphics::{Camera, ControlScheme, EngineUpdates, Entity, RIGHT_VEC, Scene, UP_VEC};
 use lin_alg::f32::{Quaternion, Vec3};
 use na_seq::AaIdent;
 
@@ -15,6 +15,7 @@ static INIT_COMPLETE: AtomicBool = AtomicBool::new(false);
 
 use crate::{
     CamSnapshot, MsaaSetting, Selection, State, ViewSelLevel, cli,
+    cli::{CLI_CMDS, autocomplete_cli},
     docking::{
         ConformationType, calc_binding_energy,
         dynamics_playback::{build_vdw_dynamics, change_snapshot},
@@ -35,7 +36,7 @@ use crate::{
     util,
     util::{
         cam_look_at, cam_look_at_outside, check_prefs_save, cycle_res_selected, orbit_center,
-        select_from_search,
+        reset_camera, select_from_search,
     },
 };
 
@@ -170,7 +171,6 @@ fn get_snap_name(snap: Option<usize>, snaps: &[CamSnapshot]) -> String {
     }
 }
 
-
 fn cam_snapshots(
     state: &mut State,
     scene: &mut Scene,
@@ -234,7 +234,7 @@ fn cam_controls(
 
     let mut changed = false;
 
-    let cam = &mut scene.camera;
+    // let cam = &mut scene.camera;
 
     ui.horizontal(|ui| {
         ui.label("Cam:");
@@ -242,12 +242,7 @@ fn cam_controls(
         // Preset buttons
         if ui.button("Front").clicked() {
             if let Some(mol) = &state.molecule {
-                let center: Vec3 = mol.center.into();
-                cam.position =
-                    Vec3::new(center.x, center.y, center.z - (mol.size + CAM_INIT_OFFSET));
-                cam.orientation = Quaternion::new_identity();
-
-                state.ui.view_depth = (VIEW_DEPTH_NEAR_MIN, VIEW_DEPTH_FAR_MAX);
+                reset_camera(&mut scene.camera, &mut state.ui.view_depth, mol);
                 changed = true;
             }
         }
@@ -255,11 +250,11 @@ fn cam_controls(
         if ui.button("Top").clicked() {
             if let Some(mol) = &state.molecule {
                 let center: Vec3 = mol.center.into();
-                cam.position =
+                reset_camera(&mut scene.camera, &mut state.ui.view_depth, mol);
+                scene.camera.position =
                     Vec3::new(center.x, center.y + (mol.size + CAM_INIT_OFFSET), center.z);
-                cam.orientation = Quaternion::from_axis_angle(RIGHT_VEC, TAU / 4.);
+                scene.camera.orientation = Quaternion::from_axis_angle(RIGHT_VEC, TAU / 4.);
 
-                state.ui.view_depth = (VIEW_DEPTH_NEAR_MIN, VIEW_DEPTH_FAR_MAX);
                 changed = true;
             }
         }
@@ -267,11 +262,10 @@ fn cam_controls(
         if ui.button("Left").clicked() {
             if let Some(mol) = &state.molecule {
                 let center: Vec3 = mol.center.into();
-                cam.position =
+                scene.camera.position =
                     Vec3::new(center.x - (mol.size + CAM_INIT_OFFSET), center.y, center.z);
-                cam.orientation = Quaternion::from_axis_angle(UP_VEC, TAU / 4.);
+                scene.camera.orientation = Quaternion::from_axis_angle(UP_VEC, TAU / 4.);
 
-                state.ui.view_depth = (VIEW_DEPTH_NEAR_MIN, VIEW_DEPTH_FAR_MAX);
                 changed = true;
             }
         }
@@ -335,19 +329,19 @@ fn cam_controls(
 
         if state.ui.view_depth != depth_prev {
             // Interpret the slider being at min or max position to mean (effectively) unlimited.
-            cam.near = if state.ui.view_depth.0 == VIEW_DEPTH_NEAR_MIN {
+            scene.camera.near = if state.ui.view_depth.0 == VIEW_DEPTH_NEAR_MIN {
                 RENDER_DIST_NEAR
             } else {
                 state.ui.view_depth.0 as f32 / 10.
             };
 
-            cam.far = if state.ui.view_depth.1 == VIEW_DEPTH_FAR_MAX {
+            scene.camera.far = if state.ui.view_depth.1 == VIEW_DEPTH_FAR_MAX {
                 RENDER_DIST_FAR
             } else {
                 state.ui.view_depth.1 as f32
             };
 
-            cam.update_proj_mat();
+            scene.camera.update_proj_mat();
             changed = true;
         }
 
@@ -561,17 +555,29 @@ fn draw_cli(
 
     ui.horizontal(|ui| {
         ui.label("In: ");
-        if ui
-            .add(TextEdit::singleline(&mut state.ui.cmd_line_input).desired_width(140.))
-            .changed()
-        {
+        let edit_resp = ui.add(
+            TextEdit::singleline(&mut state.ui.cmd_line_input)
+                .desired_width(140.)
+                // Prevent losing focus on Tab;
+                // .cursor_at_end(true)
+                .lock_focus(true),
+        );
+
+        if edit_resp.changed() {
             // todo: Validate input and color-code?
         }
 
         ui.add_space(COL_SPACING / 2.);
 
         let button_clicked = ui.button(RichText::new("Submit")).clicked();
-        let enter_pressed = ui.input(|i| i.key_pressed(Key::Enter));
+        // This  behavior of lost and has are due to the default EGUI beavhior of those keys.
+        // We can use the `lock_focus(true)` method to prevent these, but we generally like them.
+        let enter_pressed = edit_resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
+        let tab_pressed = edit_resp.has_focus() && ui.input(|i| i.key_pressed(Key::Tab));
+
+        if tab_pressed && !state.ui.cmd_line_input.is_empty() {
+            autocomplete_cli(&mut state.ui.cmd_line_input);
+        }
 
         if (button_clicked || enter_pressed) && state.ui.cmd_line_input.len() >= 4 {
             // todo: Error color
@@ -584,6 +590,8 @@ fn draw_cli(
                 );
 
             state.ui.cmd_line_input = String::new();
+            // Compensates for the default lose focus behavior; we still want the cursor to remain here.
+            edit_resp.request_focus();
         }
     });
 }
@@ -1414,10 +1422,11 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
             ui.add_space(COL_SPACING);
             ui.label(RichText::new("Query databases (ident):").color(color_open_tools));
-            let response = ui.add(TextEdit::singleline(&mut state.ui.db_input).desired_width(40.));
+            let edit_resp = ui.add(TextEdit::singleline(&mut state.ui.db_input).desired_width(40.));
 
             if state.ui.db_input.len() >= 4 {
-                let enter_pressed = ui.input(|i| i.key_pressed(Key::Enter));
+                let enter_pressed =
+                    edit_resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
                 let button_clicked = ui.button("Download from RCSB").clicked();
 
                 // if response.lost_focus() && (button_clicked || enter_pressed)

@@ -1,3 +1,4 @@
+mod cif_secondary_structure;
 pub mod cif_sf;
 pub mod map;
 pub mod mol2;

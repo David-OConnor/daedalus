@@ -14,14 +14,15 @@ use crate::molecule::{Atom, AtomRole, Residue, ResidueType};
 /// How many slices around each tube cross-section
 const TUBE_SIDES: usize = 8;
 
-#[derive(Clone, Copy, PartialEq)]
-enum SecondaryStructure {
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum SecondaryStructure {
     Helix,
     Sheet,
     Coil,
 }
 
-struct BackboneSegment {
+#[derive(Clone, Debug)]
+pub struct BackboneSS {
     start: Vec3,
     end: Vec3,
     sec_struct: SecondaryStructure,
@@ -67,7 +68,7 @@ fn get_secondary_structure_of_residue(res: &Residue) -> SecondaryStructure {
 }
 
 // todo: ChatGpt
-fn build_backbone_segments(atoms: &[Atom], residues: &[Residue]) -> Vec<BackboneSegment> {
+fn build_backbone_segments(atoms: &[Atom], residues: &[Residue]) -> Vec<BackboneSS> {
     let alpha_positions = gather_alpha_positions(atoms, residues);
     let mut segments = Vec::new();
     if alpha_positions.len() < 2 {
@@ -81,7 +82,7 @@ fn build_backbone_segments(atoms: &[Atom], residues: &[Residue]) -> Vec<Backbone
             let r = &residues[i];
             get_secondary_structure_of_residue(r)
         };
-        segments.push(BackboneSegment {
+        segments.push(BackboneSS {
             start: alpha_positions[i],
             end: alpha_positions[i + 1],
             sec_struct,

@@ -2,7 +2,6 @@
 
 //! Contains data structures and related code for molecules, atoms, residues, chains, etc.
 use std::{
-    collections::HashMap,
     fmt,
     str::FromStr,
     sync::mpsc::{self, Receiver},
@@ -20,21 +19,18 @@ use lin_alg::{
 use na_seq::AminoAcid;
 use rayon::prelude::*;
 
-// use pdbtbx::SecondaryStructure;
 use crate::{
     Selection,
     aa_coords::Dihedral,
     bond_inference::{create_bonds, create_hydrogen_bonds},
+    cartoon_mesh::BackboneSS,
     docking::{
         ConformationType, DockingSite, Pose,
         prep::{DockType, Torsion, UnitCellDims, setup_flexibility},
     },
     element::Element,
-    util::mol_center_size,
-};
-use crate::{
-    prefs::PerMolToSave,
     reflection::{ElectronDensity, ReflectionsData},
+    util::mol_center_size,
 };
 
 pub const ATOM_NEIGHBOR_DIST_THRESH: f64 = 5.; // todo: Adjust A/R.
@@ -57,7 +53,7 @@ pub struct Molecule {
     /// Stored in scene meshes; this variable keeps track if that's populated.
     pub mesh_created: bool,
     pub eem_charges_assigned: bool,
-    // pub secondary_structure: Vec<SecondaryStructure>,
+    pub secondary_structure: Vec<BackboneSS>,
     /// Center and size are used for lighting, and for rotating ligands.
     pub center: Vec3,
     pub size: f32,

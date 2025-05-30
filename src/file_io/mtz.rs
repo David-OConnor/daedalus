@@ -1,7 +1,8 @@
 //! For interoperability between MTZ files, and our reflections structs
 //!
+//! (None of these sources are a great description of the format)
 //! [Gemmi source](https://github.com/project-gemmi/gemmi/blob/master/src/mtz.cpp)
-//! https://github.com/project-gemmi/gemmi/tree/master/include/gemmi
+//! [Gemmi docs] https://gemmi.readthedocs.io/en/latest/hkl.html)
 //! [Unnoficial guide (Vague, but has general info)](https://staraniso.globalphasing.org/html/mtzformat.html)
 
 use std::{
