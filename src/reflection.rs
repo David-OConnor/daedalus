@@ -284,3 +284,10 @@ fn frac_to_cart(fr: Vec3, a: f64, b: f64, c: f64, α: f64, β: f64, γ: f64) -> 
         z: ox.z * fr.x + oy.z * fr.y + oz.z * fr.z,
     }
 }
+
+// /// Intermediate struct required by the IsoSurface lib.
+// struct Source {
+//
+// }
+//
+// fn make_mesh(density: &[ElectronDensity], iso_val: f32)

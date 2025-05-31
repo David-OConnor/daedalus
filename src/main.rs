@@ -44,6 +44,7 @@ mod cli;
 mod reflection;
 #[cfg(test)]
 mod tests;
+// mod isosurface;
 
 use std::{
     collections::HashMap,
@@ -585,8 +586,8 @@ fn main() {
     // println!("MTZ: {:?}", mtz);
 
     {
-        // let map_path = PathBuf::from_str("../../../Desktop/reflections/1fat_2fo.map").unwrap();
-        let map_path = PathBuf::from_str("../../../Desktop/reflections/2f67_2fo.map").unwrap();
+        let map_path = PathBuf::from_str("../../../Desktop/reflections/1fat_2fo.map").unwrap();
+        // let map_path = PathBuf::from_str("../../../Desktop/reflections/2f67_2fo.map").unwrap();
         let (hdr, dens) = file_io::map::read_map_data(&map_path).unwrap();
 
         println!("Map header: {:#?}", hdr);

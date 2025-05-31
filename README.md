@@ -111,7 +111,6 @@ Daedalus supports a very limited subset of PyMol's CLI interface. Supported comm
 - `view`: Save and load scenes. e.g. `view v1`, `view v1 store`, `view v2 recall`
 - `hide`: Limited options available, e.g. `resn HOH`, `hydro`, `chain`, `hetatm` etc.
 - `remove`: Limited options available, e.g. `resn HOH`, `hydro`, `chain`, `hetatm` etc.
-- `roll`
 - `turn`
 - `move`
 - `orient`

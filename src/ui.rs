@@ -577,6 +577,11 @@ fn draw_cli(
 
         if tab_pressed && !state.ui.cmd_line_input.is_empty() {
             autocomplete_cli(&mut state.ui.cmd_line_input);
+
+            // edit_resp.surrender_focus();
+            // state.ui.cmd_line_input.push(' ');
+            // state.ui.cmd_line_input.pop();
+            // edit_resp.request_focus();
         }
 
         if (button_clicked || enter_pressed) && state.ui.cmd_line_input.len() >= 4 {

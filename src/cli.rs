@@ -3,7 +3,7 @@
 
 use std::{f32::consts::TAU, io, io::ErrorKind, path::PathBuf, str::FromStr};
 
-use graphics::{EngineUpdates, Scene};
+use graphics::{EngineUpdates, Scene, FWD_VEC, RIGHT_VEC, UP_VEC};
 use lin_alg::f32::{Quaternion, Vec3};
 use regex::Regex;
 
@@ -19,9 +19,13 @@ use crate::{
     util::{cam_look_at, reset_camera},
 };
 
+fn new_invalid(msg: &str) -> io::Error {
+    io::Error::new(ErrorKind::InvalidData, msg)
+}
+
 // We use this for autocomplete.
-pub const CLI_CMDS: [&str; 14] = [
-    "help", "fetch", "save", "load", "show", "show_as", "view", "hide", "remove", "orient", "roll",
+pub const CLI_CMDS: [&str; 13] = [
+    "help", "fetch", "save", "load", "show", "show_as", "view", "hide", "remove", "orient",
     "turn", "move", "reset"
 ];
 
@@ -48,7 +52,6 @@ pub fn handle_cmd(
     let re_remove = Regex::new(r"(?i)^remove\s+([a-z0-9\s]+)$").unwrap();
     let re_orient = Regex::new(r"(?i)^orient\s*(?:sel)?$").unwrap();
     let re_turn = Regex::new(r"(?i)^turn\s+([xyz]),\s*(-*\d{1,4})$").unwrap();
-    let re_roll = Regex::new(r"(?i)^roll\s+([xyz]),\s*(-*\d{1,4})$").unwrap();
     let re_move = Regex::new(r"(?i)^move\s+([xyz]),\s*(-*\d{1,4})$").unwrap();
     let re_zoom = Regex::new(r"(?i)^zoom\s+([a-z0-9\s]+)$").unwrap();
     let re_reset = Regex::new(r"(?i)^reset\s*$").unwrap();
@@ -57,13 +60,15 @@ pub fn handle_cmd(
         // todo: Multiline, once you set that up.
         return Ok(String::from(
             "The following commands are available: fetch, save, load, show, view, hide, remove, orient,\
-             roll, turn, move, reset",
+             turn, move, reset",
         ));
     }
 
     if let Some(caps) = re_fetch.captures(&input) {
         let ident = &caps[1];
         util::query_rcsb(ident, state, scene, engine_updates, redraw, reset_cam);
+
+        return Ok(format!("Loaded {ident} from RCSB PDB"));
     }
 
     // todo: Save and load: Limited functionalitiy, and DRY with ui.
@@ -81,6 +86,7 @@ pub fn handle_cmd(
                     state.to_save.last_opened = Some(path.to_owned());
                     state.update_save_prefs()
                 }
+                return Ok(format!("Saved {filename}"));
             }
         }
     }
@@ -102,6 +108,8 @@ pub fn handle_cmd(
         load_file(&path, state, redraw, reset_cam, engine_updates, ligand_load);
         set_flashlight(scene);
         engine_updates.lighting = true;
+
+        return Ok(format!("Loaded {filename}"));
     }
 
     // Note: We don't have show and hide for the varous display items; this sets the display.
@@ -140,6 +148,8 @@ pub fn handle_cmd(
                 util::load_snap(state, scene, engine_updates);
             }
         }
+
+        return Ok("Complete".to_owned());
     }
 
     if let Some(caps) = re_hide.captures(&input) {
@@ -167,6 +177,7 @@ pub fn handle_cmd(
         }
 
         *redraw = true;
+        return Ok("Complete".to_owned());
     }
 
     if let Some(caps) = re_remove.captures(&input) {
@@ -219,31 +230,21 @@ pub fn handle_cmd(
         // }
 
         *redraw = true;
+
+        return Ok("Complete".to_owned());
     }
 
     if let Some(caps) = re_orient.captures(&input) {
         engine_updates.camera = true;
+
+        return Ok("Complete".to_owned());
     }
 
-    if let Some(caps) = re_roll.captures(&input) {
-        let axis = match caps[1].to_lowercase().as_ref() {
-            "x" => Vec3::new(1., 0., 0.),
-            "y" => Vec3::new(0., 1., 0.),
-            "z" => Vec3::new(1., 0., 1.),
-            _ => unreachable!(),
-        };
-        let amt: f32 = caps[2]
-            .parse()
-            .map_err(|_| io::Error::new(ErrorKind::InvalidData, "Invalid angle."))?;
-
-        let rotation = Quaternion::from_axis_angle(axis, amt * TAU / 360.);
-        scene.camera.orientation = rotation * scene.camera.orientation;
-        engine_updates.camera = true;
-    }
-
-    // todo: DRY with roll
     if let Some(caps) = re_turn.captures(&input) {
-        // todo: I'm not sure how this works. How should it be different from roll?
+        let Some(mol) = &state.molecule else {
+            return Ok(String::from("Can't turn without a molecule"));
+        };
+
         let axis = match caps[1].to_lowercase().as_ref() {
             "x" => Vec3::new(1., 0., 0.),
             "y" => Vec3::new(0., 1., 0.),
@@ -254,9 +255,20 @@ pub fn handle_cmd(
             .parse()
             .map_err(|_| io::Error::new(ErrorKind::InvalidData, "Invalid angle."))?;
 
-        let rotation = Quaternion::from_axis_angle(axis, amt * TAU / 360.);
-        scene.camera.orientation = rotation * scene.camera.orientation;
+        let amt = amt * TAU / 360.;
+
+        let rotation = Quaternion::from_axis_angle(axis, amt);
+
+        scene.camera.orientation = (rotation * scene.camera.orientation).to_normalized();
+
+        let center: Vec3 = mol.center.into();
+        let dist = (scene.camera.position - center).magnitude();
+        // Update position based on the new orientation.
+        scene.camera.position = center - scene.camera.orientation.rotate_vec(FWD_VEC) * dist;
+
         engine_updates.camera = true;
+
+        return Ok("Complete".to_owned());
     }
 
     if let Some(caps) = re_move.captures(&input) {
@@ -273,6 +285,8 @@ pub fn handle_cmd(
         let movement = axis * amt;
         scene.camera.position += movement;
         engine_updates.camera = true;
+
+        return Ok("Complete".to_owned());
     }
 
     if let Some(caps) = re_orient.captures(&input) {
@@ -285,6 +299,8 @@ pub fn handle_cmd(
                 state.ui.cam_snapshot = None;
             }
         }
+
+        return Ok("Complete".to_owned());
     }
 
     if let Some(_) = re_reset.captures(&input) {
@@ -292,9 +308,10 @@ pub fn handle_cmd(
             reset_camera(&mut scene.camera, &mut state.ui.view_depth, mol);
             engine_updates.camera = true;
         }
+        return Ok("Complete".to_owned());
     }
 
-    Ok(String::from("Command succeeded"))
+    Err(new_invalid("Can't find that command"))
 }
 
 /// Simple autocomplete.
