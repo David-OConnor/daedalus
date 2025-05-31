@@ -327,7 +327,6 @@ pub fn event_dev_handler(
     }
 
     if redraw {
-        scene.entities = Vec::new();
         // todo:This is overkill for certain keys. Just change the color of the one[s] in question, and set update.entities = true.
         mol_drawing::draw_molecule(state_, scene, false);
         mol_drawing::draw_ligand(state_, scene);
@@ -363,7 +362,6 @@ pub fn event_dev_handler(
             lig.atom_posits = lig.position_atoms(None);
         }
 
-        scene.entities = Vec::new();
         mol_drawing::draw_molecule(state_, scene, false);
         mol_drawing::draw_ligand(state_, scene);
 

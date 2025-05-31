@@ -2,7 +2,7 @@
 
 use std::{fmt, io, io::ErrorKind, str::FromStr};
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, Encode, error::EncodeError};
 use graphics::{ControlScheme, Entity, FWD_VEC, RIGHT_VEC, Scene, UP_VEC};
 use lin_alg::{
     f32::{Quaternion, Vec3},
@@ -13,6 +13,7 @@ use crate::{
     Selection, State, ViewSelLevel,
     element::Element,
     molecule::{Atom, AtomRole, BondCount, BondType, Chain, Residue, ResidueType, aa_color},
+    reflection::ElectronDensity,
     render::{
         ATOM_SHININESS, BACKGROUND_COLOR, BALL_RADIUS_WATER, BALL_STICK_RADIUS,
         BALL_STICK_RADIUS_H, BODY_SHINYNESS, CAM_INIT_OFFSET, Color, MESH_BOND, MESH_CUBE,
@@ -60,6 +61,16 @@ const MESH_BOND_CAP: usize = MESH_SPHERE_LOWRES;
 // const MESH_DOCKING_SITE: usize = MESH_SPHERE_HIGHRES;
 const MESH_DOCKING_SITE: usize = MESH_DOCKING_BOX;
 const MESH_SURFACE_DOT: usize = MESH_SPHERE_LOWRES;
+
+// For now at least, we hijack the Entity's id field to mean the type it is.
+#[derive(Clone, Copy, PartialEq)]
+#[repr(usize)]
+pub enum EntityType {
+    Protein = 0,
+    Ligand = 1,
+    Density = 2,
+    Other = 4,
+}
 
 // todo: For ligands that are flexible, highlight the fleixble bonds in a bright color.
 
@@ -191,11 +202,18 @@ fn add_bond(
     dist_half: f32,
     caps: bool,
     thickness: f32,
+    ligand: bool,
 ) {
     // Split the bond into two entities, so you can color-code them separately based
     // on which atom the half is closer to.
     let center_0 = (posits.0 + center) / 2.;
     let center_1 = (posits.1 + center) / 2.;
+
+    let entity_type = if ligand {
+        EntityType::Ligand
+    } else {
+        EntityType::Protein
+    } as usize;
 
     let mut entity_0 = Entity::new(
         MESH_BOND,
@@ -205,6 +223,7 @@ fn add_bond(
         colors.0,
         BODY_SHINYNESS,
     );
+    entity_0.id = entity_type;
 
     let mut entity_1 = Entity::new(
         MESH_BOND,
@@ -214,11 +233,12 @@ fn add_bond(
         colors.1,
         BODY_SHINYNESS,
     );
+    entity_0.id = entity_type;
 
     if caps {
         // These spheres are to put a rounded cap on each bond.
         // todo: You only need a dome; performance implications.
-        let cap_0 = Entity::new(
+        let mut cap_0 = Entity::new(
             MESH_BOND_CAP,
             posits.0,
             Quaternion::new_identity(),
@@ -226,7 +246,7 @@ fn add_bond(
             colors.0,
             BODY_SHINYNESS,
         );
-        let cap_1 = Entity::new(
+        let mut cap_1 = Entity::new(
             MESH_BOND_CAP,
             posits.1,
             Quaternion::new_identity(),
@@ -235,6 +255,8 @@ fn add_bond(
             BODY_SHINYNESS,
         );
 
+        entity_0.id = entity_type;
+        entity_1.id = entity_type;
         entities.push(cap_0);
         entities.push(cap_1);
     }
@@ -300,6 +322,7 @@ fn bond_entities(
                 dist_half,
                 caps,
                 thickness,
+                ligand,
             );
         }
         // todo: Put back once you have a dihedral-angle-based approach.
@@ -357,6 +380,7 @@ fn bond_entities(
                 dist_half,
                 caps,
                 0.5,
+                ligand,
             );
             add_bond(
                 entities,
@@ -367,6 +391,7 @@ fn bond_entities(
                 dist_half,
                 caps,
                 0.5,
+                ligand,
             );
         }
         BondCount::Triple => {
@@ -387,6 +412,7 @@ fn bond_entities(
                 dist_half,
                 caps,
                 0.4,
+                ligand,
             );
             add_bond(
                 entities,
@@ -397,6 +423,7 @@ fn bond_entities(
                 dist_half,
                 caps,
                 0.4,
+                ligand,
             );
             add_bond(
                 entities,
@@ -407,6 +434,7 @@ fn bond_entities(
                 dist_half,
                 caps,
                 0.4,
+                ligand,
             );
         }
     }
@@ -415,6 +443,10 @@ fn bond_entities(
 // todo: DRY with/subset of draw_molecule?
 pub fn draw_ligand(state: &mut State, scene: &mut Scene) {
     // Hard-coded for sticks for now.
+
+    scene
+        .entities
+        .retain(|ent| ent.id != EntityType::Ligand as usize);
 
     let Some(lig) = state.ligand.as_ref() else {
         set_docking_light(scene, None);
@@ -430,6 +462,7 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene) {
     if state.ui.show_docking_tools {
         // Add a visual indicator for the docking site.
         scene.entities.push(Entity {
+            id: EntityType::Ligand as usize, // todo: A/R
             // todo: High-res spheres are blocking bonds inside them. Likely engine problem.
             mesh: MESH_DOCKING_SITE,
             position: lig.docking_site.site_center.into(),
@@ -537,6 +570,32 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene) {
     set_docking_light(scene, Some(&state.ligand.as_ref().unwrap().docking_site));
 }
 
+/// A visual representation (e.g. ISO surface or volumentric display) of electron density,
+/// as loaded from .map files or similar.
+pub fn draw_density(entities: &mut Vec<Entity>, density: &[ElectronDensity]) {
+    entities.retain(|ent| ent.id != EntityType::Density as usize);
+
+    for point in density {
+        let mut ent = Entity::new(
+            MESH_SPHERE_LOWRES,
+            // MESH_CUBE,
+            point.coords.into(),
+            Quaternion::new_identity(),
+            1. * point.density.powf(1.2) as f32,
+            // 0.5,
+            // (point.density as f32 * 10., 0.0, 1. - point.density as f32),
+            (point.density as f32 * 2., 0.0, 0.2),
+            // (1., 0.7, 0.5),
+            ATOM_SHININESS,
+        );
+        ent.id = EntityType::Density as usize;
+
+        // ent.opacity =point.density as f32 * 10.;
+
+        entities.push(ent);
+    }
+}
+
 /// Refreshes entities with the model passed.
 /// Sensitive to various view configuration parameters.
 pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: bool) {
@@ -544,8 +603,9 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
         return;
     };
 
-    // todo: Update this capacity A/R as you flesh out your renders.
-    // *entities = Vec::with_capacity(molecule.bonds.len());
+    scene
+        .entities
+        .retain(|ent| ent.id != EntityType::Protein as usize);
 
     let ui = &state.ui;
 
@@ -563,14 +623,16 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
         // let mut i = 0;
         for ring in mol.sa_surface_pts.as_ref().unwrap() {
             for sfc_pt in ring {
-                scene.entities.push(Entity::new(
+                let mut entity = Entity::new(
                     MESH_SURFACE_DOT,
                     *sfc_pt,
                     Quaternion::new_identity(),
                     RADIUS_SFC_DOT,
                     COLOR_SFC_DOT,
                     ATOM_SHININESS,
-                ));
+                );
+                entity.id = EntityType::Protein as usize;
+                scene.entities.push(entity);
             }
             // i += 1;
             // if i > 100 {
@@ -594,15 +656,6 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
             mol.mesh_created = true;
             println!("Mesh complete");
         }
-
-        scene.entities.push(Entity::new(
-            MESH_SOLVENT_SURFACE,
-            Vec3::new_zero(),
-            Quaternion::new_identity(),
-            1.,
-            COLOR_SFC_DOT,  // todo
-            ATOM_SHININESS, // todo
-        ));
     }
 
     // If sticks view, draw water molecules as balls.
@@ -621,14 +674,16 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                             false,
                         );
 
-                        scene.entities.push(Entity::new(
+                        let mut entity = Entity::new(
                             MESH_WATER_SPHERE,
                             atom.posit.into(),
                             Quaternion::new_identity(),
                             BALL_RADIUS_WATER,
                             color_atom,
                             ATOM_SHININESS,
-                        ));
+                        );
+                        entity.id = EntityType::Protein as usize;
+                        scene.entities.push(entity);
                     }
                 }
             }
@@ -732,14 +787,16 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                 dim_peptide,
             );
 
-            scene.entities.push(Entity::new(
+            let mut entity = Entity::new(
                 mesh,
                 atom.posit.into(),
                 Quaternion::new_identity(),
                 radius,
                 color_atom,
                 ATOM_SHININESS,
-            ));
+            );
+            entity.id = EntityType::Protein as usize;
+            scene.entities.push(entity);
         }
     }
 
@@ -927,28 +984,6 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                 BondType::Hydrogen,
                 false,
             );
-        }
-    }
-
-    // todo: A temporary visualization.
-    if let Some(elec) = &mol.elec_density {
-        for point in elec {
-            let mut ent = Entity::new(
-                MESH_SPHERE_LOWRES,
-                // MESH_CUBE,
-                point.coords.into(),
-                Quaternion::new_identity(),
-                1. * point.density.powf(1.2) as f32,
-                // 0.5,
-                // (point.density as f32 * 10., 0.0, 1. - point.density as f32),
-                (point.density as f32 * 2., 0.0, 0.2),
-                // (1., 0.7, 0.5),
-                ATOM_SHININESS,
-            );
-
-            // ent.opacity =point.density as f32 * 10.;
-
-            scene.entities.push(ent);
         }
     }
 

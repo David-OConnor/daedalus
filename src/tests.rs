@@ -17,8 +17,8 @@ fn test_docking_setup() {
     let lj_lut = init_lj_lut();
 
     // todo: Don't load from file; set up test molecule[s]. For now, this is fine.
-    let pdb = load_pdb(&PathBuf::from_str("molecules/1c8k.cif").unwrap()).unwrap();
-    let receptor = Molecule::from_pdb(&pdb);
+    let pdb = load_cif_pdb(&PathBuf::from_str("molecules/1c8k.cif").unwrap()).unwrap();
+    let receptor = Molecule::from_cif_pdb(&pdb);
 
     let mol_ligand = load_sdf(&PathBuf::from_str("molecules/DB03496.sdf").unwrap()).unwrap();
     let mut ligand = Ligand::new(mol_ligand);

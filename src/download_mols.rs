@@ -3,7 +3,7 @@
 use bio_apis::{ReqError, drugbank, pubchem, rcsb};
 use pdbtbx::PDB;
 
-use crate::{file_io::pdb::read_pdb, molecule::Molecule};
+use crate::{file_io::cif_pdb::read_pdb, molecule::Molecule};
 
 /// Download a CIF file from the RSCB, and parse as PDB.
 pub fn load_cif_rcsb(ident: &str) -> Result<PDB, ReqError> {

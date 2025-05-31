@@ -1,8 +1,15 @@
 //! Our CLI system. Apes PyMol's syntax. We don't introduce our own commands, as this functionality
 //! is primarily for PyMol users who are comfortable with this workflow.
 
-use std::{env, f32::consts::TAU, fs, io, io::ErrorKind, path::PathBuf, str::FromStr};
-use std::path::Path;
+use std::{
+    env,
+    f32::consts::TAU,
+    fs, io,
+    io::ErrorKind,
+    path::{Path, PathBuf},
+    str::FromStr,
+};
+
 use graphics::{EngineUpdates, FWD_VEC, RIGHT_VEC, Scene, UP_VEC, arc_rotation};
 use lin_alg::f32::{Quaternion, Vec3};
 use regex::Regex;

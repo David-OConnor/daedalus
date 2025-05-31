@@ -98,7 +98,7 @@ pub fn find_selected_atom(
 
         let atom = &atoms[*atom_i];
 
-        if ui.visibility.hide_sidechains {
+        if ui.visibility.hide_sidechains || ui.mol_view == MoleculeView::Backbone {
             if let Some(role) = atom.role {
                 if role == AtomRole::Sidechain || role == AtomRole::H_Sidechain {
                     continue;
@@ -443,7 +443,7 @@ pub fn query_rcsb(
         // tood: For organization purposes, move thi scode out of the UI.
         Ok(pdb) => {
             state.pdb = Some(pdb);
-            state.molecule = Some(Molecule::from_pdb(state.pdb.as_ref().unwrap()));
+            state.molecule = Some(Molecule::from_cif_pdb(state.pdb.as_ref().unwrap()));
             state.update_from_prefs();
 
             *redraw = true;

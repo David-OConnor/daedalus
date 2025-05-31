@@ -8,7 +8,7 @@ use std::{
 };
 
 use byteorder::{LittleEndian, ReadBytesExt};
-use lin_alg::f64::Vec3;
+use lin_alg::f64::{Mat3, Vec3};
 
 use crate::reflection::ElectronDensity;
 
@@ -143,6 +143,63 @@ fn read_map_header<R: Read + Seek>(mut r: R) -> io::Result<MapHeader> {
     })
 }
 
+pub struct UnitCell {
+    a: f64,
+    b: f64,
+    c: f64,
+    alpha: f64,
+    beta: f64,
+    gamma: f64,
+    ortho: Mat3,     // frac  -> cart
+    ortho_inv: Mat3, // cart -> frac
+}
+
+impl UnitCell {
+    pub fn new(a: f64, b: f64, c: f64, alpha_deg: f64, beta_deg: f64, gamma_deg: f64) -> Self {
+        let (α, β, γ) = (
+            alpha_deg.to_radians(),
+            beta_deg.to_radians(),
+            gamma_deg.to_radians(),
+        );
+
+        // components of the three cell vectors in Cartesian space
+        let v_a = Vec3::new(a, 0.0, 0.0);
+        let v_b = Vec3::new(b * γ.cos(), b * γ.sin(), 0.0);
+
+        let cx = c * β.cos();
+        let cy = c * (α.cos() - β.cos() * γ.cos()) / γ.sin();
+        let cz = c * (1.0 - β.cos().powi(2) - cy.powi(2) / c.powi(2)).sqrt();
+        let v_c = Vec3::new(cx, cy, cz);
+
+        // 3×3 matrix whose columns are a,b,c
+        let ortho = Mat3::from_cols(v_a, v_b, v_c);
+        let ortho_inv = ortho.inverse().expect("unit-cell matrix is singular");
+
+        Self {
+            a,
+            b,
+            c,
+            alpha: α,
+            beta: β,
+            gamma: γ,
+            ortho,
+            ortho_inv,
+        }
+    }
+
+    #[inline]
+    pub fn fractional_to_cartesian(&self, f: Vec3) -> Vec3 {
+        // todo: Don't clone!
+        self.ortho.clone() * f
+    }
+
+    #[inline]
+    pub fn cartesian_to_fractional(&self, c: Vec3) -> Vec3 {
+        // todo: Don't clone!
+        self.ortho_inv.clone() * c
+    }
+}
+
 /// Reads the entire density grid.
 /// Assumes `mode == 2` (i.e. 32-bit floats);
 pub fn read_map_data(path: &Path) -> io::Result<(MapHeader, Vec<ElectronDensity>)> {
@@ -223,22 +280,62 @@ pub fn read_map_data(path: &Path) -> io::Result<(MapHeader, Vec<ElectronDensity>
             for i in 0..nx {
                 let raw = file.read_f32::<LittleEndian>()? as f64;
 
-                // indices in *file* order, shifted to voxel centre (+0.5)
-                let idx_file = [i as f64 + 0.5, j as f64 + 0.5, k as f64 + 0.5];
+                // // indices in *file* order, shifted to voxel centre (+0.5)
+                // let idx_file = [i as f64 + 0.5, j as f64 + 0.5, k as f64 + 0.5];
+                //
+                // // fractional crystal coords
+                // let frac = [
+                //     (idx_file[f_of_c[0]] + start_vox[0]) / hdr.mx as f64,
+                //     (idx_file[f_of_c[1]] + start_vox[1]) / hdr.my as f64,
+                //     (idx_file[f_of_c[2]] + start_vox[2]) / hdr.mz as f64,
+                // ];
+                //
+                // // Cartesian Å coordinate
+                // let coord = v_a * frac[0] + v_b * frac[1] + v_c * frac[2];
 
-                // fractional crystal coords
-                let frac = [
-                    (idx_file[f_of_c[0]] + start_vox[0]) / hdr.mx as f64,
-                    (idx_file[f_of_c[1]] + start_vox[1]) / hdr.my as f64,
-                    (idx_file[f_of_c[2]] + start_vox[2]) / hdr.mz as f64,
-                ];
+                // densities.push(ElectronDensity {
+                //     coords: coord,
+                //     density: raw, // keep raw value; contour in UI
+                // });
 
-                // Cartesian Å coordinate
-                let coord = v_a * frac[0] + v_b * frac[1] + v_c * frac[2];
+                // 1.  Build a proper UnitCell object once
+                let cell = UnitCell::new(
+                    hdr.cell[0] as f64,
+                    hdr.cell[1] as f64,
+                    hdr.cell[2] as f64,
+                    hdr.cell[3] as f64,
+                    hdr.cell[4] as f64,
+                    hdr.cell[5] as f64,
+                );
+
+                // 2.  Origin in *fractional* coordinates
+                let origin_frac = if let (Some(ox), Some(oy), Some(oz)) =
+                    (hdr.xorigin, hdr.yorigin, hdr.zorigin)
+                {
+                    cell.cartesian_to_fractional(Vec3::new(ox as f64, oy as f64, oz as f64))
+                } else {
+                    Vec3::new(
+                        hdr.nxstart as f64 / hdr.mx as f64,
+                        hdr.nystart as f64 / hdr.my as f64,
+                        hdr.nzstart as f64 / hdr.mz as f64,
+                    )
+                };
+
+                // 3.  Inside the triple-nested loop
+                let idx_file = [i as f64, j as f64, k as f64]; // voxel corners
+                let frac = origin_frac
+                    + Vec3::new(
+                        (idx_file[f_of_c[0]] + 0.5) / hdr.mx as f64,
+                        (idx_file[f_of_c[1]] + 0.5) / hdr.my as f64,
+                        (idx_file[f_of_c[2]] + 0.5) / hdr.mz as f64,
+                    );
+
+                // 4.  Convert with the full orthogonalisation matrix
+                let coord = cell.fractional_to_cartesian(frac); // Å
 
                 densities.push(ElectronDensity {
                     coords: coord,
-                    density: raw, // keep raw value; contour in UI
+                    density: raw as f64,
                 });
             }
         }

@@ -9,7 +9,7 @@ const EPS: f64 = 0.0000001;
 /// Add reflections data to a HashMap from a CIF file. This may be run successively on multiple files.
 /// We observe that sometimes reflection data is split across all three file types, and sometimes it's
 /// all present in an SF file.
-fn parse_file(
+fn parse_cif(
     reflections: &mut HashMap<(i32, i32, i32), Reflection>,
     text: &str,
     header_sink: &mut dyn FnMut(&str, &str),
@@ -138,9 +138,7 @@ impl ReflectionsData {
     /// * `sf`              – contents of `*.sf.cif`
     /// * `map_2fo_fc` – optional contents of `*2fo-fc_map_coef.cif`
     /// * `map_fo_fc` – optional contents of `*fo-fc_map_coef.cif`
-    pub fn from_cifs(sf: &str, map_2fo_fc: Option<&str>, map_fo_fc: Option<&str>) -> Self {
-        use std::{collections::HashMap, str::FromStr}; // brings MapType::from_str into scope
-
+    pub fn from_cifs(sf: Option<&str>, map_2fo_fc: Option<&str>, map_fo_fc: Option<&str>) -> Self {
         let mut reflections: HashMap<(i32, i32, i32), Reflection> = HashMap::new();
 
         let mut space_group = String::new();
@@ -166,17 +164,19 @@ impl ReflectionsData {
             _ => {}
         };
 
-        if let Some(txt) = map_2fo_fc {
-            println!("2fo-fc map available.");
-            parse_file(&mut reflections, txt, &mut header);
-        } else {
-            // Parse files in ascending precedence.
-            if let Some(txt) = map_fo_fc {
-                // println!("2fo-fc map available. Using fo-fc");
-                // parse_file(&mut reflections, txt, &mut header);
-            }
-            println!("2fo-fc map available. Using SF");
-            parse_file(&mut reflections, sf, &mut header);
+        // Parse will overwrite previous data, so for duplicate data, the ones we
+        // parse after take precedence.
+
+        if let Some(data) = sf {
+            parse_cif(&mut reflections, data, &mut header);
+        }
+
+        if let Some(data) = map_fo_fc {
+            parse_cif(&mut reflections, data, &mut header);
+        }
+
+        if let Some(data) = map_fo_fc {
+            parse_cif(&mut reflections, data, &mut header);
         }
 
         Self {

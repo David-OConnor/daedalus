@@ -26,7 +26,9 @@ use crate::{
     },
     download_mols::{load_cif_rcsb, load_sdf_drugbank, load_sdf_pubchem},
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
-    mol_drawing::{COLOR_DOCKING_SITE_MESH, MoleculeView, draw_ligand, draw_molecule},
+    mol_drawing::{
+        COLOR_DOCKING_SITE_MESH, EntityType, MoleculeView, draw_density, draw_ligand, draw_molecule,
+    },
     molecule::{Ligand, Molecule, ResidueType},
     reflection::{ReflectionsData, compute_density_grid},
     render::{
@@ -844,10 +846,9 @@ fn docking(
                         &state.volatile.snapshots[state.ui.current_snapshot],
                     );
 
-                    // todo: Come back to your approach here; definitely don't redraw the main molecule atoms etc.
-                    scene.entities = Vec::new();
-                    draw_molecule(state, scene, reset_cam);
-                    draw_ligand(state, scene);
+                    // scene.entities.retain(|ent| {ent.id != EntityType::Protein as usize && ent.id != EntityType::Ligand as usize});
+                    // draw_molecule(state, scene, reset_cam);
+                    // draw_ligand(state, scene);
 
                     engine_updates.entities = true;
                 }
@@ -1249,8 +1250,12 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
                 if ui.button("Close").clicked() {
                     state.molecule = None;
-                    scene.entities = Vec::new();
-                    redraw = true;
+                    scene.entities.retain(|ent| {
+                        ent.id != EntityType::Protein as usize
+                            && ent.id != EntityType::Density as usize
+                    });
+                    // redraw = true;
+                    engine_updates.entities = true;
 
                     state.to_save.last_opened = None;
                     state.update_save_prefs();
@@ -1317,10 +1322,9 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                                 Ok(data) => {
                                     // println!("SF data: {:?}", data);
                                 }
-                                Err(_) => eprintln!(
-                                    "Error loading RCSB structure factors for {:?}",
-                                    &mol.ident
-                                ),
+                                Err(_) => {
+                                    eprintln!("Error loading RCSB 2fo-fc map for {:?}", &mol.ident)
+                                }
                             }
                         }
 
@@ -1342,6 +1346,22 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                                 }
                                 Err(e) => {
                                     eprintln!("Error loading reflections data: {e:?}");
+                                }
+                            }
+                        }
+                    }
+
+                    if data.validation_fo_fc {
+                        if ui
+                            .button(RichText::new("fo-fc").color(COLOR_HIGHLIGHT))
+                            .clicked()
+                        {
+                            match rcsb::load_validation_fo_fc_cif(&mol.ident) {
+                                Ok(data) => {
+                                    // println!("SF data: {:?}", data);
+                                }
+                                Err(_) => {
+                                    eprintln!("Error loading RCSB fo-fc map for {:?}", &mol.ident)
                                 }
                             }
                         }
@@ -1483,7 +1503,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     if let Ok(ident) = rcsb::get_newly_released() {
                         match load_cif_rcsb(&ident) {
                             Ok(pdb) => {
-                                state.molecule = Some(Molecule::from_pdb(&pdb));
+                                state.molecule = Some(Molecule::from_cif_pdb(&pdb));
                                 state.pdb = Some(pdb);
                                 state.update_from_prefs();
 
@@ -1547,8 +1567,13 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         if close_ligand {
             state.ligand = None;
-            scene.entities = Vec::new();
-            redraw = true;
+            // todo: Once you sort this out properly, use the ligand type.
+            // scene.entities.retain(|ent| {ent.id != EntityType::Protein as usize});
+            scene
+                .entities
+                .retain(|ent| ent.id != EntityType::Ligand as usize);
+            // redraw = true;
+            engine_updates.entities = true;
 
             state.to_save.last_ligand_opened = None;
             state.update_save_prefs();
@@ -1667,7 +1692,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         // -------UI above; clean-up items (based on flags) below
 
         if redraw {
-            scene.entities = Vec::new();
             draw_molecule(state, scene, reset_cam);
             draw_ligand(state, scene);
 
@@ -1726,6 +1750,16 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         set_flashlight(scene);
         engine_updates.lighting = true;
+    }
+
+    if state.volatile.draw_density {
+        if let Some(mol) = &state.molecule {
+            if let Some(dens) = &mol.elec_density {
+                draw_density(&mut scene.entities, dens);
+            }
+        }
+
+        state.volatile.draw_density = false;
     }
 
     if let Some(mol) = &mut state.molecule {

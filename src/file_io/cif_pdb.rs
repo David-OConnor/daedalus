@@ -18,7 +18,7 @@ use crate::{
 };
 
 impl Atom {
-    pub fn from_pdb(
+    pub fn from_cif_pdb(
         atom_pdb: &pdbtbx::Atom,
         atom_i: usize,
         aa_map: &HashMap<usize, ResidueType>,
@@ -54,7 +54,7 @@ impl Atom {
 
 impl Molecule {
     /// From `pdbtbx`'s format.
-    pub fn from_pdb(pdb: &PDB) -> Self {
+    pub fn from_cif_pdb(pdb: &PDB) -> Self {
         // todo: Maybe return the PDB type here, and store that. Also have a way to
         // todo get molecules from it
 
@@ -149,7 +149,7 @@ impl Molecule {
         let atoms: Vec<Atom> = atoms_pdb
             .into_iter()
             .enumerate()
-            .map(|(i, atom)| Atom::from_pdb(atom, i, &aa_map))
+            .map(|(i, atom)| Atom::from_cif_pdb(atom, i, &aa_map))
             .collect();
 
         // todo: We use our own bond inference, since most PDBs seem to lack bond information.
@@ -216,7 +216,7 @@ pub fn read_pdb(pdb_text: &str) -> io::Result<PDB> {
 }
 
 /// From file
-pub fn load_pdb(path: &Path) -> io::Result<PDB> {
+pub fn load_cif_pdb(path: &Path) -> io::Result<PDB> {
     let (pdb, _errors) = ReadOptions::default()
         // At the default strictness level of Medium, we fail to parse a number of files. Medium and Strict
         // ensure closer conformance to the PDB and CIF specs, but many files in the wild do not. Setting

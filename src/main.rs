@@ -67,7 +67,7 @@ use cudarc::{
 };
 use egui::RichText;
 use egui_file_dialog::{FileDialog, FileDialogConfig};
-use file_io::{pdb::load_pdb, sdf::load_sdf};
+use file_io::{cif_pdb::load_cif_pdb, sdf::load_sdf};
 use graphics::{Camera, InputsCommanded};
 use lin_alg::{
     f32::{Quaternion, Vec3, f32x8},
@@ -84,7 +84,7 @@ use crate::{
         prep::DockingSetup,
     },
     element::{Element, init_lj_lut},
-    file_io::{mol2::load_mol2, mtz::load_mtz, pdb::save_pdb, pdbqt::load_pdbqt},
+    file_io::{cif_pdb::save_pdb, mol2::load_mol2, mtz::load_mtz, pdbqt::load_pdbqt},
     molecule::{Ligand, ResidueType},
     navigation::Tab,
     prefs::ToSave,
@@ -246,6 +246,8 @@ struct StateVolatile {
     docking_setup: Option<DockingSetup>,
     /// e.g. waiting for the data avail thread to return
     mol_pending_data_avail: Option<Receiver<Result<DataAvailable, ReqError>>>,
+    // Pending flag
+    draw_density: bool,
 }
 
 impl Default for StateVolatile {
@@ -258,6 +260,7 @@ impl Default for StateVolatile {
             snapshots: Default::default(),
             docking_setup: Default::default(),
             mol_pending_data_avail: Default::default(),
+            draw_density: false,
         }
     }
 }
@@ -530,18 +533,9 @@ fn main() {
     // println!("MTZ: {:?}", mtz);
 
     {
-        let map_path = PathBuf::from_str("../../../Desktop/reflections/1fat_2fo.map").unwrap();
-        // let map_path = PathBuf::from_str("../../../Desktop/reflections/2f67_2fo.map").unwrap();
-        let (hdr, dens) = file_io::map::read_map_data(&map_path).unwrap();
-
-        println!("Map header: {:#?}", hdr);
-
-        // for pt in &dens[0..100] {
-        //     println!("{:.2?}", pt);
-        // }
-        if let Some(mol) = &mut state.molecule {
-            mol.elec_density = Some(dens);
-        }
+        // let map_path = PathBuf::from_str("../../../Desktop/reflections/1fat_2fo.map").unwrap();
+        let map_path = PathBuf::from_str("../../../Desktop/reflections/8s6p.map").unwrap();
+        state.open(&map_path).unwrap();
     }
 
     render(state);

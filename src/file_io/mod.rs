@@ -3,22 +3,23 @@ use std::{io, io::ErrorKind, path::Path};
 use lin_alg::f64::Vec3;
 
 use crate::{
-    State,
+    State, file_io,
     file_io::{
+        cif_pdb::{load_cif_pdb, save_pdb},
         mol2::load_mol2,
-        pdb::{load_pdb, save_pdb},
         pdbqt::load_pdbqt,
         sdf::load_sdf,
     },
     molecule::{Ligand, Molecule},
+    reflection::handle_map_symmetry,
 };
 
+pub mod cif_pdb;
 mod cif_secondary_structure;
 pub mod cif_sf;
 pub mod map;
 pub mod mol2;
 pub mod mtz;
-pub mod pdb;
 pub mod pdbqt;
 pub mod sdf;
 
@@ -33,6 +34,21 @@ impl State {
             .unwrap_or_default()
         {
             "sdf" | "mol2" | "pdbqt" | "pdb" | "cif" => self.open_molecule(path)?,
+            "map" => {
+                let (hdr, mut dens) = map::read_map_data(&path)?;
+
+                println!("Map header: {:#?}", hdr);
+
+                // for pt in &dens[0..100] {
+                //     println!("{:.2?}", pt);
+                // }
+                if let Some(mol) = &mut self.molecule {
+                    // handle_map_symmetry(&mut dens, &mol.atoms);
+
+                    mol.elec_density = Some(dens);
+                    self.volatile.draw_density = true;
+                }
+            }
             _ => {
                 return Err(io::Error::new(
                     ErrorKind::InvalidData,
@@ -63,17 +79,17 @@ impl State {
                     molecule
                 })
             }
-            "pdb" | "cif" => {
-                let pdb = load_pdb(path);
-                match pdb {
-                    Ok(p) => {
-                        let mol = Molecule::from_pdb(&p);
-                        self.pdb = Some(p);
-                        Ok(mol)
-                    }
-                    Err(e) => Err(e),
+            "pdb" | "cif" => match load_cif_pdb(path) {
+                Ok(p) => {
+                    let mol = Molecule::from_cif_pdb(&p);
+                    self.pdb = Some(p);
+                    Ok(mol)
                 }
-            }
+                Err(e) => {
+                    eprintln!("Error loading PDB or CIF file: {:?}", e);
+                    Err(e)
+                }
+            },
             _ => Err(io::Error::new(
                 ErrorKind::InvalidData,
                 "Invalid file extension",
@@ -103,10 +119,14 @@ impl State {
 
                     self.update_docking_site(init_posit);
                 } else {
+                    println!("Updated last opened: {:?}", path);
                     self.molecule = Some(mol);
                     self.to_save.last_opened = Some(path.to_owned());
                 }
 
+                self.update_save_prefs(); // To save last mol/lig opened.
+
+                // Update from prefs based on the molecule-specific items.
                 self.update_from_prefs();
 
                 if let Some(mol) = &mut self.molecule {

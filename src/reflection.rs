@@ -10,7 +10,10 @@ use lin_alg::{
 };
 use rayon::prelude::*;
 
-use crate::molecule::Molecule;
+use crate::{
+    file_io::map::MapHeader,
+    molecule::{Atom, Molecule},
+};
 
 #[derive(Clone, Copy, PartialEq, Debug, Default)]
 pub enum MapStatus {
@@ -90,11 +93,16 @@ pub struct ReflectionsData {
 impl ReflectionsData {
     /// Load reflections data from RCSB, then parse. (SF, 2fo_fc, and fo_fc)
     pub fn load_from_rcsb(ident: &str) -> Result<Self, ReqError> {
-        let sf = rcsb::load_structure_factors_cif(ident)?;
+        println!("Downloading structure factors and Map data for {ident}...");
 
-        // todo: Only attempt these maps if we've established as available?
+        let sf = match rcsb::load_structure_factors_cif(ident) {
+            Ok(m) => Some(m),
+            Err(_) => {
+                eprintln!("Error loading structure factors CIF");
+                None
+            }
+        };
 
-        println!("Downloading reflections data for {ident}...");
         let map_2fo_fc = match rcsb::load_validation_2fo_fc_cif(ident) {
             Ok(m) => Some(m),
             Err(_) => {
@@ -113,7 +121,7 @@ impl ReflectionsData {
 
         println!("Download complete. Parsing...");
         Ok(Self::from_cifs(
-            &sf,
+            sf.as_deref(),
             map_2fo_fc.as_deref(),
             map_fo_fc.as_deref(),
         ))
@@ -199,15 +207,18 @@ fn compute_density(reflections: &[Reflection], posit: Vec3, unit_cell_vol: f32) 
         //  real part of  F · e^{iφ} · e^{iarg} = amp·cos(φ+arg)
 
         // todo: Which sign/order?
-        // rho += amp * (arg + phase.to_radians()).cos();
-        rho += amp * (arg - phase.to_radians()).cos();
+        rho += amp * (arg + phase.to_radians()).cos();
+        // rho += amp * (arg - phase.to_radians()).cos();
     }
 
     // Normalize.
-    rho / unit_cell_vol as f64
+    // rho / unit_cell_vol as f64
+
+    // todo temp
+    rho * 4. / unit_cell_vol as f64
 }
 
-/// Compute electron density from reflection data.
+/// Compute electron density from reflection data. Simmilar to gemmi's `sf2map`.
 pub fn compute_density_grid(data: &ReflectionsData) -> Vec<ElectronDensity> {
     let grid = data.regular_fractional_grid(90);
     let unit_cell_vol = data.cell_len_a * data.cell_len_b * data.cell_len_c;
@@ -228,20 +239,21 @@ pub fn compute_density_grid(data: &ReflectionsData) -> Vec<ElectronDensity> {
         .map(|p| ElectronDensity {
             // coords: *p,
             // Convert coords to real space, in angstroms.
-            coords: Vec3 {
-                x: p.x * len_a,
-                y: p.y * len_b,
-                z: p.z * len_c,
-            },
+            // coords: Vec3 {
+            //     x: p.x * len_a,
+            //     y: p.y * len_b,
+            //     z: p.z * len_c,
+            // },
             // coords: frac_to_cart(
-            //     *p,
-            //     len_a,
-            //     len_b,
-            //     len_c,
-            //     (data.cell_angle_alpha as f64).to_radians(),
-            //     (data.cell_angle_beta as f64).to_radians(),
-            //     (data.cell_angle_gamma as f64).to_radians(),
-            // ),
+            coords: frac_to_cart3(
+                *p,
+                len_a,
+                len_b,
+                len_c,
+                (data.cell_angle_alpha as f64).to_radians(),
+                (data.cell_angle_beta as f64).to_radians(),
+                (data.cell_angle_gamma as f64).to_radians(),
+            ),
             density: compute_density(&data.points, *p, unit_cell_vol),
         })
         .collect();
@@ -285,9 +297,138 @@ fn frac_to_cart(fr: Vec3, a: f64, b: f64, c: f64, α: f64, β: f64, γ: f64) -> 
     }
 }
 
+fn frac_to_cart3(
+    frac: Vec3,
+    a: f64,
+    b: f64,
+    c: f64,
+    alpha_deg: f64,
+    beta_deg: f64,
+    gamma_deg: f64,
+) -> Vec3 {
+    let (alpha, beta, gamma) = (
+        alpha_deg.to_radians(),
+        beta_deg.to_radians(),
+        gamma_deg.to_radians(),
+    );
+
+    // cos and sin of the angles
+    let (ca, cb, cg) = (alpha.cos(), beta.cos(), gamma.cos());
+    let sg = gamma.sin();
+
+    // volume factor (G² in International Tables)
+    let v = (1.0 - ca * ca - cb * cb - cg * cg + 2.0 * ca * cb * cg).sqrt();
+
+    // International Tables orthogonalisation, PDB convention
+    let x = a * frac.x + b * cg * frac.y + c * cb * frac.z;
+
+    let y = b * sg * frac.y + c * (ca - cb * cg) / sg * frac.z;
+
+    let z = c * v / sg * frac.z;
+
+    Vec3 { x, y, z }
+}
+
+/// Electron density maps are ususally provided in terms of a cell which may not directly
+/// encompass the entire protein. We copy electron density from the opposite side until
+/// the protein is enclosed. We also remove parts of the density not near the protein.
+pub fn handle_map_symmetry(map: &mut Vec<ElectronDensity>, hdr: &MapHeader, atoms: &[Atom]) {}
+
 // /// Intermediate struct required by the IsoSurface lib.
 // struct Source {
 //
 // }
 //
 // fn make_mesh(density: &[ElectronDensity], iso_val: f32)
+
+//////////////// gpt below...
+
+/// Convert Å → fractional using inverse cell matrix
+fn cart_to_frac(p: Vec3, inv: &[[f64; 3]; 3]) -> Vec3 {
+    Vec3::new(
+        inv[0][0] * p.x + inv[0][1] * p.y + inv[0][2] * p.z,
+        inv[1][0] * p.x + inv[1][1] * p.y + inv[1][2] * p.z,
+        inv[2][0] * p.x + inv[2][1] * p.y + inv[2][2] * p.z,
+    )
+}
+
+/// Convert fractional → Å using the cell vectors
+fn frac_to_cart2(f: Vec3, ax: Vec3, bx: Vec3, cx: Vec3) -> Vec3 {
+    ax * f.x + bx * f.y + cx * f.z
+}
+
+/// Build the cell vectors (ax,bx,cx) and inverse matrix (Å⁻¹)
+fn cell_matrices(cell: &[f32; 6]) -> (Vec3, Vec3, Vec3, [[f64; 3]; 3]) {
+    let (a, b, c) = (cell[0] as f64, cell[1] as f64, cell[2] as f64);
+    let (al, be, ga) = (
+        cell[3] as f64 * TAU / 360.,
+        cell[4] as f64 * TAU / 360.,
+        cell[5] as f64 * TAU / 360.,
+    );
+
+    let ax = Vec3::new(a, 0.0, 0.0);
+    let bx = Vec3::new(b * ga.cos(), b * ga.sin(), 0.0);
+    let cx = {
+        let cx = c * be.cos();
+        let cy = c * (al.cos() - be.cos() * ga.cos()) / ga.sin();
+        let cz = c
+            * (1.0 - al.cos().powi(2) - be.cos().powi(2) - ga.cos().powi(2)
+                + 2.0 * al.cos() * be.cos() * ga.cos())
+            .sqrt()
+            / ga.sin();
+        Vec3::new(cx, cy, cz)
+    };
+
+    // inverse(A) where A has columns ax,bx,cx
+    let a_inv = {
+        let det = ax.x * (bx.y * cx.z - bx.z * cx.y) - bx.x * (ax.y * cx.z - ax.z * cx.y)
+            + cx.x * (ax.y * bx.z - ax.z * bx.y);
+        let inv = 1.0 / det;
+        let m = |v: Vec3| v;
+        [
+            [
+                (m(bx).y * m(cx).z - m(bx).z * m(cx).y) * inv,
+                (m(ax).z * m(cx).y - m(ax).y * m(cx).z) * inv,
+                (m(ax).y * m(bx).z - m(ax).z * m(bx).y) * inv,
+            ],
+            [
+                (m(bx).z * m(cx).x - m(bx).x * m(cx).z) * inv,
+                (m(ax).x * m(cx).z - m(ax).z * m(cx).x) * inv,
+                (m(ax).z * m(bx).x - m(ax).x * m(bx).z) * inv,
+            ],
+            [
+                (m(bx).x * m(cx).y - m(bx).y * m(cx).x) * inv,
+                (m(ax).y * m(cx).x - m(ax).x * m(cx).y) * inv,
+                (m(ax).x * m(bx).y - m(ax).y * m(bx).x) * inv,
+            ],
+        ]
+    };
+
+    (ax, bx, cx, a_inv)
+}
+
+/// Wrap every atom coordinate back into the unit cell so the
+/// existing *single* asymmetric-unit map encloses them.
+///
+/// After this call your renderer can sample `map` without ever
+/// running out of density.
+pub fn wrap_atoms_into_cell(hdr: &MapHeader, atoms: &mut [Atom]) {
+    if atoms.is_empty() {
+        return;
+    }
+
+    let (ax, bx, cx, a_inv) = cell_matrices(&hdr.cell);
+
+    for at in atoms {
+        // ● Å → fractional
+        let mut f = cart_to_frac(at.posit, &a_inv);
+
+        // ● wrap each fractional coord into [0,1)
+        f.x -= f.x.floor();
+        f.y -= f.y.floor();
+        f.z -= f.z.floor();
+
+        // ● back to Cartesian Å
+        at.posit = frac_to_cart2(f, ax, bx, cx);
+    }
+}
