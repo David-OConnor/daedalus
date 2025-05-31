@@ -16,7 +16,7 @@ static INIT_COMPLETE: AtomicBool = AtomicBool::new(false);
 
 use crate::{
     CamSnapshot, MsaaSetting, Selection, State, ViewSelLevel, cli,
-    cli::{CLI_CMDS, autocomplete_cli},
+    cli::{autocomplete_cli},
     docking::{
         ConformationType, calc_binding_energy,
         dynamics_playback::{build_vdw_dynamics, change_snapshot},
@@ -25,7 +25,6 @@ use crate::{
         find_sites::find_docking_sites,
     },
     download_mols::{load_cif_rcsb, load_sdf_drugbank, load_sdf_pubchem},
-    file_io::pdb::save_pdb,
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
     mol_drawing::{COLOR_DOCKING_SITE_MESH, MoleculeView, draw_ligand, draw_molecule},
     molecule::{Ligand, Molecule, ResidueType},
@@ -570,7 +569,7 @@ fn draw_cli(
             // edit_resp.request_focus();
         }
 
-        if (button_clicked || enter_pressed) && state.ui.cmd_line_input.len() >= 4 {
+        if (button_clicked || enter_pressed) && state.ui.cmd_line_input.len() >= 2 {
             // todo: Error color
             state.ui.cmd_line_output =
                 cli::handle_cmd(state, scene, engine_updates, redraw, reset_cam).unwrap_or_else(
@@ -1707,13 +1706,17 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         if let Some(mol) = &state.molecule {
             if let Some(lig) = &state.ligand {
-                let lig_pos: Vec3 = lig.position_atoms(None)[lig.anchor_atom].into();
-                let ctr: Vec3 = mol.center.into();
+                if lig.anchor_atom >= lig.molecule.atoms.len() {
+                    eprintln!("Error positioning ligand atoms; anchor outside len");
+                } else {
+                    let lig_pos: Vec3 = lig.position_atoms(None)[lig.anchor_atom].into();
+                    let ctr: Vec3 = mol.center.into();
 
-                cam_look_at_outside(&mut scene.camera, lig_pos, ctr);
+                    cam_look_at_outside(&mut scene.camera, lig_pos, ctr);
 
-                engine_updates.camera = true;
-                state.ui.cam_snapshot = None;
+                    engine_updates.camera = true;
+                    state.ui.cam_snapshot = None;
+                }
             }
         }
     }

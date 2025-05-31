@@ -1,17 +1,15 @@
 //! Our CLI system. Apes PyMol's syntax. We don't introduce our own commands, as this functionality
 //! is primarily for PyMol users who are comfortable with this workflow.
 
-use std::{f32::consts::TAU, io, io::ErrorKind, path::PathBuf, str::FromStr};
+use std::{env, f32::consts::TAU, fs, io, io::ErrorKind, path::PathBuf, str::FromStr};
 
-use graphics::{EngineUpdates, FWD_VEC, RIGHT_VEC, Scene, UP_VEC};
+use graphics::{EngineUpdates, FWD_VEC,  Scene,};
 use lin_alg::f32::{Quaternion, Vec3};
 use regex::Regex;
 
 use crate::{
-    CamSnapshot, State,
+    State,
     element::Element,
-    file_io::pdb::save_pdb,
-    mol_drawing::MoleculeView,
     molecule::AtomRole,
     render::set_flashlight,
     ui::load_file,
@@ -24,9 +22,9 @@ fn new_invalid(msg: &str) -> io::Error {
 }
 
 // We use this for autocomplete.
-pub const CLI_CMDS: [&str; 13] = [
+pub const CLI_CMDS: [&str; 16] = [
     "help", "fetch", "save", "load", "show", "show_as", "view", "hide", "remove", "orient", "turn",
-    "move", "reset",
+    "move", "reset", "pwd", "ls", "cd"
 ];
 
 /// Process a raw CLI command from the user. Return the CLI output from the entered command.
@@ -41,26 +39,31 @@ pub fn handle_cmd(
 
     // todo: Helpers to reduce regex DRY.
     let re_help = Regex::new(r"(?i)^help$").unwrap();
+    //
     let re_fetch = Regex::new(r"(?i)^fetch\s+([a-z0-9]{4})$").unwrap();
     let re_save = Regex::new(r"(?i)^save\s+([a-z0-9./]+)$").unwrap();
     let re_load = Regex::new(r"(?i)^load\s+([a-z0-9./]+)$").unwrap();
+    //
     let re_show = Regex::new(r"(?i)^(?:show|show_as)\s+([a-z0-9./]+)$").unwrap();
     // todo: Shoudl this be get_view and set_view? Have seen both.
     let re_view = Regex::new(r"(?i)^view\s+([^,\s]+)(?:\s*,\s*(store|recall))?\s*$").unwrap();
-
     let re_hide = Regex::new(r"(?i)^hide\s+([a-z0-9\s]+)$").unwrap();
     let re_remove = Regex::new(r"(?i)^remove\s+([a-z0-9\s]+)$").unwrap();
+    //
     let re_orient = Regex::new(r"(?i)^orient\s*(?:sel)?$").unwrap();
     let re_turn = Regex::new(r"(?i)^turn\s+([xyz]),\s*(-*\d{1,4})$").unwrap();
     let re_move = Regex::new(r"(?i)^move\s+([xyz]),\s*(-*\d{1,4})$").unwrap();
     let re_zoom = Regex::new(r"(?i)^zoom\s+([a-z0-9\s]+)$").unwrap();
     let re_reset = Regex::new(r"(?i)^reset\s*$").unwrap();
+    //
+    let re_pwd = Regex::new(r"(?i)^pwd\s*$").unwrap();
+    let re_ls = Regex::new(r"(?i)^ls\s*$").unwrap();
+    let re_cd = Regex::new(r"(?i)^cd\s+(.+)$").unwrap();
 
     if let Some(_caps) = re_help.captures(&input) {
         // todo: Multiline, once you set that up.
-        return Ok(String::from(
-            "The following commands are available: fetch, save, load, show, view, hide, remove, orient,\
-             turn, move, reset",
+        return Ok(format!(
+            "The following commands are available: {}", CLI_CMDS.join(", ")
         ));
     }
 
@@ -291,6 +294,28 @@ pub fn handle_cmd(
             engine_updates.camera = true;
         }
         return Ok("Complete".to_owned());
+    }
+
+    if let Some(_) = re_pwd.captures(&input) {
+        return Ok(format!("{}", env::current_dir()?.display()));
+    }
+
+    if let Some(_) = re_ls.captures(&input) {
+        let entries = fs::read_dir(env::current_dir()?)?;
+        let names: Vec<String> = entries
+            .filter_map(|dir_entry| dir_entry.ok())
+            .map(|dir_entry| dir_entry.file_name().to_string_lossy().into_owned())
+            .collect();
+        return Ok(names.join("   "));
+    }
+
+    if let Some(caps) = re_cd.captures(&input) {
+        let dir = &caps[0];
+
+        println!("DIR: {:?}", dir);mit
+
+        env::set_current_dir(dir)?;
+        return Ok(format!("Now in {}", env::current_dir()?.display()));
     }
 
     Err(new_invalid("Can't find that command"))
