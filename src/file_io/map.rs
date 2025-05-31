@@ -40,8 +40,7 @@ pub struct MapHeader {
     /// origin in Å (MRC-2014) **or** derived from *\*START if absent**
     pub xorigin: Option<f32>,
     pub yorigin: Option<f32>,
-    pub zorigin: Option<f32>
-                        // todo: More header items A/R.
+    pub zorigin: Option<f32>, // todo: More header items A/R.
 }
 
 fn read_map_header<R: Read + Seek>(mut r: R) -> io::Result<MapHeader> {
@@ -95,7 +94,10 @@ fn read_map_header<R: Read + Seek>(mut r: R) -> io::Result<MapHeader> {
     r.read_exact(&mut tag)?;
 
     if &tag != b"MAP " {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid MAP tag in header."));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Invalid MAP tag in header.",
+        ));
     }
 
     const EPS: f32 = 0.0001;
@@ -183,12 +185,10 @@ pub fn read_map_data(path: &Path) -> io::Result<(MapHeader, Vec<ElectronDensity>
     let cz = c * (1.0 - cosβ * cosβ - ((cosα - cosβ * cosγ) / sinγ).powi(2)).sqrt();
     let v_c = Vec3::new(cx, cy, cz);
 
-
     // Origin offset: Voxel units
     let step = [a / hdr.mx as f64, b / hdr.my as f64, c / hdr.mz as f64];
 
-    let start_vox = if let (Some(xo), Some(yo), Some(zo)) =
-        (hdr.xorigin, hdr.yorigin, hdr.zorigin)
+    let start_vox = if let (Some(xo), Some(yo), Some(zo)) = (hdr.xorigin, hdr.yorigin, hdr.zorigin)
     {
         [
             xo as f64 / step[0],
@@ -196,11 +196,7 @@ pub fn read_map_data(path: &Path) -> io::Result<(MapHeader, Vec<ElectronDensity>
             zo as f64 / step[2],
         ]
     } else {
-        [
-            hdr.nxstart as f64,
-            hdr.nystart as f64,
-            hdr.nzstart as f64,
-        ]
+        [hdr.nxstart as f64, hdr.nystart as f64, hdr.nzstart as f64]
     };
 
     // Axis permutation: file -> crystal
@@ -214,9 +210,6 @@ pub fn read_map_data(path: &Path) -> io::Result<(MapHeader, Vec<ElectronDensity>
     for (file_axis, cryst_axis) in perm.iter().enumerate() {
         f_of_c[*cryst_axis] = file_axis;
     }
-
-
-
 
     // unit‐cell volume = |v_a ⋅ (v_b × v_c)|
     // let volume = v_a.dot(v_b.cross(v_c)).abs();
@@ -250,7 +243,6 @@ pub fn read_map_data(path: &Path) -> io::Result<(MapHeader, Vec<ElectronDensity>
             }
         }
     }
-
 
     // for k in 0..nz {
     //     for j in 0..ny {

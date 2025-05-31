@@ -3,7 +3,7 @@
 
 use std::{f32::consts::TAU, io, io::ErrorKind, path::PathBuf, str::FromStr};
 
-use graphics::{EngineUpdates, Scene, FWD_VEC, RIGHT_VEC, UP_VEC};
+use graphics::{EngineUpdates, FWD_VEC, RIGHT_VEC, Scene, UP_VEC};
 use lin_alg::f32::{Quaternion, Vec3};
 use regex::Regex;
 
@@ -25,8 +25,8 @@ fn new_invalid(msg: &str) -> io::Error {
 
 // We use this for autocomplete.
 pub const CLI_CMDS: [&str; 13] = [
-    "help", "fetch", "save", "load", "show", "show_as", "view", "hide", "remove", "orient",
-    "turn", "move", "reset"
+    "help", "fetch", "save", "load", "show", "show_as", "view", "hide", "remove", "orient", "turn",
+    "move", "reset",
 ];
 
 /// Process a raw CLI command from the user. Return the CLI output from the entered command.
@@ -73,22 +73,13 @@ pub fn handle_cmd(
 
     // todo: Save and load: Limited functionalitiy, and DRY with ui.
 
-    // todo: Load ligands and other types of file.
     if let Some(caps) = re_save.captures(&input) {
-        if let Some(mol) = &state.molecule {
-            if let Some(pdb) = &mut state.pdb {
-                let filename = &caps[1];
-                let path = PathBuf::from_str(filename).unwrap();
+        let filename = &caps[1];
+        let path = PathBuf::from_str(filename).unwrap();
 
-                if let Err(e) = save_pdb(pdb, &path) {
-                    eprintln!("Error saving pdb: {}", e);
-                } else {
-                    state.to_save.last_opened = Some(path.to_owned());
-                    state.update_save_prefs()
-                }
-                return Ok(format!("Saved {filename}"));
-            }
-        }
+        state.save(&path)?;
+
+        return Ok(format!("Saved {filename}"));
     }
 
     // todo: Load other types of file, e.g. map and mtz.
@@ -96,16 +87,7 @@ pub fn handle_cmd(
         let filename = &caps[1];
         let path = PathBuf::from_str(filename).unwrap();
 
-        let ligand_load = matches!(
-            path.extension()
-                .unwrap_or_default()
-                .to_ascii_lowercase()
-                .to_str()
-                .unwrap_or_default(),
-            "sdf" | "mol2"
-        );
-
-        load_file(&path, state, redraw, reset_cam, engine_updates, ligand_load);
+        load_file(&path, state, redraw, reset_cam, engine_updates)?;
         set_flashlight(scene);
         engine_updates.lighting = true;
 

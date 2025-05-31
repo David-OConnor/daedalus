@@ -1,5 +1,6 @@
 use std::{
     f32::consts::TAU,
+    io,
     path::Path,
     sync::atomic::{AtomicBool, Ordering},
     time::Instant,
@@ -100,23 +101,14 @@ pub fn load_file(
     redraw: &mut bool,
     reset_cam: &mut bool,
     engine_updates: &mut EngineUpdates,
-    ligand_load: bool,
-) {
-    // todo: This needs to be fallible, e.g. for your use in CLI.
-    state.open_molecule(path, ligand_load);
+) -> io::Result<()> {
+    state.open(path)?;
 
-    // todo: These only if successful.
     *redraw = true;
     *reset_cam = true;
     engine_updates.entities = true;
 
-    if ligand_load {
-        state.to_save.last_ligand_opened = Some(path.to_owned());
-    } else {
-        state.to_save.last_opened = Some(path.to_owned());
-    }
-
-    state.update_save_prefs()
+    Ok(())
 }
 
 fn _int_field(val: &mut usize, label: &str, redraw: &mut bool, ui: &mut Ui) {
@@ -149,16 +141,7 @@ pub fn handle_input(
         // Check for file drop
         if let Some(dropped_files) = ip.raw.dropped_files.first() {
             if let Some(path) = &dropped_files.path {
-                let ligand_load = matches!(
-                    path.extension()
-                        .unwrap_or_default()
-                        .to_ascii_lowercase()
-                        .to_str()
-                        .unwrap_or_default(),
-                    "sdf" | "mol2"
-                );
-
-                load_file(path, state, redraw, reset_cam, engine_updates, ligand_load);
+                load_file(path, state, redraw, reset_cam, engine_updates).ok();
             }
         }
     });
@@ -551,13 +534,16 @@ fn draw_cli(
     reset_cam: &mut bool,
     ui: &mut Ui,
 ) {
-    ui.label(format!("Out: {}", state.ui.cmd_line_output)); // todo: A/R
+    ui.horizontal(|ui| {
+        ui.label("Out: ");
+        ui.label(RichText::new(format!("{}", state.ui.cmd_line_output)).color(Color32::WHITE));
+    });
 
     ui.horizontal(|ui| {
         ui.label("In: ");
         let edit_resp = ui.add(
             TextEdit::singleline(&mut state.ui.cmd_line_input)
-                .desired_width(140.)
+                .desired_width(200.)
                 // Prevent losing focus on Tab;
                 // .cursor_at_end(true)
                 .lock_focus(true),
@@ -590,7 +576,7 @@ fn draw_cli(
                 cli::handle_cmd(state, scene, engine_updates, redraw, reset_cam).unwrap_or_else(
                     |e| {
                         eprintln!("Error processing command");
-                        format!("{:?}", e)
+                        e.to_string()
                     },
                 );
 
@@ -1380,10 +1366,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 }
             }
 
-            if ui.button("Open lig").clicked() {
-                state.volatile.dialogs.load_ligand.pick_file();
-            }
-
             if let Some(lig) = &state.ligand {
                 if ui.button("Save lig").clicked() {
                     // todo: Allow saving as SDF, PDBQT, or mol2 here
@@ -1398,13 +1380,18 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                         format!("{name}.{extension}")
                     };
 
-                    state
-                        .volatile
-                        .dialogs
-                        .save_ligand
-                        .config_mut()
-                        .default_file_name = filename.to_string();
-                    state.volatile.dialogs.save_ligand.save_file();
+                    // state
+                    //     .volatile
+                    //     .dialogs
+                    //     .save_ligand
+                    //     .config_mut()
+                    //     .default_file_name = filename.to_string();
+                    // state.volatile.dialogs.save_ligand.save_file();
+
+                    state.volatile.dialogs.save.config_mut().default_file_name =
+                        filename.to_string();
+
+                    state.volatile.dialogs.save.save_file();
                 }
             }
 
@@ -1623,46 +1610,14 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 &mut redraw,
                 &mut reset_cam,
                 &mut engine_updates,
-                false,
-            );
+            )
+            .ok();
             set_flashlight(scene);
             engine_updates.lighting = true;
         }
 
         if let Some(path) = &state.volatile.dialogs.save.take_picked() {
-            if let Some(mol) = &state.molecule {
-                if let Some(pdb) = &mut state.pdb {
-                    if let Err(e) = save_pdb(pdb, path) {
-                        eprintln!("Error saving molecule (PDB/CIF): {}", e);
-                    } else {
-                        state.to_save.last_opened = Some(path.to_owned());
-                        state.update_save_prefs()
-                    }
-                }
-            }
-        }
-
-        if let Some(path) = &state.volatile.dialogs.save_ligand.take_picked() {
-            if let Some(lig) = &state.ligand {
-                // todo: Other formats A/R
-                if let Err(e) = lig.molecule.save_mol2(path) {
-                    eprintln!("Error saving SDF: {}", e);
-                } else {
-                    state.to_save.last_ligand_opened = Some(path.to_owned());
-                    state.update_save_prefs()
-                }
-            }
-        }
-
-        if let Some(path) = &state.volatile.dialogs.load_ligand.take_picked() {
-            load_file(
-                path,
-                state,
-                &mut redraw,
-                &mut reset_cam,
-                &mut engine_updates,
-                true,
-            );
+            state.save(path).ok();
         }
 
         if let Some(path) = &state.volatile.dialogs.autodock_path.take_picked() {
@@ -1673,32 +1628,32 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             }
         }
 
-        if let Some(path_dir) = &state.volatile.dialogs.save_pdbqt.take_picked() {
-            if let Some(mol) = &mut state.molecule {
-                let filename = format!("{}_target.pdbqt", mol.ident);
-                let path = Path::new(path_dir).join(filename);
-
-                // todo: You will likely need to add charges earlier, so you can view their data in the UI.
-                // setup_partial_charges(&mut mol.atoms, PartialChargeType::Gasteiger);
-                // create_partial_charges(&mut mol.atoms);
-
-                if mol.save_pdbqt(&path, None).is_err() {
-                    eprintln!("Error saving PDBQT target");
-                }
-            }
-
-            if let Some(lig) = &mut state.ligand {
-                let filename = format!("{}_ligand.pdbqt", lig.molecule.ident);
-                let path = Path::new(path_dir).join(filename);
-
-                // create_partial_charges(&mut lig.molecule.atoms);
-                // setup_partial_charges(&mut lig.molecule.atoms, PartialChargeType::Gasteiger);
-
-                if lig.molecule.save_pdbqt(&path, None).is_err() {
-                    eprintln!("Error saving PDBQT ligand");
-                }
-            }
-        }
+        // if let Some(path_dir) = &state.volatile.dialogs.save_pdbqt.take_picked() {
+        //     if let Some(mol) = &mut state.molecule {
+        //         let filename = format!("{}_target.pdbqt", mol.ident);
+        //         let path = Path::new(path_dir).join(filename);
+        //
+        //         // todo: You will likely need to add charges earlier, so you can view their data in the UI.
+        //         // setup_partial_charges(&mut mol.atoms, PartialChargeType::Gasteiger);
+        //         // create_partial_charges(&mut mol.atoms);
+        //
+        //         if mol.save_pdbqt(&path, None).is_err() {
+        //             eprintln!("Error saving PDBQT target");
+        //         }
+        //     }
+        //
+        //     if let Some(lig) = &mut state.ligand {
+        //         let filename = format!("{}_ligand.pdbqt", lig.molecule.ident);
+        //         let path = Path::new(path_dir).join(filename);
+        //
+        //         // create_partial_charges(&mut lig.molecule.atoms);
+        //         // setup_partial_charges(&mut lig.molecule.atoms, PartialChargeType::Gasteiger);
+        //
+        //         if lig.molecule.save_pdbqt(&path, None).is_err() {
+        //             eprintln!("Error saving PDBQT ligand");
+        //         }
+        //     }
+        // }
 
         // todo: Move A/r.
         draw_cli(
@@ -1731,11 +1686,11 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
     });
 
     state.volatile.dialogs.load.update(ctx);
-    state.volatile.dialogs.load_ligand.update(ctx);
+    // state.volatile.dialogs.load_ligand.update(ctx);
     state.volatile.dialogs.save.update(ctx);
-    state.volatile.dialogs.save_ligand.update(ctx);
+    // state.volatile.dialogs.save_ligand.update(ctx);
     state.volatile.dialogs.autodock_path.update(ctx);
-    state.volatile.dialogs.save_pdbqt.update(ctx);
+    // state.volatile.dialogs.save_pdbqt.update(ctx);
 
     // todo: Appropriate place for this?
     if state.volatile.inputs_commanded.inputs_present() {

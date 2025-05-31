@@ -84,7 +84,7 @@ use crate::{
         prep::DockingSetup,
     },
     element::{Element, init_lj_lut},
-    file_io::{mol2::load_mol2, mtz::load_mtz, pdbqt::load_pdbqt},
+    file_io::{mol2::load_mol2, mtz::load_mtz, pdb::save_pdb, pdbqt::load_pdbqt},
     molecule::{Ligand, ResidueType},
     navigation::Tab,
     prefs::ToSave,
@@ -122,86 +122,109 @@ impl fmt::Display for ViewSelLevel {
 
 struct FileDialogs {
     load: FileDialog,
-    load_ligand: FileDialog,
+    // load_ligand: FileDialog,
     save: FileDialog,
-    save_ligand: FileDialog,
+    // save_ligand: FileDialog,
     autodock_path: FileDialog,
-    save_pdbqt: FileDialog,
-    load_mdx: FileDialog,
-    load_crystallography: FileDialog,
+    // save_pdbqt: FileDialog,
+    // load_mdx: FileDialog,
+    // load_crystallography: FileDialog,
 }
 
 impl Default for FileDialogs {
     fn default() -> Self {
-        let cfg_protein = FileDialogConfig {
-            ..Default::default()
-        }
-        .add_file_filter_extensions("PDB/CIF", vec!["pdb", "cif"]);
-
-        let cfg_small_mol = FileDialogConfig {
-            ..Default::default()
-        }
-        .add_file_filter_extensions("SDF/MOL2/PDBQT", vec!["sdf", "mol2", "pdbqt"]);
-
-        let cfg_save_small_mol = FileDialogConfig {
-            ..Default::default()
-        }
-        .add_save_extension("SDF", "sdf")
-        .add_save_extension("Mol2", "mol2");
-
-        let cfg_crystallography = FileDialogConfig {
-            ..Default::default()
-        }
-        .add_file_filter_extensions("Map/MTZ", vec!["map", "mtz"]);
-
-        let cfg_save_crystallography = FileDialogConfig {
-            ..Default::default()
-        }
-        .add_save_extension("Map", "map")
-        .add_save_extension("MTZ", "mtz");
+        let cfg_all = FileDialogConfig::default()
+            .add_file_filter_extensions(
+                "All",
+                vec!["pdb", "cif", "sdf", "mol2", "pdbqt", "map", "mtz"],
+            )
+            .add_file_filter_extensions("Coords", vec!["pdb", "cif", "sdf", "mol2", "pdbqt"])
+            .add_file_filter_extensions("Protein", vec!["pdb", "cif"])
+            .add_file_filter_extensions("Small mol", vec!["sdf", "mol2", "pdbqt"])
+            .add_file_filter_extensions("Xtal", vec!["map", "mtz", "cif"])
+            .add_save_extension("CIF", "cif")
+            .add_save_extension("SDF", "sdf")
+            .add_save_extension("Mol2", "sdf")
+            .add_save_extension("Pdbqt", "pdbqt1")
+            .add_save_extension("Map", "map");
 
         let cfg_vina = FileDialogConfig {
             ..Default::default()
         }
         .add_file_filter_extensions("Executables", vec!["", "exe"]);
 
-        let cfg_save_pdbqt = FileDialogConfig {
-            ..Default::default()
-        }
-        .add_save_extension("PDBQT", "pdbqt");
+        //
+        // let cfg_protein = FileDialogConfig {
+        //     ..Default::default()
+        // }
+        // .add_file_filter_extensions("PDB/CIF", vec!["pdb", "cif"]);
+        //
+        // let cfg_small_mol = FileDialogConfig {
+        //     ..Default::default()
+        // }
+        // .add_file_filter_extensions("SDF/MOL2/PDBQT", vec!["sdf", "mol2", "pdbqt"]);
+        //
+        // let cfg_save_small_mol = FileDialogConfig {
+        //     ..Default::default()
+        // }
+        // .add_save_extension("SDF", "sdf")
+        // .add_save_extension("Mol2", "mol2");
+        //
+        // let cfg_crystallography = FileDialogConfig {
+        //     ..Default::default()
+        // }
+        // .add_file_filter_extensions("Map/MTZ", vec!["map", "mtz"]);
+        //
+        // let cfg_save_crystallography = FileDialogConfig {
+        //     ..Default::default()
+        // }
+        // .add_save_extension("Map", "map")
+        // .add_save_extension("MTZ", "mtz");
 
-        let cfg_load_mdx = FileDialogConfig {
-            ..Default::default()
-        }
-        .add_file_filter_extensions("MDX", vec!["mdx"]);
+        //
+        // let cfg_save_pdbqt = FileDialogConfig {
+        //     ..Default::default()
+        // }
+        // .add_save_extension("PDBQT", "pdbqt");
+        //
+        // let cfg_load_mdx = FileDialogConfig {
+        //     ..Default::default()
+        // }
+        // .add_file_filter_extensions("MDX", vec!["mdx"]);
+        //
+        // let load = FileDialog::with_config(cfg_protein.clone()).default_file_filter("PDB/CIF");
+        //
+        // let load_ligand =
+        //     FileDialog::with_config(cfg_small_mol.clone()).default_file_filter("SDF/MOL2/PDBQT");
+        //
+        // let load_crystallography =
+        //     FileDialog::with_config(cfg_crystallography).default_file_filter("Map/MTZ");
+        //
+        // let save = FileDialog::with_config(cfg_protein)
+        //     .add_save_extension("CIF", "cif")
+        //     .default_save_extension("CIF");
+        //
+        // let save_ligand = FileDialog::with_config(cfg_save_small_mol).default_save_extension("SDF");
+        // let save_pdbqt = FileDialog::with_config(cfg_save_pdbqt).default_save_extension("PDBQT");
+        //
+        // // todo: What is this?
+        // let load_mdx = FileDialog::with_config(cfg_load_mdx).default_file_filter("MDX");
 
-        let load = FileDialog::with_config(cfg_protein.clone()).default_file_filter("PDB/CIF");
-        let load_ligand =
-            FileDialog::with_config(cfg_small_mol.clone()).default_file_filter("SDF/MOL2/PDBQT");
-
-        let load_crystallography =
-            FileDialog::with_config(cfg_crystallography).default_file_filter("Map/MTZ");
-
-        let save = FileDialog::with_config(cfg_protein)
-            .add_save_extension("CIF", "cif")
-            .default_save_extension("CIF");
-
-        let save_ligand = FileDialog::with_config(cfg_save_small_mol).default_save_extension("SDF");
         let autodock_path = FileDialog::with_config(cfg_vina).default_file_filter("Executables");
-        let save_pdbqt = FileDialog::with_config(cfg_save_pdbqt).default_save_extension("PDBQT");
 
-        // todo: What is this?
-        let load_mdx = FileDialog::with_config(cfg_load_mdx).default_file_filter("MDX");
+        let load = FileDialog::with_config(cfg_all.clone()).default_file_filter("All");
+
+        let save = FileDialog::with_config(cfg_all).default_save_extension("Protein");
 
         Self {
             load,
-            load_ligand,
+            // load_ligand,
             save,
-            save_ligand,
+            // save_ligand,
             autodock_path,
-            save_pdbqt,
-            load_mdx,
-            load_crystallography,
+            // save_pdbqt,
+            // load_mdx,
+            // load_crystallography,
         }
     }
 }
@@ -392,15 +415,35 @@ impl State {
         self.ui.chain_to_pick_res = None;
     }
 
-    pub fn open_molecule(&mut self, path: &Path, is_ligand: bool) {
-        let mut ligand = None;
-        let molecule = match path
+    /// A single endpoint to open a number of file types
+    pub fn open(&mut self, path: &Path) -> io::Result<()> {
+        match path
             .extension()
             .unwrap_or_default()
             .to_ascii_lowercase()
             .to_str()
             .unwrap_or_default()
         {
+            "sdf" | "mol2" | "pdbqt" | "pdb" | "cif" => self.open_molecule(path)?,
+            _ => {
+                return Err(io::Error::new(
+                    ErrorKind::InvalidData,
+                    "Unsupported file extension",
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn open_molecule(&mut self, path: &Path) -> io::Result<()> {
+        let binding = path.extension().unwrap_or_default().to_ascii_lowercase();
+        let extension = binding;
+
+        let is_ligand = matches!(extension.to_str().unwrap(), "sdf" | "mol2");
+
+        let mut ligand = None;
+        let molecule = match extension.to_str().unwrap() {
             "sdf" => load_sdf(path),
             "mol2" => load_mol2(path),
             "pdbqt" => {
@@ -448,10 +491,12 @@ impl State {
                     }
 
                     self.ligand = Some(lig);
+                    self.to_save.last_ligand_opened = Some(path.to_owned());
 
                     self.update_docking_site(init_posit);
                 } else {
                     self.molecule = Some(mol);
+                    self.to_save.last_opened = Some(path.to_owned());
                 }
 
                 self.update_from_prefs();
@@ -467,8 +512,61 @@ impl State {
 
                 self.ui.new_mol_loaded = true;
             }
-            Err(e) => eprintln!("Error loading file at path {path:?}: {e:?}"),
+            Err(e) => {
+                return Err(e);
+            }
         }
+
+        Ok(())
+    }
+
+    /// A single endpoint to save a number of file types
+    pub fn save(&mut self, path: &Path) -> io::Result<()> {
+        let binding = path.extension().unwrap_or_default().to_ascii_lowercase();
+        let extension = binding;
+
+        match extension.to_str().unwrap_or_default() {
+            "pdb" | "cif" => {
+                if let Some(pdb) = &mut self.pdb {
+                    save_pdb(pdb, path)?;
+                    self.to_save.last_opened = Some(path.to_owned());
+                    self.update_save_prefs()
+                }
+            }
+            "sdf" => match &self.ligand {
+                Some(lig) => {
+                    lig.molecule.save_sdf(path);
+                    self.to_save.last_ligand_opened = Some(path.to_owned());
+                    self.update_save_prefs()
+                }
+                None => return Err(io::Error::new(ErrorKind::InvalidData, "No ligand to save")),
+            },
+            "mol2" => match &self.ligand {
+                Some(lig) => {
+                    lig.molecule.save_mol2(path)?;
+                    self.to_save.last_ligand_opened = Some(path.to_owned());
+                    self.update_save_prefs()
+                }
+                None => return Err(io::Error::new(ErrorKind::InvalidData, "No ligand to save")),
+            },
+            "pdbqt" => match &self.ligand {
+                Some(lig) => {
+                    lig.molecule.save_pdbqt(path, None)?;
+                    self.to_save.last_ligand_opened = Some(path.to_owned());
+                    self.update_save_prefs()
+                }
+                None => return Err(io::Error::new(ErrorKind::InvalidData, "No ligand to save")),
+            },
+            "map" => {}
+            _ => {
+                return Err(io::Error::new(
+                    ErrorKind::InvalidData,
+                    "Unsupported file extension",
+                ));
+            }
+        }
+
+        Ok(())
     }
 
     /// Gets the docking setup, creating it if it doesn't exist. Returns `None` if molecule
@@ -567,12 +665,12 @@ fn main() {
 
     let last_opened = state.to_save.last_opened.clone();
     if let Some(path) = &last_opened {
-        state.open_molecule(path, false);
+        state.open_molecule(path).ok();
     }
 
     let last_ligand_opened = state.to_save.last_ligand_opened.clone();
     if let Some(path) = &last_ligand_opened {
-        state.open_molecule(path, true);
+        state.open_molecule(path).ok();
     }
 
     // Update ligand positions, e.g. from the docking position site center loaded from prefs.
