@@ -2,8 +2,8 @@
 //! is primarily for PyMol users who are comfortable with this workflow.
 
 use std::{env, f32::consts::TAU, fs, io, io::ErrorKind, path::PathBuf, str::FromStr};
-
-use graphics::{EngineUpdates, FWD_VEC,  Scene,};
+use std::path::Path;
+use graphics::{EngineUpdates, FWD_VEC, RIGHT_VEC, Scene, UP_VEC, arc_rotation};
 use lin_alg::f32::{Quaternion, Vec3};
 use regex::Regex;
 
@@ -24,7 +24,7 @@ fn new_invalid(msg: &str) -> io::Error {
 // We use this for autocomplete.
 pub const CLI_CMDS: [&str; 16] = [
     "help", "fetch", "save", "load", "show", "show_as", "view", "hide", "remove", "orient", "turn",
-    "move", "reset", "pwd", "ls", "cd"
+    "move", "reset", "pwd", "ls", "cd",
 ];
 
 /// Process a raw CLI command from the user. Return the CLI output from the entered command.
@@ -63,7 +63,8 @@ pub fn handle_cmd(
     if let Some(_caps) = re_help.captures(&input) {
         // todo: Multiline, once you set that up.
         return Ok(format!(
-            "The following commands are available: {}", CLI_CMDS.join(", ")
+            "The following commands are available: {}",
+            CLI_CMDS.join(", ")
         ));
     }
 
@@ -231,9 +232,9 @@ pub fn handle_cmd(
         };
 
         let axis = match caps[1].to_lowercase().as_ref() {
-            "x" => Vec3::new(1., 0., 0.),
-            "y" => Vec3::new(0., 1., 0.),
-            "z" => Vec3::new(1., 0., 1.),
+            "x" => RIGHT_VEC,
+            "y" => UP_VEC,
+            "z" => FWD_VEC,
             _ => unreachable!(),
         };
         let amt: f32 = caps[2]
@@ -242,14 +243,7 @@ pub fn handle_cmd(
 
         let amt = amt * TAU / 360.;
 
-        let rotation = Quaternion::from_axis_angle(axis, amt);
-
-        scene.camera.orientation = (rotation * scene.camera.orientation).to_normalized();
-
-        let center: Vec3 = mol.center.into();
-        let dist = (scene.camera.position - center).magnitude();
-        // Update position based on the new orientation.
-        scene.camera.position = center - scene.camera.orientation.rotate_vec(FWD_VEC) * dist;
+        arc_rotation(&mut scene.camera, axis, amt, mol.center.into());
 
         engine_updates.camera = true;
 
@@ -258,9 +252,9 @@ pub fn handle_cmd(
 
     if let Some(caps) = re_move.captures(&input) {
         let axis = match caps[1].to_lowercase().as_ref() {
-            "x" => Vec3::new(1., 0., 0.),
-            "y" => Vec3::new(0., 1., 0.),
-            "z" => Vec3::new(1., 0., 1.),
+            "x" => RIGHT_VEC,
+            "y" => UP_VEC,
+            "z" => FWD_VEC,
             _ => unreachable!(),
         };
         let amt: f32 = caps[2]
@@ -301,18 +295,14 @@ pub fn handle_cmd(
     }
 
     if let Some(_) = re_ls.captures(&input) {
-        let entries = fs::read_dir(env::current_dir()?)?;
-        let names: Vec<String> = entries
-            .filter_map(|dir_entry| dir_entry.ok())
-            .map(|dir_entry| dir_entry.file_name().to_string_lossy().into_owned())
-            .collect();
+        let names = get_files_curdir()?;
         return Ok(names.join("   "));
     }
 
     if let Some(caps) = re_cd.captures(&input) {
-        let dir = &caps[0];
+        let dir = &caps[1];
 
-        println!("DIR: {:?}", dir);mit
+        // Note: This doesn't handle ~ properly.
 
         env::set_current_dir(dir)?;
         return Ok(format!("Now in {}", env::current_dir()?.display()));
@@ -321,22 +311,53 @@ pub fn handle_cmd(
     Err(new_invalid("Can't find that command"))
 }
 
+fn get_files_curdir() -> io::Result<Vec<String>> {
+    let entries = fs::read_dir(env::current_dir()?)?;
+    Ok(entries
+        .filter_map(|dir_entry| dir_entry.ok())
+        .map(|dir_entry| dir_entry.file_name().to_string_lossy().into_owned())
+        .collect())
+}
+
 /// Simple autocomplete.
 pub fn autocomplete_cli(input: &mut String) {
     // todo: Try to guess arguments; not just the params.
     let trimmed = input.trim().to_string();
     for cmd in CLI_CMDS {
         if cmd.starts_with(&trimmed) {
+            // Complete the command.
             // Start with just the command.
-            if trimmed.len() < cmd.len() {
-                *input = cmd.to_owned() + " ";
-                // todo: Make it so it auto-positiosn the cursor at the end.
-                // edit_resp.surrender_focus();
-                // edit_resp.request_focus();
-            } else {
-                // todo: This needs work to work.
-                // The command has been entered; supply arguments/actions.
-                if cmd == "view" {}
+            *input = cmd.to_owned() + " ";
+            // todo: Make it so it auto-positiosn the cursor at the end.
+            // edit_resp.surrender_focus();
+            // edit_resp.request_focus();
+        } else if trimmed.starts_with(&cmd) {
+            // Complete the action.
+
+            match cmd {
+                "view" => {}
+                "load" => {
+                    // todo: Filter names by extension.
+                    let fnames = get_files_curdir().unwrap_or_default();
+                    for name in fnames {
+                        if format!("{cmd} {name}").starts_with(&trimmed) {
+                            *input = format!("{cmd} {name}");
+                        }
+                    }
+                }
+                "cd" => {
+                    let fnames = get_files_curdir().unwrap_or_default();
+                    for name in fnames {
+                        // check if “name” is a directory on disk
+                        if Path::new(&name).is_dir() {
+                            if format!("{cmd} {name}").starts_with(&trimmed) {
+                                *input = format!("{cmd} {name}");
+                                break;
+                            }
+                        }
+                    }
+                }
+                _ => (),
             }
         }
     }

@@ -16,7 +16,7 @@ static INIT_COMPLETE: AtomicBool = AtomicBool::new(false);
 
 use crate::{
     CamSnapshot, MsaaSetting, Selection, State, ViewSelLevel, cli,
-    cli::{autocomplete_cli},
+    cli::autocomplete_cli,
     docking::{
         ConformationType, calc_binding_energy,
         dynamics_playback::{build_vdw_dynamics, change_snapshot},
