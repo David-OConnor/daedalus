@@ -846,7 +846,7 @@ fn docking(
                         &state.volatile.snapshots[state.ui.current_snapshot],
                     );
 
-                    // scene.entities.retain(|ent| {ent.id != EntityType::Protein as usize && ent.id != EntityType::Ligand as usize});
+                    // scene.entities.retain(|ent| {ent.class != EntityType::Protein as usize && ent.class != EntityType::Ligand as usize});
                     // draw_molecule(state, scene, reset_cam);
                     // draw_ligand(state, scene);
 
@@ -1251,8 +1251,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 if ui.button("Close").clicked() {
                     state.molecule = None;
                     scene.entities.retain(|ent| {
-                        ent.id != EntityType::Protein as usize
-                            && ent.id != EntityType::Density as usize
+                        ent.class != EntityType::Protein as u32
+                            && ent.class != EntityType::Density as u32
                     });
                     // redraw = true;
                     engine_updates.entities = true;
@@ -1568,10 +1568,10 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         if close_ligand {
             state.ligand = None;
             // todo: Once you sort this out properly, use the ligand type.
-            // scene.entities.retain(|ent| {ent.id != EntityType::Protein as usize});
+            // scene.entities.retain(|ent| {ent.class != EntityType::Protein as usize});
             scene
                 .entities
-                .retain(|ent| ent.id != EntityType::Ligand as usize);
+                .retain(|ent| ent.class != EntityType::Ligand as u32);
             // redraw = true;
             engine_updates.entities = true;
 

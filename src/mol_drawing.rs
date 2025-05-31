@@ -64,7 +64,7 @@ const MESH_SURFACE_DOT: usize = MESH_SPHERE_LOWRES;
 
 // For now at least, we hijack the Entity's id field to mean the type it is.
 #[derive(Clone, Copy, PartialEq)]
-#[repr(usize)]
+#[repr(u32)]
 pub enum EntityType {
     Protein = 0,
     Ligand = 1,
@@ -213,7 +213,7 @@ fn add_bond(
         EntityType::Ligand
     } else {
         EntityType::Protein
-    } as usize;
+    } as u32;
 
     let mut entity_0 = Entity::new(
         MESH_BOND,
@@ -446,7 +446,7 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene) {
 
     scene
         .entities
-        .retain(|ent| ent.id != EntityType::Ligand as usize);
+        .retain(|ent| ent.class != EntityType::Ligand as u32);
 
     let Some(lig) = state.ligand.as_ref() else {
         set_docking_light(scene, None);
@@ -462,7 +462,7 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene) {
     if state.ui.show_docking_tools {
         // Add a visual indicator for the docking site.
         scene.entities.push(Entity {
-            id: EntityType::Ligand as usize, // todo: A/R
+            id: EntityType::Ligand as u32, // todo: A/R
             // todo: High-res spheres are blocking bonds inside them. Likely engine problem.
             mesh: MESH_DOCKING_SITE,
             position: lig.docking_site.site_center.into(),
@@ -573,7 +573,7 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene) {
 /// A visual representation (e.g. ISO surface or volumentric display) of electron density,
 /// as loaded from .map files or similar.
 pub fn draw_density(entities: &mut Vec<Entity>, density: &[ElectronDensity]) {
-    entities.retain(|ent| ent.id != EntityType::Density as usize);
+    entities.retain(|ent| ent.class != EntityType::Density as u32);
 
     for point in density {
         let mut ent = Entity::new(
@@ -588,7 +588,7 @@ pub fn draw_density(entities: &mut Vec<Entity>, density: &[ElectronDensity]) {
             // (1., 0.7, 0.5),
             ATOM_SHININESS,
         );
-        ent.id = EntityType::Density as usize;
+        ent.class = EntityType::Density as u32;
 
         // ent.opacity =point.density as f32 * 10.;
 
@@ -605,7 +605,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
 
     scene
         .entities
-        .retain(|ent| ent.id != EntityType::Protein as usize);
+        .retain(|ent| ent.class != EntityType::Protein as u32);
 
     let ui = &state.ui;
 
@@ -631,7 +631,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                     COLOR_SFC_DOT,
                     ATOM_SHININESS,
                 );
-                entity.id = EntityType::Protein as usize;
+                entity.class = EntityType::Protein as u32;
                 scene.entities.push(entity);
             }
             // i += 1;
@@ -682,7 +682,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                             color_atom,
                             ATOM_SHININESS,
                         );
-                        entity.id = EntityType::Protein as usize;
+                        entity.class =  EntityType::Protein as u32;
                         scene.entities.push(entity);
                     }
                 }
@@ -795,7 +795,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                 color_atom,
                 ATOM_SHININESS,
             );
-            entity.id = EntityType::Protein as usize;
+            entity.class =  EntityType::Protein as u32;
             scene.entities.push(entity);
         }
     }
