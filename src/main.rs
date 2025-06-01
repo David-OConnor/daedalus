@@ -48,7 +48,7 @@ mod tests;
 
 use std::{
     collections::HashMap,
-    fmt, io,
+    env, fmt, io,
     io::ErrorKind,
     path::{Path, PathBuf},
     str::FromStr,
@@ -248,6 +248,8 @@ struct StateVolatile {
     mol_pending_data_avail: Option<Receiver<Result<DataAvailable, ReqError>>>,
     // Pending flag
     draw_density: bool,
+    /// We may change CWD during CLI navigation; keep prefs directory constant.
+    prefs_dir: PathBuf,
 }
 
 impl Default for StateVolatile {
@@ -261,6 +263,7 @@ impl Default for StateVolatile {
             docking_setup: Default::default(),
             mol_pending_data_avail: Default::default(),
             draw_density: false,
+            prefs_dir: env::current_dir().unwrap(),
         }
     }
 }
@@ -533,7 +536,6 @@ fn main() {
     // println!("MTZ: {:?}", mtz);
 
     {
-        // let map_path = PathBuf::from_str("../../../Desktop/reflections/1fat_2fo.map").unwrap();
         let map_path = PathBuf::from_str("../../../Desktop/reflections/8s6p.map").unwrap();
         state.open(&map_path).unwrap();
     }

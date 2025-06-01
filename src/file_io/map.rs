@@ -2,11 +2,14 @@
 //! from reflection data, using a fourier transform.
 
 use std::{
+    fs,
     fs::File,
-    io::{self, Read, Seek, SeekFrom},
+    io::{self, ErrorKind, Read, Seek, SeekFrom, Write},
     path::Path,
+    process::Command,
 };
 
+use bio_apis::{ReqError, rcsb};
 use byteorder::{LittleEndian, ReadBytesExt};
 use lin_alg::f64::{Mat3, Vec3};
 
@@ -383,3 +386,24 @@ pub fn read_map_data(path: &Path) -> io::Result<(MapHeader, Vec<ElectronDensity>
 //     let v = |row| [s(row,0)?, s(row,1)?, s(row,2)?, cif.get("_atom_sites.Cartn_trans_vector", row, 0)?.parse().ok()?];
 //     Some([v(0)?, v(1)?, v(2)?, [0.0, 0.0, 0.0, 1.0]])
 // }
+
+/// Stopgap approach?
+pub fn density_from_rcsb_gemmi(ident: &str) -> io::Result<Vec<ElectronDensity>> {
+    println!("Downloading Map data for {ident}...");
+
+    let map_2fo_fc = rcsb::load_validation_2fo_fc_cif(ident)
+        .map_err(|_| io::Error::new(ErrorKind::InvalidData, "Problem loading 2fo-fc from RCSB"))?;
+
+    fs::write("temp_map.cif", map_2fo_fc)?;
+
+    let output_text = Command::new("gemmi")
+        .args(["sf2map", "temp_map.cif", "temp_map.map"])
+        .output()?;
+
+    let (_hdr, map) = read_map_data(Path::new("temp_map.map"))?;
+
+    fs::remove_file(Path::new("temp_map.cif"))?;
+    fs::remove_file(Path::new("temp_map.map"))?;
+
+    Ok(map)
+}

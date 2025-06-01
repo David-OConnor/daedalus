@@ -25,6 +25,7 @@ use crate::{
         find_sites::find_docking_sites,
     },
     download_mols::{load_cif_rcsb, load_sdf_drugbank, load_sdf_pubchem},
+    file_io::map::density_from_rcsb_gemmi,
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
     mol_drawing::{
         COLOR_DOCKING_SITE_MESH, EntityType, MoleculeView, draw_density, draw_ligand, draw_molecule,
@@ -1329,25 +1330,64 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                         }
 
                         if ui
-                            .button(RichText::new("Load reflections").color(COLOR_HIGHLIGHT))
+                            .button(RichText::new("Load map").color(COLOR_HIGHLIGHT))
                             .clicked()
                         {
-                            match ReflectionsData::load_from_rcsb(&mol.ident) {
+                            // todo: For now, we rely on Gemmi being available on the Path.
+                            // todo: We will eventually get our own reflections loader working.
+
+                            match density_from_rcsb_gemmi(&mol.ident) {
                                 Ok(d) => {
-                                    println!("Successfully loaded reflections data");
-
-                                    let density = compute_density_grid(&d);
-
-                                    mol.reflections_data = Some(d);
-                                    mol.elec_density = Some(density);
-
-                                    // todo: Update A/R based on how we visualize this.
-                                    redraw = true;
+                                    println!(
+                                        "Succsesfully loaded density data from RSCB using Gemmi."
+                                    );
+                                    mol.elec_density = Some(d);
+                                    draw_density(
+                                        &mut scene.entities,
+                                        mol.elec_density.as_ref().unwrap(),
+                                    );
+                                    engine_updates.entities = true;
                                 }
                                 Err(e) => {
-                                    eprintln!("Error loading reflections data: {e:?}");
+                                    eprintln!(
+                                        "Error loading reflections and density map data.: {e:?}"
+                                    );
                                 }
                             }
+
+                            // match ReflectionsData::load_from_rcsb(&mol.ident) {
+                            //     Ok(d) => {
+                            //         println!("Successfully loaded reflections and density map data");
+                            //
+                            //         let density = compute_density_grid(&d);
+                            //
+                            //         mol.reflections_data = Some(d);
+                            //         mol.elec_density = Some(density);
+                            //
+                            //         // todo: Update A/R based on how we visualize this.
+                            //         redraw = true;
+                            //     }
+                            //     Err(e) => {
+                            //         eprintln!("Error loading reflections and density map data.: {e:?}");
+                            //     }
+                            // }
+
+                            // match ReflectionsData::load_from_rcsb(&mol.ident) {
+                            //     Ok(d) => {
+                            //         println!("Successfully loaded reflections and density map data");
+                            //
+                            //         let density = compute_density_grid(&d);
+                            //
+                            //         mol.reflections_data = Some(d);
+                            //         mol.elec_density = Some(density);
+                            //
+                            //         // todo: Update A/R based on how we visualize this.
+                            //         redraw = true;
+                            //     }
+                            //     Err(e) => {
+                            //         eprintln!("Error loading reflections and density map data.: {e:?}");
+                            //     }
+                            // }
                         }
                     }
 
@@ -1756,6 +1796,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         if let Some(mol) = &state.molecule {
             if let Some(dens) = &mol.elec_density {
                 draw_density(&mut scene.entities, dens);
+                engine_updates.entities = true;
             }
         }
 

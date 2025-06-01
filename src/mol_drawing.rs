@@ -682,7 +682,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                             color_atom,
                             ATOM_SHININESS,
                         );
-                        entity.class =  EntityType::Protein as u32;
+                        entity.class = EntityType::Protein as u32;
                         scene.entities.push(entity);
                     }
                 }
@@ -795,7 +795,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                 color_atom,
                 ATOM_SHININESS,
             );
-            entity.class =  EntityType::Protein as u32;
+            entity.class = EntityType::Protein as u32;
             scene.entities.push(entity);
         }
     }

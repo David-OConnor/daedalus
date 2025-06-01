@@ -121,7 +121,10 @@ impl State {
             self.to_save.per_mol.insert(mol.ident.clone(), data);
         }
 
-        if let Err(e) = save(&PathBuf::from(DEFAULT_PREFS_FILE), &self.to_save) {
+        if let Err(e) = save(
+            &self.volatile.prefs_dir.join(DEFAULT_PREFS_FILE),
+            &self.to_save,
+        ) {
             eprintln!("Error saving state: {e:?}");
         }
     }
