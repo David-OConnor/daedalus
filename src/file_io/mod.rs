@@ -1,4 +1,10 @@
-use std::{fs::File, io, io::ErrorKind, path::Path};
+use std::{
+    fs,
+    fs::File,
+    io,
+    io::{ErrorKind, Read},
+    path::Path,
+};
 
 use lin_alg::f64::Vec3;
 
@@ -81,9 +87,14 @@ impl State {
             }
             "pdb" | "cif" => match load_cif_pdb(path) {
                 Ok(p) => {
-                    let file = File::open(path)?;
-                    let mol = Molecule::from_cif_pdb(&p, file)?;
+                    let mut file = File::open(path)?;
+                    let mol = Molecule::from_cif_pdb(&p, &file)?;
                     self.pdb = Some(p);
+
+                    let mut data_str = String::new();
+                    file.read_to_string(&mut data_str)?;
+                    self.cif_pdb_raw = Some(data_str);
+
                     Ok(mol)
                 }
                 Err(e) => {
@@ -156,8 +167,14 @@ impl State {
 
         match extension.to_str().unwrap_or_default() {
             "pdb" | "cif" => {
-                if let Some(pdb) = &mut self.pdb {
-                    save_pdb(pdb, path)?;
+                // todo: Eval how you want to handle this. For now, the raw CIF or PDB.
+                // if let Some(pdb) = &mut self.pdb {
+                //     save_pdb(pdb, path)?;
+                //     self.to_save.last_opened = Some(path.to_owned());
+                //     self.update_save_prefs()
+                // }
+                if let Some(data) = &mut self.cif_pdb_raw {
+                    fs::write(path, data)?;
                     self.to_save.last_opened = Some(path.to_owned());
                     self.update_save_prefs()
                 }

@@ -55,7 +55,6 @@ impl Atom {
 
 impl Molecule {
     /// From `pdbtbx`'s format. Uses raw data too to add secondary structure, which pdbtbx doesn't handle.
-    /// // todo: Io::result
     pub fn from_cif_pdb<R: Read + Seek>(pdb: &PDB, raw: R) -> io::Result<Self> {
         // todo: Maybe return the PDB type here, and store that. Also have a way to
         // todo get molecules from it
@@ -253,4 +252,6 @@ pub fn save_pdb(pdb: &mut PDB, path: &Path) -> io::Result<()> {
             format!("Problem saving a PDB or CIF file: {e:?}"),
         )
     })
+
+    // todo: Save SS.
 }

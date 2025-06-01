@@ -401,6 +401,7 @@ struct State {
     pub ui: StateUi,
     pub volatile: StateVolatile,
     pub pdb: Option<PDB>,
+    pub cif_pdb_raw: Option<String>,
     pub molecule: Option<Molecule>,
     // pub ligand: Option<Molecule>,
     pub ligand: Option<Ligand>,

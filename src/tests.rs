@@ -1,4 +1,4 @@
-use std::{path::PathBuf, str::FromStr, time::Instant};
+use std::{fs::File, path::PathBuf, str::FromStr, time::Instant};
 
 use lin_alg::f32::{Vec3 as Vec3F32, pack_float, unpack_slice};
 use rayon::{iter::IntoParallelRefIterator, prelude::*};
@@ -17,8 +17,10 @@ fn test_docking_setup() {
     let lj_lut = init_lj_lut();
 
     // todo: Don't load from file; set up test molecule[s]. For now, this is fine.
-    let pdb = load_cif_pdb(&PathBuf::from_str("molecules/1c8k.cif").unwrap()).unwrap();
-    let receptor = Molecule::from_cif_pdb(&pdb);
+    let path = PathBuf::from_str("molecules/1c8k.cif").unwrap();
+    let pdb = load_cif_pdb(&path).unwrap();
+    let file = File::open(&path).unwrap();
+    let receptor = Molecule::from_cif_pdb(&pdb, file);
 
     let mol_ligand = load_sdf(&PathBuf::from_str("molecules/DB03496.sdf").unwrap()).unwrap();
     let mut ligand = Ligand::new(mol_ligand);

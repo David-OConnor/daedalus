@@ -35,12 +35,12 @@ use crate::{
     reflection::{ReflectionsData, compute_density_grid},
     render::{
         CAM_INIT_OFFSET, MESH_DOCKING_SURFACE, RENDER_DIST_FAR, RENDER_DIST_NEAR,
-        set_docking_light, set_flashlight,
+        set_docking_light, set_flashlight, set_static_light,
     },
     util,
     util::{
         cam_look_at, cam_look_at_outside, check_prefs_save, cycle_res_selected, orbit_center,
-        reset_camera, select_from_search,
+        query_rcsb, reset_camera, select_from_search,
     },
 };
 
@@ -870,10 +870,6 @@ fn docking(
                         &state.volatile.snapshots[state.ui.current_snapshot],
                     );
 
-                    // scene.entities.retain(|ent| {ent.class != EntityType::Protein as usize && ent.class != EntityType::Ligand as usize});
-                    // draw_molecule(state, scene, reset_cam);
-                    // draw_ligand(state, scene);
-
                     engine_updates.entities = true;
                 }
             }
@@ -1564,24 +1560,14 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     .clicked()
                 {
                     if let Ok(ident) = rcsb::get_newly_released() {
-                        match load_cif_rcsb(&ident) {
-                            Ok((pdb, cif_data)) => {
-                                let mut cursor = Cursor::new(cif_data);
-                                // todo: Don't unwerap.
-                                state.molecule =
-                                    Some(Molecule::from_cif_pdb(&pdb, cursor).unwrap());
-                                state.pdb = Some(pdb);
-                                state.update_from_prefs();
-
-                                redraw = true;
-                                reset_cam = true;
-                                set_flashlight(scene);
-                                engine_updates.lighting = true;
-                            }
-                            Err(_e) => {
-                                eprintln!("Error loading CIF file");
-                            }
-                        }
+                        query_rcsb(
+                            &ident,
+                            state,
+                            scene,
+                            &mut engine_updates,
+                            &mut redraw,
+                            &mut reset_cam,
+                        );
                     }
                 }
             }
@@ -1758,7 +1744,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         // -------UI above; clean-up items (based on flags) below
 
         if redraw {
-            draw_molecule(state, scene, reset_cam);
+            draw_molecule(state, scene);
             draw_ligand(state, scene);
 
             if let Some(mol) = &state.molecule {
@@ -1770,6 +1756,22 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             // For docking light, but may be overkill here.
             if state.ligand.is_some() {
                 engine_updates.lighting = true;
+            }
+        }
+
+        // todo: Eval this.
+        // Perform cleanup.
+        if reset_cam {
+            if let Some(mol) = &state.molecule {
+                let center: Vec3 = mol.center.into();
+                scene.camera.position =
+                    Vec3::new(center.x, center.y, center.z - (mol.size + CAM_INIT_OFFSET));
+                scene.camera.orientation = Quaternion::from_axis_angle(RIGHT_VEC, 0.);
+                scene.camera.far = RENDER_DIST_FAR;
+                scene.camera.update_proj_mat();
+
+                // Update lighting based on the new molecule center and dims.
+                set_static_light(scene, center, mol.size);
             }
         }
     });

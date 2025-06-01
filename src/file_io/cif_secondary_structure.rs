@@ -9,7 +9,7 @@ use lin_alg::f64::Vec3;
 
 use crate::cartoon_mesh::{BackboneSS, SecondaryStructure};
 
-// todo: PDB support too?
+// todo: Save SS to CIF.
 
 pub fn load_secondary_structure<R: Read + Seek>(mut data: R) -> io::Result<Vec<BackboneSS>> {
     data.seek(SeekFrom::Start(0))?;

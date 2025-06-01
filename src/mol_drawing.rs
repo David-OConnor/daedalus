@@ -598,7 +598,7 @@ pub fn draw_density(entities: &mut Vec<Entity>, density: &[ElectronDensity]) {
 
 /// Refreshes entities with the model passed.
 /// Sensitive to various view configuration parameters.
-pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: bool) {
+pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
     let Some(mol) = state.molecule.as_mut() else {
         return;
     };
@@ -985,19 +985,6 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene, update_cam_lighting: 
                 false,
             );
         }
-    }
-
-    // Perform cleanup.
-    if update_cam_lighting {
-        let center: Vec3 = mol.center.into();
-        scene.camera.position =
-            Vec3::new(center.x, center.y, center.z - (mol.size + CAM_INIT_OFFSET));
-        scene.camera.orientation = Quaternion::from_axis_angle(RIGHT_VEC, 0.);
-        scene.camera.far = RENDER_DIST_FAR;
-        scene.camera.update_proj_mat();
-
-        // Update lighting based on the new molecule center and dims.
-        set_static_light(scene, center, mol.size);
     }
 
     if let ControlScheme::Arc { center } = &mut scene.input_settings.control_scheme {

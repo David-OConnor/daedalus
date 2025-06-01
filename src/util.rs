@@ -442,10 +442,14 @@ pub fn query_rcsb(
     match load_cif_rcsb(&ident) {
         // tood: For organization purposes, move thi scode out of the UI.
         Ok((pdb, cif_data)) => {
-            // todo: Don't unwrap.
-            let cursor = Cursor::new(cif_data);
-            state.molecule = Some(Molecule::from_cif_pdb(&pdb, cursor).unwrap());
+            let cursor = Cursor::new(&cif_data);
+            match Molecule::from_cif_pdb(&pdb, cursor) {
+                Ok(mol) => state.molecule = Some(mol),
+                Err(e) => eprintln!("Problem loading molecule from CIF: {e:?}"),
+            }
+
             state.pdb = Some(pdb);
+            state.cif_pdb_raw = Some(cif_data);
             state.update_from_prefs();
 
             *redraw = true;

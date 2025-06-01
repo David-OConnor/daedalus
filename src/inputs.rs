@@ -328,7 +328,7 @@ pub fn event_dev_handler(
 
     if redraw {
         // todo:This is overkill for certain keys. Just change the color of the one[s] in question, and set update.entities = true.
-        mol_drawing::draw_molecule(state_, scene, false);
+        mol_drawing::draw_molecule(state_, scene);
         mol_drawing::draw_ligand(state_, scene);
         updates.lighting = true; // Ligand docking light. // todo: Not always necessary.
         updates.entities = true;
@@ -362,7 +362,7 @@ pub fn event_dev_handler(
             lig.atom_posits = lig.position_atoms(None);
         }
 
-        mol_drawing::draw_molecule(state_, scene, false);
+        mol_drawing::draw_molecule(state_, scene);
         mol_drawing::draw_ligand(state_, scene);
 
         updates.entities = true;
