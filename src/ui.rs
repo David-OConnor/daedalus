@@ -1,11 +1,12 @@
 use std::{
     f32::consts::TAU,
     io,
+    io::Cursor,
     path::Path,
     sync::atomic::{AtomicBool, Ordering},
     time::Instant,
 };
-use std::io::Cursor;
+
 use bio_apis::{drugbank, pubchem, rcsb};
 use egui::{Color32, ComboBox, Context, Key, RichText, Slider, TextEdit, TopBottomPanel, Ui};
 use graphics::{Camera, ControlScheme, EngineUpdates, Entity, RIGHT_VEC, Scene, UP_VEC};
@@ -1567,7 +1568,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                             Ok((pdb, cif_data)) => {
                                 let mut cursor = Cursor::new(cif_data);
                                 // todo: Don't unwerap.
-                                state.molecule = Some(Molecule::from_cif_pdb(&pdb, cursor).unwrap());
+                                state.molecule =
+                                    Some(Molecule::from_cif_pdb(&pdb, cursor).unwrap());
                                 state.pdb = Some(pdb);
                                 state.update_from_prefs();
 

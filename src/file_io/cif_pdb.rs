@@ -1,10 +1,10 @@
 use std::{
     collections::HashMap,
     io,
-    io::{BufReader, ErrorKind},
+    io::{BufReader, ErrorKind, Read, Seek},
     path::Path,
 };
-use std::io::{Read, Seek};
+
 use lin_alg::f64::Vec3;
 use pdbtbx::{Format, PDB, ReadOptions, StrictnessLevel};
 use rayon::prelude::*;
@@ -13,10 +13,10 @@ use crate::{
     bond_inference::{create_bonds, create_hydrogen_bonds},
     docking::prep::DockType,
     element::Element,
+    file_io::cif_secondary_structure::load_secondary_structure,
     molecule::{Atom, AtomRole, Chain, Molecule, Residue, ResidueType},
     util::mol_center_size,
 };
-use crate::file_io::cif_secondary_structure::load_secondary_structure;
 
 impl Atom {
     pub fn from_cif_pdb(
@@ -169,12 +169,9 @@ impl Molecule {
             None,
         );
 
-        result.secondary_structure =  load_secondary_structure(raw)?;
-
-        println!("SS: {:?}", result.secondary_structure);
+        result.secondary_structure = load_secondary_structure(raw)?;
 
         Ok(result)
-
     }
 }
 

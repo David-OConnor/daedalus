@@ -1,5 +1,5 @@
-use std::{collections::HashMap, f32::consts::TAU, time::Instant};
-use std::io::Cursor;
+use std::{collections::HashMap, f32::consts::TAU, io::Cursor, time::Instant};
+
 use graphics::{Camera, ControlScheme, EngineUpdates, FWD_VEC, RIGHT_VEC, Scene};
 use lin_alg::{
     f32::{Quaternion, Vec3 as Vec3F32},

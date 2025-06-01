@@ -1,5 +1,5 @@
-use std::{io, io::ErrorKind, path::Path};
-use std::fs::File;
+use std::{fs::File, io, io::ErrorKind, path::Path};
+
 use lin_alg::f64::Vec3;
 
 use crate::{

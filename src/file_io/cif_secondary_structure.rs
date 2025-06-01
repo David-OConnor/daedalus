@@ -13,189 +13,200 @@ use crate::cartoon_mesh::{BackboneSS, SecondaryStructure};
 
 pub fn load_secondary_structure<R: Read + Seek>(mut data: R) -> io::Result<Vec<BackboneSS>> {
     data.seek(SeekFrom::Start(0))?;
-    let mut reader = BufReader::new(data);
+    let mut rdr = BufReader::new(data);
 
-    // ---------------------------------------------------------------------
-    // Pass 1 — read the file once and collect:
-    //   • ‘CA’ atom coordinates keyed by (chain-id, seq-id)
-    //   • every row of the   _struct_conf   table (we’ll interpret later)
-    // ---------------------------------------------------------------------
-    let mut ca_coord: HashMap<(String, i32), Vec3> = HashMap::new();
-    let mut struct_rows: Vec<(Vec<String>, Vec<String>)> = Vec::new();
+    // ─────────────  caches  ─────────────
+    let mut ca_xyz: HashMap<(String, i32), Vec3> = HashMap::new();
+    let mut helix_rows: Vec<(Vec<String>, Vec<String>)> = Vec::new();
+    let mut sheet_rows: Vec<(Vec<String>, Vec<String>)> = Vec::new();
 
-    enum Block {
-        Nothing,
-        StructConf { head: Vec<String> },
-        AtomSite { head: Vec<String> },
+    enum LoopKind {
+        None,
+        StructConf,
+        AtomSite,
+        SheetRange,
     }
-    let mut block = Block::Nothing;
+    let mut kind = LoopKind::None;
+    let mut head: Vec<String> = Vec::new();
 
-    // Column indices we care about inside the _atom_site table
-    let mut idx_asym = None;
-    let mut idx_seq = None;
-    let mut idx_atom = None;
-    let mut idx_x = None;
-    let mut idx_y = None;
-    let mut idx_z = None;
+    // atom-site column indices (filled on first row)
+    let mut a_idx = (None, None, None, None, None, None); // asym, seq, atom, x,y,z
 
-    for line in reader.lines() {
+    for line in rdr.lines() {
         let line = line?;
-        let trimmed = line.trim();
-
-        // ──────────────────────────────────────────────────────────────
-        // Delimiters
-        if trimmed.starts_with("loop_") {
-            block = Block::Nothing;
+        let t = line.trim();
+        if t.is_empty() {
             continue;
         }
-        // ──────────────────────────────────────────────────────────────
-        // Which block are we in?
-        match &mut block {
-            Block::Nothing => {
-                if trimmed.starts_with("_struct_conf.") {
-                    block = Block::StructConf {
-                        head: vec![trimmed.to_owned()],
-                    };
-                } else if trimmed.starts_with("_atom_site.") {
-                    block = Block::AtomSite {
-                        head: vec![trimmed.to_owned()],
-                    };
+
+        if t == "loop_" {
+            kind = LoopKind::None;
+            head.clear();
+            a_idx = (None, None, None, None, None, None);
+            continue;
+        }
+        if t == "#" {
+            kind = LoopKind::None;
+            continue;
+        }
+
+        match kind {
+            LoopKind::None => {
+                if t.starts_with("_struct_conf.") {
+                    kind = LoopKind::StructConf;
+                    head.push(t.to_owned());
+                } else if t.starts_with("_atom_site.") {
+                    kind = LoopKind::AtomSite;
+                    head.push(t.to_owned());
+                } else if t.starts_with("_struct_sheet_range.") {
+                    kind = LoopKind::SheetRange;
+                    head.push(t.to_owned());
                 }
             }
 
-            // -------------------------  _struct_conf  -----------------
-            Block::StructConf { head } => {
-                if trimmed.starts_with('_') {
-                    head.push(trimmed.to_owned());
-                } else if !trimmed.is_empty() {
-                    let cols = trimmed.split_whitespace().map(str::to_owned).collect();
-                    struct_rows.push((head.clone(), cols));
-                } else {
-                    block = Block::Nothing;
+            // ───────────── _struct_conf  (helices/turns/strands) ─────────────
+            LoopKind::StructConf => {
+                if t.starts_with('_') {
+                    head.push(t.to_owned());
+                    continue;
                 }
+                let cols: Vec<String> = t.split_whitespace().map(str::to_owned).collect();
+                helix_rows.push((head.clone(), cols));
             }
 
-            // --------------------------  _atom_site  ------------------
-            Block::AtomSite { head } => {
-                if trimmed.starts_with('_') {
-                    head.push(trimmed.to_owned());
-                } else if !trimmed.is_empty() {
-                    // First data row → derive column indices
-                    if idx_asym.is_none() {
-                        for (i, h) in head.iter().enumerate() {
-                            match &h[h.rfind('.').unwrap() + 1..] {
-                                "label_asym_id" => idx_asym = Some(i),
-                                "label_seq_id" => idx_seq = Some(i),
-                                "label_atom_id" => idx_atom = Some(i),
-                                "Cartn_x" => idx_x = Some(i),
-                                "Cartn_y" => idx_y = Some(i),
-                                "Cartn_z" => idx_z = Some(i),
-                                _ => {}
-                            }
+            // ───────────── _struct_sheet_range (β-strands) ─────────────
+            LoopKind::SheetRange => {
+                if t.starts_with('_') {
+                    head.push(t.to_owned());
+                    continue;
+                }
+                let cols: Vec<String> = t.split_whitespace().map(str::to_owned).collect();
+                sheet_rows.push((head.clone(), cols));
+            }
+
+            // ───────────── _atom_site (coordinates) ─────────────
+            LoopKind::AtomSite => {
+                if t.starts_with('_') {
+                    head.push(t.to_owned());
+                    continue;
+                }
+
+                // first data row of atom_site → locate columns
+                if a_idx.0.is_none() {
+                    for (i, h) in head.iter().enumerate() {
+                        match &h[h.rfind('.').unwrap() + 1..] {
+                            "label_asym_id" => a_idx.0 = Some(i),
+                            "label_seq_id" => a_idx.1 = Some(i),
+                            "label_atom_id" => a_idx.2 = Some(i),
+                            "Cartn_x" => a_idx.3 = Some(i),
+                            "Cartn_y" => a_idx.4 = Some(i),
+                            "Cartn_z" => a_idx.5 = Some(i),
+                            _ => {}
                         }
                     }
-                    let (i_asym, i_seq, i_atom, i_x, i_y, i_z) =
-                        match (idx_asym, idx_seq, idx_atom, idx_x, idx_y, idx_z) {
-                            (Some(a), Some(s), Some(at), Some(x), Some(y), Some(z)) => {
-                                (a, s, at, x, y, z)
-                            }
-                            _ => continue, // columns missing – ignore
-                        };
+                }
+                let (ia, isq, iat, ix, iy, iz) = match a_idx {
+                    (Some(a), Some(s), Some(at), Some(x), Some(y), Some(z)) => (a, s, at, x, y, z),
+                    _ => continue,
+                };
 
-                    let cols: Vec<&str> = trimmed.split_whitespace().collect();
-                    if cols.len() <= i_z {
-                        continue;
-                    }
-                    if cols[i_atom] != "CA" {
-                        continue;
-                    } // we only need alpha-carbon
+                let c: Vec<&str> = t.split_whitespace().collect();
+                if c.len() <= iz || c[iat] != "CA" {
+                    continue;
+                }
 
-                    if let Ok(seq) = cols[i_seq].parse::<i32>() {
-                        let x: f64 = cols[i_x].parse().unwrap_or(0.0);
-                        let y: f64 = cols[i_y].parse().unwrap_or(0.0);
-                        let z: f64 = cols[i_z].parse().unwrap_or(0.0);
-                        ca_coord.insert((cols[i_asym].to_owned(), seq), Vec3::new(x, y, z));
-                    }
-                } else {
-                    block = Block::Nothing;
+                if let Ok(seq) = c[isq].parse::<i32>() {
+                    let xyz = Vec3::new(
+                        c[ix].parse().unwrap_or(0.0),
+                        c[iy].parse().unwrap_or(0.0),
+                        c[iz].parse().unwrap_or(0.0),
+                    );
+                    ca_xyz.insert((c[ia].to_owned(), seq), xyz);
                 }
             }
         }
     }
 
-    // ---------------------------------------------------------------------
-    // Pass 2 — interpret every _struct_conf row and build BackboneSS records
-    // ---------------------------------------------------------------------
-    let mut result = Vec::new();
+    // ─────────────  build BackboneSS records  ─────────────
+    let mut out = Vec::new();
 
-    for (head, cols) in struct_rows {
-        if head.len() != cols.len() {
-            continue;
+    // ----- helices from _struct_conf -----
+    for (h, c) in helix_rows {
+        // resolve indices once per header set
+        fn find(h: &[String], tag: &str) -> Option<usize> {
+            h.iter().position(|s| s.ends_with(tag))
         }
-
-        // work out once per row where the interesting fields are
-        let mut i_conf_type = None;
-        let mut i_beg_asym = None;
-        let mut i_beg_seq = None;
-        let mut i_end_asym = None;
-        let mut i_end_seq = None;
-
-        for (i, h) in head.iter().enumerate() {
-            match &h[h.rfind('.').unwrap() + 1..] {
-                "conf_type_id" => i_conf_type = Some(i),
-                "beg_label_asym_id" => i_beg_asym = Some(i),
-                "beg_label_seq_id" => i_beg_seq = Some(i),
-                "end_label_asym_id" => i_end_asym = Some(i),
-                "end_label_seq_id" => i_end_seq = Some(i),
-                _ => {}
-            }
-        }
-
-        let (ic, ib_a, ib_s, ie_a, ie_s) =
-            match (i_conf_type, i_beg_asym, i_beg_seq, i_end_asym, i_end_seq) {
-                (Some(a), Some(b), Some(c), Some(d), Some(e)) => (a, b, c, d, e),
-                _ => continue,
-            };
-
-        let conf_tag = &cols[ic];
-        let beg_chain = &cols[ib_a];
-        let end_chain = &cols[ie_a];
-
-        // Only consider single-chain segments (multi-chain β-sheets are rare in struct_conf)
-        if beg_chain != end_chain {
-            continue;
-        }
-
-        let beg_seq = cols[ib_s].parse::<i32>().ok();
-        let end_seq = cols[ie_s].parse::<i32>().ok();
-        let (beg_seq, end_seq) = match (beg_seq, end_seq) {
-            (Some(b), Some(e)) => (b, e),
+        let i_type = find(&h, "conf_type_id");
+        let i_ba = find(&h, "beg_label_asym_id");
+        let i_bs = find(&h, "beg_label_seq_id");
+        let i_ea = find(&h, "end_label_asym_id");
+        let i_es = find(&h, "end_label_seq_id");
+        let (i_type, i_ba, i_bs, i_ea, i_es) = match (i_type, i_ba, i_bs, i_ea, i_es) {
+            (Some(a), Some(b), Some(c), Some(d), Some(e)) => (a, b, c, d, e),
             _ => continue,
         };
 
-        let start = match ca_coord.get(&(beg_chain.clone(), beg_seq)) {
+        if !c[i_type].starts_with("HELX") {
+            continue;
+        } // we only want helices
+
+        let beg_seq = c[i_bs].parse().ok();
+        let end_seq = c[i_es].parse().ok();
+        if beg_seq.is_none() || end_seq.is_none() {
+            continue;
+        }
+
+        let start = match ca_xyz.get(&(c[i_ba].clone(), beg_seq.unwrap())) {
             Some(v) => *v,
             None => continue,
         };
-        let end = match ca_coord.get(&(end_chain.clone(), end_seq)) {
+        let end = match ca_xyz.get(&(c[i_ea].clone(), end_seq.unwrap())) {
             Some(v) => *v,
             None => continue,
         };
 
-        let ss = if conf_tag.starts_with("HELX") {
-            SecondaryStructure::Helix
-        } else if conf_tag.starts_with("STRN") || conf_tag.starts_with("SHEET") {
-            SecondaryStructure::Sheet
-        } else {
-            SecondaryStructure::Coil
-        };
-
-        result.push(BackboneSS {
+        out.push(BackboneSS {
             start,
             end,
-            sec_struct: ss,
+            sec_struct: SecondaryStructure::Helix,
         });
     }
 
-    Ok(result)
+    // ----- β-strands from _struct_sheet_range -----
+    for (h, c) in sheet_rows {
+        fn idx(h: &[String], tag: &str) -> Option<usize> {
+            h.iter().position(|s| s.ends_with(tag))
+        }
+        let ib_a = idx(&h, "beg_label_asym_id");
+        let ib_s = idx(&h, "beg_label_seq_id");
+        let ie_a = idx(&h, "end_label_asym_id");
+        let ie_s = idx(&h, "end_label_seq_id");
+        let (ib_a, ib_s, ie_a, ie_s) = match (ib_a, ib_s, ie_a, ie_s) {
+            (Some(a), Some(b), Some(c), Some(d)) => (a, b, c, d),
+            _ => continue,
+        };
+
+        let beg_seq = c[ib_s].parse().ok();
+        let end_seq = c[ie_s].parse().ok();
+        if beg_seq.is_none() || end_seq.is_none() {
+            continue;
+        }
+
+        let start = match ca_xyz.get(&(c[ib_a].clone(), beg_seq.unwrap())) {
+            Some(v) => *v,
+            None => continue,
+        };
+        let end = match ca_xyz.get(&(c[ie_a].clone(), end_seq.unwrap())) {
+            Some(v) => *v,
+            None => continue,
+        };
+
+        out.push(BackboneSS {
+            start,
+            end,
+            sec_struct: SecondaryStructure::Sheet,
+        });
+    }
+
+    Ok(out)
 }
