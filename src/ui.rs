@@ -562,6 +562,8 @@ fn draw_cli(
         // We can use the `lock_focus(true)` method to prevent these, but we generally like them.
         let enter_pressed = edit_resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
         let tab_pressed = edit_resp.has_focus() && ui.input(|i| i.key_pressed(Key::Tab));
+        let up_pressed = edit_resp.has_focus() && ui.input(|i| i.key_pressed(Key::ArrowUp));
+        let dn_pressed = edit_resp.has_focus() && ui.input(|i| i.key_pressed(Key::ArrowDown));
 
         if tab_pressed && !state.ui.cmd_line_input.is_empty() {
             autocomplete_cli(&mut state.ui.cmd_line_input);
@@ -570,6 +572,26 @@ fn draw_cli(
             // state.ui.cmd_line_input.push(' ');
             // state.ui.cmd_line_input.pop();
             // edit_resp.request_focus();
+        }
+
+        if up_pressed {
+            if state.volatile.cli_input_selected != 0 {
+                state.volatile.cli_input_selected -= 1;
+            }
+            if state.volatile.cli_input_history.len() > state.volatile.cli_input_selected {
+                state.ui.cmd_line_input =
+                    state.volatile.cli_input_history[state.volatile.cli_input_selected].clone();
+            }
+        }
+
+        if dn_pressed {
+            if state.volatile.cli_input_selected < state.volatile.cli_input_history.len() - 1 {
+                state.volatile.cli_input_selected += 1;
+            }
+            if state.volatile.cli_input_history.len() > state.volatile.cli_input_selected {
+                state.ui.cmd_line_input =
+                    state.volatile.cli_input_history[state.volatile.cli_input_selected].clone();
+            }
         }
 
         if (button_clicked || enter_pressed) && state.ui.cmd_line_input.len() >= 2 {

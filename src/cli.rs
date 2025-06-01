@@ -44,6 +44,9 @@ pub fn handle_cmd(
 ) -> io::Result<String> {
     let input = state.ui.cmd_line_input.trim().to_string();
 
+    state.volatile.cli_input_history.push(input.clone());
+    state.volatile.cli_input_selected += 1;
+
     // todo: Helpers to reduce regex DRY.
     let re_help = Regex::new(r"(?i)^help$").unwrap();
     //

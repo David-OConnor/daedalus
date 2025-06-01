@@ -250,6 +250,9 @@ struct StateVolatile {
     draw_density: bool,
     /// We may change CWD during CLI navigation; keep prefs directory constant.
     prefs_dir: PathBuf,
+    /// Entered by the user, for this session.
+    cli_input_history: Vec<String>,
+    cli_input_selected: usize,
 }
 
 impl Default for StateVolatile {
@@ -264,6 +267,8 @@ impl Default for StateVolatile {
             mol_pending_data_avail: Default::default(),
             draw_density: false,
             prefs_dir: env::current_dir().unwrap(),
+            cli_input_history: Default::default(),
+            cli_input_selected: Default::default(),
         }
     }
 }
