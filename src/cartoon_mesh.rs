@@ -23,9 +23,9 @@ pub enum SecondaryStructure {
 
 #[derive(Clone, Debug)]
 pub struct BackboneSS {
-    start: Vec3,
-    end: Vec3,
-    sec_struct: SecondaryStructure,
+    pub start: Vec3,
+    pub end: Vec3,
+    pub sec_struct: SecondaryStructure,
 }
 
 // todo: ChatGpt

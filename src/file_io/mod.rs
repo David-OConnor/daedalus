@@ -1,5 +1,5 @@
 use std::{io, io::ErrorKind, path::Path};
-
+use std::fs::File;
 use lin_alg::f64::Vec3;
 
 use crate::{
@@ -15,7 +15,7 @@ use crate::{
 };
 
 pub mod cif_pdb;
-mod cif_secondary_structure;
+pub mod cif_secondary_structure;
 pub mod cif_sf;
 pub mod map;
 pub mod mol2;
@@ -81,7 +81,8 @@ impl State {
             }
             "pdb" | "cif" => match load_cif_pdb(path) {
                 Ok(p) => {
-                    let mol = Molecule::from_cif_pdb(&p);
+                    let file = File::open(path)?;
+                    let mol = Molecule::from_cif_pdb(&p, file)?;
                     self.pdb = Some(p);
                     Ok(mol)
                 }

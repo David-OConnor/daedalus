@@ -4,7 +4,7 @@ use std::{
     io::{BufReader, ErrorKind},
     path::Path,
 };
-
+use std::io::{Read, Seek};
 use lin_alg::f64::Vec3;
 use pdbtbx::{Format, PDB, ReadOptions, StrictnessLevel};
 use rayon::prelude::*;
@@ -16,6 +16,7 @@ use crate::{
     molecule::{Atom, AtomRole, Chain, Molecule, Residue, ResidueType},
     util::mol_center_size,
 };
+use crate::file_io::cif_secondary_structure::load_secondary_structure;
 
 impl Atom {
     pub fn from_cif_pdb(
@@ -53,8 +54,9 @@ impl Atom {
 }
 
 impl Molecule {
-    /// From `pdbtbx`'s format.
-    pub fn from_cif_pdb(pdb: &PDB) -> Self {
+    /// From `pdbtbx`'s format. Uses raw data too to add secondary structure, which pdbtbx doesn't handle.
+    /// // todo: Io::result
+    pub fn from_cif_pdb<R: Read + Seek>(pdb: &PDB, raw: R) -> io::Result<Self> {
         // todo: Maybe return the PDB type here, and store that. Also have a way to
         // todo get molecules from it
 
@@ -158,15 +160,21 @@ impl Molecule {
         //     bonds.push((Atom::from_pdb(a0), Atom::from_pdb(a1), bond));
         // }
 
-        Molecule::new(
+        let mut result = Molecule::new(
             pdb.identifier.clone().unwrap_or_default(),
             atoms,
             chains,
             residues,
-            // pdb.secondary_structure.clone(),
             None,
             None,
-        )
+        );
+
+        result.secondary_structure =  load_secondary_structure(raw)?;
+
+        println!("SS: {:?}", result.secondary_structure);
+
+        Ok(result)
+
     }
 }
 

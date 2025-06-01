@@ -1,5 +1,5 @@
 use std::{collections::HashMap, f32::consts::TAU, time::Instant};
-
+use std::io::Cursor;
 use graphics::{Camera, ControlScheme, EngineUpdates, FWD_VEC, RIGHT_VEC, Scene};
 use lin_alg::{
     f32::{Quaternion, Vec3 as Vec3F32},
@@ -441,9 +441,11 @@ pub fn query_rcsb(
 ) {
     match load_cif_rcsb(&ident) {
         // tood: For organization purposes, move thi scode out of the UI.
-        Ok(pdb) => {
+        Ok((pdb, cif_data)) => {
+            // todo: Don't unwrap.
+            let cursor = Cursor::new(cif_data);
+            state.molecule = Some(Molecule::from_cif_pdb(&pdb, cursor).unwrap());
             state.pdb = Some(pdb);
-            state.molecule = Some(Molecule::from_cif_pdb(state.pdb.as_ref().unwrap()));
             state.update_from_prefs();
 
             *redraw = true;
