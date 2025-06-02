@@ -94,7 +94,7 @@ impl PerMolToSave {
         }
 
         Self {
-            selection: state.selection,
+            selection: state.selection.clone(),
             cam_snapshots: state.cam_snapshots.clone(),
             mol_view: state.ui.mol_view,
             view_sel_level: state.ui.view_sel_level,
@@ -135,11 +135,13 @@ impl State {
 
         let mut center = lin_alg::f64::Vec3::new_zero();
 
+        println!("To save loaded: {:?}", self.to_save);
+
         if let Some(mol) = &mut self.molecule {
             if self.to_save.per_mol.contains_key(&mol.ident) {
                 let data = &self.to_save.per_mol[&mol.ident];
 
-                self.selection = data.selection;
+                self.selection = data.selection.clone();
                 self.cam_snapshots = data.cam_snapshots.clone();
                 self.ui.mol_view = data.mol_view;
                 self.ui.view_sel_level = data.view_sel_level;

@@ -85,23 +85,19 @@ impl State {
                     molecule
                 })
             }
-            "pdb" | "cif" => match load_cif_pdb(path) {
-                Ok(p) => {
-                    let mut file = File::open(path)?;
-                    let mol = Molecule::from_cif_pdb(&p, &file)?;
-                    self.pdb = Some(p);
+            "pdb" | "cif" => {
+                let pdb = load_cif_pdb(path)?;
+                let mut file = File::open(path)?;
 
-                    let mut data_str = String::new();
-                    file.read_to_string(&mut data_str)?;
-                    self.cif_pdb_raw = Some(data_str);
+                let mol = Molecule::from_cif_pdb(&pdb, &file)?;
+                self.pdb = Some(pdb);
 
-                    Ok(mol)
-                }
-                Err(e) => {
-                    eprintln!("Error loading PDB or CIF file: {:?}", e);
-                    Err(e)
-                }
-            },
+                let mut data_str = String::new();
+                file.read_to_string(&mut data_str)?;
+                self.cif_pdb_raw = Some(data_str);
+
+                Ok(mol)
+            }
             _ => Err(io::Error::new(
                 ErrorKind::InvalidData,
                 "Invalid file extension",
@@ -135,8 +131,6 @@ impl State {
                     self.molecule = Some(mol);
                     self.to_save.last_opened = Some(path.to_owned());
                 }
-
-                self.update_save_prefs(); // To save last mol/lig opened.
 
                 // Update from prefs based on the molecule-specific items.
                 self.update_from_prefs();

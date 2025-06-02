@@ -1,7 +1,6 @@
 use std::{
     f32::consts::TAU,
     io,
-    io::Cursor,
     path::Path,
     sync::atomic::{AtomicBool, Ordering},
     time::Instant,
@@ -25,22 +24,21 @@ use crate::{
         find_optimal_pose,
         find_sites::find_docking_sites,
     },
-    download_mols::{load_cif_rcsb, load_sdf_drugbank, load_sdf_pubchem},
+    download_mols::{load_sdf_drugbank, load_sdf_pubchem},
     file_io::map::density_from_rcsb_gemmi,
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
     mol_drawing::{
         COLOR_DOCKING_SITE_MESH, EntityType, MoleculeView, draw_density, draw_ligand, draw_molecule,
     },
     molecule::{Ligand, Molecule, ResidueType},
-    reflection::{ReflectionsData, compute_density_grid},
     render::{
         CAM_INIT_OFFSET, MESH_DOCKING_SURFACE, RENDER_DIST_FAR, RENDER_DIST_NEAR,
         set_docking_light, set_flashlight, set_static_light,
     },
     util,
     util::{
-        cam_look_at, cam_look_at_outside, check_prefs_save, cycle_res_selected, orbit_center,
-        query_rcsb, reset_camera, select_from_search,
+        cam_look_at, cam_look_at_outside, check_prefs_save, cycle_res_selected, handle_err,
+        orbit_center, query_rcsb, reset_camera, select_from_search,
     },
 };
 
@@ -67,6 +65,9 @@ const COLOR_INACTIVE: Color32 = Color32::GRAY;
 const COLOR_ACTIVE: Color32 = Color32::LIGHT_GREEN;
 const COLOR_HIGHLIGHT: Color32 = Color32::LIGHT_BLUE;
 const COLOR_ACTIVE_RADIO: Color32 = Color32::LIGHT_BLUE;
+const COLOR_OUT_ERROR: Color32 = Color32::LIGHT_RED;
+const COLOR_OUT_NORMAL: Color32 = Color32::WHITE;
+const COLOR_OUT_SUCCESS: Color32 = Color32::LIGHT_GREEN; // Unused for now
 
 const MAX_TITLE_LEN: usize = 120; // Number of characters to display.
 
@@ -144,7 +145,9 @@ pub fn handle_input(
         // Check for file drop
         if let Some(dropped_files) = ip.raw.dropped_files.first() {
             if let Some(path) = &dropped_files.path {
-                load_file(path, state, redraw, reset_cam, engine_updates).ok();
+                if let Err(e) = load_file(path, state, redraw, reset_cam, engine_updates) {
+                    handle_err(&mut state.ui, e.to_string());
+                }
             }
         }
     });
@@ -228,7 +231,7 @@ fn cam_controls(
         // Preset buttons
         if ui.button("Front").clicked() {
             if let Some(mol) = &state.molecule {
-                reset_camera(&mut scene.camera, &mut state.ui.view_depth, mol);
+                reset_camera(scene, &mut state.ui.view_depth, engine_updates, mol);
                 changed = true;
             }
         }
@@ -236,7 +239,7 @@ fn cam_controls(
         if ui.button("Top").clicked() {
             if let Some(mol) = &state.molecule {
                 let center: Vec3 = mol.center.into();
-                reset_camera(&mut scene.camera, &mut state.ui.view_depth, mol);
+                reset_camera(scene, &mut state.ui.view_depth, engine_updates, mol);
                 scene.camera.position =
                     Vec3::new(center.x, center.y + (mol.size + CAM_INIT_OFFSET), center.z);
                 scene.camera.orientation = Quaternion::from_axis_angle(RIGHT_VEC, TAU / 4.);
@@ -248,6 +251,7 @@ fn cam_controls(
         if ui.button("Left").clicked() {
             if let Some(mol) = &state.molecule {
                 let center: Vec3 = mol.center.into();
+                reset_camera(scene, &mut state.ui.view_depth, engine_updates, mol);
                 scene.camera.position =
                     Vec3::new(center.x - (mol.size + CAM_INIT_OFFSET), center.y, center.z);
                 scene.camera.orientation = Quaternion::from_axis_angle(UP_VEC, TAU / 4.);
@@ -345,14 +349,14 @@ fn cam_controls(
 }
 
 /// Display text of the selected atom
-fn selected_data(mol: &Molecule, selection: Selection, ui: &mut Ui) {
+fn selected_data(mol: &Molecule, selection: &Selection, ui: &mut Ui) {
     match selection {
         Selection::Atom(sel_i) => {
-            if sel_i >= mol.atoms.len() {
+            if *sel_i >= mol.atoms.len() {
                 return;
             }
 
-            let atom = &mol.atoms[sel_i];
+            let atom = &mol.atoms[*sel_i];
 
             let aa = match atom.residue_type {
                 ResidueType::AminoAcid(a) => format!("AA: {}", a.to_str(AaIdent::OneLetter)),
@@ -393,12 +397,16 @@ fn selected_data(mol: &Molecule, selection: Selection, ui: &mut Ui) {
             ui.label(RichText::new(text_c).color(Color32::GOLD));
         }
         Selection::Residue(sel_i) => {
-            if sel_i >= mol.residues.len() {
+            if *sel_i >= mol.residues.len() {
                 return;
             }
 
-            let res = &mol.residues[sel_i];
+            let res = &mol.residues[*sel_i];
             ui.label(RichText::new(res.descrip()).color(Color32::GOLD));
+        }
+        Selection::Atoms(is) => {
+            // todo: A/R
+            ui.label(RichText::new(format!("{} atoms", is.len())).color(Color32::GOLD));
         }
         Selection::None => (),
     }
@@ -539,7 +547,12 @@ fn draw_cli(
 ) {
     ui.horizontal(|ui| {
         ui.label("Out: ");
-        ui.label(RichText::new(format!("{}", state.ui.cmd_line_output)).color(Color32::WHITE));
+        let color = if state.ui.cmd_line_out_is_err {
+            COLOR_OUT_ERROR
+        } else {
+            COLOR_OUT_NORMAL
+        };
+        ui.label(RichText::new(format!("{}", state.ui.cmd_line_output)).color(color));
     });
 
     ui.horizontal(|ui| {
@@ -598,12 +611,17 @@ fn draw_cli(
         if (button_clicked || enter_pressed) && state.ui.cmd_line_input.len() >= 2 {
             // todo: Error color
             state.ui.cmd_line_output =
-                cli::handle_cmd(state, scene, engine_updates, redraw, reset_cam).unwrap_or_else(
-                    |e| {
+                match cli::handle_cmd(state, scene, engine_updates, redraw, reset_cam) {
+                    Ok(out) => {
+                        state.ui.cmd_line_out_is_err = false;
+                        out
+                    }
+                    Err(e) => {
                         eprintln!("Error processing command");
+                        state.ui.cmd_line_out_is_err = true;
                         e.to_string()
-                    },
-                );
+                    }
+                };
 
             state.ui.cmd_line_input = String::new();
             // Compensates for the default lose focus behavior; we still want the cursor to remain here.
@@ -811,7 +829,7 @@ fn docking(
                 .button(RichText::new("Center on sel").color(COLOR_HIGHLIGHT))
                 .clicked()
             {
-                let atom_sel = mol.get_sel_atom(state.selection);
+                let atom_sel = mol.get_sel_atom(&state.selection);
 
                 if let Some(atom) = atom_sel {
                     docking_posit_update = Some(atom.posit);
@@ -879,18 +897,19 @@ fn docking(
 
 fn residue_search(state: &mut State, scene: &mut Scene, redraw: &mut bool, ui: &mut Ui) {
     ui.horizontal(|ui| {
-        let sel_prev = state.selection;
+        // let sel_prev = &state.selection;
         ui.label("Find residue:");
         if ui
             .add(TextEdit::singleline(&mut state.ui.residue_search).desired_width(60.))
             .changed()
         {
             select_from_search(state);
-        }
-
-        if sel_prev != state.selection {
             *redraw = true;
         }
+
+        // if sel_prev != &state.selection {
+        //     *redraw = true;
+        // }
 
         // todo: for UI adccessbility
         // if key_up_is_down {
@@ -1001,7 +1020,7 @@ fn selection_section(
                     .button(RichText::new("Move cam to sel").color(COLOR_HIGHLIGHT))
                     .clicked()
                 {
-                    let atom_sel = mol.get_sel_atom(state.selection);
+                    let atom_sel = mol.get_sel_atom(&state.selection);
 
                     if let Some(atom) = atom_sel {
                         cam_look_at(&mut scene.camera, atom.posit);
@@ -1028,7 +1047,7 @@ fn selection_section(
             }
 
             ui.add_space(COL_SPACING / 2.);
-            selected_data(mol, state.selection, ui);
+            selected_data(mol, &state.selection, ui);
         }
     });
 }
@@ -1071,7 +1090,13 @@ fn mol_descrip(mol: &Molecule, ui: &mut Ui) {
     }
 }
 
-fn view_settings(state: &mut State, entities: &mut Vec<Entity>, engine_updates: &mut EngineUpdates, redraw: &mut bool, ui: &mut Ui) {
+fn view_settings(
+    state: &mut State,
+    entities: &mut Vec<Entity>,
+    engine_updates: &mut EngineUpdates,
+    redraw: &mut bool,
+    ui: &mut Ui,
+) {
     ui.horizontal(|ui| {
         ui.label("View:");
         let prev_view = state.ui.mol_view;
@@ -1151,7 +1176,12 @@ fn view_settings(state: &mut State, entities: &mut Vec<Entity>, engine_updates: 
         if let Some(mol) = &state.molecule {
             if let Some(dens) = &mol.elec_density {
                 let mut redraw_dens = false;
-                vis_check(&mut state.ui.visibility.hide_density, "Density", ui, &mut redraw_dens);
+                vis_check(
+                    &mut state.ui.visibility.hide_density,
+                    "Density",
+                    ui,
+                    &mut redraw_dens,
+                );
 
                 if redraw_dens {
                     if state.ui.visibility.hide_density {
@@ -1342,10 +1372,14 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                                 Ok(data) => {
                                     // println!("SF data: {:?}", data);
                                 }
-                                Err(_) => eprintln!(
-                                    "Error loading RCSB structure factors for {:?}",
-                                    &mol.ident
-                                ),
+                                Err(_) => {
+                                    let msg = format!(
+                                        "Error loading RCSB structure factors for {:?}",
+                                        &mol.ident
+                                    );
+
+                                    handle_err(&mut state.ui, msg);
+                                }
                             }
                         }
                     }
@@ -1359,7 +1393,11 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                                     // println!("SF data: {:?}", data);
                                 }
                                 Err(_) => {
-                                    eprintln!("Error loading RCSB 2fo-fc map for {:?}", &mol.ident)
+                                    let msg = format!(
+                                        "Error loading RCSB 2fo-fc map for {:?}",
+                                        &mol.ident
+                                    );
+                                    handle_err(&mut state.ui, msg);
                                 }
                             }
                         }
@@ -1384,9 +1422,10 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                                     engine_updates.entities = true;
                                 }
                                 Err(e) => {
-                                    eprintln!(
+                                    let msg = format!(
                                         "Error loading reflections and density map data.: {e:?}"
                                     );
+                                    handle_err(&mut state.ui, msg);
                                 }
                             }
 
@@ -1436,7 +1475,11 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                                     // println!("SF data: {:?}", data);
                                 }
                                 Err(_) => {
-                                    eprintln!("Error loading RCSB fo-fc map for {:?}", &mol.ident)
+                                    let msg = format!(
+                                        "Error loading RCSB fo-fc map for {:?}",
+                                        &mol.ident
+                                    );
+                                    handle_err(&mut state.ui, msg);
                                 }
                             }
                         }
@@ -1452,7 +1495,11 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                                     // println!("VAL DATA: {:?}", data);
                                 }
                                 Err(_) => {
-                                    eprintln!("Error loading RCSB validation for {:?}", &mol.ident)
+                                    let msg = format!(
+                                        "Error loading RCSB validation for {:?}",
+                                        &mol.ident
+                                    );
+                                    handle_err(&mut state.ui, msg);
                                 }
                             }
                         }
@@ -1543,7 +1590,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                                 reset_cam = true;
                             }
                             Err(_e) => {
-                                eprintln!("Error loading SDF file");
+                                let msg = "Error loading SDF file".to_owned();
+                                handle_err(&mut state.ui, msg);
                             }
                         }
                     }
@@ -1563,7 +1611,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                             reset_cam = true;
                         }
                         Err(_e) => {
-                            eprintln!("Error loading SDF file");
+                            let msg = "Error loading SDF file".to_owned();
+                            handle_err(&mut state.ui, msg);
                         }
                     }
                 }
@@ -1664,7 +1713,13 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
-                view_settings(state, &mut scene.entities, &mut engine_updates, &mut redraw, ui);
+                view_settings(
+                    state,
+                    &mut scene.entities,
+                    &mut engine_updates,
+                    &mut redraw,
+                    ui,
+                );
                 ui.add_space(ROW_SPACING);
                 chain_selector(state, &mut redraw, ui);
 
@@ -1696,14 +1751,16 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         ui.add_space(ROW_SPACING / 2.);
 
         if let Some(path) = &state.volatile.dialogs.load.take_picked() {
-            load_file(
+            if let Err(e) = load_file(
                 path,
                 state,
                 &mut redraw,
                 &mut reset_cam,
                 &mut engine_updates,
-            )
-            .ok();
+            ) {
+                handle_err(&mut state.ui, e.to_string());
+            }
+
             set_flashlight(scene);
             engine_updates.lighting = true;
         }
@@ -1775,19 +1832,10 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             }
         }
 
-        // todo: Eval this.
         // Perform cleanup.
         if reset_cam {
             if let Some(mol) = &state.molecule {
-                let center: Vec3 = mol.center.into();
-                scene.camera.position =
-                    Vec3::new(center.x, center.y, center.z - (mol.size + CAM_INIT_OFFSET));
-                scene.camera.orientation = Quaternion::from_axis_angle(RIGHT_VEC, 0.);
-                scene.camera.far = RENDER_DIST_FAR;
-                scene.camera.update_proj_mat();
-
-                // Update lighting based on the new molecule center and dims.
-                set_static_light(scene, center, mol.size);
+                reset_camera(scene, &mut state.ui.view_depth, &mut engine_updates, mol);
             }
         }
     });
@@ -1815,7 +1863,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         if let Some(mol) = &state.molecule {
             if let Some(lig) = &state.ligand {
                 if lig.anchor_atom >= lig.molecule.atoms.len() {
-                    eprintln!("Error positioning ligand atoms; anchor outside len");
+                    let msg = "Error positioning ligand atoms; anchor outside len".to_owned();
+                    handle_err(&mut state.ui, msg);
                 } else {
                     let lig_pos: Vec3 = lig.position_atoms(None)[lig.anchor_atom].into();
                     let ctr: Vec3 = mol.center.into();
@@ -1826,6 +1875,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     state.ui.cam_snapshot = None;
                 }
             }
+            set_static_light(scene, mol.center.into(), mol.size);
         }
     }
 

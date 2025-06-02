@@ -145,7 +145,7 @@ fn atom_color(
     atom: &Atom,
     i: usize,
     residues: &[Residue],
-    selection: Selection,
+    selection: &Selection,
     view_sel_level: ViewSelLevel,
     dimmed: bool,
 ) -> Color {
@@ -170,12 +170,17 @@ fn atom_color(
     // If selected, the selected color overrides the element or residue color.
     match selection {
         Selection::Atom(sel_i) => {
-            if sel_i == i {
+            if *sel_i == i {
                 result = COLOR_SELECTED;
             }
         }
         Selection::Residue(sel_i) => {
-            if residues[sel_i].atoms.contains(&i) {
+            if residues[*sel_i].atoms.contains(&i) {
+                result = COLOR_SELECTED;
+            }
+        }
+        Selection::Atoms(sel_is) => {
+            if sel_is.contains(&i) {
                 result = COLOR_SELECTED;
             }
         }
@@ -505,7 +510,7 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene) {
             atom_0,
             0,
             &mol.residues,
-            Selection::None,
+            &Selection::None,
             state.ui.view_sel_level,
             false,
         );
@@ -513,7 +518,7 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene) {
             atom_1,
             0,
             &mol.residues,
-            Selection::None,
+            &Selection::None,
             state.ui.view_sel_level,
             false,
         );
@@ -669,7 +674,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
                             atom,
                             i,
                             &mol.residues,
-                            state.selection,
+                            &state.selection,
                             state.ui.view_sel_level,
                             false,
                         );
@@ -742,7 +747,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
 
             // We assume only one of near sel, near lig is selectable at a time.
             if ui.show_near_sel_only {
-                let atom_sel = mol.get_sel_atom(state.selection);
+                let atom_sel = mol.get_sel_atom(&state.selection);
                 if let Some(a) = atom_sel {
                     if (atom.posit - a.posit).magnitude() as f32 > ui.nearby_dist_thresh as f32 {
                         continue;
@@ -782,7 +787,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
                 atom,
                 i,
                 &mol.residues,
-                state.selection,
+                &state.selection,
                 state.ui.view_sel_level,
                 dim_peptide,
             );
@@ -820,7 +825,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
         }
 
         if ui.show_near_sel_only {
-            let atom_sel = mol.get_sel_atom(state.selection);
+            let atom_sel = mol.get_sel_atom(&state.selection);
             if let Some(a) = atom_sel {
                 if (atom_0.posit - a.posit).magnitude() as f32 > ui.nearby_dist_thresh as f32 {
                     continue;
@@ -883,7 +888,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
             atom_0,
             bond.atom_0,
             &mol.residues,
-            state.selection,
+            &state.selection,
             state.ui.view_sel_level,
             dim_peptide,
         );
@@ -891,7 +896,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
             atom_1,
             bond.atom_1,
             &mol.residues,
-            state.selection,
+            &state.selection,
             state.ui.view_sel_level,
             dim_peptide,
         );
@@ -931,7 +936,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
 
             // todo: More DRY with cov bonds
             if ui.show_near_sel_only {
-                let atom_sel = mol.get_sel_atom(state.selection);
+                let atom_sel = mol.get_sel_atom(&state.selection);
                 if let Some(a) = atom_sel {
                     if (atom_donor.posit - a.posit).magnitude() as f32
                         > ui.nearby_dist_thresh as f32

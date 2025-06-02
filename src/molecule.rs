@@ -145,12 +145,12 @@ impl Molecule {
         adjacency_list
     }
 
-    /// If a residue, get the alpha C.
-    pub fn get_sel_atom(&self, sel: Selection) -> Option<&Atom> {
+    /// If a residue, get the alpha C. If multiple, get an arbtirary one.
+    pub fn get_sel_atom(&self, sel: &Selection) -> Option<&Atom> {
         match sel {
-            Selection::Atom(i) => self.atoms.get(i),
+            Selection::Atom(i) => self.atoms.get(*i),
             Selection::Residue(i) => {
-                let res = &self.residues[i];
+                let res = &self.residues[*i];
                 if !res.atoms.is_empty() {
                     for atom_i in &res.atoms {
                         let atom = &self.atoms[*atom_i];
@@ -166,6 +166,10 @@ impl Molecule {
                 } else {
                     None
                 }
+            }
+            Selection::Atoms(is) => {
+                // todo temp?
+                self.atoms.get(is[0])
             }
             Selection::None => None,
         }

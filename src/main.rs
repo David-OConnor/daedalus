@@ -90,6 +90,7 @@ use crate::{
     prefs::ToSave,
     render::render,
     ui::{COL_SPACING, VIEW_DEPTH_FAR_MAX, VIEW_DEPTH_NEAR_MIN},
+    util::handle_err,
 };
 
 // todo: Eventually, implement a system that automatically checks for changes, and don't
@@ -367,14 +368,17 @@ struct StateUi {
     rotation_sens_input: String,
     cmd_line_input: String,
     cmd_line_output: String,
+    /// Indicates CLI, or errors more broadly by changing its displayed color.
+    cmd_line_out_is_err: bool,
 }
 
-#[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]
+#[derive(Clone, PartialEq, Debug, Default, Encode, Decode)]
 pub enum Selection {
     #[default]
     None,
     Atom(usize),
     Residue(usize),
+    Atoms(Vec<usize>),
 }
 
 #[derive(Clone, Debug, Encode, Decode)]
@@ -525,12 +529,16 @@ fn main() {
 
     let last_opened = state.to_save.last_opened.clone();
     if let Some(path) = &last_opened {
-        state.open_molecule(path).ok();
+        if let Err(e) = state.open_molecule(path) {
+            handle_err(&mut state.ui, e.to_string());
+        }
     }
 
     let last_ligand_opened = state.to_save.last_ligand_opened.clone();
     if let Some(path) = &last_ligand_opened {
-        state.open_molecule(path).ok();
+        if let Err(e) = state.open_molecule(path) {
+            handle_err(&mut state.ui, e.to_string());
+        }
     }
 
     // Update ligand positions, e.g. from the docking position site center loaded from prefs.
@@ -544,8 +552,8 @@ fn main() {
     // println!("MTZ: {:?}", mtz);
 
     {
-        let map_path = PathBuf::from_str("../../../Desktop/reflections/8s6p.map").unwrap();
-        state.open(&map_path).unwrap();
+        // let map_path = PathBuf::from_str("../../../Desktop/reflections/8s6p.map").unwrap();
+        // state.open(&map_path).unwrap();
     }
 
     render(state);

@@ -121,6 +121,13 @@ Daedalus supports a very limited subset of PyMol's CLI interface. Supported comm
 - `hide`: Limited options available, e.g. `resn HOH`, `hydro`, `chain`, `hetatm` etc.
 - `remove`: Limited options available, e.g. `resn HOH`, `hydro`, `chain`, `hetatm` etc.
 
+## Selections
+- `select resn`: Select a residue by 3-letter amino acid identifier
+- `select resi`: Select a residue by index
+- `select elem`: Select an atom by element abbreviation
+
+(`sele` works too)
+
 ### Camera controls
 - `turn`
 - `move`

@@ -6,8 +6,12 @@ use kiddo::{KdTree, SquaredEuclidean};
 use lin_alg::f32::Vec3 as Vec3F32;
 use lin_alg::f64::Vec3;
 use isosurface::{
-    marching_cubes::MarchingCubes,
-    source::Source,
+   LinearHashedMarchingCubes,
+    source::ScalarSource,
+    math::vector,
+   sampler::Sample,
+   distance::Signed,
+   extractor::Extractor,
 };
 use crate::reflection::ElectronDensity;
 
@@ -30,12 +34,12 @@ impl GridField {
     }
 }
 
-impl Source for GridField {
+impl ScalarSource for GridField {
     /// Trilinear interpolation at **world** position `p`
-    fn sample(&self, x: f32, y: f32, z: f32) -> f32 {
-        let lx = ((x - self.origin[0]) / self.h).clamp(0.0, (self.dims.0 - 1) as f32);
-        let ly = ((y - self.origin[1]) / self.h).clamp(0.0, (self.dims.1 - 1) as f32);
-        let lz = ((z - self.origin[2]) / self.h).clamp(0.0, (self.dims.2 - 1) as f32);
+    fn sample_scalar(&self, p: vector::Vec3) -> Signed {
+        let lx = ((p.x - self.origin[0]) / self.h).clamp(0.0, (self.dims.0 - 1) as f32);
+        let ly = ((p.y - self.origin[1]) / self.h).clamp(0.0, (self.dims.1 - 1) as f32);
+        let lz = ((p.z - self.origin[2]) / self.h).clamp(0.0, (self.dims.2 - 1) as f32);
 
         let xi = lx.floor() as usize;
         let yi = ly.floor() as usize;
@@ -64,11 +68,16 @@ impl Source for GridField {
         let v0 = v00 * (1.0 - ty) + v10 * ty;
         let v1 = v01 * (1.0 - ty) + v11 * ty;
 
-        v0 * (1.0 - tz) + v1 * tz
+        Signed(v0 * (1.0 - tz) + v1 * tz)
     }
 }
 
-
+impl Sample<Signed> for GridField {
+    #[inline]
+    fn sample(&self, p: vector::Vec3) -> Signed {
+        self.sample_scalar(p)          // simply forward
+    }
+}
 
 
 pub fn create_isosurface(points: &[ElectronDensity], iso: f32) -> Mesh {
@@ -77,6 +86,7 @@ pub fn create_isosurface(points: &[ElectronDensity], iso: f32) -> Mesh {
     let mut xs: Vec<f64> = points.iter().map(|p| p.coords.x).collect();
     let mut ys: Vec<f64> = points.iter().map(|p| p.coords.y).collect();
     let mut zs: Vec<f64> = points.iter().map(|p| p.coords.z).collect();
+
     xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
     ys.sort_by(|a, b| a.partial_cmp(b).unwrap());
     zs.sort_by(|a, b| a.partial_cmp(b).unwrap());
@@ -115,14 +125,15 @@ pub fn create_isosurface(points: &[ElectronDensity], iso: f32) -> Mesh {
     // optionally fill any gaps by IDW using the k-d tree (omitted for brevity)
 
     /* ---------- 3. Marching-Cubes ---------- */
-    let source = GridField {
+    let mut source = GridField {
         data: field,
         dims: (nx, ny, nz),
         origin: [xs[0] as f32, ys[0] as f32, zs[0] as f32],
         h,
     };
 
-    let mut mc = MarchingCubes::<f32>::new([nx as u32, ny as u32, nz as u32]);
+    let max_depth = 3; // todo?
+    let mut mc = LinearHashedMarchingCubes::new(max_depth);
     mc.extract(&source, iso);                          // build the surface
 
     /* ---------- 4. Convert → your Mesh ---------- */
@@ -139,13 +150,12 @@ pub fn create_isosurface(points: &[ElectronDensity], iso: f32) -> Mesh {
 
             // rough gradient for the normal
             let eps = 1.0;
+            let sdf = |x: f32, y: f32, z: f32| source.sample_scalar(vector::Vec3::new(x, y, z)).0;
+
             let grad = Vector3::new(
-                source.sample(Point3::new(v.x + eps, v.y, v.z))
-                    - source.sample(Point3::new(v.x - eps, v.y, v.z)),
-                source.sample(Point3::new(v.x, v.y + eps, v.z))
-                    - source.sample(Point3::new(v.x, v.y - eps, v.z)),
-                source.sample(Point3::new(v.x, v.y, v.z + eps))
-                    - source.sample(Point3::new(v.x, v.y, v.z - eps)),
+                sdf(v.x + eps, v.y, v.z) - sdf(v.x - eps, v.y, v.z),
+                sdf(v.x, v.y + eps, v.z) - sdf(v.x, v.y - eps, v.z),
+                sdf(v.x, v.y, v.z + eps) - sdf(v.x, v.y, v.z - eps),
             )
                 .normalize();
 

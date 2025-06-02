@@ -13,7 +13,9 @@ use crate::{
     element::Element,
     mol_drawing::MoleculeView,
     molecule::{Atom, AtomRole, Bond, Chain, Molecule, Residue, ResidueType},
-    render::{CAM_INIT_OFFSET, set_flashlight},
+    render::{
+        CAM_INIT_OFFSET, RENDER_DIST_FAR, RENDER_DIST_NEAR, set_flashlight, set_static_light,
+    },
     ui::{VIEW_DEPTH_FAR_MAX, VIEW_DEPTH_NEAR_MIN},
 };
 
@@ -98,7 +100,12 @@ pub fn find_selected_atom(
 
         let atom = &atoms[*atom_i];
 
-        if ui.visibility.hide_sidechains || ui.mol_view == MoleculeView::Backbone {
+        if ui.visibility.hide_sidechains
+            || matches!(
+                ui.mol_view,
+                MoleculeView::SpaceFill | MoleculeView::Backbone
+            )
+        {
             if let Some(role) = atom.role {
                 if role == AtomRole::Sidechain || role == AtomRole::H_Sidechain {
                     continue;
@@ -111,7 +118,11 @@ pub fn find_selected_atom(
                 continue;
             }
             if role == AtomRole::Water
-                && (ui.visibility.hide_water || ui.mol_view == MoleculeView::SpaceFill)
+                && (ui.visibility.hide_water
+                    || matches!(
+                        ui.mol_view,
+                        MoleculeView::SpaceFill | MoleculeView::Backbone
+                    ))
             {
                 continue;
             }
@@ -374,10 +385,10 @@ pub fn setup_neighbor_pairs(
 /// Based on selection status and if a molecule is open, find the center for the orbit camera.
 pub fn orbit_center(state: &State) -> Vec3F32 {
     if state.ui.orbit_around_selection {
-        match state.selection {
+        match &state.selection {
             Selection::Atom(i) => {
                 if let Some(mol) = &state.molecule {
-                    match mol.atoms.get(i) {
+                    match mol.atoms.get(*i) {
                         Some(a) => a.posit.into(),
                         None => Vec3F32::new_zero(),
                     }
@@ -387,7 +398,7 @@ pub fn orbit_center(state: &State) -> Vec3F32 {
             }
             Selection::Residue(i) => {
                 if let Some(mol) = &state.molecule {
-                    match mol.residues.get(i) {
+                    match mol.residues.get(*i) {
                         Some(res) => {
                             match mol.atoms.get(match res.atoms.first() {
                                 Some(a) => *a,
@@ -397,6 +408,16 @@ pub fn orbit_center(state: &State) -> Vec3F32 {
                                 None => Vec3F32::new_zero(),
                             }
                         }
+                        None => Vec3F32::new_zero(),
+                    }
+                } else {
+                    Vec3F32::new_zero()
+                }
+            }
+            Selection::Atoms(is) => {
+                if let Some(mol) = &state.molecule {
+                    match mol.atoms.get(is[0]) {
+                        Some(a) => a.posit.into(),
                         None => Vec3F32::new_zero(),
                     }
                 } else {
@@ -504,11 +525,34 @@ pub fn load_snap(state: &mut State, scene: &mut Scene, engine_updates: &mut Engi
     }
 }
 
-pub fn reset_camera(cam: &mut Camera, view_depth: &mut (u16, u16), mol: &Molecule) {
+/// Resets the camera to the *front* view, and related settings.
+pub fn reset_camera(
+    scene: &mut Scene,
+    view_depth: &mut (u16, u16),
+    engine_updates: &mut EngineUpdates,
+    mol: &Molecule,
+) {
     let center: lin_alg::f32::Vec3 = mol.center.into();
-    cam.position =
-        lin_alg::f32::Vec3::new(center.x, center.y + (mol.size + CAM_INIT_OFFSET), center.z);
-    cam.orientation = Quaternion::from_axis_angle(RIGHT_VEC, TAU / 4.);
+    scene.camera.position =
+        lin_alg::f32::Vec3::new(center.x, center.y, center.z - (mol.size + CAM_INIT_OFFSET));
+    scene.camera.orientation = Quaternion::new_identity();
+
+    scene.camera.near = RENDER_DIST_NEAR;
+    scene.camera.far = RENDER_DIST_FAR;
+    scene.camera.update_proj_mat();
+
+    set_static_light(scene, center, mol.size);
+    set_flashlight(scene);
+
+    engine_updates.camera = true;
+    engine_updates.lighting = true;
 
     *view_depth = (VIEW_DEPTH_NEAR_MIN, VIEW_DEPTH_FAR_MAX);
+}
+
+/// Utility function that prints to stderr, and the CLI output. Sets the out flag.
+pub fn handle_err(ui: &mut StateUi, msg: String) {
+    eprintln!("{msg}");
+    ui.cmd_line_output = msg;
+    ui.cmd_line_out_is_err = true;
 }

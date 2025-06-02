@@ -251,8 +251,12 @@ pub enum DockType {
     Ca,
     Mn,
     Cu,
-    Hd,    // Polar hydrogen (hydrogen donor)
-    Other, // Fallback for unknown types
+    /// Polar hydrogen (hydrogen donor)
+    Hd,
+    /// Generic / non-polar hydrogen
+    H,
+    /// Fallback for unknown types
+    Other,
 }
 
 impl DockType {
@@ -344,6 +348,7 @@ impl DockType {
             "MN" => Self::Mn,
             "CU" => Self::Cu,
             "HD" => Self::Hd,
+            "H" => Self::H,
             _ => {
                 if s.starts_with("C") {
                     Self::C
@@ -353,6 +358,8 @@ impl DockType {
                     Self::Oh
                 } else if s.starts_with("S") {
                     Self::S
+                } else if s.starts_with("H") {
+                    Self::H
                 } else {
                     eprintln!("Unknown dock type: {}", s);
                     Self::Other
@@ -389,6 +396,7 @@ impl DockType {
             Self::Mn => "MN",
             Self::Cu => "CU",
             Self::Hd => "HD",
+            Self::H => "H",
             Self::Other => "--",
         }
         .to_string()
@@ -423,6 +431,7 @@ impl DockType {
             Self::Mn => 1.55,
             Self::Cu => 1.90,
             Self::Hd => 2.20,
+            Self::H => 2.20,     // todo: A/R.
             Self::Other => 2.50, // Fallback default value
         }
     }

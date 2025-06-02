@@ -55,7 +55,7 @@ kiddo = "5.0.3"
 pdbtbx = { git = "https://github.com/David-OConnor/pdbtbx", branch = "Fix-symmetry-error-newer-CIFs" }
 #barnes_hut = { path = "../../barnes_hut" }
 #na_seq = { path = "../na_seq" }
-#bio_apis = { path = "../bio_apis" }
+bio_apis = { path = "../bio_apis" }
 
 
 

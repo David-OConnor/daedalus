@@ -1,5 +1,7 @@
 //! Our CLI system. Apes PyMol's syntax. We don't introduce our own commands, as this functionality
 //! is primarily for PyMol users who are comfortable with this workflow.
+//!
+//! On PyMol selection syntax: https://pymolwiki.org/index.php/Selection_Algebra
 
 use std::{
     env,
@@ -11,13 +13,13 @@ use std::{
 };
 
 use graphics::{EngineUpdates, FWD_VEC, RIGHT_VEC, Scene, UP_VEC, arc_rotation};
-use lin_alg::f32::{Quaternion, Vec3};
+use na_seq::AminoAcid;
 use regex::Regex;
 
 use crate::{
-    State,
+    Selection, State,
     element::Element,
-    molecule::AtomRole,
+    molecule::{AtomRole, ResidueType},
     render::set_flashlight,
     ui::load_file,
     util,
@@ -29,9 +31,9 @@ fn new_invalid(msg: &str) -> io::Error {
 }
 
 // We use this for autocomplete.
-pub const CLI_CMDS: [&str; 16] = [
+pub const CLI_CMDS: [&str; 17] = [
     "help", "fetch", "save", "load", "show", "show_as", "view", "hide", "remove", "orient", "turn",
-    "move", "reset", "pwd", "ls", "cd",
+    "move", "reset", "pwd", "ls", "cd", "select",
 ];
 
 /// Process a raw CLI command from the user. Return the CLI output from the entered command.
@@ -69,6 +71,10 @@ pub fn handle_cmd(
     let re_pwd = Regex::new(r"(?i)^pwd\s*$").unwrap();
     let re_ls = Regex::new(r"(?i)^ls\s*$").unwrap();
     let re_cd = Regex::new(r"(?i)^cd\s+(.+)$").unwrap();
+
+    let re_sel_resi = Regex::new(r"(?i)^(?:sele|select)\s+resi\s+([0-9]+)$").unwrap();
+    let re_sel_resn = Regex::new(r"(?i)^(?:sele|select)\s+resn\s+([a-z]{3})$").unwrap();
+    let re_sel_elem = Regex::new(r"(?i)^(?:sele|select)\s+elem\s+([a-z]{1,2})$").unwrap();
 
     if let Some(_caps) = re_help.captures(&input) {
         // todo: Multiline, once you set that up.
@@ -280,7 +286,7 @@ pub fn handle_cmd(
 
     if let Some(caps) = re_orient.captures(&input) {
         if let Some(mol) = &state.molecule {
-            let atom_sel = mol.get_sel_atom(state.selection);
+            let atom_sel = mol.get_sel_atom(&state.selection);
 
             if let Some(atom) = atom_sel {
                 cam_look_at(&mut scene.camera, atom.posit);
@@ -294,7 +300,7 @@ pub fn handle_cmd(
 
     if let Some(_) = re_reset.captures(&input) {
         if let Some(mol) = &state.molecule {
-            reset_camera(&mut scene.camera, &mut state.ui.view_depth, mol);
+            reset_camera(scene, &mut state.ui.view_depth, engine_updates, mol);
             engine_updates.camera = true;
         }
         return Ok("Complete".to_owned());
@@ -316,6 +322,65 @@ pub fn handle_cmd(
 
         env::set_current_dir(dir)?;
         return Ok(format!("Now in {}", env::current_dir()?.display()));
+    }
+
+    // Selections
+    if let Some(caps) = re_sel_resn.captures(&input) {
+        if let Some(mol) = &state.molecule {
+            let aa = AminoAcid::from_str(&caps[1])?;
+
+            let mut result = Vec::new();
+
+            for res in &mol.residues {
+                if let ResidueType::AminoAcid(aa_) = res.res_type {
+                    if aa_ == aa {
+                        result.extend(&res.atoms);
+                    }
+                }
+            }
+
+            state.selection = Selection::Atoms(result);
+            *redraw = true;
+            return Ok("Complete".to_owned());
+        }
+    }
+
+    if let Some(caps) = re_sel_resi.captures(&input) {
+        if let Some(mol) = &state.molecule {
+            let i: isize = caps[1]
+                .parse()
+                .map_err(|_| io::Error::new(ErrorKind::InvalidData, "Invalid index."))?;
+
+            for (i_res, res) in mol.residues.iter().enumerate() {
+                if res.serial_number == i {
+                    state.selection = Selection::Residue(i_res);
+                    *redraw = true;
+                    return Ok("Complete".to_owned());
+                }
+            }
+
+            return Err(io::Error::new(
+                ErrorKind::InvalidData,
+                "Unable to find this residue",
+            ));
+        }
+    }
+
+    if let Some(caps) = re_sel_elem.captures(&input) {
+        if let Some(mol) = &state.molecule {
+            let el = Element::from_letter(&caps[1])?;
+
+            let mut result = Vec::new();
+            for (i, atom) in mol.atoms.iter().enumerate() {
+                if atom.element == el {
+                    result.push(i);
+                }
+            }
+
+            state.selection = Selection::Atoms(result);
+            *redraw = true;
+            return Ok("Complete".to_owned());
+        }
     }
 
     Err(new_invalid("Can't find that command"))
