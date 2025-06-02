@@ -1071,7 +1071,7 @@ fn mol_descrip(mol: &Molecule, ui: &mut Ui) {
     }
 }
 
-fn view_settings(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
+fn view_settings(state: &mut State, entities: &mut Vec<Entity>, engine_updates: &mut EngineUpdates, redraw: &mut bool, ui: &mut Ui) {
     ui.horizontal(|ui| {
         ui.label("View:");
         let prev_view = state.ui.mol_view;
@@ -1145,6 +1145,22 @@ fn view_settings(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
             {
                 state.ui.visibility.dim_peptide = !state.ui.visibility.dim_peptide;
                 *redraw = true;
+            }
+        }
+
+        if let Some(mol) = &state.molecule {
+            if let Some(dens) = &mol.elec_density {
+                let mut redraw_dens = false;
+                vis_check(&mut state.ui.visibility.hide_density, "Density", ui, &mut redraw_dens);
+
+                if redraw_dens {
+                    if state.ui.visibility.hide_density {
+                        entities.retain(|ent| ent.class != EntityType::Density as u32);
+                    } else {
+                        draw_density(entities, dens);
+                    }
+                    engine_updates.entities = true;
+                }
             }
         }
     });
@@ -1648,7 +1664,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
-                view_settings(state, &mut redraw, ui);
+                view_settings(state, &mut scene.entities, &mut engine_updates, &mut redraw, ui);
                 ui.add_space(ROW_SPACING);
                 chain_selector(state, &mut redraw, ui);
 
