@@ -41,10 +41,10 @@ mod util;
 mod vibrations;
 
 mod cli;
+mod marching_cubes;
 mod reflection;
 #[cfg(test)]
 mod tests;
-// mod isosurface;
 
 use std::{
     collections::HashMap,
@@ -85,6 +85,7 @@ use crate::{
     },
     element::{Element, init_lj_lut},
     file_io::{cif_pdb::save_pdb, mol2::load_mol2, mtz::load_mtz, pdbqt::load_pdbqt},
+    marching_cubes::MarchingCubes,
     molecule::{Ligand, ResidueType},
     navigation::Tab,
     prefs::ToSave,
@@ -289,6 +290,8 @@ struct Visibility {
     hide_h_bonds: bool,
     dim_peptide: bool,
     hide_density: bool,
+    hide_density_surface: bool,
+    // todo: Seq here, or not?
 }
 
 impl Default for Visibility {
@@ -303,6 +306,7 @@ impl Default for Visibility {
             hide_h_bonds: false,
             dim_peptide: false,
             hide_density: false,
+            hide_density_surface: false,
         }
     }
 }
@@ -374,6 +378,9 @@ struct StateUi {
     /// Indicates CLI, or errors more broadly by changing its displayed color.
     cmd_line_out_is_err: bool,
     show_aa_seq: bool,
+    /// Use a viridis or simialar colr scheme to color residues gradually based on their
+    /// position in the sequence.
+    res_color_by_index: bool,
 }
 
 #[derive(Clone, PartialEq, Debug, Default, Encode, Decode)]
@@ -530,6 +537,7 @@ fn main() {
     state.ui.nearby_dist_thresh = 15;
 
     state.load_prefs();
+    println!("Last opened: {:?}", state.to_save.last_opened);
 
     let last_opened = state.to_save.last_opened.clone();
     if let Some(path) = &last_opened {
@@ -554,11 +562,6 @@ fn main() {
     // todo temp
     // let mtz = load_mtz(&PathBuf::from_str("../../../Desktop/1fat_2fo.mtz").unwrap());
     // println!("MTZ: {:?}", mtz);
-
-    {
-        // let map_path = PathBuf::from_str("../../../Desktop/reflections/8s6p.map").unwrap();
-        // state.open(&map_path).unwrap();
-    }
 
     render(state);
 }

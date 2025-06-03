@@ -41,7 +41,8 @@ pub const MESH_SPHERE_LOWRES: usize = 3;
 pub const MESH_SPHERE_MEDRES: usize = 4;
 pub const MESH_DOCKING_BOX: usize = 5;
 pub const MESH_SOLVENT_SURFACE: usize = 6; // Van Der Waals surface.
-pub const MESH_DOCKING_SURFACE: usize = 7; // Van Der Waals surface.
+pub const MESH_DOCKING_SURFACE: usize = 7;
+pub const MESH_DENSITY_SURFACE: usize = 8;
 
 pub const BALL_STICK_RADIUS: f32 = 0.3;
 pub const BALL_STICK_RADIUS_H: f32 = 0.2;
@@ -115,13 +116,12 @@ pub fn render(mut state: State) {
             Mesh::new_sphere(1., 3),
             Mesh::new_box(1., 1., 1.),
             Mesh::new_cylinder(1., BOND_RADIUS, 14),
-            // todo: Consider using scale instead of having two separate meshes.
-            // Mesh::new_cylinder(1., BOND_RADIUS_LIGAND, 20),
             Mesh::new_sphere(1., 1), // low-res sphere
             Mesh::new_sphere(1., 2), // med-res sphere
             Mesh::new_box(1., 1., 1.),
             Mesh::new_box(1., 1., 1.), // Placeholder for VDW surface; populated later.
             Mesh::new_box(1., 1., 1.), // Placeholder for docking site sufrace; populated later.
+            Mesh::new_box(1., 1., 1.), // Placeholder for density sufrace; populated later.
         ],
         entities: Vec::new(),
         gaussians: Vec::new(),

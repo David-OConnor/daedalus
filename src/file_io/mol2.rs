@@ -14,7 +14,7 @@ use lin_alg::f64::Vec3;
 
 use crate::{
     element::Element,
-    molecule::{Atom, Bond, BondCount, BondType, Chain, Molecule, Residue, ResidueType},
+    molecule::{Atom, Bond, BondCount, BondType, Molecule, ResidueType},
 };
 
 #[derive(Clone, Copy, PartialEq)]
@@ -112,15 +112,37 @@ impl Molecule {
         let mut in_bond_section = false;
 
         for line in &lines {
-            if line.to_uppercase().contains("<TRIPOS>ATOM") {
+            let upper = line.to_uppercase();
+            if upper.contains("<TRIPOS>ATOM") {
                 in_atom_section = true;
                 in_bond_section = false;
                 continue;
             }
 
-            if line.to_uppercase().contains("<TRIPOS>BOND") {
+            if upper.contains("<TRIPOS>BOND") {
                 in_atom_section = false;
                 in_bond_section = true;
+                continue;
+            }
+
+            if upper.contains("@<TRIPOS>SUBSTRUCTURE") {
+                // todo: As required. Example:
+                //    1 SER     2 RESIDUE           4 A     SER     1 ROOT
+                //      2 VAL    13 RESIDUE           4 A     VAL     2
+                //      3 PRO    29 RESIDUE           4 A     PRO     2
+                in_atom_section = false;
+                in_bond_section = false;
+                continue;
+            }
+
+            if upper.contains("@<TRIPOS>SET") {
+                // todo: As required. Example:
+                // ANCHOR          STATIC     ATOMS    <user>   **** Anchor Atom Set
+                // 63 127 1110 128 129 610 130 131 132 133 134 740 135 53 741 54 55 617 1482 612 57 58 1485 60 1487 1488 742 1489 743 59 614 1075 611 1486 1076 1481 1077 613 1078 1079 615 616 744 1081 56 618 61 745 1080 1483 738 1074 739 1103 746 1104 1484 1105 1106 1107 1108 1109 1102 1082
+                // RIGID           STATIC     BONDS    <user>   **** Rigid Bond Set
+                // 56 280 58 59 281 60 61 62 63 64 65 671 672 673 674 332 675 676 484 485 677 678 284 333 24 480 481 26 282 482 334 483 28 486 283 30 31 285 335 487 286 337 338 336 493 494 495 496 27 497 25 499 500 331 279 498 29
+                in_atom_section = false;
+                in_bond_section = false;
                 continue;
             }
 
@@ -145,7 +167,13 @@ impl Molecule {
                     io::Error::new(ErrorKind::InvalidData, "Could not parse serial number")
                 })?;
 
-                let element = Element::from_letter(cols[1])?;
+                // Col 1: e.g. "H", "HG22" etc. Col 5: "C.3", "N.p13" etc.
+                let mut elem_txt = cols[5].to_owned();
+                if let Some((before_dot, _after_dot)) = elem_txt.split_once('.') {
+                    elem_txt = before_dot.to_string();
+                }
+
+                let element = Element::from_letter(&elem_txt)?;
 
                 let x = cols[2].parse::<f64>().map_err(|_| {
                     io::Error::new(ErrorKind::InvalidData, "Could not parse X coordinate")
@@ -187,18 +215,18 @@ impl Molecule {
                 let cols: Vec<&str> = line.split_whitespace().collect();
 
                 let atom_0 = cols[1].parse::<usize>().map_err(|_| {
-                    io::Error::new(ErrorKind::InvalidData, "Could not parse atom 0 in bond")
+                    io::Error::new(
+                        ErrorKind::InvalidData,
+                        format!("Could not parse atom 0 in bond: {}", cols[1]),
+                    )
                 })?;
 
                 let atom_1 = cols[2].parse::<usize>().map_err(|_| {
-                    io::Error::new(ErrorKind::InvalidData, "Could not parse atom 1 in bond")
+                    io::Error::new(
+                        ErrorKind::InvalidData,
+                        format!("Could not parse atom 1 in bond: {}", cols[2]),
+                    )
                 })?;
-
-                let count_num = cols[3].parse::<u8>().map_err(|_| {
-                    io::Error::new(ErrorKind::InvalidData, "Could not parse atom 1 in bond")
-                })?;
-
-                // For bond types: You are not handling all of these:
 
                 // 1 = single
                 // 2 = double
@@ -208,10 +236,9 @@ impl Molecule {
                 // du = dummy
                 // un = unknown (cannot be determined from the parameter tables)
                 // nc = not connected
-
                 bonds.push(Bond {
                     bond_type: BondType::Covalent {
-                        count: BondCount::from_count(count_num),
+                        count: BondCount::from_str(cols[3]),
                     },
                     // Our bonds are by index; these are by serial number. This should align them in most cases.
                     // todo: Map serial num to index incase these don't ascend by one.

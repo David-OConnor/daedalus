@@ -178,7 +178,7 @@ impl ReflectionsData {
 pub struct ElectronDensity {
     /// In Å
     pub coords: Vec3,
-    /// Noramlized, using the unit cell volume, as reported in the reflection data.
+    /// Normalized, using the unit cell volume, as reported in the reflection data.
     pub density: f64,
 }
 

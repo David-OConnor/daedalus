@@ -27,18 +27,20 @@ use crate::{
     download_mols::{load_sdf_drugbank, load_sdf_pubchem},
     file_io::map::density_from_rcsb_gemmi,
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
+    marching_cubes::MarchingCubes,
     mol_drawing::{
-        COLOR_DOCKING_SITE_MESH, EntityType, MoleculeView, draw_density, draw_ligand, draw_molecule,
+        COLOR_DOCKING_SITE_MESH, EntityType, MoleculeView, draw_density, draw_density_surface,
+        draw_ligand, draw_molecule,
     },
     molecule::{Ligand, Molecule, ResidueType},
     render::{
-        CAM_INIT_OFFSET, MESH_DOCKING_SURFACE, RENDER_DIST_FAR, RENDER_DIST_NEAR,
-        set_docking_light, set_flashlight, set_static_light,
+        ATOM_SHININESS, CAM_INIT_OFFSET, MESH_DENSITY_SURFACE, MESH_DOCKING_SURFACE,
+        RENDER_DIST_FAR, RENDER_DIST_NEAR, set_docking_light, set_flashlight, set_static_light,
     },
     util,
     util::{
-        cam_look_at, cam_look_at_outside, check_prefs_save, cycle_res_selected, handle_err,
-        orbit_center, query_rcsb, reset_camera, select_from_search,
+        cam_look_at, cam_look_at_outside, check_prefs_save, close_lig, close_mol,
+        cycle_res_selected, handle_err, orbit_center, query_rcsb, reset_camera, select_from_search,
     },
 };
 
@@ -946,6 +948,8 @@ fn residue_search(state: &mut State, scene: &mut Scene, redraw: &mut bool, ui: &
                 state.ui.show_docking_tools = !state.ui.show_docking_tools;
             }
 
+            ui.add_space(COL_SPACING / 2.);
+
             let dock_seq_text = if state.ui.show_aa_seq {
                 "Hide seq"
             } else {
@@ -960,7 +964,7 @@ fn residue_search(state: &mut State, scene: &mut Scene, redraw: &mut bool, ui: &
 }
 
 fn add_aa_seq(seq_text: &str, ui: &mut Ui) {
-    ui.horizontal_wrapped( |ui| {
+    ui.horizontal_wrapped(|ui| {
         ui.label(RichText::new(seq_text).color(Color32::LIGHT_BLUE));
     });
 }
@@ -989,6 +993,21 @@ fn selection_section(
             *redraw = true;
             // Kludge to prevent surprising behavior.
             state.selection = Selection::None;
+        }
+
+        if state.ui.view_sel_level == ViewSelLevel::Residue {
+            ui.add_space(COL_SPACING / 2.);
+            let dock_seq_text = if state.ui.res_color_by_index {
+                "Color by res AA"
+            } else {
+                "Color by res #"
+            };
+
+            if ui.button(RichText::new(dock_seq_text)).clicked() {
+                state.ui.res_color_by_index = !state.ui.res_color_by_index;
+                state.ui.view_sel_level = ViewSelLevel::Residue;
+                *redraw = true;
+            }
         }
 
         ui.add_space(COL_SPACING);
@@ -1052,13 +1071,20 @@ fn selection_section(
                     .button(RichText::new("Move cam to lig").color(COLOR_HIGHLIGHT))
                     .clicked()
                 {
-                    let lig_pos: Vec3 = lig.position_atoms(None)[lig.anchor_atom].into();
-                    let ctr: Vec3 = mol.center.into();
+                    if lig.anchor_atom >= lig.molecule.atoms.len() {
+                        handle_err(
+                            &mut state.ui,
+                            "Problem positioning ligand atoms. Len shorter than anchor.".to_owned(),
+                        );
+                    } else {
+                        let lig_pos: Vec3 = lig.position_atoms(None)[lig.anchor_atom].into();
+                        let ctr: Vec3 = mol.center.into();
 
-                    cam_look_at_outside(&mut scene.camera, lig_pos, ctr);
+                        cam_look_at_outside(&mut scene.camera, lig_pos, ctr);
 
-                    engine_updates.camera = true;
-                    state.ui.cam_snapshot = None;
+                        engine_updates.camera = true;
+                        state.ui.cam_snapshot = None;
+                    }
                 }
             }
 
@@ -1207,6 +1233,24 @@ fn view_settings(
                     }
                     engine_updates.entities = true;
                 }
+
+                let mut redraw_dens_surface = false;
+                vis_check(
+                    &mut state.ui.visibility.hide_density_surface,
+                    "Density sfc",
+                    ui,
+                    &mut redraw_dens_surface,
+                );
+
+                // todo
+                if redraw_dens_surface {
+                    if state.ui.visibility.hide_density_surface {
+                        entities.retain(|ent| ent.class != EntityType::DensitySurface as u32);
+                    } else {
+                        draw_density_surface(entities);
+                    }
+                    engine_updates.entities = true;
+                }
             }
         }
     });
@@ -1331,17 +1375,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 mol_descrip(mol, ui);
 
                 if ui.button("Close").clicked() {
-                    state.molecule = None;
-                    scene.entities.retain(|ent| {
-                        ent.class != EntityType::Protein as u32
-                            && ent.class != EntityType::Density as u32
-                    });
-                    // redraw = true;
-                    engine_updates.entities = true;
-
-                    state.to_save.last_opened = None;
-                    state.volatile.aa_seq_text = String::new();
-                    state.update_save_prefs();
+                    close_mol(state, scene, &mut engine_updates);
                 }
                 ui.add_space(COL_SPACING);
             }
@@ -1699,20 +1733,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             });
         }
 
-        if close_ligand {
-            state.ligand = None;
-            // todo: Once you sort this out properly, use the ligand type.
-            // scene.entities.retain(|ent| {ent.class != EntityType::Protein as usize});
-            scene
-                .entities
-                .retain(|ent| ent.class != EntityType::Ligand as u32);
-            // redraw = true;
-            engine_updates.entities = true;
-
-            state.to_save.last_ligand_opened = None;
-            state.update_save_prefs();
-        }
-
         ui.add_space(ROW_SPACING);
         selection_section(state, scene, &mut redraw, &mut engine_updates, ui);
 
@@ -1767,6 +1787,28 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         ui.add_space(ROW_SPACING / 2.);
 
+        if state.ui.show_aa_seq {
+            if state.molecule.is_some() {
+                add_aa_seq(&state.volatile.aa_seq_text, ui);
+            }
+        }
+
+        // todo: Move A/r.
+        draw_cli(
+            state,
+            scene,
+            &mut engine_updates,
+            &mut redraw,
+            &mut reset_cam,
+            ui,
+        );
+
+        // -------UI above; clean-up items (based on flags) below
+
+        if close_ligand {
+            close_lig(state, scene, &mut engine_updates);
+        }
+
         if let Some(path) = &state.volatile.dialogs.load.take_picked() {
             if let Err(e) = load_file(
                 path,
@@ -1820,24 +1862,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         //         }
         //     }
         // }
-
-        if state.ui.show_aa_seq {
-            if state.molecule.is_some() {
-                add_aa_seq(&state.volatile.aa_seq_text, ui);
-            }
-        }
-
-        // todo: Move A/r.
-        draw_cli(
-            state,
-            scene,
-            &mut engine_updates,
-            &mut redraw,
-            &mut reset_cam,
-            ui,
-        );
-
-        // -------UI above; clean-up items (based on flags) below
 
         if redraw {
             draw_molecule(state, scene);
@@ -1912,7 +1936,23 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
     if state.volatile.draw_density {
         if let Some(mol) = &state.molecule {
             if let Some(dens) = &mol.elec_density {
-                draw_density(&mut scene.entities, dens);
+                if !state.ui.visibility.hide_density {
+                    draw_density(&mut scene.entities, dens);
+                }
+
+                let mc = MarchingCubes::from_density(
+                    &mol.elec_density_header.as_ref().unwrap(),
+                    &mol.elec_density.as_ref().unwrap(),
+                );
+
+                let mesh = mc.generate();
+                scene.meshes[MESH_DENSITY_SURFACE] = mesh;
+
+                if !state.ui.visibility.hide_density_surface {
+                    draw_density_surface(&mut scene.entities);
+                }
+
+                engine_updates.meshes = true;
                 engine_updates.entities = true;
             }
         }

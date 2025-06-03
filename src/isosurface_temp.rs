@@ -13,6 +13,7 @@ use isosurface::{
    distance::Signed,
    extractor::Extractor,
 };
+use isosurface::extractor::IndexedInterleavedNormals;
 use crate::reflection::ElectronDensity;
 
 
@@ -110,6 +111,8 @@ pub fn create_isosurface(points: &[ElectronDensity], iso: f32) -> Mesh {
     let mut field = vec![0f32; nx * ny * nz];
     let mut tree: KdTree<f64, 3> = KdTree::new();
 
+    let mut extractor = IndexedInterleavedNormals::new(&mut vertices, &mut indices, &sampler);
+
     // map world → lattice index for direct inserts
     let idx = |ix, iy, iz| ix + nx * (iy + ny * iz);
 
@@ -134,9 +137,8 @@ pub fn create_isosurface(points: &[ElectronDensity], iso: f32) -> Mesh {
 
     let max_depth = 3; // todo?
     let mut mc = LinearHashedMarchingCubes::new(max_depth);
-    mc.extract(&source, iso);                          // build the surface
+    mc.extract(&source, iso);
 
-    /* ---------- 4. Convert → your Mesh ---------- */
     let vertices: Vec<Vertex> = mc
         .vertices
         .iter()

@@ -67,6 +67,7 @@ pub struct PerMolToSave {
     metadata: Option<MolMetaData>,
     docking_site: DockingSite,
     show_docking_tools: bool,
+    res_color_by_index: bool,
     show_aa_seq: bool,
     rcsb_data_avail: Option<DataAvailable>,
 }
@@ -108,6 +109,7 @@ impl PerMolToSave {
             metadata,
             docking_site,
             show_docking_tools: state.ui.show_docking_tools,
+            res_color_by_index: state.ui.res_color_by_index,
             show_aa_seq: state.ui.show_aa_seq,
             rcsb_data_avail,
         }
@@ -137,8 +139,6 @@ impl State {
 
         let mut center = lin_alg::f64::Vec3::new_zero();
 
-        println!("To save loaded: {:?}", self.to_save);
-
         if let Some(mol) = &mut self.molecule {
             if self.to_save.per_mol.contains_key(&mol.ident) {
                 let data = &self.to_save.per_mol[&mol.ident];
@@ -153,6 +153,7 @@ impl State {
                 self.ui.chain_to_pick_res = data.chain_to_pick_res;
                 self.ui.visibility = data.visibility.clone();
                 self.ui.show_docking_tools = data.show_docking_tools;
+                self.ui.res_color_by_index = data.res_color_by_index;
                 self.ui.show_aa_seq = data.show_aa_seq;
 
                 if let Some(md) = &data.metadata {

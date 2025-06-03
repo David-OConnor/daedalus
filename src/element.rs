@@ -175,7 +175,7 @@ impl Element {
             // todo: Fill in if you need, or remove this fn.
             _ => Err(io::Error::new(
                 ErrorKind::InvalidData,
-                "Invalid atom letter",
+                format!("Invalid atom letter: {letter}"),
             )),
         }
     }

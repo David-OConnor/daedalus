@@ -17,8 +17,9 @@ use crate::{
     render::{
         ATOM_SHININESS, BACKGROUND_COLOR, BALL_RADIUS_WATER, BALL_STICK_RADIUS,
         BALL_STICK_RADIUS_H, BODY_SHINYNESS, CAM_INIT_OFFSET, Color, MESH_BOND, MESH_CUBE,
-        MESH_DOCKING_BOX, MESH_SOLVENT_SURFACE, MESH_SPHERE_HIGHRES, MESH_SPHERE_LOWRES,
-        MESH_SPHERE_MEDRES, RENDER_DIST_FAR, set_docking_light, set_static_light,
+        MESH_DENSITY_SURFACE, MESH_DOCKING_BOX, MESH_SOLVENT_SURFACE, MESH_SPHERE_HIGHRES,
+        MESH_SPHERE_LOWRES, MESH_SPHERE_MEDRES, RENDER_DIST_FAR, set_docking_light,
+        set_static_light,
     },
     surface::{get_mesh_points, mesh_from_sas_points},
     util::orbit_center,
@@ -69,6 +70,7 @@ pub enum EntityType {
     Protein = 0,
     Ligand = 1,
     Density = 2,
+    DensitySurface = 3,
     Other = 4,
 }
 
@@ -141,6 +143,44 @@ impl fmt::Display for MoleculeView {
     }
 }
 
+/// A linear color map using the viridis scheme.
+fn color_viridis(i: usize, min: usize, max: usize) -> Color {
+    // Normalize i to [0.0, 1.0]
+    let t = if max > min {
+        // Compute as f32 and clamp to [0,1]
+        let tt = (i.saturating_sub(min) as f32) / ((max - min) as f32);
+        tt.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+
+    // A small set of Viridis control points (R, G, B), from t=0.0 to t=1.0
+    const VIRIDIS: [(f32, f32, f32); 5] = [
+        (0.267004, 0.004874, 0.329415), // t = 0.00
+        (0.229739, 0.322361, 0.545706), // t = 0.25
+        (0.127568, 0.566949, 0.550556), // t = 0.50
+        (0.369214, 0.788888, 0.382914), // t = 0.75
+        (0.993248, 0.906157, 0.143936), // t = 1.00
+    ];
+
+    // Scale t into the control‐point index range [0 .. VIRIDIS.len()-1]
+    let n_pts = VIRIDIS.len();
+    let scaled = t * ((n_pts - 1) as f32);
+    let idx = scaled.floor() as usize;
+    let idx_next = (idx + 1).min(n_pts - 1);
+    let frac = scaled - (idx as f32);
+
+    let (r1, g1, b1) = VIRIDIS[idx];
+    let (r2, g2, b2) = VIRIDIS[idx_next];
+
+    // Linear interpolation between the two nearest control points
+    let r = r1 + (r2 - r1) * frac;
+    let g = g1 + (g2 - g1) * frac;
+    let b = b1 + (b2 - b1) * frac;
+
+    (r, g, b)
+}
+
 fn atom_color(
     atom: &Atom,
     i: usize,
@@ -148,12 +188,25 @@ fn atom_color(
     selection: &Selection,
     view_sel_level: ViewSelLevel,
     dimmed: bool,
+    res_color_by_index: bool,
 ) -> Color {
     let mut result = match view_sel_level {
         ViewSelLevel::Atom => atom.element.color(),
         ViewSelLevel::Residue => {
             match atom.residue_type {
-                ResidueType::AminoAcid(aa) => aa_color(aa),
+                ResidueType::AminoAcid(aa) => {
+                    if res_color_by_index {
+                        let mut c = aa_color(aa);
+                        for (i_res, res) in residues.iter().enumerate() {
+                            if res.atoms.contains(&i) {
+                                c = color_viridis(i_res, 0, residues.len());
+                            }
+                        }
+                        c
+                    } else {
+                        aa_color(aa)
+                    }
+                }
                 _ => COLOR_AA_NON_RESIDUE,
             }
             // Below is currently equivalent:
@@ -228,7 +281,7 @@ fn add_bond(
         colors.0,
         BODY_SHINYNESS,
     );
-    entity_0.id = entity_type;
+    entity_0.class = entity_type;
 
     let mut entity_1 = Entity::new(
         MESH_BOND,
@@ -238,7 +291,7 @@ fn add_bond(
         colors.1,
         BODY_SHINYNESS,
     );
-    entity_0.id = entity_type;
+    entity_1.class = entity_type;
 
     if caps {
         // These spheres are to put a rounded cap on each bond.
@@ -260,8 +313,8 @@ fn add_bond(
             BODY_SHINYNESS,
         );
 
-        entity_0.id = entity_type;
-        entity_1.id = entity_type;
+        cap_0.class = entity_type;
+        cap_1.class = entity_type;
         entities.push(cap_0);
         entities.push(cap_1);
     }
@@ -513,6 +566,7 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene) {
             &Selection::None,
             state.ui.view_sel_level,
             false,
+            false,
         );
         let mut color_1 = atom_color(
             atom_1,
@@ -520,6 +574,7 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene) {
             &mol.residues,
             &Selection::None,
             state.ui.view_sel_level,
+            false,
             false,
         );
 
@@ -575,7 +630,7 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene) {
     set_docking_light(scene, Some(&state.ligand.as_ref().unwrap().docking_site));
 }
 
-/// A visual representation (e.g. ISO surface or volumentric display) of electron density,
+/// A visual representation of volumetric electron density,
 /// as loaded from .map files or similar.
 pub fn draw_density(entities: &mut Vec<Entity>, density: &[ElectronDensity]) {
     entities.retain(|ent| ent.class != EntityType::Density as u32);
@@ -599,6 +654,23 @@ pub fn draw_density(entities: &mut Vec<Entity>, density: &[ElectronDensity]) {
 
         entities.push(ent);
     }
+}
+
+/// An isosurface of electron density,
+/// as loaded from .map files or similar.
+pub fn draw_density_surface(entities: &mut Vec<Entity>) {
+    entities.retain(|ent| ent.class != EntityType::DensitySurface as u32);
+
+    let mut ent = Entity::new(
+        MESH_DENSITY_SURFACE,
+        Vec3::new_zero(),
+        Quaternion::new_identity(),
+        1.,
+        (0., 1., 1.),
+        ATOM_SHININESS,
+    );
+    ent.class = EntityType::DensitySurface as u32;
+    entities.push(ent);
 }
 
 /// Refreshes entities with the model passed.
@@ -676,6 +748,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
                             &mol.residues,
                             &state.selection,
                             state.ui.view_sel_level,
+                            false,
                             false,
                         );
 
@@ -790,6 +863,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
                 &state.selection,
                 state.ui.view_sel_level,
                 dim_peptide,
+                state.ui.res_color_by_index,
             );
 
             let mut entity = Entity::new(
@@ -891,6 +965,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
             &state.selection,
             state.ui.view_sel_level,
             dim_peptide,
+            state.ui.res_color_by_index,
         );
         let color_1 = atom_color(
             atom_1,
@@ -899,6 +974,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
             &state.selection,
             state.ui.view_sel_level,
             dim_peptide,
+            state.ui.res_color_by_index,
         );
 
         bond_entities(

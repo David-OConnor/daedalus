@@ -8,16 +8,11 @@ use std::{
 
 use lin_alg::f64::Vec3;
 use na_seq::AaIdent;
+
 use crate::{
-    State, file_io,
-    file_io::{
-        cif_pdb::{load_cif_pdb, save_pdb},
-        mol2::load_mol2,
-        pdbqt::load_pdbqt,
-        sdf::load_sdf,
-    },
+    State,
+    file_io::{cif_pdb::load_cif_pdb, mol2::load_mol2, pdbqt::load_pdbqt, sdf::load_sdf},
     molecule::{Ligand, Molecule},
-    reflection::handle_map_symmetry,
 };
 
 pub mod cif_pdb;
@@ -43,7 +38,7 @@ impl State {
             "map" => {
                 let (hdr, mut dens) = map::read_map_data(&path)?;
 
-                println!("Map header: {:#?}", hdr);
+                // println!("Map header: {:#?}", hdr);
 
                 // for pt in &dens[0..100] {
                 //     println!("{:.2?}", pt);
@@ -51,6 +46,7 @@ impl State {
                 if let Some(mol) = &mut self.molecule {
                     // handle_map_symmetry(&mut dens, &mol.atoms);
 
+                    mol.elec_density_header = Some(hdr);
                     mol.elec_density = Some(dens);
                     self.volatile.draw_density = true;
                 }
@@ -125,15 +121,17 @@ impl State {
                     self.ligand = Some(lig);
                     self.to_save.last_ligand_opened = Some(path.to_owned());
 
+                    println!("Loaded lig: {:?}", &self.ligand);
+
                     self.update_docking_site(init_posit);
                 } else {
-                    println!("Updated last opened: {:?}", path);
-
                     self.to_save.last_opened = Some(path.to_owned());
 
                     self.volatile.aa_seq_text = String::with_capacity(mol.atoms.len());
                     for aa in &mol.aa_seq {
-                        self.volatile.aa_seq_text.push_str(&aa.to_str(AaIdent::OneLetter));
+                        self.volatile
+                            .aa_seq_text
+                            .push_str(&aa.to_str(AaIdent::OneLetter));
                     }
                     self.molecule = Some(mol);
                 }
@@ -145,6 +143,9 @@ impl State {
                     // Only after updating from prefs (to prevent unecesasary loading) do we update data avail.
                     mol.update_data_avail(&mut self.volatile.mol_pending_data_avail);
                 }
+
+                // Now, save prefs: This is to save last opened.
+                self.update_save_prefs();
 
                 if self.get_make_docking_setup().is_none() {
                     eprintln!("Problem making or getting docking setup.");

@@ -15,7 +15,7 @@ use crate::{
     CamSnapshot, PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel,
     download_mols::load_cif_rcsb,
     element::Element,
-    mol_drawing::MoleculeView,
+    mol_drawing::{EntityType, MoleculeView},
     molecule::{Atom, AtomRole, Bond, Chain, Molecule, Residue, ResidueType},
     render::{
         CAM_INIT_OFFSET, RENDER_DIST_FAR, RENDER_DIST_NEAR, set_flashlight, set_static_light,
@@ -472,11 +472,14 @@ pub fn query_rcsb(
                 Ok(mol) => {
                     state.volatile.aa_seq_text = String::with_capacity(mol.atoms.len());
                     for aa in &mol.aa_seq {
-                        state.volatile.aa_seq_text.push_str(&aa.to_str(AaIdent::OneLetter));
+                        state
+                            .volatile
+                            .aa_seq_text
+                            .push_str(&aa.to_str(AaIdent::OneLetter));
                     }
 
                     state.molecule = Some(mol)
-                },
+                }
                 Err(e) => eprintln!("Problem loading molecule from CIF: {e:?}"),
             }
 
@@ -566,4 +569,30 @@ pub fn handle_err(ui: &mut StateUi, msg: String) {
     eprintln!("{msg}");
     ui.cmd_line_output = msg;
     ui.cmd_line_out_is_err = true;
+}
+
+pub fn close_mol(state: &mut State, scene: &mut Scene, engine_updates: &mut EngineUpdates) {
+    state.molecule = None;
+    scene.entities.retain(|ent| {
+        ent.class != EntityType::Protein as u32
+            && ent.class != EntityType::Density as u32
+            && ent.class != EntityType::DensitySurface as u32
+    });
+    engine_updates.entities = true;
+
+    state.to_save.last_opened = None;
+    state.volatile.aa_seq_text = String::new();
+    state.update_save_prefs();
+}
+
+pub fn close_lig(state: &mut State, scene: &mut Scene, engine_updates: &mut EngineUpdates) {
+    state.ligand = None;
+    scene
+        .entities
+        .retain(|ent| ent.class != EntityType::Ligand as u32);
+
+    engine_updates.entities = true;
+
+    state.to_save.last_ligand_opened = None;
+    state.update_save_prefs();
 }

@@ -29,6 +29,7 @@ use crate::{
         prep::{DockType, Torsion, UnitCellDims, setup_flexibility},
     },
     element::Element,
+    file_io::map::MapHeader,
     reflection::{ElectronDensity, ReflectionsData},
     util::mol_center_size,
 };
@@ -64,6 +65,8 @@ pub struct Molecule {
     pub het_residues: Vec<Residue>,
     pub rcsb_data_avail: Option<DataAvailable>,
     pub reflections_data: Option<ReflectionsData>,
+    /// E.g. from a MAP file, or 2fo-fc header.
+    pub elec_density_header: Option<MapHeader>,
     /// From reflections
     pub elec_density: Option<Vec<ElectronDensity>>,
     pub aa_seq: Vec<AminoAcid>,
@@ -519,6 +522,33 @@ impl BondCount {
             3 => Self::Triple,
             _ => {
                 eprintln!("Error: Invalid count value: {}", count);
+                Self::Single
+            }
+        }
+    }
+
+    /// E.g. the Mol2 format.
+    pub fn from_str(val: &str) -> Self {
+        // 1 = single
+        // 2 = double
+        // 3 = triple
+        // am = amide
+        // ar = aromatic
+        // du = dummy
+        // un = unknown (cannot be determined from the parameter tables)
+        // nc = not connected
+        match val {
+            "1" => Self::Single,
+            "2" => Self::Double,
+            "3" => Self::Triple,
+            // todo: How should we handle these? New types in the enum?
+            "am" => Self::SingleDoubleHybrid,
+            "ar" => Self::Triple,
+            "du" => Self::Single,
+            "un" => Self::Single,
+            "nc" => Self::Single,
+            _ => {
+                eprintln!("Error: Invalid count value: {}", val);
                 Self::Single
             }
         }

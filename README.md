@@ -109,6 +109,7 @@ Daedalus supports a very limited subset of PyMol's CLI interface. Supported comm
 - `pwd`
 - `ls`
 - `cd`
+- `set seq_view`
 
 ### File IO
 - `fetch`: Loads a protein from the RCSB PDB. e.g. `fetch 1C8K`

@@ -18,7 +18,7 @@ use crate::reflection::ElectronDensity;
 const HEADER_SIZE: u64 = 1_024;
 
 /// Minimal subset of the 1024-byte CCP4/MRC header
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct MapHeader {
     pub nx: i32,      // grid points along X
     pub ny: i32,      // grid points along Y

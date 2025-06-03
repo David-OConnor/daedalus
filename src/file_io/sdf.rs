@@ -282,5 +282,5 @@ pub fn load_sdf(path: &Path) -> io::Result<Molecule> {
     let data_str: String = String::from_utf8(buffer)
         .map_err(|_| io::Error::new(ErrorKind::InvalidData, "Invalid UTF8"))?;
 
-    Molecule::from_mol2(&data_str)
+    Molecule::from_sdf(&data_str)
 }

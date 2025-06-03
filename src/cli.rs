@@ -31,9 +31,27 @@ fn new_invalid(msg: &str) -> io::Error {
 }
 
 // We use this for autocomplete.
-pub const CLI_CMDS: [&str; 19] = [
-    "help", "fetch", "save", "load", "show", "show_as", "view", "hide", "remove", "orient", "turn",
-    "move", "reset", "pwd", "ls", "cd", "select resn", "select resi", "select elem",
+pub const CLI_CMDS: [&str; 20] = [
+    "help",
+    "fetch",
+    "save",
+    "load",
+    "show",
+    "show_as",
+    "view",
+    "hide",
+    "remove",
+    "orient",
+    "turn",
+    "move",
+    "reset",
+    "pwd",
+    "ls",
+    "cd",
+    "select resn",
+    "select resi",
+    "select elem",
+    "set",
 ];
 
 /// Process a raw CLI command from the user. Return the CLI output from the entered command.
@@ -75,6 +93,8 @@ pub fn handle_cmd(
     let re_sel_resi = Regex::new(r"(?i)^(?:sele|select)\s+resi\s+([0-9]+)$").unwrap();
     let re_sel_resn = Regex::new(r"(?i)^(?:sele|select)\s+resn\s+([a-z]{3})$").unwrap();
     let re_sel_elem = Regex::new(r"(?i)^(?:sele|select)\s+elem\s+([a-z]{1,2})$").unwrap();
+
+    let re_set = Regex::new(r"(?i)^set\s+([a-z0-9\s\-_]+)(?:,\s*([a-z0-9]+))?$").unwrap();
 
     if let Some(_caps) = re_help.captures(&input) {
         // todo: Multiline, once you set that up.
@@ -360,10 +380,7 @@ pub fn handle_cmd(
                 }
             }
 
-            return Err(io::Error::new(
-                ErrorKind::InvalidData,
-                "Unable to find this residue",
-            ));
+            return Err(new_invalid("Unable to find this residue"));
         }
     }
 
@@ -381,6 +398,31 @@ pub fn handle_cmd(
             state.selection = Selection::Atoms(result);
             *redraw = true;
             return Ok("Complete".to_owned());
+        }
+    }
+
+    if let Some(caps) = re_set.captures(&input) {
+        let action = &caps[1].to_lowercase();
+
+        match action.as_ref() {
+            "seq_view" => {
+                state.ui.show_aa_seq = match caps.get(2) {
+                    Some(action_2) => {
+                        if action_2.as_str() == "off" {
+                            false
+                        } else {
+                            true
+                        }
+                    }
+                    None => true,
+                };
+                return Ok("Complete".to_owned());
+            }
+            "seq_view_format" => {
+                // todo: Support 3-letter seq.
+                return Ok("Complete".to_owned());
+            }
+            _ => return Err(new_invalid("Unable to find this residue")),
         }
     }
 
