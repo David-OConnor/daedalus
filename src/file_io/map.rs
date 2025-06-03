@@ -211,7 +211,7 @@ pub fn read_map_data(path: &Path) -> io::Result<(MapHeader, Vec<ElectronDensity>
 
     if hdr.mode != 2 {
         return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
+            ErrorKind::InvalidData,
             format!("Unsupported mode: {}", hdr.mode),
         ));
     }
@@ -396,9 +396,9 @@ pub fn density_from_rcsb_gemmi(ident: &str) -> io::Result<Vec<ElectronDensity>> 
 
     fs::write("temp_map.cif", map_2fo_fc)?;
 
-    let output_text = Command::new("gemmi")
+    let _status = Command::new("gemmi")
         .args(["sf2map", "temp_map.cif", "temp_map.map"])
-        .output()?;
+        .status()?;
 
     let (_hdr, map) = read_map_data(Path::new("temp_map.map"))?;
 

@@ -66,6 +66,7 @@ pub struct Molecule {
     pub reflections_data: Option<ReflectionsData>,
     /// From reflections
     pub elec_density: Option<Vec<ElectronDensity>>,
+    pub aa_seq: Vec<AminoAcid>,
 }
 
 impl Molecule {
@@ -95,6 +96,8 @@ impl Molecule {
             drugbank_id,
             ..Default::default()
         };
+
+        result.aa_seq = result.get_seq();
 
         // todo: Perhaps you still want to calculate dihedral angles if hydrogens are populated already.
         // todo; For now, you are skipping both. Example when this comes up: Ligands.
@@ -229,6 +232,21 @@ impl Molecule {
             }
         }
         false
+    }
+
+    /// Get the amino acid sequence from the currently opened molecule, if applicable.
+    fn get_seq(&self) -> Vec<AminoAcid> {
+        // todo: If not a polypeptide, should we return an error, or empty vec?
+        let mut result = Vec::new();
+
+        // todo This is fragile, I believe.
+        for res in &self.residues {
+            if let ResidueType::AminoAcid(aa) = res.res_type {
+                result.push(aa);
+            }
+        }
+
+        result
     }
 }
 

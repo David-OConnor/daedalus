@@ -7,7 +7,7 @@ use std::{
 };
 
 use lin_alg::f64::Vec3;
-
+use na_seq::AaIdent;
 use crate::{
     State, file_io,
     file_io::{
@@ -128,8 +128,14 @@ impl State {
                     self.update_docking_site(init_posit);
                 } else {
                     println!("Updated last opened: {:?}", path);
-                    self.molecule = Some(mol);
+
                     self.to_save.last_opened = Some(path.to_owned());
+
+                    self.volatile.aa_seq_text = String::with_capacity(mol.atoms.len());
+                    for aa in &mol.aa_seq {
+                        self.volatile.aa_seq_text.push_str(&aa.to_str(AaIdent::OneLetter));
+                    }
+                    self.molecule = Some(mol);
                 }
 
                 // Update from prefs based on the molecule-specific items.

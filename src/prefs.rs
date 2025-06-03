@@ -67,6 +67,7 @@ pub struct PerMolToSave {
     metadata: Option<MolMetaData>,
     docking_site: DockingSite,
     show_docking_tools: bool,
+    show_aa_seq: bool,
     rcsb_data_avail: Option<DataAvailable>,
 }
 
@@ -107,6 +108,7 @@ impl PerMolToSave {
             metadata,
             docking_site,
             show_docking_tools: state.ui.show_docking_tools,
+            show_aa_seq: state.ui.show_aa_seq,
             rcsb_data_avail,
         }
     }
@@ -151,6 +153,7 @@ impl State {
                 self.ui.chain_to_pick_res = data.chain_to_pick_res;
                 self.ui.visibility = data.visibility.clone();
                 self.ui.show_docking_tools = data.show_docking_tools;
+                self.ui.show_aa_seq = data.show_aa_seq;
 
                 if let Some(md) = &data.metadata {
                     mol.metadata = Some(PdbMetaData {

@@ -254,6 +254,8 @@ struct StateVolatile {
     /// Entered by the user, for this session.
     cli_input_history: Vec<String>,
     cli_input_selected: usize,
+    /// Pre-computed from the molecule
+    aa_seq_text: String,
 }
 
 impl Default for StateVolatile {
@@ -270,6 +272,7 @@ impl Default for StateVolatile {
             prefs_dir: env::current_dir().unwrap(),
             cli_input_history: Default::default(),
             cli_input_selected: Default::default(),
+            aa_seq_text: Default::default(),
         }
     }
 }
@@ -370,6 +373,7 @@ struct StateUi {
     cmd_line_output: String,
     /// Indicates CLI, or errors more broadly by changing its displayed color.
     cmd_line_out_is_err: bool,
+    show_aa_seq: bool,
 }
 
 #[derive(Clone, PartialEq, Debug, Default, Encode, Decode)]

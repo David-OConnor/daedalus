@@ -31,9 +31,9 @@ fn new_invalid(msg: &str) -> io::Error {
 }
 
 // We use this for autocomplete.
-pub const CLI_CMDS: [&str; 17] = [
+pub const CLI_CMDS: [&str; 19] = [
     "help", "fetch", "save", "load", "show", "show_as", "view", "hide", "remove", "orient", "turn",
-    "move", "reset", "pwd", "ls", "cd", "select",
+    "move", "reset", "pwd", "ls", "cd", "select resn", "select resi", "select elem",
 ];
 
 /// Process a raw CLI command from the user. Return the CLI output from the entered command.
@@ -56,7 +56,7 @@ pub fn handle_cmd(
     let re_save = Regex::new(r"(?i)^save\s+([a-z0-9./]+)$").unwrap();
     let re_load = Regex::new(r"(?i)^load\s+([a-z0-9./]+)$").unwrap();
     //
-    let re_show = Regex::new(r"(?i)^(?:show|show_as)\s+([a-z0-9./]+)$").unwrap();
+    let re_show = Regex::new(r"(?i)^(?:show|show_as)\s+([a-z0-9./\-_]+)$").unwrap();
     // todo: Shoudl this be get_view and set_view? Have seen both.
     let re_view = Regex::new(r"(?i)^view\s+([^,\s]+)(?:\s*,\s*(store|recall))?\s*$").unwrap();
     let re_hide = Regex::new(r"(?i)^hide\s+([a-z0-9\s]+)$").unwrap();
@@ -120,6 +120,7 @@ pub fn handle_cmd(
 
         state.ui.mol_view = mode.parse()?;
         *redraw = true;
+        return Ok("Complete".to_owned());
     }
 
     if let Some(caps) = re_view.captures(&input) {

@@ -400,6 +400,9 @@ pub fn event_win_handler(
         WindowEvent::Resized(_) => {
             state.ui.mouse_in_window = true;
         }
+        WindowEvent::Focused(val) => {
+            state.ui.mouse_in_window = val;
+        }
         _ => (),
     }
     EngineUpdates::default() // todo: A/R.

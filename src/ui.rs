@@ -10,7 +10,7 @@ use bio_apis::{drugbank, pubchem, rcsb};
 use egui::{Color32, ComboBox, Context, Key, RichText, Slider, TextEdit, TopBottomPanel, Ui};
 use graphics::{Camera, ControlScheme, EngineUpdates, Entity, RIGHT_VEC, Scene, UP_VEC};
 use lin_alg::f32::{Quaternion, Vec3};
-use na_seq::AaIdent;
+use na_seq::{AaIdent, AminoAcid};
 
 static INIT_COMPLETE: AtomicBool = AtomicBool::new(false);
 
@@ -945,7 +945,23 @@ fn residue_search(state: &mut State, scene: &mut Scene, redraw: &mut bool, ui: &
             if ui.button(RichText::new(dock_tools_text)).clicked() {
                 state.ui.show_docking_tools = !state.ui.show_docking_tools;
             }
+
+            let dock_seq_text = if state.ui.show_aa_seq {
+                "Hide seq"
+            } else {
+                "Show seq"
+            };
+
+            if ui.button(RichText::new(dock_seq_text)).clicked() {
+                state.ui.show_aa_seq = !state.ui.show_aa_seq;
+            }
         }
+    });
+}
+
+fn add_aa_seq(seq_text: &str, ui: &mut Ui) {
+    ui.horizontal_wrapped( |ui| {
+        ui.label(RichText::new(seq_text).color(Color32::LIGHT_BLUE));
     });
 }
 
@@ -1324,6 +1340,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     engine_updates.entities = true;
 
                     state.to_save.last_opened = None;
+                    state.volatile.aa_seq_text = String::new();
                     state.update_save_prefs();
                 }
                 ui.add_space(COL_SPACING);
@@ -1565,7 +1582,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 // if response.lost_focus() && (button_clicked || enter_pressed)
                 if (button_clicked || enter_pressed) && state.ui.db_input.trim().len() == 4 {
                     let ident = state.ui.db_input.clone().trim().to_owned();
-                    util::query_rcsb(
+                    query_rcsb(
                         &ident,
                         state,
                         scene,
@@ -1803,6 +1820,12 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         //         }
         //     }
         // }
+
+        if state.ui.show_aa_seq {
+            if state.molecule.is_some() {
+                add_aa_seq(&state.volatile.aa_seq_text, ui);
+            }
+        }
 
         // todo: Move A/r.
         draw_cli(

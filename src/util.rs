@@ -1,11 +1,15 @@
-use std::{collections::HashMap, f32::consts::TAU, io::Cursor, time::Instant};
+//! A collection of utility functions that don't neatly belong in other modules.
+//! For example, we may call some of these from the GUI, but they won't have any EGUI-specific
+//! logic in them.
 
-use graphics::{Camera, ControlScheme, EngineUpdates, FWD_VEC, RIGHT_VEC, Scene};
+use std::{collections::HashMap, io::Cursor, time::Instant};
+
+use graphics::{Camera, ControlScheme, EngineUpdates, FWD_VEC, Scene};
 use lin_alg::{
     f32::{Quaternion, Vec3 as Vec3F32},
     f64::Vec3,
 };
-use na_seq::AaIdent;
+use na_seq::{AaIdent, AminoAcid};
 
 use crate::{
     CamSnapshot, PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel,
@@ -465,7 +469,14 @@ pub fn query_rcsb(
         Ok((pdb, cif_data)) => {
             let cursor = Cursor::new(&cif_data);
             match Molecule::from_cif_pdb(&pdb, cursor) {
-                Ok(mol) => state.molecule = Some(mol),
+                Ok(mol) => {
+                    state.volatile.aa_seq_text = String::with_capacity(mol.atoms.len());
+                    for aa in &mol.aa_seq {
+                        state.volatile.aa_seq_text.push_str(&aa.to_str(AaIdent::OneLetter));
+                    }
+
+                    state.molecule = Some(mol)
+                },
                 Err(e) => eprintln!("Problem loading molecule from CIF: {e:?}"),
             }
 
