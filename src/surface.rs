@@ -278,7 +278,7 @@ pub fn mesh_from_sas_points(rings: &[Vec<Vec3>]) -> Mesh {
     // Each triplet in indices is one triangle
     for tri_idx in 0..(indices.len() / 3) {
         let base = tri_idx * 3;
-        let i0 = indices[base + 0];
+        let i0 = indices[base];
         let i1 = indices[base + 1];
         let i2 = indices[base + 2];
 

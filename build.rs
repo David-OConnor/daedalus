@@ -10,7 +10,7 @@ fn main() {
     #[cfg(feature = "cuda")]
     build(
         GpuArchitecture::Rtx4,
-        &vec!["src/cuda/cuda.cu", "src/cuda/util.cu"],
+        &["src/cuda/cuda.cu", "src/cuda/util.cu"],
     );
 
     if env::var_os("CARGO_CFG_WINDOWS").is_some() {

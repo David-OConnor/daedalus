@@ -200,15 +200,10 @@ fn atom_color(
                 color = match &res.res_type {
                     ResidueType::AminoAcid(aa) => {
                         if res_color_by_index {
-                            let mut c = aa_color(*aa);
-                            for (i_res, res) in residues.iter().enumerate() {
-                                if let Some(res_i) = atom.residue {
-                                    if res_i == i {
-                                        c = color_viridis(i_res, 0, residues.len());
-                                    }
-                                }
+                            match atom.residue {
+                                Some(res_i) => color_viridis(res_i, 0, residues.len()),
+                                None => aa_color(*aa),
                             }
-                            c
                         } else {
                             aa_color(*aa)
                         }

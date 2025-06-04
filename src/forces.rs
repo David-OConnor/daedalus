@@ -104,7 +104,7 @@ pub fn force_lj_gpu(
     let n_sources = posits_src.len();
     let n_targets = posits_tgt.len();
 
-    let posits_src_gpu = vec3s_to_dev(stream, &posits_src);
+    let posits_src_gpu = vec3s_to_dev(stream, posits_src);
     let posits_tgt_gpu = vec3s_to_dev(stream, posits_tgt);
 
     let mut result_buf = {
@@ -133,7 +133,7 @@ pub fn force_lj_gpu(
     unsafe { launch_args.launch(cfg) }.unwrap();
 
     // todo: Consider dtoh; passing to an existing vec instead of re-allocating
-    let result = vec3s_from_dev(stream, &mut result_buf);
+    let result = vec3s_from_dev(stream, &result_buf);
 
     // let time_diff = Instant::now() - start;
     // println!("GPU LJ force data collected. Time: {:?}", time_diff);

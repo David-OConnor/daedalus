@@ -11,7 +11,7 @@ pub fn load_cif_rcsb(ident: &str) -> Result<(PDB, String), ReqError> {
 
     let pdb = read_pdb(&cif_data).map_err(|e| {
         eprintln!("Error parsing mmCIF file: {e}");
-        ReqError {}
+        e
     });
 
     Ok((pdb?, cif_data))
@@ -21,12 +21,12 @@ pub fn load_cif_rcsb(ident: &str) -> Result<(PDB, String), ReqError> {
 pub fn load_sdf_drugbank(ident: &str) -> Result<Molecule, ReqError> {
     let sdf_data = drugbank::load_sdf(ident)?;
 
-    Molecule::from_mol2(&sdf_data).map_err(|e| ReqError {})
+    Molecule::from_mol2(&sdf_data).map_err(|e| ReqError::Http)
 }
 
 /// Download an SDF file from DrugBank, and parse as a molecule.
 pub fn load_sdf_pubchem(ident: &str) -> Result<Molecule, ReqError> {
     let sdf_data = pubchem::load_sdf(ident)?;
 
-    Molecule::from_mol2(&sdf_data).map_err(|_e| ReqError {})
+    Molecule::from_mol2(&sdf_data).map_err(|_e| ReqError::Http)
 }

@@ -10,7 +10,7 @@ use std::{
 
 use bio_apis::{
     ReqError, rcsb,
-    rcsb::{DataAvailable, PdbMetaData},
+    rcsb::{FilesAvailable, PdbDataResults, PdbMetaData},
 };
 use lin_alg::{
     f32::Vec3 as Vec3F32,
@@ -63,7 +63,9 @@ pub struct Molecule {
     /// We currently use this for aligning ligands to CIF etc data, where they may already be included
     /// in a protein/ligand complex as hetero atoms.
     pub het_residues: Vec<Residue>,
-    pub rcsb_data_avail: Option<DataAvailable>,
+    /// The full (Or partial while WIP) results from the RCSB data api.
+    pub rcsb_data: Option<PdbDataResults>,
+    pub rcsb_files_avail: Option<FilesAvailable>,
     pub reflections_data: Option<ReflectionsData>,
     /// E.g. from a MAP file, or 2fo-fc header.
     pub elec_density_header: Option<MapHeader>,
@@ -181,53 +183,82 @@ impl Molecule {
         }
     }
 
-    /// Load which (beyond coordinates) data items are available from the PDB. We do this
+    /// Load RCSB data, and the list of (non-coordinate) files available from the PDB. We do this
     /// in a new thread, to prevent blocking the UI, or delaying a molecule's loading.
-    pub fn update_data_avail(
+    pub fn updates_rcsb_data(
         &mut self,
-        pending_data_avail: &mut Option<Receiver<Result<DataAvailable, ReqError>>>,
+        pending_data: &mut Option<
+            Receiver<(
+                Result<PdbDataResults, ReqError>,
+                Result<FilesAvailable, ReqError>,
+            )>,
+        >,
     ) {
-        if self.rcsb_data_avail.is_some() || pending_data_avail.is_some() {
+        if (self.rcsb_files_avail.is_some() && self.rcsb_data.is_some()) || pending_data.is_some() {
             return;
         }
 
-        println!("Spawning tread to fetch data-avail for {}", self.ident);
+        println!("Spawning tread to fetch RCSB data for {}", self.ident);
 
         let ident = self.ident.clone(); // data the worker needs
         let (tx, rx) = mpsc::channel(); // one-shot channel
 
         thread::spawn(move || {
-            let res = rcsb::get_data_avail(&ident);
-            println!("Getting data avail...");
+            let data = rcsb::get_all_data(&ident);
+            let files_data = rcsb::get_files_avail(&ident);
+            println!("Getting RCSB data...");
             // it’s fine if the send fails (e.g. the app closed)
-            let _ = tx.send(res);
+            let _ = tx.send((data, files_data));
         });
 
-        *pending_data_avail = Some(rx);
+        *pending_data = Some(rx);
     }
 
     /// Call this periodically from the UI/event loop; it’s non-blocking.
     /// Returns if it updated, e.g. so we can update prefs.
     pub fn poll_data_avail(
         &mut self,
-        pending_data_avail: &mut Option<Receiver<Result<DataAvailable, ReqError>>>,
+        pending_data_avail: &mut Option<
+            Receiver<(
+                Result<PdbDataResults, ReqError>,
+                Result<FilesAvailable, ReqError>,
+            )>,
+        >,
     ) -> bool {
         if let Some(rx) = pending_data_avail {
             // `try_recv` returns immediately
             match rx.try_recv() {
-                Ok(Ok(d)) => {
-                    println!("Data-avail ready for {}: {:?}", self.ident, d);
-                    self.rcsb_data_avail = Some(d);
-                    *pending_data_avail = None; // finished
+                // both fetches succeeded:
+                Ok((Ok(pdb_data), Ok(files_avail))) => {
+                    println!("Data‐avail ready for {}: {:?}, {:?}", self.ident, pdb_data, files_avail);
+
+                    self.rcsb_data = Some(pdb_data);
+                    self.rcsb_files_avail = Some(files_avail);
+
+                    println!("Data loaded: {:?}", self.rcsb_data.as_ref().unwrap());
+
+                    *pending_data_avail = None;
                     return true;
                 }
-                Ok(Err(e)) => {
-                    eprintln!("Failed to fetch data-avail for {}: {e:?}", self.ident);
+
+                // PdbDataResults failed, but FilesAvailable might not have been sent:
+                Ok((Err(e), _)) => {
+                    eprintln!("Failed to fetch PDB data for {}: {e:?}", self.ident);
                     *pending_data_avail = None;
                 }
-                Err(mpsc::TryRecvError::Empty) => {
-                    // Still working – do nothing this frame
+
+                // FilesAvailable failed (even if PdbDataResults succeeded):
+                Ok((_, Err(e))) => {
+                    eprintln!("Failed to fetch file‐list for {}: {e:?}", self.ident);
+                    *pending_data_avail = None;
                 }
+
+                // the worker hasn’t sent anything yet:
+                Err(mpsc::TryRecvError::Empty) => {
+                    // still pending; do nothing this frame
+                }
+
+                // the sender hung up before sending:
                 Err(mpsc::TryRecvError::Disconnected) => {
                     eprintln!("Worker thread died before sending result");
                     *pending_data_avail = None;
@@ -478,6 +509,7 @@ impl Ligand {
     }
 }
 
+#[allow(unused)]
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum BondType {
     // C+P from pdbtbx for now
@@ -515,7 +547,7 @@ impl BondCount {
         }
     }
 
-    pub fn from_count(count: u8) -> Self {
+    pub fn _from_count(count: u8) -> Self {
         match count {
             1 => Self::Single,
             2 => Self::Double,

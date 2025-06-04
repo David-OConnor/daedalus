@@ -49,6 +49,7 @@ impl MapStatus {
     }
 }
 
+#[allow(unused)]
 /// Reflection data for a single Miller index set. Pieced together from 3 formats of CIF
 /// file (Structure factors, map 2fo-fc, and map fo-fc), or an MTZ.
 #[derive(Clone, Default, Debug)]
@@ -332,7 +333,7 @@ fn frac_to_cart3(
 /// Electron density maps are ususally provided in terms of a cell which may not directly
 /// encompass the entire protein. We copy electron density from the opposite side until
 /// the protein is enclosed. We also remove parts of the density not near the protein.
-pub fn handle_map_symmetry(map: &mut Vec<ElectronDensity>, hdr: &MapHeader, atoms: &[Atom]) {}
+pub fn handle_map_symmetry(map: &mut [ElectronDensity], hdr: &MapHeader, atoms: &[Atom]) {}
 
 // /// Intermediate struct required by the IsoSurface lib.
 // struct Source {

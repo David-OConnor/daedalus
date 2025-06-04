@@ -456,14 +456,14 @@ fn make_posits_orientations(
     for i_lat in 0..n_lats {
         let frac = (i_lat as f32 + 0.5) / n_lats as f32;
         let mu = -1.0 + 2.0 * frac;
-        let ϕ = mu.acos();
+        let φ = mu.acos();
 
         for i_lon in 0..n_lons {
             let θ = (i_lon as f32 + 0.5) * TAU / (n_lons as f32);
 
             // Convert spherical to Cartesian
-            let x = ϕ.sin() * θ.cos();
-            let y = ϕ.sin() * θ.sin();
+            let x = φ.sin() * θ.cos();
+            let y = φ.sin() * θ.sin();
             let z = mu;
 
             let lat_lon_vec = Vec3F32::new(x, y, z).to_normalized();
@@ -533,8 +533,8 @@ pub(crate) fn init_poses(
 
 /// Contains code that is specific to a set of poses. This includes low-cost filters that reduce
 /// the downstream number of poses to match.
-fn process_poses<'a>(
-    poses: &'a [Pose],
+fn process_poses(
+    poses: &[Pose],
     setup: &DockingSetup,
     ligand: &Ligand,
 ) -> Vec<(usize, BindingEnergy)> {

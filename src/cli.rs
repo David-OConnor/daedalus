@@ -150,7 +150,7 @@ pub fn handle_cmd(
         match caps.get(2) {
             Some(action) => {
                 if action.as_str().eq_ignore_ascii_case("store") {
-                    util::save_snap(state, &scene.camera, &name);
+                    util::save_snap(state, &scene.camera, name);
                 } else {
                     recall = true;
                 }
@@ -319,7 +319,7 @@ pub fn handle_cmd(
         return Ok("Complete".to_owned());
     }
 
-    if let Some(_) = re_reset.captures(&input) {
+    if re_reset.captures(&input).is_some() {
         if let Some(mol) = &state.molecule {
             reset_camera(scene, &mut state.ui.view_depth, engine_updates, mol);
             engine_updates.camera = true;
@@ -327,11 +327,11 @@ pub fn handle_cmd(
         return Ok("Complete".to_owned());
     }
 
-    if let Some(_) = re_pwd.captures(&input) {
+    if re_pwd.captures(&input).is_some() {
         return Ok(format!("{}", env::current_dir()?.display()));
     }
 
-    if let Some(_) = re_ls.captures(&input) {
+    if re_ls.captures(&input).is_some() {
         let names = get_files_curdir()?;
         return Ok(names.join("   "));
     }
@@ -449,7 +449,7 @@ pub fn autocomplete_cli(input: &mut String) {
             // todo: Make it so it auto-positiosn the cursor at the end.
             // edit_resp.surrender_focus();
             // edit_resp.request_focus();
-        } else if trimmed.starts_with(&cmd) {
+        } else if trimmed.starts_with(cmd) {
             // Complete the action.
 
             match cmd {

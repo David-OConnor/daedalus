@@ -277,7 +277,7 @@ impl ReflectionsData {
         let header_data = &buf[header_addr..];
 
         // read_main_headers(&buf[80..], None);
-        read_main_headers(&header_data, None)?;
+        read_main_headers(header_data, None)?;
 
         println!("HEader data: {:x?}", &header_data[..100]);
 

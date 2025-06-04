@@ -4,6 +4,7 @@
 // )]
 
 #![allow(clippy::too_many_arguments)]
+#![allow(clippy::needless_range_loop)]
 
 // Note: To test if it compiles on ARM:
 // `rustup target add aarch64-pc-windows-msvc`
@@ -57,7 +58,8 @@ use std::{
 
 use barnes_hut::BhConfig;
 use bincode::{Decode, Encode};
-use bio_apis::{ReqError, rcsb::DataAvailable};
+use bio_apis::{ReqError, rcsb};
+use bio_apis::rcsb::{FilesAvailable, PdbDataResults};
 // #[cfg(feature = "cuda")]
 // use cuda_setup::ComputationDevice;
 #[cfg(feature = "cuda")]
@@ -247,7 +249,12 @@ struct StateVolatile {
     snapshots: Vec<Snapshot>,
     docking_setup: Option<DockingSetup>,
     /// e.g. waiting for the data avail thread to return
-    mol_pending_data_avail: Option<Receiver<Result<DataAvailable, ReqError>>>,
+    mol_pending_data_avail: Option<
+        Receiver<(
+            Result<PdbDataResults, ReqError>,
+            Result<FilesAvailable, ReqError>,
+        )>,
+    >,
     // Pending flag
     draw_density: bool,
     /// We may change CWD during CLI navigation; keep prefs directory constant.
@@ -321,7 +328,7 @@ enum MsaaSetting {
 }
 
 impl MsaaSetting {
-    pub fn to_str(&self) -> String {
+    pub fn to_str(self) -> String {
         match self {
             Self::None => "None",
             // Self::Two => "2×",
@@ -526,15 +533,21 @@ fn main() {
     // Sets up write-once static muts.
     init_local_bond_vecs();
 
-    let mut state = State::default();
-
-    state.dev = dev;
-    state.bh_config.θ = THETA_BH;
-
     // todo: Consider a custom default impl. This is a substitute.
-    state.ui.view_depth = (VIEW_DEPTH_NEAR_MIN, VIEW_DEPTH_FAR_MAX);
-    state.ui.new_mol_loaded = true;
-    state.ui.nearby_dist_thresh = 15;
+    let mut state = State {
+        dev,
+        bh_config: BhConfig {
+            θ: THETA_BH,
+            ..Default::default()
+        },
+        ui: StateUi {
+            view_depth: (VIEW_DEPTH_NEAR_MIN, VIEW_DEPTH_FAR_MAX),
+            new_mol_loaded: true,
+            nearby_dist_thresh: 15,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
 
     state.load_prefs();
 

@@ -50,6 +50,8 @@ from the [RCSB PDB](https://www.rcsb.org/).
 ## File formats
 - Proteins: mmCIF and PDB
 - Small molecules: SDF, Mol2, and PDBQT
+- Electron density: `2fo-fc` CIF, and Map.
+
 
 ![Docking A](screenshots/docking_a.png)
 
@@ -99,6 +101,12 @@ If *orbit sel* is set in the GUI, the orbit center will be the selected atom or 
 - **Esc**: Clear selection
 - **Left arrow**: select previous residue
 - **Right arrow**: select next residue
+
+
+## WIP Reflections and electron density
+Supports volumetric, and isosurface views for electron density data, e.g. from Cryo-EM. Can download
+this data from RCSB PDB. Currently, requires Gemmi available on the Path, to convert from 2fo-fc CIF
+to Map. Can import Map directly.
 
 
 ## PyMol-like Command line interface

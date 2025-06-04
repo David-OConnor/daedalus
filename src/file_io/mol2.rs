@@ -27,7 +27,7 @@ enum MolType {
 }
 
 impl MolType {
-    pub fn to_str(&self) -> String {
+    pub fn to_str(self) -> String {
         match self {
             Self::Small => "SMALL",
             Self::Bipolymer => "BIPOLYMER",
@@ -56,7 +56,7 @@ enum ChargeType {
 }
 
 impl ChargeType {
-    pub fn to_str(&self) -> String {
+    pub fn to_str(self) -> String {
         match self {
             Self::None => "NO_CHARGES",
             Self::DelRe => "DEL_RE",

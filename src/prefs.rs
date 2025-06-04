@@ -3,7 +3,7 @@
 use std::{collections::HashMap, path::PathBuf};
 
 use bincode::{Decode, Encode};
-use bio_apis::rcsb::{DataAvailable, PdbMetaData, load_metadata};
+use bio_apis::rcsb::{FilesAvailable, PdbMetaData, load_metadata, PdbDataResults};
 use graphics::{
     ControlScheme,
     app_utils::{load, save},
@@ -69,14 +69,16 @@ pub struct PerMolToSave {
     show_docking_tools: bool,
     res_color_by_index: bool,
     show_aa_seq: bool,
-    rcsb_data_avail: Option<DataAvailable>,
+    rcsb_data: Option<PdbDataResults>,
+    rcsb_files_avail: Option<FilesAvailable>,
 }
 
 impl PerMolToSave {
     pub fn from_state(state: &State) -> Self {
         let mut chain_vis = Vec::new();
         let mut metadata = None;
-        let mut rcsb_data_avail = None;
+        let mut rcsb_data = None;
+        let mut rcsb_files_avail = None;
 
         if let Some(mol) = &state.molecule {
             chain_vis = mol.chains.iter().map(|c| c.visible).collect();
@@ -87,7 +89,8 @@ impl PerMolToSave {
                 });
             }
 
-            rcsb_data_avail = mol.rcsb_data_avail.clone();
+            rcsb_data = mol.rcsb_data.clone();
+            rcsb_files_avail = mol.rcsb_files_avail.clone();
         }
 
         let mut docking_site = Default::default();
@@ -111,7 +114,8 @@ impl PerMolToSave {
             show_docking_tools: state.ui.show_docking_tools,
             res_color_by_index: state.ui.res_color_by_index,
             show_aa_seq: state.ui.show_aa_seq,
-            rcsb_data_avail,
+            rcsb_data,
+            rcsb_files_avail,
         }
     }
 }
@@ -170,7 +174,8 @@ impl State {
 
                 center = data.docking_site.site_center;
 
-                mol.rcsb_data_avail = data.rcsb_data_avail.clone();
+                mol.rcsb_data = data.rcsb_data.clone();
+                mol.rcsb_files_avail = data.rcsb_files_avail.clone();
             }
 
             // If loaded from file or not.

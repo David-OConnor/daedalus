@@ -529,7 +529,7 @@ pub fn build_vdw_dynamics(
 
                 let f_lj_per_tgt = force_lj_gpu(
                     &stream,
-                    &module,
+                    module,
                     &lig_posits_f32,
                     &posits_rec,
                     &setup.lj_sigma,

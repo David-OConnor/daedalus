@@ -467,7 +467,7 @@ pub fn query_rcsb(
     redraw: &mut bool,
     reset_cam: &mut bool,
 ) {
-    match load_cif_rcsb(&ident) {
+    match load_cif_rcsb(ident) {
         // tood: For organization purposes, move thi scode out of the UI.
         Ok((pdb, cif_data)) => {
             let cursor = Cursor::new(&cif_data);
@@ -501,7 +501,7 @@ pub fn query_rcsb(
                 .molecule
                 .as_mut()
                 .unwrap()
-                .update_data_avail(&mut state.volatile.mol_pending_data_avail);
+                .updates_rcsb_data(&mut state.volatile.mol_pending_data_avail);
         }
         Err(_e) => {
             eprintln!("Error loading CIF file");

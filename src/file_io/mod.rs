@@ -36,7 +36,7 @@ impl State {
         {
             "sdf" | "mol2" | "pdbqt" | "pdb" | "cif" => self.open_molecule(path)?,
             "map" => {
-                let (hdr, mut dens) = map::read_map_data(&path)?;
+                let (hdr, mut dens) = map::read_map_data(path)?;
 
                 // println!("Map header: {:#?}", hdr);
 
@@ -141,7 +141,7 @@ impl State {
 
                 if let Some(mol) = &mut self.molecule {
                     // Only after updating from prefs (to prevent unecesasary loading) do we update data avail.
-                    mol.update_data_avail(&mut self.volatile.mol_pending_data_avail);
+                    mol.updates_rcsb_data(&mut self.volatile.mol_pending_data_avail);
                 }
 
                 // Now, save prefs: This is to save last opened.

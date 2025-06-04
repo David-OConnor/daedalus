@@ -383,7 +383,7 @@ fn selected_data(mol: &Molecule, selection: &Selection, ui: &mut Ui) {
             // Split so we can color-code by element.
             let text_a = format!("{}  {}  El:", posit_txt, atom.serial_number);
 
-            let text_b = format!("{}", atom.element.to_letter());
+            let text_b = atom.element.to_letter();
 
             let mut text_c = format!("{aa}  {role}",);
 
@@ -557,7 +557,7 @@ fn draw_cli(
         } else {
             COLOR_OUT_NORMAL
         };
-        ui.label(RichText::new(format!("{}", state.ui.cmd_line_output)).color(color));
+        ui.label(RichText::new(&state.ui.cmd_line_output).color(color));
     });
 
     ui.horizontal(|ui| {
@@ -866,7 +866,7 @@ fn docking(
                 state.volatile.snapshots = build_vdw_dynamics(
                     &state.dev,
                     lig,
-                    &state.volatile.docking_setup.as_ref().unwrap(),
+                    state.volatile.docking_setup.as_ref().unwrap(),
                     false,
                     1_500,
                 );
@@ -1416,7 +1416,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 }
 
                 // todo: Move these A/R. LIkely in a sub menu.
-                if let Some(data) = &mol.rcsb_data_avail {
+                if let Some(data) = &mol.rcsb_files_avail {
                     if data.structure_factors {
                         if ui
                             .button(RichText::new("SF").color(COLOR_HIGHLIGHT))
@@ -1455,6 +1455,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                                 }
                             }
                         }
+                        // todo: Map download directly from RCSB if avail?
 
                         if ui
                             .button(RichText::new("Load map").color(COLOR_HIGHLIGHT))
@@ -1910,6 +1911,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             state.volatile.ui_height = ctx.used_size().y;
         }
 
+        // todo: Move to new_mol_loaded code block?
         if let Some(mol) = &state.molecule {
             if let Some(lig) = &state.ligand {
                 if lig.anchor_atom >= lig.molecule.atoms.len() {
@@ -1932,6 +1934,10 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
     if state.ui.new_mol_loaded {
         state.ui.new_mol_loaded = false;
 
+        if let Some(mol) = &state.molecule {
+            reset_camera(scene, &mut state.ui.view_depth, &mut engine_updates, mol);
+        }
+
         set_flashlight(scene);
         engine_updates.lighting = true;
     }
@@ -1944,8 +1950,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 }
 
                 let mc = MarchingCubes::from_density(
-                    &mol.elec_density_header.as_ref().unwrap(),
-                    &mol.elec_density.as_ref().unwrap(),
+                    mol.elec_density_header.as_ref().unwrap(),
+                    mol.elec_density.as_ref().unwrap(),
                 );
 
                 let mesh = mc.generate();
@@ -1963,8 +1969,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         state.volatile.draw_density = false;
     }
 
-    if let Some(mol) = &mut state.molecule {
-        if state.volatile.mol_pending_data_avail.is_some() {
+    if state.volatile.mol_pending_data_avail.is_some() {
+        if let Some(mol) = &mut state.molecule {
             if mol.poll_data_avail(&mut state.volatile.mol_pending_data_avail) {
                 state.update_save_prefs();
             }

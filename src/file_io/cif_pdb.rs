@@ -70,7 +70,6 @@ impl Molecule {
             // println!("Remark: {remark:?}");
         }
 
-        println!("Loading atoms...");
         let atoms_pdb: Vec<&pdbtbx::Atom> = pdb.par_atoms().collect();
 
         // println!("Gather residues...");
@@ -82,8 +81,6 @@ impl Molecule {
             .collect();
 
         residues.sort_by_key(|r| r.serial_number);
-
-        println!("Setting up chains...");
 
         let mut chains = Vec::with_capacity(pdb.chain_count());
         for chain_pdb in pdb.chains() {
