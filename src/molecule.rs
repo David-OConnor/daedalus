@@ -644,7 +644,12 @@ pub struct Atom {
     pub element: Element,
     pub name: String,
     pub role: Option<AtomRole>,
-    pub residue_type: ResidueType, // todo: Duplicate with the residue association.
+    // todo: We should have a residue *pointer* etc to speed up computations;
+    // todo: We shouldn't have to iterate through residues checking for atom membership.
+    /// We include this reference to the residue for speed; iterating through residues to check for
+    /// atom membership is slow.
+    pub residue: Option<usize>,
+    // pub residue_type: ResidueType, // todo: Duplicate with the residue association.
     pub hetero: bool,
     /// For docking.
     /// // todo: Consider a substruct for docking fields.

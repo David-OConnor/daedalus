@@ -12,7 +12,7 @@ egui-file-dialog = "0.10.0" #  For file dialogs.
 cfg-if = "1.0.0"
 
 lin_alg = { version = "1.1.10", features = ["encode"] }
-# todo: Use https://github.com/bempp/kifmm when ready. Adapt for Windows.
+# todo: Use https://github.com/bempp/kifmm when ready? Adapt for Windows.
 barnes_hut = { version = "1.0.8"}  # enc temp rem
 # todo: Qhull is temp until we find a way to generate non-convex meshes.
 # todo: Relies on C FFI. This may complicate compiling.

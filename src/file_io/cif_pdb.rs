@@ -10,31 +10,36 @@ use pdbtbx::{Format, PDB, ReadOptions, StrictnessLevel};
 use rayon::prelude::*;
 
 use crate::{
-    bond_inference::{create_bonds, create_hydrogen_bonds},
     docking::prep::DockType,
     element::Element,
     file_io::cif_secondary_structure::load_secondary_structure,
     molecule::{Atom, AtomRole, Chain, Molecule, Residue, ResidueType},
-    util::mol_center_size,
 };
 
 impl Atom {
     pub fn from_cif_pdb(
         atom_pdb: &pdbtbx::Atom,
         atom_i: usize,
-        aa_map: &HashMap<usize, ResidueType>,
+        // aa_map: &HashMap<usize, ResidueType>,
+        aa_map: &HashMap<usize, usize>, // atom_i: res_i
+        residues: &[Residue],
     ) -> Self {
-        let mut residue_type = ResidueType::Other("".to_owned());
+        // let mut residue_type = ResidueType::Other("".to_owned());
+        let mut residue = None;
         let mut role = None;
 
-        if let Some(res_type) = aa_map.get(&atom_i) {
-            role = match res_type {
+        if let Some(res_i) = aa_map.get(&atom_i) {
+            let res = &residues[*res_i];
+            residue = Some(*res_i);
+
+            // if let Some(res_type) = aa_map.get(&atom_i) {
+            role = match res.res_type {
                 ResidueType::AminoAcid(_aa) => Some(AtomRole::from_name(atom_pdb.name())),
                 ResidueType::Water => Some(AtomRole::Water),
                 _ => None,
             };
 
-            residue_type = res_type.clone();
+            // residue_type = res_type.clone();
         }
 
         Self {
@@ -43,7 +48,8 @@ impl Atom {
             element: Element::from_pdb(atom_pdb.element()),
             name: atom_pdb.name().to_owned(),
             role,
-            residue_type,
+            residue,
+            // residue_type,
             hetero: atom_pdb.hetero(),
             occupancy: None,
             temperature_factor: None,
@@ -67,8 +73,8 @@ impl Molecule {
         println!("Loading atoms...");
         let atoms_pdb: Vec<&pdbtbx::Atom> = pdb.par_atoms().collect();
 
-        println!("Gather residues...");
-        let res_pdb: Vec<&pdbtbx::Residue> = pdb.par_residues().collect();
+        // println!("Gather residues...");
+        // let res_pdb: Vec<&pdbtbx::Residue> = pdb.par_residues().collect();
 
         let mut residues: Vec<Residue> = pdb
             .par_residues()
@@ -113,9 +119,6 @@ impl Molecule {
                             atom_sns_res.push(atoms_pdb[*atom_i].serial_number());
                         }
 
-                        // println!("Atoms 1: {:?}", atom_sns_chain);
-                        // println!("Atoms 2: {:?}\n", atom_sns_res);
-
                         if atom_sns_chain == atom_sns_res {
                             chain.residues.push(i);
                         }
@@ -131,18 +134,15 @@ impl Molecule {
                 // }
             }
 
-            // println!("Chain: {}, {:?}", chain.id, chain.residues);
-
             chains.push(chain);
         }
 
-        println!("Atoms final...");
-
-        // This pre-computation of the AA map is more efficient;
+        // This pre-computation of the AA map is more efficient. { atom_i: res_i}
         let mut aa_map = HashMap::new();
-        for res in &residues {
+        for (res_i, res) in residues.iter().enumerate() {
             for atom_i in &res.atoms {
-                aa_map.insert(*atom_i, res.res_type.clone());
+                // aa_map.insert(*atom_i, res.res_type.clone());
+                aa_map.insert(*atom_i, res_i);
             }
         }
 
@@ -150,10 +150,12 @@ impl Molecule {
         let atoms: Vec<Atom> = atoms_pdb
             .into_iter()
             .enumerate()
-            .map(|(i, atom)| Atom::from_cif_pdb(atom, i, &aa_map))
+            .map(|(i, atom)| Atom::from_cif_pdb(atom, i, &aa_map, &residues))
             .collect();
 
         // todo: We use our own bond inference, since most PDBs seem to lack bond information.
+
+        // todo: Check modern ones?
         // let mut bonds = Vec::new();
         // for (a0, a1, bond) in pdb.bonds() {
         //     bonds.push((Atom::from_pdb(a0), Atom::from_pdb(a1), bond));

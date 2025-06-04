@@ -182,7 +182,7 @@ impl State {
             }
             "sdf" => match &self.ligand {
                 Some(lig) => {
-                    lig.molecule.save_sdf(path);
+                    lig.molecule.save_sdf(path)?;
                     self.to_save.last_ligand_opened = Some(path.to_owned());
                     self.update_save_prefs()
                 }

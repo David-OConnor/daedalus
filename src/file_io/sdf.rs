@@ -117,7 +117,8 @@ impl Molecule {
                 element: Element::from_letter(element)?,
                 name: String::new(),
                 role: None,
-                residue_type: ResidueType::Other(String::new()), // Not available in SDF.
+                residue: None,
+                // residue_type: ResidueType::Other(String::new()), // Not available in SDF.
                 hetero: false,
                 occupancy: None,
                 temperature_factor: None,

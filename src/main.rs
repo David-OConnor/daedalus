@@ -537,7 +537,6 @@ fn main() {
     state.ui.nearby_dist_thresh = 15;
 
     state.load_prefs();
-    println!("Last opened: {:?}", state.to_save.last_opened);
 
     let last_opened = state.to_save.last_opened.clone();
     if let Some(path) = &last_opened {

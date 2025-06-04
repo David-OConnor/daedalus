@@ -171,7 +171,8 @@ impl Molecule {
                     element,
                     name: name.to_owned(),
                     role,
-                    residue_type,
+                    residue: None,
+                    // residue_type,
                     hetero,
                     occupancy,
                     temperature_factor,
@@ -280,18 +281,21 @@ impl Molecule {
             let residue_name = if ligand.is_some() {
                 "UNL".to_owned()
             } else {
-                match self.residues.iter().find(|r| r.atoms.contains(&i)) {
-                    Some(r) => match &r.res_type {
+                let mut text = "---".to_owned();
+                if let Some(res_i) = atom.residue {
+                    let res = &self.residues[res_i];
+
+                    text = match &res.res_type {
                         ResidueType::AminoAcid(aa) => {
-                            res_num = r.serial_number;
+                            res_num = res.serial_number;
                             aa.to_str(AaIdent::ThreeLetters).to_uppercase()
                         }
                         // todo: Limit to 3 chars?
                         ResidueType::Other(name) => name.clone(),
                         ResidueType::Water => "HOH".to_owned(),
-                    },
-                    None => "---".to_owned(),
+                    };
                 }
+                text
             };
 
             let chain_id = match self.chains.iter().find(|c| c.atoms.contains(&i)) {

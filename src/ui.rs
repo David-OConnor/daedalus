@@ -360,10 +360,14 @@ fn selected_data(mol: &Molecule, selection: &Selection, ui: &mut Ui) {
 
             let atom = &mol.atoms[*sel_i];
 
-            let aa = match atom.residue_type {
-                ResidueType::AminoAcid(a) => format!("AA: {}", a.to_str(AaIdent::OneLetter)),
-                _ => String::new(),
-            };
+            let mut aa = String::new();
+            if let Some(res_i) = atom.residue {
+                let res = &mol.residues[res_i];
+                aa = match res.res_type {
+                    ResidueType::AminoAcid(a) => format!("AA: {}", a.to_str(AaIdent::OneLetter)),
+                    _ => String::new(),
+                };
+            }
 
             let role = match atom.role {
                 Some(r) => format!("Role: {r}"),
@@ -383,10 +387,9 @@ fn selected_data(mol: &Molecule, selection: &Selection, ui: &mut Ui) {
 
             let mut text_c = format!("{aa}  {role}",);
 
-            // todo: Helper fn for this, and find otehr places in the code where we need it.
-            let res = &mol.residues.iter().find(|r| r.atoms.contains(&sel_i));
-            if let Some(r) = res {
-                text_c += &format!("  {}", r.descrip());
+            if let Some(res_i) = atom.residue {
+                let res = &mol.residues[res_i];
+                text_c += &format!("  {}", res.descrip());
             }
 
             ui.label(RichText::new(text_a).color(Color32::GOLD));

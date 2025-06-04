@@ -193,30 +193,30 @@ fn atom_color(
     let mut result = match view_sel_level {
         ViewSelLevel::Atom => atom.element.color(),
         ViewSelLevel::Residue => {
-            match atom.residue_type {
-                ResidueType::AminoAcid(aa) => {
-                    if res_color_by_index {
-                        let mut c = aa_color(aa);
-                        for (i_res, res) in residues.iter().enumerate() {
-                            if res.atoms.contains(&i) {
-                                c = color_viridis(i_res, 0, residues.len());
+            let mut color = COLOR_AA_NON_RESIDUE;
+
+            if let Some(res_i) = &atom.residue {
+                let res = &residues[*res_i];
+                color = match &res.res_type {
+                    ResidueType::AminoAcid(aa) => {
+                        if res_color_by_index {
+                            let mut c = aa_color(*aa);
+                            for (i_res, res) in residues.iter().enumerate() {
+                                if let Some(res_i) = atom.residue {
+                                    if res_i == i {
+                                        c = color_viridis(i_res, 0, residues.len());
+                                    }
+                                }
                             }
+                            c
+                        } else {
+                            aa_color(*aa)
                         }
-                        c
-                    } else {
-                        aa_color(aa)
                     }
+                    _ => COLOR_AA_NON_RESIDUE,
                 }
-                _ => COLOR_AA_NON_RESIDUE,
             }
-            // Below is currently equivalent:
-            // for res in &mol.residues {
-            //     if res.atoms.contains(&i) {
-            //         if let ResidueType::AminoAcid(aa) = res.res_type {
-            //             c = aa_color(aa);
-            //         }
-            //     }
-            // }
+            color
         }
     };
 
@@ -228,8 +228,10 @@ fn atom_color(
             }
         }
         Selection::Residue(sel_i) => {
-            if residues[*sel_i].atoms.contains(&i) {
-                result = COLOR_SELECTED;
+            if let Some(res_i) = atom.residue {
+                if res_i == *sel_i {
+                    result = COLOR_SELECTED;
+                }
             }
         }
         Selection::Atoms(sel_is) => {

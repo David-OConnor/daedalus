@@ -1,8 +1,8 @@
 //! Handles user inputs, e.g. from keyboard and mouse.
 
 use graphics::{
-    ControlScheme, DeviceEvent, ElementState, EngineUpdates, FWD_VEC, RIGHT_VEC, Scene, UP_VEC,
-    WindowEvent,
+    ControlScheme, DeviceEvent, ElementState, EngineUpdates, Entity, FWD_VEC, RIGHT_VEC, Scene,
+    UP_VEC, WindowEvent,
     winit::keyboard::{KeyCode, PhysicalKey::Code},
 };
 use lin_alg::{
@@ -14,8 +14,7 @@ use lin_alg::{
 use crate::{
     Selection, State, mol_drawing,
     mol_drawing::MoleculeView,
-    render::set_flashlight,
-    util,
+    render::{BODY_SHINYNESS, MESH_BOND, set_flashlight},
     util::{cycle_res_selected, find_selected_atom, orbit_center, points_along_ray},
 };
 
@@ -46,8 +45,8 @@ pub fn event_dev_handler(
 
     let mut updates = EngineUpdates::default();
 
-    let mut redraw = false;
-    let mut ligand_changed = false;
+    let mut redraw_protein = false;
+    let mut redraw_lig = false;
 
     let mut lig_move_dir = None;
     let mut lig_rot_dir = None;
@@ -134,30 +133,7 @@ pub fn event_dev_handler(
                                     *center = orbit_center(state_);
                                 }
 
-                                // todo: Debug code to draw teh ray on screen, so we can see why the selection is off.
-                                // {
-                                //     let center = (selected_ray.0 + selected_ray.1) / 2.;
-                                //
-                                //     let diff = selected_ray.0 - selected_ray.1;
-                                //     let diff_unit = diff.to_normalized();
-                                //     let orientation = Quaternion::from_unit_vecs(UP_VEC, diff_unit);
-                                //
-                                //     let scale = Some(Vec3::new(0.3, diff.magnitude(), 0.3));
-                                //
-                                //     let mut ent = Entity::new(
-                                //         MESH_BOND,
-                                //         center,
-                                //         orientation,
-                                //         1.,
-                                //         (1., 0., 1.),
-                                //         BODY_SHINYNESS,
-                                //     );
-                                //     ent.scale_partial = scale;
-                                //
-                                //     scene.entities.push(ent);
-                                // updates.entities = true;
-                                // }
-                                redraw = true;
+                                redraw_protein = true;
                             }
                         }
                     }
@@ -177,15 +153,15 @@ pub fn event_dev_handler(
                 ElementState::Pressed => match key.physical_key {
                     Code(KeyCode::ArrowLeft) => {
                         cycle_res_selected(state_, scene, true);
-                        redraw = true;
+                        redraw_protein = true;
                     }
                     Code(KeyCode::ArrowRight) => {
                         cycle_res_selected(state_, scene, false);
-                        redraw = true;
+                        redraw_protein = true;
                     }
                     Code(KeyCode::Escape) => {
                         state_.selection = Selection::None;
-                        redraw = true;
+                        redraw_protein = true;
                     }
                     // These lig rotations are temporary.
                     Code(KeyCode::KeyU) => {
@@ -326,11 +302,9 @@ pub fn event_dev_handler(
         _ => (),
     }
 
-    if redraw {
+    if redraw_protein {
         // todo:This is overkill for certain keys. Just change the color of the one[s] in question, and set update.entities = true.
         mol_drawing::draw_molecule(state_, scene);
-        mol_drawing::draw_ligand(state_, scene);
-        updates.lighting = true; // Ligand docking light. // todo: Not always necessary.
         updates.entities = true;
     }
 
@@ -341,7 +315,7 @@ pub fn event_dev_handler(
             let move_amt: Vec3F64 = (dir * lig_move_amt).into();
             lig.pose.anchor_posit += move_amt;
 
-            ligand_changed = true;
+            redraw_lig = true;
         }
     }
 
@@ -353,18 +327,16 @@ pub fn event_dev_handler(
                 Quaternion::from_axis_angle(dir, lig_rotate_amt * dt).into();
             lig.pose.orientation = rotation * lig.pose.orientation;
 
-            ligand_changed = true;
+            redraw_lig = true;
         }
     }
 
-    if ligand_changed {
+    if redraw_lig {
         if let Some(lig) = &mut state_.ligand {
             lig.atom_posits = lig.position_atoms(None);
         }
 
-        mol_drawing::draw_molecule(state_, scene);
         mol_drawing::draw_ligand(state_, scene);
-
         updates.entities = true;
     }
 
@@ -405,5 +377,30 @@ pub fn event_win_handler(
         }
         _ => (),
     }
-    EngineUpdates::default() // todo: A/R.
+    EngineUpdates::default()
+}
+
+#[allow(unused)]
+/// Debug code to draw teh ray on screen, so we can see why the selection is off.
+fn plot_ray() {
+    // let center = (selected_ray.0 + selected_ray.1) / 2.;
+    //
+    // let diff = selected_ray.0 - selected_ray.1;
+    // let diff_unit = diff.to_normalized();
+    // let orientation = Quaternion::from_unit_vecs(UP_VEC, diff_unit);
+    //
+    // let scale = Some(Vec3::new(0.3, diff.magnitude(), 0.3));
+    //
+    // let mut ent = Entity::new(
+    //     MESH_BOND,
+    //     center,
+    //     orientation,
+    //     1.,
+    //     (1., 0., 1.),
+    //     BODY_SHINYNESS,
+    // );
+    // ent.scale_partial = scale;
+    //
+    // scene.entities.push(ent);
+    // updates.entities = true;
 }

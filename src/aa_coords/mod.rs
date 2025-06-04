@@ -618,7 +618,8 @@ pub fn aa_data_from_coords(
         element: Hydrogen,
         name: "H".to_string(),
         role: Some(AtomRole::H_Backbone),
-        residue_type: residue_type.clone(),
+        residue: None, // todo?
+        // residue_type: residue_type.clone(),
         hetero: false,
         dock_type: None,
         occupancy: None,

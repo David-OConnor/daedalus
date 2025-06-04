@@ -162,8 +162,11 @@ pub fn find_selected_atom(
         ViewSelLevel::Atom => Selection::Atom(near_i),
         ViewSelLevel::Residue => {
             for (i_res, res) in ress.iter().enumerate() {
-                if res.atoms.contains(&near_i) {
-                    return Selection::Residue(i_res);
+                let atom_near = &atoms[near_i];
+                if let Some(res_i) = atom_near.residue {
+                    if res_i == i_res {
+                        return Selection::Residue(i_res);
+                    }
                 }
             }
             Selection::None // Selected atom is not in a residue.
