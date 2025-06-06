@@ -3,7 +3,7 @@
 use std::{collections::HashMap, path::PathBuf};
 
 use bincode::{Decode, Encode};
-use bio_apis::rcsb::{FilesAvailable, PdbMetaData, load_metadata, PdbDataResults};
+use bio_apis::rcsb::{FilesAvailable, PdbDataResults, PdbMetaData, load_metadata};
 use graphics::{
     ControlScheme,
     app_utils::{load, save},

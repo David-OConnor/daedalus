@@ -8,6 +8,7 @@ use lin_alg::{
     complex_nums::{Cplx, IM},
     f64::Vec3,
 };
+use mcubes::GridPoint;
 use rayon::prelude::*;
 
 use crate::{
@@ -181,6 +182,13 @@ pub struct ElectronDensity {
     pub coords: Vec3,
     /// Normalized, using the unit cell volume, as reported in the reflection data.
     pub density: f64,
+}
+
+impl GridPoint for ElectronDensity {
+    // fn coords(&self) -> Vec3 {self.coords}
+    fn value(&self) -> f64 {
+        self.density
+    }
 }
 
 fn compute_density(reflections: &[Reflection], posit: Vec3, unit_cell_vol: f32) -> f64 {

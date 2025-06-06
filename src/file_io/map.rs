@@ -9,7 +9,7 @@ use std::{
     process::Command,
 };
 
-use bio_apis::{ReqError, rcsb};
+use bio_apis::rcsb;
 use byteorder::{LittleEndian, ReadBytesExt};
 use lin_alg::f64::{Mat3, Vec3};
 
@@ -21,24 +21,32 @@ const HEADER_SIZE: u64 = 1_024;
 #[allow(unused)]
 #[derive(Clone, Debug)]
 pub struct MapHeader {
-    pub nx: i32,      // grid points along X
-    pub ny: i32,      // grid points along Y
-    pub nz: i32,      // grid points along Z
-    pub mode: i32,    // data type (0=int8, 1=int16, 2=float32, …)
-    pub nxstart: i32, // origin (usually 0,0,0)
+    /// Numbemr of grid points along each axis. nx × ny × nz is the number of voxels.
+    pub nx: i32,
+    pub ny: i32,
+    pub nz: i32,
+    pub mode: i32, // data type (0=int8, 1=int16, 2=float32, …)
+    /// the `n[xyz]start` values specify the grid starting point (offset) in each dimension.
+    /// They are 0 in most cryo-EM maps.
+    pub nxstart: i32,
     pub nystart: i32,
     pub nzstart: i32,
-    pub mx: i32, // sampling (usually = nx,ny,nz)
+    /// the m values give number of grid-sampling intervals along each axis. This is usually equal
+    /// to the n values. In this case, each voxel corresponds to one spacing unit. They will differ
+    /// in the case of over and under sampling.
+    pub mx: i32,
     pub my: i32,
     pub mz: i32,
+    /// Unit cell dimensions. [XYZ] length. Then α: Angle between Y and Z, β: Angle
+    /// between X and Z, and γ: ANgle between X and Y. Distances are in Å, and angles are in degrees.
     pub cell: [f32; 6], // cell dimensions: a, b, c, alpha, beta, gamma
-    pub mapc: i32,      // which axis is fast (1=X, 2=Y, 3=Z)
-    pub mapr: i32,      // which axis is medium
-    pub maps: i32,      // which axis is slow
-    pub dmin: f32,      // minimum density value
-    pub dmax: f32,      // maximum density value
-    pub dmean: f32,     // mean density
-    pub ispg: i16,      // space group number
+    pub mapc: i32,  // which axis is fast (1=X, 2=Y, 3=Z)
+    pub mapr: i32,  // which axis is medium
+    pub maps: i32,  // which axis is slow
+    pub dmin: f32,  // minimum density value
+    pub dmax: f32,  // maximum density value
+    pub dmean: f32, // mean density
+    pub ispg: i16,  // space group number
     /// Number of bytes used by the symmetry block. (Usually 0 for cry-EM, and 80xn for crystallography.)
     pub nsymbt: i16,
     /// origin in Å (MRC-2014) **or** derived from *\*START if absent**
@@ -99,7 +107,7 @@ fn read_map_header<R: Read + Seek>(mut r: R) -> io::Result<MapHeader> {
 
     if &tag != b"MAP " {
         return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
+            ErrorKind::InvalidData,
             "Invalid MAP tag in header.",
         ));
     }
@@ -147,6 +155,7 @@ fn read_map_header<R: Read + Seek>(mut r: R) -> io::Result<MapHeader> {
     })
 }
 
+#[derive(Clone, Debug)]
 pub struct UnitCell {
     a: f64,
     b: f64,
@@ -204,9 +213,7 @@ impl UnitCell {
     }
 }
 
-/// Reads the entire density grid.
-/// Assumes `mode == 2` (i.e. 32-bit floats);
-pub fn read_map_data(path: &Path) -> io::Result<(MapHeader, Vec<ElectronDensity>)> {
+fn read_map_data_raw(path: &Path) -> io::Result<(MapHeader, Vec<f32>)> {
     let mut file = File::open(path)?;
     let hdr = read_map_header(&mut file)?;
 
@@ -218,6 +225,21 @@ pub fn read_map_data(path: &Path) -> io::Result<(MapHeader, Vec<ElectronDensity>
     }
 
     file.seek(SeekFrom::Start(HEADER_SIZE + hdr.nsymbt as u64))?;
+
+    let n = (hdr.nx * hdr.ny * hdr.nz) as usize;
+    let mut data = Vec::with_capacity(n);
+
+    for _ in 0..n {
+        data.push(file.read_f32::<LittleEndian>()?);
+    }
+
+    Ok((hdr, data))
+}
+
+/// Reads the entire density grid.
+/// Assumes `mode == 2` (i.e. 32-bit floats);
+pub fn read_map_data(path: &Path) -> io::Result<(MapHeader, Vec<ElectronDensity>)> {
+    let (hdr, data) = read_map_data_raw(path)?;
 
     // todo: QC all these; simplify A/R.
 
@@ -239,26 +261,26 @@ pub fn read_map_data(path: &Path) -> io::Result<(MapHeader, Vec<ElectronDensity>
     let cosγ = γ.cos();
     let sinγ = γ.sin();
 
-    let v_a = Vec3::new(a, 0.0, 0.0);
-    let v_b = Vec3::new(b * cosγ, b * sinγ, 0.0);
+    // let v_a = Vec3::new(a, 0.0, 0.0);
+    // let v_b = Vec3::new(b * cosγ, b * sinγ, 0.0);
     let cx = c * cosβ;
     let cy = c * (cosα - cosβ * cosγ) / sinγ;
     let cz = c * (1.0 - cosβ * cosβ - ((cosα - cosβ * cosγ) / sinγ).powi(2)).sqrt();
-    let v_c = Vec3::new(cx, cy, cz);
+    // let v_c = Vec3::new(cx, cy, cz);
 
-    // Origin offset: Voxel units
-    let step = [a / hdr.mx as f64, b / hdr.my as f64, c / hdr.mz as f64];
+    // // Origin offset: Voxel units
+    // let step = [a / hdr.mx as f64, b / hdr.my as f64, c / hdr.mz as f64];
 
-    let start_vox = if let (Some(xo), Some(yo), Some(zo)) = (hdr.xorigin, hdr.yorigin, hdr.zorigin)
-    {
-        [
-            xo as f64 / step[0],
-            yo as f64 / step[1],
-            zo as f64 / step[2],
-        ]
-    } else {
-        [hdr.nxstart as f64, hdr.nystart as f64, hdr.nzstart as f64]
-    };
+    // let start_vox = if let (Some(xo), Some(yo), Some(zo)) = (hdr.xorigin, hdr.yorigin, hdr.zorigin)
+    // {
+    //     [
+    //         xo as f64 / step[0],
+    //         yo as f64 / step[1],
+    //         zo as f64 / step[2],
+    //     ]
+    // } else {
+    //     [hdr.nxstart as f64, hdr.nystart as f64, hdr.nzstart as f64]
+    // };
 
     // Axis permutation: file -> crystal
     let perm = [
@@ -272,60 +294,38 @@ pub fn read_map_data(path: &Path) -> io::Result<(MapHeader, Vec<ElectronDensity>
         f_of_c[*cryst_axis] = file_axis;
     }
 
-    // unit‐cell volume = |v_a ⋅ (v_b × v_c)|
-    // let volume = v_a.dot(v_b.cross(v_c)).abs();
-
     // Read voxels; build coordinates.
 
     let mut densities = Vec::with_capacity(npoints);
 
+    let cell = UnitCell::new(
+        hdr.cell[0] as f64,
+        hdr.cell[1] as f64,
+        hdr.cell[2] as f64,
+        hdr.cell[3] as f64,
+        hdr.cell[4] as f64,
+        hdr.cell[5] as f64,
+    );
+
+    // 2.  Origin in *fractional* coordinates
+    let origin_frac =
+        if let (Some(ox), Some(oy), Some(oz)) = (hdr.xorigin, hdr.yorigin, hdr.zorigin) {
+            cell.cartesian_to_fractional(Vec3::new(ox as f64, oy as f64, oz as f64))
+        } else {
+            Vec3::new(
+                hdr.nxstart as f64 / hdr.mx as f64,
+                hdr.nystart as f64 / hdr.my as f64,
+                hdr.nzstart as f64 / hdr.mz as f64,
+            )
+        };
+
+    let mut idx = 0;
     for k in 0..nz {
         for j in 0..ny {
             for i in 0..nx {
-                let raw = file.read_f32::<LittleEndian>()? as f64;
+                let density = data[idx] as f64;
+                idx += 1;
 
-                // // indices in *file* order, shifted to voxel centre (+0.5)
-                // let idx_file = [i as f64 + 0.5, j as f64 + 0.5, k as f64 + 0.5];
-                //
-                // // fractional crystal coords
-                // let frac = [
-                //     (idx_file[f_of_c[0]] + start_vox[0]) / hdr.mx as f64,
-                //     (idx_file[f_of_c[1]] + start_vox[1]) / hdr.my as f64,
-                //     (idx_file[f_of_c[2]] + start_vox[2]) / hdr.mz as f64,
-                // ];
-                //
-                // // Cartesian Å coordinate
-                // let coord = v_a * frac[0] + v_b * frac[1] + v_c * frac[2];
-
-                // densities.push(ElectronDensity {
-                //     coords: coord,
-                //     density: raw, // keep raw value; contour in UI
-                // });
-
-                // 1.  Build a proper UnitCell object once
-                let cell = UnitCell::new(
-                    hdr.cell[0] as f64,
-                    hdr.cell[1] as f64,
-                    hdr.cell[2] as f64,
-                    hdr.cell[3] as f64,
-                    hdr.cell[4] as f64,
-                    hdr.cell[5] as f64,
-                );
-
-                // 2.  Origin in *fractional* coordinates
-                let origin_frac = if let (Some(ox), Some(oy), Some(oz)) =
-                    (hdr.xorigin, hdr.yorigin, hdr.zorigin)
-                {
-                    cell.cartesian_to_fractional(Vec3::new(ox as f64, oy as f64, oz as f64))
-                } else {
-                    Vec3::new(
-                        hdr.nxstart as f64 / hdr.mx as f64,
-                        hdr.nystart as f64 / hdr.my as f64,
-                        hdr.nzstart as f64 / hdr.mz as f64,
-                    )
-                };
-
-                // 3.  Inside the triple-nested loop
                 let idx_file = [i as f64, j as f64, k as f64]; // voxel corners
                 let frac = origin_frac
                     + Vec3::new(
@@ -334,62 +334,123 @@ pub fn read_map_data(path: &Path) -> io::Result<(MapHeader, Vec<ElectronDensity>
                         (idx_file[f_of_c[2]] + 0.5) / hdr.mz as f64,
                     );
 
-                // 4.  Convert with the full orthogonalisation matrix
-                let coord = cell.fractional_to_cartesian(frac); // Å
+                let coords = cell.fractional_to_cartesian(frac); // Å
 
-                densities.push(ElectronDensity {
-                    coords: coord,
-                    density: raw,
-                });
+                densities.push(ElectronDensity { coords, density });
             }
         }
     }
 
-    // for k in 0..nz {
-    //     for j in 0..ny {
-    //         for i in 0..nx {
-    //             let raw = file.read_f32::<LittleEndian>()?;
-    //             // let density = raw as f64 / volume;
-    //
-    //             // todo: Temp?
-    //             let density = raw as f64 / (hdr.dmax as f64);
-    //
-    //             // We are assuming the present of one origin means the others are too.
-    //             let (x_start, y_start, z_start) = match hdr.xorigin {
-    //                 Some(x) => (x as f64, hdr.yorigin.unwrap_or_default() as f64, hdr.zorigin.unwrap_or_default() as f64),
-    //                 None => (hdr.nxstart as f64, hdr.nystart as f64, hdr.nzstart as f64)
-    //             };
-    //
-    //             // fractional coords including header offset
-    //             let fx = (i as f64 + x_start) / hdr.mx as f64;
-    //             let fy = (j as f64 + y_start) / hdr.my as f64;
-    //             let fz = (k as f64 + z_start) / hdr.mz as f64;
-    //
-    //             // todo: Use origins if available.
-    //
-    //             // Cartesian Å coordinate
-    //             let coord = v_a * fx + v_b * fy + v_c * fz;
-    //
-    //             densities.push(ElectronDensity {
-    //                 coords: coord,
-    //                 density,
-    //             });
-    //         }
-    //     }
+    // // todo: Symmetry augmentation experimentation.
+    // let mut slid_x_ = Vec::with_capacity(npoints);
+    // for density in &densities {
+    //     let slid_x = ElectronDensity {
+    //         // coords: Vec3::new(density.x - hdr.dmax, density.y, density.z),
+    //         coords: Vec3::new(density.coords.x + hdr.cell[0] as f64 * nx as f64, density.coords.y, density.coords.z),
+    //         density: density.density,
+    //     };
+    //     slid_x_.push(slid_x);
     // }
+    //
+    // densities.append(&mut slid_x_);
 
     Ok((hdr, densities))
 }
 
-// /// return 4×4 matrix that converts CIF coords → crystallographic orthogonal Å
-// fn cif_scale_matrix(cif: &CifDocument) -> Option<[[f64;4];4]> {
-//     let s = |row, col| cif.get("_atom_sites.Cartn_scale_matrix", row, col)?.parse().ok();
-//     let v = |row| [s(row,0)?, s(row,1)?, s(row,2)?, cif.get("_atom_sites.Cartn_trans_vector", row, 0)?.parse().ok()?];
-//     Some([v(0)?, v(1)?, v(2)?, [0.0, 0.0, 0.0, 1.0]])
-// }
+#[derive(Clone, Debug)]
+/// The 1-D array is stored in **file order**
+///   fastest-varying index = MAPC
+pub struct DensityMap {
+    pub hdr: MapHeader,
+    pub cell: UnitCell,
+    pub origin_frac: Vec3,    // header origin, already converted to fractional
+    pub perm_f2c: [usize; 3], // file-axis → cryst-axis (from MAPC/MAPR/MAPS)
+    pub perm_c2f: [usize; 3], // cryst-axis → file-axis (inverse permutation)
+    pub data: Vec<f32>,
+}
+
+impl DensityMap {
+    /// Build the helper once
+    pub fn new(path: &Path) -> io::Result<Self> {
+        let (hdr, data) = read_map_data_raw(path)?; // see § 7
+        let cell = UnitCell::new(
+            hdr.cell[0] as f64,
+            hdr.cell[1] as f64,
+            hdr.cell[2] as f64,
+            hdr.cell[3] as f64,
+            hdr.cell[4] as f64,
+            hdr.cell[5] as f64,
+        );
+
+        let perm_f2c = [
+            hdr.mapc as usize - 1,
+            hdr.mapr as usize - 1,
+            hdr.maps as usize - 1,
+        ];
+        let mut perm_c2f = [0usize; 3];
+        for (f, c) in perm_f2c.iter().enumerate() {
+            perm_c2f[*c] = f;
+        }
+
+        // header origin → fractional
+        let origin_frac =
+            if let (Some(ox), Some(oy), Some(oz)) = (hdr.xorigin, hdr.yorigin, hdr.zorigin) {
+                cell.cartesian_to_fractional(Vec3::new(ox as f64, oy as f64, oz as f64))
+            } else {
+                Vec3::new(
+                    hdr.nxstart as f64 / hdr.mx as f64,
+                    hdr.nystart as f64 / hdr.my as f64,
+                    hdr.nzstart as f64 / hdr.mz as f64,
+                )
+            };
+
+        Ok(Self {
+            hdr,
+            cell,
+            origin_frac,
+            perm_f2c,
+            perm_c2f,
+            data,
+        })
+    }
+
+    /// Positive modulus that always lands in 0..n-1
+    #[inline(always)]
+    fn pmod(i: isize, n: usize) -> usize {
+        ((i % n as isize) + n as isize) as usize % n
+    }
+
+    /// Nearest-neighbour lookup – add trilinear if you like
+    pub fn rho(&self, cart: Vec3) -> f32 {
+        // 1. Cart → frac (wrap immediately to [0,1) )
+        let mut frac = self.cell.cartesian_to_fractional(cart);
+        frac.x -= frac.x.floor();
+        frac.y -= frac.y.floor();
+        frac.z -= frac.z.floor();
+
+        // 2. frac → crystallographic voxel index (float)
+        let frac_rel = frac - self.origin_frac;
+        let ic = [
+            (frac_rel.x * self.hdr.mx as f64 - 0.5).round() as isize,
+            (frac_rel.y * self.hdr.my as f64 - 0.5).round() as isize,
+            (frac_rel.z * self.hdr.mz as f64 - 0.5).round() as isize,
+        ];
+
+        // 3. crystallographic → file order, then wrap with pmod
+        let ifile = [
+            Self::pmod(ic[self.perm_f2c[0]], self.hdr.nx as usize),
+            Self::pmod(ic[self.perm_f2c[1]], self.hdr.ny as usize),
+            Self::pmod(ic[self.perm_f2c[2]], self.hdr.nz as usize),
+        ];
+
+        // 4. linear offset in file order (x fastest)
+        let offset = (ifile[2] * self.hdr.ny as usize + ifile[1]) * self.hdr.nx as usize + ifile[0];
+        self.data[offset]
+    }
+}
 
 /// Stopgap approach?
-pub fn density_from_rcsb_gemmi(ident: &str) -> io::Result<Vec<ElectronDensity>> {
+pub fn density_from_rcsb_gemmi(ident: &str) -> io::Result<(MapHeader, Vec<ElectronDensity>)> {
     println!("Downloading Map data for {ident}...");
 
     let map_2fo_fc = rcsb::load_validation_2fo_fc_cif(ident)
@@ -401,7 +462,27 @@ pub fn density_from_rcsb_gemmi(ident: &str) -> io::Result<Vec<ElectronDensity>> 
         .args(["sf2map", "temp_map.cif", "temp_map.map"])
         .status()?;
 
-    let (_hdr, map) = read_map_data(Path::new("temp_map.map"))?;
+    let (hdr, map) = read_map_data(Path::new("temp_map.map"))?;
+
+    fs::remove_file(Path::new("temp_map.cif"))?;
+    fs::remove_file(Path::new("temp_map.map"))?;
+
+    Ok((hdr, map))
+}
+
+pub fn density_from_rcsb_gemmi2(ident: &str) -> io::Result<DensityMap> {
+    println!("Downloading Map data for {ident}...");
+
+    let map_2fo_fc = rcsb::load_validation_2fo_fc_cif(ident)
+        .map_err(|_| io::Error::new(ErrorKind::InvalidData, "Problem loading 2fo-fc from RCSB"))?;
+
+    fs::write("temp_map.cif", map_2fo_fc)?;
+
+    let _status = Command::new("gemmi")
+        .args(["sf2map", "temp_map.cif", "temp_map.map"])
+        .status()?;
+
+    let map = DensityMap::new(Path::new("temp_map.map"))?;
 
     fs::remove_file(Path::new("temp_map.cif"))?;
     fs::remove_file(Path::new("temp_map.map"))?;

@@ -29,9 +29,9 @@ use crate::{
         prep::{DockType, Torsion, UnitCellDims, setup_flexibility},
     },
     element::Element,
-    file_io::map::MapHeader,
+    file_io::map::{DensityMap, MapHeader},
     reflection::{ElectronDensity, ReflectionsData},
-    util::mol_center_size,
+    util::{handle_err, mol_center_size},
 };
 
 pub const ATOM_NEIGHBOR_DIST_THRESH: f64 = 5.; // todo: Adjust A/R.
@@ -71,6 +71,7 @@ pub struct Molecule {
     pub elec_density_header: Option<MapHeader>,
     /// From reflections
     pub elec_density: Option<Vec<ElectronDensity>>,
+    pub density_map: Option<DensityMap>, // todo: Experimenting with one that wraps.
     pub aa_seq: Vec<AminoAcid>,
 }
 
@@ -198,15 +199,18 @@ impl Molecule {
             return;
         }
 
-        println!("Spawning tread to fetch RCSB data for {}", self.ident);
+        println!("Existing data: {:?}", self.rcsb_data);
+        println!("Existing files: {:?}", self.rcsb_files_avail);
 
         let ident = self.ident.clone(); // data the worker needs
         let (tx, rx) = mpsc::channel(); // one-shot channel
 
+        println!("Getting RCSB data...");
+
         thread::spawn(move || {
             let data = rcsb::get_all_data(&ident);
             let files_data = rcsb::get_files_avail(&ident);
-            println!("Getting RCSB data...");
+
             // it’s fine if the send fails (e.g. the app closed)
             let _ = tx.send((data, files_data));
         });
@@ -230,12 +234,11 @@ impl Molecule {
             match rx.try_recv() {
                 // both fetches succeeded:
                 Ok((Ok(pdb_data), Ok(files_avail))) => {
-                    println!("Data‐avail ready for {}: {:?}, {:?}", self.ident, pdb_data, files_avail);
-
+                    println!("RCSB data ready for {}", self.ident);
                     self.rcsb_data = Some(pdb_data);
                     self.rcsb_files_avail = Some(files_avail);
 
-                    println!("Data loaded: {:?}", self.rcsb_data.as_ref().unwrap());
+                    // todo: Save state here, but need to get a proper signal with &mut State available.
 
                     *pending_data_avail = None;
                     return true;

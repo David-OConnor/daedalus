@@ -10,6 +10,7 @@ use bio_apis::{drugbank, pubchem, rcsb};
 use egui::{Color32, ComboBox, Context, Key, RichText, Slider, TextEdit, TopBottomPanel, Ui};
 use graphics::{Camera, ControlScheme, EngineUpdates, Entity, RIGHT_VEC, Scene, UP_VEC};
 use lin_alg::f32::{Quaternion, Vec3};
+use mcubes::MarchingCubes;
 use na_seq::{AaIdent, AminoAcid};
 
 static INIT_COMPLETE: AtomicBool = AtomicBool::new(false);
@@ -25,9 +26,8 @@ use crate::{
         find_sites::find_docking_sites,
     },
     download_mols::{load_sdf_drugbank, load_sdf_pubchem},
-    file_io::map::density_from_rcsb_gemmi,
+    file_io::map::{DensityMap, density_from_rcsb_gemmi, density_from_rcsb_gemmi2},
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
-    marching_cubes::MarchingCubes,
     mol_drawing::{
         COLOR_DOCKING_SITE_MESH, EntityType, MoleculeView, draw_density, draw_density_surface,
         draw_ligand, draw_molecule,
@@ -1245,6 +1245,20 @@ fn view_settings(
                     &mut redraw_dens_surface,
                 );
 
+                if !state.ui.visibility.hide_density_surface {
+                    let iso_prev = state.ui.density_iso_level;
+
+                    ui.spacing_mut().slider_width = 200.;
+                    ui.add(Slider::new(
+                        &mut state.ui.density_iso_level,
+                        // todo: Consts for these
+                        -0.0..=1.0,
+                    ));
+                    if state.ui.density_iso_level != iso_prev {
+                        state.volatile.make_density_mesh = true;
+                    }
+                }
+
                 // todo
                 if redraw_dens_surface {
                     if state.ui.visibility.hide_density_surface {
@@ -1465,16 +1479,27 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                             // todo: We will eventually get our own reflections loader working.
 
                             match density_from_rcsb_gemmi(&mol.ident) {
-                                Ok(d) => {
+                                Ok((hdr, dens)) => {
                                     println!(
                                         "Succsesfully loaded density data from RSCB using Gemmi."
                                     );
-                                    mol.elec_density = Some(d);
-                                    draw_density(
-                                        &mut scene.entities,
-                                        mol.elec_density.as_ref().unwrap(),
-                                    );
-                                    engine_updates.entities = true;
+
+                                    mol.elec_density_header = Some(hdr);
+                                    mol.elec_density = Some(dens);
+
+                                    let dm = density_from_rcsb_gemmi2(&mol.ident).unwrap(); // todo unwrap temp.
+                                    mol.density_map = Some(dm);
+
+                                    state.volatile.make_density_mesh = true;
+
+                                    if !state.ui.visibility.hide_density {
+                                        draw_density(
+                                            &mut scene.entities,
+                                            mol.elec_density.as_ref().unwrap(),
+                                        );
+
+                                        engine_updates.entities = true;
+                                    }
                                 }
                                 Err(e) => {
                                     let msg = format!(
@@ -1942,31 +1967,41 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         engine_updates.lighting = true;
     }
 
-    if state.volatile.draw_density {
+    if state.volatile.make_density_mesh {
         if let Some(mol) = &state.molecule {
             if let Some(dens) = &mol.elec_density {
-                if !state.ui.visibility.hide_density {
-                    draw_density(&mut scene.entities, dens);
-                }
+                // if !state.ui.visibility.hide_density {
+                //     draw_density(&mut scene.entities, dens);
+                // }
 
-                let mc = MarchingCubes::from_density(
-                    mol.elec_density_header.as_ref().unwrap(),
+                // println!("Dens header: {:?}", mol.elec_density_header);
+
+                let hdr = mol.elec_density_header.as_ref().unwrap();
+
+                match MarchingCubes::from_gridpoints(
+                    (hdr.nx as usize, hdr.ny as usize, hdr.nz as usize),
+                    (hdr.cell[0], hdr.cell[1], hdr.cell[2]),
+                    (hdr.mx as f32, hdr.my as f32, hdr.mz as f32),
                     mol.elec_density.as_ref().unwrap(),
-                );
+                    state.ui.density_iso_level,
+                ) {
+                    Ok(mc) => {
+                        let mesh = mc.generate();
+                        scene.meshes[MESH_DENSITY_SURFACE] = mesh;
 
-                let mesh = mc.generate();
-                scene.meshes[MESH_DENSITY_SURFACE] = mesh;
+                        if !state.ui.visibility.hide_density_surface {
+                            draw_density_surface(&mut scene.entities);
+                        }
 
-                if !state.ui.visibility.hide_density_surface {
-                    draw_density_surface(&mut scene.entities);
+                        engine_updates.meshes = true;
+                        engine_updates.entities = true;
+                    }
+                    Err(e) => handle_err(&mut state.ui, e.to_string()),
                 }
-
-                engine_updates.meshes = true;
-                engine_updates.entities = true;
             }
         }
 
-        state.volatile.draw_density = false;
+        state.volatile.make_density_mesh = false;
     }
 
     if state.volatile.mol_pending_data_avail.is_some() {

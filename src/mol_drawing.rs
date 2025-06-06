@@ -50,6 +50,8 @@ const DOCKING_SITE_OPACITY: f32 = 0.35;
 
 const DIMMED_PEPTIDE_AMT: f32 = 0.92; // Higher value means more dim.
 
+pub const DENSITY_ISO_OPACITY: f32 = 0.8;
+
 // This allows us to more easily customize sphere mesh resolution.
 const MESH_BALL_STICK_SPHERE: usize = MESH_SPHERE_MEDRES;
 // todo: I believe this causes performance problems on many machines. But looks
@@ -667,6 +669,7 @@ pub fn draw_density_surface(entities: &mut Vec<Entity>) {
         ATOM_SHININESS,
     );
     ent.class = EntityType::DensitySurface as u32;
+    // ent.opacity = DENSITY_ISO_OPACITY; // todo temp rm
     entities.push(ent);
 }
 

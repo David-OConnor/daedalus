@@ -11,7 +11,9 @@ use na_seq::AaIdent;
 
 use crate::{
     State,
-    file_io::{cif_pdb::load_cif_pdb, mol2::load_mol2, pdbqt::load_pdbqt, sdf::load_sdf},
+    file_io::{
+        cif_pdb::load_cif_pdb, map::DensityMap, mol2::load_mol2, pdbqt::load_pdbqt, sdf::load_sdf,
+    },
     molecule::{Ligand, Molecule},
 };
 
@@ -48,7 +50,11 @@ impl State {
 
                     mol.elec_density_header = Some(hdr);
                     mol.elec_density = Some(dens);
-                    self.volatile.draw_density = true;
+
+                    let dm = DensityMap::new(path)?;
+                    mol.density_map = Some(dm);
+
+                    self.volatile.make_density_mesh = true;
                 }
             }
             _ => {

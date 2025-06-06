@@ -42,7 +42,6 @@ mod util;
 mod vibrations;
 
 mod cli;
-mod marching_cubes;
 mod reflection;
 #[cfg(test)]
 mod tests;
@@ -58,8 +57,10 @@ use std::{
 
 use barnes_hut::BhConfig;
 use bincode::{Decode, Encode};
-use bio_apis::{ReqError, rcsb};
-use bio_apis::rcsb::{FilesAvailable, PdbDataResults};
+use bio_apis::{
+    ReqError, rcsb,
+    rcsb::{FilesAvailable, PdbDataResults},
+};
 // #[cfg(feature = "cuda")]
 // use cuda_setup::ComputationDevice;
 #[cfg(feature = "cuda")]
@@ -87,7 +88,6 @@ use crate::{
     },
     element::{Element, init_lj_lut},
     file_io::{cif_pdb::save_pdb, mol2::load_mol2, mtz::load_mtz, pdbqt::load_pdbqt},
-    marching_cubes::MarchingCubes,
     molecule::{Ligand, ResidueType},
     navigation::Tab,
     prefs::ToSave,
@@ -256,7 +256,7 @@ struct StateVolatile {
         )>,
     >,
     // Pending flag
-    draw_density: bool,
+    make_density_mesh: bool,
     /// We may change CWD during CLI navigation; keep prefs directory constant.
     prefs_dir: PathBuf,
     /// Entered by the user, for this session.
@@ -276,7 +276,7 @@ impl Default for StateVolatile {
             snapshots: Default::default(),
             docking_setup: Default::default(),
             mol_pending_data_avail: Default::default(),
-            draw_density: false,
+            make_density_mesh: false,
             prefs_dir: env::current_dir().unwrap(),
             cli_input_history: Default::default(),
             cli_input_selected: Default::default(),
@@ -388,6 +388,8 @@ struct StateUi {
     /// Use a viridis or simialar colr scheme to color residues gradually based on their
     /// position in the sequence.
     res_color_by_index: bool,
+    /// Affects the electron density mesh.
+    density_iso_level: f32,
 }
 
 #[derive(Clone, PartialEq, Debug, Default, Encode, Decode)]
@@ -544,6 +546,7 @@ fn main() {
             view_depth: (VIEW_DEPTH_NEAR_MIN, VIEW_DEPTH_FAR_MAX),
             new_mol_loaded: true,
             nearby_dist_thresh: 15,
+            density_iso_level: 0.19,
             ..Default::default()
         },
         ..Default::default()
