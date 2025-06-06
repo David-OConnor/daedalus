@@ -8,10 +8,10 @@ use lin_alg::{
     f32::{Quaternion, Vec3},
     map_linear,
 };
+use na_seq::Element;
 
 use crate::{
     Selection, State, ViewSelLevel,
-    element::Element,
     molecule::{Atom, AtomRole, BondCount, BondType, Chain, Residue, ResidueType, aa_color},
     reflection::ElectronDensity,
     render::{

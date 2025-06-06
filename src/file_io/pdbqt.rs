@@ -10,7 +10,7 @@ use std::{
 };
 
 use lin_alg::f64::Vec3;
-use na_seq::AaIdent;
+use na_seq::{AaIdent, Element};
 use regex::Regex;
 
 use crate::{
@@ -18,7 +18,6 @@ use crate::{
         ConformationType,
         prep::{DockType, UnitCellDims},
     },
-    element::Element,
     molecule::{Atom, AtomRole, Chain, Ligand, Molecule, Residue, ResidueType},
 };
 

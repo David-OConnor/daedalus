@@ -6,12 +6,19 @@ use std::{
 };
 
 use lin_alg::f64::Vec3;
+use na_seq::{
+    Element,
+    Element::{
+        Aluminum, Bromine, Calcium, Carbon, Chlorine, Copper, Fluorine, Gold, Hydrogen, Iodine,
+        Iron, Lead, Magnesium, Manganese, Mercury, Nitrogen, Oxygen, Phosphorus, Potassium,
+        Selenium, Silver, Sulfur, Tellurium, Tin, Tungsten, Zinc,
+    },
+};
 use pdbtbx::{Format, PDB, ReadOptions, StrictnessLevel};
 use rayon::prelude::*;
 
 use crate::{
     docking::prep::DockType,
-    element::Element,
     file_io::cif_secondary_structure::load_secondary_structure,
     molecule::{Atom, AtomRole, Chain, Molecule, Residue, ResidueType},
 };
@@ -45,7 +52,7 @@ impl Atom {
         Self {
             serial_number: atom_pdb.serial_number(),
             posit: Vec3::new(atom_pdb.x(), atom_pdb.y(), atom_pdb.z()),
-            element: Element::from_pdb(atom_pdb.element()),
+            element: el_from_pdb(atom_pdb.element()),
             name: atom_pdb.name().to_owned(),
             role,
             residue,
@@ -253,4 +260,45 @@ pub fn save_pdb(pdb: &mut PDB, path: &Path) -> io::Result<()> {
     })
 
     // todo: Save SS.
+}
+
+pub fn el_from_pdb(el: Option<&pdbtbx::Element>) -> Element {
+    if let Some(e) = el {
+        match e {
+            pdbtbx::Element::H => Hydrogen,
+            pdbtbx::Element::C => Carbon,
+            pdbtbx::Element::O => Oxygen,
+            pdbtbx::Element::N => Nitrogen,
+            pdbtbx::Element::F => Fluorine,
+            pdbtbx::Element::S => Sulfur,
+            pdbtbx::Element::P => Phosphorus,
+            pdbtbx::Element::Fe => Iron,
+            pdbtbx::Element::Cu => Copper,
+            pdbtbx::Element::Ca => Calcium,
+            pdbtbx::Element::K => Potassium,
+            pdbtbx::Element::Al => Aluminum,
+            pdbtbx::Element::Pb => Lead,
+            pdbtbx::Element::Au => Gold,
+            pdbtbx::Element::Ag => Silver,
+            pdbtbx::Element::Hg => Mercury,
+            pdbtbx::Element::Sn => Tin,
+            pdbtbx::Element::Zn => Zinc,
+            pdbtbx::Element::Mg => Magnesium,
+            pdbtbx::Element::Mn => Manganese,
+            pdbtbx::Element::I => Iodine,
+            pdbtbx::Element::Cl => Chlorine,
+            pdbtbx::Element::W => Tungsten,
+            pdbtbx::Element::Te => Tellurium,
+            pdbtbx::Element::Se => Selenium,
+            pdbtbx::Element::Br => Bromine,
+
+            _ => {
+                eprintln!("Unknown element: {e:?}");
+                Element::Other
+            }
+        }
+    } else {
+        // todo?
+        Element::Other
+    }
 }

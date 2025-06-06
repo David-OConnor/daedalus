@@ -13,12 +13,11 @@ use std::{
 };
 
 use graphics::{EngineUpdates, FWD_VEC, RIGHT_VEC, Scene, UP_VEC, arc_rotation};
-use na_seq::AminoAcid;
+use na_seq::{AminoAcid, Element};
 use regex::Regex;
 
 use crate::{
     Selection, State,
-    element::Element,
     molecule::{AtomRole, ResidueType},
     render::set_flashlight,
     ui::load_file,

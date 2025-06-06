@@ -23,6 +23,7 @@ pub struct ToSave {
     pub per_mol: HashMap<String, PerMolToSave>,
     pub last_opened: Option<PathBuf>,
     pub last_ligand_opened: Option<PathBuf>,
+    pub last_map_opened: Option<PathBuf>,
     pub autodock_vina_path: Option<PathBuf>,
     pub control_scheme: ControlScheme,
     pub msaa: MsaaSetting,
@@ -37,6 +38,7 @@ impl Default for ToSave {
         Self {
             per_mol: Default::default(),
             last_opened: Default::default(),
+            last_map_opened: Default::default(),
             last_ligand_opened: Default::default(),
             autodock_vina_path: Default::default(),
             control_scheme: Default::default(),

@@ -4,6 +4,7 @@
 use std::{collections::HashMap, f64::consts::TAU, io, time::Instant};
 
 use bio_apis::{ReqError, rcsb};
+use bio_files::MapHeader;
 use lin_alg::{
     complex_nums::{Cplx, IM},
     f64::Vec3,
@@ -11,10 +12,7 @@ use lin_alg::{
 use mcubes::GridPoint;
 use rayon::prelude::*;
 
-use crate::{
-    file_io::map::MapHeader,
-    molecule::{Atom, Molecule},
-};
+use crate::molecule::{Atom, Molecule};
 
 #[derive(Clone, Copy, PartialEq, Debug, Default)]
 pub enum MapStatus {

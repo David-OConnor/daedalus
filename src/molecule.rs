@@ -12,11 +12,12 @@ use bio_apis::{
     ReqError, rcsb,
     rcsb::{FilesAvailable, PdbDataResults, PdbMetaData},
 };
+use bio_files::{DensityMap, MapHeader, Mol2};
 use lin_alg::{
     f32::Vec3 as Vec3F32,
     f64::{Quaternion, Vec3},
 };
-use na_seq::AminoAcid;
+use na_seq::{AminoAcid, Element};
 use rayon::prelude::*;
 
 use crate::{
@@ -28,10 +29,8 @@ use crate::{
         ConformationType, DockingSite, Pose,
         prep::{DockType, Torsion, UnitCellDims, setup_flexibility},
     },
-    element::Element,
-    file_io::map::{DensityMap, MapHeader},
     reflection::{ElectronDensity, ReflectionsData},
-    util::{handle_err, mol_center_size},
+    util::mol_center_size,
 };
 
 pub const ATOM_NEIGHBOR_DIST_THRESH: f64 = 5.; // todo: Adjust A/R.
@@ -760,3 +759,44 @@ pub const fn aa_color(aa: AminoAcid) -> (f32, f32, f32) {
 // impl HelixClass {
 //     pub fn from
 // }
+
+impl From<Mol2> for Molecule {
+    fn from(m: Mol2) -> Self {
+        // let mut result = Molecule::new(ident, atoms, Vec::new(), Vec::new(), None, None);
+        let mut atoms = Vec::with_capacity(m.atoms.len());
+        for atom in &m.atoms {
+            atoms.push(Atom {
+                serial_number: atom.serial_number,
+                posit: atom.posit,
+                element: atom.element,
+                name: String::new(),
+                partial_charge: atom.partial_charge,
+                ..Default::default()
+            });
+        }
+
+        let mut result = Self::new(m.ident, atoms, Vec::new(), Vec::new(), None, None);
+
+        let mut bonds = Vec::with_capacity(m.bonds.len());
+        for bond in &m.bonds {
+            bonds.push(Bond {
+                bond_type: BondType::Covalent {
+                    count: BondCount::from_str(&bond.bond_type),
+                },
+                // Our bonds are by index; these are by serial number. This should align them in most cases.
+                // todo: Map serial num to index incase these don't ascend by one.
+                atom_0: bond.atom_0 - 1,
+                atom_1: bond.atom_1 - 1,
+                is_backbone: false,
+            });
+        }
+
+        // This replaces the built-in bond computation with our own. Ideally, we don't even calculate
+        // those for performance reasons.
+        result.bonds = bonds;
+        result.bonds_hydrogen = Vec::new();
+        result.adjacency_list = result.build_adjacency_list();
+
+        result
+    }
+}

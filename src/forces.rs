@@ -14,11 +14,11 @@ use std::{collections::HashMap, time::Instant};
 use lin_alg::f32::Vec3;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use lin_alg::f32::{Vec3x8, f32x8};
+use na_seq::Element;
 use rayon::prelude::*;
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use crate::docking::dynamics_playback::BodyVdwx8;
-use crate::element::Element;
 
 // The rough Van der Waals (Lennard-Jones) minimum potential value, for two carbon atoms.
 const LJ_MIN_R_CC: f32 = 3.82;

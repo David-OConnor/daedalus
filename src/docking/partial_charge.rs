@@ -3,18 +3,12 @@
 //! https://acc2.ncbr.muni.cz/
 //! https://github.com/sb-ncbr/eem_parameters/
 
-use std::f32::consts::TAU;
-
 use barnes_hut::BodyModel;
 use lin_alg::{f32::Vec3, f64::Vec3 as Vec3F64};
+use na_seq::Element;
 use nalgebra::{DMatrix, DVector};
-use rand::Rng;
 
-use crate::{
-    element::Element,
-    molecule::{Atom, Bond, BondCount, BondType, Molecule},
-    util::setup_neighbor_pairs,
-};
+use crate::molecule::{Atom, Bond, BondCount, BondType};
 
 const GRID_SIZE: f64 = 1.6; // Slightly larger than the largest... todo: What?
 

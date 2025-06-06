@@ -18,6 +18,7 @@ use graphics::Entity;
 use lin_alg::f32::{Mat3, Quaternion, Vec3};
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use lin_alg::f32::{Vec3x8, f32x8, pack_slice, pack_vec3};
+use na_seq::Element;
 use rayon::prelude::*;
 
 #[cfg(feature = "cuda")]
@@ -29,7 +30,6 @@ use crate::{
         BindingEnergy, ConformationType, Pose, calc_binding_energy,
         prep::{DockingSetup, Torsion},
     },
-    element::Element,
     forces::force_lj,
     molecule::{Atom, Ligand},
 };

@@ -49,6 +49,7 @@ use lin_alg::{
     f64::{FORWARD, Quaternion, RIGHT, UP, Vec3},
     linspace,
 };
+use na_seq::Element;
 use partial_charge::create_partial_charges;
 use rand::Rng;
 use rayon::prelude::*;
@@ -60,7 +61,6 @@ use crate::{
         dynamics_playback::build_vdw_dynamics,
         prep::{DockingSetup, LIGAND_SAMPLE_RATIO, Torsion},
     },
-    element::Element,
     forces,
     forces::{V_lj, V_lj_x8},
     molecule::{Atom, Ligand},

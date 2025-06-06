@@ -19,6 +19,8 @@ barnes_hut = { version = "1.0.8"}  # enc temp rem
 #qhull = "0.4.0"
 na_seq = "0.2.7"
 bio_apis = {  version = "0.1.2", features = ["encode"] }
+#bio_files = "0.1.0"
+bio_files = { path = "../bio_files" }
 
 # For loading and saving config
 bincode = "2.0.1"
@@ -40,9 +42,6 @@ regex = "1.11.1"
 # nalgebra: For solving linear systems of equations when generating partial changes.
 nalgebra = "0.33.2"
 
-# For use with some of the readers.
-byteorder = "1.5.0"
-
 mcubes = "0.1.0"
 
 
@@ -52,9 +51,10 @@ graphics = { path = "../../graphics" }
 #lin_alg = { path = "../../lin_alg" }
 pdbtbx = { git = "https://github.com/David-OConnor/pdbtbx", branch = "Fix-symmetry-error-newer-CIFs" }
 #barnes_hut = { path = "../../barnes_hut" }
-#na_seq = { path = "../na_seq" }
+na_seq = { path = "../na_seq" }
 bio_apis = { path = "../bio_apis" }
 mcubes = { path = "../mcubes" }
+#bio_files = { path = "../bio_files" }
 
 
 

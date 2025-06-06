@@ -6,25 +6,26 @@ use std::{
     path::Path,
 };
 
+use bio_files::{DensityCube, DensityMap, extract_cube, read_map_data};
 use lin_alg::f64::Vec3;
 use na_seq::AaIdent;
 
 use crate::{
     State,
-    file_io::{
-        cif_pdb::load_cif_pdb, map::DensityMap, mol2::load_mol2, pdbqt::load_pdbqt, sdf::load_sdf,
-    },
+    file_io::{cif_pdb::load_cif_pdb, pdbqt::load_pdbqt},
     molecule::{Ligand, Molecule},
 };
 
 pub mod cif_pdb;
 pub mod cif_secondary_structure;
 pub mod cif_sf;
-pub mod map;
-pub mod mol2;
 pub mod mtz;
 pub mod pdbqt;
 pub mod sdf;
+
+use bio_files::Mol2;
+
+use crate::reflection::ElectronDensity;
 
 impl State {
     /// A single endpoint to open a number of file types
@@ -37,26 +38,7 @@ impl State {
             .unwrap_or_default()
         {
             "sdf" | "mol2" | "pdbqt" | "pdb" | "cif" => self.open_molecule(path)?,
-            "map" => {
-                let (hdr, mut dens) = map::read_map_data(path)?;
-
-                // println!("Map header: {:#?}", hdr);
-
-                // for pt in &dens[0..100] {
-                //     println!("{:.2?}", pt);
-                // }
-                if let Some(mol) = &mut self.molecule {
-                    // handle_map_symmetry(&mut dens, &mol.atoms);
-
-                    mol.elec_density_header = Some(hdr);
-                    mol.elec_density = Some(dens);
-
-                    let dm = DensityMap::new(path)?;
-                    mol.density_map = Some(dm);
-
-                    self.volatile.make_density_mesh = true;
-                }
-            }
+            "map" => self.open_map(path)?,
             _ => {
                 return Err(io::Error::new(
                     ErrorKind::InvalidData,
@@ -76,8 +58,9 @@ impl State {
 
         let mut ligand = None;
         let molecule = match extension.to_str().unwrap() {
-            "sdf" => load_sdf(path),
-            "mol2" => load_mol2(path),
+            "sdf" => Molecule::load_sdf(path),
+            // "sdf" => Ok(Sdf::load(path)?.into()),
+            "mol2" => Ok(Mol2::load(path)?.into()),
             "pdbqt" => {
                 load_pdbqt(path).map(|(molecule, mut lig_loaded)| {
                     if lig_loaded.is_some() {
@@ -167,6 +150,54 @@ impl State {
         Ok(())
     }
 
+    pub fn open_map(&mut self, path: &Path) -> io::Result<()> {
+        let (hdr, mut dens) = read_map_data(path)?;
+
+        // println!("Map header: {:#?}", hdr);
+
+        // for pt in &dens[0..100] {
+        //     println!("{:.2?}", pt);
+        // }
+        if let Some(mol) = &mut self.molecule {
+            // handle_map_symmetry(&mut dens, &mol.atoms);
+
+            // todo: Most of this will be replaced with DensityMap if correct.
+
+            mol.elec_density_header = Some(hdr);
+
+            // let elec_dens = dens.iter().map(|d| ElectronDensity {
+            //    coords: d.coords,
+            //     density: d.density,
+            // }).collect();
+            // mol.elec_density = Some(elec_dens);
+
+            let dm = DensityMap::new(path)?;
+            let margin = 5.;
+            let atom_posits: Vec<_> = mol.atoms.iter().map(|a| a.posit).collect();
+
+            let dens_rec = DensityCube::new(&atom_posits, &dm, margin);
+
+            let dens = dens_rec.make_densities(&dm.cell);
+            let elec_dens = dens
+                .iter()
+                .map(|d| ElectronDensity {
+                    coords: d.coords,
+                    density: d.density,
+                })
+                .collect();
+
+            mol.density_map = Some(dm);
+            mol.elec_density = Some(elec_dens);
+
+            self.volatile.make_density_mesh = true;
+        }
+
+        self.to_save.last_map_opened = Some(path.to_owned());
+        self.update_save_prefs();
+
+        Ok(())
+    }
+
     /// A single endpoint to save a number of file types
     pub fn save(&mut self, path: &Path) -> io::Result<()> {
         let binding = path.extension().unwrap_or_default().to_ascii_lowercase();
@@ -196,7 +227,9 @@ impl State {
             },
             "mol2" => match &self.ligand {
                 Some(lig) => {
-                    lig.molecule.save_mol2(path)?;
+                    // todo: Impl Molecule to Mol2, then put this back.
+                    // lig.molecule.save_mol2(path)?;
+
                     self.to_save.last_ligand_opened = Some(path.to_owned());
                     self.update_save_prefs()
                 }

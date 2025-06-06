@@ -26,7 +26,6 @@ mod cartoon_mesh;
 mod docking;
 mod download_mols;
 mod drug_like;
-mod element;
 mod file_io;
 mod forces;
 mod inputs;
@@ -70,7 +69,7 @@ use cudarc::{
 };
 use egui::RichText;
 use egui_file_dialog::{FileDialog, FileDialogConfig};
-use file_io::{cif_pdb::load_cif_pdb, sdf::load_sdf};
+use file_io::cif_pdb::load_cif_pdb;
 use graphics::{Camera, InputsCommanded};
 use lin_alg::{
     f32::{Quaternion, Vec3, f32x8},
@@ -78,6 +77,7 @@ use lin_alg::{
 };
 use mol_drawing::MoleculeView;
 use molecule::Molecule;
+use na_seq::{Element, element::init_lj_lut};
 use pdbtbx::{self, PDB};
 
 use crate::{
@@ -86,8 +86,7 @@ use crate::{
         BindingEnergy, THETA_BH, dynamics_playback::Snapshot, external::check_adv_avail,
         prep::DockingSetup,
     },
-    element::{Element, init_lj_lut},
-    file_io::{cif_pdb::save_pdb, mol2::load_mol2, mtz::load_mtz, pdbqt::load_pdbqt},
+    file_io::{cif_pdb::save_pdb, mtz::load_mtz, pdbqt::load_pdbqt},
     molecule::{Ligand, ResidueType},
     navigation::Tab,
     prefs::ToSave,
@@ -557,6 +556,13 @@ fn main() {
     let last_opened = state.to_save.last_opened.clone();
     if let Some(path) = &last_opened {
         if let Err(e) = state.open_molecule(path) {
+            handle_err(&mut state.ui, e.to_string());
+        }
+    }
+
+    let last_map_opened = state.to_save.last_map_opened.clone();
+    if let Some(path) = &last_map_opened {
+        if let Err(e) = state.open(path) {
             handle_err(&mut state.ui, e.to_string());
         }
     }

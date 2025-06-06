@@ -8,12 +8,16 @@ use std::{
 
 use bio_apis::{drugbank, pubchem, rcsb};
 use egui::{Color32, ComboBox, Context, Key, RichText, Slider, TextEdit, TopBottomPanel, Ui};
-use graphics::{Camera, ControlScheme, EngineUpdates, Entity, RIGHT_VEC, Scene, UP_VEC};
+use graphics::{
+    Camera, ControlScheme, EngineUpdates, Entity, Mesh, RIGHT_VEC, Scene, UP_VEC, Vertex,
+};
 use lin_alg::f32::{Quaternion, Vec3};
-use mcubes::MarchingCubes;
+use mcubes::{MarchingCubes, MeshSide};
 use na_seq::{AaIdent, AminoAcid};
 
 static INIT_COMPLETE: AtomicBool = AtomicBool::new(false);
+
+use bio_files::{DensityMap, density_from_rcsb_gemmi, density_from_rcsb_gemmi2};
 
 use crate::{
     CamSnapshot, MsaaSetting, Selection, State, ViewSelLevel, cli,
@@ -26,13 +30,13 @@ use crate::{
         find_sites::find_docking_sites,
     },
     download_mols::{load_sdf_drugbank, load_sdf_pubchem},
-    file_io::map::{DensityMap, density_from_rcsb_gemmi, density_from_rcsb_gemmi2},
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
     mol_drawing::{
         COLOR_DOCKING_SITE_MESH, EntityType, MoleculeView, draw_density, draw_density_surface,
         draw_ligand, draw_molecule,
     },
     molecule::{Ligand, Molecule, ResidueType},
+    reflection::ElectronDensity,
     render::{
         ATOM_SHININESS, CAM_INIT_OFFSET, MESH_DENSITY_SURFACE, MESH_DOCKING_SURFACE,
         RENDER_DIST_FAR, RENDER_DIST_NEAR, set_docking_light, set_flashlight, set_static_light,
@@ -1485,7 +1489,15 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                                     );
 
                                     mol.elec_density_header = Some(hdr);
-                                    mol.elec_density = Some(dens);
+
+                                    let elec_dens = dens
+                                        .iter()
+                                        .map(|d| ElectronDensity {
+                                            coords: d.coords,
+                                            density: d.density,
+                                        })
+                                        .collect();
+                                    mol.elec_density = Some(elec_dens);
 
                                     let dm = density_from_rcsb_gemmi2(&mol.ident).unwrap(); // todo unwrap temp.
                                     mol.density_map = Some(dm);
@@ -1986,8 +1998,20 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     state.ui.density_iso_level,
                 ) {
                     Ok(mc) => {
-                        let mesh = mc.generate();
-                        scene.meshes[MESH_DENSITY_SURFACE] = mesh;
+                        let mesh = mc.generate(MeshSide::Both);
+
+                        // Convert from `mcubes::Mesh` to `graphics::Mesh`.
+                        let vertices = mesh
+                            .vertices
+                            .iter()
+                            .map(|v| Vertex::new(v.posit.to_arr(), v.normal))
+                            .collect();
+
+                        scene.meshes[MESH_DENSITY_SURFACE] = Mesh {
+                            vertices,
+                            indices: mesh.indices,
+                            material: 0,
+                        };
 
                         if !state.ui.visibility.hide_density_surface {
                             draw_density_surface(&mut scene.entities);

@@ -8,6 +8,7 @@ use barnes_hut::{BhConfig, Cube, Tree};
 use lin_alg::f32::Vec3;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use lin_alg::f32::{Vec3x8, f32x8, pack_float};
+use na_seq::Element;
 
 use crate::{
     docking::{
@@ -16,7 +17,6 @@ use crate::{
             EemParams, EemSet, PartialCharge, assign_eem_charges, create_partial_charges,
         },
     },
-    element::Element,
     forces::setup_sigma_eps_x8,
     molecule::{Atom, Bond, BondCount, BondType, Ligand, Molecule},
 };

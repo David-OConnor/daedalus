@@ -9,12 +9,11 @@ use lin_alg::{
     f32::{Quaternion, Vec3 as Vec3F32},
     f64::Vec3,
 };
-use na_seq::{AaIdent, AminoAcid};
+use na_seq::{AaIdent, AminoAcid, Element};
 
 use crate::{
     CamSnapshot, PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel,
     download_mols::load_cif_rcsb,
-    element::Element,
     mol_drawing::{EntityType, MoleculeView},
     molecule::{Atom, AtomRole, Bond, Chain, Molecule, Residue, ResidueType},
     render::{

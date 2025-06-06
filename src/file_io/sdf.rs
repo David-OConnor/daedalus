@@ -10,17 +10,24 @@ use std::{
 };
 
 use lin_alg::f64::Vec3;
+use na_seq::Element;
 
-use crate::{
-    element::Element,
-    molecule::{Atom, BondType, Chain, Molecule, Residue, ResidueType},
-};
+use crate::molecule::{Atom, BondType, Chain, Molecule, Residue, ResidueType};
 
-struct Sdf {
-    pub molecule: Molecule,
+pub struct Sdf {
     /// These fields aren't universal to the format.
+    pub ident: String,
+    // pub mol_type: MolType,
     pub metadata: HashMap<String, String>,
+    pub atoms: Vec<bio_files::AtomGeneric>,
+    pub bonds: Vec<bio_files::BondGeneric>,
 }
+//
+// struct Sdf {
+//     pub molecule: Molecule,
+//     /// These fields aren't universal to the format.
+//     pub metadata: HashMap<String, String>,
+// }
 
 impl Molecule {
     /// From a string of a CIF or PDB text file.
@@ -273,15 +280,15 @@ impl Molecule {
 
         Ok(())
     }
-}
 
-pub fn load_sdf(path: &Path) -> io::Result<Molecule> {
-    let mut file = File::open(path)?;
-    let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer)?;
+    pub fn load_sdf(path: &Path) -> io::Result<Molecule> {
+        let mut file = File::open(path)?;
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer)?;
 
-    let data_str: String = String::from_utf8(buffer)
-        .map_err(|_| io::Error::new(ErrorKind::InvalidData, "Invalid UTF8"))?;
+        let data_str: String = String::from_utf8(buffer)
+            .map_err(|_| io::Error::new(ErrorKind::InvalidData, "Invalid UTF8"))?;
 
-    Molecule::from_sdf(&data_str)
+        Molecule::from_sdf(&data_str)
+    }
 }

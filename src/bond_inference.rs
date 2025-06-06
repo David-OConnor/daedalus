@@ -9,13 +9,13 @@
 
 use std::f64::consts::TAU;
 
+use na_seq::{
+    Element,
+    Element::{Carbon, Fluorine, Hydrogen, Nitrogen, Oxygen, Sulfur},
+};
 use rayon::prelude::*;
 
 use crate::{
-    element::{
-        Element,
-        Element::{Carbon, Fluorine, Hydrogen, Nitrogen, Oxygen, Sulfur},
-    },
     molecule::{
         Atom, Bond,
         BondCount::*,

@@ -3,6 +3,7 @@
 use std::{f64::consts::TAU, fmt, fmt::Formatter};
 
 use lin_alg::f64::{Quaternion, Vec3, det_from_cols};
+use na_seq::{Element, Element::Hydrogen};
 
 use crate::{
     aa_coords::{
@@ -12,7 +13,6 @@ use crate::{
         },
         sidechain::Sidechain,
     },
-    element::{Element, Element::Hydrogen},
     molecule::{Atom, AtomRole, ResidueType},
 };
 
