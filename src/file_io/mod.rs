@@ -6,7 +6,7 @@ use std::{
     path::Path,
 };
 
-use bio_files::{DensityCube, DensityMap, extract_cube, read_map_data};
+use bio_files::{DensityMap, read_map_data};
 use lin_alg::f64::Vec3;
 use na_seq::AaIdent;
 
@@ -25,7 +25,7 @@ pub mod sdf;
 
 use bio_files::Mol2;
 
-use crate::reflection::ElectronDensity;
+use crate::reflection::{DensityCube, ElectronDensity};
 
 impl State {
     /// A single endpoint to open a number of file types
@@ -153,11 +153,6 @@ impl State {
     pub fn open_map(&mut self, path: &Path) -> io::Result<()> {
         let (hdr, mut dens) = read_map_data(path)?;
 
-        // println!("Map header: {:#?}", hdr);
-
-        // for pt in &dens[0..100] {
-        //     println!("{:.2?}", pt);
-        // }
         if let Some(mol) = &mut self.molecule {
             // handle_map_symmetry(&mut dens, &mol.atoms);
 
@@ -172,13 +167,13 @@ impl State {
             // mol.elec_density = Some(elec_dens);
 
             let dm = DensityMap::new(path)?;
-            let margin = 5.;
+            let margin = 1.;
             let atom_posits: Vec<_> = mol.atoms.iter().map(|a| a.posit).collect();
 
             let dens_rec = DensityCube::new(&atom_posits, &dm, margin);
 
             let dens = dens_rec.make_densities(&dm.cell);
-            let elec_dens = dens
+            let elec_dens: Vec<_> = dens
                 .iter()
                 .map(|d| ElectronDensity {
                     coords: d.coords,
@@ -189,7 +184,9 @@ impl State {
             mol.density_map = Some(dm);
             mol.elec_density = Some(elec_dens);
 
-            self.volatile.make_density_mesh = true;
+            // todo: Put back
+            self.ui.new_density_loaded = true;
+            // self.volatile.make_density_mesh = true;
         }
 
         self.to_save.last_map_opened = Some(path.to_owned());
@@ -227,8 +224,7 @@ impl State {
             },
             "mol2" => match &self.ligand {
                 Some(lig) => {
-                    // todo: Impl Molecule to Mol2, then put this back.
-                    // lig.molecule.save_mol2(path)?;
+                    lig.molecule.to_mol2().save(path)?;
 
                     self.to_save.last_ligand_opened = Some(path.to_owned());
                     self.update_save_prefs()

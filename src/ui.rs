@@ -1979,6 +1979,17 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         engine_updates.lighting = true;
     }
 
+    if state.ui.new_density_loaded {
+        state.ui.new_density_loaded = false;
+        if let Some(mol) = &state.molecule {
+            if !state.ui.visibility.hide_density {
+                if let Some(density) = &mol.elec_density {
+                    draw_density(&mut scene.entities, density);
+                    engine_updates.entities = true;
+                }
+            }
+        }
+    }
     if state.volatile.make_density_mesh {
         if let Some(mol) = &state.molecule {
             if let Some(dens) = &mol.elec_density {

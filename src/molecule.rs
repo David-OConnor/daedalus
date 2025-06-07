@@ -12,7 +12,7 @@ use bio_apis::{
     ReqError, rcsb,
     rcsb::{FilesAvailable, PdbDataResults, PdbMetaData},
 };
-use bio_files::{DensityMap, MapHeader, Mol2};
+use bio_files::{AtomGeneric, BondGeneric, ChargeType, DensityMap, MapHeader, Mol2, MolType};
 use lin_alg::{
     f32::Vec3 as Vec3F32,
     f64::{Quaternion, Vec3},
@@ -762,7 +762,6 @@ pub const fn aa_color(aa: AminoAcid) -> (f32, f32, f32) {
 
 impl From<Mol2> for Molecule {
     fn from(m: Mol2) -> Self {
-        // let mut result = Molecule::new(ident, atoms, Vec::new(), Vec::new(), None, None);
         let mut atoms = Vec::with_capacity(m.atoms.len());
         for atom in &m.atoms {
             atoms.push(Atom {
@@ -798,5 +797,40 @@ impl From<Mol2> for Molecule {
         result.adjacency_list = result.build_adjacency_list();
 
         result
+    }
+}
+
+impl Molecule {
+    pub fn to_mol2(&self) -> Mol2 {
+        let mut atoms = Vec::with_capacity(self.atoms.len());
+        for atom in &self.atoms {
+            atoms.push(AtomGeneric {
+                serial_number: atom.serial_number,
+                posit: atom.posit,
+                element: atom.element,
+                // name: String::new(),
+                partial_charge: atom.partial_charge,
+                ..Default::default()
+            });
+        }
+
+        let mut bonds = Vec::with_capacity(self.bonds.len());
+        for bond in &self.bonds {
+            bonds.push(BondGeneric {
+                bond_type: "1".to_owned(), // todo
+                // todo: Map serial num to index incase these don't ascend by one.
+                atom_0: bond.atom_0 + 1,
+                atom_1: bond.atom_1 + 1,
+            });
+        }
+
+        Mol2 {
+            ident: self.ident.clone(),
+            mol_type: MolType::Small,
+            charge_type: ChargeType::None,
+            comment: None,
+            atoms,
+            bonds,
+        }
     }
 }

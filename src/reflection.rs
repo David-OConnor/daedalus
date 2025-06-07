@@ -4,7 +4,7 @@
 use std::{collections::HashMap, f64::consts::TAU, io, time::Instant};
 
 use bio_apis::{ReqError, rcsb};
-use bio_files::MapHeader;
+use bio_files::{Density, DensityMap, MapHeader, UnitCell};
 use lin_alg::{
     complex_nums::{Cplx, IM},
     f64::Vec3,
@@ -437,5 +437,170 @@ pub fn wrap_atoms_into_cell(hdr: &MapHeader, atoms: &mut [Atom]) {
 
         // ● back to Cartesian Å
         at.posit = frac_to_cart2(f, ax, bx, cx);
+    }
+}
+
+
+
+/// One dense 3-D brick of map values. We use this struct to handle symmetry: ensuring full coverage
+/// of all atoms.
+#[derive(Debug)]
+pub struct DensityCube {
+    /// Cartesian coordinate of the *centre* of voxel (0,0,0)
+    pub origin_cart: Vec3,
+    /// Size of one voxel along a,b,c in Å
+    pub step: [f64; 3],
+    /// (nx, ny, nz) – number of voxels stored
+    pub dims: [usize; 3],
+    /// Row-major file-order data:  z → y → x fastest
+    pub data: Vec<f32>,
+}
+
+impl DensityCube {
+    /// Extract the smallest cube that covers all atoms plus `margin` Å.
+    /// `margin = 0.0` means “touch each atom’s centre”.
+    /// // todo: Cube or rect?
+    pub fn new(atom_posits: &[Vec3], map: &DensityMap, margin: f64) -> Self {
+        let hdr = &map.hdr;
+        let cell = &map.cell;
+
+        // ────────────────────────────────────────────────────────────────
+        // 1. Atom bounds in fractional coords *relative to map origin*
+        // ────────────────────────────────────────────────────────────────
+        let mut min_r = Vec3::new(f64::INFINITY, f64::INFINITY, f64::INFINITY);
+        let mut max_r = Vec3::new(f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
+
+        for p in atom_posits {
+            // (a) Cartesian → absolute fractional
+            let mut f = cell.cartesian_to_fractional(*p);
+            // (b) shift so that origin_frac becomes (0,0,0)
+            f -= map.origin_frac;
+
+            // keep *unwrapped* values (they can be <0 or >1)
+            min_r = Vec3::new(min_r.x.min(f.x), min_r.y.min(f.y), min_r.z.min(f.z));
+            max_r = Vec3::new(max_r.x.max(f.x), max_r.y.max(f.y), max_r.z.max(f.z));
+        }
+
+        // extra margin in fractional units
+        let margin_r = Vec3::new(margin / cell.a, margin / cell.b, margin / cell.c);
+        min_r -= margin_r;
+        max_r += margin_r;
+
+        // ────────────────────────────────────────────────────────────────
+        // 2.  Fractional → voxel indices (no wrapping)
+        // ────────────────────────────────────────────────────────────────
+        let to_idx = |fr: f64, n: i32| -> isize { (fr * n as f64 - 0.5).floor() as isize };
+
+        let lo_i = [
+            to_idx(min_r.x, hdr.mx),
+            to_idx(min_r.y, hdr.my),
+            to_idx(min_r.z, hdr.mz),
+        ];
+        let hi_i = [
+            to_idx(max_r.x, hdr.mx),
+            to_idx(max_r.y, hdr.my),
+            to_idx(max_r.z, hdr.mz),
+        ];
+
+        // inclusive → dims       (now guaranteed hi_i ≥ lo_i)
+        let dims = [
+            (hi_i[0] - lo_i[0] + 1) as usize,
+            (hi_i[1] - lo_i[1] + 1) as usize,
+            (hi_i[2] - lo_i[2] + 1) as usize,
+        ];
+
+        // ────────────────────────────────────────────────────────────────
+        // 3. Cartesian centre of voxel (0,0,0); add origin_frac only once
+        // ────────────────────────────────────────────────────────────────
+        let lo_frac = Vec3::new(
+            (lo_i[0] as f64 + 0.5) / hdr.mx as f64,
+            (lo_i[1] as f64 + 0.5) / hdr.my as f64,
+            (lo_i[2] as f64 + 0.5) / hdr.mz as f64,
+        ) + map.origin_frac;          // back to absolute fractional
+
+        let origin_cart = cell.fractional_to_cartesian(lo_frac);
+
+        // Voxel step vectors in Å
+        let step = [
+            cell.a / hdr.mx as f64,
+            cell.b / hdr.my as f64,
+            cell.c / hdr.mz as f64,
+        ];
+
+        // ——————————————————————————————————————————
+        // 4.  Sample the map
+        let mut data = Vec::with_capacity(dims[0] * dims[1] * dims[2]);
+
+        for kz in 0..dims[2] {
+            for ky in 0..dims[1] {
+                for kx in 0..dims[0] {
+                    let idx_c = [
+                        lo_i[0] + kx as isize,
+                        lo_i[1] + ky as isize,
+                        lo_i[2] + kz as isize,
+                    ];
+
+                    // crystallographic → Cartesian centre of this voxel
+                    let frac = map.origin_frac
+                        + Vec3::new(
+                        (idx_c[0] as f64 + 0.5) / hdr.mx as f64,
+                        (idx_c[1] as f64 + 0.5) / hdr.my as f64,
+                        (idx_c[2] as f64 + 0.5) / hdr.mz as f64,
+                    );
+                    let cart = cell.fractional_to_cartesian(frac);
+
+                    data.push(map.density_at_point(cart));
+                }
+            }
+        }
+
+        Self {
+            origin_cart,
+            step,
+            dims,
+            data,
+        }
+    }
+
+    /// Convert a DensityCube into (coords, density) structs.
+    ///
+    /// Works for any unit-cell.  We rely on the same `UnitCell` you already have,
+    /// so non-orthogonal (triclinic, monoclinic, …) cells come out correct.
+    pub fn make_densities(
+        &self,
+        cell: &UnitCell, // use the very same cell you built the cube with
+    ) -> Vec<Density> {
+        // Step *vectors* along a, b, c — not just their lengths
+        let cols = cell.ortho.to_cols();
+
+        // length of one voxel along the a-axis in Å  =  a / mx
+        let step_vec_a = cols.0 * (self.step[0] / cell.a);   //  = a_vec / mx
+        let step_vec_b = cols.1 * (self.step[1] / cell.b);   //  = b_vec / my
+        let step_vec_c = cols.2 * (self.step[2] / cell.c);   //  = c_vec / mz
+
+        let (nx, ny, nz) = (self.dims[0], self.dims[1], self.dims[2]);
+        let mut out = Vec::with_capacity(nx * ny * nz);
+
+        for kz in 0..nz {
+            for ky in 0..ny {
+                for kx in 0..nx {
+                    // linear index in self.data  (z → y → x fastest)
+                    let idx = ((kz * ny + ky) * nx + kx) as usize;
+                    let rho = self.data[idx] as f64;
+
+                    // Cartesian centre of this voxel
+                    let coords = self.origin_cart
+                        + step_vec_a * kx as f64
+                        + step_vec_b * ky as f64
+                        + step_vec_c * kz as f64;
+
+                    out.push(Density {
+                        coords,
+                        density: rho,
+                    });
+                }
+            }
+        }
+        out
     }
 }

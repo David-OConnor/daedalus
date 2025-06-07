@@ -8,7 +8,7 @@ use std::{
     io::{ErrorKind, Read, Write},
     path::Path,
 };
-
+use bio_files::{AtomGeneric, BondGeneric};
 use lin_alg::f64::Vec3;
 use na_seq::Element;
 
@@ -19,15 +19,10 @@ pub struct Sdf {
     pub ident: String,
     // pub mol_type: MolType,
     pub metadata: HashMap<String, String>,
-    pub atoms: Vec<bio_files::AtomGeneric>,
-    pub bonds: Vec<bio_files::BondGeneric>,
+    pub atoms: Vec<AtomGeneric>,
+    pub bonds: Vec<BondGeneric>,
 }
-//
-// struct Sdf {
-//     pub molecule: Molecule,
-//     /// These fields aren't universal to the format.
-//     pub metadata: HashMap<String, String>,
-// }
+
 
 impl Molecule {
     /// From a string of a CIF or PDB text file.

@@ -19,8 +19,8 @@ barnes_hut = { version = "1.0.8"}  # enc temp rem
 #qhull = "0.4.0"
 na_seq = "0.2.7"
 bio_apis = {  version = "0.1.2", features = ["encode"] }
-#bio_files = "0.1.0"
-bio_files = { path = "../bio_files" }
+bio_files = "0.1.0"
+#bio_files = { path = "../bio_files" }
 
 # For loading and saving config
 bincode = "2.0.1"
@@ -42,7 +42,7 @@ regex = "1.11.1"
 # nalgebra: For solving linear systems of equations when generating partial changes.
 nalgebra = "0.33.2"
 
-mcubes = "0.1.0"
+mcubes = "0.1.1"
 
 
 # We use these when developing locally to reduce friction.
@@ -54,7 +54,7 @@ pdbtbx = { git = "https://github.com/David-OConnor/pdbtbx", branch = "Fix-symmet
 na_seq = { path = "../na_seq" }
 bio_apis = { path = "../bio_apis" }
 mcubes = { path = "../mcubes" }
-#bio_files = { path = "../bio_files" }
+bio_files = { path = "../bio_files" }
 
 
 
