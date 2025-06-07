@@ -17,7 +17,7 @@ use na_seq::{AaIdent, AminoAcid};
 
 static INIT_COMPLETE: AtomicBool = AtomicBool::new(false);
 
-use bio_files::{DensityMap, density_from_rcsb_gemmi, density_from_rcsb_gemmi2};
+use bio_files::{DensityMap, density_from_rcsb_gemmi, density_from_rcsb_gemmi2, ResidueType};
 
 use crate::{
     CamSnapshot, MsaaSetting, Selection, State, ViewSelLevel, cli,
@@ -35,10 +35,10 @@ use crate::{
         COLOR_DOCKING_SITE_MESH, EntityType, MoleculeView, draw_density, draw_density_surface,
         draw_ligand, draw_molecule,
     },
-    molecule::{Ligand, Molecule, ResidueType},
+    molecule::{Ligand, Molecule},
     reflection::ElectronDensity,
     render::{
-        ATOM_SHININESS, CAM_INIT_OFFSET, MESH_DENSITY_SURFACE, MESH_DOCKING_SURFACE,
+        CAM_INIT_OFFSET, MESH_DENSITY_SURFACE, MESH_DOCKING_SURFACE,
         RENDER_DIST_FAR, RENDER_DIST_NEAR, set_docking_light, set_flashlight, set_static_light,
     },
     util,
@@ -1992,19 +1992,43 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
     }
     if state.volatile.make_density_mesh {
         if let Some(mol) = &state.molecule {
-            if let Some(dens) = &mol.elec_density {
-                // if !state.ui.visibility.hide_density {
-                //     draw_density(&mut scene.entities, dens);
-                // }
+            // if let Some(dens) = &mol.elec_density {
 
-                // println!("Dens header: {:?}", mol.elec_density_header);
+                // todo: Adapt this to your new approach, if it works.
+                // let hdr = mol.elec_density_header.as_ref().unwrap();
+                // let rect = mol.density_rect.as_ref().unwrap();
+            if let Some(rect) = &mol.density_rect {
 
-                let hdr = mol.elec_density_header.as_ref().unwrap();
+                /////
+
+                // 2) Grid parameters for MarchingCubes
+                let dims = (rect.dims[0], rect.dims[1], rect.dims[2]);        // (nx,ny,nz)
+
+                let size = (
+                    (rect.step[0] * rect.dims[0] as f64) as f32,              // Δx * nx  (Å)
+                    (rect.step[1] * rect.dims[1] as f64) as f32,
+                    (rect.step[2] * rect.dims[2] as f64) as f32,
+                );
+
+                // “sampling interval” in the original code is really the number of
+                // samples along each axis (= nx,ny,nz), so just cast dims to f32:
+                let samples = (
+                    rect.dims[0] as f32,
+                    rect.dims[1] as f32,
+                    rect.dims[2] as f32,
+                );
+                
+                ////
+                
 
                 match MarchingCubes::from_gridpoints(
-                    (hdr.nx as usize, hdr.ny as usize, hdr.nz as usize),
-                    (hdr.cell[0], hdr.cell[1], hdr.cell[2]),
-                    (hdr.mx as f32, hdr.my as f32, hdr.mz as f32),
+                    dims,
+                    size,
+                    samples,
+                    rect.origin_cart.into(),
+                    // (hdr.nx as usize, hdr.ny as usize, hdr.nz as usize),
+                    // (hdr.cell[0], hdr.cell[1], hdr.cell[2]),
+                    // (hdr.mx as f32, hdr.my as f32, hdr.mz as f32),
                     mol.elec_density.as_ref().unwrap(),
                     state.ui.density_iso_level,
                 ) {

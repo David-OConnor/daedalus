@@ -21,11 +21,10 @@ pub mod cif_secondary_structure;
 pub mod cif_sf;
 pub mod mtz;
 pub mod pdbqt;
-pub mod sdf;
 
 use bio_files::Mol2;
-
-use crate::reflection::{DensityCube, ElectronDensity};
+use bio_files::sdf::Sdf;
+use crate::reflection::{DensityRect, ElectronDensity};
 
 impl State {
     /// A single endpoint to open a number of file types
@@ -58,8 +57,7 @@ impl State {
 
         let mut ligand = None;
         let molecule = match extension.to_str().unwrap() {
-            "sdf" => Molecule::load_sdf(path),
-            // "sdf" => Ok(Sdf::load(path)?.into()),
+            "sdf" => Ok(Sdf::load(path)?.into()),
             "mol2" => Ok(Mol2::load(path)?.into()),
             "pdbqt" => {
                 load_pdbqt(path).map(|(molecule, mut lig_loaded)| {
@@ -154,39 +152,45 @@ impl State {
         let (hdr, mut dens) = read_map_data(path)?;
 
         if let Some(mol) = &mut self.molecule {
-            // handle_map_symmetry(&mut dens, &mol.atoms);
 
+            /////////
             // todo: Most of this will be replaced with DensityMap if correct.
+            // todo: Once you fix the misalignment, remove this non-DM approach, and add back the DM approach.
 
             mol.elec_density_header = Some(hdr);
 
-            // let elec_dens = dens.iter().map(|d| ElectronDensity {
-            //    coords: d.coords,
-            //     density: d.density,
-            // }).collect();
-            // mol.elec_density = Some(elec_dens);
-
-            let dm = DensityMap::new(path)?;
-            let margin = 1.;
-            let atom_posits: Vec<_> = mol.atoms.iter().map(|a| a.posit).collect();
-
-            let dens_rec = DensityCube::new(&atom_posits, &dm, margin);
-
-            let dens = dens_rec.make_densities(&dm.cell);
-            let elec_dens: Vec<_> = dens
-                .iter()
-                .map(|d| ElectronDensity {
-                    coords: d.coords,
-                    density: d.density,
-                })
-                .collect();
-
-            mol.density_map = Some(dm);
+            let elec_dens = dens.iter().map(|d| ElectronDensity {
+               coords: d.coords,
+                density: d.density,
+            }).collect();
             mol.elec_density = Some(elec_dens);
+            ////
 
-            // todo: Put back
+
+            ////
+            // let dm = DensityMap::new(path)?;
+            // let margin = 1.;
+            // let atom_posits: Vec<_> = mol.atoms.iter().map(|a| a.posit).collect();
+            //
+            // let dens_rect = DensityRect::new(&atom_posits, &dm, margin);
+            //
+            // let dens = dens_rect.make_densities(&dm.cell);
+            // let elec_dens: Vec<_> = dens
+            //     .iter()
+            //     .map(|d| ElectronDensity {
+            //         coords: d.coords,
+            //         density: d.density,
+            //     })
+            //     .collect();
+            //
+            // mol.density_map = Some(dm);
+            // mol.density_rect = Some(dens_rect);
+            // mol.elec_density = Some(elec_dens);
+            //////
+
+
             self.ui.new_density_loaded = true;
-            // self.volatile.make_density_mesh = true;
+            self.volatile.make_density_mesh = true;
         }
 
         self.to_save.last_map_opened = Some(path.to_owned());
@@ -216,7 +220,8 @@ impl State {
             }
             "sdf" => match &self.ligand {
                 Some(lig) => {
-                    lig.molecule.save_sdf(path)?;
+                    lig.molecule.to_sdf().save(path)?;
+
                     self.to_save.last_ligand_opened = Some(path.to_owned());
                     self.update_save_prefs()
                 }

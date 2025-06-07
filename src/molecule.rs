@@ -7,12 +7,13 @@ use std::{
     sync::mpsc::{self, Receiver},
     thread,
 };
-
+use std::collections::HashMap;
 use bio_apis::{
     ReqError, rcsb,
     rcsb::{FilesAvailable, PdbDataResults, PdbMetaData},
 };
-use bio_files::{AtomGeneric, BondGeneric, ChargeType, DensityMap, MapHeader, Mol2, MolType};
+use bio_files::{AtomGeneric, BondGeneric, Chain, ChargeType, DensityMap, MapHeader, Mol2, MolType, ResidueGeneric, ResidueType};
+use bio_files::sdf::Sdf;
 use lin_alg::{
     f32::Vec3 as Vec3F32,
     f64::{Quaternion, Vec3},
@@ -32,6 +33,7 @@ use crate::{
     reflection::{ElectronDensity, ReflectionsData},
     util::mol_center_size,
 };
+use crate::reflection::DensityRect;
 
 pub const ATOM_NEIGHBOR_DIST_THRESH: f64 = 5.; // todo: Adjust A/R.
 
@@ -71,6 +73,7 @@ pub struct Molecule {
     /// From reflections
     pub elec_density: Option<Vec<ElectronDensity>>,
     pub density_map: Option<DensityMap>, // todo: Experimenting with one that wraps.
+    pub density_rect: Option<DensityRect>, // todo: Experimenting with one that wraps.
     pub aa_seq: Vec<AminoAcid>,
 }
 
@@ -599,6 +602,32 @@ pub struct Bond {
     pub is_backbone: bool,
 }
 
+impl Bond {
+    pub fn to_generic(&self) -> BondGeneric {
+        BondGeneric {
+            bond_type: "1".to_owned(), // todo!
+            // todo: Map serial num to index incase these don't ascend by one.
+            atom_0: self.atom_0 + 1,
+            atom_1: self.atom_1 + 1,
+        }
+    }
+}
+
+impl From<&BondGeneric> for Bond {
+    fn from(bond: &BondGeneric) -> Self {
+        Self {
+            bond_type: BondType::Covalent {
+                count: BondCount::from_str(&bond.bond_type),
+            },
+            // Our bonds are by index; these are by serial number. This should align them in most cases.
+            // todo: Map serial num to index incase these don't ascend by one.
+            atom_0: bond.atom_0 - 1,
+            atom_1: bond.atom_1 - 1,
+            is_backbone: false,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct HydrogenBond {
     /// All three atoms are indexes.
@@ -607,43 +636,7 @@ pub struct HydrogenBond {
     pub hydrogen: usize,
 }
 
-#[derive(Debug, Clone)]
-pub struct Chain {
-    pub id: String,
-    // todo: Do we want both residues and atoms stored here? It's an overconstraint.
-    pub residues: Vec<usize>,
-    /// Indexes
-    pub atoms: Vec<usize>,
-    // todo: Perhaps vis would make more sense in a separate UI-related place.
-    pub visible: bool,
-}
 
-#[derive(Debug, Clone)]
-pub enum ResidueType {
-    AminoAcid(AminoAcid),
-    Water,
-    Other(String),
-}
-
-impl Default for ResidueType {
-    fn default() -> Self {
-        Self::Other(String::new())
-    }
-}
-
-impl ResidueType {
-    /// Parses from the "name" field in common text-based formats lik CIF, PDB, and PDBQT.
-    pub fn from_str(name: &str) -> Self {
-        if name.to_uppercase() == "HOH" {
-            ResidueType::Water
-        } else {
-            match AminoAcid::from_str(name) {
-                Ok(aa) => ResidueType::AminoAcid(aa),
-                Err(_) => ResidueType::Other(name.to_owned()),
-            }
-        }
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct Residue {
@@ -654,6 +647,28 @@ pub struct Residue {
     pub atoms: Vec<usize>, // Atom index
     pub dihedral: Option<Dihedral>,
 }
+
+impl Residue {
+    pub fn to_generic(&self) -> ResidueGeneric {
+        ResidueGeneric {
+            serial_number: self.serial_number,
+            res_type: self.res_type.clone(),
+            atoms: self.atoms.clone(),
+        }
+    }
+}
+
+impl From<&ResidueGeneric> for Residue {
+    fn from(res: &ResidueGeneric) -> Self {
+        Self {
+            serial_number: res.serial_number,
+            res_type: res.res_type.clone(),
+            atoms: res.atoms.clone(),
+            dihedral: None,
+        }
+    }
+}
+
 
 impl Residue {
     pub fn descrip(&self) -> String {
@@ -670,6 +685,7 @@ impl Residue {
         result
     }
 }
+
 
 #[derive(Debug, Clone, Default)]
 pub struct Atom {
@@ -708,6 +724,30 @@ impl Atom {
             ]
             .contains(&r),
             None => false,
+        }
+    }
+
+    pub fn to_generic(&self) -> AtomGeneric {
+        AtomGeneric {
+            serial_number: self.serial_number,
+            posit: self.posit,
+            element: self.element,
+            // name: String::new(),
+            partial_charge: self.partial_charge,
+            ..Default::default()
+        }
+    }
+}
+
+impl From<&AtomGeneric> for Atom {
+    fn from(atom: &AtomGeneric) -> Self {
+        Self {
+            serial_number: atom.serial_number,
+            posit: atom.posit,
+            element: atom.element,
+            name: String::new(),
+            partial_charge: atom.partial_charge,
+            ..Default::default()
         }
     }
 }
@@ -762,33 +802,11 @@ pub const fn aa_color(aa: AminoAcid) -> (f32, f32, f32) {
 
 impl From<Mol2> for Molecule {
     fn from(m: Mol2) -> Self {
-        let mut atoms = Vec::with_capacity(m.atoms.len());
-        for atom in &m.atoms {
-            atoms.push(Atom {
-                serial_number: atom.serial_number,
-                posit: atom.posit,
-                element: atom.element,
-                name: String::new(),
-                partial_charge: atom.partial_charge,
-                ..Default::default()
-            });
-        }
+        let atoms = m.atoms.iter().map(|a| a.into()).collect();
 
         let mut result = Self::new(m.ident, atoms, Vec::new(), Vec::new(), None, None);
 
-        let mut bonds = Vec::with_capacity(m.bonds.len());
-        for bond in &m.bonds {
-            bonds.push(Bond {
-                bond_type: BondType::Covalent {
-                    count: BondCount::from_str(&bond.bond_type),
-                },
-                // Our bonds are by index; these are by serial number. This should align them in most cases.
-                // todo: Map serial num to index incase these don't ascend by one.
-                atom_0: bond.atom_0 - 1,
-                atom_1: bond.atom_1 - 1,
-                is_backbone: false,
-            });
-        }
+        let bonds = m.bonds.iter().map(|b| b.into()).collect();
 
         // This replaces the built-in bond computation with our own. Ideally, we don't even calculate
         // those for performance reasons.
@@ -800,29 +818,28 @@ impl From<Mol2> for Molecule {
     }
 }
 
+impl From<Sdf> for Molecule {
+    fn from(m: Sdf) -> Self {
+        let atoms = m.atoms.iter().map(|a| a.into()).collect();
+        let residues = m.residues.iter().map(|r| r.into()).collect();
+
+        let mut result = Self::new(m.ident, atoms, m.chains.clone(), residues, None, None);
+
+        let bonds = m.bonds.iter().map(|b| b.into()).collect();
+
+        // See note in Mol2's method.
+        result.bonds = bonds;
+        result.bonds_hydrogen = Vec::new();
+        result.adjacency_list = result.build_adjacency_list();
+
+        result
+    }
+}
+
 impl Molecule {
     pub fn to_mol2(&self) -> Mol2 {
-        let mut atoms = Vec::with_capacity(self.atoms.len());
-        for atom in &self.atoms {
-            atoms.push(AtomGeneric {
-                serial_number: atom.serial_number,
-                posit: atom.posit,
-                element: atom.element,
-                // name: String::new(),
-                partial_charge: atom.partial_charge,
-                ..Default::default()
-            });
-        }
-
-        let mut bonds = Vec::with_capacity(self.bonds.len());
-        for bond in &self.bonds {
-            bonds.push(BondGeneric {
-                bond_type: "1".to_owned(), // todo
-                // todo: Map serial num to index incase these don't ascend by one.
-                atom_0: bond.atom_0 + 1,
-                atom_1: bond.atom_1 + 1,
-            });
-        }
+        let atoms = self.atoms.iter().map(|a| a.to_generic()).collect();
+        let bonds = self.bonds.iter().map(|b| b.to_generic()).collect();
 
         Mol2 {
             ident: self.ident.clone(),
@@ -831,6 +848,24 @@ impl Molecule {
             comment: None,
             atoms,
             bonds,
+        }
+    }
+
+    // todo: DRY!
+    pub fn to_sdf(&self) -> Sdf {
+        let atoms = self.atoms.iter().map(|a| a.to_generic()).collect();
+        let bonds = self.bonds.iter().map(|b| b.to_generic()).collect();
+        let residues = self.residues.iter().map(|r| r.to_generic()).collect();
+
+        Sdf {
+            ident: self.ident.clone(),
+            atoms,
+            bonds,
+            chains: self.chains.clone(),
+            residues,
+            metadata: HashMap::new(), // todo?
+            pubchem_cid: self.pubchem_cid,
+            drugbank_id: self.drugbank_id.clone(),
         }
     }
 }

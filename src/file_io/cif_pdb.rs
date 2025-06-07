@@ -4,7 +4,7 @@ use std::{
     io::{BufReader, ErrorKind, Read, Seek},
     path::Path,
 };
-
+use bio_files::{Chain, ResidueType};
 use lin_alg::f64::Vec3;
 use na_seq::{
     Element,
@@ -20,7 +20,7 @@ use rayon::prelude::*;
 use crate::{
     docking::prep::DockType,
     file_io::cif_secondary_structure::load_secondary_structure,
-    molecule::{Atom, AtomRole, Chain, Molecule, Residue, ResidueType},
+    molecule::{Atom, AtomRole, Molecule, Residue},
 };
 
 impl Atom {

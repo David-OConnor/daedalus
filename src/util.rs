@@ -3,19 +3,19 @@
 //! logic in them.
 
 use std::{collections::HashMap, io::Cursor, time::Instant};
-
+use bio_files::{Chain, ResidueType};
 use graphics::{Camera, ControlScheme, EngineUpdates, FWD_VEC, Scene};
 use lin_alg::{
     f32::{Quaternion, Vec3 as Vec3F32},
     f64::Vec3,
 };
-use na_seq::{AaIdent, AminoAcid, Element};
+use na_seq::{AaIdent, Element};
 
 use crate::{
     CamSnapshot, PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel,
     download_mols::load_cif_rcsb,
     mol_drawing::{EntityType, MoleculeView},
-    molecule::{Atom, AtomRole, Bond, Chain, Molecule, Residue, ResidueType},
+    molecule::{Atom, AtomRole, Bond, Molecule, Residue},
     render::{
         CAM_INIT_OFFSET, RENDER_DIST_FAR, RENDER_DIST_NEAR, set_flashlight, set_static_light,
     },

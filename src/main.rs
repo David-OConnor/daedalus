@@ -87,7 +87,7 @@ use crate::{
         prep::DockingSetup,
     },
     file_io::{cif_pdb::save_pdb, mtz::load_mtz, pdbqt::load_pdbqt},
-    molecule::{Ligand, ResidueType},
+    molecule::{Ligand},
     navigation::Tab,
     prefs::ToSave,
     render::render,

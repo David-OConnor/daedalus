@@ -1,7 +1,7 @@
 //! Adapted from `peptide`. Operations related to the geometry of atomic coordinates.
 
 use std::{f64::consts::TAU, fmt, fmt::Formatter};
-
+use bio_files::ResidueType;
 use lin_alg::f64::{Quaternion, Vec3, det_from_cols};
 use na_seq::{Element, Element::Hydrogen};
 
@@ -13,7 +13,7 @@ use crate::{
         },
         sidechain::Sidechain,
     },
-    molecule::{Atom, AtomRole, ResidueType},
+    molecule::{Atom, AtomRole},
 };
 
 pub mod bond_vecs;

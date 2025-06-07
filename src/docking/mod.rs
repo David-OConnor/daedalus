@@ -71,7 +71,6 @@ pub mod external;
 pub mod find_sites;
 pub mod partial_charge;
 pub mod prep;
-pub mod prep_external;
 pub mod site_surface;
 
 const GRID_SPACING_SITE_FINDING: f64 = 5.0;

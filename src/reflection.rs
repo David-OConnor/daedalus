@@ -444,8 +444,8 @@ pub fn wrap_atoms_into_cell(hdr: &MapHeader, atoms: &mut [Atom]) {
 
 /// One dense 3-D brick of map values. We use this struct to handle symmetry: ensuring full coverage
 /// of all atoms.
-#[derive(Debug)]
-pub struct DensityCube {
+#[derive(Clone, Debug)]
+pub struct DensityRect {
     /// Cartesian coordinate of the *centre* of voxel (0,0,0)
     pub origin_cart: Vec3,
     /// Size of one voxel along a,b,c in Å
@@ -456,7 +456,7 @@ pub struct DensityCube {
     pub data: Vec<f32>,
 }
 
-impl DensityCube {
+impl DensityRect {
     /// Extract the smallest cube that covers all atoms plus `margin` Å.
     /// `margin = 0.0` means “touch each atom’s centre”.
     /// // todo: Cube or rect?

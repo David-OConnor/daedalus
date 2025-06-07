@@ -8,7 +8,7 @@ use std::{
     io::{ErrorKind, Read, Write},
     path::Path,
 };
-
+use bio_files::{Chain, ResidueType};
 use lin_alg::f64::Vec3;
 use na_seq::{AaIdent, Element};
 use regex::Regex;
@@ -18,7 +18,7 @@ use crate::{
         ConformationType,
         prep::{DockType, UnitCellDims},
     },
-    molecule::{Atom, AtomRole, Chain, Ligand, Molecule, Residue, ResidueType},
+    molecule::{Atom, AtomRole, Ligand, Molecule, Residue},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]

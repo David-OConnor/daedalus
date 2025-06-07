@@ -3,6 +3,7 @@
 use std::{fmt, io, io::ErrorKind, str::FromStr};
 
 use bincode::{Decode, Encode, error::EncodeError};
+use bio_files::{Chain, ResidueType};
 use graphics::{ControlScheme, Entity, FWD_VEC, RIGHT_VEC, Scene, UP_VEC};
 use lin_alg::{
     f32::{Quaternion, Vec3},
@@ -12,14 +13,13 @@ use na_seq::Element;
 
 use crate::{
     Selection, State, ViewSelLevel,
-    molecule::{Atom, AtomRole, BondCount, BondType, Chain, Residue, ResidueType, aa_color},
+    molecule::{Atom, AtomRole, BondCount, BondType, Residue, aa_color},
     reflection::ElectronDensity,
     render::{
         ATOM_SHININESS, BACKGROUND_COLOR, BALL_RADIUS_WATER, BALL_STICK_RADIUS,
-        BALL_STICK_RADIUS_H, BODY_SHINYNESS, CAM_INIT_OFFSET, Color, MESH_BOND, MESH_CUBE,
+        BALL_STICK_RADIUS_H, BODY_SHINYNESS, Color, MESH_BOND,
         MESH_DENSITY_SURFACE, MESH_DOCKING_BOX, MESH_SOLVENT_SURFACE, MESH_SPHERE_HIGHRES,
-        MESH_SPHERE_LOWRES, MESH_SPHERE_MEDRES, RENDER_DIST_FAR, set_docking_light,
-        set_static_light,
+        MESH_SPHERE_LOWRES, MESH_SPHERE_MEDRES,  set_docking_light,
     },
     surface::{get_mesh_points, mesh_from_sas_points},
     util::orbit_center,

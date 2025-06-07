@@ -4,12 +4,12 @@
 // todo not parsed by PDBTBX.
 
 use std::f64::consts::PI;
-
+use bio_files::ResidueType;
 use graphics::{Mesh, Vertex};
 use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 use na_seq::AminoAcid;
 
-use crate::molecule::{Atom, AtomRole, Residue, ResidueType};
+use crate::molecule::{Atom, AtomRole, Residue};
 
 /// How many slices around each tube cross-section
 const TUBE_SIDES: usize = 8;

@@ -1,6 +1,6 @@
 use crate::{
     aa_coords::aa_data_from_coords,
-    molecule::{Atom, AtomRole, Molecule, ResidueType},
+    molecule::{Atom, AtomRole, Molecule},
 };
 
 impl Molecule {
