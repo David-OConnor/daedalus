@@ -435,7 +435,7 @@ impl DockType {
             Self::Cu => 1.90,
             Self::Hd => 2.20,
             Self::H => 2.20,     // todo: A/R.
-            Self::Ru => 2.00,     // todo: Set this. THIs is wrong.
+            Self::Ru => 2.00,    // todo: Set this. THIs is wrong.
             Self::Other => 2.50, // Fallback default value
         }
     }

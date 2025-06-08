@@ -7,9 +7,7 @@ use std::{
 
 use bio_files::{Chain, ResidueType};
 use lin_alg::f64::Vec3;
-use na_seq::{
-    Element::{self, *},
-};
+use na_seq::Element::{self, *};
 use pdbtbx::{Format, PDB, ReadOptions, StrictnessLevel};
 use rayon::prelude::*;
 

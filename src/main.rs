@@ -251,6 +251,7 @@ struct StateVolatile {
     >,
     // Pending flag
     make_density_mesh: bool,
+    clear_density_drawing: bool,
     /// We may change CWD during CLI navigation; keep prefs directory constant.
     prefs_dir: PathBuf,
     /// Entered by the user, for this session.
@@ -271,6 +272,7 @@ impl Default for StateVolatile {
             docking_setup: Default::default(),
             mol_pending_data_avail: Default::default(),
             make_density_mesh: false,
+            clear_density_drawing: false,
             prefs_dir: env::current_dir().unwrap(),
             cli_input_history: Default::default(),
             cli_input_selected: Default::default(),
@@ -556,6 +558,7 @@ fn main() {
         }
     }
 
+    // Load map after molecule, so it knows the coordinates.
     let last_map_opened = state.to_save.last_map_opened.clone();
     if let Some(path) = &last_map_opened {
         if let Err(e) = state.open(path) {

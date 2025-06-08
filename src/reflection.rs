@@ -11,9 +11,9 @@ use rayon::prelude::*;
 
 use crate::{molecule::Atom, util::setup_neighbor_pairs};
 
+pub const DENSITY_CELL_MARGIN: f64 = 2.0;
 // Density points must be within this distance in Å of a (backbone?) atom to be generated.
-pub const DENSITY_MAX_DIST: f64 = 4.0;
-
+pub const DENSITY_MAX_DIST: f64 = 3.0;
 
 #[derive(Clone, Copy, PartialEq, Debug, Default)]
 pub enum MapStatus {

@@ -24,7 +24,7 @@ pub mod pdbqt;
 
 use bio_files::{Mol2, sdf::Sdf};
 
-use crate::reflection::{DENSITY_MAX_DIST, DensityRect, ElectronDensity};
+use crate::reflection::{DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityRect, ElectronDensity};
 
 impl State {
     /// A single endpoint to open a number of file types
@@ -123,10 +123,6 @@ impl State {
                 } else {
                     self.to_save.last_opened = Some(path.to_owned());
 
-                    // todo: Sort this out, so you can load a new m ap on init, but the map
-                    // todo clears when opening a new molecule.
-                    // self.to_save.last_map_opened = None;
-
                     self.volatile.aa_seq_text = String::with_capacity(mol.atoms.len());
                     for aa in &mol.aa_seq {
                         self.volatile
@@ -134,6 +130,8 @@ impl State {
                             .push_str(&aa.to_str(AaIdent::OneLetter));
                     }
                     self.molecule = Some(mol);
+
+                    self.volatile.clear_density_drawing = true;
                 }
 
                 // Update from prefs based on the molecule-specific items.
@@ -163,8 +161,6 @@ impl State {
 
     pub fn load_density(&mut self, dm: DensityMap) {
         if let Some(mol) = &mut self.molecule {
-            let margin = 2.;
-
             // We are filtering for backbone atoms of one type for now, for performance reasons. This is
             // a sample. Good enough?
             let atom_posits: Vec<_> = mol
@@ -176,7 +172,7 @@ impl State {
                 .map(|a| a.posit)
                 .collect();
 
-            let dens_rect = DensityRect::new(&atom_posits, &dm, margin);
+            let dens_rect = DensityRect::new(&atom_posits, &dm, DENSITY_CELL_MARGIN);
             let dens = dens_rect.make_densities(&atom_posits, &dm.cell, DENSITY_MAX_DIST);
 
             let elec_dens: Vec<_> = dens

@@ -118,6 +118,11 @@ pub fn load_file(
 ) -> io::Result<()> {
     state.open(path)?;
 
+    // Clear last map opened here, vice in `open_molecule`, to prevent it clearing the map
+    // on init.
+
+    state.to_save.last_map_opened = None;
+
     *redraw = true;
     *reset_cam = true;
     engine_updates.entities = true;
@@ -1260,7 +1265,7 @@ fn view_settings(
                     ui.add(Slider::new(
                         &mut state.ui.density_iso_level,
                         // todo: Consts for these
-                        DENS_ISO_MIN..= DENS_ISO_MAX,
+                        DENS_ISO_MIN..=DENS_ISO_MAX,
                     ));
                     if state.ui.density_iso_level != iso_prev {
                         state.volatile.make_density_mesh = true;
@@ -1970,6 +1975,13 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 }
             }
         }
+    }
+
+    if state.volatile.clear_density_drawing {
+        scene.entities.retain(|ent| {
+            ent.class != EntityType::Density as u32
+                && ent.class != EntityType::DensitySurface as u32
+        });
     }
 
     // todo: temp experiencing a crash from wgpu on vertex buffer
