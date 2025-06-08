@@ -59,6 +59,9 @@ pub const VIEW_DEPTH_NEAR_MAX: u16 = 300;
 pub const VIEW_DEPTH_FAR_MIN: u16 = 10;
 pub const VIEW_DEPTH_FAR_MAX: u16 = 60;
 
+const DENS_ISO_MIN: f32 = 1.0;
+const DENS_ISO_MAX: f32 = 3.0;
+
 const NEARBY_THRESH_MIN: u16 = 5;
 const NEARBY_THRESH_MAX: u16 = 60;
 
@@ -1257,7 +1260,7 @@ fn view_settings(
                     ui.add(Slider::new(
                         &mut state.ui.density_iso_level,
                         // todo: Consts for these
-                        0.1..=1.3,
+                        DENS_ISO_MIN..= DENS_ISO_MAX,
                     ));
                     if state.ui.density_iso_level != iso_prev {
                         state.volatile.make_density_mesh = true;

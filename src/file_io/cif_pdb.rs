@@ -8,12 +8,7 @@ use std::{
 use bio_files::{Chain, ResidueType};
 use lin_alg::f64::Vec3;
 use na_seq::{
-    Element,
-    Element::{
-        Aluminum, Bromine, Calcium, Carbon, Chlorine, Copper, Fluorine, Gold, Hydrogen, Iodine,
-        Iron, Lead, Magnesium, Manganese, Mercury, Nitrogen, Oxygen, Phosphorus, Potassium,
-        Selenium, Silver, Sulfur, Tellurium, Tin, Tungsten, Zinc,
-    },
+    Element::{self, *},
 };
 use pdbtbx::{Format, PDB, ReadOptions, StrictnessLevel};
 use rayon::prelude::*;
@@ -292,6 +287,7 @@ pub fn el_from_pdb(el: Option<&pdbtbx::Element>) -> Element {
             pdbtbx::Element::Te => Tellurium,
             pdbtbx::Element::Se => Selenium,
             pdbtbx::Element::Br => Bromine,
+            pdbtbx::Element::Ru => Rubidium,
 
             _ => {
                 eprintln!("Unknown element: {e:?}");

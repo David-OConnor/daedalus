@@ -634,16 +634,20 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene) {
 pub fn draw_density(entities: &mut Vec<Entity>, density: &[ElectronDensity]) {
     entities.retain(|ent| ent.class != EntityType::Density as u32);
 
+    const EPS: f64 = 0.0000001;
+
     for point in density {
+        // For example, points we filter out for not being near the atoms; we set them to 0 density,
+        // vice ommitting them. Skipping them here makes rendering more efficient.
+        if point.density.abs() < EPS {
+            continue;
+        }
+
         let mut ent = Entity::new(
             MESH_SPHERE_LOWRES,
-            // MESH_CUBE,
             point.coords.into(),
             Quaternion::new_identity(),
-            // 1. * point.density.powf(1.2) as f32,
-            0.04 * point.density.powf(1.3) as f32,
-            // 0.5,
-            // (point.density as f32 * 10., 0.0, 1. - point.density as f32),
+            0.03 * point.density.powf(1.3) as f32,
             (point.density as f32 * 2., 0.0, 0.2),
             // (1., 0.7, 0.5),
             ATOM_SHININESS,

@@ -541,7 +541,7 @@ fn main() {
             view_depth: (VIEW_DEPTH_NEAR_MIN, VIEW_DEPTH_FAR_MAX),
             new_mol_loaded: true,
             nearby_dist_thresh: 15,
-            density_iso_level: 0.19,
+            density_iso_level: 1.8,
             ..Default::default()
         },
         ..Default::default()

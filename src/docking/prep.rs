@@ -251,6 +251,7 @@ pub enum DockType {
     Ca,
     Mn,
     Cu,
+    Ru,
     /// Polar hydrogen (hydrogen donor)
     Hd,
     /// Generic / non-polar hydrogen
@@ -315,6 +316,7 @@ impl DockType {
             Element::Manganese => Self::Mn,
             Element::Copper => Self::Cu,
             Element::Hydrogen => Self::Hd,
+            Element::Rubidium => Self::Ru,
             Element::Other => Self::Other,
         }
     }
@@ -397,6 +399,7 @@ impl DockType {
             Self::Cu => "CU",
             Self::Hd => "HD",
             Self::H => "H",
+            Self::Ru => "RU",
             Self::Other => "--",
         }
         .to_string()
@@ -432,6 +435,7 @@ impl DockType {
             Self::Cu => 1.90,
             Self::Hd => 2.20,
             Self::H => 2.20,     // todo: A/R.
+            Self::Ru => 2.00,     // todo: Set this. THIs is wrong.
             Self::Other => 2.50, // Fallback default value
         }
     }

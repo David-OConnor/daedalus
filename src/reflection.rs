@@ -4,7 +4,7 @@
 use std::{f64::consts::TAU, time::Instant};
 
 use bio_apis::{ReqError, rcsb};
-use bio_files::{Density, DensityMap, MapHeader, UnitCell};
+use bio_files::{DensityMap, MapHeader, UnitCell};
 use lin_alg::f64::Vec3;
 use mcubes::GridPoint;
 use rayon::prelude::*;
@@ -13,6 +13,7 @@ use crate::{molecule::Atom, util::setup_neighbor_pairs};
 
 // Density points must be within this distance in Å of a (backbone?) atom to be generated.
 pub const DENSITY_MAX_DIST: f64 = 4.0;
+
 
 #[derive(Clone, Copy, PartialEq, Debug, Default)]
 pub enum MapStatus {
@@ -546,7 +547,9 @@ impl DensityRect {
                         );
                     let cart = cell.fractional_to_cartesian(frac);
 
-                    data.push(map.density_at_point(cart));
+                    let density = map.density_at_point_trilinear(cart);
+                    let dens_sig = map.density_to_sig(density);
+                    data.push(dens_sig);
                 }
             }
         }
@@ -568,7 +571,7 @@ impl DensityRect {
         atom_posits: &[Vec3],
         cell: &UnitCell,
         dist_thresh: f64,
-    ) -> Vec<Density> {
+    ) -> Vec<ElectronDensity> {
         // Step vectors along a, b, c.
         let cols = cell.ortho.to_cols();
 
@@ -587,8 +590,6 @@ impl DensityRect {
         // let atom_posits2: Vec<&_> = atom_posits.iter().map(|p| p).collect();
         // const GRID: f64 = 1.0; // todo: Experiment.
         // let neighbor_pairs = setup_neighbor_pairs(&atom_posits2, &indices, GRID);
-
-        println!("Atoms len: {:?}", atom_posits.len());
 
         for kz in 0..nz {
             for ky in 0..ny {
@@ -624,14 +625,12 @@ impl DensityRect {
                     }
 
                     if nearest_dist > dist_thresh {
-                        // todo: You may need to set to 0 to avoid problems with the isosurface
-                        // todo generation.
-                        // todo: Try both
+                        // We set density to 0, vice removing the coordinates; our marching cubes
+                        // algorithm requires a regular grid, with no absent values.
                         density = 0.;
-                        // continue
                     }
 
-                    out.push(Density { coords, density });
+                    out.push(ElectronDensity { coords, density });
                 }
             }
         }
