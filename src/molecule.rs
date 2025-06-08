@@ -2,18 +2,21 @@
 
 //! Contains data structures and related code for molecules, atoms, residues, chains, etc.
 use std::{
+    collections::HashMap,
     fmt,
     str::FromStr,
     sync::mpsc::{self, Receiver},
     thread,
 };
-use std::collections::HashMap;
+
 use bio_apis::{
     ReqError, rcsb,
     rcsb::{FilesAvailable, PdbDataResults, PdbMetaData},
 };
-use bio_files::{AtomGeneric, BondGeneric, Chain, ChargeType, DensityMap, MapHeader, Mol2, MolType, ResidueGeneric, ResidueType};
-use bio_files::sdf::Sdf;
+use bio_files::{
+    AtomGeneric, BondGeneric, Chain, ChargeType, DensityMap, MapHeader, Mol2, MolType,
+    ResidueGeneric, ResidueType, sdf::Sdf,
+};
 use lin_alg::{
     f32::Vec3 as Vec3F32,
     f64::{Quaternion, Vec3},
@@ -30,10 +33,9 @@ use crate::{
         ConformationType, DockingSite, Pose,
         prep::{DockType, Torsion, UnitCellDims, setup_flexibility},
     },
-    reflection::{ElectronDensity, ReflectionsData},
+    reflection::{DensityRect, ElectronDensity, ReflectionsData},
     util::mol_center_size,
 };
-use crate::reflection::DensityRect;
 
 pub const ATOM_NEIGHBOR_DIST_THRESH: f64 = 5.; // todo: Adjust A/R.
 
@@ -69,11 +71,10 @@ pub struct Molecule {
     pub rcsb_files_avail: Option<FilesAvailable>,
     pub reflections_data: Option<ReflectionsData>,
     /// E.g. from a MAP file, or 2fo-fc header.
-    pub elec_density_header: Option<MapHeader>,
     /// From reflections
     pub elec_density: Option<Vec<ElectronDensity>>,
-    pub density_map: Option<DensityMap>, // todo: Experimenting with one that wraps.
-    pub density_rect: Option<DensityRect>, // todo: Experimenting with one that wraps.
+    pub density_map: Option<DensityMap>,
+    pub density_rect: Option<DensityRect>,
     pub aa_seq: Vec<AminoAcid>,
 }
 
@@ -636,8 +637,6 @@ pub struct HydrogenBond {
     pub hydrogen: usize,
 }
 
-
-
 #[derive(Debug, Clone)]
 pub struct Residue {
     /// We use serial number of display, search etc, and array index to select. Residue serial number is not
@@ -669,7 +668,6 @@ impl From<&ResidueGeneric> for Residue {
     }
 }
 
-
 impl Residue {
     pub fn descrip(&self) -> String {
         let name = match &self.res_type {
@@ -685,7 +683,6 @@ impl Residue {
         result
     }
 }
-
 
 #[derive(Debug, Clone, Default)]
 pub struct Atom {

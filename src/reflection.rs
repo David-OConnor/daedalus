@@ -1,18 +1,15 @@
 //! For displaying electron density as measured by crytalographics reflection data. From precomputed
 //! data, or from Miller indices.
 
-use std::{collections::HashMap, f64::consts::TAU, io, time::Instant};
+use std::{f64::consts::TAU, time::Instant};
 
 use bio_apis::{ReqError, rcsb};
 use bio_files::{Density, DensityMap, MapHeader, UnitCell};
-use lin_alg::{
-    complex_nums::{Cplx, IM},
-    f64::Vec3,
-};
+use lin_alg::f64::Vec3;
 use mcubes::GridPoint;
 use rayon::prelude::*;
 
-use crate::molecule::{Atom, Molecule};
+use crate::molecule::Atom;
 
 #[derive(Clone, Copy, PartialEq, Debug, Default)]
 pub enum MapStatus {
@@ -440,8 +437,6 @@ pub fn wrap_atoms_into_cell(hdr: &MapHeader, atoms: &mut [Atom]) {
     }
 }
 
-
-
 /// One dense 3-D brick of map values. We use this struct to handle symmetry: ensuring full coverage
 /// of all atoms.
 #[derive(Clone, Debug)]
@@ -516,7 +511,7 @@ impl DensityRect {
             (lo_i[0] as f64 + 0.5) / hdr.mx as f64,
             (lo_i[1] as f64 + 0.5) / hdr.my as f64,
             (lo_i[2] as f64 + 0.5) / hdr.mz as f64,
-        ) + map.origin_frac;          // back to absolute fractional
+        ) + map.origin_frac; // back to absolute fractional
 
         let origin_cart = cell.fractional_to_cartesian(lo_frac);
 
@@ -543,10 +538,10 @@ impl DensityRect {
                     // crystallographic → Cartesian centre of this voxel
                     let frac = map.origin_frac
                         + Vec3::new(
-                        (idx_c[0] as f64 + 0.5) / hdr.mx as f64,
-                        (idx_c[1] as f64 + 0.5) / hdr.my as f64,
-                        (idx_c[2] as f64 + 0.5) / hdr.mz as f64,
-                    );
+                            (idx_c[0] as f64 + 0.5) / hdr.mx as f64,
+                            (idx_c[1] as f64 + 0.5) / hdr.my as f64,
+                            (idx_c[2] as f64 + 0.5) / hdr.mz as f64,
+                        );
                     let cart = cell.fractional_to_cartesian(frac);
 
                     data.push(map.density_at_point(cart));
@@ -574,9 +569,9 @@ impl DensityRect {
         let cols = cell.ortho.to_cols();
 
         // length of one voxel along the a-axis in Å  =  a / mx
-        let step_vec_a = cols.0 * (self.step[0] / cell.a);   //  = a_vec / mx
-        let step_vec_b = cols.1 * (self.step[1] / cell.b);   //  = b_vec / my
-        let step_vec_c = cols.2 * (self.step[2] / cell.c);   //  = c_vec / mz
+        let step_vec_a = cols.0 * (self.step[0] / cell.a); //  = a_vec / mx
+        let step_vec_b = cols.1 * (self.step[1] / cell.b); //  = b_vec / my
+        let step_vec_c = cols.2 * (self.step[2] / cell.c); //  = c_vec / mz
 
         let (nx, ny, nz) = (self.dims[0], self.dims[1], self.dims[2]);
         let mut out = Vec::with_capacity(nx * ny * nz);

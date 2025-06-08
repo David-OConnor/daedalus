@@ -17,9 +17,9 @@ use crate::{
     reflection::ElectronDensity,
     render::{
         ATOM_SHININESS, BACKGROUND_COLOR, BALL_RADIUS_WATER, BALL_STICK_RADIUS,
-        BALL_STICK_RADIUS_H, BODY_SHINYNESS, Color, MESH_BOND,
-        MESH_DENSITY_SURFACE, MESH_DOCKING_BOX, MESH_SOLVENT_SURFACE, MESH_SPHERE_HIGHRES,
-        MESH_SPHERE_LOWRES, MESH_SPHERE_MEDRES,  set_docking_light,
+        BALL_STICK_RADIUS_H, BODY_SHINYNESS, Color, MESH_BOND, MESH_DENSITY_SURFACE,
+        MESH_DOCKING_BOX, MESH_SOLVENT_SURFACE, MESH_SPHERE_HIGHRES, MESH_SPHERE_LOWRES,
+        MESH_SPHERE_MEDRES, set_docking_light,
     },
     surface::{get_mesh_points, mesh_from_sas_points},
     util::orbit_center,
@@ -50,7 +50,7 @@ const DOCKING_SITE_OPACITY: f32 = 0.35;
 
 const DIMMED_PEPTIDE_AMT: f32 = 0.92; // Higher value means more dim.
 
-pub const DENSITY_ISO_OPACITY: f32 = 0.8;
+pub const DENSITY_ISO_OPACITY: f32 = 0.5;
 
 // This allows us to more easily customize sphere mesh resolution.
 const MESH_BALL_STICK_SPHERE: usize = MESH_SPHERE_MEDRES;
@@ -640,7 +640,8 @@ pub fn draw_density(entities: &mut Vec<Entity>, density: &[ElectronDensity]) {
             // MESH_CUBE,
             point.coords.into(),
             Quaternion::new_identity(),
-            1. * point.density.powf(1.2) as f32,
+            // 1. * point.density.powf(1.2) as f32,
+            0.04 * point.density.powf(1.3) as f32,
             // 0.5,
             // (point.density as f32 * 10., 0.0, 1. - point.density as f32),
             (point.density as f32 * 2., 0.0, 0.2),
@@ -669,7 +670,7 @@ pub fn draw_density_surface(entities: &mut Vec<Entity>) {
         ATOM_SHININESS,
     );
     ent.class = EntityType::DensitySurface as u32;
-    // ent.opacity = DENSITY_ISO_OPACITY; // todo temp rm
+    ent.opacity = DENSITY_ISO_OPACITY; // todo temp rm
     entities.push(ent);
 }
 

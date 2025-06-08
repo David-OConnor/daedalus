@@ -6,7 +6,7 @@ use std::{
     path::Path,
 };
 
-use bio_files::{DensityMap, read_map_data};
+use bio_files::{DensityMap, gemmi_cif_to_map};
 use lin_alg::f64::Vec3;
 use na_seq::AaIdent;
 
@@ -22,8 +22,8 @@ pub mod cif_sf;
 pub mod mtz;
 pub mod pdbqt;
 
-use bio_files::Mol2;
-use bio_files::sdf::Sdf;
+use bio_files::{Mol2, sdf::Sdf};
+
 use crate::reflection::{DensityRect, ElectronDensity};
 
 impl State {
@@ -69,6 +69,15 @@ impl State {
                 })
             }
             "pdb" | "cif" => {
+                // If a 2fo-fc CIF, use gemmi to convert it to Map data.
+                // Using the filename is rough here, but good enough for now.
+                if let Some(name) = path.file_name().and_then(|os| os.to_str()) {
+                    if name.contains("2fo") && name.contains("fc") {
+                        let dm = gemmi_cif_to_map(path.to_str().unwrap())?;
+                        // todo: Continue this once you figure out which map approach you use. You'll loop it into `open_map`.
+                    }
+                }
+
                 let pdb = load_cif_pdb(path)?;
                 let mut file = File::open(path)?;
 
@@ -148,50 +157,34 @@ impl State {
         Ok(())
     }
 
-    pub fn open_map(&mut self, path: &Path) -> io::Result<()> {
-        let (hdr, mut dens) = read_map_data(path)?;
-
+    pub fn load_density(&mut self, dm: DensityMap) {
         if let Some(mol) = &mut self.molecule {
+            let margin = 2.;
+            let atom_posits: Vec<_> = mol.atoms.iter().map(|a| a.posit).collect();
 
-            /////////
-            // todo: Most of this will be replaced with DensityMap if correct.
-            // todo: Once you fix the misalignment, remove this non-DM approach, and add back the DM approach.
+            let dens_rect = DensityRect::new(&atom_posits, &dm, margin);
 
-            mol.elec_density_header = Some(hdr);
+            let dens = dens_rect.make_densities(&dm.cell);
+            let elec_dens: Vec<_> = dens
+                .iter()
+                .map(|d| ElectronDensity {
+                    coords: d.coords,
+                    density: d.density,
+                })
+                .collect();
 
-            let elec_dens = dens.iter().map(|d| ElectronDensity {
-               coords: d.coords,
-                density: d.density,
-            }).collect();
+            mol.density_map = Some(dm);
+            mol.density_rect = Some(dens_rect);
             mol.elec_density = Some(elec_dens);
-            ////
-
-
-            ////
-            // let dm = DensityMap::new(path)?;
-            // let margin = 1.;
-            // let atom_posits: Vec<_> = mol.atoms.iter().map(|a| a.posit).collect();
-            //
-            // let dens_rect = DensityRect::new(&atom_posits, &dm, margin);
-            //
-            // let dens = dens_rect.make_densities(&dm.cell);
-            // let elec_dens: Vec<_> = dens
-            //     .iter()
-            //     .map(|d| ElectronDensity {
-            //         coords: d.coords,
-            //         density: d.density,
-            //     })
-            //     .collect();
-            //
-            // mol.density_map = Some(dm);
-            // mol.density_rect = Some(dens_rect);
-            // mol.elec_density = Some(elec_dens);
-            //////
-
 
             self.ui.new_density_loaded = true;
             self.volatile.make_density_mesh = true;
         }
+    }
+
+    pub fn open_map(&mut self, path: &Path) -> io::Result<()> {
+        let dm = DensityMap::new(path)?;
+        self.load_density(dm);
 
         self.to_save.last_map_opened = Some(path.to_owned());
         self.update_save_prefs();

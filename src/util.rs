@@ -3,6 +3,7 @@
 //! logic in them.
 
 use std::{collections::HashMap, io::Cursor, time::Instant};
+
 use bio_files::{Chain, ResidueType};
 use graphics::{Camera, ControlScheme, EngineUpdates, FWD_VEC, Scene};
 use lin_alg::{
@@ -583,7 +584,9 @@ pub fn close_mol(state: &mut State, scene: &mut Scene, engine_updates: &mut Engi
     engine_updates.entities = true;
 
     state.to_save.last_opened = None;
+    state.to_save.last_map_opened = None;
     state.volatile.aa_seq_text = String::new();
+
     state.update_save_prefs();
 }
 

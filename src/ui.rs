@@ -17,7 +17,7 @@ use na_seq::{AaIdent, AminoAcid};
 
 static INIT_COMPLETE: AtomicBool = AtomicBool::new(false);
 
-use bio_files::{DensityMap, density_from_rcsb_gemmi, density_from_rcsb_gemmi2, ResidueType};
+use bio_files::{DensityMap, ResidueType, density_from_rcsb_gemmi};
 
 use crate::{
     CamSnapshot, MsaaSetting, Selection, State, ViewSelLevel, cli,
@@ -36,10 +36,10 @@ use crate::{
         draw_ligand, draw_molecule,
     },
     molecule::{Ligand, Molecule},
-    reflection::ElectronDensity,
+    reflection::{DensityRect, ElectronDensity},
     render::{
-        CAM_INIT_OFFSET, MESH_DENSITY_SURFACE, MESH_DOCKING_SURFACE,
-        RENDER_DIST_FAR, RENDER_DIST_NEAR, set_docking_light, set_flashlight, set_static_light,
+        CAM_INIT_OFFSET, MESH_DENSITY_SURFACE, MESH_DOCKING_SURFACE, RENDER_DIST_FAR,
+        RENDER_DIST_NEAR, set_docking_light, set_flashlight, set_static_light,
     },
     util,
     util::{
@@ -1256,7 +1256,7 @@ fn view_settings(
                     ui.add(Slider::new(
                         &mut state.ui.density_iso_level,
                         // todo: Consts for these
-                        -0.0..=1.0,
+                        0.4..=1.5,
                     ));
                     if state.ui.density_iso_level != iso_prev {
                         state.volatile.make_density_mesh = true;
@@ -1413,6 +1413,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 state.volatile.dialogs.load.pick_file();
             }
 
+            let mut dm_loaded = None; // avoids a double-borrow error.
             if let Some(mol) = &mut state.molecule {
                 if state.pdb.is_some() {
                     if ui.button("Save").clicked() {
@@ -1434,8 +1435,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 }
 
                 // todo: Move these A/R. LIkely in a sub menu.
-                if let Some(data) = &mol.rcsb_files_avail {
-                    if data.structure_factors {
+                if let Some(files_avail) = &mol.rcsb_files_avail {
+                    if files_avail.structure_factors {
                         if ui
                             .button(RichText::new("SF").color(COLOR_HIGHLIGHT))
                             .clicked()
@@ -1455,7 +1456,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                             }
                         }
                     }
-                    if data.validation_2fo_fc {
+                    if files_avail.validation_2fo_fc {
                         if ui
                             .button(RichText::new("2fo-fc").color(COLOR_HIGHLIGHT))
                             .clicked()
@@ -1479,39 +1480,17 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                             .button(RichText::new("Load map").color(COLOR_HIGHLIGHT))
                             .clicked()
                         {
+                            // todo: Consolidate this with that in filo IO, and the 2fo_fc load button.
+
                             // todo: For now, we rely on Gemmi being available on the Path.
                             // todo: We will eventually get our own reflections loader working.
 
                             match density_from_rcsb_gemmi(&mol.ident) {
-                                Ok((hdr, dens)) => {
+                                Ok(dm) => {
+                                    dm_loaded = Some(dm);
                                     println!(
                                         "Succsesfully loaded density data from RSCB using Gemmi."
                                     );
-
-                                    mol.elec_density_header = Some(hdr);
-
-                                    let elec_dens = dens
-                                        .iter()
-                                        .map(|d| ElectronDensity {
-                                            coords: d.coords,
-                                            density: d.density,
-                                        })
-                                        .collect();
-                                    mol.elec_density = Some(elec_dens);
-
-                                    let dm = density_from_rcsb_gemmi2(&mol.ident).unwrap(); // todo unwrap temp.
-                                    mol.density_map = Some(dm);
-
-                                    state.volatile.make_density_mesh = true;
-
-                                    if !state.ui.visibility.hide_density {
-                                        draw_density(
-                                            &mut scene.entities,
-                                            mol.elec_density.as_ref().unwrap(),
-                                        );
-
-                                        engine_updates.entities = true;
-                                    }
                                 }
                                 Err(e) => {
                                     let msg = format!(
@@ -1557,7 +1536,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                         }
                     }
 
-                    if data.validation_fo_fc {
+                    if files_avail.validation_fo_fc {
                         if ui
                             .button(RichText::new("fo-fc").color(COLOR_HIGHLIGHT))
                             .clicked()
@@ -1577,7 +1556,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                         }
                     }
 
-                    if data.validation {
+                    if files_avail.validation {
                         if ui
                             .button(RichText::new("Val").color(COLOR_HIGHLIGHT))
                             .clicked()
@@ -1596,7 +1575,29 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                             }
                         }
                     }
+
+                    if files_avail.map {
+                        if ui
+                            .button(RichText::new("Map").color(COLOR_HIGHLIGHT))
+                            .clicked()
+                        {
+                            match rcsb::load_map(&mol.ident) {
+                                Ok(data) => {
+                                    println!("VAL DATA: {:?}", &data[0..10]);
+                                }
+                                Err(_) => {
+                                    let msg =
+                                        format!("Error loading RCSB Map for {:?}", &mol.ident);
+                                    handle_err(&mut state.ui, msg);
+                                }
+                            }
+                        }
+                    }
                 }
+            }
+
+            if let Some(dm) = dm_loaded {
+                state.load_density(dm);
             }
 
             if let Some(lig) = &state.ligand {
@@ -1929,11 +1930,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
     });
 
     state.volatile.dialogs.load.update(ctx);
-    // state.volatile.dialogs.load_ligand.update(ctx);
     state.volatile.dialogs.save.update(ctx);
-    // state.volatile.dialogs.save_ligand.update(ctx);
     state.volatile.dialogs.autodock_path.update(ctx);
-    // state.volatile.dialogs.save_pdbqt.update(ctx);
 
     // todo: Appropriate place for this?
     if state.volatile.inputs_commanded.inputs_present() {
@@ -1990,22 +1988,24 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             }
         }
     }
+
+    // todo: temp experiencing a crash from wgpu on vertex buffer
     if state.volatile.make_density_mesh {
+        // if false {
         if let Some(mol) = &state.molecule {
             // if let Some(dens) = &mol.elec_density {
 
-                // todo: Adapt this to your new approach, if it works.
-                // let hdr = mol.elec_density_header.as_ref().unwrap();
-                // let rect = mol.density_rect.as_ref().unwrap();
+            // todo: Adapt this to your new approach, if it works.
+            // let hdr = mol.elec_density_header.as_ref().unwrap();
+            // let rect = mol.density_rect.as_ref().unwrap();
             if let Some(rect) = &mol.density_rect {
-
                 /////
 
                 // 2) Grid parameters for MarchingCubes
-                let dims = (rect.dims[0], rect.dims[1], rect.dims[2]);        // (nx,ny,nz)
+                let dims = (rect.dims[0], rect.dims[1], rect.dims[2]); // (nx,ny,nz)
 
                 let size = (
-                    (rect.step[0] * rect.dims[0] as f64) as f32,              // Δx * nx  (Å)
+                    (rect.step[0] * rect.dims[0] as f64) as f32, // Δx * nx  (Å)
                     (rect.step[1] * rect.dims[1] as f64) as f32,
                     (rect.step[2] * rect.dims[2] as f64) as f32,
                 );
@@ -2017,9 +2017,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     rect.dims[1] as f32,
                     rect.dims[2] as f32,
                 );
-                
+
                 ////
-                
 
                 match MarchingCubes::from_gridpoints(
                     dims,

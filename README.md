@@ -52,6 +52,7 @@ from the [RCSB PDB](https://www.rcsb.org/).
 - Small molecules: SDF, Mol2, and PDBQT
 - Electron density: `2fo-fc` CIF, and Map.
 
+![ELectron density](screenshots/iso_a.png)
 
 ![Docking A](screenshots/docking_a.png)
 

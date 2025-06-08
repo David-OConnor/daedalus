@@ -4,6 +4,7 @@
 // todo not parsed by PDBTBX.
 
 use std::f64::consts::PI;
+
 use bio_files::ResidueType;
 use graphics::{Mesh, Vertex};
 use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
