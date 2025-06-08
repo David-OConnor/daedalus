@@ -1,6 +1,7 @@
 use std::{
     f32::consts::TAU,
     io,
+    io::Cursor,
     path::Path,
     sync::atomic::{AtomicBool, Ordering},
     time::Instant,
@@ -17,7 +18,7 @@ use na_seq::{AaIdent, AminoAcid};
 
 static INIT_COMPLETE: AtomicBool = AtomicBool::new(false);
 
-use bio_files::{DensityMap, ResidueType, density_from_rcsb_gemmi};
+use bio_files::{DensityMap, ResidueType, density_from_2fo_fc_rcsb_gemmi};
 
 use crate::{
     CamSnapshot, MsaaSetting, Selection, State, ViewSelLevel, cli,
@@ -1252,11 +1253,11 @@ fn view_settings(
                 if !state.ui.visibility.hide_density_surface {
                     let iso_prev = state.ui.density_iso_level;
 
-                    ui.spacing_mut().slider_width = 200.;
+                    ui.spacing_mut().slider_width = 300.;
                     ui.add(Slider::new(
                         &mut state.ui.density_iso_level,
                         // todo: Consts for these
-                        0.4..=1.5,
+                        0.1..=1.3,
                     ));
                     if state.ui.density_iso_level != iso_prev {
                         state.volatile.make_density_mesh = true;
@@ -1461,31 +1462,10 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                             .button(RichText::new("2fo-fc").color(COLOR_HIGHLIGHT))
                             .clicked()
                         {
-                            match rcsb::load_validation_2fo_fc_cif(&mol.ident) {
-                                Ok(data) => {
-                                    // println!("SF data: {:?}", data);
-                                }
-                                Err(_) => {
-                                    let msg = format!(
-                                        "Error loading RCSB 2fo-fc map for {:?}",
-                                        &mol.ident
-                                    );
-                                    handle_err(&mut state.ui, msg);
-                                }
-                            }
-                        }
-                        // todo: Map download directly from RCSB if avail?
-
-                        if ui
-                            .button(RichText::new("Load map").color(COLOR_HIGHLIGHT))
-                            .clicked()
-                        {
-                            // todo: Consolidate this with that in filo IO, and the 2fo_fc load button.
-
                             // todo: For now, we rely on Gemmi being available on the Path.
                             // todo: We will eventually get our own reflections loader working.
 
-                            match density_from_rcsb_gemmi(&mol.ident) {
+                            match density_from_2fo_fc_rcsb_gemmi(&mol.ident) {
                                 Ok(dm) => {
                                     dm_loaded = Some(dm);
                                     println!(
@@ -1494,7 +1474,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                                 }
                                 Err(e) => {
                                     let msg = format!(
-                                        "Error loading reflections and density map data.: {e:?}"
+                                        "Error loading RCSB 2fo-fc map for {:?}",
+                                        &mol.ident
                                     );
                                     handle_err(&mut state.ui, msg);
                                 }
@@ -1517,64 +1498,50 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                             //     }
                             // }
 
-                            // match ReflectionsData::load_from_rcsb(&mol.ident) {
-                            //     Ok(d) => {
-                            //         println!("Successfully loaded reflections and density map data");
-                            //
-                            //         let density = compute_density_grid(&d);
-                            //
-                            //         mol.reflections_data = Some(d);
-                            //         mol.elec_density = Some(density);
-                            //
-                            //         // todo: Update A/R based on how we visualize this.
-                            //         redraw = true;
-                            //     }
-                            //     Err(e) => {
-                            //         eprintln!("Error loading reflections and density map data.: {e:?}");
-                            //     }
+                            // match rcsb::load_validation_2fo_fc_cif(&mol.ident) {
                             // }
                         }
                     }
-
-                    if files_avail.validation_fo_fc {
-                        if ui
-                            .button(RichText::new("fo-fc").color(COLOR_HIGHLIGHT))
-                            .clicked()
-                        {
-                            match rcsb::load_validation_fo_fc_cif(&mol.ident) {
-                                Ok(data) => {
-                                    // println!("SF data: {:?}", data);
-                                }
-                                Err(_) => {
-                                    let msg = format!(
-                                        "Error loading RCSB fo-fc map for {:?}",
-                                        &mol.ident
-                                    );
-                                    handle_err(&mut state.ui, msg);
-                                }
-                            }
-                        }
-                    }
-
-                    if files_avail.validation {
-                        if ui
-                            .button(RichText::new("Val").color(COLOR_HIGHLIGHT))
-                            .clicked()
-                        {
-                            match rcsb::load_validation_cif(&mol.ident) {
-                                Ok(data) => {
-                                    // println!("VAL DATA: {:?}", data);
-                                }
-                                Err(_) => {
-                                    let msg = format!(
-                                        "Error loading RCSB validation for {:?}",
-                                        &mol.ident
-                                    );
-                                    handle_err(&mut state.ui, msg);
-                                }
-                            }
-                        }
-                    }
+                    // todo: Add these if you end up with a way to use them. fo-fc is likely for visualizations.
+                    // if files_avail.validation_fo_fc {
+                    //     if ui
+                    //         .button(RichText::new("fo-fc").color(COLOR_HIGHLIGHT))
+                    //         .clicked()
+                    //     {
+                    //         match rcsb::load_validation_fo_fc_cif(&mol.ident) {
+                    //             Ok(data) => {
+                    //                 // println!("SF data: {:?}", data);
+                    //             }
+                    //             Err(_) => {
+                    //                 let msg = format!(
+                    //                     "Error loading RCSB fo-fc map for {:?}",
+                    //                     &mol.ident
+                    //                 );
+                    //                 handle_err(&mut state.ui, msg);
+                    //             }
+                    //         }
+                    //     }
+                    // }
+                    //
+                    // if files_avail.validation {
+                    //     if ui
+                    //         .button(RichText::new("Val").color(COLOR_HIGHLIGHT))
+                    //         .clicked()
+                    //     {
+                    //         match rcsb::load_validation_cif(&mol.ident) {
+                    //             Ok(data) => {
+                    //                 // println!("VAL DATA: {:?}", data);
+                    //             }
+                    //             Err(_) => {
+                    //                 let msg = format!(
+                    //                     "Error loading RCSB validation for {:?}",
+                    //                     &mol.ident
+                    //                 );
+                    //                 handle_err(&mut state.ui, msg);
+                    //             }
+                    //         }
+                    //     }
+                    // }
 
                     if files_avail.map {
                         if ui
@@ -1583,7 +1550,20 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                         {
                             match rcsb::load_map(&mol.ident) {
                                 Ok(data) => {
-                                    println!("VAL DATA: {:?}", &data[0..10]);
+                                    let mut cursor = Cursor::new(data);
+                                    match DensityMap::new(&mut cursor) {
+                                        Ok(dm) => {
+                                            dm_loaded = Some(dm);
+                                            println!("Succsesfully loaded Map rom RSCB.");
+                                        }
+                                        Err(e) => {
+                                            let msg = format!(
+                                                "Error loading RCSB Map for {:?}",
+                                                &mol.ident
+                                            );
+                                            handle_err(&mut state.ui, msg);
+                                        }
+                                    }
                                 }
                                 Err(_) => {
                                     let msg =

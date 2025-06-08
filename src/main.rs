@@ -125,13 +125,8 @@ impl fmt::Display for ViewSelLevel {
 
 struct FileDialogs {
     load: FileDialog,
-    // load_ligand: FileDialog,
     save: FileDialog,
-    // save_ligand: FileDialog,
     autodock_path: FileDialog,
-    // save_pdbqt: FileDialog,
-    // load_mdx: FileDialog,
-    // load_crystallography: FileDialog,
 }
 
 impl Default for FileDialogs {

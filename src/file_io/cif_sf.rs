@@ -1,5 +1,7 @@
 //! For reflections data from CIF dialects: SF, map 2fo_fc and map fo_fc.
 
+// todo: Move this to bio_files, once you sort out how to interpor with Reflrection structs.
+
 use std::collections::HashMap;
 
 use crate::reflection::{MapStatus, Reflection, ReflectionsData};
@@ -175,7 +177,7 @@ impl ReflectionsData {
             parse_cif(&mut reflections, data, &mut header);
         }
 
-        if let Some(data) = map_fo_fc {
+        if let Some(data) = map_2fo_fc {
             parse_cif(&mut reflections, data, &mut header);
         }
 

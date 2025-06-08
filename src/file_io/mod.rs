@@ -8,7 +8,7 @@ use std::{
 
 use bio_files::{DensityMap, gemmi_cif_to_map};
 use lin_alg::f64::Vec3;
-use na_seq::AaIdent;
+use na_seq::{AaIdent, Element};
 
 use crate::{
     State,
@@ -24,7 +24,7 @@ pub mod pdbqt;
 
 use bio_files::{Mol2, sdf::Sdf};
 
-use crate::reflection::{DensityRect, ElectronDensity};
+use crate::reflection::{DENSITY_MAX_DIST, DensityRect, ElectronDensity};
 
 impl State {
     /// A single endpoint to open a number of file types
@@ -74,7 +74,7 @@ impl State {
                 if let Some(name) = path.file_name().and_then(|os| os.to_str()) {
                     if name.contains("2fo") && name.contains("fc") {
                         let dm = gemmi_cif_to_map(path.to_str().unwrap())?;
-                        // todo: Continue this once you figure out which map approach you use. You'll loop it into `open_map`.
+                        self.load_density(dm);
                     }
                 }
 
@@ -123,6 +123,10 @@ impl State {
                 } else {
                     self.to_save.last_opened = Some(path.to_owned());
 
+                    // todo: Sort this out, so you can load a new m ap on init, but the map
+                    // todo clears when opening a new molecule.
+                    // self.to_save.last_map_opened = None;
+
                     self.volatile.aa_seq_text = String::with_capacity(mol.atoms.len());
                     for aa in &mol.aa_seq {
                         self.volatile
@@ -160,11 +164,21 @@ impl State {
     pub fn load_density(&mut self, dm: DensityMap) {
         if let Some(mol) = &mut self.molecule {
             let margin = 2.;
-            let atom_posits: Vec<_> = mol.atoms.iter().map(|a| a.posit).collect();
+
+            // We are filtering for backbone atoms of one type for now, for performance reasons. This is
+            // a sample. Good enough?
+            let atom_posits: Vec<_> = mol
+                .atoms
+                .iter()
+                // .filter(|a| a.is_backbone() && a.element == Element::Nitrogen)
+                .filter(|a| a.element != Element::Hydrogen)
+                // .filter(|a| a.is_backbone())
+                .map(|a| a.posit)
+                .collect();
 
             let dens_rect = DensityRect::new(&atom_posits, &dm, margin);
+            let dens = dens_rect.make_densities(&atom_posits, &dm.cell, DENSITY_MAX_DIST);
 
-            let dens = dens_rect.make_densities(&dm.cell);
             let elec_dens: Vec<_> = dens
                 .iter()
                 .map(|d| ElectronDensity {
@@ -183,7 +197,7 @@ impl State {
     }
 
     pub fn open_map(&mut self, path: &Path) -> io::Result<()> {
-        let dm = DensityMap::new(path)?;
+        let dm = DensityMap::load(path)?;
         self.load_density(dm);
 
         self.to_save.last_map_opened = Some(path.to_owned());
@@ -237,7 +251,9 @@ impl State {
                 }
                 None => return Err(io::Error::new(ErrorKind::InvalidData, "No ligand to save")),
             },
-            "map" => {}
+            "map" => {
+                // todo
+            }
             _ => {
                 return Err(io::Error::new(
                     ErrorKind::InvalidData,

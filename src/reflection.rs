@@ -9,7 +9,10 @@ use lin_alg::f64::Vec3;
 use mcubes::GridPoint;
 use rayon::prelude::*;
 
-use crate::molecule::Atom;
+use crate::{molecule::Atom, util::setup_neighbor_pairs};
+
+// Density points must be within this distance in Å of a (backbone?) atom to be generated.
+pub const DENSITY_MAX_DIST: f64 = 4.0;
 
 #[derive(Clone, Copy, PartialEq, Debug, Default)]
 pub enum MapStatus {
@@ -454,7 +457,6 @@ pub struct DensityRect {
 impl DensityRect {
     /// Extract the smallest cube that covers all atoms plus `margin` Å.
     /// `margin = 0.0` means “touch each atom’s centre”.
-    /// // todo: Cube or rect?
     pub fn new(atom_posits: &[Vec3], map: &DensityMap, margin: f64) -> Self {
         let hdr = &map.hdr;
         let cell = &map.cell;
@@ -563,9 +565,11 @@ impl DensityRect {
     /// so non-orthogonal (triclinic, monoclinic, …) cells come out correct.
     pub fn make_densities(
         &self,
-        cell: &UnitCell, // use the very same cell you built the cube with
+        atom_posits: &[Vec3],
+        cell: &UnitCell,
+        dist_thresh: f64,
     ) -> Vec<Density> {
-        // Step *vectors* along a, b, c — not just their lengths
+        // Step vectors along a, b, c.
         let cols = cell.ortho.to_cols();
 
         // length of one voxel along the a-axis in Å  =  a / mx
@@ -576,12 +580,22 @@ impl DensityRect {
         let (nx, ny, nz) = (self.dims[0], self.dims[1], self.dims[2]);
         let mut out = Vec::with_capacity(nx * ny * nz);
 
+        // todo: Experimenting with neighbor grid here
+        let indices: Vec<_> = (0..atom_posits.len()).collect();
+
+        // todo: Temp dealing with the ref vs not.
+        // let atom_posits2: Vec<&_> = atom_posits.iter().map(|p| p).collect();
+        // const GRID: f64 = 1.0; // todo: Experiment.
+        // let neighbor_pairs = setup_neighbor_pairs(&atom_posits2, &indices, GRID);
+
+        println!("Atoms len: {:?}", atom_posits.len());
+
         for kz in 0..nz {
             for ky in 0..ny {
                 for kx in 0..nx {
                     // linear index in self.data  (z → y → x fastest)
-                    let idx = ((kz * ny + ky) * nx + kx) as usize;
-                    let rho = self.data[idx] as f64;
+                    let idx = (kz * ny + ky) * nx + kx;
+                    let mut density = self.data[idx] as f64;
 
                     // Cartesian centre of this voxel
                     let coords = self.origin_cart
@@ -589,10 +603,35 @@ impl DensityRect {
                         + step_vec_b * ky as f64
                         + step_vec_c * kz as f64;
 
-                    out.push(Density {
-                        coords,
-                        density: rho,
-                    });
+                    // todo: Insert code here to, using a neighbors algorithm and/or only select
+                    // todo backboneo atoms (e.g. only Calpha etc), don't include points pas a certain
+                    // todo min distance from this backbone. (Performance saver over checking all atoms)
+
+                    // neighbor_pairs
+                    //     .par_iter()
+                    //     .filter_map(|(i, j)| {
+                    //         let atom_0 = &atom_posits[*i];
+                    //         let atom_1 = &atom_posits[*j];
+                    //         let dist = (atom_0 - atom_1).magnitude();
+
+                    // todo: Too slow, but can work for now.
+                    let mut nearest_dist = 99999.;
+                    for p in atom_posits {
+                        let dist = (*p - coords).magnitude();
+                        if dist < nearest_dist {
+                            nearest_dist = dist;
+                        }
+                    }
+
+                    if nearest_dist > dist_thresh {
+                        // todo: You may need to set to 0 to avoid problems with the isosurface
+                        // todo generation.
+                        // todo: Try both
+                        density = 0.;
+                        // continue
+                    }
+
+                    out.push(Density { coords, density });
                 }
             }
         }
