@@ -259,6 +259,7 @@ struct StateVolatile {
     cli_input_selected: usize,
     /// Pre-computed from the molecule
     aa_seq_text: String,
+    update_ss_mesh: bool,
 }
 
 impl Default for StateVolatile {
@@ -277,6 +278,7 @@ impl Default for StateVolatile {
             cli_input_history: Default::default(),
             cli_input_selected: Default::default(),
             aa_seq_text: Default::default(),
+            update_ss_mesh: false,
         }
     }
 }

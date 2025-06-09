@@ -12,8 +12,13 @@ use na_seq::AminoAcid;
 
 use crate::molecule::{Atom, AtomRole, Residue};
 
-/// How many slices around each tube cross-section
-const TUBE_SIDES: usize = 8;
+/// Radii / dimensions for each cartoon element (Å).
+const HELIX_RADIUS: f32 = 0.6;
+const COIL_RADIUS:  f32 = 0.3;
+const SHEET_HALF_W: f32 = 0.9;   // half-width of the β-ribbon
+const SHEET_THICK: f32 = 0.2;
+
+// todo: Eval if you want a second cyilnder mesh of different parameters.
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum SecondaryStructure {
@@ -29,167 +34,72 @@ pub struct BackboneSS {
     pub sec_struct: SecondaryStructure,
 }
 
-// todo: ChatGpt
-fn gather_alpha_positions(atoms: &[Atom], residues: &[Residue]) -> Vec<Vec3> {
-    let mut alpha_positions = Vec::new();
+/// Build a thin ribbon/arrow for β-strands.
+/// Simplest version: just a box; you can fancy-it-up later.
+fn sheet_ribbon(a: Vec3F32,
+                b: Vec3F32,
+                half_w: f32,
+                thick: f32) -> (Vec<Vertex>, Vec<usize>)
+{
+    let axis   = (b - a).to_normalized();
+    let helper = if axis.z.abs() < 0.999 { Vec3F32::new(0.0, 0.0, 1.0) }
+    else                     { Vec3F32::new(0.0, 1.0, 0.0) };
+    let u = axis.cross(helper).to_normalized(); // width direction
+    let v = axis.cross(u).to_normalized();      // thickness direction
 
-    // For each residue, find the alpha carbon and push its position
-    for residue in residues {
-        // Each residue holds indexes to `atoms`
-        let mut found_ca = None;
-        for &atom_idx in &residue.atoms {
-            let atom = &atoms[atom_idx];
-            if atom.role == Some(AtomRole::C_Alpha) {
-                found_ca = Some(atom.posit);
-                break;
-            }
-        }
-        if let Some(pos) = found_ca {
-            alpha_positions.push(pos);
+    // 8 corners of a rectangular prism (arrow head: add later.)
+    let mut verts = Vec::<Vertex>::with_capacity(8);
+    for &side in &[-1.0, 1.0] {      // lower/upper faces
+        for &edge in &[-1.0, 1.0] {  // left/right edges
+            let offset = u * (edge * half_w) + v * (side * thick * 0.5);
+            
+            verts.push(Vertex::new((a + offset).to_arr(), v * side));
+            verts.push(Vertex::new((b + offset).to_arr(), v * side));
         }
     }
-    alpha_positions
+
+    // Twelve triangles (6 quad faces)
+    let idx: [usize; 36] = [
+        // bottom
+        0,2,1,  1,2,3,
+        // top
+        4,5,6,  5,7,6,
+        // sides
+        0,1,4,  4,1,5,
+        2,6,3,  3,6,7,
+        0,4,2,  2,4,6,
+        1,3,5,  5,3,7,
+    ];
+    (verts, idx.to_vec())
 }
 
-// todo: ChatGpt
-fn get_secondary_structure_of_residue(res: &Residue) -> SecondaryStructure {
-    // Simple placeholder: a real implementation would parse from
-    // your PDB data or run a calculation.
-    if let ResidueType::AminoAcid(aa) = res.res_type {
-        match aa {
-            // Maybe just random examples
-            AminoAcid::Ala => SecondaryStructure::Helix,
-            AminoAcid::Arg => SecondaryStructure::Sheet,
-            // ...
-            _ => SecondaryStructure::Coil,
-        }
-    } else {
-        SecondaryStructure::Coil
-    }
-}
+pub fn build_cartoon_mesh(backbone: &[BackboneSS]) -> Mesh {
+    let mut vertices = Vec::<Vertex>::new();
+    let mut indices  = Vec::<usize>::new();
 
-// todo: ChatGpt
-fn build_backbone_segments(atoms: &[Atom], residues: &[Residue]) -> Vec<BackboneSS> {
-    let alpha_positions = gather_alpha_positions(atoms, residues);
-    let mut segments = Vec::new();
-    if alpha_positions.len() < 2 {
-        return segments;
-    }
-
-    for i in 0..(alpha_positions.len() - 1) {
-        // For example, use the structure type of the *leading* residue
-        let sec_struct = {
-            // retrieve from residue i
-            let r = &residues[i];
-            get_secondary_structure_of_residue(r)
-        };
-        segments.push(BackboneSS {
-            start: alpha_positions[i],
-            end: alpha_positions[i + 1],
-            sec_struct,
-        });
-    }
-    segments
-}
-
-pub fn mesh_from_atoms(atoms: &[Atom], residues: &[Residue]) -> Mesh {
-    let backbone = build_backbone_segments(atoms, residues);
-
-    // Our final mesh
-    let mut mesh = Mesh {
-        vertices: Vec::new(),
-        indices: Vec::new(),
-        material: 0, // or whatever
-    };
-
-    // Keep track of vertex offset as we add geometry
-    let mut base_index = 0;
-
-    for segment in &backbone {
-        let direction = (segment.end - segment.start).to_normalized();
-
-        // Decide on radius based on structure type
-        let radius = match segment.sec_struct {
-            SecondaryStructure::Helix => 0.35,
-            SecondaryStructure::Sheet => 0.25,
-            SecondaryStructure::Coil => 0.15,
+    for seg in backbone {
+        let (mut vtx, mut idx) = match seg.sec_struct {
+            SecondaryStructure::Helix =>
+            // todo: Do better than a cylinder...
+                (Vec::new(), Vec::new()),
+                // cylinder(seg.start, seg.end, HELIX_RADIUS, CYLINDER_SEGMENTS),
+            SecondaryStructure::Coil =>
+                (Vec::new(), Vec::new()),
+                // cylinder(seg.start, seg.end, COIL_RADIUS,  CYLINDER_SEGMENTS / 2),
+            SecondaryStructure::Sheet =>
+                sheet_ribbon(seg.start.into(), seg.end.into(), SHEET_HALF_W, SHEET_THICK),
         };
 
-        // Build local coordinate system for the tube cross-section
-        // A typical way is to pick a "pseudo-up" vector that isn't parallel to direction,
-        // then cross to find a right vector, etc.
-        let arbitrary_up = if direction.y.abs() < 0.99 {
-            Vec3::new(0.0, 1.0, 0.0)
-        } else {
-            Vec3::new(1.0, 0.0, 0.0)
-        };
-
-        let right = direction.cross(arbitrary_up).to_normalized();
-        let up = right.cross(direction).to_normalized();
-
-        // Generate ring of vertices at start
-        let start_ring: Vec<(Vec3, Vec3)> = (0..TUBE_SIDES)
-            .map(|i| {
-                let theta = 2.0 * PI * (i as f64) / (TUBE_SIDES as f64);
-                // Normal in cross-section
-                let normal = (right * theta.cos() + up * theta.sin()).to_normalized();
-                // Vertex position for the start circle
-                let position = segment.start + normal * radius;
-                (position, normal)
-            })
-            .collect();
-
-        // Generate ring of vertices at end
-        let end_ring: Vec<(Vec3, Vec3)> = (0..TUBE_SIDES)
-            .map(|i| {
-                let theta = 2.0 * PI * (i as f64) / (TUBE_SIDES as f64);
-                let normal = (right * theta.cos() + up * theta.sin()).to_normalized();
-                let position = segment.end + normal * radius;
-                (position, normal)
-            })
-            .collect();
-
-        // Add these vertices to the mesh
-        for (pos, normal) in &start_ring {
-            let pos: Vec3F32 = (*pos).into();
-            mesh.vertices
-                .push(Vertex::new(pos.to_arr(), (*normal).into()));
-        }
-        for (pos, normal) in &end_ring {
-            let pos: Vec3F32 = (*pos).into();
-            mesh.vertices
-                .push(Vertex::new(pos.to_arr(), (*normal).into()));
-        }
-
-        // Build indices for the quads connecting start_ring to end_ring
-        // We have TUBE_SIDES sides in each ring. We'll create triangles in pairs.
-        for i in 0..TUBE_SIDES {
-            // current and next index, wrapping around
-            let i0 = i;
-            let i1 = (i + 1) % TUBE_SIDES;
-
-            // Indices in the mesh's vertex buffer:
-            // start ring goes from base_index to base_index + TUBE_SIDES-1
-            // end ring goes from base_index + TUBE_SIDES to base_index + 2*TUBE_SIDES-1
-            let start0 = base_index + i0;
-            let start1 = base_index + i1;
-            let end0 = base_index + TUBE_SIDES + i0;
-            let end1 = base_index + TUBE_SIDES + i1;
-
-            // Two triangles for each quad:
-            //   (start0, start1, end0) + (end0, start1, end1)
-            mesh.indices.push(start0);
-            mesh.indices.push(start1);
-            mesh.indices.push(end0);
-
-            mesh.indices.push(end0);
-            mesh.indices.push(start1);
-            mesh.indices.push(end1);
-        }
-
-        // Update base_index for next segment
-        base_index += 2 * TUBE_SIDES;
+        // offset indices by the number of verts already emitted
+        let base = vertices.len();
+        idx.iter_mut().for_each(|i| *i += base);
+        vertices.extend(vtx);
+        indices.extend(idx);
     }
 
-    mesh
+    Mesh {
+        vertices,
+        indices,
+        material: 0,
+    }
 }

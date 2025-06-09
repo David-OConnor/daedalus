@@ -24,6 +24,7 @@ use crate::{
     surface::{get_mesh_points, mesh_from_sas_points},
     util::orbit_center,
 };
+use crate::render::MESH_SECONDARY_STRUCTURE;
 
 const LIGAND_COLOR: Color = (0., 0.4, 1.);
 const LIGAND_COLOR_ANCHOR: Color = (1., 0., 1.);
@@ -73,7 +74,8 @@ pub enum EntityType {
     Ligand = 1,
     Density = 2,
     DensitySurface = 3,
-    Other = 4,
+    SecondaryStructure = 4,
+    Other = 5,
 }
 
 // todo: For ligands that are flexible, highlight the fleixble bonds in a bright color.
@@ -678,12 +680,33 @@ pub fn draw_density_surface(entities: &mut Vec<Entity>) {
     entities.push(ent);
 }
 
+
+/// Secondary structure, e.g. cartoon.
+pub fn draw_secondary_structure(entities: &mut Vec<Entity>) {
+    entities.retain(|ent| ent.class != EntityType::SecondaryStructure as u32);
+
+    let mut ent = Entity::new(
+        MESH_SECONDARY_STRUCTURE,
+        Vec3::new_zero(),
+        Quaternion::new_identity(),
+        1.,
+        (0.7, 0.2, 1.), // todo: Make this customizable etc.
+        ATOM_SHININESS,
+    );
+    ent.class = EntityType::SecondaryStructure as u32;
+    entities.push(ent);
+}
+
+
 /// Refreshes entities with the model passed.
 /// Sensitive to various view configuration parameters.
 pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
     let Some(mol) = state.molecule.as_mut() else {
         return;
     };
+
+    // todo: Temp location for this.
+    draw_secondary_structure(&mut scene.entities);
 
     scene
         .entities

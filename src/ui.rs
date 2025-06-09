@@ -48,6 +48,8 @@ use crate::{
         cycle_res_selected, handle_err, orbit_center, query_rcsb, reset_camera, select_from_search,
     },
 };
+use crate::cartoon_mesh::build_cartoon_mesh;
+use crate::render::MESH_SECONDARY_STRUCTURE;
 
 pub const ROW_SPACING: f32 = 10.;
 pub const COL_SPACING: f32 = 30.;
@@ -2055,6 +2057,14 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         }
 
         state.volatile.make_density_mesh = false;
+    }
+
+    if state.volatile.update_ss_mesh {
+        if let Some(mol) = &state.molecule {
+            scene.meshes[MESH_SECONDARY_STRUCTURE] = build_cartoon_mesh(&mol.secondary_structure);
+
+            engine_updates.meshes = true;
+        }
     }
 
     if state.volatile.mol_pending_data_avail.is_some() {

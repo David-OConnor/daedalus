@@ -129,6 +129,9 @@ impl State {
                             .aa_seq_text
                             .push_str(&aa.to_str(AaIdent::OneLetter));
                     }
+
+                    self.volatile.update_ss_mesh = true;
+
                     self.molecule = Some(mol);
 
                     self.volatile.clear_density_drawing = true;
