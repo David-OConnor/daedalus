@@ -36,7 +36,6 @@ pub const BODY_SHINYNESS: f32 = 0.9;
 pub const MESH_SPHERE_HIGHRES: usize = 0;
 pub const MESH_CUBE: usize = 1;
 pub const MESH_BOND: usize = 2;
-// pub const MESH_BOND_LIGAND: usize = 3;
 pub const MESH_SPHERE_LOWRES: usize = 3;
 pub const MESH_SPHERE_MEDRES: usize = 4;
 pub const MESH_DOCKING_BOX: usize = 5;
@@ -120,7 +119,7 @@ pub fn render(mut state: State) {
             Mesh::new_sphere(1., 1), // low-res sphere
             Mesh::new_sphere(1., 2), // med-res sphere
             Mesh::new_box(1., 1., 1.),
-            Mesh::new_box(1., 1., 1.), // Placeholder for VDW surface; populated later.
+            Mesh::new_box(1., 1., 1.), // Placeholder for VDW/SA surface; populated later.
             Mesh::new_box(1., 1., 1.), // Placeholder for docking site sufrace; populated later.
             Mesh::new_box(1., 1., 1.), // Placeholder for density sufrace; populated later.
             Mesh::new_box(1., 1., 1.), // Placeholder for secondary structure surface; populated later.

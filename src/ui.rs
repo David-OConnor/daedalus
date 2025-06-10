@@ -21,7 +21,9 @@ static INIT_COMPLETE: AtomicBool = AtomicBool::new(false);
 use bio_files::{DensityMap, ResidueType, density_from_2fo_fc_rcsb_gemmi};
 
 use crate::{
-    CamSnapshot, MsaaSetting, Selection, State, ViewSelLevel, cli,
+    CamSnapshot, MsaaSetting, Selection, State, ViewSelLevel,
+    cartoon_mesh::build_cartoon_mesh,
+    cli,
     cli::autocomplete_cli,
     docking::{
         ConformationType, calc_binding_energy,
@@ -37,19 +39,19 @@ use crate::{
         draw_ligand, draw_molecule,
     },
     molecule::{Ligand, Molecule},
-    reflection::{DensityRect, ElectronDensity},
     render::{
-        CAM_INIT_OFFSET, MESH_DENSITY_SURFACE, MESH_DOCKING_SURFACE, RENDER_DIST_FAR,
-        RENDER_DIST_NEAR, set_docking_light, set_flashlight, set_static_light,
+        CAM_INIT_OFFSET, MESH_DENSITY_SURFACE, MESH_DOCKING_SURFACE, MESH_SECONDARY_STRUCTURE,
+        MESH_SOLVENT_SURFACE, RENDER_DIST_FAR, RENDER_DIST_NEAR, set_docking_light, set_flashlight,
+        set_static_light,
     },
+    sa_surface::make_sas_mesh,
     util,
     util::{
         cam_look_at, cam_look_at_outside, check_prefs_save, close_lig, close_mol,
-        cycle_res_selected, handle_err, orbit_center, query_rcsb, reset_camera, select_from_search,
+        cycle_res_selected, handle_err, load_atom_coords_rcsb, orbit_center, reset_camera,
+        select_from_search,
     },
 };
-use crate::cartoon_mesh::build_cartoon_mesh;
-use crate::render::MESH_SECONDARY_STRUCTURE;
 
 pub const ROW_SPACING: f32 = 10.;
 pub const COL_SPACING: f32 = 30.;
@@ -1170,8 +1172,7 @@ fn view_settings(
                     MoleculeView::BallAndStick,
                     // MoleculeView::Cartoon,
                     MoleculeView::SpaceFill,
-                    // MoleculeView::Surface, // Partially-implemented, but broken/crashes.
-                    // MoleculeView::Mesh,
+                    MoleculeView::Surface,
                     MoleculeView::Dots,
                 ] {
                     ui.selectable_value(&mut state.ui.mol_view, *view, view.to_string());
@@ -1648,7 +1649,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 // if response.lost_focus() && (button_clicked || enter_pressed)
                 if (button_clicked || enter_pressed) && state.ui.db_input.trim().len() == 4 {
                     let ident = state.ui.db_input.clone().trim().to_owned();
-                    query_rcsb(
+                    load_atom_coords_rcsb(
                         &ident,
                         state,
                         scene,
@@ -1708,7 +1709,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     .clicked()
                 {
                     if let Ok(ident) = rcsb::get_newly_released() {
-                        query_rcsb(
+                        load_atom_coords_rcsb(
                             &ident,
                             state,
                             scene,
@@ -2060,8 +2061,29 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
     }
 
     if state.volatile.update_ss_mesh {
+        state.volatile.update_ss_mesh = false;
         if let Some(mol) = &state.molecule {
-            scene.meshes[MESH_SECONDARY_STRUCTURE] = build_cartoon_mesh(&mol.secondary_structure);
+            scene.meshes[MESH_SECONDARY_STRUCTURE] =
+                build_cartoon_mesh(&mol.secondary_structure, &mol.atoms);
+
+            engine_updates.meshes = true;
+        }
+    }
+
+    // todo: Generate these on-demand, first time a relevant view is open.
+    if state.volatile.update_sas_mesh {
+        state.volatile.update_sas_mesh = false;
+        if let Some(mol) = &state.molecule {
+            let atoms: Vec<&_> = mol.atoms.iter().filter(|a| !a.hetero).collect();
+            scene.meshes[MESH_SOLVENT_SURFACE] =
+                make_sas_mesh(&atoms, state.to_save.sa_surface_precision);
+
+            // We draw the molecule here
+            if state.ui.mol_view == MoleculeView::Dots {
+                // The dots are drawn from the mesh vertices
+                draw_molecule(state, scene);
+                engine_updates.entities = true;
+            }
 
             engine_updates.meshes = true;
         }

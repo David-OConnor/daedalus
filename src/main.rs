@@ -34,8 +34,8 @@ mod molecule;
 mod navigation;
 mod prefs;
 mod render;
+mod sa_surface;
 mod save_load;
-mod surface;
 mod ui;
 mod util;
 mod vibrations;
@@ -259,7 +259,10 @@ struct StateVolatile {
     cli_input_selected: usize,
     /// Pre-computed from the molecule
     aa_seq_text: String,
+    /// Secondary structure
     update_ss_mesh: bool,
+    /// Solvent-accessible surface.
+    update_sas_mesh: bool,
 }
 
 impl Default for StateVolatile {
@@ -279,6 +282,7 @@ impl Default for StateVolatile {
             cli_input_selected: Default::default(),
             aa_seq_text: Default::default(),
             update_ss_mesh: false,
+            update_sas_mesh: false,
         }
     }
 }

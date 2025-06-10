@@ -65,7 +65,9 @@ The free camera controls is intended to be used with a keyboard and mouse togeth
 the viewer, vice the molecule. You can move and rotate and move the camera
 in 6 degrees of freedom, allowing you to easily view the molecule from any perspective.
 
-![Protein A](screenshots/protein_a.png)
+
+![Surface example](screenshots/surface_a.png)
+
 
 #### Mouse controls:
 - Hold the **left mouse button while dragging** to rotate the camera in pitch and yaw.
@@ -98,6 +100,7 @@ mouse button and dragging. Other controls, like scroll wheel and middle mouse, o
 If *orbit sel* is set in the GUI, the orbit center will be the selected atom or residue, vice the molecule center.
 
 
+
 ### Non-camera hotkeys
 - **Esc**: Clear selection
 - **Left arrow**: select previous residue
@@ -112,6 +115,9 @@ to Map. Can import Map directly.
 
 ## PyMol-like Command line interface
 Daedalus supports a very limited subset of PyMol's CLI interface. Supported commands:
+
+![Protein A](screenshots/protein_a.png)
+
 
 ### General
 - `help`: Lists commands
@@ -148,7 +154,6 @@ Daedalus supports a very limited subset of PyMol's CLI interface. Supported comm
 
 ### Erratta
 - Cartoon view (Showing helices and sheets) is currently unavailable.
-- The only van der Waals surface view currently available is *dots*, and it's slow to build. Mesh WIP.
 - The GUI doesn't handle proteins with many chains well.
 - Docking is inop.
 

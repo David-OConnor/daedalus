@@ -106,9 +106,9 @@ pub fn handle_cmd(
 
     if let Some(caps) = re_fetch.captures(&input) {
         let ident = &caps[1];
-        util::query_rcsb(ident, state, scene, engine_updates, redraw, reset_cam);
+        util::load_atom_coords_rcsb(ident, state, scene, engine_updates, redraw, reset_cam);
 
-        return Ok(format!("Loaded {ident} from RCSB PDB"));
+        return Ok(format!("Loaded {ident} molecule from RCSB PDB"));
     }
 
     // todo: Save and load: Limited functionalitiy, and DRY with ui.

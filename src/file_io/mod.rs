@@ -130,11 +130,12 @@ impl State {
                             .push_str(&aa.to_str(AaIdent::OneLetter));
                     }
 
+                    // todo: Update these meshes on-demand from the view.
                     self.volatile.update_ss_mesh = true;
-
-                    self.molecule = Some(mol);
+                    self.volatile.update_sas_mesh = true;
 
                     self.volatile.clear_density_drawing = true;
+                    self.molecule = Some(mol);
                 }
 
                 // Update from prefs based on the molecule-specific items.

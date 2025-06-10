@@ -11,26 +11,28 @@ use crate::cartoon_mesh::{BackboneSS, SecondaryStructure};
 
 // todo: Save SS to CIF.
 
+enum LoopKind {
+    None,
+    StructConf,
+    AtomSite,
+    SheetRange,
+}
+
 pub fn load_secondary_structure<R: Read + Seek>(mut data: R) -> io::Result<Vec<BackboneSS>> {
     data.seek(SeekFrom::Start(0))?;
     let mut rdr = BufReader::new(data);
 
-    // ─────────────  caches  ─────────────
-    let mut ca_xyz: HashMap<(String, i32), Vec3> = HashMap::new();
+    // Caches
+    // let mut ca_xyz: HashMap<(String, i32), Vec3> = HashMap::new();
+    let mut ca_xyz: HashMap<(String, i32), usize> = HashMap::new();
     let mut helix_rows: Vec<(Vec<String>, Vec<String>)> = Vec::new();
     let mut sheet_rows: Vec<(Vec<String>, Vec<String>)> = Vec::new();
 
-    enum LoopKind {
-        None,
-        StructConf,
-        AtomSite,
-        SheetRange,
-    }
     let mut kind = LoopKind::None;
     let mut head: Vec<String> = Vec::new();
 
     // atom-site column indices (filled on first row)
-    let mut a_idx = (None, None, None, None, None, None); // asym, seq, atom, x,y,z
+    let mut a_idx = (None, None, None, None, None, None, None); // asym, seq, atom, x,y,z, id
 
     for line in rdr.lines() {
         let line = line?;
@@ -42,7 +44,7 @@ pub fn load_secondary_structure<R: Read + Seek>(mut data: R) -> io::Result<Vec<B
         if t == "loop_" {
             kind = LoopKind::None;
             head.clear();
-            a_idx = (None, None, None, None, None, None);
+            a_idx = (None, None, None, None, None, None, None);
             continue;
         }
         if t == "#" {
@@ -98,6 +100,7 @@ pub fn load_secondary_structure<R: Read + Seek>(mut data: R) -> io::Result<Vec<B
                             "label_asym_id" => a_idx.0 = Some(i),
                             "label_seq_id" => a_idx.1 = Some(i),
                             "label_atom_id" => a_idx.2 = Some(i),
+                            "id" => a_idx.6 = Some(i),
                             "Cartn_x" => a_idx.3 = Some(i),
                             "Cartn_y" => a_idx.4 = Some(i),
                             "Cartn_z" => a_idx.5 = Some(i),
@@ -105,8 +108,11 @@ pub fn load_secondary_structure<R: Read + Seek>(mut data: R) -> io::Result<Vec<B
                         }
                     }
                 }
-                let (ia, isq, iat, ix, iy, iz) = match a_idx {
-                    (Some(a), Some(s), Some(at), Some(x), Some(y), Some(z)) => (a, s, at, x, y, z),
+
+                let (ia, isq, iat, ix, iy, iz, id) = match a_idx {
+                    (Some(a), Some(s), Some(at), Some(x), Some(y), Some(z), Some(id)) => {
+                        (a, s, at, x, y, z, id)
+                    }
                     _ => continue,
                 };
 
@@ -116,21 +122,23 @@ pub fn load_secondary_structure<R: Read + Seek>(mut data: R) -> io::Result<Vec<B
                 }
 
                 if let Ok(seq) = c[isq].parse::<i32>() {
-                    let xyz = Vec3::new(
-                        c[ix].parse().unwrap_or(0.0),
-                        c[iy].parse().unwrap_or(0.0),
-                        c[iz].parse().unwrap_or(0.0),
-                    );
-                    ca_xyz.insert((c[ia].to_owned(), seq), xyz);
+                    // let xyz = Vec3::new(
+                    //     c[ix].parse().unwrap_or(0.0),
+                    //     c[iy].parse().unwrap_or(0.0),
+                    //     c[iz].parse().unwrap_or(0.0),
+                    // );
+                    // ca_xyz.insert((c[ia].to_owned(), seq), id);
+                    if let (Ok(seq), Ok(serial)) = (c[isq].parse::<i32>(), c[id].parse::<usize>()) {
+                        ca_xyz.insert((c[ia].to_owned(), seq), serial);
+                    }
                 }
             }
         }
     }
 
-    // ─────────────  build BackboneSS records  ─────────────
     let mut out = Vec::new();
 
-    // ----- helices from _struct_conf -----
+    // Helices from _struct_conf -----
     for (h, c) in helix_rows {
         // resolve indices once per header set
         fn find(h: &[String], tag: &str) -> Option<usize> {
@@ -148,7 +156,7 @@ pub fn load_secondary_structure<R: Read + Seek>(mut data: R) -> io::Result<Vec<B
 
         if !c[i_type].starts_with("HELX") {
             continue;
-        } // we only want helices
+        }
 
         let beg_seq = c[i_bs].parse().ok();
         let end_seq = c[i_es].parse().ok();

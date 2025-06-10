@@ -103,9 +103,9 @@ pub fn event_dev_handler(
                                 // behind the desired one, but closer to the ray, may be selected; likely
                                 // this is undesired.
                                 let dist_thresh = match state_.ui.mol_view {
-                                    MoleculeView::Mesh
-                                    | MoleculeView::Dots
-                                    | MoleculeView::SpaceFill => SELECTION_DIST_THRESH_LARGE,
+                                    MoleculeView::Dots | MoleculeView::SpaceFill => {
+                                        SELECTION_DIST_THRESH_LARGE
+                                    }
                                     _ => SELECTION_DIST_THRESH_SMALL,
                                 };
                                 let atoms_along_ray =

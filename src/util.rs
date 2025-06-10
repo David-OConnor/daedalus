@@ -459,7 +459,7 @@ pub fn find_atom<'a>(atoms: &'a [Atom], indices: &[usize], i_to_find: usize) -> 
     None
 }
 
-pub fn query_rcsb(
+pub fn load_atom_coords_rcsb(
     ident: &str,
     state: &mut State,
     scene: &mut Scene,
@@ -471,6 +471,7 @@ pub fn query_rcsb(
         // tood: For organization purposes, move thi scode out of the UI.
         Ok((pdb, cif_data)) => {
             let cursor = Cursor::new(&cif_data);
+
             match Molecule::from_cif_pdb(&pdb, cursor) {
                 Ok(mol) => {
                     state.volatile.aa_seq_text = String::with_capacity(mol.atoms.len());
@@ -481,6 +482,21 @@ pub fn query_rcsb(
                             .push_str(&aa.to_str(AaIdent::OneLetter));
                     }
 
+                    // todo: DRY from `open_molecule`. Refactor into shared code?
+
+                    state.volatile.aa_seq_text = String::with_capacity(mol.atoms.len());
+                    for aa in &mol.aa_seq {
+                        state
+                            .volatile
+                            .aa_seq_text
+                            .push_str(&aa.to_str(AaIdent::OneLetter));
+                    }
+
+                    // todo: Update these meshes on-demand from the view.
+                    state.volatile.update_ss_mesh = true;
+                    state.volatile.update_sas_mesh = true;
+
+                    state.volatile.clear_density_drawing = true;
                     state.molecule = Some(mol)
                 }
                 Err(e) => eprintln!("Problem loading molecule from CIF: {e:?}"),

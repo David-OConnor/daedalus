@@ -12,19 +12,21 @@ use lin_alg::{
 use na_seq::Element;
 
 use crate::{
-    Selection, State, ViewSelLevel,
+    Selection,
+    State,
+    ViewSelLevel,
     molecule::{Atom, AtomRole, BondCount, BondType, Residue, aa_color},
     reflection::ElectronDensity,
     render::{
         ATOM_SHININESS, BACKGROUND_COLOR, BALL_RADIUS_WATER, BALL_STICK_RADIUS,
         BALL_STICK_RADIUS_H, BODY_SHINYNESS, Color, MESH_BOND, MESH_DENSITY_SURFACE,
-        MESH_DOCKING_BOX, MESH_SOLVENT_SURFACE, MESH_SPHERE_HIGHRES, MESH_SPHERE_LOWRES,
-        MESH_SPHERE_MEDRES, set_docking_light,
+        MESH_DOCKING_BOX, MESH_SECONDARY_STRUCTURE, MESH_SOLVENT_SURFACE, MESH_SPHERE_HIGHRES,
+        MESH_SPHERE_LOWRES, MESH_SPHERE_MEDRES, set_docking_light,
     },
-    surface::{get_mesh_points, mesh_from_sas_points},
+    // surface::{get_mesh_points, mesh_from_sas_points},
+    sa_surface::make_sas_mesh,
     util::orbit_center,
 };
-use crate::render::MESH_SECONDARY_STRUCTURE;
 
 const LIGAND_COLOR: Color = (0., 0.4, 1.);
 const LIGAND_COLOR_ANCHOR: Color = (1., 0., 1.);
@@ -40,6 +42,8 @@ const COLOR_SFC_DOT: Color = (0.7, 0.7, 0.7);
 const COLOR_DOCKING_BOX: Color = (0.3, 0.3, 0.9);
 pub const COLOR_DOCKING_SITE_MESH: Color = (0.5, 0.5, 0.9);
 
+const COLOR_SA_SURFACE: Color = (1., 0.2, 1.);
+
 pub const BOND_RADIUS: f32 = 0.10;
 pub const BOND_RADIUS_LIGAND_RATIO: f32 = 1.3; // Of bond radius.
 // const BOND_CAP_RADIUS: f32 = 1./BOND_RADIUS;
@@ -52,6 +56,7 @@ const DOCKING_SITE_OPACITY: f32 = 0.35;
 const DIMMED_PEPTIDE_AMT: f32 = 0.92; // Higher value means more dim.
 
 pub const DENSITY_ISO_OPACITY: f32 = 0.5;
+pub const SAS_ISO_OPACITY: f32 = 0.8;
 
 // This allows us to more easily customize sphere mesh resolution.
 const MESH_BALL_STICK_SPHERE: usize = MESH_SPHERE_MEDRES;
@@ -66,7 +71,7 @@ const MESH_BOND_CAP: usize = MESH_SPHERE_LOWRES;
 const MESH_DOCKING_SITE: usize = MESH_DOCKING_BOX;
 const MESH_SURFACE_DOT: usize = MESH_SPHERE_LOWRES;
 
-// For now at least, we hijack the Entity's id field to mean the type it is.
+/// We use the Entity's class field to determine which entities to retain and remove.
 #[derive(Clone, Copy, PartialEq)]
 #[repr(u32)]
 pub enum EntityType {
@@ -75,7 +80,8 @@ pub enum EntityType {
     Density = 2,
     DensitySurface = 3,
     SecondaryStructure = 4,
-    Other = 5,
+    SaSurface = 5,
+    Other = 6,
 }
 
 // todo: For ligands that are flexible, highlight the fleixble bonds in a bright color.
@@ -104,7 +110,6 @@ pub enum MoleculeView {
     SpaceFill,
     Cartoon,
     Surface,
-    Mesh,
     Dots,
 }
 
@@ -120,7 +125,6 @@ impl FromStr for MoleculeView {
             "spacefill" | "space_fill" | "space-fill" | "spheres" => Ok(MoleculeView::SpaceFill),
             "cartoon" | "ribbon" => Ok(MoleculeView::Cartoon),
             "surface" => Ok(MoleculeView::Surface),
-            "mesh" => Ok(MoleculeView::Mesh),
             "dots" => Ok(MoleculeView::Dots),
             other => Err(io::Error::new(
                 ErrorKind::InvalidData,
@@ -139,7 +143,6 @@ impl fmt::Display for MoleculeView {
             Self::Cartoon => "Cartoon",
             Self::SpaceFill => "Spacefill",
             Self::Surface => "Surface (Van der Waals)",
-            Self::Mesh => "Mesh (Van der Waals)",
             Self::Dots => "Dots (Van der Waals)",
         };
 
@@ -213,7 +216,15 @@ fn atom_color(
                         }
                     }
                     _ => COLOR_AA_NON_RESIDUE,
-                }
+                };
+
+                // // Todo: WOrkaround for a problem we're having with Hydrogen's showing like hetero atoms
+                // // todo in residue mode. Likely due to them not having their AA set.
+                // if atom.element == Element::Hydrogen {
+                //     // todo: Not working
+                //     println!("SETTING");
+                //     color = atom.element.color();
+                // }
             }
             color
         }
@@ -680,7 +691,6 @@ pub fn draw_density_surface(entities: &mut Vec<Entity>) {
     entities.push(ent);
 }
 
-
 /// Secondary structure, e.g. cartoon.
 pub fn draw_secondary_structure(entities: &mut Vec<Entity>) {
     entities.retain(|ent| ent.class != EntityType::SecondaryStructure as u32);
@@ -697,7 +707,6 @@ pub fn draw_secondary_structure(entities: &mut Vec<Entity>) {
     entities.push(ent);
 }
 
-
 /// Refreshes entities with the model passed.
 /// Sensitive to various view configuration parameters.
 pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
@@ -705,62 +714,46 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
         return;
     };
 
-    // todo: Temp location for this.
-    draw_secondary_structure(&mut scene.entities);
+    // todo: Temp location for this. ANd temp removed until you fix the meshes.
+    // draw_secondary_structure(&mut scene.entities);
 
-    scene
-        .entities
-        .retain(|ent| ent.class != EntityType::Protein as u32);
+    // todo: You may wish to integrate Cartoon into this workflow.
+    scene.entities.retain(|ent| {
+        ent.class != EntityType::Protein as u32 && ent.class != EntityType::SaSurface as u32
+    });
 
     let ui = &state.ui;
 
     let chains_invis: Vec<&Chain> = mol.chains.iter().filter(|c| !c.visible).collect();
 
-    // todo: Figure out how to handle the VDW models A/R.
-    // todo: Mesh and/or Surface A/R.
     if ui.mol_view == MoleculeView::Dots {
-        if mol.sa_surface_pts.is_none() {
-            println!("Starting getting mesh pts...");
-            mol.sa_surface_pts = Some(get_mesh_points(&mol.atoms));
-            println!("Mesh pts complete.");
-        }
-
-        // let mut i = 0;
-        for ring in mol.sa_surface_pts.as_ref().unwrap() {
-            for sfc_pt in ring {
-                let mut entity = Entity::new(
-                    MESH_SURFACE_DOT,
-                    *sfc_pt,
-                    Quaternion::new_identity(),
-                    RADIUS_SFC_DOT,
-                    COLOR_SFC_DOT,
-                    ATOM_SHININESS,
-                );
-                entity.class = EntityType::Protein as u32;
-                scene.entities.push(entity);
-            }
-            // i += 1;
-            // if i > 100 {
-            //     break;
-            // }
+        for vertex in &scene.meshes[MESH_SOLVENT_SURFACE].vertices {
+            let mut entity = Entity::new(
+                MESH_SURFACE_DOT,
+                Vec3::from_slice(&vertex.position).unwrap(),
+                Quaternion::new_identity(),
+                RADIUS_SFC_DOT,
+                COLOR_SFC_DOT,
+                ATOM_SHININESS,
+            );
+            entity.class = EntityType::Protein as u32;
+            scene.entities.push(entity);
         }
     }
 
+    // todo: Consider if you handle this here, or in a sep fn.
     if ui.mol_view == MoleculeView::Surface {
-        if mol.sa_surface_pts.is_none() {
-            // todo: DRY with above.
-            println!("Starting getting mesh pts...");
-            mol.sa_surface_pts = Some(get_mesh_points(&mol.atoms));
-            println!("Mesh pts complete.");
-        }
-
-        if !mol.mesh_created {
-            println!("Building surface mesh...");
-            scene.meshes[MESH_SOLVENT_SURFACE] =
-                mesh_from_sas_points(mol.sa_surface_pts.as_ref().unwrap());
-            mol.mesh_created = true;
-            println!("Mesh complete");
-        }
+        let mut ent = Entity::new(
+            MESH_SOLVENT_SURFACE,
+            Vec3::new_zero(),
+            Quaternion::new_identity(),
+            1.,
+            COLOR_SA_SURFACE,
+            ATOM_SHININESS,
+        );
+        ent.class = EntityType::SaSurface as u32;
+        ent.opacity = SAS_ISO_OPACITY;
+        scene.entities.push(ent);
     }
 
     // If sticks view, draw water molecules as balls.
