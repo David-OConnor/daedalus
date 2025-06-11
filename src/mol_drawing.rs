@@ -27,6 +27,7 @@ use crate::{
     sa_surface::make_sas_mesh,
     util::orbit_center,
 };
+use crate::render::MESH_CUBE;
 
 const LIGAND_COLOR: Color = (0., 0.4, 1.);
 const LIGAND_COLOR_ANCHOR: Color = (1., 0., 1.);
@@ -49,9 +50,10 @@ pub const BOND_RADIUS_LIGAND_RATIO: f32 = 1.3; // Of bond radius.
 // const BOND_CAP_RADIUS: f32 = 1./BOND_RADIUS;
 pub const BOND_RADIUS_DOUBLE: f32 = 0.07;
 
-pub const RADIUS_SFC_DOT: f32 = 0.05;
+pub const SIZE_SFC_DOT: f32 = 0.03;
 
 const DOCKING_SITE_OPACITY: f32 = 0.35;
+
 
 const DIMMED_PEPTIDE_AMT: f32 = 0.92; // Higher value means more dim.
 
@@ -69,7 +71,9 @@ const MESH_BOND_CAP: usize = MESH_SPHERE_LOWRES;
 // the cam is outside.
 // const MESH_DOCKING_SITE: usize = MESH_SPHERE_HIGHRES;
 const MESH_DOCKING_SITE: usize = MESH_DOCKING_BOX;
-const MESH_SURFACE_DOT: usize = MESH_SPHERE_LOWRES;
+
+// Spheres look slightly better when close, but even our coarsest one leads to performance problems.
+const MESH_SURFACE_DOT: usize = MESH_CUBE;
 
 /// We use the Entity's class field to determine which entities to retain and remove.
 #[derive(Clone, Copy, PartialEq)]
@@ -202,6 +206,8 @@ fn atom_color(
         ViewSelLevel::Residue => {
             let mut color = COLOR_AA_NON_RESIDUE;
 
+            let mut color = (1., 1., 1.);
+
             if let Some(res_i) = &atom.residue {
                 let res = &residues[*res_i];
                 color = match &res.res_type {
@@ -218,13 +224,12 @@ fn atom_color(
                     _ => COLOR_AA_NON_RESIDUE,
                 };
 
-                // // Todo: WOrkaround for a problem we're having with Hydrogen's showing like hetero atoms
-                // // todo in residue mode. Likely due to them not having their AA set.
-                // if atom.element == Element::Hydrogen {
-                //     // todo: Not working
-                //     println!("SETTING");
-                //     color = atom.element.color();
-                // }
+                // Todo: WOrkaround for a problem we're having with Hydrogen's showing like hetero atoms
+                // todo in residue mode. Likely due to them not having their AA set.
+                // This sets white vice the residue color, but this may be OK.
+                if atom.element == Element::Hydrogen {
+                    color = atom.element.color();
+                }
             }
             color
         }
@@ -726,13 +731,14 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
 
     let chains_invis: Vec<&Chain> = mol.chains.iter().filter(|c| !c.visible).collect();
 
+    // Note that this renders over a sticks model.
     if ui.mol_view == MoleculeView::Dots {
         for vertex in &scene.meshes[MESH_SOLVENT_SURFACE].vertices {
             let mut entity = Entity::new(
                 MESH_SURFACE_DOT,
                 Vec3::from_slice(&vertex.position).unwrap(),
                 Quaternion::new_identity(),
-                RADIUS_SFC_DOT,
+                SIZE_SFC_DOT,
                 COLOR_SFC_DOT,
                 ATOM_SHININESS,
             );
