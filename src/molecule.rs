@@ -39,6 +39,7 @@ use crate::{
 
 pub const ATOM_NEIGHBOR_DIST_THRESH: f64 = 5.; // todo: Adjust A/R.
 
+
 #[derive(Debug, Default, Clone)]
 pub struct Molecule {
     pub ident: String,
@@ -121,8 +122,12 @@ impl Molecule {
             result.populate_hydrogens_angles();
         }
 
-        result.bonds = create_bonds(&result.atoms);
+        let bonds = create_bonds(&result.atoms);
+        result.bonds = bonds;
+
         result.bonds_hydrogen = create_hydrogen_bonds(&result.atoms, &result.bonds);
+        println!("H bond count: {:?}", result.bonds_hydrogen.len());
+
         result.adjacency_list = result.build_adjacency_list();
 
         for res in &result.residues {

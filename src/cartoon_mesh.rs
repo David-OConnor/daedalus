@@ -95,10 +95,10 @@ fn cylinder(a: Vec3F32, b: Vec3F32, radius: f32, segments: usize) -> (Vec<Vertex
 /// ‣ We stitch successive cross-sections with quads (two triangles each)
 ///   to make a smooth, curved strip with thickness.
 fn sheet_ribbon(backbone_posits: &[Vec3F32], half_w: f32, thick: f32) -> (Vec<Vertex>, Vec<usize>) {
-    assert!(
-        backbone_posits.len() >= 2,
-        "Need ≥2 backbone positions for a ribbon"
-    );
+    if backbone_posits.len() < 2 {
+        eprintln!("Error loading backbone positions for cartoon mesh");
+        return (Vec::new(), Vec::new());
+    }
 
     let n_pts = backbone_posits.len();
     let mut verts = Vec::<Vertex>::with_capacity(n_pts * 4);

@@ -9,12 +9,10 @@ use std::{
 
 use bio_apis::{drugbank, pubchem, rcsb};
 use egui::{Color32, ComboBox, Context, Key, RichText, Slider, TextEdit, TopBottomPanel, Ui};
-use graphics::{
-    Camera, ControlScheme, EngineUpdates, Entity, Mesh, RIGHT_VEC, Scene, UP_VEC, Vertex,
-};
+use graphics::{ControlScheme, EngineUpdates, Entity, Mesh, RIGHT_VEC, Scene, UP_VEC, Vertex};
 use lin_alg::f32::{Quaternion, Vec3};
 use mcubes::{MarchingCubes, MeshSide};
-use na_seq::{AaIdent, AminoAcid};
+use na_seq::AaIdent;
 
 static INIT_COMPLETE: AtomicBool = AtomicBool::new(false);
 
@@ -40,16 +38,15 @@ use crate::{
     },
     molecule::{Ligand, Molecule},
     render::{
-        CAM_INIT_OFFSET, MESH_DENSITY_SURFACE, MESH_DOCKING_SURFACE, MESH_SECONDARY_STRUCTURE,
-        MESH_SOLVENT_SURFACE, RENDER_DIST_FAR, RENDER_DIST_NEAR, set_docking_light, set_flashlight,
-        set_static_light,
+        CAM_INIT_OFFSET, MESH_DOCKING_SURFACE, MESH_SECONDARY_STRUCTURE, MESH_SOLVENT_SURFACE,
+        RENDER_DIST_FAR, RENDER_DIST_NEAR, set_docking_light, set_flashlight, set_static_light,
     },
     sa_surface::make_sas_mesh,
     util,
     util::{
         cam_look_at, cam_look_at_outside, check_prefs_save, close_lig, close_mol,
-        cycle_res_selected, handle_err, load_atom_coords_rcsb, orbit_center, reset_camera,
-        select_from_search,
+        cycle_res_selected, handle_err, handle_scene_flags, load_atom_coords_rcsb,
+        make_density_mesh, orbit_center, reset_camera, select_from_search,
     },
 };
 
@@ -83,7 +80,8 @@ const COLOR_OUT_ERROR: Color32 = Color32::LIGHT_RED;
 const COLOR_OUT_NORMAL: Color32 = Color32::WHITE;
 const COLOR_OUT_SUCCESS: Color32 = Color32::LIGHT_GREEN; // Unused for now
 
-const MAX_TITLE_LEN: usize = 120; // Number of characters to display.
+// Number of characters to display. E.g. the molecular description. Often long.
+const MAX_TITLE_LEN: usize = 80;
 
 fn active_color(val: bool) -> Color32 {
     if val { COLOR_ACTIVE } else { COLOR_INACTIVE }
@@ -1267,11 +1265,10 @@ fn view_settings(
                     ui.spacing_mut().slider_width = 300.;
                     ui.add(Slider::new(
                         &mut state.ui.density_iso_level,
-                        // todo: Consts for these
                         DENS_ISO_MIN..=DENS_ISO_MAX,
                     ));
                     if state.ui.density_iso_level != iso_prev {
-                        state.volatile.make_density_mesh = true;
+                        state.volatile.flags.make_density_mesh = true;
                     }
                 }
 
@@ -1283,6 +1280,7 @@ fn view_settings(
                         draw_density_surface(entities);
                     }
                     engine_updates.entities = true;
+                    redraw_dens_surface = false;
                 }
             }
         }
@@ -1448,26 +1446,26 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
                 // todo: Move these A/R. LIkely in a sub menu.
                 if let Some(files_avail) = &mol.rcsb_files_avail {
-                    if files_avail.structure_factors {
-                        if ui
-                            .button(RichText::new("SF").color(COLOR_HIGHLIGHT))
-                            .clicked()
-                        {
-                            match rcsb::load_structure_factors_cif(&mol.ident) {
-                                Ok(data) => {
-                                    // println!("SF data: {:?}", data);
-                                }
-                                Err(_) => {
-                                    let msg = format!(
-                                        "Error loading RCSB structure factors for {:?}",
-                                        &mol.ident
-                                    );
-
-                                    handle_err(&mut state.ui, msg);
-                                }
-                            }
-                        }
-                    }
+                    // if files_avail.structure_factors {
+                    //     if ui
+                    //         .button(RichText::new("SF").color(COLOR_HIGHLIGHT))
+                    //         .clicked()
+                    //     {
+                    //         match rcsb::load_structure_factors_cif(&mol.ident) {
+                    //             Ok(data) => {
+                    //                 // println!("SF data: {:?}", data);
+                    //             }
+                    //             Err(_) => {
+                    //                 let msg = format!(
+                    //                     "Error loading RCSB structure factors for {:?}",
+                    //                     &mol.ident
+                    //                 );
+                    //
+                    //                 handle_err(&mut state.ui, msg);
+                    //             }
+                    //         }
+                    //     }
+                    // }
                     if files_avail.validation_2fo_fc {
                         if ui
                             .button(RichText::new("2fo-fc").color(COLOR_HIGHLIGHT))
@@ -1957,145 +1955,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         }
     }
 
-    if state.ui.new_mol_loaded {
-        state.ui.new_mol_loaded = false;
-
-        if let Some(mol) = &state.molecule {
-            reset_camera(scene, &mut state.ui.view_depth, &mut engine_updates, mol);
-        }
-
-        set_flashlight(scene);
-        engine_updates.lighting = true;
-    }
-
-    if state.ui.new_density_loaded {
-        state.ui.new_density_loaded = false;
-        if let Some(mol) = &state.molecule {
-            if !state.ui.visibility.hide_density {
-                if let Some(density) = &mol.elec_density {
-                    draw_density(&mut scene.entities, density);
-                    engine_updates.entities = true;
-                }
-            }
-        }
-    }
-
-    if state.volatile.clear_density_drawing {
-        scene.entities.retain(|ent| {
-            ent.class != EntityType::Density as u32
-                && ent.class != EntityType::DensitySurface as u32
-        });
-    }
-
-    // todo: temp experiencing a crash from wgpu on vertex buffer
-    if state.volatile.make_density_mesh {
-        // if false {
-        if let Some(mol) = &state.molecule {
-            // if let Some(dens) = &mol.elec_density {
-
-            // todo: Adapt this to your new approach, if it works.
-            // let hdr = mol.elec_density_header.as_ref().unwrap();
-            // let rect = mol.density_rect.as_ref().unwrap();
-            if let Some(rect) = &mol.density_rect {
-                /////
-
-                // 2) Grid parameters for MarchingCubes
-                let dims = (rect.dims[0], rect.dims[1], rect.dims[2]); // (nx,ny,nz)
-
-                let size = (
-                    (rect.step[0] * rect.dims[0] as f64) as f32, // Δx * nx  (Å)
-                    (rect.step[1] * rect.dims[1] as f64) as f32,
-                    (rect.step[2] * rect.dims[2] as f64) as f32,
-                );
-
-                // “sampling interval” in the original code is really the number of
-                // samples along each axis (= nx,ny,nz), so just cast dims to f32:
-                let samples = (
-                    rect.dims[0] as f32,
-                    rect.dims[1] as f32,
-                    rect.dims[2] as f32,
-                );
-
-                ////
-
-                match MarchingCubes::from_gridpoints(
-                    dims,
-                    size,
-                    samples,
-                    rect.origin_cart.into(),
-                    // (hdr.nx as usize, hdr.ny as usize, hdr.nz as usize),
-                    // (hdr.cell[0], hdr.cell[1], hdr.cell[2]),
-                    // (hdr.mx as f32, hdr.my as f32, hdr.mz as f32),
-                    mol.elec_density.as_ref().unwrap(),
-                    state.ui.density_iso_level,
-                ) {
-                    Ok(mc) => {
-                        let mesh = mc.generate(MeshSide::Both);
-
-                        // Convert from `mcubes::Mesh` to `graphics::Mesh`.
-                        let vertices = mesh
-                            .vertices
-                            .iter()
-                            .map(|v| Vertex::new(v.posit.to_arr(), v.normal))
-                            .collect();
-
-                        scene.meshes[MESH_DENSITY_SURFACE] = Mesh {
-                            vertices,
-                            indices: mesh.indices,
-                            material: 0,
-                        };
-
-                        if !state.ui.visibility.hide_density_surface {
-                            draw_density_surface(&mut scene.entities);
-                        }
-
-                        engine_updates.meshes = true;
-                        engine_updates.entities = true;
-                    }
-                    Err(e) => handle_err(&mut state.ui, e.to_string()),
-                }
-            }
-        }
-
-        state.volatile.make_density_mesh = false;
-    }
-
-    if state.volatile.update_ss_mesh {
-        state.volatile.update_ss_mesh = false;
-        if let Some(mol) = &state.molecule {
-            scene.meshes[MESH_SECONDARY_STRUCTURE] =
-                build_cartoon_mesh(&mol.secondary_structure, &mol.atoms);
-
-            engine_updates.meshes = true;
-        }
-    }
-
-    // todo: Generate these on-demand, first time a relevant view is open.
-    if state.volatile.update_sas_mesh {
-        state.volatile.update_sas_mesh = false;
-        if let Some(mol) = &state.molecule {
-            let atoms: Vec<&_> = mol.atoms.iter().filter(|a| !a.hetero).collect();
-            scene.meshes[MESH_SOLVENT_SURFACE] =
-                make_sas_mesh(&atoms, state.to_save.sa_surface_precision);
-
-            // We draw the molecule here
-            if state.ui.mol_view == MoleculeView::Dots {
-                // The dots are drawn from the mesh vertices
-                draw_molecule(state, scene);
-                engine_updates.entities = true;
-            }
-
-            engine_updates.meshes = true;
-        }
-    }
-
-    if state.volatile.mol_pending_data_avail.is_some() {
-        if let Some(mol) = &mut state.molecule {
-            if mol.poll_data_avail(&mut state.volatile.mol_pending_data_avail) {
-                state.update_save_prefs();
-            }
-        }
-    }
+    handle_scene_flags(state, scene, &mut engine_updates);
 
     engine_updates
 }

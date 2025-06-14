@@ -18,9 +18,20 @@ const SOLVENT_RAD: f32 = 1.4; // water probe
 /// Create a mesh of the solvent-accessible surface. We do this using the ball-rolling method
 /// based on Van-der-Waals radius, then use the Marching Cubes algorithm to generate an iso mesh with
 /// iso value = 0.
-pub fn make_sas_mesh(atoms: &[&Atom], precision: f32) -> Mesh {
+pub fn make_sas_mesh(atoms: &[&Atom], mut precision: f32) -> Mesh {
     if atoms.is_empty() {
         return Mesh::default();
+    }
+
+    // todo: Experimenting avoiding problems on large mols. We have problems with both surface
+    // todo: And dots; this mitigates surface. The dots one is re Instance Buffer max size;
+    // todo: This one addresses Vertex buffer being maximum size.
+    if atoms.len() > 10_000 {
+        precision = 0.6;
+    } else if atoms.len() > 20_000 {
+        precision = 0.7;
+    } else if atoms.len() > 40_000 {
+        precision = 0.75;
     }
 
     // Bounding box and grid

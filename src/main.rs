@@ -44,6 +44,7 @@ mod cli;
 mod reflection;
 #[cfg(test)]
 mod tests;
+mod dynamics;
 
 use std::{
     collections::HashMap,
@@ -227,6 +228,20 @@ impl Default for FileDialogs {
     }
 }
 
+/// Flags to accomplish things that must be done somewhere with access to `Scene`.
+#[derive(Default)]
+struct SceneFlags {
+    /// Secondary structure
+    pub update_ss_mesh: bool,
+    /// Solvent-accessible surface.
+    pub update_sas_mesh: bool,
+    pub ss_mesh_created: bool,
+    pub sas_mesh_created: bool,
+    pub make_density_mesh: bool,
+    pub clear_density_drawing: bool,
+    pub new_density_loaded: bool,
+    pub new_mol_loaded: bool,
+}
 /// Temprary, and generated state.
 struct StateVolatile {
     dialogs: FileDialogs,
@@ -249,9 +264,6 @@ struct StateVolatile {
             Result<FilesAvailable, ReqError>,
         )>,
     >,
-    // Pending flag
-    make_density_mesh: bool,
-    clear_density_drawing: bool,
     /// We may change CWD during CLI navigation; keep prefs directory constant.
     prefs_dir: PathBuf,
     /// Entered by the user, for this session.
@@ -259,10 +271,7 @@ struct StateVolatile {
     cli_input_selected: usize,
     /// Pre-computed from the molecule
     aa_seq_text: String,
-    /// Secondary structure
-    update_ss_mesh: bool,
-    /// Solvent-accessible surface.
-    update_sas_mesh: bool,
+    flags: SceneFlags,
 }
 
 impl Default for StateVolatile {
@@ -275,14 +284,11 @@ impl Default for StateVolatile {
             snapshots: Default::default(),
             docking_setup: Default::default(),
             mol_pending_data_avail: Default::default(),
-            make_density_mesh: false,
-            clear_density_drawing: false,
             prefs_dir: env::current_dir().unwrap(),
             cli_input_history: Default::default(),
             cli_input_selected: Default::default(),
             aa_seq_text: Default::default(),
-            update_ss_mesh: false,
-            update_sas_mesh: false,
+            flags: Default::default(),
         }
     }
 }
@@ -377,8 +383,6 @@ struct StateUi {
     current_snapshot: usize,
     /// A flag so we know to update the flashlight upon loading a new model; this should be done within
     /// a callback.
-    new_mol_loaded: bool,
-    new_density_loaded: bool,
     show_docking_tools: bool,
     show_settings: bool,
     movement_speed_input: String,
@@ -547,7 +551,6 @@ fn main() {
         },
         ui: StateUi {
             view_depth: (VIEW_DEPTH_NEAR_MIN, VIEW_DEPTH_FAR_MAX),
-            new_mol_loaded: true,
             nearby_dist_thresh: 15,
             density_iso_level: 1.8,
             ..Default::default()

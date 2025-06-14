@@ -130,11 +130,10 @@ impl State {
                             .push_str(&aa.to_str(AaIdent::OneLetter));
                     }
 
-                    // todo: Update these meshes on-demand from the view.
-                    self.volatile.update_ss_mesh = true;
-                    self.volatile.update_sas_mesh = true;
+                    self.volatile.flags.ss_mesh_created = false;
+                    self.volatile.flags.sas_mesh_created = false;
 
-                    self.volatile.clear_density_drawing = true;
+                    self.volatile.flags.clear_density_drawing = true;
                     self.molecule = Some(mol);
                 }
 
@@ -153,7 +152,7 @@ impl State {
                     eprintln!("Problem making or getting docking setup.");
                 }
 
-                self.ui.new_mol_loaded = true;
+                self.volatile.flags.new_mol_loaded = true;
             }
             Err(e) => {
                 return Err(e);
@@ -191,8 +190,8 @@ impl State {
             mol.density_rect = Some(dens_rect);
             mol.elec_density = Some(elec_dens);
 
-            self.ui.new_density_loaded = true;
-            self.volatile.make_density_mesh = true;
+            self.volatile.flags.new_density_loaded = true;
+            self.volatile.flags.make_density_mesh = true;
         }
     }
 

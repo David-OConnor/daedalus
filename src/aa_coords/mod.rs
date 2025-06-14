@@ -240,7 +240,7 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
                             match get_prev_bonds(atom, atoms, i, atoms_bonded[0]) {
                                 Ok(v) => v,
                                 Err(_) => {
-                                    eprintln!("Error: Could not find prev bonds on Methyl");
+                                    // eprintln!("Error: Could not find prev bonds on Methyl");
                                     continue;
                                 }
                             };

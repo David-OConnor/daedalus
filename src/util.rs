@@ -5,21 +5,25 @@
 use std::{collections::HashMap, io::Cursor, time::Instant};
 
 use bio_files::{Chain, ResidueType};
-use graphics::{Camera, ControlScheme, EngineUpdates, FWD_VEC, Scene};
+use graphics::{Camera, ControlScheme, EngineUpdates, FWD_VEC, Mesh, Scene, Vertex};
 use lin_alg::{
     f32::{Quaternion, Vec3 as Vec3F32},
     f64::Vec3,
 };
+use mcubes::{MarchingCubes, MeshSide};
 use na_seq::{AaIdent, Element};
 
 use crate::{
     CamSnapshot, PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel,
+    cartoon_mesh::build_cartoon_mesh,
     download_mols::load_cif_rcsb,
-    mol_drawing::{EntityType, MoleculeView},
+    mol_drawing::{EntityType, MoleculeView, draw_density, draw_density_surface, draw_molecule},
     molecule::{Atom, AtomRole, Bond, Molecule, Residue},
     render::{
-        CAM_INIT_OFFSET, RENDER_DIST_FAR, RENDER_DIST_NEAR, set_flashlight, set_static_light,
+        CAM_INIT_OFFSET, MESH_DENSITY_SURFACE, MESH_SECONDARY_STRUCTURE, MESH_SOLVENT_SURFACE,
+        RENDER_DIST_FAR, RENDER_DIST_NEAR, set_flashlight, set_static_light,
     },
+    sa_surface::make_sas_mesh,
     ui::{VIEW_DEPTH_FAR_MAX, VIEW_DEPTH_NEAR_MIN},
 };
 
@@ -492,11 +496,9 @@ pub fn load_atom_coords_rcsb(
                             .push_str(&aa.to_str(AaIdent::OneLetter));
                     }
 
-                    // todo: Update these meshes on-demand from the view.
-                    state.volatile.update_ss_mesh = true;
-                    state.volatile.update_sas_mesh = true;
-
-                    state.volatile.clear_density_drawing = true;
+                    state.volatile.flags.ss_mesh_created = false;
+                    state.volatile.flags.sas_mesh_created = false;
+                    state.volatile.flags.clear_density_drawing = true;
                     state.molecule = Some(mol)
                 }
                 Err(e) => eprintln!("Problem loading molecule from CIF: {e:?}"),
@@ -596,6 +598,8 @@ pub fn close_mol(state: &mut State, scene: &mut Scene, engine_updates: &mut Engi
         ent.class != EntityType::Protein as u32
             && ent.class != EntityType::Density as u32
             && ent.class != EntityType::DensitySurface as u32
+            && ent.class != EntityType::SecondaryStructure as u32
+            && ent.class != EntityType::SaSurface as u32
     });
     engine_updates.entities = true;
 
@@ -616,4 +620,152 @@ pub fn close_lig(state: &mut State, scene: &mut Scene, engine_updates: &mut Engi
 
     state.to_save.last_ligand_opened = None;
     state.update_save_prefs();
+}
+
+/// Populdate the electron-density mesh (isosurface). This assumes the density_rect is already set up.
+pub fn make_density_mesh(state: &mut State, scene: &mut Scene, engine_updates: &mut EngineUpdates) {
+    if let Some(mol) = &state.molecule {
+        // todo: Adapt this to your new approach, if it works.
+        if let Some(rect) = &mol.density_rect {
+            let dims = (rect.dims[0], rect.dims[1], rect.dims[2]); // (nx,ny,nz)
+
+            let size = (
+                (rect.step[0] * rect.dims[0] as f64) as f32, // Δx * nx  (Å)
+                (rect.step[1] * rect.dims[1] as f64) as f32,
+                (rect.step[2] * rect.dims[2] as f64) as f32,
+            );
+
+            // “sampling interval” in the original code is really the number of
+            // samples along each axis (= nx,ny,nz), so just cast dims to f32:
+            let samples = (
+                rect.dims[0] as f32,
+                rect.dims[1] as f32,
+                rect.dims[2] as f32,
+            );
+
+            match MarchingCubes::from_gridpoints(
+                dims,
+                size,
+                samples,
+                rect.origin_cart.into(),
+                mol.elec_density.as_ref().unwrap(),
+                state.ui.density_iso_level,
+            ) {
+                Ok(mc) => {
+                    let mesh = mc.generate(MeshSide::Both);
+
+                    // Convert from `mcubes::Mesh` to `graphics::Mesh`.
+                    let vertices = mesh
+                        .vertices
+                        .iter()
+                        .map(|v| Vertex::new(v.posit.to_arr(), v.normal))
+                        .collect();
+
+                    scene.meshes[MESH_DENSITY_SURFACE] = Mesh {
+                        vertices,
+                        indices: mesh.indices,
+                        material: 0,
+                    };
+
+                    if !state.ui.visibility.hide_density_surface {
+                        draw_density_surface(&mut scene.entities);
+                    }
+
+                    engine_updates.meshes = true;
+                    engine_updates.entities = true;
+                }
+                Err(e) => handle_err(&mut state.ui, e.to_string()),
+            }
+        }
+    }
+}
+
+/// Code here is ctivated by flags. It's organized here, where we have access to the Scene.
+/// These flags are set in places that don't have access to the scene.
+pub fn handle_scene_flags(
+    state: &mut State,
+    scene: &mut Scene,
+    engine_updates: &mut EngineUpdates,
+) {
+    if state.volatile.flags.new_mol_loaded {
+        state.volatile.flags.new_mol_loaded = false;
+
+        if let Some(mol) = &state.molecule {
+            reset_camera(scene, &mut state.ui.view_depth, engine_updates, mol);
+        }
+
+        set_flashlight(scene);
+        engine_updates.lighting = true;
+    }
+
+    if state.volatile.flags.new_density_loaded {
+        state.volatile.flags.new_density_loaded = false;
+
+        if let Some(mol) = &state.molecule {
+            if !state.ui.visibility.hide_density {
+                if let Some(density) = &mol.elec_density {
+                    draw_density(&mut scene.entities, density);
+                    engine_updates.entities = true;
+                }
+            }
+        }
+    }
+
+    if state.volatile.flags.clear_density_drawing {
+        state.volatile.flags.clear_density_drawing = false;
+
+        scene.entities.retain(|ent| {
+            ent.class != EntityType::Density as u32
+                && ent.class != EntityType::DensitySurface as u32
+        });
+    }
+
+    // todo: temp experiencing a crash from wgpu on vertex buffer
+    if state.volatile.flags.make_density_mesh {
+        state.volatile.flags.make_density_mesh = false;
+        make_density_mesh(state, scene, engine_updates);
+    }
+
+    if state.volatile.flags.update_ss_mesh {
+        state.volatile.flags.update_ss_mesh = false;
+        state.volatile.flags.ss_mesh_created = true;
+
+        if let Some(mol) = &state.molecule {
+            scene.meshes[MESH_SECONDARY_STRUCTURE] =
+                build_cartoon_mesh(&mol.secondary_structure, &mol.atoms);
+
+            engine_updates.meshes = true;
+        }
+    }
+
+    if state.volatile.flags.update_sas_mesh {
+        state.volatile.flags.update_sas_mesh = false;
+        state.volatile.flags.sas_mesh_created = true;
+
+        if let Some(mol) = &state.molecule {
+            let atoms: Vec<&_> = mol.atoms.iter().filter(|a| !a.hetero).collect();
+            scene.meshes[MESH_SOLVENT_SURFACE] =
+                make_sas_mesh(&atoms, state.to_save.sa_surface_precision);
+
+            // We draw the molecule here
+            if matches!(
+                state.ui.mol_view,
+                MoleculeView::Dots | MoleculeView::Surface
+            ) {
+                // The dots are drawn from the mesh vertices
+                draw_molecule(state, scene);
+                engine_updates.entities = true;
+            }
+
+            engine_updates.meshes = true;
+        }
+    }
+
+    if state.volatile.mol_pending_data_avail.is_some() {
+        if let Some(mol) = &mut state.molecule {
+            if mol.poll_data_avail(&mut state.volatile.mol_pending_data_avail) {
+                state.update_save_prefs();
+            }
+        }
+    }
 }
