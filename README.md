@@ -153,7 +153,10 @@ Daedalus supports a very limited subset of PyMol's CLI interface. Supported comm
 
 
 ### Erratta
-- Cartoon view (Showing helices and sheets) is currently unavailable.
+- Ribbon view is currently unavailable.
+- Opening a molecule by drag + drop may not work until minimizing/unminimizing the program
+- Loading map files that are very large (e.g. high detail, especially Map files directly available
+on RCSB, vice created from 2fo-fc) may crash the program.
 - The GUI doesn't handle proteins with many chains well.
 - Docking is inop.
 

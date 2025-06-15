@@ -1,8 +1,5 @@
 //! Gets a cartoon mesh for secondary structure.
 
-// todo: You may be able to get useful data from CIF or PDB files, although this is
-// todo not parsed by PDBTBX.
-
 use std::{f32::consts::TAU, f64::consts::PI};
 
 use bio_files::ResidueType;

@@ -15,7 +15,6 @@ use na_seq::{AaIdent, Element};
 
 use crate::{
     CamSnapshot, PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel,
-    cartoon_mesh::build_cartoon_mesh,
     download_mols::load_cif_rcsb,
     mol_drawing::{EntityType, MoleculeView, draw_density, draw_density_surface, draw_molecule},
     molecule::{Atom, AtomRole, Bond, Molecule, Residue},
@@ -23,6 +22,7 @@ use crate::{
         CAM_INIT_OFFSET, MESH_DENSITY_SURFACE, MESH_SECONDARY_STRUCTURE, MESH_SOLVENT_SURFACE,
         RENDER_DIST_FAR, RENDER_DIST_NEAR, set_flashlight, set_static_light,
     },
+    ribbon_mesh::build_cartoon_mesh,
     sa_surface::make_sas_mesh,
     ui::{VIEW_DEPTH_FAR_MAX, VIEW_DEPTH_NEAR_MIN},
 };

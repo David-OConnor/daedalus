@@ -106,7 +106,7 @@ pub enum MoleculeView {
     BallAndStick,
     /// i.e. Van der Waals radius, or CPK.
     SpaceFill,
-    Cartoon,
+    Ribbon,
     Surface,
     Dots,
 }
@@ -121,7 +121,7 @@ impl FromStr for MoleculeView {
             "backbone" => Ok(MoleculeView::Backbone),
             "ballandstick" | "ball_and_stick" | "ball-and-stick" => Ok(MoleculeView::BallAndStick),
             "spacefill" | "space_fill" | "space-fill" | "spheres" => Ok(MoleculeView::SpaceFill),
-            "cartoon" | "ribbon" => Ok(MoleculeView::Cartoon),
+            "cartoon" | "ribbon" => Ok(MoleculeView::Ribbon),
             "surface" => Ok(MoleculeView::Surface),
             "dots" => Ok(MoleculeView::Dots),
             other => Err(io::Error::new(
@@ -138,7 +138,7 @@ impl fmt::Display for MoleculeView {
             Self::Backbone => "Backbone",
             Self::Sticks => "Sticks",
             Self::BallAndStick => "Ball and stick",
-            Self::Cartoon => "Cartoon",
+            Self::Ribbon => "Ribbon",
             Self::SpaceFill => "Spacefill",
             Self::Surface => "Surface (Van der Waals)",
             Self::Dots => "Dots (Van der Waals)",
@@ -778,7 +778,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
 
     let ui = &state.ui;
 
-    if ui.mol_view == MoleculeView::Cartoon {
+    if ui.mol_view == MoleculeView::Ribbon {
         draw_secondary_structure(
             &mut state.volatile.flags.update_ss_mesh,
             state.volatile.flags.ss_mesh_created,

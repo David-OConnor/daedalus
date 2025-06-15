@@ -1,13 +1,18 @@
-//! For parsing mmCIF files for secondary structure. Easier to implement here than modifying PDBTBX.
+//! For parsing mmCIF files for information not provided by PDBTBX. This includes sendary structure,
+//! and experimental method. Easier to implement here than modifying PDBTBX, which doesn't seem to be
+//! accepting PRs.
 
 use std::{
     collections::HashMap,
     io::{self, BufRead, BufReader, Read, Seek, SeekFrom},
 };
 
-use lin_alg::f64::Vec3;
+use regex::Regex;
 
-use crate::cartoon_mesh::{BackboneSS, SecondaryStructure};
+use crate::{
+    molecule::ExperimentalMethod,
+    ribbon_mesh::{BackboneSS, SecondaryStructure},
+};
 
 // todo: Save SS to CIF.
 
@@ -18,7 +23,9 @@ enum LoopKind {
     SheetRange,
 }
 
-pub fn load_secondary_structure<R: Read + Seek>(mut data: R) -> io::Result<Vec<BackboneSS>> {
+pub fn load_data<R: Read + Seek>(
+    mut data: R,
+) -> io::Result<(Vec<BackboneSS>, Option<ExperimentalMethod>)> {
     data.seek(SeekFrom::Start(0))?;
     let mut rdr = BufReader::new(data);
 
@@ -34,11 +41,22 @@ pub fn load_secondary_structure<R: Read + Seek>(mut data: R) -> io::Result<Vec<B
     // atom-site column indices (filled on first row)
     let mut a_idx = (None, None, None, None, None, None, None); // asym, seq, atom, x,y,z, id
 
+    let mut method = None;
+
     for line in rdr.lines() {
         let line = line?;
         let t = line.trim();
         if t.is_empty() {
             continue;
+        }
+
+        let method_re = Regex::new(r#"^_exptl\.method\s+['"]([^'"]+)['"]\s*$"#).unwrap();
+        if let Some(caps) = method_re.captures(t) {
+            // caps[1] is whatever matched inside the ([A-Za-z]+) group
+
+            if let Ok(m) = caps[1].to_string().parse() {
+                method = Some(m);
+            }
         }
 
         if t == "loop_" {
@@ -136,7 +154,7 @@ pub fn load_secondary_structure<R: Read + Seek>(mut data: R) -> io::Result<Vec<B
         }
     }
 
-    let mut out = Vec::new();
+    let mut ss = Vec::new();
 
     // Helices from _struct_conf -----
     for (h, c) in helix_rows {
@@ -173,7 +191,7 @@ pub fn load_secondary_structure<R: Read + Seek>(mut data: R) -> io::Result<Vec<B
             None => continue,
         };
 
-        out.push(BackboneSS {
+        ss.push(BackboneSS {
             start,
             end,
             sec_struct: SecondaryStructure::Helix,
@@ -209,12 +227,12 @@ pub fn load_secondary_structure<R: Read + Seek>(mut data: R) -> io::Result<Vec<B
             None => continue,
         };
 
-        out.push(BackboneSS {
+        ss.push(BackboneSS {
             start,
             end,
             sec_struct: SecondaryStructure::Sheet,
         });
     }
 
-    Ok(out)
+    Ok((ss, method))
 }

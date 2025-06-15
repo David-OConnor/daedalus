@@ -19,18 +19,17 @@ static INIT_COMPLETE: AtomicBool = AtomicBool::new(false);
 use bio_files::{DensityMap, ResidueType, density_from_2fo_fc_rcsb_gemmi};
 
 use crate::{
-    CamSnapshot, MsaaSetting, Selection, State, ViewSelLevel,
-    cartoon_mesh::build_cartoon_mesh,
-    cli,
+    CamSnapshot, MsaaSetting, Selection, State, ViewSelLevel, cli,
     cli::autocomplete_cli,
     docking::{
         ConformationType, calc_binding_energy,
-        dynamics_playback::{build_vdw_dynamics, change_snapshot},
+        dynamics_playback::{build_dock_dynamics, change_snapshot},
         external::check_adv_avail,
         find_optimal_pose,
         find_sites::find_docking_sites,
     },
     download_mols::{load_sdf_drugbank, load_sdf_pubchem},
+    dynamics::MdState,
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
     mol_drawing::{
         COLOR_DOCKING_SITE_MESH, EntityType, MoleculeView, draw_density, draw_density_surface,
@@ -41,6 +40,7 @@ use crate::{
         CAM_INIT_OFFSET, MESH_DOCKING_SURFACE, MESH_SECONDARY_STRUCTURE, MESH_SOLVENT_SURFACE,
         RENDER_DIST_FAR, RENDER_DIST_NEAR, set_docking_light, set_flashlight, set_static_light,
     },
+    ribbon_mesh::build_cartoon_mesh,
     sa_surface::make_sas_mesh,
     util,
     util::{
@@ -878,7 +878,7 @@ fn docking(
     ui.horizontal(|ui| {
         if let Some(lig) = &mut state.ligand {
             if ui.button("Build VDW sim").clicked() {
-                state.volatile.snapshots = build_vdw_dynamics(
+                state.volatile.snapshots = build_dock_dynamics(
                     &state.dev,
                     lig,
                     state.volatile.docking_setup.as_ref().unwrap(),
@@ -1116,6 +1116,10 @@ fn mol_descrip(mol: &Molecule, ui: &mut Ui) {
     ui.heading(RichText::new(mol.ident.clone()).color(Color32::GOLD));
 
     ui.label(format!("{} atoms", mol.atoms.len()));
+
+    if let Some(method) = mol.method {
+        ui.label(method.to_str_short());
+    }
 
     if let Some(metadata) = &mol.metadata {
         // Limit size to prevent UI problems.
@@ -1821,6 +1825,14 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         if state.ui.show_aa_seq {
             if state.molecule.is_some() {
                 add_aa_seq(&state.volatile.aa_seq_text, ui);
+            }
+        }
+
+        // todo: Move this A/R
+        if let Some(mol) = &state.molecule {
+            if ui.button("Run MD").clicked() {
+                state.mol_dynamics = MdState::new(&mol.atoms, &state.volatile.lj_lookup_table);
+                // todo
             }
         }
 

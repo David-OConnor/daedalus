@@ -5,6 +5,8 @@
 //! We are using f64, and CPU-only for now, unless we confirm f32 will work.
 //! Maybe a mixed approach: Coordinates, velocities, and forces in 32-bit; sensitive global
 //! reductions (energy, virial, integration) in 64-bit.
+//!
+//! We use Verlet integration. todo: Velocity verlet? Other techniques that improve and build upon it?
 
 // todo: Integration: Consider Verlet or Langevin
 
@@ -27,6 +29,7 @@ use crate::{
 // vacuum permittivity constant   (k_e = 1/(4π ε0))
 // SI, matched with charge in e₀ & Å → kcal mol // todo: QC
 const ε_0: f64 = 8.8541878128e-1;
+const k_e: f32 = 332.0636; // kcal·Å /(mol·e²)
 // const ε_0: f64 = 1.;
 
 #[derive(Debug, Default)]
@@ -61,8 +64,8 @@ impl AtomDynamics {
     }
 }
 
-impl From<Atom> for AtomDynamics {
-    fn from(atom: Atom) -> Self {
+impl From<&Atom> for AtomDynamics {
+    fn from(atom: &Atom) -> Self {
         Self {
             posit: atom.posit.into(),
             vel: Vec3::new_zero(),
@@ -107,7 +110,7 @@ pub struct Torsion {
 }
 
 #[derive(Default)]
-struct MdState {
+pub struct MdState {
     pub atoms: Vec<AtomDynamics>,
     pub bonds: Vec<BondDynamics>,
     pub angles: Vec<Angle>,
@@ -126,7 +129,7 @@ struct MdState {
 }
 
 impl MdState {
-    pub fn new(atoms: Vec<Atom>, lj_table: &LjTable) -> Self {
+    pub fn new(atoms: &[Atom], lj_table: &LjTable) -> Self {
         let atoms_dy = atoms.iter().map(|a| a.into()).collect();
 
         Self {
@@ -136,14 +139,14 @@ impl MdState {
         }
     }
 
-    // todo: QC and tidy all of the below. from LLM
-
     /// One **Velocity-Verlet** step (leap-frog style) of length `dt_fs` femtoseconds.
     pub fn step(&mut self, dt_fs: f64) {
         let dt = dt_fs * 1.0e-15; // s
         let dt_half = 0.5 * dt;
 
         // 1) First half-kick (v += a dt/2) and drift (x += v dt)
+
+        // todo: Do we want traditional verlet instead?
         for a in &mut self.atoms {
             a.vel += a.accel * dt_half;
             a.posit += a.vel * dt;
@@ -170,7 +173,6 @@ impl MdState {
         }
     }
 
-    // ─────────── bonded ───────────
     fn apply_bond_forces(&mut self) {
         for &BondDynamics {
             atom_0,
@@ -181,31 +183,37 @@ impl MdState {
         {
             let (ai, aj) = split2_mut(&mut self.atoms, atom_0, atom_1);
 
-            let r_vec = aj.posit - ai.posit;
-            let r = r_vec.magnitude();
-            let Δ = r - r0;
+            let diff = aj.posit - ai.posit;
+            let dist = diff.magnitude();
+
+            let Δ = dist - r0;
             // F = -dV/dr = -k 2Δ   (harmonic)
-            let f_mag = -2.0 * k * Δ / r.max(1e-12);
-            let f = r_vec * f_mag;
+            let f_mag = -2.0 * k * Δ / dist.max(1e-12);
+            let f = diff * f_mag;
             ai.accel -= f / ai.mass;
             aj.accel += f / aj.mass;
         }
     }
 
     fn apply_angle_forces(&mut self) {
-        use std::f64::consts::PI;
         for &Angle { i, j, k, kθ, θ0 } in &self.angles {
+            // todo: Use your existing dihedral angle code?
             let (ai, aj, ak) = split3_mut(&mut self.atoms, i, j, k);
-            let rij = ai.posit - aj.posit;
-            let rkj = ak.posit - aj.posit;
-            let cosθ = rij.dot(rkj) / (rij.magnitude() * rkj.magnitude()).max(1e-12);
+
+            let dist_ij = ai.posit - aj.posit;
+            let dist_kj = ak.posit - aj.posit;
+
+            let cosθ =
+                dist_ij.dot(dist_kj) / (dist_ij.magnitude() * dist_kj.magnitude()).max(1e-12);
             let θ = cosθ.acos();
             let Δ = θ - θ0;
+
             // simplified small-angle approximation: torque converted to force along bisectors
             let f_mag = -2.0 * kθ * Δ;
-            let n = rij.cross(rkj).to_normalized();
-            let f_i = n.cross(rij).to_normalized() * f_mag;
-            let f_k = rkj.cross(n).to_normalized() * f_mag;
+            let n = dist_ij.cross(dist_kj).to_normalized();
+            let f_i = n.cross(dist_ij).to_normalized() * f_mag;
+            let f_k = dist_kj.cross(n).to_normalized() * f_mag;
+
             ai.accel += f_i / ai.mass;
             ak.accel += f_k / ak.mass;
             aj.accel -= (f_i + f_k) / aj.mass;
@@ -224,13 +232,17 @@ impl MdState {
         } in &self.torsions
         {
             let (ai, aj, ak, al) = split4_mut(&mut self.atoms, i, j, k, l);
-            let r_ij = ai.posit - aj.posit;
-            let r_kj = ak.posit - aj.posit;
-            let r_kj2 = ak.posit - al.posit;
-            let n1 = r_ij.cross(r_kj).to_normalized();
-            let n2 = r_kj.cross(r_kj2).to_normalized();
+
+            let dist_ij = ai.posit - aj.posit;
+            let dist_kj = ak.posit - aj.posit;
+            let dist_kj2 = ak.posit - al.posit;
+
+            let n1 = dist_ij.cross(dist_kj).to_normalized();
+            let n2 = dist_kj.cross(dist_kj2).to_normalized();
+
             let φ = n1.dot(n2).clamp(-1.0, 1.0).acos();
             let dV_dφ = 0.5 * vn * (n as f64) * ((n as f64) * φ - γ).sin();
+
             // Approximate: project torque equally; full derivation omitted for brevity.
             let torque = dV_dφ;
             let f = n2 * torque;
@@ -240,7 +252,6 @@ impl MdState {
     }
 
     fn apply_nonbonded_forces(&mut self) {
-        let k_e = 332.0636; // kcal·Å /(mol·e²)
         let n = self.atoms.len();
         for i in 0..n - 1 {
             for j in i + 1..n {
@@ -264,8 +275,12 @@ impl MdState {
                 );
 
                 let f = f_lj + f_coulomb;
-                self.atoms[i].accel += f / self.atoms[i].mass;
-                self.atoms[j].accel -= f / self.atoms[j].mass;
+
+                let accel_0 = f / self.atoms[i].mass;
+                let accel_1 = f / self.atoms[j].mass;
+
+                self.atoms[i].accel += accel_0;
+                self.atoms[j].accel -= accel_1;
             }
         }
     }
@@ -290,15 +305,17 @@ fn split2_mut<T>(v: &mut [T], i: usize, j: usize) -> (&mut T, &mut T) {
 
 #[inline]
 fn split3_mut<T>(v: &mut [T], i: usize, j: usize, k: usize) -> (&mut T, &mut T, &mut T) {
-    assert!(i != j && i != k && j != k);
-    let (a, b) = split2_mut(v, i, j);
-    if k == i {
-        unreachable!()
-    } else if k == j {
-        unreachable!()
-    } else {
-        let c = &mut v[k] as *mut T; // safe because distinct indices
-        unsafe { (a, b, &mut *c) }
+    let len = v.len();
+    assert!(i < len && j < len && k < len, "index out of bounds");
+    assert!(i != j && i != k && j != k, "indices must be distinct");
+
+    // SAFETY: we just asserted that 0 <= i,j,k < v.len() and that they're all different.
+    let ptr = v.as_mut_ptr();
+    unsafe {
+        let a = &mut *ptr.add(i);
+        let b = &mut *ptr.add(j);
+        let c = &mut *ptr.add(k);
+        (a, b, c)
     }
 }
 
@@ -336,75 +353,6 @@ pub fn split4_mut<T>(
         )
     }
 }
-
-//
-// /// r_0 minimizes E.
-// fn f_bond_distance(r: f64, r_0: f64) -> Vec3 {
-//     let dist = (r - r_0).abs();
-//     Vec3::new_zero()
-// }
-//
-// /// θ_0 minimizes E.
-// fn f_bond_angle(θ: f64, θ_0: f64) -> Vec3 {
-//     let dist = (θ - θ_0).abs(); // todo: QC wraparounds. I don't think this is right as-is.
-//     Vec3::new_zero()
-// }
-//
-// /// Dihedral angle.
-// /// todo: How does this work? Single angle value like bond angle?
-// fn f_bond_torsion(θ: f64, θ_0: f64) -> Vec3 {
-//     Vec3::new_zero()
-// }
-//
-// /// Electrostatic + VDW: "non-bonded forces" in trad MD. This uses atom-centered partial charges.
-// fn f_electrostatic(atom: &AtomDynamics, atoms: &[AtomDynamics]) -> Vec3 {
-//     let mut result = Vec3::new_zero();
-//     for atom_other in atoms {
-//         // todo: QC dir
-//         let diff = atom_other.posit - atom.posit;
-//         let dist = diff.magnitude();
-//         let dir = diff / dist;
-//
-//         result += force_coulomb_f64(
-//             dir,
-//             dist,
-//             atom_other.partial_charge,
-//             atom.partial_charge,
-//             0.0000001, // todo
-//         );
-//     }
-//
-//     result
-// }
-//
-// /// Electrostatic + VDW: "non-bonded forces" in trad MD.
-// // fn f_vdw(atom: &Atom, atoms: &[Atom], lj_sigma: &Vec<f64>, lj_eps: &Vec<f64>) -> Vec3 {
-// fn f_vdw(atom: &Atom, atoms: &[Atom], lj_lut: &LjTable) -> Vec3 {
-//     // todo: SIMD/Cuda. Likely need to compute dists oveor all combos in a diff sort of fn for that.
-//     // todo: Check out
-//
-//     let mut result = Vec3::new_zero();
-//     for atom_other in atoms {
-//         // todo: QC dir
-//         let diff = atom_other.posit - atom.posit;
-//         let dist = diff.magnitude();
-//         let dir = diff / dist;
-//
-//         let (sigma, eps) = lj_lut.get(&(atom.element, atom_other.element)).unwrap();
-//
-//         result += force_lj_f64(
-//             dir,
-//             dist,
-//             *sigma as f64,
-//             *eps as f64,
-//             // todo: Set these up.
-//             // lj_sigma[0],
-//             // lj_eps[0],
-//         );
-//     }
-//
-//     result
-// }
 
 // todo: A/R
 pub struct Water {

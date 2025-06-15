@@ -18,7 +18,7 @@ use na_seq::{Element, element::LjTable};
 use rayon::prelude::*;
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-use crate::docking::dynamics_playback::BodyVdwx8;
+use crate::docking::dynamics_playback::BodyDockMdx8;
 
 // The rough Van der Waals (Lennard-Jones) minimum potential value, for two carbon atoms.
 const LJ_MIN_R_CC: f32 = 3.82;
@@ -151,7 +151,7 @@ pub fn setup_sigma_eps_x8(
     lanes_tgt: usize,
     valid_lanes_src_last: usize,
     el_rec: &[Element],
-    body_source: &BodyVdwx8,
+    body_source: &BodyDockMdx8,
 ) -> (f32x8, f32x8) {
     let lanes_src = if i_src == chunks_src - 1 {
         valid_lanes_src_last

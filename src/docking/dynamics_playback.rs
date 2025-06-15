@@ -120,7 +120,7 @@ impl BodyRigid {
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[derive(Clone, Debug)]
-pub(crate) struct BodyVdwx8 {
+pub(crate) struct BodyDockMdx8 {
     pub posit: Vec3x8,
     pub vel: Vec3x8,
     pub accel: Vec3x8,
@@ -129,7 +129,7 @@ pub(crate) struct BodyVdwx8 {
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-impl BodyVdwx8 {
+impl BodyDockMdx8 {
     pub fn from_array(bodies: [BodyDockDynamics; 8]) -> Self {
         let mut posits = [Vec3::new_zero(); 8];
         let mut vels = [Vec3::new_zero(); 8];
@@ -193,119 +193,6 @@ fn calc_dt_dynamic(
     result
 }
 
-/// Compute acceleration, position, and velocity, using RK4.
-/// The acc fn: (id, target posit, target element, target charge) -> Acceleration.
-/// todo: C+P from causal grav.
-pub fn integrate_rk4<F>(body_tgt: &mut BodyDockDynamics, id_tgt: usize, acc: &F, dt: f32)
-where
-    F: Fn(usize, Vec3, Element, f32) -> Vec3,
-{
-    // Step 1: Calculate the k-values for position and velocity
-    body_tgt.accel = acc(id_tgt, body_tgt.posit, body_tgt.element, body_tgt.mass);
-
-    let k1_v = body_tgt.accel * dt;
-    let k1_pos = body_tgt.vel * dt;
-
-    let body_pos_k2 = body_tgt.posit + k1_pos * 0.5;
-    let k2_v = acc(id_tgt, body_pos_k2, body_tgt.element, body_tgt.mass) * dt;
-    let k2_pos = (body_tgt.vel + k1_v * 0.5) * dt;
-
-    let body_pos_k3 = body_tgt.posit + k2_pos * 0.5;
-    let k3_v = acc(id_tgt, body_pos_k3, body_tgt.element, body_tgt.mass) * dt;
-    let k3_pos = (body_tgt.vel + k2_v * 0.5) * dt;
-
-    let body_pos_k4 = body_tgt.posit + k3_pos;
-    let k4_v = acc(id_tgt, body_pos_k4, body_tgt.element, body_tgt.mass) * dt;
-    let k4_pos = (body_tgt.vel + k3_v) * dt;
-
-    // Step 2: Update position and velocity using weighted average of k-values
-    body_tgt.vel += (k1_v + k2_v * 2. + k3_v * 2. + k4_v) / 6.;
-    body_tgt.posit += (k1_pos + k2_pos * 2. + k3_pos * 2. + k4_pos) / 6.;
-}
-
-/// Integrates position and orientation of a rigid body using RK4.
-pub fn integrate_rk4_rigid<F>(body: &mut BodyRigid, force_torque: &F, dt: f32)
-where
-    // force_torque(body) should return (net_force, net_torque) in *world* coordinates
-    F: Fn(&BodyRigid) -> (Vec3, Vec3),
-{
-    // -- k1 --------------------------------------------------------------------
-    let (f1, τ1) = force_torque(body);
-    let acc_lin1 = f1 / body.mass;
-    let acc_ω1 =
-        body.inertia_body_inv.clone() * (τ1 - body.ω.cross(body.inertia_body.clone() * body.ω));
-
-    let k1_v = acc_lin1 * dt; // change in velocity
-    let k1_pos = body.vel * dt; // change in position
-    let k1_w = acc_ω1 * dt; // change in angular velocity
-    let k1_q = orientation_derivative(body.orientation, body.ω) * dt; // change in orientation
-
-    // -- Prepare body_k2 (the state at t + dt/2) -------------------------------
-    let mut body_k2 = body.clone();
-    body_k2.vel = body.vel + k1_v * 0.5;
-    body_k2.posit = body.posit + k1_pos * 0.5;
-    body_k2.ω = body.ω + k1_w * 0.5;
-    body_k2.orientation = (body.orientation + k1_q * 0.5).to_normalized();
-
-    // -- k2 --------------------------------------------------------------------
-    let (f2, τ2) = force_torque(&body_k2);
-    let acc_lin2 = f2 / body_k2.mass;
-    let acc_ω2 =
-        body_k2.inertia_body_inv * (τ2 - body_k2.ω.cross(body_k2.inertia_body * body_k2.ω));
-
-    let k2_v = acc_lin2 * dt;
-    let k2_pos = body_k2.vel * dt;
-    let k2_w = acc_ω2 * dt;
-    let k2_q = orientation_derivative(body_k2.orientation, body_k2.ω) * dt;
-
-    // -- Prepare body_k3 (the state at t + dt/2) -------------------------------
-    let mut body_k3 = body.clone();
-    body_k3.vel = body.vel + k2_v * 0.5;
-    body_k3.posit = body.posit + k2_pos * 0.5;
-    body_k3.ω = body.ω + k2_w * 0.5;
-    body_k3.orientation = (body.orientation + k2_q * 0.5).to_normalized();
-
-    // -- k3 --------------------------------------------------------------------
-    let (f3, τ3) = force_torque(&body_k3);
-    let acc_lin3 = f3 / body_k3.mass;
-    let acc_ω3 =
-        body_k3.inertia_body_inv * (τ3 - body_k3.ω.cross(body_k3.inertia_body * body_k3.ω));
-
-    let k3_v = acc_lin3 * dt;
-    let k3_pos = body_k3.vel * dt;
-    let k3_w = acc_ω3 * dt;
-    let k3_q = orientation_derivative(body_k3.orientation, body_k3.ω) * dt;
-
-    // -- Prepare body_k4 (the state at t + dt) ---------------------------------
-    let mut body_k4 = body.clone();
-    body_k4.vel = body.vel + k3_v;
-    body_k4.posit = body.posit + k3_pos;
-    body_k4.ω = body.ω + k3_w;
-    body_k4.orientation = (body.orientation + k3_q).to_normalized();
-
-    // -- k4 --------------------------------------------------------------------
-    let (f4, τ4) = force_torque(&body_k4);
-    let acc_lin4 = f4 / body_k4.mass;
-    let acc_ω4 =
-        body_k4.inertia_body_inv * (τ4 - body_k4.ω.cross(body_k4.inertia_body * body_k4.ω));
-
-    let k4_v = acc_lin4 * dt;
-    let k4_pos = body_k4.vel * dt;
-    let k4_w = acc_ω4 * dt;
-    let k4_q = orientation_derivative(body_k4.orientation, body_k4.ω) * dt;
-
-    // -- Combine k1..k4 to get final update -------------------------------------
-    // Final: v(t+dt) = v(t) + 1/6 * (k1_v + 2k2_v + 2k3_v + k4_v)
-    body.vel += (k1_v + k2_v * 2.0 + k3_v * 2.0 + k4_v) / 6.0;
-    body.posit += (k1_pos + k2_pos * 2.0 + k3_pos * 2.0 + k4_pos) / 6.0;
-
-    body.ω += (k1_w + k2_w * 2.0 + k3_w * 2.0 + k4_w) / 6.0;
-
-    // For orientation, do the same weighted average of the "k" changes,
-    // then normalize the result at the end.
-    let orientation_update = (k1_q + k2_q * 2. + k3_q * 2.0 + k4_q) / 6.0;
-    body.orientation = (body.orientation + orientation_update).to_normalized();
-}
 
 fn bodies_from_atoms(atoms: &[Atom]) -> Vec<BodyDockDynamics> {
     atoms.iter().map(BodyDockDynamics::from_atom).collect()
@@ -313,7 +200,7 @@ fn bodies_from_atoms(atoms: &[Atom]) -> Vec<BodyDockDynamics> {
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 /// Also returns valid lanes in the last item.
-fn bodies_from_atoms_x8(atoms: &[Atom]) -> (Vec<BodyVdwx8>, usize) {
+fn bodies_from_atoms_x8(atoms: &[Atom]) -> (Vec<BodyDockMdx8>, usize) {
     let mut posits: Vec<Vec3> = Vec::with_capacity(atoms.len());
     let mut els = Vec::with_capacity(atoms.len());
 
@@ -331,7 +218,7 @@ fn bodies_from_atoms_x8(atoms: &[Atom]) -> (Vec<BodyVdwx8>, usize) {
         let masses: Vec<_> = els_x8[i].iter().map(|el| el.atomic_weight()).collect();
         let mass = f32x8::from_slice(&masses);
 
-        result.push(BodyVdwx8 {
+        result.push(BodyDockMdx8 {
             posit: *posit,
             vel: Vec3x8::new_zero(),
             accel: Vec3x8::new_zero(),
@@ -438,7 +325,7 @@ fn scalar_f_t(
 /// Observation: We can use analytic VDW force to position individual atoms, but once we treat
 /// the molecule together, we seem to get bogus results using this approach. Instead, we use a numerical
 /// derivative of the total VDW potential, and use gradient descent.
-pub fn build_vdw_dynamics(
+pub fn build_dock_dynamics(
     dev: &ComputationDevice,
     lig: &Ligand,
     setup: &DockingSetup,
@@ -446,7 +333,7 @@ pub fn build_vdw_dynamics(
     intertial: bool,
     n_steps: usize,
 ) -> Vec<Snapshot> {
-    println!("Building VDW dyanmics...");
+    println!("Building docking dyanmics...");
     let start = Instant::now();
 
     // todo: You should possibly add your pre-computed LJ pairs, instead of looking up each time.

@@ -3,7 +3,11 @@
 //! Contains data structures and related code for molecules, atoms, residues, chains, etc.
 use std::{
     collections::HashMap,
+    convert::Infallible,
     fmt,
+    fmt::{Display, Formatter},
+    io,
+    io::ErrorKind,
     str::FromStr,
     sync::mpsc::{self, Receiver},
     thread,
@@ -28,12 +32,12 @@ use crate::{
     Selection,
     aa_coords::Dihedral,
     bond_inference::{create_bonds, create_hydrogen_bonds},
-    cartoon_mesh::BackboneSS,
     docking::{
         ConformationType, DockingSite, Pose,
         prep::{DockType, Torsion, UnitCellDims, setup_flexibility},
     },
     reflection::{DensityRect, ElectronDensity, ReflectionsData},
+    ribbon_mesh::BackboneSS,
     util::mol_center_size,
 };
 
@@ -76,6 +80,7 @@ pub struct Molecule {
     pub density_map: Option<DensityMap>,
     pub density_rect: Option<DensityRect>,
     pub aa_seq: Vec<AminoAcid>,
+    pub method: Option<ExperimentalMethod>,
 }
 
 impl Molecule {
@@ -86,7 +91,6 @@ impl Molecule {
         atoms: Vec<Atom>,
         chains: Vec<Chain>,
         residues: Vec<Residue>,
-        // secondary_structure: Vec<SecondaryStructure>,
         pubchem_cid: Option<u32>,
         drugbank_id: Option<String>,
     ) -> Self {
@@ -98,7 +102,6 @@ impl Molecule {
             bonds: Vec::new(),
             chains,
             residues,
-            // secondary_structure,
             center,
             size,
             pubchem_cid,
@@ -868,5 +871,69 @@ impl Molecule {
             pubchem_cid: self.pubchem_cid,
             drugbank_id: self.drugbank_id.clone(),
         }
+    }
+}
+
+// todo: Move to na_seq?
+#[derive(Clone, Copy, PartialEq, Debug)]
+/// The method used to find a given molecular structure. This data is present in mmCIF files
+/// as the `_exptl.method` field.
+pub enum ExperimentalMethod {
+    XRayDiffraction,
+    ElectronDiffraction,
+    NeutronDiffraction,
+    /// i.e. Cryo-EM
+    ElectronMicroscopy,
+    SolutionNmr,
+}
+
+impl ExperimentalMethod {
+    /// E.g. for displaying in the space-constrained UI.
+    pub fn to_str_short(&self) -> String {
+        match self {
+            Self::XRayDiffraction => "X-ray",
+            Self::NeutronDiffraction => "ND",
+            Self::ElectronDiffraction => "ED",
+            Self::ElectronMicroscopy => "EM",
+            Self::SolutionNmr => "NMR",
+        }
+        .to_owned()
+    }
+}
+
+impl Display for ExperimentalMethod {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let val = match self {
+            Self::XRayDiffraction => "X-Ray diffraction",
+            Self::NeutronDiffraction => "Neutron diffraction",
+            Self::ElectronDiffraction => "Electron diffraction",
+            Self::ElectronMicroscopy => "Electron microscopy",
+            Self::SolutionNmr => "Solution NMR",
+        };
+        write!(f, "{val}")
+    }
+}
+
+impl FromStr for ExperimentalMethod {
+    type Err = io::Error;
+
+    /// Parse an mmCIF‐style method string into an ExperimentalMethod.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let normalized = s.to_lowercase();
+        let s = normalized.trim();
+        let method = match s {
+            "x-ray diffraction" => ExperimentalMethod::XRayDiffraction,
+            "neutron diffraction" => ExperimentalMethod::NeutronDiffraction,
+            "electron diffraction" => ExperimentalMethod::ElectronDiffraction,
+            "electron microscopy" => ExperimentalMethod::ElectronMicroscopy,
+            "solution nmr" => ExperimentalMethod::SolutionNmr,
+            other => {
+                return Err(io::Error::new(
+                    ErrorKind::InvalidData,
+                    format!("Error parsing experimental method: {other}"),
+                ));
+            }
+        };
+        Ok(method)
     }
 }

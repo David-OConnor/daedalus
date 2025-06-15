@@ -22,7 +22,6 @@ mod aa_coords;
 mod add_hydrogens;
 mod amino_acid_coords;
 mod bond_inference;
-mod cartoon_mesh;
 mod docking;
 mod download_mols;
 mod drug_like;
@@ -34,6 +33,7 @@ mod molecule;
 mod navigation;
 mod prefs;
 mod render;
+mod ribbon_mesh;
 mod sa_surface;
 mod save_load;
 mod ui;
@@ -45,6 +45,7 @@ mod dynamics;
 mod reflection;
 #[cfg(test)]
 mod tests;
+mod integrate;
 
 use std::{
     collections::HashMap,
@@ -90,6 +91,7 @@ use crate::{
         BindingEnergy, THETA_BH, dynamics_playback::Snapshot, external::check_adv_avail,
         prep::DockingSetup,
     },
+    dynamics::MdState,
     file_io::{cif_pdb::save_pdb, mtz::load_mtz, pdbqt::load_pdbqt},
     molecule::Ligand,
     navigation::Tab,
@@ -452,6 +454,7 @@ struct State {
     pub docking_ready: bool,
     pub bh_config: BhConfig,
     pub dev: ComputationDevice,
+    pub mol_dynamics: MdState,
 }
 
 impl State {

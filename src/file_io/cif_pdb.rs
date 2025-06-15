@@ -13,7 +13,7 @@ use rayon::prelude::*;
 
 use crate::{
     docking::prep::DockType,
-    file_io::cif_secondary_structure::load_secondary_structure,
+    file_io::cif_aux::load_data,
     molecule::{Atom, AtomRole, Molecule, Residue},
 };
 
@@ -67,9 +67,7 @@ impl Molecule {
         // todo get molecules from it
 
         // todo: Pdbtbx doesn't implm this yet for CIF.
-        for remark in pdb.remarks() {
-            // println!("Remark: {remark:?}");
-        }
+        for remark in pdb.remarks() {}
 
         let atoms_pdb: Vec<&pdbtbx::Atom> = pdb.par_atoms().collect();
 
@@ -168,7 +166,7 @@ impl Molecule {
             None,
         );
 
-        result.secondary_structure = load_secondary_structure(raw)?;
+        (result.secondary_structure, result.method) = load_data(raw)?;
 
         Ok(result)
     }
