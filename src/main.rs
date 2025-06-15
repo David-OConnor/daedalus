@@ -41,10 +41,10 @@ mod util;
 mod vibrations;
 
 mod cli;
+mod dynamics;
 mod reflection;
 #[cfg(test)]
 mod tests;
-mod dynamics;
 
 use std::{
     collections::HashMap,
@@ -78,7 +78,10 @@ use lin_alg::{
 };
 use mol_drawing::MoleculeView;
 use molecule::Molecule;
-use na_seq::{Element, element::init_lj_lut};
+use na_seq::{
+    Element,
+    element::{LjTable, init_lj_lut},
+};
 use pdbtbx::{self, PDB};
 
 use crate::{
@@ -254,7 +257,7 @@ struct StateVolatile {
     /// update the flashlight when moving.
     inputs_commanded: InputsCommanded,
     /// (Sigma, Epsilon). Initialize once at startup. Not-quite-static.
-    lj_lookup_table: HashMap<(Element, Element), (f32, f32)>,
+    lj_lookup_table: LjTable,
     snapshots: Vec<Snapshot>,
     docking_setup: Option<DockingSetup>,
     /// e.g. waiting for the data avail thread to return

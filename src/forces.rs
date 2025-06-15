@@ -11,10 +11,10 @@ cfg_if::cfg_if! {
 }
 use std::{collections::HashMap, time::Instant};
 
-use lin_alg::f32::Vec3;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use lin_alg::f32::{Vec3x8, f32x8};
-use na_seq::Element;
+use lin_alg::{f32::Vec3, f64::Vec3 as Vec3F64};
+use na_seq::{Element, element::LjTable};
 use rayon::prelude::*;
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -146,7 +146,7 @@ pub fn force_lj_gpu(
 pub fn setup_sigma_eps_x8(
     // todo: THis param list is onerous.
     i_src: usize,
-    lj_lut: &HashMap<(Element, Element), (f32, f32)>,
+    lj_lut: &LjTable,
     chunks_src: usize,
     lanes_tgt: usize,
     valid_lanes_src_last: usize,
@@ -179,8 +179,16 @@ pub fn setup_sigma_eps_x8(
 /// The most fundamental part of Newtonian acceleration calculation.
 /// `acc_dir` is a unit vector.
 pub fn force_coulomb(dir: Vec3, dist: f32, q0: f32, q1: f32, softening_factor_sq: f32) -> Vec3 {
-    // Assume the coulomb constant is 1.
-    // println!("AD: {acc_dir}, src: {src_q} tgt: {tgt_q}  dist: {dist}");
+    dir * q0 * q1 / (dist.powi(2) + softening_factor_sq)
+}
+
+pub fn force_coulomb_f64(
+    dir: Vec3F64,
+    dist: f64,
+    q0: f64,
+    q1: f64,
+    softening_factor_sq: f64,
+) -> Vec3F64 {
     dir * q0 * q1 / (dist.powi(2) + softening_factor_sq)
 }
 
@@ -203,12 +211,12 @@ pub fn force_coulomb_x8(
 /// In a real system, you’d want to parameterize \(\sigma\) and \(\epsilon\)
 /// based on the atom types (i.e. from a force field lookup). Here, we’ll
 /// just demonstrate the structure of the calculation with made-up constants.
-pub fn V_lj(r: f32, sigma: f32, eps: f32) -> f32 {
-    if r < f32::EPSILON {
+pub fn V_lj(dist: f32, sigma: f32, eps: f32) -> f32 {
+    if dist < f32::EPSILON {
         return 0.;
     }
 
-    let sr = sigma / r;
+    let sr = sigma / dist;
     let sr6 = sr.powi(6);
     let sr12 = sr6.powi(2);
 
@@ -216,12 +224,12 @@ pub fn V_lj(r: f32, sigma: f32, eps: f32) -> f32 {
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-pub fn V_lj_x8(r: f32x8, sigma: f32x8, eps: f32x8) -> f32x8 {
+pub fn V_lj_x8(dist: f32x8, sigma: f32x8, eps: f32x8) -> f32x8 {
     // if r < f32::EPSILON {
     //     return f32x8::splat(0.);
     // }
 
-    let sr = sigma / r;
+    let sr = sigma / dist;
     let sr6 = sr.powi(6);
     let sr12 = sr6.powi(2);
 
@@ -229,23 +237,33 @@ pub fn V_lj_x8(r: f32x8, sigma: f32x8, eps: f32x8) -> f32x8 {
 }
 
 /// Calculate the Lennard Jones force; a Newtonian force based on the LJ potential.
-pub fn force_lj(dir: Vec3, r: f32, sigma: f32, eps: f32) -> Vec3 {
-    let sr = sigma / r;
+pub fn force_lj(dir: Vec3, dist: f32, sigma: f32, eps: f32) -> Vec3 {
+    let sr = sigma / dist;
     let sr6 = sr.powi(6);
     let sr12 = sr6.powi(2);
 
-    let mag = 24. * eps * (2. * sr12 - sr6) / r.powi(2);
+    let mag = 24. * eps * (2. * sr12 - sr6) / dist.powi(2);
+    -dir * mag
+}
+
+/// Note: Can't make generic due to Vec3 not being generic, but of two types.
+pub fn force_lj_f64(dir: Vec3F64, dist: f64, sigma: f64, eps: f64) -> Vec3F64 {
+    let sr = sigma / dist;
+    let sr6 = sr.powi(6);
+    let sr12 = sr6.powi(2);
+
+    let mag = 24. * eps * (2. * sr12 - sr6) / dist.powi(2);
     -dir * mag
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 /// Calculate the Lennard Jones force; a Newtonian force based on the LJ potential.
-pub fn force_lj_x8(dir: Vec3x8, r: f32x8, sigma: f32x8, eps: f32x8) -> Vec3x8 {
-    let sr = sigma / r;
+pub fn force_lj_x8(dir: Vec3x8, dist: f32x8, sigma: f32x8, eps: f32x8) -> Vec3x8 {
+    let sr = sigma / dist;
     let sr6 = sr.powi(6);
     let sr12 = sr6.powi(2);
 
-    let mag = f32x8::splat(24.) * eps * (f32x8::splat(2.) * sr12 - sr6) / r.powi(2);
+    let mag = f32x8::splat(24.) * eps * (f32x8::splat(2.) * sr12 - sr6) / dist.powi(2);
 
     -dir * mag
 }

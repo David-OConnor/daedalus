@@ -8,7 +8,7 @@ use barnes_hut::{BhConfig, Cube, Tree};
 use lin_alg::f32::Vec3;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use lin_alg::f32::{Vec3x8, f32x8, pack_float};
-use na_seq::Element;
+use na_seq::{Element, element::LjTable};
 
 use crate::{
     docking::{
@@ -91,7 +91,7 @@ pub struct DockingSetup {
     pub charges_rec: Vec<PartialCharge>,
     pub rec_bonds_near_site: Vec<Bond>,
     // Note: DRY with state.volatile
-    pub lj_lut: HashMap<(Element, Element), (f32, f32)>,
+    pub lj_lut: LjTable,
     /// Sigmas and epsilons are Lennard Jones parameters. Flat here, with outer loop receptor.
     /// Flattened. Separate single-value array facilitate use in CUDA and SIMD, vice a tuple.
     pub lj_sigma: Vec<f32>,
@@ -112,7 +112,7 @@ impl DockingSetup {
     pub fn new(
         receptor: &Molecule,
         ligand: &mut Ligand,
-        lj_lut: &HashMap<(Element, Element), (f32, f32)>,
+        lj_lut: &LjTable,
         bh_config: &BhConfig,
     ) -> Self {
         let (mut rec_atoms_near_site, rec_indices) =

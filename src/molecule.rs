@@ -39,7 +39,6 @@ use crate::{
 
 pub const ATOM_NEIGHBOR_DIST_THRESH: f64 = 5.; // todo: Adjust A/R.
 
-
 #[derive(Debug, Default, Clone)]
 pub struct Molecule {
     pub ident: String,

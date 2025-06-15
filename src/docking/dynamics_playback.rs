@@ -3,7 +3,7 @@
 //! Experimental molecular dynamics, with a playback system. Starting with fixed-ligand position only,
 //! referencing the anchor.
 
-use std::{collections::HashMap, time::Instant};
+use std::time::Instant;
 
 use crate::ComputationDevice;
 
@@ -44,7 +44,7 @@ const ROTATION_INERTIA: f32 = 500_000.;
 const DX: f32 = 0.1;
 
 #[derive(Clone, Debug)]
-pub(crate) struct BodyVdw {
+pub(crate) struct BodyDockDynamics {
     pub posit: Vec3,
     pub vel: Vec3,
     pub accel: Vec3,
@@ -52,13 +52,13 @@ pub(crate) struct BodyVdw {
     pub element: Element,
 }
 
-impl BodyVdw {
+impl BodyDockDynamics {
     pub fn from_atom(atom: &Atom) -> Self {
         Self {
             posit: atom.posit.into(),
             vel: Default::default(),
             accel: Default::default(),
-            mass: atom.element.atomic_number() as f32,
+            mass: atom.element.atomic_weight(),
             element: atom.element,
         }
     }
@@ -83,7 +83,7 @@ impl BodyRigid {
     fn from_ligand(lig: &Ligand) -> Self {
         let mut mass = 0.;
         for atom in &lig.molecule.atoms {
-            mass += atom.element.atomic_number() as f32; // Arbitrary mass scale for now.
+            mass += atom.element.atomic_weight(); // Arbitrary mass scale for now.
         }
 
         let inertia_body = Mat3::new_identity() * ROTATION_INERTIA;
@@ -130,7 +130,7 @@ pub(crate) struct BodyVdwx8 {
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 impl BodyVdwx8 {
-    pub fn from_array(bodies: [BodyVdw; 8]) -> Self {
+    pub fn from_array(bodies: [BodyDockDynamics; 8]) -> Self {
         let mut posits = [Vec3::new_zero(); 8];
         let mut vels = [Vec3::new_zero(); 8];
         let mut accels = [Vec3::new_zero(); 8];
@@ -167,8 +167,8 @@ pub struct Snapshot {
 /// Defaults to `Config::dt_integration`, but becomes more precise when
 /// bodies are close. This is a global DT, vice local only for those bodies.
 fn calc_dt_dynamic(
-    bodies_src: &[BodyVdw],
-    bodies_tgt: &[BodyVdw],
+    bodies_src: &[BodyDockDynamics],
+    bodies_tgt: &[BodyDockDynamics],
     dt_scaler: f32,
     dt_max: f32,
 ) -> f32 {
@@ -196,7 +196,7 @@ fn calc_dt_dynamic(
 /// Compute acceleration, position, and velocity, using RK4.
 /// The acc fn: (id, target posit, target element, target charge) -> Acceleration.
 /// todo: C+P from causal grav.
-pub fn integrate_rk4<F>(body_tgt: &mut BodyVdw, id_tgt: usize, acc: &F, dt: f32)
+pub fn integrate_rk4<F>(body_tgt: &mut BodyDockDynamics, id_tgt: usize, acc: &F, dt: f32)
 where
     F: Fn(usize, Vec3, Element, f32) -> Vec3,
 {
@@ -307,8 +307,8 @@ where
     body.orientation = (body.orientation + orientation_update).to_normalized();
 }
 
-fn bodies_from_atoms(atoms: &[Atom]) -> Vec<BodyVdw> {
-    atoms.iter().map(BodyVdw::from_atom).collect()
+fn bodies_from_atoms(atoms: &[Atom]) -> Vec<BodyDockDynamics> {
+    atoms.iter().map(BodyDockDynamics::from_atom).collect()
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -328,10 +328,7 @@ fn bodies_from_atoms_x8(atoms: &[Atom]) -> (Vec<BodyVdwx8>, usize) {
     let mut result = Vec::with_capacity(posits_x8.len());
 
     for (i, posit) in posits_x8.iter().enumerate() {
-        let masses: Vec<_> = els_x8[i]
-            .iter()
-            .map(|el| el.atomic_number() as f32)
-            .collect();
+        let masses: Vec<_> = els_x8[i].iter().map(|el| el.atomic_weight()).collect();
         let mass = f32x8::from_slice(&masses);
 
         result.push(BodyVdwx8 {
