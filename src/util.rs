@@ -594,6 +594,8 @@ pub fn handle_err(ui: &mut StateUi, msg: String) {
 
 pub fn close_mol(state: &mut State, scene: &mut Scene, engine_updates: &mut EngineUpdates) {
     state.molecule = None;
+    state.mol_dynamics = None;
+
     scene.entities.retain(|ent| {
         ent.class != EntityType::Protein as u32
             && ent.class != EntityType::Density as u32
@@ -601,13 +603,14 @@ pub fn close_mol(state: &mut State, scene: &mut Scene, engine_updates: &mut Engi
             && ent.class != EntityType::SecondaryStructure as u32
             && ent.class != EntityType::SaSurface as u32
     });
-    engine_updates.entities = true;
 
     state.to_save.last_opened = None;
     state.to_save.last_map_opened = None;
     state.volatile.aa_seq_text = String::new();
 
     state.update_save_prefs();
+
+    engine_updates.entities = true;
 }
 
 pub fn close_lig(state: &mut State, scene: &mut Scene, engine_updates: &mut EngineUpdates) {

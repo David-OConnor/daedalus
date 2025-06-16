@@ -23,7 +23,7 @@ use crate::{
     cli::autocomplete_cli,
     docking::{
         ConformationType, calc_binding_energy,
-        dynamics_playback::{build_dock_dynamics, change_snapshot},
+        dynamics::{build_dock_dynamics, change_snapshot},
         external::check_adv_avail,
         find_optimal_pose,
         find_sites::find_docking_sites,
@@ -882,7 +882,6 @@ fn docking(
                     &state.dev,
                     lig,
                     state.volatile.docking_setup.as_ref().unwrap(),
-                    false,
                     1_500,
                 );
 
@@ -1831,8 +1830,30 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         // todo: Move this A/R
         if let Some(mol) = &state.molecule {
             if ui.button("Run MD").clicked() {
-                state.mol_dynamics = MdState::new(&mol.atoms, &state.volatile.lj_lookup_table);
-                // todo
+                // if let Some(mol) = &state.molecule {
+                //     let dynamics = match &mut state.mol_dynamics {
+                //         Some(md) => md,
+                //         None => {
+                //             state.mol_dynamics = Some(MdState::new(&mol.atoms));
+                //             &state.dy
+                //         }
+                //     };
+                // }
+
+                // todo: We don't need to gen each time? But this is cheap.
+                state.mol_dynamics =
+                    Some(MdState::new(&mol.atoms, &state.volatile.lj_lookup_table));
+
+                let dynamics = &mut state.mol_dynamics.as_mut().unwrap();
+
+                println!("Running dynamics...");
+                let num_steps = 1_000;
+                let dt = 0.001;
+                for t in 0..num_steps {
+                    dynamics.step(dt)
+                }
+
+                println!("Complete.");
             }
         }
 

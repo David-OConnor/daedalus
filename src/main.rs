@@ -42,10 +42,10 @@ mod vibrations;
 
 mod cli;
 mod dynamics;
+mod integrate;
 mod reflection;
 #[cfg(test)]
 mod tests;
-mod integrate;
 
 use std::{
     collections::HashMap,
@@ -88,8 +88,7 @@ use pdbtbx::{self, PDB};
 use crate::{
     aa_coords::bond_vecs::init_local_bond_vecs,
     docking::{
-        BindingEnergy, THETA_BH, dynamics_playback::Snapshot, external::check_adv_avail,
-        prep::DockingSetup,
+        BindingEnergy, THETA_BH, dynamics::Snapshot, external::check_adv_avail, prep::DockingSetup,
     },
     dynamics::MdState,
     file_io::{cif_pdb::save_pdb, mtz::load_mtz, pdbqt::load_pdbqt},
@@ -454,7 +453,7 @@ struct State {
     pub docking_ready: bool,
     pub bh_config: BhConfig,
     pub dev: ComputationDevice,
-    pub mol_dynamics: MdState,
+    pub mol_dynamics: Option<MdState>,
 }
 
 impl State {

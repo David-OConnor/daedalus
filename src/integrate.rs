@@ -1,9 +1,9 @@
 //! Numerical integration techniques
 
-use lin_alg::f32::Vec3;
-use lin_alg::f64::Vec3 as Vec3F64;
+use lin_alg::{f32::Vec3, f64::Vec3 as Vec3F64};
 use na_seq::Element;
-use crate::docking::dynamics_playback::BodyDockDynamics;
+
+use crate::docking::dynamics::BodyDockDynamics;
 
 /// Compute acceleration, position, and velocity, using RK4.
 /// The acc fn: (id, target posit, target element, target charge) -> Acceleration.
@@ -36,10 +36,13 @@ where
 }
 
 /// Integrates position and orientation of a rigid body using RK4.
-pub fn integrate_rk4_rigid<F>(body: &mut crate::docking::dynamics_playback::BodyRigid, force_torque: &F, dt: f32)
-where
-// force_torque(body) should return (net_force, net_torque) in *world* coordinates
-    F: Fn(&crate::docking::dynamics_playback::BodyRigid) -> (Vec3, Vec3),
+pub fn integrate_rk4_rigid<F>(
+    body: &mut crate::docking::dynamics::BodyRigid,
+    force_torque: &F,
+    dt: f32,
+) where
+    // force_torque(body) should return (net_force, net_torque) in *world* coordinates
+    F: Fn(&crate::docking::dynamics::BodyRigid) -> (Vec3, Vec3),
 {
     // -- k1 --------------------------------------------------------------------
     let (f1, τ1) = force_torque(body);
@@ -50,7 +53,7 @@ where
     let k1_v = acc_lin1 * dt; // change in velocity
     let k1_pos = body.vel * dt; // change in position
     let k1_w = acc_ω1 * dt; // change in angular velocity
-    let k1_q = crate::docking::dynamics_playback::orientation_derivative(body.orientation, body.ω) * dt; // change in orientation
+    let k1_q = crate::docking::dynamics::orientation_derivative(body.orientation, body.ω) * dt; // change in orientation
 
     // -- Prepare body_k2 (the state at t + dt/2) -------------------------------
     let mut body_k2 = body.clone();
@@ -68,7 +71,8 @@ where
     let k2_v = acc_lin2 * dt;
     let k2_pos = body_k2.vel * dt;
     let k2_w = acc_ω2 * dt;
-    let k2_q = crate::docking::dynamics_playback::orientation_derivative(body_k2.orientation, body_k2.ω) * dt;
+    let k2_q =
+        crate::docking::dynamics::orientation_derivative(body_k2.orientation, body_k2.ω) * dt;
 
     // -- Prepare body_k3 (the state at t + dt/2) -------------------------------
     let mut body_k3 = body.clone();
@@ -86,7 +90,8 @@ where
     let k3_v = acc_lin3 * dt;
     let k3_pos = body_k3.vel * dt;
     let k3_w = acc_ω3 * dt;
-    let k3_q = crate::docking::dynamics_playback::orientation_derivative(body_k3.orientation, body_k3.ω) * dt;
+    let k3_q =
+        crate::docking::dynamics::orientation_derivative(body_k3.orientation, body_k3.ω) * dt;
 
     // -- Prepare body_k4 (the state at t + dt) ---------------------------------
     let mut body_k4 = body.clone();
@@ -104,7 +109,8 @@ where
     let k4_v = acc_lin4 * dt;
     let k4_pos = body_k4.vel * dt;
     let k4_w = acc_ω4 * dt;
-    let k4_q = crate::docking::dynamics_playback::orientation_derivative(body_k4.orientation, body_k4.ω) * dt;
+    let k4_q =
+        crate::docking::dynamics::orientation_derivative(body_k4.orientation, body_k4.ω) * dt;
 
     // -- Combine k1..k4 to get final update -------------------------------------
     // Final: v(t+dt) = v(t) + 1/6 * (k1_v + 2k2_v + 2k3_v + k4_v)
@@ -119,9 +125,14 @@ where
     body.orientation = (body.orientation + orientation_update).to_normalized();
 }
 
-/// Standard verlet integration. (Without velocity)
-pub fn integrate_verlet(p_last: Vec3F64, p_2back: Vec3F64, a_last: Vec3F64, t: f64) -> Vec3F64 {
-    p_last * 2. - p_2back + a_last * t.powi(2)
+/// Standard verlet integration. (Without velocity). Returns position. (i.e. position next).
+pub fn integrate_verlet(p: Vec3, p_prev: Vec3, a: Vec3, dt: f32) -> Vec3 {
+    p * 2. - p_prev + a * dt.powi(2)
+}
+
+/// Standard verlet integration. (Without velocity). Returns position. (i.e. position next).
+pub fn integrate_verlet_f64(p: Vec3F64, p_prev: Vec3F64, a: Vec3F64, dt: f64) -> Vec3F64 {
+    p * 2. - p_prev + a * dt.powi(2)
 }
 
 /// Velocity-Verlet integration step.
@@ -137,9 +148,7 @@ pub fn integrate_velocity_verlet(
     a_next: Vec3F64,
     dt: f64,
 ) -> (Vec3F64, Vec3F64) {
-    let dt2 = dt * dt;
-
-    let p_next = p + v * dt + a * (0.5 * dt2);
+    let p_next = p + v * dt + a * (0.5 * dt.powi(2));
     let v_next = v + (a + a_next) * (0.5 * dt);
 
     (p_next, v_next)

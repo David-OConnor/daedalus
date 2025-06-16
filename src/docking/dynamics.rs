@@ -31,9 +31,9 @@ use crate::{
         prep::{DockingSetup, Torsion},
     },
     forces::force_lj,
+    integrate::integrate_verlet,
     molecule::{Atom, Ligand},
 };
-
 // This seems to be how we control rotation vice movement. A higher value means
 // more movement, less rotation for a given dt.
 
@@ -66,8 +66,10 @@ impl BodyDockDynamics {
 
 #[derive(Clone, Debug)]
 /// We use this for integration.
-struct BodyRigid {
+pub struct BodyRigid {
     pub posit: Vec3,
+    /// We track this for verlet integration.
+    pub posit_prev: Vec3,
     pub vel: Vec3,
     // pub accel: Vec3,
     pub orientation: Quaternion,
@@ -96,6 +98,7 @@ impl BodyRigid {
 
         Self {
             posit: lig.pose.anchor_posit.into(),
+            posit_prev: lig.pose.anchor_posit.into(),
             vel: Default::default(),
             orientation: lig.pose.orientation.into(),
             torsions,
@@ -193,7 +196,6 @@ fn calc_dt_dynamic(
     result
 }
 
-
 fn bodies_from_atoms(atoms: &[Atom]) -> Vec<BodyDockDynamics> {
     atoms.iter().map(BodyDockDynamics::from_atom).collect()
 }
@@ -231,7 +233,7 @@ fn bodies_from_atoms_x8(atoms: &[Atom]) -> (Vec<BodyDockMdx8>, usize) {
 }
 
 // todo: QC this
-fn orientation_derivative(orientation: Quaternion, ang_vel_world: Vec3) -> Quaternion {
+pub fn orientation_derivative(orientation: Quaternion, ang_vel_world: Vec3) -> Quaternion {
     // Represent w in quaternion form: (0, wx, wy, wz)
     let w_quat = Quaternion::new(0.0, ang_vel_world.x, ang_vel_world.y, ang_vel_world.z);
     // dq/dt = 0.5 * w_quat * q
@@ -329,8 +331,6 @@ pub fn build_dock_dynamics(
     dev: &ComputationDevice,
     lig: &Ligand,
     setup: &DockingSetup,
-    // Integrate velocity, position.
-    intertial: bool,
     n_steps: usize,
 ) -> Vec<Snapshot> {
     println!("Building docking dyanmics...");
@@ -480,6 +480,8 @@ pub fn build_dock_dynamics(
             }
         };
 
+        // todo: Switch to verlet, and use leap-frog between posit and orientation. (As you do)
+
         // let el = start.elapsed().as_micros();
         // println!("\nElapsed: {el}");
 
@@ -500,76 +502,54 @@ pub fn build_dock_dynamics(
         // todo and force as well.
 
         // todo: RK4; once you are ready to make an acc fn again.
-        if intertial {
-            if t % 2 == 0 {
-                let acc = force * dt;
-                body_ligand_rigid.vel += acc * dt;
-                body_ligand_rigid.posit += body_ligand_rigid.vel * dt;
-            } else {
-                // let rotator = Quaternion::from_axis_angle(
-                //     torque.to_normalized(),
-                //     torque.magnitude() * dt * 0.00001,
-                // );
-                //
-                // todo: QC this approach.
-                body_ligand_rigid.ω += torque * dt;
+        if t % 2 == 0 {
+            // Update position.
+            let acc = force * dt;
 
-                // let ω_mag = body_ligand_rigid.ω.magnitude();
-                // if ω_mag > 0.0 {
-                //     let axis = body_ligand_rigid.ω / ω_mag;
-                //     let delta_q = Quaternion::from_axis_angle(axis, ω_mag * dt);
-                //     // semi‐implicit Euler: apply rotation *after* updating ω
-                //     body_ligand_rigid.orientation = (delta_q * body_ligand_rigid.orientation).to_normalized();
-                // }
-                let ω_q = Quaternion::new(
-                    0.0,
-                    body_ligand_rigid.ω.x,
-                    body_ligand_rigid.ω.y,
-                    body_ligand_rigid.ω.z,
-                );
-                let q_dot = ω_q * body_ligand_rigid.orientation * 0.5;
-                body_ligand_rigid.orientation =
-                    (body_ligand_rigid.orientation + q_dot * dt).to_normalized();
-            }
+            let posit_this = body_ligand_rigid.posit;
+            body_ligand_rigid.posit = integrate_verlet(
+                body_ligand_rigid.posit,
+                body_ligand_rigid.posit_prev,
+                acc,
+                dt,
+            );
+            body_ligand_rigid.posit_prev = posit_this;
         } else {
-            if t % 2 == 0 {
-                let mut posit_change = force * dt;
-                // Clamp.
-                let mag = posit_change.magnitude();
-                let max_dist = 0.5;
-                if mag > max_dist {
-                    posit_change = posit_change.to_normalized() * max_dist;
-                }
-                body_ligand_rigid.posit += posit_change;
-            } else {
-                let rotator =
-                    Quaternion::from_axis_angle(torque.to_normalized(), torque.magnitude() * dt);
-                body_ligand_rigid.orientation = rotator * body_ligand_rigid.orientation;
-            }
+            // Update orientation.
+
+            // todo: Update this using a verlet-adjacent approach?
+
+            // let rotator = Quaternion::from_axis_angle(
+            //     torque.to_normalized(),
+            //     torque.magnitude() * dt * 0.00001,
+            // );
+            //
+            // todo: QC this approach.
+            body_ligand_rigid.ω += torque * dt;
+
+            // let ω_mag = body_ligand_rigid.ω.magnitude();
+            // if ω_mag > 0.0 {
+            //     let axis = body_ligand_rigid.ω / ω_mag;
+            //     let delta_q = Quaternion::from_axis_angle(axis, ω_mag * dt);
+            //     // semi‐implicit Euler: apply rotation *after* updating ω
+            //     body_ligand_rigid.orientation = (delta_q * body_ligand_rigid.orientation).to_normalized();
+            // }
+            let ω_q = Quaternion::new(
+                0.0,
+                body_ligand_rigid.ω.x,
+                body_ligand_rigid.ω.y,
+                body_ligand_rigid.ω.z,
+            );
+            let q_dot = ω_q * body_ligand_rigid.orientation * 0.5;
+            body_ligand_rigid.orientation =
+                (body_ligand_rigid.orientation + q_dot * dt).to_normalized();
         }
-
-        // let gradient = calc_gradient_posit(&body_ligand_rigid, &net_V_fn);
-        // let gradient = calc_gradient_posit(&body_ligand_rigid, &net_V_fn);
-        // let gradient = calc_gradient_posit(&body_ligand_rigid, &net_V_fn_scalar, lig, docking_setup);
-
-        // body_ligand_rigid.posit -= gradient.to_normalized() * dt;
-        // body_ligand_rigid.vel += gradient.to_normalized() * dt * 10.;
-        // body_ligand_rigid.posit -= body_ligand_rigid.vel * dt * 10.;
-
-        // todo. Next: Figure out what's up with SIMD. Then try a motion simulator again,
-        // todo with RK4.
 
         // Experimenting with a drag term to prevent inertia from having too much influence.
         // body_ligand_rigid.vel *= 0.90;
         body_ligand_rigid.ω *= 0.90;
 
         time_elapsed += dt;
-
-        // Save the current state to a snapshot, for later playback.
-
-        // Unpack bodies for the purposes of saving a snapshot.
-        // let bodies_lig: Vec<_> = bodies_lig_x8.iter().map(|b| b.posit).collect();
-        // let posits_unpacked = unpack_vec3(&bodies_lig, lig.molecule.atoms.len());
 
         if t % snapshot_ratio == 0 {
             let pose = body_ligand_rigid.as_pose();

@@ -37,6 +37,7 @@ cudarc = { version = "0.16.4", features = ["cuda-version-from-build-system"], op
 # For reading PDB and mmCIF files
 pdbtbx = "0.12.0"
 rand = "0.9.1"
+rand_distr  = "0.5.1"  # todo: Used in ML. Eval!
 regex = "1.11.1"
 
 # nalgebra: For solving linear systems of equations when generating partial changes.
@@ -48,7 +49,7 @@ mcubes = "0.1.3"
 # We use these when developing locally to reduce friction.
 [patch.crates-io]
 graphics = { path = "../../graphics" }
-#lin_alg = { path = "../../lin_alg" }
+lin_alg = { path = "../../lin_alg" }
 pdbtbx = { git = "https://github.com/David-OConnor/pdbtbx", branch = "Fix-symmetry-error-newer-CIFs" }
 #barnes_hut = { path = "../../barnes_hut" }
 na_seq = { path = "../na_seq" }

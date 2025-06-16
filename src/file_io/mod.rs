@@ -117,8 +117,6 @@ impl State {
                     self.ligand = Some(lig);
                     self.to_save.last_ligand_opened = Some(path.to_owned());
 
-                    println!("Loaded lig: {:?}", &self.ligand);
-
                     self.update_docking_site(init_posit);
                 } else {
                     self.to_save.last_opened = Some(path.to_owned());

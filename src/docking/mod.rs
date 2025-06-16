@@ -58,7 +58,7 @@ use crate::{
     ComputationDevice,
     bond_inference::create_hydrogen_bonds_one_way,
     docking::{
-        dynamics_playback::build_dock_dynamics,
+        dynamics::build_dock_dynamics,
         prep::{DockingSetup, LIGAND_SAMPLE_RATIO, Torsion},
     },
     forces,
@@ -66,7 +66,7 @@ use crate::{
     molecule::{Atom, Ligand},
 };
 
-pub mod dynamics_playback;
+pub mod dynamics;
 pub mod external;
 pub mod find_sites;
 pub mod partial_charge;
@@ -762,7 +762,7 @@ pub fn find_optimal_pose(
         let mut lig_this = ligand.clone(); //  todo: DOn't like this clone.
         lig_this.pose = poses[*pose_i].clone();
 
-        let snapshots = build_dock_dynamics(dev, &lig_this, setup, false, num_vdw_steps);
+        let snapshots = build_dock_dynamics(dev, &lig_this, setup, num_vdw_steps);
 
         let final_snap = &snapshots[snapshots.len() - 1];
         println!(

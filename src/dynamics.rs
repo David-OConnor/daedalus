@@ -20,6 +20,7 @@ use lin_alg::f64::{Quaternion, Vec3};
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use lin_alg::f64::{f64x4, f64x8, pack_slice};
 use na_seq::{Element, element::LjTable};
+use rand_distr::{Distribution, UnitSphere};
 
 use crate::{
     forces::{force_coulomb_f64, force_lj_f64},
@@ -31,6 +32,14 @@ use crate::{
 const ε_0: f64 = 8.8541878128e-1;
 const k_e: f32 = 332.0636; // kcal·Å /(mol·e²)
 // const ε_0: f64 = 1.;
+
+// Verlet list parameters
+const CUTOFF: f64 = 12.0; // Å
+const SKIN: f64 = 2.0; // Å – rebuild list if an atom moved >½·SKIN
+const M_O: f64 = 15.999; // Da
+const M_H: f64 = 1.008; // Da
+const R_OH: f64 = 0.9572; // Å
+const ANG_HOH: f64 = 104.52_f64.to_radians();
 
 #[derive(Debug, Default)]
 pub struct SnapshotDynamics {
@@ -73,7 +82,7 @@ impl From<&Atom> for AtomDynamics {
             // todo: Sort this out. What is the proton mass here.
             mass: atom.element.atomic_weight() as f64,
             element: atom.element,
-            partial_charge: atom.partial_charge.unwrap() as f64,
+            partial_charge: atom.partial_charge.unwrap_or_default() as f64,
         }
     }
 }
@@ -126,6 +135,11 @@ pub struct MdState {
     // #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     // pub lj_eps_x8: Vec<f64x4>,
     pub snapshots: Vec<SnapshotDynamics>,
+    pub cell: SimBox,
+    neighbour: Vec<Vec<usize>>,    // Verlet list
+    max_disp2: f64,                // track atom displacements²
+    pub kb_berendsen: Option<f64>, // coupling constant (ps⁻¹) if you want a thermostat
+    pub target_temp: f64,
 }
 
 impl MdState {
@@ -139,6 +153,35 @@ impl MdState {
         }
     }
 
+    pub fn with_cell(atoms: &[Atom], lj_table: &LjTable, cell: SimBox) -> Self {
+        let mut s = Self::new(atoms, lj_table);
+        s.cell = cell;
+        s.build_neighbour();
+        s
+    }
+
+    /// Build / rebuild Verlet list
+    fn build_neighbour(&mut self) {
+        let cutoff2 = (CUTOFF + SKIN).powi(2);
+        self.neighbour = vec![Vec::new(); self.atoms.len()];
+        for i in 0..self.atoms.len() - 1 {
+            for j in i + 1..self.atoms.len() {
+                let dv = self
+                    .cell
+                    .min_image(self.atoms[j].posit - self.atoms[i].posit);
+                if dv.magnitude_squared() < cutoff2 {
+                    self.neighbour[i].push(j);
+                    self.neighbour[j].push(i);
+                }
+            }
+        }
+        // reset displacement tracker
+        for a in &mut self.atoms {
+            a.vel /* nothing */;
+        }
+        self.max_disp2 = 0.0;
+    }
+
     /// One **Velocity-Verlet** step (leap-frog style) of length `dt_fs` femtoseconds.
     pub fn step(&mut self, dt_fs: f64) {
         let dt = dt_fs * 1.0e-15; // s
@@ -150,10 +193,16 @@ impl MdState {
         for a in &mut self.atoms {
             a.vel += a.accel * dt_half;
             a.posit += a.vel * dt;
+            a.posit = self.cell.wrap(a.posit);
+
+            // track the largest squared displacement to know when to rebuild the list
+            self.max_disp2 = self.max_disp2.max((a.vel * dt).magnitude_squared());
         }
 
-        // 2) Recalculate forces → update accelerations
-        self.zero_acc();
+        for a in &mut self.atoms {
+            a.accel = Vec3::new_zero();
+        }
+
         self.apply_bond_forces();
         self.apply_angle_forces();
         self.apply_torsion_forces();
@@ -164,12 +213,22 @@ impl MdState {
             a.vel += a.accel * dt_half;
         }
 
-        self.time += dt_fs;
-    }
+        // Berendsen thermostat (T coupling to target every step)
+        if let Some(tau_ps) = self.kb_berendsen {
+            let tau = tau_ps * 1e-12;
+            let curr_ke = self.current_kinetic_energy();
+            let curr_t = 2.0 * curr_ke / (3.0 * self.atoms.len() as f64 * 0.0019872041); // k_B in kcal/mol
+            let λ = (1.0 + dt / tau * (self.target_temp - curr_t) / curr_t).sqrt();
+            for a in &mut self.atoms {
+                a.vel *= λ;
+            }
+        }
 
-    fn zero_acc(&mut self) {
-        for a in &mut self.atoms {
-            a.accel = Vec3::new_zero();
+        self.time += dt_fs;
+
+        // rebuild Verlet if needed
+        if self.max_disp2 > 0.25 * SKIN * SKIN {
+            self.build_neighbour();
         }
     }
 
@@ -252,16 +311,29 @@ impl MdState {
     }
 
     fn apply_nonbonded_forces(&mut self) {
-        let n = self.atoms.len();
-        for i in 0..n - 1 {
-            for j in i + 1..n {
+        let cutoff2 = CUTOFF * CUTOFF;
+
+        for i in 0..self.atoms.len() {
+            for &j in &self.neighbour[i] {
+                if j < i {
+                    continue;
+                } // each pair once
+
+                let diff = self.atoms[j].posit - self.atoms[i].posit;
+
+                let dv = self.cell.min_image(diff);
+                let r2 = dv.magnitude_squared();
+                if r2 > cutoff2 {
+                    continue;
+                }
+
+                // println!("ATOMS: {:?} {:?}", self.atoms[i].element, self.atoms[j].element);
                 let (σ, ϵ) = self
                     .lj_lut
                     .get(&(self.atoms[i].element, self.atoms[j].element))
                     .unwrap();
 
-                let diff = self.atoms[j].posit - self.atoms[i].posit;
-                let dist = diff.magnitude();
+                let dist = r2.sqrt();
                 let dir = diff / dist;
 
                 let f_lj = force_lj_f64(dir, dist, *σ as f64, *ϵ as f64);
@@ -283,6 +355,15 @@ impl MdState {
                 self.atoms[j].accel -= accel_1;
             }
         }
+    }
+
+    // quick helper for thermostat
+    #[inline]
+    fn current_kinetic_energy(&self) -> f64 {
+        self.atoms
+            .iter()
+            .map(|a| 0.5 * a.mass * a.vel.magnitude_squared())
+            .sum()
     }
 
     pub fn snapshot(&self) -> SnapshotDynamics {
@@ -408,3 +489,93 @@ fn hydrate(pressure: f64, temp: f64, bounds: (Vec3, Vec3), n_mols: usize) -> Vec
 }
 
 // todo: One more?
+
+/// Simulation cell (orthorhombic for now)
+#[derive(Clone, Copy, Default)]
+pub struct SimBox {
+    pub lo: Vec3,
+    pub hi: Vec3,
+}
+impl SimBox {
+    #[inline]
+    pub fn extent(&self) -> Vec3 {
+        self.hi - self.lo
+    }
+
+    /// wrap an absolute coordinate back into the box
+    #[inline]
+    pub fn wrap(&self, mut p: Vec3) -> Vec3 {
+        let ext = self.extent();
+
+        let ext_arr = ext.to_arr();
+        let mut p_arr = p.to_arr();
+        let lo_arr = self.lo.to_arr();
+        let hi_arr = self.hi.to_arr();
+
+        for d in 0..3 {
+            while p_arr[d] < lo_arr[d] {
+                p_arr[d] += ext_arr[d];
+            }
+            while p_arr[d] >= hi_arr[d] {
+                p_arr[d] -= ext_arr[d];
+            }
+        }
+        Vec3::from_slice(&p_arr).unwrap()
+    }
+
+    /// minimum-image distance vector  (no √ here – caller may need magnitude)
+    #[inline]
+    pub fn min_image(&self, mut dv: Vec3) -> Vec3 {
+        let ext = self.extent();
+
+        let ext_arr = ext.to_arr();
+        let mut dv_arr = dv.to_arr();
+
+        for d in 0..3 {
+            if dv_arr[d] > 0.5 * ext_arr[d] {
+                dv_arr[d] -= ext_arr[d];
+            }
+            if dv_arr[d] < -0.5 * ext_arr[d] {
+                dv_arr[d] += ext_arr[d];
+            }
+        }
+        Vec3::from_slice(&dv_arr).unwrap()
+    }
+}
+
+/// Add `n` TIP3P molecules uniformly in the box.
+pub fn add_tip3p(state: &mut MdState, n: usize, rng: &mut impl rand::Rng) {
+    use rand_distr::{Distribution, UnitSphere};
+    for _ in 0..n {
+        // random COM inside box
+        let rand3 = Vec3::new(rng.random::<f64>(), rng.random(), rng.random());
+
+        // todo: What should this be doing?
+        let com = state.cell.lo + rand3.hadamard_product(state.cell.extent());
+
+        // random orientation – unit vector + perpendicular
+        let z = Vec3::from_slice(&UnitSphere.sample(rng)).unwrap();
+        // todo: This is a good idea...
+        let x = z.any_perpendicular().to_normalized();
+        let y = z.cross(x);
+
+        // two H positions in the HOH plane
+        let d = R_OH * (ANG_HOH / 2.0).sin();
+        let h0 = com + z * R_OH;
+        let h1 = com + z * (-R_OH * ANG_HOH.cos()) + x * d * 2.;
+
+        let mut make = |pos, mass, q, elem| AtomDynamics {
+            posit: pos,
+            vel: Vec3::new_zero(),
+            accel: Vec3::new_zero(),
+            mass,
+            partial_charge: q,
+            element: elem,
+        };
+
+        state.atoms.push(make(com, M_O, -0.834, Element::Oxygen));
+        state.atoms.push(make(h0, M_H, 0.417, Element::Hydrogen));
+        state.atoms.push(make(h1, M_H, 0.417, Element::Hydrogen));
+    }
+    state.build_neighbour(); // list is stale now
+}
