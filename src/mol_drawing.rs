@@ -79,7 +79,8 @@ pub enum EntityType {
     DensitySurface = 3,
     SecondaryStructure = 4,
     SaSurface = 5,
-    Other = 6,
+    DockingSite = 6,
+    Other = 10,
 }
 
 // todo: For ligands that are flexible, highlight the fleixble bonds in a bright color.
@@ -515,7 +516,7 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene) {
 
     scene
         .entities
-        .retain(|ent| ent.class != EntityType::Ligand as u32);
+        .retain(|ent| ent.class != EntityType::Ligand as u32 && ent.class != EntityType::DockingSite as u32);
 
     let Some(lig) = state.ligand.as_ref() else {
         set_docking_light(scene, None);
@@ -530,8 +531,9 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene) {
 
     if state.ui.show_docking_tools {
         // Add a visual indicator for the docking site.
+
         scene.entities.push(Entity {
-            id: EntityType::Ligand as u32, // todo: A/R
+            class: EntityType::DockingSite as u32,
             // todo: High-res spheres are blocking bonds inside them. Likely engine problem.
             mesh: MESH_DOCKING_SITE,
             position: lig.docking_site.site_center.into(),

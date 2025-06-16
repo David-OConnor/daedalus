@@ -15,6 +15,7 @@
 // Note on timescale: Generally femtosecond (-15)
 
 use std::collections::HashMap;
+use std::collections::HashSet;
 
 use lin_alg::f64::{Quaternion, Vec3};
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -40,6 +41,11 @@ const M_O: f64 = 15.999; // Da
 const M_H: f64 = 1.008; // Da
 const R_OH: f64 = 0.9572; // Å
 const ANG_HOH: f64 = 104.52_f64.to_radians();
+
+// For exclusions.
+const SCALE_LJ_14   : f64 = 0.5;        // AMBER default
+const SCALE_COUL_14 : f64 = 1.0 / 1.2;  // 0.833̅
+
 
 #[derive(Debug, Default)]
 pub struct SnapshotDynamics {
@@ -140,17 +146,45 @@ pub struct MdState {
     max_disp2: f64,                // track atom displacements²
     pub kb_berendsen: Option<f64>, // coupling constant (ps⁻¹) if you want a thermostat
     pub target_temp: f64,
+    /// Exclusions / masks optimization.
+    excluded_pairs : HashSet<(usize, usize)>,   // 1-2 and 1-3
+    scaled14_pairs : HashSet<(usize, usize)>,   // 1-4
 }
 
 impl MdState {
     pub fn new(atoms: &[Atom], lj_table: &LjTable) -> Self {
         let atoms_dy = atoms.iter().map(|a| a.into()).collect();
 
-        Self {
+        let mut result = Self {
             atoms: atoms_dy,
             lj_lut: lj_table.clone(),
+            excluded_pairs : HashSet::new(),
+            scaled14_pairs : HashSet::new(),
             ..Default::default()
-        }
+        };
+
+        result.build_masks();
+
+        result
+    }
+
+    fn build_masks(&mut self) {
+        // helper to store pairs in canonical (low,high) order
+        let mut push = |set: &mut HashSet<(usize,usize)>, i: usize, j: usize| {
+            if i < j { set.insert((i,j)); } else { set.insert((j,i)); }
+        };
+
+        // 1-2 -----------------------------------------------------------
+        for b in &self.bonds { push(&mut self.excluded_pairs, b.atom_0, b.atom_1); }
+
+        // 1-3 -----------------------------------------------------------
+        for a in &self.angles { push(&mut self.excluded_pairs, a.i, a.k); }
+
+        // 1-4 -----------------------------------------------------------
+        for t in &self.torsions { push(&mut self.scaled14_pairs, t.i, t.l); }
+
+        // make sure no 1-4 pair is also in the excluded set
+        for p in &self.scaled14_pairs { self.excluded_pairs.remove(p); }
     }
 
     pub fn with_cell(atoms: &[Atom], lj_table: &LjTable, cell: SimBox) -> Self {
@@ -311,19 +345,27 @@ impl MdState {
     }
 
     fn apply_nonbonded_forces(&mut self) {
-        let cutoff2 = CUTOFF * CUTOFF;
+        let cutoff_sq = CUTOFF * CUTOFF;
 
         for i in 0..self.atoms.len() {
+            // todo: Can you unify this with your neighbor code used for bonds?
             for &j in &self.neighbour[i] {
-                if j < i {
+                if j < i { // Prevents duplication of the pair in the other order.
                     continue;
-                } // each pair once
+                }
+
+                // Handle masks.
+                let key = if i < j { (i, j) } else { (j, i) };
+
+                if self.excluded_pairs.contains(&key) { continue; }
+
+                let scale14 = self.scaled14_pairs.contains(&key);
 
                 let diff = self.atoms[j].posit - self.atoms[i].posit;
 
                 let dv = self.cell.min_image(diff);
                 let r2 = dv.magnitude_squared();
-                if r2 > cutoff2 {
+                if r2 > cutoff_sq {
                     continue;
                 }
 
@@ -336,15 +378,20 @@ impl MdState {
                 let dist = r2.sqrt();
                 let dir = diff / dist;
 
-                let f_lj = force_lj_f64(dir, dist, *σ as f64, *ϵ as f64);
+                let mut f_lj = force_lj_f64(dir, dist, *σ as f64, *ϵ as f64);
 
-                let f_coulomb = force_coulomb_f64(
+                let mut f_coulomb = force_coulomb_f64(
                     dir,
                     dist,
                     self.atoms[i].partial_charge,
                     self.atoms[j].partial_charge,
                     0.0000001, // todo
                 );
+
+                if scale14 {
+                    f_lj *= SCALE_LJ_14;
+                    f_coulomb  *= SCALE_COUL_14;
+                }
 
                 let f = f_lj + f_coulomb;
 

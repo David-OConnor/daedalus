@@ -745,28 +745,30 @@ fn docking(
         //     *redraw = true;
         // }
 
-        // todo: Make this automatic A/R. For not a button
-        if ui.button("Site mesh").clicked() {
-            // let (mesh, edges) = find_docking_site_surface(mol, &ligand.docking_site);
-
-            // scene.meshes[MESH_DOCKING_SURFACE] = mesh;
-
-            // todo: You must remove prev entities of it too! Do you need an entity ID for this? Likely.
-            // todo: Move to the draw module A/R.
-            let mut entity = Entity::new(
-                MESH_DOCKING_SURFACE,
-                Vec3::new_zero(),
-                Quaternion::new_identity(),
-                1.,
-                COLOR_DOCKING_SITE_MESH,
-                0.5,
-            );
-            entity.opacity = 0.8;
-            scene.entities.push(entity);
-
-            engine_updates.meshes = true;
-            engine_updates.entities = true;
-        }
+        // todo: Put back A/r.
+        // if ui.button("Site sfc").clicked() {
+        //     // let (mesh, edges) = find_docking_site_surface(mol, &ligand.docking_site);
+        //
+        //     // scene.meshes[MESH_DOCKING_SURFACE] = mesh;
+        //
+        //     // todo: You must remove prev entities of it too! Do you need an entity ID for this? Likely.
+        //     // todo: Move to the draw module A/R.
+        //     let mut entity = Entity::new(
+        //         MESH_DOCKING_SURFACE,
+        //         Vec3::new_zero(),
+        //         Quaternion::new_identity(),
+        //         1.,
+        //         COLOR_DOCKING_SITE_MESH,
+        //         0.5,
+        //     );
+        //     entity.opacity = 0.8;
+        //     entity.class = EntityType::DockingSite as u32;
+        //
+        //     scene.entities.push(entity);
+        //
+        //     engine_updates.meshes = true;
+        //     engine_updates.entities = true;
+        // }
 
         ui.add_space(COL_SPACING);
 
@@ -1155,7 +1157,7 @@ fn mol_descrip(mol: &Molecule, ui: &mut Ui) {
 
 fn view_settings(
     state: &mut State,
-    entities: &mut Vec<Entity>,
+    scene: &mut Scene,
     engine_updates: &mut EngineUpdates,
     redraw: &mut bool,
     ui: &mut Ui,
@@ -1216,7 +1218,21 @@ fn view_settings(
         }
 
         if state.ligand.is_some() {
-            vis_check(&mut state.ui.visibility.hide_ligand, "Lig", ui, redraw);
+            let color = active_color(!state.ui.visibility.hide_ligand);
+            if ui.button(RichText::new("Lig").color(color)).clicked() {
+                state.ui.visibility.hide_ligand = !state.ui.visibility.hide_ligand;
+
+                if state.ui.visibility.hide_ligand {
+                    scene
+                        .entities
+                        .retain(|ent| ent.class != EntityType::Ligand as u32 && ent.class != EntityType::DockingSite as u32);
+                } else {
+                    draw_ligand(state, scene);
+                }
+
+                engine_updates.entities = true;
+                engine_updates.lighting = true; // docking light.
+            }
         }
 
         vis_check(&mut state.ui.visibility.hide_h_bonds, "H bonds", ui, redraw);
@@ -1247,9 +1263,9 @@ fn view_settings(
 
                 if redraw_dens {
                     if state.ui.visibility.hide_density {
-                        entities.retain(|ent| ent.class != EntityType::Density as u32);
+                        scene.entities.retain(|ent| ent.class != EntityType::Density as u32);
                     } else {
-                        draw_density(entities, dens);
+                        draw_density(&mut scene.entities, dens);
                     }
                     engine_updates.entities = true;
                 }
@@ -1278,9 +1294,9 @@ fn view_settings(
                 // todo
                 if redraw_dens_surface {
                     if state.ui.visibility.hide_density_surface {
-                        entities.retain(|ent| ent.class != EntityType::DensitySurface as u32);
+                        &mut scene.entities.retain(|ent| ent.class != EntityType::DensitySurface as u32);
                     } else {
-                        draw_density_surface(entities);
+                        draw_density_surface(&mut scene.entities);
                     }
                     engine_updates.entities = true;
                     redraw_dens_surface = false;
@@ -1378,7 +1394,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
     check_prefs_save(state);
 
     // return  engine_updates;
-    let mut redraw = false;
+    let mut redraw_mol = false;
     let mut reset_cam = false;
 
     // For getting DT for certain buttons when held. Does not seem to be the same as the 3D render DT.
@@ -1387,7 +1403,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
     TopBottomPanel::top("0").show(ctx, |ui| {
         ui.spacing_mut().slider_width = 120.;
 
-        handle_input(state, ui, &mut redraw, &mut reset_cam, &mut engine_updates);
+        handle_input(state, ui, &mut redraw_mol, &mut reset_cam, &mut engine_updates);
 
         settings(state, scene, ui);
 
@@ -1655,7 +1671,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                         state,
                         scene,
                         &mut engine_updates,
-                        &mut redraw,
+                        &mut redraw_mol,
                         &mut reset_cam,
                     );
                 }
@@ -1671,7 +1687,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
                                 state.update_from_prefs();
 
-                                redraw = true;
+                                redraw_mol = true;
                                 reset_cam = true;
                             }
                             Err(_e) => {
@@ -1692,7 +1708,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
                             state.update_from_prefs();
 
-                            redraw = true;
+                            redraw_mol = true;
                             reset_cam = true;
                         }
                         Err(_e) => {
@@ -1715,7 +1731,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                             state,
                             scene,
                             &mut engine_updates,
-                            &mut redraw,
+                            &mut redraw_mol,
                             &mut reset_cam,
                         );
                     }
@@ -1745,7 +1761,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                                 (torsions[i].dihedral_angle + TAU / 64.) % TAU;
 
                             ligand.atom_posits = ligand.position_atoms(None);
-                            redraw = true;
+                            redraw_mol = true;
                         }
                     }
                 }
@@ -1768,7 +1784,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         }
 
         ui.add_space(ROW_SPACING);
-        selection_section(state, scene, &mut redraw, &mut engine_updates, ui);
+        selection_section(state, scene, &mut redraw_mol, &mut engine_updates, ui);
 
         ui.add_space(ROW_SPACING);
 
@@ -1786,23 +1802,23 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             ui.vertical(|ui| {
                 view_settings(
                     state,
-                    &mut scene.entities,
+                    scene,
                     &mut engine_updates,
-                    &mut redraw,
+                    &mut redraw_mol,
                     ui,
                 );
                 ui.add_space(ROW_SPACING);
-                chain_selector(state, &mut redraw, ui);
+                chain_selector(state, &mut redraw_mol, ui);
 
                 // todo: Show hide based on AaCategory? i.e. residue.amino_acid.category(). Hydrophilic, acidic etc.
 
-                residue_selector(state, scene, &mut redraw, ui);
+                residue_selector(state, scene, &mut redraw_mol, ui);
             });
         });
 
         ui.add_space(ROW_SPACING);
 
-        residue_search(state, scene, &mut redraw, ui);
+        residue_search(state, scene, &mut redraw_mol, ui);
 
         if state.ui.show_docking_tools {
             ui.add_space(ROW_SPACING);
@@ -1810,7 +1826,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             docking(
                 state,
                 scene,
-                &mut redraw,
+                &mut redraw_mol,
                 reset_cam,
                 &mut engine_updates,
                 ui,
@@ -1862,7 +1878,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             state,
             scene,
             &mut engine_updates,
-            &mut redraw,
+            &mut redraw_mol,
             &mut reset_cam,
             ui,
         );
@@ -1877,7 +1893,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             if let Err(e) = load_file(
                 path,
                 state,
-                &mut redraw,
+                &mut redraw_mol,
                 &mut reset_cam,
                 &mut engine_updates,
             ) {
@@ -1927,9 +1943,9 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         //     }
         // }
 
-        if redraw {
+        if redraw_mol {
             draw_molecule(state, scene);
-            draw_ligand(state, scene);
+            draw_ligand(state, scene); // todo: Hmm.
 
             if let Some(mol) = &state.molecule {
                 set_window_title(&mol.ident, scene);
