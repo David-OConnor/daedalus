@@ -9,16 +9,22 @@ cfg_if::cfg_if! {
         use lin_alg::f32::{vec3s_to_dev, vec3s_from_dev};
     }
 }
-use std::{collections::HashMap, time::Instant};
+use std::time::Instant;
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-use lin_alg::f32::{Vec3x8, f32x8};
-use lin_alg::{f32::Vec3, f64::Vec3 as Vec3F64};
+use lin_alg::{
+    f32::{Vec3x8, f32x8},
+    f64::f64x4
+};
+use lin_alg::{
+    f32::Vec3 as Vec3F32,
+    f64::{Vec3},
+};
 use na_seq::{Element, element::LjTable};
 use rayon::prelude::*;
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-use crate::docking::dynamics::BodyDockMdx8;
+use crate::dynamics::AtomDynamicsx4;
 
 // The rough Van der Waals (Lennard-Jones) minimum potential value, for two carbon atoms.
 const LJ_MIN_R_CC: f32 = 3.82;
@@ -27,8 +33,8 @@ const LJ_MIN_R_CC: f32 = 3.82;
 pub fn force_coulomb_gpu_outer(
     stream: &Arc<CudaStream>,
     module: &Arc<CudaModule>,
-    posits_src: &[Vec3],
-    posits_tgt: &[Vec3],
+    posits_src: &[Vec3F32],
+    posits_tgt: &[Vec3F32],
     charges: &[f64], // Corresponds 1:1 with `posit_charges`.
 ) -> Vec<f64> {
     let start = Instant::now();
@@ -92,11 +98,11 @@ pub fn force_coulomb_gpu_outer(
 pub fn force_lj_gpu(
     stream: &Arc<CudaStream>,
     module: &Arc<CudaModule>,
-    posits_tgt: &[Vec3],
-    posits_src: &[Vec3],
+    posits_tgt: &[Vec3F32],
+    posits_src: &[Vec3F32],
     sigmas: &[f32],
     epss: &[f32],
-) -> Vec<Vec3> {
+) -> Vec<Vec3F32> {
     // Out is per target.
     let start = Instant::now();
 
@@ -108,7 +114,7 @@ pub fn force_lj_gpu(
     let posits_tgt_gpu = vec3s_to_dev(stream, posits_tgt);
 
     let mut result_buf = {
-        let v = vec![Vec3::new_zero(); n_targets];
+        let v = vec![Vec3F32::new_zero(); n_targets];
         vec3s_to_dev(stream, &v)
     };
 
@@ -151,8 +157,9 @@ pub fn setup_sigma_eps_x8(
     lanes_tgt: usize,
     valid_lanes_src_last: usize,
     el_rec: &[Element],
-    body_source: &BodyDockMdx8,
-) -> (f32x8, f32x8) {
+    body_source: &AtomDynamicsx4,
+    // ) -> (f32x8, f32x8) {
+) -> (f64x4, f64x4) {
     let lanes_src = if i_src == chunks_src - 1 {
         valid_lanes_src_last
     } else {
@@ -162,33 +169,36 @@ pub fn setup_sigma_eps_x8(
     let valid_lanes = lanes_src.min(lanes_tgt);
 
     // Setting sigma and eps to 0 for invalid lanes makes their contribution 0.
-    let mut sigmas = [0.; 8];
-    let mut epss = [0.; 8];
+    // let mut sigmas = [0.; 8];
+    // let mut epss = [0.; 8];
+    let mut sigmas = [0.; 4];
+    let mut epss = [0.; 4];
 
     for lane in 0..valid_lanes {
         let (sigma, eps) = lj_lut
             .get(&(body_source.element[lane], el_rec[lane]))
             .unwrap();
-        sigmas[lane] = *sigma;
-        epss[lane] = *eps;
+        sigmas[lane] = *sigma as f64;
+        epss[lane] = *eps as f64;
     }
 
-    (f32x8::from_array(sigmas), f32x8::from_array(epss))
+    // (f32x8::from_array(sigmas), f32x8::from_array(epss))
+    (f64x4::from_array(sigmas), f64x4::from_array(epss))
 }
 
 /// The most fundamental part of Newtonian acceleration calculation.
 /// `acc_dir` is a unit vector.
-pub fn force_coulomb(dir: Vec3, dist: f32, q0: f32, q1: f32, softening_factor_sq: f32) -> Vec3 {
+pub fn force_coulomb_f32(
+    dir: Vec3F32,
+    dist: f32,
+    q0: f32,
+    q1: f32,
+    softening_factor_sq: f32,
+) -> Vec3F32 {
     dir * q0 * q1 / (dist.powi(2) + softening_factor_sq)
 }
 
-pub fn force_coulomb_f64(
-    dir: Vec3F64,
-    dist: f64,
-    q0: f64,
-    q1: f64,
-    softening_factor_sq: f64,
-) -> Vec3F64 {
+pub fn force_coulomb(dir: Vec3, dist: f64, q0: f64, q1: f64, softening_factor_sq: f64) -> Vec3 {
     dir * q0 * q1 / (dist.powi(2) + softening_factor_sq)
 }
 
@@ -237,7 +247,7 @@ pub fn V_lj_x8(dist: f32x8, sigma: f32x8, eps: f32x8) -> f32x8 {
 }
 
 /// Calculate the Lennard Jones force; a Newtonian force based on the LJ potential.
-pub fn force_lj(dir: Vec3, dist: f32, sigma: f32, eps: f32) -> Vec3 {
+pub fn force_lj_f32(dir: Vec3F32, dist: f32, sigma: f32, eps: f32) -> Vec3F32 {
     let sr = sigma / dist;
     let sr6 = sr.powi(6);
     let sr12 = sr6.powi(2);
@@ -247,7 +257,7 @@ pub fn force_lj(dir: Vec3, dist: f32, sigma: f32, eps: f32) -> Vec3 {
 }
 
 /// Note: Can't make generic due to Vec3 not being generic, but of two types.
-pub fn force_lj_f64(dir: Vec3F64, dist: f64, sigma: f64, eps: f64) -> Vec3F64 {
+pub fn force_lj(dir: Vec3, dist: f64, sigma: f64, eps: f64) -> Vec3 {
     let sr = sigma / dist;
     let sr6 = sr.powi(6);
     let sr12 = sr6.powi(2);

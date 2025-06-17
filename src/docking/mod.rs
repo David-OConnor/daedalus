@@ -154,7 +154,9 @@ impl Default for DockingSite {
 #[derive(Clone, Debug, Default)]
 pub enum ConformationType {
     #[default]
-    Rigid,
+    /// Don't resposition atoms based on the pose. Useful for molecular dynamics.
+    AbsolutePosits,
+    // Rigid,
     Flexible {
         torsions: Vec<Torsion>,
     },
@@ -370,7 +372,7 @@ pub fn calc_binding_energy(
 
             // Our bh algorithm is currently hard-coded to f64.
             let force_fn = |dir: Vec3, q_src: f64, dist: f64| {
-                forces::force_coulomb(
+                forces::force_coulomb_f32(
                     dir.into(),
                     dist as f32,
                     q_src as f32,

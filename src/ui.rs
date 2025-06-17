@@ -879,7 +879,7 @@ fn docking(
 
     ui.horizontal(|ui| {
         if let Some(lig) = &mut state.ligand {
-            if ui.button("Build VDW sim").clicked() {
+            if ui.button("Run MD docking").clicked() {
                 state.volatile.snapshots = build_dock_dynamics(
                     &state.dev,
                     lig,
@@ -1223,9 +1223,10 @@ fn view_settings(
                 state.ui.visibility.hide_ligand = !state.ui.visibility.hide_ligand;
 
                 if state.ui.visibility.hide_ligand {
-                    scene
-                        .entities
-                        .retain(|ent| ent.class != EntityType::Ligand as u32 && ent.class != EntityType::DockingSite as u32);
+                    scene.entities.retain(|ent| {
+                        ent.class != EntityType::Ligand as u32
+                            && ent.class != EntityType::DockingSite as u32
+                    });
                 } else {
                     draw_ligand(state, scene);
                 }
@@ -1263,7 +1264,9 @@ fn view_settings(
 
                 if redraw_dens {
                     if state.ui.visibility.hide_density {
-                        scene.entities.retain(|ent| ent.class != EntityType::Density as u32);
+                        scene
+                            .entities
+                            .retain(|ent| ent.class != EntityType::Density as u32);
                     } else {
                         draw_density(&mut scene.entities, dens);
                     }
@@ -1294,7 +1297,9 @@ fn view_settings(
                 // todo
                 if redraw_dens_surface {
                     if state.ui.visibility.hide_density_surface {
-                        &mut scene.entities.retain(|ent| ent.class != EntityType::DensitySurface as u32);
+                        &mut scene
+                            .entities
+                            .retain(|ent| ent.class != EntityType::DensitySurface as u32);
                     } else {
                         draw_density_surface(&mut scene.entities);
                     }
@@ -1403,7 +1408,13 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
     TopBottomPanel::top("0").show(ctx, |ui| {
         ui.spacing_mut().slider_width = 120.;
 
-        handle_input(state, ui, &mut redraw_mol, &mut reset_cam, &mut engine_updates);
+        handle_input(
+            state,
+            ui,
+            &mut redraw_mol,
+            &mut reset_cam,
+            &mut engine_updates,
+        );
 
         settings(state, scene, ui);
 
@@ -1800,13 +1811,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
-                view_settings(
-                    state,
-                    scene,
-                    &mut engine_updates,
-                    &mut redraw_mol,
-                    ui,
-                );
+                view_settings(state, scene, &mut engine_updates, &mut redraw_mol, ui);
                 ui.add_space(ROW_SPACING);
                 chain_selector(state, &mut redraw_mol, ui);
 

@@ -3,7 +3,6 @@
 //! Contains data structures and related code for molecules, atoms, residues, chains, etc.
 use std::{
     collections::HashMap,
-    convert::Infallible,
     fmt,
     fmt::{Display, Formatter},
     io,
@@ -18,7 +17,7 @@ use bio_apis::{
     rcsb::{FilesAvailable, PdbDataResults, PdbMetaData},
 };
 use bio_files::{
-    AtomGeneric, BondGeneric, Chain, ChargeType, DensityMap, MapHeader, Mol2, MolType,
+    AtomGeneric, BondGeneric, Chain, ChargeType, DensityMap, Mol2, MolType,
     ResidueGeneric, ResidueType, sdf::Sdf,
 };
 use lin_alg::{

@@ -123,7 +123,9 @@ pub fn make_sas_mesh(atoms: &[&Atom], mut precision: f32) -> Mesh {
         MarchingCubes::new(grid_dim, size, samp, bb_min, field, 0.).expect("marching cubes init");
 
     // I believe even with one side, it draws both, as it creates an isosurface surrounding the value. (?)
-    let mc_mesh = mc.generate(MeshSide::OutsideOnly);
+    // It appeares `InsideOnly` is giving us the outside mesh, and vice-versa.
+    let mc_mesh = mc.generate(MeshSide::InsideOnly);
+    // let mc_mesh = mc.generate(MeshSide::OutsideOnly);
 
     let vertices: Vec<Vertex> = mc_mesh
         .vertices

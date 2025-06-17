@@ -54,7 +54,7 @@ pdbtbx = { git = "https://github.com/David-OConnor/pdbtbx", branch = "Fix-symmet
 #barnes_hut = { path = "../../barnes_hut" }
 na_seq = { path = "../na_seq" }
 bio_apis = { path = "../bio_apis" }
-#mcubes = { path = "../mcubes" }
+mcubes = { path = "../mcubes" }
 bio_files = { path = "../bio_files" }
 
 

@@ -38,7 +38,7 @@ const COLOR_SFC_DOT: Color = (0.7, 0.7, 0.7);
 const COLOR_DOCKING_BOX: Color = (0.3, 0.3, 0.9);
 pub const COLOR_DOCKING_SITE_MESH: Color = (0.5, 0.5, 0.9);
 
-const COLOR_SA_SURFACE: Color = (1., 0.2, 1.);
+const COLOR_SA_SURFACE: Color = (0.3, 0.2, 1.);
 
 pub const BOND_RADIUS: f32 = 0.10;
 pub const BOND_RADIUS_LIGAND_RATIO: f32 = 1.3; // Of bond radius.
@@ -47,12 +47,13 @@ pub const BOND_RADIUS_DOUBLE: f32 = 0.07;
 
 pub const SIZE_SFC_DOT: f32 = 0.03;
 
-const DOCKING_SITE_OPACITY: f32 = 0.35;
+const DOCKING_SITE_OPACITY: f32 = 0.1;
 
 const DIMMED_PEPTIDE_AMT: f32 = 0.92; // Higher value means more dim.
 
 pub const DENSITY_ISO_OPACITY: f32 = 0.5;
-pub const SAS_ISO_OPACITY: f32 = 0.8;
+pub const SAS_ISO_OPACITY: f32 = 0.85;
+// pub const SAS_ISO_OPACITY: f32 = 1.0; // todo temp
 
 // This allows us to more easily customize sphere mesh resolution.
 const MESH_BALL_STICK_SPHERE: usize = MESH_SPHERE_MEDRES;
@@ -514,9 +515,9 @@ fn bond_entities(
 pub fn draw_ligand(state: &mut State, scene: &mut Scene) {
     // Hard-coded for sticks for now.
 
-    scene
-        .entities
-        .retain(|ent| ent.class != EntityType::Ligand as u32 && ent.class != EntityType::DockingSite as u32);
+    scene.entities.retain(|ent| {
+        ent.class != EntityType::Ligand as u32 && ent.class != EntityType::DockingSite as u32
+    });
 
     let Some(lig) = state.ligand.as_ref() else {
         set_docking_light(scene, None);
@@ -547,15 +548,19 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene) {
 
     let mut atoms_positioned = mol.atoms.clone();
 
-    // for atom in &mol.atoms {
-    //     scene.entities.push(Entity::new(
-    //         MESH_SPHERE,
-    //         (atom.posit + ligand.offset).into(),
-    //         Quaternion::new_identity(),
-    //         BALL_STICK_RADIUS,
-    //         atom.element.color(),
-    //         ATOM_SHINYNESS,
-    //     ));
+    // for (i, atom) in mol.atoms.iter().enumerate() {
+    //         let posit = lig.atom_posits[i].into();
+    //         let mut ent = Entity::new(
+    //             MESH_BALL_STICK_SPHERE,
+    //             posit,
+    //             Quaternion::new_identity(),
+    //             BALL_STICK_RADIUS,
+    //             atom.element.color(),
+    //             ATOM_SHININESS
+    //         );
+    //
+    //         ent.class = EntityType::Ligand as u32;
+    //         scene.entities.push(ent);
     // }
 
     // todo: C+P from draw_molecule. With some removed, but a lot of repeated.

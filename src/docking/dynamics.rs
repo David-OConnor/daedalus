@@ -15,9 +15,15 @@ cfg_if::cfg_if! {
 }
 
 use graphics::Entity;
-use lin_alg::f32::{Mat3, Quaternion, Vec3};
+use lin_alg::{
+    f32::{Mat3 as Mat3F32, Quaternion as QuaternionF32, Vec3 as Vec3F32},
+    f64::{Mat3, Quaternion, Vec3},
+};
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-use lin_alg::f32::{Vec3x8, f32x8, pack_slice, pack_vec3};
+use lin_alg::{
+    // f32::{Vec3x8, f32x8, pack_slice, pack_vec3},
+    f64::{Vec3x4, f64x4, pack_slice, pack_vec3},
+};
 use na_seq::Element;
 use rayon::prelude::*;
 
@@ -30,39 +36,21 @@ use crate::{
         BindingEnergy, ConformationType, Pose, calc_binding_energy,
         prep::{DockingSetup, Torsion},
     },
-    forces::force_lj,
-    integrate::integrate_verlet,
+    dynamics::{AtomDynamics, AtomDynamicsx4},
+    forces::{force_lj, force_lj_f32},
+    integrate::{integrate_verlet, integrate_verlet_f64},
     molecule::{Atom, Ligand},
 };
 // This seems to be how we control rotation vice movement. A higher value means
 // more movement, less rotation for a given dt.
 
 // todo: A/R remove torque calc??
-const ROTATION_INERTIA: f32 = 500_000.;
+// const ROTATION_INERTIA: f32 = 500_000.;
+const ROTATION_INERTIA: f64 = 500_000.;
 
 // For calculating numerical derivatives.
-const DX: f32 = 0.1;
-
-#[derive(Clone, Debug)]
-pub(crate) struct BodyDockDynamics {
-    pub posit: Vec3,
-    pub vel: Vec3,
-    pub accel: Vec3,
-    pub mass: f32,
-    pub element: Element,
-}
-
-impl BodyDockDynamics {
-    pub fn from_atom(atom: &Atom) -> Self {
-        Self {
-            posit: atom.posit.into(),
-            vel: Default::default(),
-            accel: Default::default(),
-            mass: atom.element.atomic_weight(),
-            element: atom.element,
-        }
-    }
-}
+// const DX: f32 = 0.1;
+const DX: f64 = 0.1;
 
 #[derive(Clone, Debug)]
 /// We use this for integration.
@@ -75,7 +63,8 @@ pub struct BodyRigid {
     pub orientation: Quaternion,
     pub ω: Vec3,
     pub torsions: Vec<Torsion>,
-    pub mass: f32,
+    // pub mass: f32,
+    pub mass: f64,
     /// Inertia tensor in the body frame (if it’s diagonal, can store as Vec3)
     pub inertia_body: Mat3,
     pub inertia_body_inv: Mat3,
@@ -85,7 +74,7 @@ impl BodyRigid {
     fn from_ligand(lig: &Ligand) -> Self {
         let mut mass = 0.;
         for atom in &lig.molecule.atoms {
-            mass += atom.element.atomic_weight(); // Arbitrary mass scale for now.
+            mass += atom.element.atomic_weight() as f64; // Arbitrary mass scale for now.
         }
 
         let inertia_body = Mat3::new_identity() * ROTATION_INERTIA;
@@ -121,47 +110,9 @@ impl BodyRigid {
     }
 }
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-#[derive(Clone, Debug)]
-pub(crate) struct BodyDockMdx8 {
-    pub posit: Vec3x8,
-    pub vel: Vec3x8,
-    pub accel: Vec3x8,
-    pub mass: f32x8,
-    pub element: [Element; 8],
-}
-
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-impl BodyDockMdx8 {
-    pub fn from_array(bodies: [BodyDockDynamics; 8]) -> Self {
-        let mut posits = [Vec3::new_zero(); 8];
-        let mut vels = [Vec3::new_zero(); 8];
-        let mut accels = [Vec3::new_zero(); 8];
-        let mut masses = [0.0; 8];
-        // Replace `Element::H` (for example) with some valid default for your `Element` type:
-        let mut elements = [Element::Hydrogen; 8];
-
-        for (i, body) in bodies.into_iter().enumerate() {
-            posits[i] = body.posit;
-            vels[i] = body.vel;
-            accels[i] = body.accel;
-            masses[i] = body.mass;
-            elements[i] = body.element;
-        }
-
-        Self {
-            posit: Vec3x8::from_array(posits),
-            vel: Vec3x8::from_array(vels),
-            accel: Vec3x8::from_array(accels),
-            mass: f32x8::from_array(masses),
-            element: elements,
-        }
-    }
-}
-
 #[derive(Debug, Default)]
 pub struct Snapshot {
-    pub time: f32,
+    pub time: f64,
     pub pose: Pose, // todo: Experimenting
     pub lig_atom_posits: Vec<Vec3>,
     pub energy: Option<BindingEnergy>,
@@ -170,11 +121,14 @@ pub struct Snapshot {
 /// Defaults to `Config::dt_integration`, but becomes more precise when
 /// bodies are close. This is a global DT, vice local only for those bodies.
 fn calc_dt_dynamic(
-    bodies_src: &[BodyDockDynamics],
-    bodies_tgt: &[BodyDockDynamics],
-    dt_scaler: f32,
-    dt_max: f32,
-) -> f32 {
+    bodies_src: &[AtomDynamics],
+    bodies_tgt: &[AtomDynamics],
+    //     dt_scaler: f32,
+    //     dt_max: f32,
+    // ) -> f32 {
+    dt_scaler: f64,
+    dt_max: f64,
+) -> f64 {
     let mut result = dt_max;
 
     // todo: Consider cacheing the distances, so this second iteration can be reused.
@@ -196,13 +150,13 @@ fn calc_dt_dynamic(
     result
 }
 
-fn bodies_from_atoms(atoms: &[Atom]) -> Vec<BodyDockDynamics> {
-    atoms.iter().map(BodyDockDynamics::from_atom).collect()
+fn bodies_from_atoms(atoms: &[Atom]) -> Vec<AtomDynamics> {
+    atoms.iter().map(|a| a.into()).collect()
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 /// Also returns valid lanes in the last item.
-fn bodies_from_atoms_x8(atoms: &[Atom]) -> (Vec<BodyDockMdx8>, usize) {
+fn bodies_from_atoms_x8(atoms: &[Atom]) -> (Vec<AtomDynamicsx4>, usize) {
     let mut posits: Vec<Vec3> = Vec::with_capacity(atoms.len());
     let mut els = Vec::with_capacity(atoms.len());
 
@@ -213,19 +167,25 @@ fn bodies_from_atoms_x8(atoms: &[Atom]) -> (Vec<BodyDockMdx8>, usize) {
 
     let (posits_x8, valid_lanes) = pack_vec3(&posits);
 
-    let (els_x8, _) = pack_slice::<_, 8>(&els);
+    // let (els_x8, _) = pack_slice::<_, 8>(&els);
+    let (els_x4, _) = pack_slice::<_, 4>(&els);
     let mut result = Vec::with_capacity(posits_x8.len());
 
     for (i, posit) in posits_x8.iter().enumerate() {
-        let masses: Vec<_> = els_x8[i].iter().map(|el| el.atomic_weight()).collect();
-        let mass = f32x8::from_slice(&masses);
+        // let masses: Vec<_> = els_x4[i].iter().map(|el| el.atomic_weight()).collect();
+        // let mass = f32x8::from_slice(&masses);
+        let masses: Vec<_> = els_x4[i]
+            .iter()
+            .map(|el| el.atomic_weight() as f64)
+            .collect();
+        let mass = f64x4::from_slice(&masses);
 
-        result.push(BodyDockMdx8 {
+        result.push(AtomDynamicsx4 {
             posit: *posit,
-            vel: Vec3x8::new_zero(),
-            accel: Vec3x8::new_zero(),
+            vel: Vec3x4::new_zero(),
+            accel: Vec3x4::new_zero(),
             mass,
-            element: els_x8[i],
+            element: els_x4[i],
         })
     }
 
@@ -244,7 +204,8 @@ pub fn orientation_derivative(orientation: Quaternion, ang_vel_world: Vec3) -> Q
 /// Calculate the gradient vector, using a numerical first derivative, from potentials.
 fn calc_gradient_posit<F>(body: &BodyRigid, net_V_fn: &F) -> Vec3
 where
-    F: Fn(&BodyRigid) -> f32,
+    // F: Fn(&BodyRigid) -> f32,
+    F: Fn(&BodyRigid) -> f64,
 {
     let body_x_prev = BodyRigid {
         posit: body.posit + Vec3::new(-DX, 0., 0.),
@@ -300,9 +261,10 @@ fn scalar_f_t(
             let r = diff.magnitude();
             let dir = diff / r;
 
-            let sigma = setup.lj_sigma[i];
-            let eps = setup.lj_eps[i];
+            let sigma = setup.lj_sigma[i] as f64;
+            let eps = setup.lj_eps[i] as f64;
 
+            // let f = force_lj(dir, r, sigma, eps);
             let f = force_lj(dir, r, sigma, eps);
 
             // Torque = (r - R_cm) x F,
@@ -376,7 +338,7 @@ pub fn build_dock_dynamics(
     let len_lig = lig.atom_posits.len();
 
     // todo: CUDA only. setup struct?
-    let posits_rec: Vec<Vec3> = setup
+    let posits_rec: Vec<Vec3F32> = setup
         .rec_atoms_near_site
         .iter()
         .map(|r| r.posit.into())
@@ -409,7 +371,7 @@ pub fn build_dock_dynamics(
             #[cfg(feature = "cuda")]
             // todo: So... CUDA is taking about 1.5x the speed of CPU...
             ComputationDevice::Gpu((stream, module)) => {
-                let lig_posits_f32: Vec<Vec3> = lig_posits.iter().map(|r| (*r).into()).collect();
+                let lig_posits_f32: Vec<Vec3F32> = lig_posits.iter().map(|r| (*r).into()).collect();
 
                 let f_lj_per_tgt = force_lj_gpu(
                     &stream,
@@ -420,14 +382,15 @@ pub fn build_dock_dynamics(
                     &setup.lj_eps,
                 );
 
-                let mut f = Vec3::new_zero();
+                let mut f = Vec3F32::new_zero();
                 for f_ in &f_lj_per_tgt {
                     f += *f_;
                 }
                 // let f = f_lj_per_tgt.iter().sum(); // todo: Impl sum.
                 // todo: Torque: Need in kernel.
                 let t = Vec3::new_zero(); // todo temp!
-                (f, t)
+                // (f, t)
+                (f.into(), t.into())
             }
             ComputationDevice::Cpu => {
                 // todo: x8 isn't saving time here, and is causing invalid results. (not matching scalar)
@@ -436,43 +399,46 @@ pub fn build_dock_dynamics(
                 if true {
                     scalar_f_t(&diffs, setup, &lig_posits_by_diff, anchor_posit)
                 } else {
-                    let (diffs_x8, valid_lanes_last_diff) = pack_vec3(&diffs);
-                    let (lig_posits_by_diff_x8, _) = pack_vec3(&lig_posits_by_diff);
+                    // todo: Put this SIMD code back once you sort out f32 vs f64.
+                    // let (diffs_x8, valid_lanes_last_diff) = pack_vec3(&diffs);
+                    // let (lig_posits_by_diff_x8, _) = pack_vec3(&lig_posits_by_diff);
+                    //
+                    // let anchor_posit_x8 = Vec3x4::splat(anchor_posit);
+                    //
+                    // let (f, t) = diffs_x8
+                    //     .par_iter()
+                    //     .enumerate()
+                    //     .map(|(i, &diff)| {
+                    //         let r = diff.magnitude();
+                    //         let dir = diff / r;
+                    //         let sigma = setup.lj_sigma_x8[i];
+                    //         let eps = setup.lj_eps_x8[i];
+                    //
+                    //         let f = force_lj_x8(dir, r, sigma, eps);
+                    //
+                    //         let diff = lig_posits_by_diff_x8[i] - anchor_posit_x8;
+                    //         let torque = diff.cross(f);
+                    //
+                    //         (f, torque)
+                    //     })
+                    //     .reduce(
+                    //         || (Vec3x4::new_zero(), Vec3x4::new_zero()),
+                    //         |a, b| (a.0 + b.0, a.1 + b.1),
+                    //     );
+                    //
+                    // // todo: Impl sum.
+                    // let mut f_ = Vec3::new_zero();
+                    // let mut t_ = Vec3::new_zero();
+                    // let f_arr = f.to_array();
+                    // let t_arr = t.to_array();
+                    // for i in 0..8 {
+                    //     f_ += f_arr[i];
+                    //     t_ += t_arr[i];
+                    // }
+                    //
+                    // (f_, t_)
 
-                    let anchor_posit_x8 = Vec3x8::splat(anchor_posit);
-
-                    let (f, t) = diffs_x8
-                        .par_iter()
-                        .enumerate()
-                        .map(|(i, &diff)| {
-                            let r = diff.magnitude();
-                            let dir = diff / r;
-                            let sigma = setup.lj_sigma_x8[i];
-                            let eps = setup.lj_eps_x8[i];
-
-                            let f = force_lj_x8(dir, r, sigma, eps);
-
-                            let diff = lig_posits_by_diff_x8[i] - anchor_posit_x8;
-                            let torque = diff.cross(f);
-
-                            (f, torque)
-                        })
-                        .reduce(
-                            || (Vec3x8::new_zero(), Vec3x8::new_zero()),
-                            |a, b| (a.0 + b.0, a.1 + b.1),
-                        );
-
-                    // todo: Impl sum.
-                    let mut f_ = Vec3::new_zero();
-                    let mut t_ = Vec3::new_zero();
-                    let f_arr = f.to_array();
-                    let t_arr = t.to_array();
-                    for i in 0..8 {
-                        f_ += f_arr[i];
-                        t_ += t_arr[i];
-                    }
-
-                    (f_, t_)
+                    (Vec3::new_zero(), Vec3::new_zero())
                 }
 
                 #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
@@ -507,7 +473,8 @@ pub fn build_dock_dynamics(
             let acc = force * dt;
 
             let posit_this = body_ligand_rigid.posit;
-            body_ligand_rigid.posit = integrate_verlet(
+            // body_ligand_rigid.posit = integrate_verlet(
+            body_ligand_rigid.posit = integrate_verlet_f64(
                 body_ligand_rigid.posit,
                 body_ligand_rigid.posit_prev,
                 acc,
@@ -561,7 +528,8 @@ pub fn build_dock_dynamics(
 
             snapshots.push(Snapshot {
                 time: time_elapsed,
-                lig_atom_posits: posits,
+                // lig_atom_posits: posits,
+                lig_atom_posits: atom_posits.clone(),
                 pose,
                 energy,
             });
@@ -578,7 +546,8 @@ pub fn build_dock_dynamics(
 
     snapshots.push(Snapshot {
         time: time_elapsed,
-        lig_atom_posits: posits,
+        // lig_atom_posits: posits,
+        lig_atom_posits: atom_posits.clone(),
         pose,
         energy,
     });
