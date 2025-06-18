@@ -41,6 +41,7 @@ use crate::{
     integrate::{integrate_verlet, integrate_verlet_f64},
     molecule::{Atom, Ligand},
 };
+use crate::dynamics::{MdState, SimBox};
 // This seems to be how we control rotation vice movement. A higher value means
 // more movement, less rotation for a given dt.
 
@@ -297,6 +298,26 @@ pub fn build_dock_dynamics(
 ) -> Vec<Snapshot> {
     println!("Building docking dyanmics...");
     let start = Instant::now();
+
+    // todo: Startign new approach
+    {
+        // todo: Use state dynamics state
+        let mut md_state = MdState::new(
+            &lig.molecule.atoms,
+            &lig.molecule.bonds,
+            &setup.rec_atoms_near_site,
+            SimBox::default(),
+            &setup.lj_lut
+        );
+
+        let n_steps = 10;
+        // In femtoseconds
+        let dt = 1.;
+
+        for _ in 0..n_steps {
+            md_state.step(dt)
+        }
+    }
 
     // todo: You should possibly add your pre-computed LJ pairs, instead of looking up each time.
     // todo: See this code from docking.

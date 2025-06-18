@@ -26,10 +26,10 @@ use na_seq::{Element, element::LjTable};
 use rand_distr::{Distribution, UnitSphere};
 
 use crate::{
+    docking::dynamics::Snapshot,
     forces::{force_coulomb, force_lj},
-    molecule::Atom,
+    molecule::{Atom, Bond},
 };
-use crate::docking::dynamics::Snapshot;
 
 // vacuum permittivity constant   (k_e = 1/(4π ε0))
 // SI, matched with charge in e₀ & Å → kcal mol // todo: QC
@@ -49,6 +49,7 @@ const ANG_HOH: f64 = 104.52_f64.to_radians();
 const SCALE_LJ_14: f64 = 0.5; // AMBER default
 const SCALE_COUL_14: f64 = 1.0 / 1.2; // 0.833̅
 
+const SOFTENING_FACTOR_SQ: f64 = 1e-6;
 
 // todo: A/R
 const SNAPSHOT_RATIO: usize = 10;
@@ -149,6 +150,17 @@ pub struct BondDynamics {
     pub r0: f64, // Å
 }
 
+impl From<&Bond> for BondDynamics {
+    fn from(bond: &Bond) -> Self {
+        Self {
+            atom_0: bond.atom_0,
+            atom_1: bond.atom_1,
+            k: 0.,  // todo: How?
+            r0: 0., // todo: How?
+        }
+    }
+}
+
 /// Harmonic angle.
 #[derive(Debug, Clone, Copy)]
 pub struct Angle {
@@ -175,6 +187,10 @@ pub struct Torsion {
 pub struct MdState {
     pub atoms: Vec<AtomDynamics>,
     pub bonds: Vec<BondDynamics>,
+    /// Sources that affect atoms in the system, but are not themselves affected by it. E.g.
+    /// in docking, this might be a rigid receptor. These are for *non-bonded* interactions (e.g. Coulomb
+    /// and VDW) only.
+    pub atoms_external: Vec<AtomDynamics>,
     pub angles: Vec<Angle>,
     pub torsions: Vec<Torsion>,
     pub lj_lut: LjTable,
@@ -192,7 +208,7 @@ pub struct MdState {
     pub snapshots: Vec<SnapshotDynamics>,
     pub cell: SimBox,
     neighbour: Vec<Vec<usize>>,    // Verlet list
-    max_disp2: f64,                // track atom displacements²
+    max_disp_sq: f64,              // track atom displacements²
     pub kb_berendsen: Option<f64>, // coupling constant (ps⁻¹) if you want a thermostat
     pub target_temp: f64,
     /// Exclusions / masks optimization.
@@ -201,18 +217,30 @@ pub struct MdState {
 }
 
 impl MdState {
-    pub fn new(atoms: &[Atom], lj_table: &LjTable) -> Self {
+    pub fn new(
+        atoms: &[Atom],
+        bonds: &[Bond],
+        atoms_external: &[Atom],
+        cell: SimBox,
+        lj_table: &LjTable,
+    ) -> Self {
         let atoms_dy = atoms.iter().map(|a| a.into()).collect();
+        let bonds_dy = bonds.iter().map(|b| b.into()).collect();
+        let atoms_dy_external = atoms_external.iter().map(|a| a.into()).collect();
 
         let mut result = Self {
             atoms: atoms_dy,
+            bonds: bonds_dy,
+            atoms_external: atoms_dy_external,
             lj_lut: lj_table.clone(),
+            cell,
             excluded_pairs: HashSet::new(),
             scaled14_pairs: HashSet::new(),
             ..Default::default()
         };
 
         result.build_masks();
+        result.build_neighbour();
 
         result
     }
@@ -248,13 +276,6 @@ impl MdState {
         }
     }
 
-    pub fn with_cell(atoms: &[Atom], lj_table: &LjTable, cell: SimBox) -> Self {
-        let mut s = Self::new(atoms, lj_table);
-        s.cell = cell;
-        s.build_neighbour();
-        s
-    }
-
     /// Build / rebuild Verlet list
     fn build_neighbour(&mut self) {
         let cutoff2 = (CUTOFF + SKIN).powi(2);
@@ -274,7 +295,7 @@ impl MdState {
         for a in &mut self.atoms {
             a.vel /* nothing */;
         }
-        self.max_disp2 = 0.0;
+        self.max_disp_sq = 0.0;
     }
 
     /// One **Velocity-Verlet** step (leap-frog style) of length `dt_fs` femtoseconds.
@@ -291,7 +312,7 @@ impl MdState {
             a.posit = self.cell.wrap(a.posit);
 
             // track the largest squared displacement to know when to rebuild the list
-            self.max_disp2 = self.max_disp2.max((a.vel * dt).magnitude_squared());
+            self.max_disp_sq = self.max_disp_sq.max((a.vel * dt).magnitude_squared());
         }
 
         for a in &mut self.atoms {
@@ -322,8 +343,8 @@ impl MdState {
         self.time += dt_fs;
         self.step_count += 1;
 
-        // rebuild Verlet if needed
-        if self.max_disp2 > 0.25 * SKIN * SKIN {
+        // Rebuild Verlet if needed
+        if self.max_disp_sq > 0.25 * SKIN * SKIN {
             self.build_neighbour();
         }
 
@@ -410,6 +431,9 @@ impl MdState {
         }
     }
 
+    /// Coulomb and Van der Waals.
+    ///
+    /// todo: If required, build a neighbors list for interactions with external atoms.
     fn apply_nonbonded_forces(&mut self) {
         let cutoff_sq = CUTOFF * CUTOFF;
 
@@ -433,8 +457,8 @@ impl MdState {
                 let diff = self.atoms[j].posit - self.atoms[i].posit;
 
                 let dv = self.cell.min_image(diff);
-                let r2 = dv.magnitude_squared();
-                if r2 > cutoff_sq {
+                let r_sq = dv.magnitude_squared();
+                if r_sq > cutoff_sq {
                     continue;
                 }
 
@@ -444,7 +468,7 @@ impl MdState {
                     .get(&(self.atoms[i].element, self.atoms[j].element))
                     .unwrap();
 
-                let dist = r2.sqrt();
+                let dist = r_sq.sqrt();
                 let dir = diff / dist;
 
                 let mut f_lj = force_lj(dir, dist, *σ as f64, *ϵ as f64);
@@ -454,7 +478,7 @@ impl MdState {
                     dist,
                     self.atoms[i].partial_charge,
                     self.atoms[j].partial_charge,
-                    0.0000001, // todo
+                    SOFTENING_FACTOR_SQ,
                 );
 
                 if scale14 {
@@ -469,6 +493,32 @@ impl MdState {
 
                 self.atoms[i].accel += accel_0;
                 self.atoms[j].accel -= accel_1;
+            }
+        }
+
+        // Second pass: External atoms.
+        for ai in &mut self.atoms {
+            for aj in &self.atoms_external {
+                let dv = self.cell.min_image(aj.posit - ai.posit);
+                let r_sq = dv.magnitude_squared();
+                if r_sq > cutoff_sq {
+                    continue;
+                }
+
+                let (σ, ϵ) = self.lj_lut.get(&(ai.element, aj.element)).unwrap();
+                let dist = r_sq.sqrt();
+                let dir = dv / dist;
+
+                let f = force_lj(dir, dist, *σ as f64, *ϵ as f64)
+                    + force_coulomb(
+                        dir,
+                        dist,
+                        ai.partial_charge,
+                        aj.partial_charge,
+                        SOFTENING_FACTOR_SQ,
+                    );
+
+                ai.accel += f / ai.mass;
             }
         }
     }

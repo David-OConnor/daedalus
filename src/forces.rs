@@ -11,14 +11,11 @@ cfg_if::cfg_if! {
 }
 use std::time::Instant;
 
+use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use lin_alg::{
     f32::{Vec3x8, f32x8},
-    f64::f64x4
-};
-use lin_alg::{
-    f32::Vec3 as Vec3F32,
-    f64::{Vec3},
+    f64::f64x4,
 };
 use na_seq::{Element, element::LjTable};
 use rayon::prelude::*;

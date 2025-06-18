@@ -17,8 +17,8 @@ use bio_apis::{
     rcsb::{FilesAvailable, PdbDataResults, PdbMetaData},
 };
 use bio_files::{
-    AtomGeneric, BondGeneric, Chain, ChargeType, DensityMap, Mol2, MolType,
-    ResidueGeneric, ResidueType, sdf::Sdf,
+    AtomGeneric, BondGeneric, Chain, ChargeType, DensityMap, Mol2, MolType, ResidueGeneric,
+    ResidueType, sdf::Sdf,
 };
 use lin_alg::{
     f32::Vec3 as Vec3F32,

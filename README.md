@@ -116,8 +116,7 @@ to Map. Can import Map directly.
 ## PyMol-like Command line interface
 Daedalus supports a very limited subset of PyMol's CLI interface. Supported commands:
 
-![Protein A](screenshots/protein_a.png)
-
+![Solvent accessible surface mesh](screenshots/surface_mesh_transparent.png)
 
 ### General
 - `help`: Lists commands
@@ -150,7 +149,7 @@ Daedalus supports a very limited subset of PyMol's CLI interface. Supported comm
 - `orient`
 - `reset`
 
-
+![Protein A](screenshots/protein_a.png)
 
 ### Erratta
 - Ribbon view is currently unavailable.

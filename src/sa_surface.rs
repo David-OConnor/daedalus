@@ -65,7 +65,11 @@ pub fn make_sas_mesh(atoms: &[&Atom], mut precision: f32) -> Mesh {
     );
 
     let nvox = grid_dim.0 * grid_dim.1 * grid_dim.2;
-    let mut field = vec![f32::MAX; nvox];
+
+    // This can be any that is guaranteed to be well outside the SAS surface.
+    // It prevents holes from appearing in the mesh due to not having a value outside to compare to.
+    let far_val = (r_max + precision).powi(2) + 1.0;
+    let mut field = vec![far_val; nvox];
 
     // Helper to flatten (x, y, z)
     let idx = |x: usize, y: usize, z: usize| -> usize { (z * grid_dim.1 + y) * grid_dim.0 + x };
@@ -123,9 +127,7 @@ pub fn make_sas_mesh(atoms: &[&Atom], mut precision: f32) -> Mesh {
         MarchingCubes::new(grid_dim, size, samp, bb_min, field, 0.).expect("marching cubes init");
 
     // I believe even with one side, it draws both, as it creates an isosurface surrounding the value. (?)
-    // It appeares `InsideOnly` is giving us the outside mesh, and vice-versa.
-    let mc_mesh = mc.generate(MeshSide::InsideOnly);
-    // let mc_mesh = mc.generate(MeshSide::OutsideOnly);
+    let mc_mesh = mc.generate(MeshSide::OutsideOnly);
 
     let vertices: Vec<Vertex> = mc_mesh
         .vertices

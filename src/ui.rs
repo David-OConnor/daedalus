@@ -1862,17 +1862,17 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 // }
 
                 // todo: We don't need to gen each time? But this is cheap.
-                state.mol_dynamics =
-                    Some(MdState::new(&mol.atoms, &state.volatile.lj_lookup_table));
-
-                let dynamics = &mut state.mol_dynamics.as_mut().unwrap();
-
-                println!("Running dynamics...");
-                let num_steps = 1_000;
-                let dt = 0.001;
-                for t in 0..num_steps {
-                    dynamics.step(dt)
-                }
+                // state.mol_dynamics =
+                //     Some(MdState::new(&mol.atoms, &state.volatile.lj_lookup_table));
+                //
+                // let dynamics = &mut state.mol_dynamics.as_mut().unwrap();
+                //
+                // println!("Running dynamics...");
+                // let num_steps = 1_000;
+                // let dt = 0.001;
+                // for t in 0..num_steps {
+                //     dynamics.step(dt)
+                // }
 
                 println!("Complete.");
             }
