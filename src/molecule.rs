@@ -127,7 +127,6 @@ impl Molecule {
         result.bonds = bonds;
 
         result.bonds_hydrogen = create_hydrogen_bonds(&result.atoms, &result.bonds);
-        println!("H bond count: {:?}", result.bonds_hydrogen.len());
 
         result.adjacency_list = result.build_adjacency_list();
 
@@ -392,7 +391,7 @@ impl Ligand {
         //     }
         // }
 
-        result.atom_posits = result.position_atoms(None);
+        result.position_atoms(None);
         result
     }
 
@@ -422,73 +421,79 @@ impl Ligand {
     /// torsion angles from flexible bonds. Each pivot rotation rotates the side of the flexible bond that
     /// has fewer atoms; the intent is to minimize the overall position changes for these flexible bond angle
     /// changes.
-    pub fn position_atoms(&self, pose: Option<&Pose>) -> Vec<Vec3> {
-        if self.anchor_atom >= self.molecule.atoms.len() {
-            eprintln!(
-                "Error positioning ligand atoms: Anchor outside atom count. Atom cound: {:?}",
-                self.molecule.atoms.len()
-            );
-            return Vec::new();
-        }
-        let anchor = self.molecule.atoms[self.anchor_atom].posit;
-
+    ///
+    /// If we return None, use the existing atom_posits data; it has presumably been already set.
+    pub fn position_atoms(&mut self, pose: Option<&Pose>) {
         let pose_ = match pose {
             Some(p) => p,
             None => &self.pose,
         };
 
-        let mut result: Vec<_> = self
-            .molecule
-            .atoms
-            .par_iter()
-            .map(|atom| {
-                let posit_rel = atom.posit - anchor;
-                pose_.anchor_posit + pose_.orientation.rotate_vec(posit_rel)
-            })
-            .collect();
-
-        if let ConformationType::Flexible { torsions } = &pose_.conformation_type {
-            // Second pass: Rotations. For each flexible bond, divide all atoms into two groups:
-            // those upstream of this bond, and those downstream. For all downstream atoms, rotate
-            // by `torsions[i]`: The dihedral angle along this bond. If there are ambiguities in this
-            // process, it may mean the bond should not have been marked as flexible.
-            for torsion in torsions {
-                let bond = &self.molecule.bonds[torsion.bond];
-
-                // -- Step 1: measure how many atoms would be "downstream" from each side
-                let side0_downstream = self.find_downstream_atoms(bond.atom_1, bond.atom_0);
-                let side1_downstream = self.find_downstream_atoms(bond.atom_0, bond.atom_1);
-
-                // -- Step 2: pick the pivot as the side with a larger subtree
-                let (pivot_idx, side_idx, downstream_atom_indices) =
-                    if side0_downstream.len() > side1_downstream.len() {
-                        // side0_downstream means "downstream from atom_1 ignoring bond to atom_0"
-                        // => so pivot is atom_0, side is atom_1
-                        (bond.atom_0, bond.atom_1, side1_downstream)
-                    } else {
-                        // side1_downstream has equal or more
-                        (bond.atom_1, bond.atom_0, side0_downstream)
-                    };
-
-                // pivot and side positions
-                let pivot_pos = result[pivot_idx];
-                let side_pos = result[side_idx];
-                let axis_vec = (side_pos - pivot_pos).to_normalized();
-
-                // Build the Quaternion for this rotation
-                let rotator = Quaternion::from_axis_angle(axis_vec, torsion.dihedral_angle as f64);
-
-                // Now apply the rotation to each downstream atom:
-                for &atom_idx in &downstream_atom_indices {
-                    let old_pos = result[atom_idx];
-                    let relative = old_pos - pivot_pos;
-                    let new_pos = pivot_pos + rotator.rotate_vec(relative);
-                    result[atom_idx] = new_pos;
+        match &pose_.conformation_type {
+            ConformationType::Flexible { torsions } => {
+                if self.anchor_atom >= self.molecule.atoms.len() {
+                    eprintln!(
+                        "Error positioning ligand atoms: Anchor outside atom count. Atom cound: {:?}",
+                        self.molecule.atoms.len()
+                    );
+                    return;
                 }
+                let anchor = self.molecule.atoms[self.anchor_atom].posit;
+
+                let mut result: Vec<_> = self
+                    .molecule
+                    .atoms
+                    .par_iter()
+                    .map(|atom| {
+                        let posit_rel = atom.posit - anchor;
+                        pose_.anchor_posit + pose_.orientation.rotate_vec(posit_rel)
+                    })
+                    .collect();
+                // Second pass: Rotations. For each flexible bond, divide all atoms into two groups:
+                // those upstream of this bond, and those downstream. For all downstream atoms, rotate
+                // by `torsions[i]`: The dihedral angle along this bond. If there are ambiguities in this
+                // process, it may mean the bond should not have been marked as flexible.
+                for torsion in torsions {
+                    let bond = &self.molecule.bonds[torsion.bond];
+
+                    // -- Step 1: measure how many atoms would be "downstream" from each side
+                    let side0_downstream = self.find_downstream_atoms(bond.atom_1, bond.atom_0);
+                    let side1_downstream = self.find_downstream_atoms(bond.atom_0, bond.atom_1);
+
+                    // -- Step 2: pick the pivot as the side with a larger subtree
+                    let (pivot_idx, side_idx, downstream_atom_indices) =
+                        if side0_downstream.len() > side1_downstream.len() {
+                            // side0_downstream means "downstream from atom_1 ignoring bond to atom_0"
+                            // => so pivot is atom_0, side is atom_1
+                            (bond.atom_0, bond.atom_1, side1_downstream)
+                        } else {
+                            // side1_downstream has equal or more
+                            (bond.atom_1, bond.atom_0, side0_downstream)
+                        };
+
+                    // pivot and side positions
+                    let pivot_pos = result[pivot_idx];
+                    let side_pos = result[side_idx];
+                    let axis_vec = (side_pos - pivot_pos).to_normalized();
+
+                    // Build the Quaternion for this rotation
+                    let rotator =
+                        Quaternion::from_axis_angle(axis_vec, torsion.dihedral_angle as f64);
+
+                    // Now apply the rotation to each downstream atom:
+                    for &atom_idx in &downstream_atom_indices {
+                        let old_pos = result[atom_idx];
+                        let relative = old_pos - pivot_pos;
+                        let new_pos = pivot_pos + rotator.rotate_vec(relative);
+                        result[atom_idx] = new_pos;
+                    }
+                }
+                self.atom_posits = result;
+            }
+            ConformationType::AbsolutePosits => {
+                // take no action; we are using atom_posits.
             }
         }
-
-        result
     }
 
     /// We use this to rotate flexible molecules around torsion (e.g. dihedral) angles.

@@ -36,12 +36,11 @@ use crate::{
         BindingEnergy, ConformationType, Pose, calc_binding_energy,
         prep::{DockingSetup, Torsion},
     },
-    dynamics::{AtomDynamics, AtomDynamicsx4},
+    dynamics::{AtomDynamics, AtomDynamicsx4, MdState, SimBox},
     forces::{force_lj, force_lj_f32},
     integrate::{integrate_verlet, integrate_verlet_f64},
     molecule::{Atom, Ligand},
 };
-use crate::dynamics::{MdState, SimBox};
 // This seems to be how we control rotation vice movement. A higher value means
 // more movement, less rotation for a given dt.
 
@@ -292,12 +291,14 @@ fn scalar_f_t(
 /// derivative of the total VDW potential, and use gradient descent.
 pub fn build_dock_dynamics(
     dev: &ComputationDevice,
-    lig: &Ligand,
+    lig: &mut Ligand,
     setup: &DockingSetup,
     n_steps: usize,
 ) -> Vec<Snapshot> {
     println!("Building docking dyanmics...");
     let start = Instant::now();
+
+    lig.pose.conformation_type = ConformationType::AbsolutePosits;
 
     // todo: Startign new approach
     {
@@ -307,15 +308,23 @@ pub fn build_dock_dynamics(
             &lig.molecule.bonds,
             &setup.rec_atoms_near_site,
             SimBox::default(),
-            &setup.lj_lut
+            &setup.lj_lut,
         );
 
-        let n_steps = 10;
+        let n_steps = 1_000;
         // In femtoseconds
         let dt = 1.;
 
         for _ in 0..n_steps {
             md_state.step(dt)
+        }
+
+        for (i, atom) in md_state.atoms.iter().enumerate() {
+            if i < 30 {
+                println!("Posit: {:?}", atom.posit);
+            }
+
+            lig.molecule.atoms[i].posit = atom.posit;
         }
     }
 
@@ -366,7 +375,7 @@ pub fn build_dock_dynamics(
         .collect();
 
     for t in 0..n_steps {
-        let lig_posits = lig.position_atoms(Some(&body_ligand_rigid.as_pose()));
+        lig.position_atoms(Some(&body_ligand_rigid.as_pose()));
         // todo: Split this into a separate fn A/R
 
         // Cache diffs.
@@ -377,7 +386,7 @@ pub fn build_dock_dynamics(
         for i_rec in 0..len_rec {
             for i_lig in 0..len_lig {
                 let posit_rec: Vec3 = setup.rec_atoms_near_site[i_rec].posit.into();
-                let posit_lig: Vec3 = lig_posits[i_lig].into();
+                let posit_lig: Vec3 = lig.atom_posits[i_lig].into();
 
                 diffs.push(posit_rec - posit_lig);
                 lig_posits_by_diff.push(posit_lig);
@@ -392,7 +401,8 @@ pub fn build_dock_dynamics(
             #[cfg(feature = "cuda")]
             // todo: So... CUDA is taking about 1.5x the speed of CPU...
             ComputationDevice::Gpu((stream, module)) => {
-                let lig_posits_f32: Vec<Vec3F32> = lig_posits.iter().map(|r| (*r).into()).collect();
+                let lig_posits_f32: Vec<Vec3F32> =
+                    lig.atom_posits.iter().map(|r| (*r).into()).collect();
 
                 let f_lj_per_tgt = force_lj_gpu(
                     &stream,
@@ -541,16 +551,16 @@ pub fn build_dock_dynamics(
 
         if t % snapshot_ratio == 0 {
             let pose = body_ligand_rigid.as_pose();
-            let atom_posits = lig.position_atoms(Some(&pose));
+            lig.position_atoms(Some(&pose));
 
-            let posits: Vec<_> = atom_posits.iter().map(|p| (*p).into()).collect();
+            let posits: Vec<_> = lig.atom_posits.iter().map(|p| (*p).into()).collect();
 
             let energy = calc_binding_energy(setup, lig, &posits);
 
             snapshots.push(Snapshot {
                 time: time_elapsed,
                 // lig_atom_posits: posits,
-                lig_atom_posits: atom_posits.clone(),
+                lig_atom_posits: lig.atom_posits.clone(),
                 pose,
                 energy,
             });
@@ -559,16 +569,16 @@ pub fn build_dock_dynamics(
 
     // Final snapshot
     let pose = body_ligand_rigid.as_pose();
-    let atom_posits = lig.position_atoms(Some(&pose));
+    lig.position_atoms(Some(&pose));
 
-    let posits: Vec<_> = atom_posits.iter().map(|p| (*p).into()).collect();
+    let posits: Vec<_> = lig.atom_posits.iter().map(|p| (*p).into()).collect();
 
     let energy = calc_binding_energy(setup, lig, &posits);
 
     snapshots.push(Snapshot {
         time: time_elapsed,
         // lig_atom_posits: posits,
-        lig_atom_posits: atom_posits.clone(),
+        lig_atom_posits: lig.atom_posits.clone(),
         pose,
         energy,
     });

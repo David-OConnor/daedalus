@@ -133,18 +133,20 @@ impl State {
 
                     self.volatile.flags.clear_density_drawing = true;
                     self.molecule = Some(mol);
-                }
 
-                // Update from prefs based on the molecule-specific items.
-                self.update_from_prefs();
+                    // Only updating if not loading a ligand.
+                    // Update from prefs based on the molecule-specific items.
+                    self.update_from_prefs();
+                }
 
                 if let Some(mol) = &mut self.molecule {
                     // Only after updating from prefs (to prevent unecesasary loading) do we update data avail.
                     mol.updates_rcsb_data(&mut self.volatile.mol_pending_data_avail);
                 }
 
-                // Now, save prefs: This is to save last opened.
-                self.update_save_prefs();
+                // Now, save prefs: This is to save last opened. Note that anomolies happen
+                // if we update the molecule here, e.g. with docking site posit.
+                self.update_save_prefs_no_mol();
 
                 if self.get_make_docking_setup().is_none() {
                     eprintln!("Problem making or getting docking setup.");

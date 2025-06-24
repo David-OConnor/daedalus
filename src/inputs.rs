@@ -333,7 +333,7 @@ pub fn event_dev_handler(
 
     if redraw_lig {
         if let Some(lig) = &mut state_.ligand {
-            lig.atom_posits = lig.position_atoms(None);
+            lig.position_atoms(None);
         }
 
         mol_drawing::draw_ligand(state_, scene);

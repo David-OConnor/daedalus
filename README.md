@@ -15,7 +15,7 @@ Designed to be as easy to use, and fast as possible.
 
 
 Notes:
-- On some Linux distros (eg Ubuntu), run `setup_linux_desktop.sh`, included in the zip, to create a Desktop GUI entry.
+- On Linux distros that use Gnome (e.g. Ubuntu), run `setup_linux_desktop.sh`, included in the zip, to create a Desktop GUI entry.
 - On Windows, the first time you run the program, you may get the message *"Microsoft Defender prevented an unrecognized app from starting"*. To bypass this, click *More info*, then *Run Anyway*.
 
 ### Mac
@@ -50,7 +50,7 @@ from the [RCSB PDB](https://www.rcsb.org/).
 ## File formats
 - Proteins: mmCIF and PDB
 - Small molecules: SDF, Mol2, and PDBQT
-- Electron density: `2fo-fc` CIF, and Map.
+- Electron density: 2fo-fc CIF, and Map.
 
 ![ELectron density](screenshots/iso_a.png)
 
@@ -61,7 +61,7 @@ from the [RCSB PDB](https://www.rcsb.org/).
 There are two camera control schemes, selectable using buttons in the *camera* section of the GUI.
 
 ### Free camera
-The free camera controls is intended to be used with a keyboard and mouse together. They operate on the perspective of 
+The *free camera* mode is intended to be used with a keyboard and mouse together. They operate on the perspective of 
 the viewer, vice the molecule. You can move and rotate and move the camera
 in 6 degrees of freedom, allowing you to easily view the molecule from any perspective.
 
@@ -100,17 +100,18 @@ mouse button and dragging. Other controls, like scroll wheel and middle mouse, o
 If *orbit sel* is set in the GUI, the orbit center will be the selected atom or residue, vice the molecule center.
 
 
-
 ### Non-camera hotkeys
 - **Esc**: Clear selection
 - **Left arrow**: select previous residue
 - **Right arrow**: select next residue
 
 
-## WIP Reflections and electron density
-Supports volumetric, and isosurface views for electron density data, e.g. from Cryo-EM. Can download
-this data from RCSB PDB. Currently, requires Gemmi available on the Path, to convert from 2fo-fc CIF
-to Map. Can import Map directly.
+## Reflections and electron density
+Supports volumetric and isosurface views for electron density data, e.g. from Cryo-EM and X-Ray crystallography data. 
+It can download this data from RCSB PDB, or load files directly. Currently, to convert *2fo-fc* files to map data, it
+requires Gemmi available on the *Path*. Can import Map files directly.
+
+MTZ support is not yet available.
 
 
 ## PyMol-like Command line interface

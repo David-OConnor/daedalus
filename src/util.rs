@@ -655,7 +655,7 @@ pub fn make_density_mesh(state: &mut State, scene: &mut Scene, engine_updates: &
                 state.ui.density_iso_level,
             ) {
                 Ok(mc) => {
-                    let mesh = mc.generate(MeshSide::Both);
+                    let mesh = mc.generate(MeshSide::OutsideOnly);
 
                     // Convert from `mcubes::Mesh` to `graphics::Mesh`.
                     let vertices = mesh

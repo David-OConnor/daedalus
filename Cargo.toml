@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-graphics = { version = "0.4.0", features = ["app_utils"] }
+graphics = { version = "0.4.1", features = ["app_utils"] }
 egui = "0.31.1"
 #egui_tiles = "0.12.0" # For layouts etc. Experimenting
 egui-file-dialog = "0.10.0" #  For file dialogs.
@@ -29,9 +29,16 @@ rayon = "1.10.0"  # Parallel execution on CPU using thread pools.
 
 # todo: Do we want the `dynamic-linking` cudarc feature? Instead of dynamic-loading?
 # todo: If you use it, rem def features, and add specifically the other defaults.
-cudarc = { version = "0.16.4", features = ["cuda-version-from-build-system"], optional=true }
+
+# See [polarthene's comment here](https://github.com/coreylowman/cudarc/issues/408) for details
+# on dynamic linking vs loading, and CUDA version. CUDA versions higher than the specified version
+# will work, so set a reasonably low version.
+# Note: Dynamic linking not working.
+cudarc = { version = "0.16.4", features = ["cuda-12060"], optional=true }
+
+# These are the default features, with dynamic-loading replaced by dynamic-linking.
 #cudarc = { version = "0.16.4", features = [
-#    "std", "cublas", "cublaslt", "curand", "driver", "runtime", "nvrtc", "dynamic-linking"
+#    "std", "cublas", "cublaslt", "curand", "driver", "runtime", "nvrtc", "dynamic-linking", "cuda-12060"
 #], default-features = false, optional=true }
 
 # For reading PDB and mmCIF files
@@ -48,8 +55,8 @@ mcubes = "0.1.3"
 
 # We use these when developing locally to reduce friction.
 [patch.crates-io]
-graphics = { path = "../../graphics" }
-#lin_alg = { path = "../../lin_alg" }
+#graphics = { path = "../../graphics" }
+lin_alg = { path = "../../lin_alg" }
 pdbtbx = { git = "https://github.com/David-OConnor/pdbtbx", branch = "Fix-symmetry-error-newer-CIFs" }
 #barnes_hut = { path = "../../barnes_hut" }
 na_seq = { path = "../na_seq" }

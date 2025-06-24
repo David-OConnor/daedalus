@@ -537,7 +537,7 @@ pub(crate) fn init_poses(
 fn process_poses(
     poses: &[Pose],
     setup: &DockingSetup,
-    ligand: &Ligand,
+    lig: &mut Ligand,
 ) -> Vec<(usize, BindingEnergy)> {
     // todo: Currently an outer/inner dynamic.
     // Set up the ligand atom positions for each pose; that's all that matters re the pose for now.
@@ -553,19 +553,17 @@ fn process_poses(
     let mut geometry_poses_skip = Vec::new();
 
     for (i_pose, pose) in poses.iter().enumerate() {
+        lig.position_atoms(Some(&pose));
+
         // todo: Cache distances here?
-        let posits_this_pose: Vec<_> = ligand
-            .position_atoms(Some(pose))
-            .iter()
-            .map(|p| (*p).into())
-            .collect();
+        let posits_this_pose: Vec<_> = lig.atom_posits.iter().map(|p| (*p).into()).collect();
 
         // A smaller subset, used for some processes to improve performance.
         let lig_posits_sample: Vec<Vec3F32> = posits_this_pose
             .iter()
             .enumerate()
             .filter(|(i, a)| {
-                let atom = &ligand.molecule.atoms[*i];
+                let atom = &lig.molecule.atoms[*i];
                 atom.element == Element::Carbon && i % LIGAND_SAMPLE_RATIO == 0
             })
             .map(|(_i, v)| *v)
@@ -665,7 +663,7 @@ fn process_poses(
         .enumerate()
         .filter(|(i_pose, _)| !geometry_poses_skip.contains(i_pose))
         .filter_map(|(i_pose, _pose)| {
-            let energy = calc_binding_energy(setup, ligand, &lig_posits[i_pose]);
+            let energy = calc_binding_energy(setup, lig, &lig_posits[i_pose]);
             if let Some(e) = energy {
                 Some((i_pose, e))
             } else {
@@ -716,7 +714,7 @@ fn vary_pose(pose: &Pose) -> Vec<Pose> {
 pub fn find_optimal_pose(
     dev: &ComputationDevice,
     setup: &DockingSetup,
-    ligand: &Ligand,
+    ligand: &mut Ligand,
 ) -> (Pose, BindingEnergy) {
     // todo: Consider another fn for this part of the setup, so you can re-use it more easily.
 
@@ -764,7 +762,7 @@ pub fn find_optimal_pose(
         let mut lig_this = ligand.clone(); //  todo: DOn't like this clone.
         lig_this.pose = poses[*pose_i].clone();
 
-        let snapshots = build_dock_dynamics(dev, &lig_this, setup, num_vdw_steps);
+        let snapshots = build_dock_dynamics(dev, &mut lig_this, setup, num_vdw_steps);
 
         let final_snap = &snapshots[snapshots.len() - 1];
         println!(

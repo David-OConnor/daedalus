@@ -52,7 +52,9 @@ const DOCKING_SITE_OPACITY: f32 = 0.1;
 const DIMMED_PEPTIDE_AMT: f32 = 0.92; // Higher value means more dim.
 
 pub const DENSITY_ISO_OPACITY: f32 = 0.5;
-pub const SAS_ISO_OPACITY: f32 = 0.85;
+pub const SAS_ISO_OPACITY: f32 = 0.75;
+
+// pub const DENSITY_ISO_OPACITY: f32 = 1.0; // todo temp
 // pub const SAS_ISO_OPACITY: f32 = 1.0; // todo temp
 
 // This allows us to more easily customize sphere mesh resolution.

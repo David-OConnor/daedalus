@@ -74,7 +74,7 @@ use egui_file_dialog::{FileDialog, FileDialogConfig};
 use file_io::cif_pdb::load_cif_pdb;
 use graphics::{Camera, InputsCommanded};
 use lin_alg::{
-    f32::{Quaternion, Vec3, f32x8},
+    f32::{Quaternion, Vec3},
     f64::Vec3 as Vec3F64,
 };
 use mol_drawing::MoleculeView;
@@ -88,7 +88,8 @@ use pdbtbx::{self, PDB};
 use crate::{
     aa_coords::bond_vecs::init_local_bond_vecs,
     docking::{
-        BindingEnergy, THETA_BH, dynamics::Snapshot, external::check_adv_avail, prep::DockingSetup,
+        BindingEnergy, ConformationType, THETA_BH, dynamics::Snapshot, external::check_adv_avail,
+        prep::DockingSetup,
     },
     dynamics::MdState,
     file_io::{cif_pdb::save_pdb, mtz::load_mtz, pdbqt::load_pdbqt},
@@ -478,10 +479,15 @@ impl State {
     }
 
     pub fn update_docking_site(&mut self, posit: Vec3F64) {
+        println!("In UDS: {:?}", posit);
         if let Some(lig) = &mut self.ligand {
             lig.docking_site.site_center = posit;
             lig.pose.anchor_posit = lig.docking_site.site_center;
-            lig.atom_posits = lig.position_atoms(None);
+            lig.position_atoms(None);
+
+            // if let ConformationType::AbsolutePosits = lig.pose.conformation_type {
+            //
+            // }
 
             self.ui.docking_site_x = posit.x.to_string();
             self.ui.docking_site_y = posit.y.to_string();
@@ -590,7 +596,12 @@ fn main() {
     // Update ligand positions, e.g. from the docking position site center loaded from prefs.
     if let Some(lig) = &mut state.ligand {
         lig.pose.anchor_posit = lig.docking_site.site_center;
-        lig.atom_posits = lig.position_atoms(None);
+        lig.position_atoms(None);
+    }
+
+    if let Some(mol) = &state.molecule {
+        let posit = state.to_save.per_mol[&mol.ident].docking_site.site_center;
+        state.update_docking_site(posit);
     }
 
     // todo temp

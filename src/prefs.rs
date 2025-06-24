@@ -8,6 +8,7 @@ use graphics::{
     ControlScheme,
     app_utils::{load, save},
 };
+use lin_alg::f64::Vec3;
 
 use crate::{
     CamSnapshot, MsaaSetting, Selection, State, ViewSelLevel, Visibility,
@@ -71,12 +72,13 @@ pub struct PerMolToSave {
     chain_to_pick_res: Option<usize>,
     visibility: Visibility,
     metadata: Option<MolMetaData>,
-    docking_site: DockingSite,
+    pub docking_site: DockingSite,
     show_docking_tools: bool,
     res_color_by_index: bool,
     show_aa_seq: bool,
     rcsb_data: Option<PdbDataResults>,
     rcsb_files_avail: Option<FilesAvailable>,
+    docking_site_posit: Vec3,
 }
 
 impl PerMolToSave {
@@ -100,8 +102,11 @@ impl PerMolToSave {
         }
 
         let mut docking_site = Default::default();
+
+        let mut lig_posit = Vec3::new_zero();
         if let Some(lig) = &state.ligand {
             docking_site = lig.docking_site.clone();
+            lig_posit = lig.pose.anchor_posit;
         }
 
         Self {
@@ -122,11 +127,22 @@ impl PerMolToSave {
             show_aa_seq: state.ui.show_aa_seq,
             rcsb_data,
             rcsb_files_avail,
+            docking_site_posit: lig_posit,
         }
     }
 }
 
 impl State {
+    /// We run this after loading a molecule.
+    pub fn update_save_prefs_no_mol(&mut self) {
+        if let Err(e) = save(
+            &self.volatile.prefs_dir.join(DEFAULT_PREFS_FILE),
+            &self.to_save,
+        ) {
+            eprintln!("Error saving state: {e:?}");
+        }
+    }
+
     /// Update when prefs change, periodically etc.
     pub fn update_save_prefs(&mut self) {
         if let Some(mol) = &self.molecule {
@@ -165,6 +181,10 @@ impl State {
                 self.ui.show_docking_tools = data.show_docking_tools;
                 self.ui.res_color_by_index = data.res_color_by_index;
                 self.ui.show_aa_seq = data.show_aa_seq;
+
+                if let Some(lig) = &mut self.ligand {
+                    lig.docking_site.site_center = data.docking_site_posit; // todo: Or docking site?
+                }
 
                 if let Some(md) = &data.metadata {
                     mol.metadata = Some(PdbMetaData {

@@ -304,7 +304,6 @@ impl MdState {
         let dt_half = 0.5 * dt;
 
         // 1) First half-kick (v += a dt/2) and drift (x += v dt)
-
         // todo: Do we want traditional verlet instead?
         for a in &mut self.atoms {
             a.vel += a.accel * dt_half;
@@ -662,53 +661,48 @@ pub struct SimBox {
     pub lo: Vec3,
     pub hi: Vec3,
 }
+
 impl SimBox {
     #[inline]
     pub fn extent(&self) -> Vec3 {
         self.hi - self.lo
     }
 
-    /// wrap an absolute coordinate back into the box
+    /// wrap an absolute coordinate back into the box (orthorhombic)
     #[inline]
-    pub fn wrap(&self, mut p: Vec3) -> Vec3 {
+    pub fn wrap(&self, p: Vec3) -> Vec3 {
         let ext = self.extent();
 
-        let ext_arr = ext.to_arr();
-        let mut p_arr = p.to_arr();
-        let lo_arr = self.lo.to_arr();
-        let hi_arr = self.hi.to_arr();
+        debug_assert!(
+            ext.x > 0.0 && ext.y > 0.0 && ext.z > 0.0,
+            "SimBox edges must be > 0 (lo={:?}, hi={:?})",
+            self.lo,
+            self.hi
+        );
 
-        for d in 0..3 {
-            while p_arr[d] < lo_arr[d] {
-                p_arr[d] += ext_arr[d];
-            }
-            while p_arr[d] >= hi_arr[d] {
-                p_arr[d] -= ext_arr[d];
-            }
-        }
-        Vec3::from_slice(&p_arr).unwrap()
+        // rem_euclid keeps the value in [0, ext)
+        let wrapped = Vec3::new(
+            (p.x - self.lo.x).rem_euclid(ext.x) + self.lo.x,
+            (p.y - self.lo.y).rem_euclid(ext.y) + self.lo.y,
+            (p.z - self.lo.z).rem_euclid(ext.z) + self.lo.z,
+        );
+
+        wrapped
     }
 
-    /// minimum-image distance vector  (no √ here – caller may need magnitude)
+    /// minimum-image displacement vector (no √)
     #[inline]
-    pub fn min_image(&self, mut dv: Vec3) -> Vec3 {
+    pub fn min_image(&self, dv: Vec3) -> Vec3 {
         let ext = self.extent();
+        debug_assert!(ext.x > 0.0 && ext.y > 0.0 && ext.z > 0.0);
 
-        let ext_arr = ext.to_arr();
-        let mut dv_arr = dv.to_arr();
-
-        for d in 0..3 {
-            if dv_arr[d] > 0.5 * ext_arr[d] {
-                dv_arr[d] -= ext_arr[d];
-            }
-            if dv_arr[d] < -0.5 * ext_arr[d] {
-                dv_arr[d] += ext_arr[d];
-            }
-        }
-        Vec3::from_slice(&dv_arr).unwrap()
+        Vec3::new(
+            dv.x - (dv.x / ext.x).round() * ext.x,
+            dv.y - (dv.y / ext.y).round() * ext.y,
+            dv.z - (dv.z / ext.z).round() * ext.z,
+        )
     }
 }
-
 /// Add `n` TIP3P molecules uniformly in the box.
 pub fn add_tip3p(state: &mut MdState, n: usize, rng: &mut impl rand::Rng) {
     use rand_distr::{Distribution, UnitSphere};

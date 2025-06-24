@@ -683,10 +683,14 @@ fn docking(
             );
 
             lig.pose = pose;
-            lig.atom_posits = lig.position_atoms(None);
+
+            lig.position_atoms(None);
 
             {
-                let lig_pos: Vec3 = lig.position_atoms(None)[lig.anchor_atom].into();
+                lig.position_atoms(None);
+
+                lig.position_atoms(None);
+                let lig_pos: Vec3 = lig.atom_posits[lig.anchor_atom].into();
                 let ctr: Vec3 = mol.center.into();
 
                 cam_look_at_outside(&mut scene.camera, lig_pos, ctr);
@@ -709,11 +713,10 @@ fn docking(
             // let mut partial_charges_lig = Vec::with_capacity(poses.len());
 
             for pose in poses {
-                let posits_this_pose: Vec<_> = lig
-                    .position_atoms(Some(&pose))
-                    .iter()
-                    .map(|p| (*p).into())
-                    .collect();
+                lig.position_atoms(Some(&pose));
+
+                let posits_this_pose: Vec<_> =
+                    lig.atom_posits.iter().map(|p| (*p).into()).collect();
 
                 // partial_charges_lig.push(create_partial_charges(
                 //     &ligand.molecule.atoms,
@@ -1084,7 +1087,7 @@ fn selection_section(
                 }
             }
 
-            if let Some(lig) = &state.ligand {
+            if let Some(lig) = &mut state.ligand {
                 ui.add_space(COL_SPACING / 2.);
                 if ui
                     .button(RichText::new("Move cam to lig").color(COLOR_HIGHLIGHT))
@@ -1096,7 +1099,9 @@ fn selection_section(
                             "Problem positioning ligand atoms. Len shorter than anchor.".to_owned(),
                         );
                     } else {
-                        let lig_pos: Vec3 = lig.position_atoms(None)[lig.anchor_atom].into();
+                        lig.position_atoms(None);
+
+                        let lig_pos: Vec3 = lig.atom_posits[lig.anchor_atom].into();
                         let ctr: Vec3 = mol.center.into();
 
                         cam_look_at_outside(&mut scene.camera, lig_pos, ctr);
@@ -1771,7 +1776,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                             torsions[i].dihedral_angle =
                                 (torsions[i].dihedral_angle + TAU / 64.) % TAU;
 
-                            ligand.atom_posits = ligand.position_atoms(None);
+                            ligand.position_atoms(None);
+
                             redraw_mol = true;
                         }
                     }
@@ -1991,12 +1997,14 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         // todo: Move to new_mol_loaded code block?
         if let Some(mol) = &state.molecule {
-            if let Some(lig) = &state.ligand {
+            if let Some(lig) = &mut state.ligand {
                 if lig.anchor_atom >= lig.molecule.atoms.len() {
                     let msg = "Error positioning ligand atoms; anchor outside len".to_owned();
                     handle_err(&mut state.ui, msg);
                 } else {
-                    let lig_pos: Vec3 = lig.position_atoms(None)[lig.anchor_atom].into();
+                    lig.position_atoms(None);
+
+                    let lig_pos: Vec3 = lig.atom_posits[lig.anchor_atom].into();
                     let ctr: Vec3 = mol.center.into();
 
                     cam_look_at_outside(&mut scene.camera, lig_pos, ctr);
