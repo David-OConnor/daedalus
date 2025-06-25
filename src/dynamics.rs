@@ -228,6 +228,21 @@ impl MdState {
         let bonds_dy = bonds.iter().map(|b| b.into()).collect();
         let atoms_dy_external = atoms_external.iter().map(|a| a.into()).collect();
 
+        let cell = {
+            let (mut min, mut max) = (Vec3::splat(f64::INFINITY), Vec3::splat(f64::NEG_INFINITY));
+            for a in atoms {
+                min = min.min(a.posit);
+                max = max.max(a.posit);
+            }
+            let pad = 15.0;            // Å
+            let lo  = min - Vec3::splat(pad);
+            let hi  = max + Vec3::splat(pad);
+
+            println!("Initizing sim box. L: {lo} H: {hi}");
+
+            SimBox { lo, hi }
+        };
+
         let mut result = Self {
             atoms: atoms_dy,
             bonds: bonds_dy,
@@ -300,6 +315,7 @@ impl MdState {
 
     /// One **Velocity-Verlet** step (leap-frog style) of length `dt_fs` femtoseconds.
     pub fn step(&mut self, dt_fs: f64) {
+        // todo: Is this OK?
         let dt = dt_fs * 1.0e-15; // s
         let dt_half = 0.5 * dt;
 
@@ -308,22 +324,31 @@ impl MdState {
         for a in &mut self.atoms {
             a.vel += a.accel * dt_half;
             a.posit += a.vel * dt;
+
+            // todo; Put back, but getting NaNs.
+            // todo: This isn't the only NaN source...
+
             a.posit = self.cell.wrap(a.posit);
 
             // track the largest squared displacement to know when to rebuild the list
             self.max_disp_sq = self.max_disp_sq.max((a.vel * dt).magnitude_squared());
+
+            // println!("P: {}", a.accel);
         }
+
 
         for a in &mut self.atoms {
             a.accel = Vec3::new_zero();
+            // println!("Acc: {}", a.accel);
         }
 
+        // todo put back
         self.apply_bond_forces();
         self.apply_angle_forces();
         self.apply_torsion_forces();
         self.apply_nonbonded_forces();
 
-        // 3) Second half-kick using new accelerations
+        // Second half-kick using new accelerations
         for a in &mut self.atoms {
             a.vel += a.accel * dt_half;
         }
@@ -339,7 +364,7 @@ impl MdState {
             }
         }
 
-        self.time += dt_fs;
+        self.time += dt;
         self.step_count += 1;
 
         // Rebuild Verlet if needed
@@ -436,6 +461,8 @@ impl MdState {
     fn apply_nonbonded_forces(&mut self) {
         let cutoff_sq = CUTOFF * CUTOFF;
 
+        const EPS: f64 = 1e-6;
+
         for i in 0..self.atoms.len() {
             // todo: Can you unify this with your neighbor code used for bonds?
             for &j in &self.neighbour[i] {
@@ -470,6 +497,10 @@ impl MdState {
                 let dist = r_sq.sqrt();
                 let dir = diff / dist;
 
+                // if dist < EPS {
+                //     continue;
+                // }
+
                 let mut f_lj = force_lj(dir, dist, *σ as f64, *ϵ as f64);
 
                 let mut f_coulomb = force_coulomb(
@@ -487,6 +518,13 @@ impl MdState {
 
                 let f = f_lj + f_coulomb;
 
+                if self.atoms[i].mass < 0.0001 {
+                    println!("Mass problem: {:?}", self.atoms[i]);
+                }
+                if self.atoms[j].mass < 0.0001 {
+                    println!("Mass problem: {:?}", self.atoms[j]);
+                }
+
                 let accel_0 = f / self.atoms[i].mass;
                 let accel_1 = f / self.atoms[j].mass;
 
@@ -498,7 +536,11 @@ impl MdState {
         // Second pass: External atoms.
         for ai in &mut self.atoms {
             for aj in &self.atoms_external {
+
                 let dv = self.cell.min_image(aj.posit - ai.posit);
+
+                let dv = Vec3::new_zero();
+
                 let r_sq = dv.magnitude_squared();
                 if r_sq > cutoff_sq {
                     continue;
@@ -507,6 +549,10 @@ impl MdState {
                 let (σ, ϵ) = self.lj_lut.get(&(ai.element, aj.element)).unwrap();
                 let dist = r_sq.sqrt();
                 let dir = dv / dist;
+
+                if dist < EPS {
+                    continue;
+                }
 
                 let f = force_lj(dir, dist, *σ as f64, *ϵ as f64)
                     + force_coulomb(
@@ -517,7 +563,13 @@ impl MdState {
                         SOFTENING_FACTOR_SQ,
                     );
 
+                // if f.x.is_nan() {
+                //     println!("dist: {:?}, dir: {:?}, dv: {}", dist, dir, dv);
+                // }
+
+                // ai.accel += f / ai.mass;
                 ai.accel += f / ai.mass;
+
             }
         }
     }
@@ -661,6 +713,7 @@ pub struct SimBox {
     pub lo: Vec3,
     pub hi: Vec3,
 }
+
 
 impl SimBox {
     #[inline]
