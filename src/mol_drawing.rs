@@ -532,7 +532,9 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene) {
 
     let mol = &lig.molecule;
 
-    if state.ui.show_docking_tools {
+    // todo: You have problems with transparent objects like the view cube in conjunction
+    // todo with the transparent surface; workaround to not draw the cube here.
+    if state.ui.show_docking_tools && state.ui.mol_view != MoleculeView::Surface {
         // Add a visual indicator for the docking site.
 
         scene.entities.push(Entity {

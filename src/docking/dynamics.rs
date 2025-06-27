@@ -36,9 +36,10 @@ use crate::{
         BindingEnergy, ConformationType, Pose, calc_binding_energy,
         prep::{DockingSetup, Torsion},
     },
-    dynamics::{AtomDynamics, AtomDynamicsx4, MdState, SimBox},
+    dynamics::{AtomDynamics, AtomDynamicsx4, MdState, SimBox, SnapshotDynamics},
     forces::{force_lj, force_lj_f32},
     integrate::{integrate_verlet, integrate_verlet_f64},
+    mol_drawing::{EntityType, draw_ligand},
     molecule::{Atom, Ligand},
 };
 // This seems to be how we control rotation vice movement. A higher value means
@@ -294,7 +295,9 @@ pub fn build_dock_dynamics(
     lig: &mut Ligand,
     setup: &DockingSetup,
     n_steps: usize,
-) -> Vec<Snapshot> {
+    // ) -> Vec<Snapshot> {
+    // ) -> Vec<SnapshotDynamics> {
+) -> MdState {
     println!("Building docking dyanmics...");
     let start = Instant::now();
 
@@ -305,13 +308,14 @@ pub fn build_dock_dynamics(
         // todo: Use state dynamics state
         let mut md_state = MdState::new(
             &lig.molecule.atoms,
+            &lig.atom_posits,
             &lig.molecule.bonds,
             &setup.rec_atoms_near_site,
             SimBox::default(),
             &setup.lj_lut,
         );
 
-        let n_steps = 1_000;
+        let n_steps = 10_000;
         // In femtoseconds
         let dt = 1.;
 
@@ -320,12 +324,10 @@ pub fn build_dock_dynamics(
         }
 
         for (i, atom) in md_state.atoms.iter().enumerate() {
-            if i < 30 {
-                println!("Posit: {:?}", atom.posit);
-            }
-
             lig.molecule.atoms[i].posit = atom.posit;
         }
+
+        return md_state;
     }
 
     // todo: You should possibly add your pre-computed LJ pairs, instead of looking up each time.
@@ -585,7 +587,9 @@ pub fn build_dock_dynamics(
 
     let elapsed = start.elapsed().as_millis();
     println!("Complete. Time: {elapsed}ms");
-    snapshots
+
+    // snapshots
+    Default::default()
 }
 
 /// Body masses are separate from the snapshot, since it's invariant.
@@ -599,9 +603,7 @@ pub fn change_snapshot(
     // todo: Initial hack: Get working as individual particles. Then, try to incorporate
     // todo fixed rotation of the molecule, fixed movement, bond flexes etc.
 
-    // todo: For now, redraw all entities; eventually, don't!
-    // entities.retain(|e| !lig_entity_ids.contains(&e.id));
-    // *entities = Vec::with_capacity(snapshot.lig_atom_posits.len());
+    // entities.retain(|e| e.class != EntityType::Ligand as u32);
 
     lig.pose = snapshot.pose.clone();
 
@@ -615,45 +617,24 @@ pub fn change_snapshot(
         .collect();
 
     *energy_disp = snapshot.energy.clone();
+}
 
-    //
-    // for (i, posit) in snapshot.body_posits.iter().enumerate() {
-    //     let entity_size = f32::clamp(
-    //         BODY_SIZE_SCALER * body_masses[i],
-    //         BODY_SIZE_MIN,
-    //         BODY_SIZE_MAX,
-    //     );
-    //     entities.push(Entity::new(
-    //         MESH_SPHERE,
-    //         *posit,
-    //         Quaternion::new_identity(),
-    //         entity_size,
-    //         BODY_COLOR,
-    //         BODY_SHINYNESS,
-    //     ));
-    //
-    //     // entities.push(Entity::new(
-    //     //     MESH_ARROW,
-    //     //     *posit,
-    //     //     Quaternion::from_unit_vecs(UP_VEC, snapshot.body_accs[i].to_normalized()),
-    //     //     snapshot.body_accs[i].magnitude() * 0.2,
-    //     //     ARROW_COLOR,
-    //     //     ARROW_SHINYNESS,
-    //     // ));
-    // }
-    //
-    // for cube in &snapshot.tree_cubes {
-    //     entities.push(Entity::new(
-    //         MESH_CUBE,
-    //         Vec3f32::new(
-    //             cube.center.x as f32,
-    //             cube.center.y as f32,
-    //             cube.center.z as f32,
-    //         ),
-    //         Quaternion::new_identity(),
-    //         cube.width as f32 * TREE_CUBE_SCALE_FACTOR,
-    //         TREE_COLOR,
-    //         TREE_SHINYNESS,
-    //     ));
-    // }
+/// Body masses are separate from the snapshot, since it's invariant.
+pub fn change_snapshot_md(
+    entities: &mut [Entity],
+    lig: &mut Ligand,
+    lig_entity_ids: &[usize],
+    energy_disp: &mut Option<BindingEnergy>,
+    snapshot: &SnapshotDynamics,
+) {
+    // entities.retain(|e| e.class != EntityType::Ligand as u32);
+
+    lig.pose.conformation_type = ConformationType::AbsolutePosits; // Should alreayd be set?
+
+    // Position atoms from pose  here? You could, but the snapshot has them pre-positioned.
+    // This may make changing snapshots faster. But uses more memory from storing each
+
+    lig.atom_posits = snapshot.atom_posits.iter().map(|p| (*p).into()).collect();
+
+    // *energy_disp = snapshot.energy.clone();
 }

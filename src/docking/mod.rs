@@ -762,13 +762,13 @@ pub fn find_optimal_pose(
         let mut lig_this = ligand.clone(); //  todo: DOn't like this clone.
         lig_this.pose = poses[*pose_i].clone();
 
-        let snapshots = build_dock_dynamics(dev, &mut lig_this, setup, num_vdw_steps);
+        // let snapshots = build_dock_dynamics(dev, &mut lig_this, setup, num_vdw_steps);
+        // let final_snap = &snapshots[snapshots.len() - 1];
 
-        let final_snap = &snapshots[snapshots.len() - 1];
-        println!(
-            "Updated snap: {:?}",
-            final_snap.energy.as_ref().unwrap().score
-        );
+        // println!(
+        //     "Updated snap: {:?}",
+        //     final_snap.energy.as_ref().unwrap().score
+        // );
     }
 
     println!("Complete. \n\nBest pose init: {best_pose:?} \n\nScores: {best_energy:.3?}\n\n");

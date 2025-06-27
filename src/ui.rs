@@ -23,7 +23,7 @@ use crate::{
     cli::autocomplete_cli,
     docking::{
         ConformationType, calc_binding_energy,
-        dynamics::{build_dock_dynamics, change_snapshot},
+        dynamics::{build_dock_dynamics, change_snapshot, change_snapshot_md},
         external::check_adv_avail,
         find_optimal_pose,
         find_sites::find_docking_sites,
@@ -883,36 +883,71 @@ fn docking(
     ui.horizontal(|ui| {
         if let Some(lig) = &mut state.ligand {
             if ui.button("Run MD docking").clicked() {
-                state.volatile.snapshots = build_dock_dynamics(
+                // state.volatile.snapshots = build_dock_dynamics(
+                //     &state.dev,
+                //     lig,
+                //     state.volatile.docking_setup.as_ref().unwrap(),
+                //     1_500,
+                // );
+
+                // Set up the atom posits to be IOC the pose.
+                // println!("P before: {}", lig.atom_posits[0]);
+                // lig.position_atoms(None);
+
+                // // Sync atom posits with pose.
+                // match &lig.pose.conformation_type {
+                //     ConformationType::AbsolutePosits => {
+                //         println!("Abs")
+                //     }
+                //     ConformationType::Flexible { torsions} => {
+                //         println!("Flexible");
+                //     }
+                // }
+
+                state.mol_dynamics = Some(build_dock_dynamics(
                     &state.dev,
                     lig,
                     state.volatile.docking_setup.as_ref().unwrap(),
                     1_500,
-                );
+                ));
 
                 state.ui.current_snapshot = 0;
             }
 
-            if !state.volatile.snapshots.is_empty() {
-                ui.add_space(ROW_SPACING);
+            if let Some(md) = &state.mol_dynamics {
+                if !md.snapshots.is_empty() {
+                    // if !state.volatile.snapshots.is_empty() {
+                    ui.add_space(ROW_SPACING);
 
-                let snapshot_prev = state.ui.current_snapshot;
-                ui.spacing_mut().slider_width = ui.available_width() - 100.;
-                ui.add(Slider::new(
-                    &mut state.ui.current_snapshot,
-                    0..=state.volatile.snapshots.len() - 1,
-                ));
+                    let snapshot_prev = state.ui.current_snapshot;
+                    ui.spacing_mut().slider_width = ui.available_width() - 100.;
+                    ui.add(Slider::new(
+                        &mut state.ui.current_snapshot,
+                        // 0..=state.volatile.snapshots.len() - 1,
+                        0..=md.snapshots.len() - 1, // todo exper
+                    ));
 
-                if state.ui.current_snapshot != snapshot_prev {
-                    change_snapshot(
-                        &mut scene.entities,
-                        lig,
-                        &Vec::new(),
-                        &mut state.ui.binding_energy_disp,
-                        &state.volatile.snapshots[state.ui.current_snapshot],
-                    );
+                    if state.ui.current_snapshot != snapshot_prev {
+                        // change_snapshot(
+                        //     &mut scene.entities,
+                        //     lig,
+                        //     &Vec::new(),
+                        //     &mut state.ui.binding_energy_disp,
+                        //     &state.volatile.snapshots[state.ui.current_snapshot],
+                        // );
 
-                    engine_updates.entities = true;
+                        change_snapshot_md(
+                            &mut scene.entities,
+                            lig,
+                            &Vec::new(),
+                            &mut state.ui.binding_energy_disp,
+                            &md.snapshots[state.ui.current_snapshot],
+                        );
+
+                        draw_ligand(state, scene);
+
+                        engine_updates.entities = true;
+                    }
                 }
             }
         }

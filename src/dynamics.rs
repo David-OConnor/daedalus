@@ -91,7 +91,6 @@ impl From<&Atom> for AtomDynamics {
             posit: atom.posit.into(),
             vel: Vec3::new_zero(),
             accel: Vec3::new_zero(),
-            // todo: Sort this out. What is the proton mass here.
             mass: atom.element.atomic_weight() as f64,
             element: atom.element,
             partial_charge: atom.partial_charge.unwrap_or_default() as f64,
@@ -219,24 +218,39 @@ pub struct MdState {
 impl MdState {
     pub fn new(
         atoms: &[Atom],
+        atom_posits: &[Vec3],
         bonds: &[Bond],
         atoms_external: &[Atom],
         cell: SimBox,
         lj_table: &LjTable,
     ) -> Self {
-        let atoms_dy = atoms.iter().map(|a| a.into()).collect();
+        // We are using this approach instead of `.into`, so we can use the atom_posits from
+        // the positioned ligand. (its atom coords are relative; we need absolute)
+        let mut atoms_dy = Vec::with_capacity(atoms.len());
+        for (i, atom) in atoms.iter().enumerate() {
+            atoms_dy.push(AtomDynamics {
+                posit: atom_posits[i],
+                vel: Vec3::new_zero(),
+                accel: Vec3::new_zero(),
+                mass: atom.element.atomic_weight() as f64,
+                element: atom.element,
+                partial_charge: atom.partial_charge.unwrap_or_default() as f64,
+            });
+        }
+
+        // let atoms_dy = atoms.iter().map(|a| a.into()).collect();
         let bonds_dy = bonds.iter().map(|b| b.into()).collect();
         let atoms_dy_external = atoms_external.iter().map(|a| a.into()).collect();
 
         let cell = {
             let (mut min, mut max) = (Vec3::splat(f64::INFINITY), Vec3::splat(f64::NEG_INFINITY));
-            for a in atoms {
+            for a in &atoms_dy {
                 min = min.min(a.posit);
                 max = max.max(a.posit);
             }
-            let pad = 15.0;            // Å
-            let lo  = min - Vec3::splat(pad);
-            let hi  = max + Vec3::splat(pad);
+            let pad = 15.0; // Å
+            let lo = min - Vec3::splat(pad);
+            let hi = max + Vec3::splat(pad);
 
             println!("Initizing sim box. L: {lo} H: {hi}");
 
@@ -316,7 +330,9 @@ impl MdState {
     /// One **Velocity-Verlet** step (leap-frog style) of length `dt_fs` femtoseconds.
     pub fn step(&mut self, dt_fs: f64) {
         // todo: Is this OK?
-        let dt = dt_fs * 1.0e-15; // s
+        // let dt = dt_fs * 1.0e-15; // s
+        let dt = dt_fs * 0.0001;
+
         let dt_half = 0.5 * dt;
 
         // 1) First half-kick (v += a dt/2) and drift (x += v dt)
@@ -332,10 +348,7 @@ impl MdState {
 
             // track the largest squared displacement to know when to rebuild the list
             self.max_disp_sq = self.max_disp_sq.max((a.vel * dt).magnitude_squared());
-
-            // println!("P: {}", a.accel);
         }
-
 
         for a in &mut self.atoms {
             a.accel = Vec3::new_zero();
@@ -536,7 +549,6 @@ impl MdState {
         // Second pass: External atoms.
         for ai in &mut self.atoms {
             for aj in &self.atoms_external {
-
                 let dv = self.cell.min_image(aj.posit - ai.posit);
 
                 let dv = Vec3::new_zero();
@@ -569,7 +581,6 @@ impl MdState {
 
                 // ai.accel += f / ai.mass;
                 ai.accel += f / ai.mass;
-
             }
         }
     }
@@ -583,12 +594,12 @@ impl MdState {
             .sum()
     }
 
-    pub fn take_snapshot(&self) -> SnapshotDynamics {
-        SnapshotDynamics {
+    pub fn take_snapshot(&mut self) {
+        self.snapshots.push(SnapshotDynamics {
             time: self.time,
             atom_posits: self.atoms.iter().map(|a| a.posit).collect(),
             atom_velocities: self.atoms.iter().map(|a| a.vel).collect(),
-        }
+        })
     }
 }
 
@@ -714,7 +725,6 @@ pub struct SimBox {
     pub hi: Vec3,
 }
 
-
 impl SimBox {
     #[inline]
     pub fn extent(&self) -> Vec3 {
@@ -726,7 +736,7 @@ impl SimBox {
     pub fn wrap(&self, p: Vec3) -> Vec3 {
         let ext = self.extent();
 
-        debug_assert!(
+        assert!(
             ext.x > 0.0 && ext.y > 0.0 && ext.z > 0.0,
             "SimBox edges must be > 0 (lo={:?}, hi={:?})",
             self.lo,
