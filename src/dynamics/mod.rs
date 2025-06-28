@@ -54,6 +54,8 @@ const SOFTENING_FACTOR_SQ: f64 = 1e-6;
 // todo: A/R
 const SNAPSHOT_RATIO: usize = 10;
 
+const EPS: f64 = 1.0e-8;
+
 #[derive(Debug, Default)]
 pub struct SnapshotDynamics {
     pub time: f64,
@@ -265,7 +267,6 @@ impl MdState {
             BondDynamics::from_bond(b, atoms)
         }).collect();
 
-
         let atoms_dy_external: Vec<_> = atoms_external.iter().map(|a| a.into()).collect();
 
         let cell = {
@@ -283,9 +284,42 @@ impl MdState {
             SimBox { lo, hi }
         };
 
+        // 5-a) adjacency list from the bond table
+        let mut nbrs: Vec<Vec<usize>> = vec![Vec::new(); atoms.len()];
+        for b in bonds {
+            nbrs[b.atom_0].push(b.atom_1);
+            nbrs[b.atom_1].push(b.atom_0);
+        }
+
+        // 5-b) generate every i–j–k–l path (three consecutive bonds)
+        let mut torsions = Vec::<Torsion>::new();
+        let mut seen     = HashSet::<(usize, usize, usize, usize)>::new();
+
+        for (j, nbrs_j) in nbrs.iter().enumerate() {
+            for &k in nbrs_j {
+                if j >= k { continue }                // treat each central bond once
+                for &i in &nbrs[j] {
+                    if i == k { continue }            // same bond
+                    for &l in &nbrs[k] {
+                        if l == j { continue }
+                        // canonical ordering keeps i-j-k-l as unique key
+                        let key = (i, j, k, l);
+                        if !seen.insert(key) { continue }
+
+                        // look-up (or stub-out) the torsion parameters
+                        let (vn, n, gamma) =
+                            lookup_torsion_params(&atoms[i], &atoms[j], &atoms[k], &atoms[l]);
+
+                        torsions.push(Torsion { i, j, k, l, vn, n, γ: gamma });
+                    }
+                }
+            }
+        }
+
         let mut result = Self {
             atoms: atoms_dy,
             bonds: bonds_dy,
+            torsions,
             atoms_external: atoms_dy_external,
             lj_lut: lj_table.clone(),
             cell,
@@ -438,34 +472,68 @@ impl MdState {
         }
     }
 
+    /// This maintains bond angles between sets of three atoms as they should be from hybridization.
+    /// It reflects this hybridization, steric clashes, and partial double-bond character. This
+    /// identifies deviations from the ideal angle, calculates restoring torque, and applies forces
+    /// based on this to push the atoms back into their ideal positions in the molecule.
     fn apply_angle_forces(&mut self) {
         for &Angle { i, j, k, kθ, θ0 } in &self.angles {
-            // todo: Use your existing dihedral angle code?
+            // r_i —— r_j —— r_k   (θ is ∠ijk)
             let (ai, aj, ak) = split3_mut(&mut self.atoms, i, j, k);
 
-            let dist_ij = ai.posit - aj.posit;
-            let dist_kj = ak.posit - aj.posit;
+            // Bond vectors with j at the vertex
+            let a = ai.posit - aj.posit;              // r_ij
+            let b = ak.posit - aj.posit;              // r_kj (note sign!)
 
-            let cosθ =
-                dist_ij.dot(dist_kj) / (dist_ij.magnitude() * dist_kj.magnitude()).max(1e-12);
-            let θ = cosθ.acos();
-            let Δ = θ - θ0;
+            let a_sq = a.magnitude_squared();
+            let b_sq = b.magnitude_squared();
 
-            // simplified small-angle approximation: torque converted to force along bisectors
-            let f_mag = -2.0 * kθ * Δ;
-            let n = dist_ij.cross(dist_kj).to_normalized();
-            let f_i = n.cross(dist_ij).to_normalized() * f_mag;
-            let f_k = dist_kj.cross(n).to_normalized() * f_mag;
+            // Quit early if atoms are on top of each other
+            if a_sq < EPS || b_sq < EPS {
+                continue;
+            }
 
+            let a_len = a_sq.sqrt();
+            let b_len = b_sq.sqrt();
+            let inv_ab = 1.0 / (a_len * b_len);
+
+            // cosθ and sinθ
+            let cosθ = (a.dot(b) * inv_ab).clamp(-1.0, 1.0);
+            let sinθ_sq = 1.0 - cosθ * cosθ;
+            if sinθ_sq < EPS {
+                continue;                     // θ ≈ 0° or 180°, gradient ill-defined
+            }
+            let sinθ = sinθ_sq.sqrt();
+
+            // Actual angle and its deviation
+            let θ     = cosθ.acos();
+            let Δθ    = θ - θ0;
+            let dV_dθ = 2.0 * kθ * Δθ;        // ∂V/∂θ
+
+            // Helpers reused in both force terms
+            let coef  = -dV_dθ / sinθ;        // −∂V/∂θ  / sinθ
+            let g1    = coef * inv_ab;        // common factor
+
+            // ∂θ/∂r_i  and  ∂θ/∂r_k  (Allen & Tildesley Eq. 4.82)
+            let dθ_dri =  g1 * ( b / b_len - cosθ * a / a_len );
+            let dθ_drk =  g1 * ( a / a_len - cosθ * b / b_len );
+
+            // Forces
+            let f_i = -dV_dθ * dθ_dri;
+            let f_k = -dV_dθ * dθ_drk;
+            let f_j = -(f_i + f_k);           // Newton’s third law
+
+            // Accelerations
             ai.accel += f_i / ai.mass;
+            aj.accel += f_j / aj.mass;
             ak.accel += f_k / ak.mass;
-            aj.accel -= (f_i + f_k) / aj.mass;
         }
     }
 
+    /// This maintains dihedral angles. (i.e. the angle between four atoms in a sequence). This models
+    /// effects such as σ-bond overlap (e.g. staggered conformations), π-conjugation, which locks certain
+    /// dihedrals near 0 or τ, and steric hindrance. (Bulky groups clashing).
     fn apply_torsion_forces(&mut self) {
-        // Numerical threshold below which we skip the torsion to avoid 1/0 and NaNs
-        const EPS: f64 = 1.0e-8;
 
         for &Torsion { i, j, k, l, vn, n, γ } in &self.torsions {
             // Split the four atoms mutably without aliasing
@@ -518,10 +586,10 @@ impl MdState {
             let dφ_dr3 = -dφ_dr1 - dφ_dr2 - dφ_dr4; // Newton’s third law
 
             // F_i = −dV/dφ · ∂φ/∂r_i
-            let f1 = -dV_dφ * dφ_dr1;
-            let f2 = -dV_dφ * dφ_dr2;
-            let f3 = -dV_dφ * dφ_dr3;
-            let f4 = -dV_dφ * dφ_dr4;
+            let f1 = -dφ_dr1 * dV_dφ;
+            let f2 = -dφ_dr2 * dV_dφ;
+            let f3 = -dφ_dr3 * dV_dφ;
+            let f4 = -dφ_dr4 * dV_dφ;
 
             // Convert to accelerations
             ai.accel += f1 / ai.mass;
@@ -631,12 +699,12 @@ impl MdState {
 
                 let f = force_lj(dir, dist, *σ as f64, *ϵ as f64)
                     + force_coulomb(
-                        dir,
-                        dist,
-                        ai.partial_charge,
-                        aj.partial_charge,
-                        SOFTENING_FACTOR_SQ,
-                    );
+                    dir,
+                    dist,
+                    ai.partial_charge,
+                    aj.partial_charge,
+                    SOFTENING_FACTOR_SQ,
+                );
 
                 ai.accel += f / ai.mass;
             }
@@ -859,4 +927,20 @@ pub fn add_tip3p(state: &mut MdState, n: usize, rng: &mut impl rand::Rng) {
         state.atoms.push(make(h1, M_H, 0.417, Element::Hydrogen));
     }
     state.build_neighbour(); // list is stale now
+}
+
+// todo: Populate. Look for amber .dat files, and *frcmod or parm10.dat.
+fn lookup_torsion_params(
+    _ai: &Atom,
+    _aj: &Atom,
+    _ak: &Atom,
+    _al: &Atom,
+) -> (f64, u8, f64) {
+    // TODO: replace with a real force-field database lookup.
+    // The constants below (Cn3, phase = 0) give a mild (~0.15 kcal mol⁻¹) barrier
+    // with 3-fold periodicity, so nothing explodes while you wire in a true FF.
+    let vn     = 0.15;      // kcal·mol⁻¹
+    let n      = 3;         // periodicity
+    let gamma  = 0.0;       // rad
+    (vn, n, gamma)
 }
