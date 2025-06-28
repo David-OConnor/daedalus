@@ -653,7 +653,8 @@ fn draw_cli(
 fn docking(
     state: &mut State,
     scene: &mut Scene,
-    redraw: &mut bool,
+    // redraw_mol: &mut bool,
+    redraw_lig: &mut bool,
     reset_cam: bool,
     engine_updates: &mut EngineUpdates,
     ui: &mut Ui,
@@ -704,7 +705,7 @@ fn docking(
             //     state.volatile.autodock_path_dialog.pick_file();
             // }
             // dock_with_vina(mol, ligand, &state.to_save.autodock_vina_path);
-            *redraw = true;
+            *redraw_lig = true;
         }
 
         if ui.button("Docking energy").clicked() {
@@ -840,6 +841,9 @@ fn docking(
                     {
                         // todo: Pick center-of-mass atom, or better yet, match it to the anchor atom.
                         let posit = mol.atoms[res.atoms[0]].posit;
+                        lig.pose.conformation_type = ConformationType::Flexible {torsions: Vec::new() }; // todo: Risky to init to new?
+                        *redraw_lig = true;
+
                         docking_posit_update = Some(posit);
                         docking_init_changed = true;
                     }
@@ -857,13 +861,16 @@ fn docking(
                 let atom_sel = mol.get_sel_atom(&state.selection);
 
                 if let Some(atom) = atom_sel {
+                    lig.pose.conformation_type = ConformationType::Flexible {torsions: Vec::new() }; // todo: Risky to init to new?
+                    *redraw_lig = true;
+
                     docking_posit_update = Some(atom.posit);
                     docking_init_changed = true;
                 }
             }
         }
         if docking_init_changed {
-            *redraw = true;
+            *redraw_lig = true;
             set_docking_light(scene, Some(&lig.docking_site));
             // todo: Hardcoded as some.
             engine_updates.lighting = true;
@@ -1440,6 +1447,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
     // return  engine_updates;
     let mut redraw_mol = false;
+    let mut redraw_lig = false;
     let mut reset_cam = false;
 
     // For getting DT for certain buttons when held. Does not seem to be the same as the 3D render DT.
@@ -1872,7 +1880,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             docking(
                 state,
                 scene,
-                &mut redraw_mol,
+                // &mut redraw_mol,
+                &mut redraw_lig,
                 reset_cam,
                 &mut engine_updates,
                 ui,
@@ -1891,32 +1900,32 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         // todo: Move this A/R
         if let Some(mol) = &state.molecule {
-            if ui.button("Run MD").clicked() {
-                // if let Some(mol) = &state.molecule {
-                //     let dynamics = match &mut state.mol_dynamics {
-                //         Some(md) => md,
-                //         None => {
-                //             state.mol_dynamics = Some(MdState::new(&mol.atoms));
-                //             &state.dy
-                //         }
-                //     };
-                // }
-
-                // todo: We don't need to gen each time? But this is cheap.
-                // state.mol_dynamics =
-                //     Some(MdState::new(&mol.atoms, &state.volatile.lj_lookup_table));
-                //
-                // let dynamics = &mut state.mol_dynamics.as_mut().unwrap();
-                //
-                // println!("Running dynamics...");
-                // let num_steps = 1_000;
-                // let dt = 0.001;
-                // for t in 0..num_steps {
-                //     dynamics.step(dt)
-                // }
-
-                println!("Complete.");
-            }
+            // if ui.button("Run MD").clicked() {
+            //     if let Some(mol) = &state.molecule {
+            //         let dynamics = match &mut state.mol_dynamics {
+            //             Some(md) => md,
+            //             None => {
+            //                 state.mol_dynamics = Some(MdState::new(&mol.atoms));
+            //                 &state.dy
+            //             }
+            //         };
+            //     }
+            //
+            //     todo: We don't need to gen each time? But this is cheap.
+            //     state.mol_dynamics =
+            //         Some(MdState::new(&mol.atoms, &state.volatile.lj_lookup_table));
+            //
+            //     let dynamics = &mut state.mol_dynamics.as_mut().unwrap();
+            //
+            //     println!("Running dynamics...");
+            //     let num_steps = 1_000;
+            //     let dt = 0.001;
+            //     for t in 0..num_steps {
+            //         dynamics.step(dt)
+            //     }
+            //
+            //     println!("Complete.");
+            // }
         }
 
         // todo: Move A/r.
@@ -1996,6 +2005,17 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             if let Some(mol) = &state.molecule {
                 set_window_title(&mol.ident, scene);
             }
+
+            engine_updates.entities = true;
+
+            // For docking light, but may be overkill here.
+            if state.ligand.is_some() {
+                engine_updates.lighting = true;
+            }
+        }
+
+        if redraw_lig {
+            draw_ligand(state, scene); // todo: Hmm.
 
             engine_updates.entities = true;
 

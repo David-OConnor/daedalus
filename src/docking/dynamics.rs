@@ -311,11 +311,10 @@ pub fn build_dock_dynamics(
             &lig.atom_posits,
             &lig.molecule.bonds,
             &setup.rec_atoms_near_site,
-            SimBox::default(),
             &setup.lj_lut,
         );
 
-        let n_steps = 100_000;
+        let n_steps = 40_000;
         // In femtoseconds
         let dt = 1.;
 

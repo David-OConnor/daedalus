@@ -485,10 +485,6 @@ impl State {
             lig.pose.anchor_posit = lig.docking_site.site_center;
             lig.position_atoms(None);
 
-            // if let ConformationType::AbsolutePosits = lig.pose.conformation_type {
-            //
-            // }
-
             self.ui.docking_site_x = posit.x.to_string();
             self.ui.docking_site_y = posit.y.to_string();
             self.ui.docking_site_z = posit.z.to_string();

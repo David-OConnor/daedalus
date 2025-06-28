@@ -146,6 +146,7 @@ pub struct BondDynamics {
     pub atom_0: usize,
     pub atom_1: usize,
     /// Harmonic force const,  kcal mol⁻¹ Å⁻²
+    /// Higher values mean less flexibility to bond length.
     pub k: f64,
     /// equilibrium bond length, Å
     pub r0: f64,
@@ -172,7 +173,8 @@ impl BondDynamics {
         Self {
             atom_0: bond.atom_0,
             atom_1: bond.atom_1,
-            k: 350., // todo temp. Find out how to get this.
+            // k: 350., // todo temp. Find out how to get this.
+            k: 600., // todo temp. Find out how to get this.
             r0: init_bond_len,
         }
     }
@@ -239,7 +241,6 @@ impl MdState {
         atom_posits: &[Vec3],
         bonds: &[Bond],
         atoms_external: &[Atom],
-        cell: SimBox,
         lj_table: &LjTable,
     ) -> Self {
         // We are using this approach instead of `.into`, so we can use the atom_posits from
@@ -265,7 +266,7 @@ impl MdState {
         }).collect();
 
 
-        let atoms_dy_external = atoms_external.iter().map(|a| a.into()).collect();
+        let atoms_dy_external: Vec<_> = atoms_external.iter().map(|a| a.into()).collect();
 
         let cell = {
             let (mut min, mut max) = (Vec3::splat(f64::INFINITY), Vec3::splat(f64::NEG_INFINITY));
@@ -356,7 +357,7 @@ impl MdState {
     pub fn step(&mut self, dt_fs: f64) {
         // todo: Is this OK?
         // let dt = dt_fs * 1.0e-15; // s
-        let dt = dt_fs * 0.001;
+        let dt = dt_fs * 0.0001;
 
         let dt_half = 0.5 * dt;
 
@@ -380,7 +381,6 @@ impl MdState {
             // println!("Acc: {}", a.accel);
         }
 
-        // todo put back
         self.apply_bond_forces();
         self.apply_angle_forces();
         self.apply_torsion_forces();
@@ -430,7 +430,8 @@ impl MdState {
 
             let Δ = dist - r0;
             // F = -dV/dr = -k 2Δ   (harmonic)
-            let f_mag = -2.0 * k * Δ / dist.max(1e-12);
+            // let f_mag = -2.0 * k * Δ / dist.max(1e-12);
+            let f_mag = -k * Δ / dist.max(1e-12);
             let f = diff * f_mag;
             ai.accel -= f / ai.mass;
             aj.accel += f / aj.mass;
@@ -463,33 +464,70 @@ impl MdState {
     }
 
     fn apply_torsion_forces(&mut self) {
-        for &Torsion {
-            i,
-            j,
-            k,
-            l,
-            vn,
-            n,
-            γ,
-        } in &self.torsions
-        {
+        // Numerical threshold below which we skip the torsion to avoid 1/0 and NaNs
+        const EPS: f64 = 1.0e-8;
+
+        for &Torsion { i, j, k, l, vn, n, γ } in &self.torsions {
+            // Split the four atoms mutably without aliasing
             let (ai, aj, ak, al) = split4_mut(&mut self.atoms, i, j, k, l);
 
-            let dist_ij = ai.posit - aj.posit;
-            let dist_kj = ak.posit - aj.posit;
-            let dist_kj2 = ak.posit - al.posit;
+            // Convenience aliases for the positions
+            let r1 = ai.posit;
+            let r2 = aj.posit;
+            let r3 = ak.posit;
+            let r4 = al.posit;
 
-            let n1 = dist_ij.cross(dist_kj).to_normalized();
-            let n2 = dist_kj.cross(dist_kj2).to_normalized();
+            // Bond vectors (see Allen & Tildesley, chap. 4)
+            let b1 = r1 - r2;         // r_ij
+            let b2 = r3 - r2;         // r_kj  (note the sign!)
+            let b3 = r4 - r3;         // r_lk
 
-            let φ = n1.dot(n2).clamp(-1.0, 1.0).acos();
-            let dV_dφ = 0.5 * vn * (n as f64) * ((n as f64) * φ - γ).sin();
+            // Normal vectors to the two planes
+            let n1 = b1.cross(b2);
+            let n2 = b3.cross(b2);
 
-            // Approximate: project torque equally; full derivation omitted for brevity.
-            let torque = dV_dφ;
-            let f = n2 * torque;
-            ai.accel += f / ai.mass;
-            al.accel -= f / al.mass;
+            let n1_sq = n1.magnitude_squared();
+            let n2_sq = n2.magnitude_squared();
+            let b2_len = b2.magnitude();
+
+            // Bail out if the four atoms are (nearly) colinear
+            if n1_sq < EPS || n2_sq < EPS || b2_len < EPS {
+                continue;
+            }
+
+            // Unit normals
+            let n1_hat = n1 / n1_sq.sqrt();
+            let n2_hat = n2 / n2_sq.sqrt();
+
+            // m1 = n̂1 × (b̂2)
+            let m1 = n1_hat.cross(b2 / b2_len);
+
+            // Signed dihedral (−π … π)
+            let x = n1_hat.dot(n2_hat);
+            let y = m1.dot(n2_hat);
+            let φ = y.atan2(x);
+
+            // dV/dφ  (note the minus sign from ∂cos / ∂φ = −sin)
+            let dV_dφ = -0.5 * vn * (n as f64) * ((n as f64) * φ - γ).sin();
+
+            // ∂φ/∂r   (see e.g. DOI 10.1016/S0021-9991(97)00040-8)
+            let dφ_dr1 =  n1 * ( b2_len / n1_sq);
+            let dφ_dr4 = -n2 * ( b2_len / n2_sq);
+            let dφ_dr2 = -n1 * (b1.dot(b2) / (b2_len * n1_sq))
+                + n2 * (b3.dot(b2) / (b2_len * n2_sq));
+            let dφ_dr3 = -dφ_dr1 - dφ_dr2 - dφ_dr4; // Newton’s third law
+
+            // F_i = −dV/dφ · ∂φ/∂r_i
+            let f1 = -dV_dφ * dφ_dr1;
+            let f2 = -dV_dφ * dφ_dr2;
+            let f3 = -dV_dφ * dφ_dr3;
+            let f4 = -dV_dφ * dφ_dr4;
+
+            // Convert to accelerations
+            ai.accel += f1 / ai.mass;
+            aj.accel += f2 / aj.mass;
+            ak.accel += f3 / ak.mass;
+            al.accel += f4 / al.mass;
         }
     }
 
@@ -576,7 +614,7 @@ impl MdState {
             for aj in &self.atoms_external {
                 let dv = self.cell.min_image(aj.posit - ai.posit);
 
-                let dv = Vec3::new_zero();
+                // let dv = Vec3::new_zero();
 
                 let r_sq = dv.magnitude_squared();
                 if r_sq > cutoff_sq {
@@ -600,11 +638,6 @@ impl MdState {
                         SOFTENING_FACTOR_SQ,
                     );
 
-                // if f.x.is_nan() {
-                //     println!("dist: {:?}, dir: {:?}, dv: {}", dist, dir, dv);
-                // }
-
-                // ai.accel += f / ai.mass;
                 ai.accel += f / ai.mass;
             }
         }
