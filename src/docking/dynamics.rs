@@ -315,7 +315,7 @@ pub fn build_dock_dynamics(
             &setup.lj_lut,
         );
 
-        let n_steps = 10_000;
+        let n_steps = 100_000;
         // In femtoseconds
         let dt = 1.;
 
@@ -603,8 +603,6 @@ pub fn change_snapshot(
     // todo: Initial hack: Get working as individual particles. Then, try to incorporate
     // todo fixed rotation of the molecule, fixed movement, bond flexes etc.
 
-    // entities.retain(|e| e.class != EntityType::Ligand as u32);
-
     lig.pose = snapshot.pose.clone();
 
     // Position atoms from pose  here? You could, but the snapshot has them pre-positioned.
@@ -627,8 +625,6 @@ pub fn change_snapshot_md(
     energy_disp: &mut Option<BindingEnergy>,
     snapshot: &SnapshotDynamics,
 ) {
-    // entities.retain(|e| e.class != EntityType::Ligand as u32);
-
     lig.pose.conformation_type = ConformationType::AbsolutePosits; // Should alreayd be set?
 
     // Position atoms from pose  here? You could, but the snapshot has them pre-positioned.

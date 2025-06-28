@@ -145,17 +145,35 @@ impl AtomDynamicsx4 {
 pub struct BondDynamics {
     pub atom_0: usize,
     pub atom_1: usize,
-    pub k: f64,  // kcal mol⁻¹ Å⁻²
-    pub r0: f64, // Å
+    /// Harmonic force const,  kcal mol⁻¹ Å⁻²
+    pub k: f64,
+    /// equilibrium bond length, Å
+    pub r0: f64,
 }
 
-impl From<&Bond> for BondDynamics {
-    fn from(bond: &Bond) -> Self {
+// impl From<&Bond> for BondDynamics {
+//     fn from(bond: &Bond) -> Self {
+//
+//         Self {
+//             atom_0: bond.atom_0,
+//             atom_1: bond.atom_1,
+//             k: 350., // todo temp. Find out how to get this.
+//             r0:0., // todo: Figure out how to get this. Using `from_bonds` until then.
+//         }
+//     }
+// }
+
+impl BondDynamics {
+    // fn from(bond: &Bond) -> Self {
+    fn from_bond(bond: &Bond, atoms: &[Atom]) -> Self {
+        // todo: Temp. Figure out how to get this.
+        let init_bond_len = (atoms[bond.atom_0].posit - atoms[bond.atom_1].posit).magnitude();
+
         Self {
             atom_0: bond.atom_0,
             atom_1: bond.atom_1,
-            k: 0.,  // todo: How?
-            r0: 0., // todo: How?
+            k: 350., // todo temp. Find out how to get this.
+            r0: init_bond_len,
         }
     }
 }
@@ -239,7 +257,14 @@ impl MdState {
         }
 
         // let atoms_dy = atoms.iter().map(|a| a.into()).collect();
-        let bonds_dy = bonds.iter().map(|b| b.into()).collect();
+        // let bonds_dy = bonds.iter().map(|b| b.into()).collect();
+
+        // todo: Temp on bonds this way until we know how to init r0.
+        let bonds_dy = bonds.iter().map(|b| {
+            BondDynamics::from_bond(b, atoms)
+        }).collect();
+
+
         let atoms_dy_external = atoms_external.iter().map(|a| a.into()).collect();
 
         let cell = {
@@ -331,7 +356,7 @@ impl MdState {
     pub fn step(&mut self, dt_fs: f64) {
         // todo: Is this OK?
         // let dt = dt_fs * 1.0e-15; // s
-        let dt = dt_fs * 0.0001;
+        let dt = dt_fs * 0.001;
 
         let dt_half = 0.5 * dt;
 
