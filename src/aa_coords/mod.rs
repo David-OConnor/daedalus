@@ -617,7 +617,7 @@ pub fn aa_data_from_coords(
         serial_number: 0,
         posit: Vec3::new_zero(),
         element: Hydrogen,
-        name: "H".to_string(),
+        name: Some("H".to_string()),
         role: Some(AtomRole::H_Backbone),
         residue: None, // todo?
         // residue_type: residue_type.clone(),
@@ -625,6 +625,7 @@ pub fn aa_data_from_coords(
         dock_type: None,
         occupancy: None,
         partial_charge: None,
+        force_field_atom_type: None,
         temperature_factor: None,
     };
 

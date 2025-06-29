@@ -700,7 +700,8 @@ pub struct Atom {
     pub serial_number: usize,
     pub posit: Vec3,
     pub element: Element,
-    pub name: String,
+    /// e.g. "HA", "C", "N", "HB3" etc.
+    pub name: Option<String>,
     pub role: Option<AtomRole>,
     // todo: We should have a residue *pointer* etc to speed up computations;
     // todo: We shouldn't have to iterate through residues checking for atom membership.
@@ -714,6 +715,8 @@ pub struct Atom {
     pub dock_type: Option<DockType>,
     pub occupancy: Option<f32>,
     pub partial_charge: Option<f32>,
+    /// E.g. "c6", "ca", "n3", "ha", "h0" etc, as seen in Mol2 files from AMBER.
+    pub force_field_atom_type: Option<String>,
     pub temperature_factor: Option<f32>,
     // todo: Impl this, for various calculations
     // /// Atoms relatively close to this; simplifies  certain calculations.
@@ -738,10 +741,12 @@ impl Atom {
     pub fn to_generic(&self) -> AtomGeneric {
         AtomGeneric {
             serial_number: self.serial_number,
+            name: self.name.clone(),
             posit: self.posit,
             element: self.element,
             // name: String::new(),
             partial_charge: self.partial_charge,
+            force_field_atom_type: self.force_field_atom_type.clone(),
             ..Default::default()
         }
     }
@@ -753,8 +758,9 @@ impl From<&AtomGeneric> for Atom {
             serial_number: atom.serial_number,
             posit: atom.posit,
             element: atom.element,
-            name: String::new(),
+            name: atom.name.clone(),
             partial_charge: atom.partial_charge,
+            force_field_atom_type: atom.force_field_atom_type.clone(),
             ..Default::default()
         }
     }

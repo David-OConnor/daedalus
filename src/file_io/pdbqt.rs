@@ -169,7 +169,7 @@ impl Molecule {
                     serial_number,
                     posit: Vec3 { x, y, z },
                     element,
-                    name: name.to_owned(),
+                    name: Some(name.to_owned()),
                     role,
                     residue: None,
                     // residue_type,
@@ -177,6 +177,7 @@ impl Molecule {
                     occupancy,
                     temperature_factor,
                     partial_charge,
+                    force_field_atom_type: None,
                     dock_type,
                 });
             } else if record_type == "CRYST1" {
@@ -308,12 +309,17 @@ impl Molecule {
                 dock_type = dt.to_str();
             }
 
+            let name = match &atom.name {
+                Some(name) => name.clone(),
+                None => atom.element.to_letter(),
+            };
+
             writeln!(
                 file,
                 "{:<6}{:>5}  {:<3} {:<3} {:>1}{:>4}    {:>8.3}{:>8.3}{:>8.3}{:>6.2}{:>6.2}    {:>+6.3} {:<2}",
                 record_name,                                 // columns 1-6
                 atom.serial_number,                          // columns 7-11
-                atom.name,                                   // columns 13-14 or 13-16
+                name,                                   // columns 13-14 or 13-16
                 residue_name,                                // columns 18-20
                 chain_id,                                    // column 22
                 res_num,                                     // columns 23-26

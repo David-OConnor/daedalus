@@ -9,18 +9,14 @@ egui = "0.31.1"
 #egui_tiles = "0.12.0" # For layouts etc. Experimenting
 egui-file-dialog = "0.10.0" #  For file dialogs.
 
-cfg-if = "1.0.0"
+cfg-if = "1.0.1"
 
 lin_alg = { version = "1.2.0", features = ["encode"] }
-# todo: Use https://github.com/bempp/kifmm when ready? Adapt for Windows.
 barnes_hut = { version = "1.0.8"}  # enc temp rem
-# todo: Qhull is temp until we find a way to generate non-convex meshes.
-# todo: Relies on C FFI. This may complicate compiling.
-#qhull = "0.4.0"
-na_seq = "0.2.7"
-bio_apis = {  version = "0.1.2", features = ["encode"] }
-bio_files = "0.1.0"
-#bio_files = { path = "../bio_files" }
+
+na_seq = "0.2.8"
+bio_apis = {  version = "0.1.3", features = ["encode"] }
+bio_files = "0.1.3"
 
 # For loading and saving config
 bincode = "2.0.1"
@@ -62,7 +58,7 @@ pdbtbx = { git = "https://github.com/David-OConnor/pdbtbx", branch = "Fix-symmet
 na_seq = { path = "../na_seq" }
 bio_apis = { path = "../bio_apis" }
 mcubes = { path = "../mcubes" }
-bio_files = { path = "../bio_files" }
+#bio_files = { path = "../bio_files" }
 
 
 

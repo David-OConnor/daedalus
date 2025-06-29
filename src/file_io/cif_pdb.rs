@@ -47,7 +47,7 @@ impl Atom {
             serial_number: atom_pdb.serial_number(),
             posit: Vec3::new(atom_pdb.x(), atom_pdb.y(), atom_pdb.z()),
             element: el_from_pdb(atom_pdb.element()),
-            name: atom_pdb.name().to_owned(),
+            name: Some(atom_pdb.name().to_owned()),
             role,
             residue,
             // residue_type,
@@ -55,6 +55,7 @@ impl Atom {
             occupancy: None,
             temperature_factor: None,
             partial_charge: None,
+            force_field_atom_type: None,
             dock_type: Some(DockType::from_str(atom_pdb.name())), // Updated later with Donor/Acceptor
         }
     }

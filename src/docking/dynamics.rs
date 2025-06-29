@@ -16,7 +16,7 @@ cfg_if::cfg_if! {
 
 use graphics::Entity;
 use lin_alg::{
-    f32::{Mat3 as Mat3F32, Quaternion as QuaternionF32, Vec3 as Vec3F32},
+    f32::Vec3 as Vec3F32,
     f64::{Mat3, Quaternion, Vec3},
 };
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -24,22 +24,18 @@ use lin_alg::{
     // f32::{Vec3x8, f32x8, pack_slice, pack_vec3},
     f64::{Vec3x4, f64x4, pack_slice, pack_vec3},
 };
-use na_seq::Element;
 use rayon::prelude::*;
 
 #[cfg(feature = "cuda")]
 use crate::forces::force_lj_gpu;
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-use crate::forces::force_lj_x8;
 use crate::{
     docking::{
         BindingEnergy, ConformationType, Pose, calc_binding_energy,
         prep::{DockingSetup, Torsion},
     },
-    dynamics::{AtomDynamics, AtomDynamicsx4, MdState, SimBox, SnapshotDynamics},
-    forces::{force_lj, force_lj_f32},
-    integrate::{integrate_verlet, integrate_verlet_f64},
-    mol_drawing::{EntityType, draw_ligand},
+    dynamics::{AtomDynamics, AtomDynamicsx4, MdState, SnapshotDynamics},
+    forces::force_lj,
+    integrate::integrate_verlet_f64,
     molecule::{Atom, Ligand},
 };
 // This seems to be how we control rotation vice movement. A higher value means
@@ -314,7 +310,7 @@ pub fn build_dock_dynamics(
             &setup.lj_lut,
         );
 
-        let n_steps = 40_000;
+        let n_steps = 60_000;
         // In femtoseconds
         let dt = 1.;
 

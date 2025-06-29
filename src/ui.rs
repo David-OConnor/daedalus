@@ -841,7 +841,9 @@ fn docking(
                     {
                         // todo: Pick center-of-mass atom, or better yet, match it to the anchor atom.
                         let posit = mol.atoms[res.atoms[0]].posit;
-                        lig.pose.conformation_type = ConformationType::Flexible {torsions: Vec::new() }; // todo: Risky to init to new?
+                        lig.pose.conformation_type = ConformationType::Flexible {
+                            torsions: Vec::new(),
+                        }; // todo: Risky to init to new?
                         *redraw_lig = true;
 
                         docking_posit_update = Some(posit);
@@ -861,7 +863,9 @@ fn docking(
                 let atom_sel = mol.get_sel_atom(&state.selection);
 
                 if let Some(atom) = atom_sel {
-                    lig.pose.conformation_type = ConformationType::Flexible {torsions: Vec::new() }; // todo: Risky to init to new?
+                    lig.pose.conformation_type = ConformationType::Flexible {
+                        torsions: Vec::new(),
+                    }; // todo: Risky to init to new?
                     *redraw_lig = true;
 
                     docking_posit_update = Some(atom.posit);

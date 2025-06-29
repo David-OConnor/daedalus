@@ -148,7 +148,7 @@ impl Default for FileDialogs {
             .add_file_filter_extensions("Xtal", vec!["map", "mtz", "cif"])
             .add_save_extension("CIF", "cif")
             .add_save_extension("SDF", "sdf")
-            .add_save_extension("Mol2", "sdf")
+            .add_save_extension("Mol2", "mol2")
             .add_save_extension("Pdbqt", "pdbqt1")
             .add_save_extension("Map", "map");
 
