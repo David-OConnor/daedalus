@@ -28,10 +28,10 @@ impl ForceFieldParamsIndexed {
 
         /* ---------- per–atom tables --------------------------------------------------------- */
         for (idx, atom) in atoms.iter().enumerate() {
-            let name = atom
-                .name
+            let ff_type = atom
+                .force_field_type
                 .as_ref()
-                .ok_or_else(|| ParamError::new("Atom without a type/name"))?;
+                .ok_or_else(|| ParamError::new("Atom missing FF type"))?;
 
             // todo: A/R: Is this much different from element.atomic_weight()?
             // // Mass
@@ -70,24 +70,24 @@ impl ForceFieldParamsIndexed {
         // Bonds
         for bond in bonds {
             let (i, j) = (bond.atom_0, bond.atom_1);
-            let (name_i, name_j) = (
+            let (type_i, type_j) = (
                 atoms[i]
-                    .name
+                    .force_field_type
                     .as_ref()
-                    .ok_or_else(|| ParamError::new("Atom without a name"))?,
+                    .ok_or_else(|| ParamError::new("Atom missing FF type"))?,
                 atoms[j]
-                    .name
+                    .force_field_type
                     .as_ref()
-                    .ok_or_else(|| ParamError::new("Atom without a name"))?,
+                    .ok_or_else(|| ParamError::new("Atom missing FF type"))?,
             );
 
             let data = params
                 .bond
-                .get(&(name_i.clone(), name_j.clone()))
-                .or_else(|| params.bond.get(&(name_j.clone(), name_i.clone())))
+                .get(&(type_i.clone(), type_j.clone()))
+                .or_else(|| params.bond.get(&(type_j.clone(), type_i.clone())))
                 .cloned()
                 .ok_or_else(|| {
-                    ParamError::new(&format!("Missing bond parameters for {name_i}-{name_j}"))
+                    ParamError::new(&format!("Missing bond parameters for {type_i}-{type_j}"))
                 })?;
 
             result.bond.insert((i.min(j), i.max(j)), data);
@@ -99,33 +99,33 @@ impl ForceFieldParamsIndexed {
                 continue;
             }
             for (&i, &k) in neigh.iter().tuple_combinations() {
-                let (name_i, name_c, name_k) = (
+                let (type_i, type_j, type_k) = (
                     atoms[i]
-                        .name
+                        .force_field_type
                         .as_ref()
-                        .ok_or_else(|| ParamError::new("Atom without a name"))?,
+                        .ok_or_else(|| ParamError::new("Atom missing FF type"))?,
                     atoms[center]
-                        .name
+                        .force_field_type
                         .as_ref()
-                        .ok_or_else(|| ParamError::new("Atom without a name"))?,
+                        .ok_or_else(|| ParamError::new("Atom missing FF type"))?,
                     atoms[k]
-                        .name
+                        .force_field_type
                         .as_ref()
-                        .ok_or_else(|| ParamError::new("Atom without a name"))?,
+                        .ok_or_else(|| ParamError::new("Atom missing FF type"))?,
                 );
 
                 let data = params
                     .angle
-                    .get(&(name_i.clone(), name_c.clone(), name_k.clone()))
+                    .get(&(type_i.clone(), type_j.clone(), type_k.clone()))
                     .or_else(|| {
                         params
                             .angle
-                            .get(&(name_k.clone(), name_c.clone(), name_i.clone()))
+                            .get(&(type_k.clone(), type_j.clone(), type_i.clone()))
                     })
                     .cloned()
                     .ok_or_else(|| {
                         ParamError::new(&format!(
-                            "No ANGLE parameters for {name_i}-{name_c}-{name_k}"
+                            "No ANGLE parameters for {type_i}-{type_j}-{type_k}"
                         ))
                     })?;
 
@@ -156,47 +156,47 @@ impl ForceFieldParamsIndexed {
                             continue; // already handled through another path
                         }
 
-                        let (name_i, name_j, name_k, name_l) = (
+                        let (type_i, type_j, type_k, type_l) = (
                             atoms[i]
-                                .name
+                                .force_field_type
                                 .as_ref()
-                                .ok_or_else(|| ParamError::new("Atom without a name"))?,
+                                .ok_or_else(|| ParamError::new("Atom missing FF type"))?,
                             atoms[j]
-                                .name
+                                .force_field_type
                                 .as_ref()
-                                .ok_or_else(|| ParamError::new("Atom without a name"))?,
+                                .ok_or_else(|| ParamError::new("Atom missing FF type"))?,
                             atoms[k]
-                                .name
+                                .force_field_type
                                 .as_ref()
-                                .ok_or_else(|| ParamError::new("Atom without a name"))?,
+                                .ok_or_else(|| ParamError::new("Atom missing FF type"))?,
                             atoms[l]
-                                .name
+                                .force_field_type
                                 .as_ref()
-                                .ok_or_else(|| ParamError::new("Atom without a name"))?,
+                                .ok_or_else(|| ParamError::new("Atom missing FF type"))?,
                         );
 
                         let data = params
                             .dihedral
                             .get(&(
-                                name_i.clone(),
-                                name_j.clone(),
-                                name_k.clone(),
-                                name_l.clone(),
+                                type_i.clone(),
+                                type_j.clone(),
+                                type_k.clone(),
+                                type_l.clone(),
                             ))
                             // symmetric in the outer pair
                             .or_else(|| {
                                 params.dihedral.get(&(
-                                    name_l.clone(),
-                                    name_k.clone(),
-                                    name_j.clone(),
-                                    name_i.clone(),
+                                    type_l.clone(),
+                                    type_k.clone(),
+                                    type_j.clone(),
+                                    type_i.clone(),
                                 ))
                             })
                             .cloned()
                             .ok_or_else(|| {
                                 ParamError::new(&format!(
                                     "No dihedral parameters for \
-                                     {name_i}-{name_j}-{name_k}-{name_l}"
+                                     {type_i}-{type_j}-{type_k}-{type_l}"
                                 ))
                             })?;
 
@@ -205,6 +205,8 @@ impl ForceFieldParamsIndexed {
                 }
             }
         }
+
+        println!("\n\nFF for this ligand: {:?}", result);
 
         Ok(result)
     }
@@ -380,9 +382,21 @@ impl MdState {
         atoms_external: &[Atom],
         lj_table: &LjTable,
         ff_params_keyed: &ForceFieldParamsKeyed,
-    ) -> Self {
+    ) -> Result<Self, ParamError> {
+        // println!("ATOMS: {:?}", atoms); // temp to eval ff types.
+
+        for (k, v) in ff_params_keyed.bond.iter() {
+            if k.0 == "ca" && k.1 == "ss" {
+                println!("found ca-ss: {:?}", v);
+            }
+            if k.0 == "c" && k.1 == "cd" {
+                println!("found c-cd: {:?}", v);
+            }
+        }
+
         // Convert FF params from keyed to index-based.
-        let ff_params = ForceFieldParamsIndexed::new(ff_params_keyed, atoms, bonds, adjacency_list);
+        let force_field_params =
+            ForceFieldParamsIndexed::new(ff_params_keyed, atoms, bonds, adjacency_list)?;
 
         // We are using this approach instead of `.into`, so we can use the atom_posits from
         // the positioned ligand. (its atom coords are relative; we need absolute)
@@ -396,7 +410,7 @@ impl MdState {
                 accel: Vec3::new_zero(),
                 mass: atom.element.atomic_weight() as f64,
                 partial_charge: atom.partial_charge.unwrap_or_default() as f64,
-                force_field_type: None,
+                force_field_type: Some(atom.force_field_type.clone().unwrap_or_default()),
             });
         }
 
@@ -435,13 +449,14 @@ impl MdState {
             cell,
             excluded_pairs: HashSet::new(),
             scaled14_pairs: HashSet::new(),
+            force_field_params,
             ..Default::default()
         };
 
         result.build_masks();
         result.build_neighbours();
 
-        result
+        Ok(result)
     }
 
     // todo: Evaluate whtaq this does, and if you keep it, document.

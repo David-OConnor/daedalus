@@ -625,7 +625,7 @@ pub fn aa_data_from_coords(
         dock_type: None,
         occupancy: None,
         partial_charge: None,
-        force_field_atom_type: None,
+        force_field_type: None,
         temperature_factor: None,
     };
 

@@ -55,7 +55,7 @@ impl Atom {
             occupancy: None,
             temperature_factor: None,
             partial_charge: None,
-            force_field_atom_type: None,
+            force_field_type: None,
             dock_type: Some(DockType::from_str(atom_pdb.name())), // Updated later with Donor/Acceptor
         }
     }

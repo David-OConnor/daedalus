@@ -16,10 +16,12 @@ use na_seq::AaIdent;
 
 static INIT_COMPLETE: AtomicBool = AtomicBool::new(false);
 
-use bio_files::{DensityMap, ResidueType, density_from_2fo_fc_rcsb_gemmi};
+use bio_files::{
+    DensityMap, ResidueType, density_from_2fo_fc_rcsb_gemmi, frcmod::ForceFieldParams,
+};
 
 use crate::{
-    CamSnapshot, MsaaSetting, Selection, State, ViewSelLevel, cli,
+    CamSnapshot, GAFF2_DATA, MsaaSetting, Selection, State, ViewSelLevel, cli,
     cli::autocomplete_cli,
     docking::{
         ConformationType, calc_binding_energy,
@@ -29,7 +31,7 @@ use crate::{
         find_sites::find_docking_sites,
     },
     download_mols::{load_sdf_drugbank, load_sdf_pubchem},
-    dynamics::MdState,
+    dynamics::{ForceFieldParamsKeyed, MdState},
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
     mol_drawing::{
         COLOR_DOCKING_SITE_MESH, EntityType, MoleculeView, draw_density, draw_density_surface,
@@ -894,36 +896,55 @@ fn docking(
     ui.horizontal(|ui| {
         if let Some(lig) = &mut state.ligand {
             if ui.button("Run MD docking").clicked() {
-                // state.volatile.snapshots = build_dock_dynamics(
-                //     &state.dev,
-                //     lig,
-                //     state.volatile.docking_setup.as_ref().unwrap(),
-                //     1_500,
-                // );
+                // If not already loaded from static string to state, do so now.
+                if state.md_forcefields_lig_general.is_none() {
+                    match ForceFieldParams::from_dat(GAFF2_DATA) {
+                        Ok(ff) => {
+                            state.md_forcefields_lig_general = Some(ForceFieldParamsKeyed::new(&ff))
+                        }
+                        Err(e) => handle_err(
+                            &mut state.ui,
+                            format!("Unable to load FF params (static): {e}"),
+                        ),
+                    }
+                }
 
-                // Set up the atom posits to be IOC the pose.
-                // println!("P before: {}", lig.atom_posits[0]);
-                // lig.position_atoms(None);
+                if let Some(ff) = &state.md_forcefields_lig_general {
+                    // state.volatile.snapshots = build_dock_dynamics(
+                    //     &state.dev,
+                    //     lig,
+                    //     state.volatile.docking_setup.as_ref().unwrap(),
+                    //     1_500,
+                    // );
 
-                // // Sync atom posits with pose.
-                // match &lig.pose.conformation_type {
-                //     ConformationType::AbsolutePosits => {
-                //         println!("Abs")
-                //     }
-                //     ConformationType::Flexible { torsions} => {
-                //         println!("Flexible");
-                //     }
-                // }
+                    // Set up the atom posits to be IOC the pose.
+                    // println!("P before: {}", lig.atom_posits[0]);
+                    // lig.position_atoms(None);
 
-                state.mol_dynamics = Some(build_dock_dynamics(
-                    &state.dev,
-                    lig,
-                    state.volatile.docking_setup.as_ref().unwrap(),
-                    &state.md_forcefields_lig_general.as_ref().unwrap(),
-                    1_500,
-                ));
+                    // // Sync atom posits with pose.
+                    // match &lig.pose.conformation_type {
+                    //     ConformationType::AbsolutePosits => {
+                    //         println!("Abs")
+                    //     }
+                    //     ConformationType::Flexible { torsions} => {
+                    //         println!("Flexible");
+                    //     }
+                    // }
 
-                state.ui.current_snapshot = 0;
+                    match build_dock_dynamics(
+                        &state.dev,
+                        lig,
+                        state.volatile.docking_setup.as_ref().unwrap(),
+                        ff,
+                        1_500,
+                    ) {
+                        Ok(md) => {
+                            state.mol_dynamics = Some(md);
+                            state.ui.current_snapshot = 0;
+                        }
+                        Err(e) => handle_err(&mut state.ui, e.descrip),
+                    }
+                }
             }
 
             if let Some(md) = &state.mol_dynamics {

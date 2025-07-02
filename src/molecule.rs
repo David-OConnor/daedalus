@@ -716,7 +716,7 @@ pub struct Atom {
     pub occupancy: Option<f32>,
     pub partial_charge: Option<f32>,
     /// E.g. "c6", "ca", "n3", "ha", "h0" etc, as seen in Mol2 files from AMBER.
-    pub force_field_atom_type: Option<String>,
+    pub force_field_type: Option<String>,
     pub temperature_factor: Option<f32>,
     // todo: Impl this, for various calculations
     // /// Atoms relatively close to this; simplifies  certain calculations.
@@ -746,7 +746,7 @@ impl Atom {
             element: self.element,
             // name: String::new(),
             partial_charge: self.partial_charge,
-            force_field_atom_type: self.force_field_atom_type.clone(),
+            force_field_atom_type: self.force_field_type.clone(),
             ..Default::default()
         }
     }
@@ -760,7 +760,7 @@ impl From<&AtomGeneric> for Atom {
             element: atom.element,
             name: atom.name.clone(),
             partial_charge: atom.partial_charge,
-            force_field_atom_type: atom.force_field_atom_type.clone(),
+            force_field_type: atom.force_field_atom_type.clone(),
             ..Default::default()
         }
     }

@@ -177,7 +177,7 @@ impl Molecule {
                     occupancy,
                     temperature_factor,
                     partial_charge,
-                    force_field_atom_type: None,
+                    force_field_type: None,
                     dock_type,
                 });
             } else if record_type == "CRYST1" {

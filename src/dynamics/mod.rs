@@ -103,29 +103,29 @@ impl ForceFieldParamsKeyed {
         let mut result = Self::default();
 
         for val in &params.mass {
-            result.mass.insert(val.atom_type.clone(), val.clone());
+            result.mass.insert(val.ff_type.clone(), val.clone());
         }
 
         for val in &params.bond {
-            result.bond.insert(val.atom_names.clone(), val.clone());
+            result.bond.insert(val.ff_types.clone(), val.clone());
         }
 
         for val in &params.angle {
-            result.angle.insert(val.atom_names.clone(), val.clone());
+            result.angle.insert(val.ff_types.clone(), val.clone());
         }
 
         for val in &params.dihedral {
-            result.dihedral.insert(val.atom_names.clone(), val.clone());
+            result.dihedral.insert(val.ff_types.clone(), val.clone());
         }
 
         for val in &params.improper {
-            result.improper.insert(val.atom_names.clone(), val.clone());
+            result.improper.insert(val.ff_types.clone(), val.clone());
         }
 
         for val in &params.van_der_waals {
             result
                 .van_der_waals
-                .insert(val.atom_name.clone(), val.clone());
+                .insert(val.ff_type.clone(), val.clone());
         }
 
         result
@@ -166,7 +166,7 @@ pub struct AtomDynamics {
     /// Daltons
     pub mass: f64,
     pub partial_charge: f64,
-    pub force_field_type: Option<String>, // todo: Should this be an enum?
+    pub force_field_type: Option<String>, // todo: Should this be an enum? // todo: Should it be required?
 }
 
 impl AtomDynamics {

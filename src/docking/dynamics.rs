@@ -35,7 +35,7 @@ use crate::{
     },
     dynamics::{
         AtomDynamics, AtomDynamicsx4, ForceFieldParamsIndexed, ForceFieldParamsKeyed, MdState,
-        SnapshotDynamics,
+        ParamError, SnapshotDynamics,
     },
     forces::force_lj,
     integrate::integrate_verlet_f64,
@@ -297,7 +297,7 @@ pub fn build_dock_dynamics(
     n_steps: usize,
     // ) -> Vec<Snapshot> {
     // ) -> Vec<SnapshotDynamics> {
-) -> MdState {
+) -> Result<MdState, ParamError> {
     println!("Building docking dyanmics...");
     let start = Instant::now();
 
@@ -314,7 +314,7 @@ pub fn build_dock_dynamics(
             &setup.rec_atoms_near_site,
             &setup.lj_lut,
             ff_params,
-        );
+        )?;
 
         let n_steps = 60_000;
         // In femtoseconds
@@ -328,7 +328,7 @@ pub fn build_dock_dynamics(
             lig.molecule.atoms[i].posit = atom.posit;
         }
 
-        return md_state;
+        return Ok(md_state);
     }
 
     // todo: You should possibly add your pre-computed LJ pairs, instead of looking up each time.
@@ -590,7 +590,7 @@ pub fn build_dock_dynamics(
     println!("Complete. Time: {elapsed}ms");
 
     // snapshots
-    Default::default()
+    // Default::default()
 }
 
 /// Body masses are separate from the snapshot, since it's invariant.

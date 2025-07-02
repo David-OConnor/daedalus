@@ -102,6 +102,11 @@ use crate::{
     util::handle_err,
 };
 
+// We include, for now, `gaff2.dat` with the program. This will raise the binary size by 900kb,
+// but makes molecular dyanmics operations more transparent.
+// todo: Note that this might cause your program to always use 900kb of RAM, just for this data.
+const GAFF2_DATA: &str = include_str!("../resources/gaff2.dat");
+
 // todo: Eventually, implement a system that automatically checks for changes, and don't
 // todo save to disk if there are no changes.
 const PREFS_SAVE_INTERVAL: u64 = 60; // Save user preferences this often, in seconds.

@@ -230,40 +230,41 @@ impl State {
                 let v = &self.md_forcefields_lig_general.as_ref().unwrap();
                 println!("Lin");
                 for di in v.bond.values().take(20) {
-                    println!("Lin: {:?}, {}, {}", di.atom_names, di.k, di.r_0);
+                    println!("Lin: {:?}, {}, {}", di.ff_types, di.k, di.r_0);
                 }
 
                 println!("Angle");
                 for di in v.angle.values().take(20) {
-                    println!("Angle: {:?}, {}, {}", di.atom_names, di.k, di.angle);
+                    println!("Angle: {:?}, {}, {}", di.ff_types, di.k, di.angle);
                 }
 
                 println!("Dihe:");
                 for di in v.dihedral.values().take(20) {
                     println!(
                         "DH: {:?}, {}, {}",
-                        di.atom_names, di.barrier_height_vn, di.gamma
+                        di.ff_types, di.barrier_height_vn, di.gamma
                     );
                 }
 
                 println!("Dihedral, improper:");
                 for di in v.improper.values().take(20) {
-                    println!("Imp: {:?}, {}, {}", di.atom_names, di.k, di.phase);
+                    println!("Imp: {:?}, {}, {}", di.ff_types, di.k, di.phase);
                 }
 
                 // todo: Get VDW loading working.
                 println!("Vdw");
                 for di in v.van_der_waals.values().take(20) {
-                    println!("Vdw: {:?}, {}, {}", di.atom_name, di.sigma, di.eps);
+                    println!("Vdw: {:?}, {}, {}", di.ff_type, di.sigma, di.eps);
                 }
 
                 println!("Loaded general Ligand force fields.");
             }
             "frcmod" => {
                 let mol_name = "CPB".to_owned(); // todo temp.
+
                 self.md_forcefields_lig_specific.insert(
                     mol_name,
-                    ForceFieldParamsKeyed::new(&ForceFieldParams::load_dat(path)?),
+                    ForceFieldParamsKeyed::new(&ForceFieldParams::load_frcmod(path)?),
                 );
                 println!("Loaded molecule-specific force fields.");
             }
