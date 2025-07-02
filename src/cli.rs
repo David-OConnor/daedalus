@@ -307,7 +307,7 @@ pub fn handle_cmd(
 
     if let Some(caps) = re_orient.captures(&input) {
         if let Some(mol) = &state.molecule {
-            let atom_sel = mol.get_sel_atom(&state.selection);
+            let atom_sel = mol.get_sel_atom(&state.ui.selection);
 
             if let Some(atom) = atom_sel {
                 cam_look_at(&mut scene.camera, atom.posit);
@@ -360,7 +360,7 @@ pub fn handle_cmd(
                 }
             }
 
-            state.selection = Selection::Atoms(result);
+            state.ui.selection = Selection::Atoms(result);
             *redraw = true;
             return Ok("Complete".to_owned());
         }
@@ -374,7 +374,7 @@ pub fn handle_cmd(
 
             for (i_res, res) in mol.residues.iter().enumerate() {
                 if res.serial_number == i {
-                    state.selection = Selection::Residue(i_res);
+                    state.ui.selection = Selection::Residue(i_res);
                     *redraw = true;
                     return Ok("Complete".to_owned());
                 }
@@ -395,7 +395,7 @@ pub fn handle_cmd(
                 }
             }
 
-            state.selection = Selection::Atoms(result);
+            state.ui.selection = Selection::Atoms(result);
             *redraw = true;
             return Ok("Complete".to_owned());
         }

@@ -1,6 +1,7 @@
 //! This module contains a traditional molecular dynamics approach
 //!
 //! [Good article](https://www.owlposting.com/p/a-primer-on-molecular-dynamics)
+//! [A summary paper](https://arxiv.org/pdf/1401.1181)
 //!
 //! We are using f64, and CPU-only for now, unless we confirm f32 will work.
 //! Maybe a mixed approach: Coordinates, velocities, and forces in 32-bit; sensitive global
@@ -9,6 +10,8 @@
 //! We use Verlet integration. todo: Velocity verlet? Other techniques that improve and build upon it?
 //!
 //! Amber: ff19SB for proteins, gaff2 for ligands. (Based on recs from https://ambermd.org/AmberModels.php).
+//!
+//!
 
 // todo: Integration: Consider Verlet or Langevin
 
@@ -19,12 +22,15 @@
 
 // Note on timescale: Generally femtosecond (-15)
 
+mod amber;
 mod ambient;
-mod amber_lib;
 
 use std::collections::{HashMap, HashSet};
 
 use ambient::SimBox;
+use bio_files::frcmod::{
+    AngleData, BondData, DihedralData, ForceFieldParams, ImproperDihedralData, MassData, VdwData,
+};
 use lin_alg::f64::Vec3;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use lin_alg::f64::{Vec3x4, f64x4};
@@ -61,18 +67,185 @@ const SNAPSHOT_RATIO: usize = 10;
 
 const EPS: f64 = 1.0e-8;
 
-/// Everything we need from an AMBER force-field bundle
-pub struct ForceField {
-    /// “atom-type” → σ, ε, mass
-    /// todo: From .frcmode/parm*.dat
-    pub lj: HashMap<String, (f64, f64, f64)>,
-    /// (type_i, type_j) → k, r0
-    pub bonds: HashMap<(String, String), (f64, f64)>,
-    /// (i,j,k) → kθ, θ0
-    pub angles: HashMap<(String, String, String), (f64, f64)>,
-    /// (i,j,k,l) → Vec<(Vn, n, γ)>
-    pub torsions: HashMap<(String, String, String, String), Vec<(f64, u8, f64)>>,
-    // todo: impropers, 1-4 scaling factors, …
+#[derive(Debug)]
+pub struct ParamError {
+    pub descrip: String,
+}
+
+impl ParamError {
+    pub fn new(descrip: &str) -> Self {
+        Self {
+            descrip: descrip.to_owned(),
+        }
+    }
+}
+
+/// Force field parameters, e.g. from Amber. Similar to that in `bio_files`, but
+/// with Hashmap-based keys (of atom-name tuples) for fast look-ups.
+///
+/// For descriptions of each field and the units used, reference the structs in bio_files, of which
+/// this uses internally.
+#[derive(Debug, Default)]
+pub struct ForceFieldParamsKeyed {
+    pub mass: HashMap<String, MassData>,
+    pub bond: HashMap<(String, String), BondData>,
+    pub angle: HashMap<(String, String, String), AngleData>,
+    pub dihedral: HashMap<(String, String, String, String), DihedralData>,
+    pub improper: HashMap<(String, String, String, String), ImproperDihedralData>,
+    pub van_der_waals: HashMap<String, VdwData>,
+    // todo: Partial charges here A/R. Note that we also assign them to the atom directly.
+    pub partial_charges: HashMap<String, f32>,
+}
+
+impl ForceFieldParamsKeyed {
+    pub fn new(params: &ForceFieldParams) -> Self {
+        let mut result = Self::default();
+
+        for val in &params.mass {
+            result.mass.insert(val.atom_type.clone(), val.clone());
+        }
+
+        for val in &params.bond {
+            result.bond.insert(val.atom_names.clone(), val.clone());
+        }
+
+        for val in &params.angle {
+            result.angle.insert(val.atom_names.clone(), val.clone());
+        }
+
+        for val in &params.dihedral {
+            result.dihedral.insert(val.atom_names.clone(), val.clone());
+        }
+
+        for val in &params.improper {
+            result.improper.insert(val.atom_names.clone(), val.clone());
+        }
+
+        for val in &params.van_der_waals {
+            result
+                .van_der_waals
+                .insert(val.atom_name.clone(), val.clone());
+        }
+
+        result
+    }
+}
+
+/// Todo: Experimenting with using indices. This is a derivative of the `Keyed` variant.
+/// This variant of forcefield parameters offers the fastest lookups. Unlike the Vec and Hashmap
+/// based parameter structs, this is specific to the atom in our docking setup: The incdices are provincial
+/// to specific sets of atoms.
+///
+/// Note: The single-atom fields of `mass` and `partial_charges` are ommitted: They're part of our
+/// `AtomDynamics` struct.`
+#[derive(Debug, Default)]
+pub struct ForceFieldParamsIndexed {
+    pub bond: HashMap<(usize, usize), BondData>,
+    pub angle: HashMap<(usize, usize, usize), AngleData>,
+    pub dihedral: HashMap<(usize, usize, usize, usize), DihedralData>,
+    pub improper: HashMap<(usize, usize, usize, usize), ImproperDihedralData>,
+    pub van_der_waals: HashMap<usize, VdwData>,
+}
+
+// todo: Move this and similar into a prep module?
+/// Associate loaded Force field data (e.g. from Amber) into the atom indices used in a specific
+/// dynamics sim.
+impl ForceFieldParamsIndexed {
+    pub fn new(
+        params: &ForceFieldParamsKeyed,
+        atoms: &[Atom],
+        bonds: &[Bond],
+        adjacency_list: &[Vec<usize>],
+    ) -> Result<Self, ParamError> {
+        let mut result = Self::default();
+
+        // todo: Mainly evaluating if we've properly loaded atom names here.
+        println!("Getting field params for: {:?}", atoms);
+
+        // Load mass and partial charge data per atom.
+        for (i, atom) in atoms.iter().enumerate() {}
+
+        // Match bond data to indices.
+        for bond in bonds {
+            // todo: Error handling on index range?
+            let atom_0 = &atoms[bond.atom_0];
+            let atom_1 = &atoms[bond.atom_1];
+
+            let Some((atom_name_0, atom_name_1)) = (atom_0.name.as_ref(), atom_1.name.as_ref())
+            else {
+                return Err(ParamError::new(
+                    "Missing an atom name when loading bond params.",
+                ));
+            };
+
+            // todo: Use the key?
+            for data in &params.bond.values() {
+                let mut found = false;
+
+                if (data.atom_names.0 == atom_name_0 && data.atom_names.1 == atom_name_1)
+                    || (data.atom_names.1 == atom_name_0 && data.atom_names.0 == atom_name_1)
+                {
+                    result.bond.insert((bond.atom_0, bond.atom_1), data.clone());
+                    found = true;
+                }
+
+                if !found {
+                    return Err(ParamError::new(&format!(
+                        "Unable to find bond data for {atom_name_0}-{atom_name_1}"
+                    )));
+                }
+            }
+        }
+
+        // Set up angles of 3 atoms.
+        // for (i, atom) in atoms.iter().enumerate() {
+        for i_outer in 0..atoms.len() {
+            if adjacency_list[i_outer].len() < 3 {
+                continue;
+            }
+            // todo: Fill this out properly to get all unique combinations.
+            for (i, j, k) in adjacency_list[i_outer].combinations() {
+                let atom_0 = &atoms[i];
+                let atom_1 = &atoms[j];
+                let atom_2 = &atoms[k];
+
+                let Some((atom_name_0, atom_name_1, atom_name_2)) = (
+                    atom_0.name.as_ref(),
+                    atom_1.name.as_ref(),
+                    atom_2.name.as_ref(),
+                ) else {
+                    return Err(ParamError::new(
+                        "Missing an atom name when loading angle params.",
+                    ));
+                };
+
+                // todo: Use the key?
+                for data in &params.angle.values() {
+                    let mut found = false;
+
+                    // todo: Fix this logic; n eeds to be order-invariant to all (6?) combinations.
+                    if (data.atom_names.0 == atom_name_0
+                        && data.atom_names.1 == atom_name_1
+                        && data.atom_names.2 == atom_name_2)
+                        || (data.atom_names.1 == atom_name_0 && data.atom_names.0 == atom_name_1)
+                    {
+                        result.angle.insert((i, j, k), data.clone());
+                        found = true;
+                    }
+
+                    if !found {
+                        return Err(ParamError::new(&format!(
+                            "Unable to find angle data for {atom_name_0}-{atom_name_1}-{atom_name_2}"
+                        )));
+                    }
+                }
+
+                // todo: Do the same for dihedral
+            }
+        }
+
+        Ok(result)
+    }
 }
 
 #[derive(Debug, Default)]
@@ -85,11 +258,13 @@ pub struct SnapshotDynamics {
 #[derive(Clone, Debug)]
 /// A trimmed-down atom for use with molecular dynamics.
 pub struct AtomDynamics {
+    pub element: Element,
+    pub name: String,
     pub posit: Vec3,
     pub vel: Vec3,
     pub accel: Vec3,
-    pub mass: f64,        // Daltons
-    pub element: Element, // e₀
+    /// Daltons
+    pub mass: f64,
     pub partial_charge: f64,
     pub force_field_type: Option<String>, // todo: Should this be an enum?
 }
@@ -97,12 +272,13 @@ pub struct AtomDynamics {
 impl AtomDynamics {
     pub fn new(element: Element) -> Self {
         Self {
+            element,
+            name: String::new(),
             posit: Vec3::new_zero(),
             vel: Vec3::new_zero(),
             accel: Vec3::new_zero(),
             mass: element.atomic_weight() as f64,
             partial_charge: 0.0,
-            element,
             force_field_type: None,
         }
     }
@@ -111,11 +287,12 @@ impl AtomDynamics {
 impl From<&Atom> for AtomDynamics {
     fn from(atom: &Atom) -> Self {
         Self {
+            element: atom.element,
+            name: atom.name.clone().unwrap_or_default(),
             posit: atom.posit.into(),
             vel: Vec3::new_zero(),
             accel: Vec3::new_zero(),
             mass: atom.element.atomic_weight() as f64,
-            element: atom.element,
             partial_charge: atom.partial_charge.unwrap_or_default() as f64,
             force_field_type: None,
         }
@@ -164,17 +341,16 @@ impl AtomDynamicsx4 {
     }
 }
 
-/// Harmonic bond (AMBER-style).
-#[derive(Debug, Clone, Copy)]
-pub struct BondDynamics {
-    pub atom_0: usize,
-    pub atom_1: usize,
-    /// Harmonic force const,  kcal mol⁻¹ Å⁻²
-    /// Higher values mean less flexibility to bond length.
-    pub k: f64,
-    /// equilibrium bond length, Å
-    pub r0: f64,
-}
+// /// Harmonic bond (AMBER-style).
+// #[derive(Debug, Clone, Copy)]
+// pub struct BondDynamics {
+//     pub indices: (usize, usize),
+//     /// Harmonic force const,  kcal mol⁻¹ Å⁻²
+//     /// Higher values mean less flexibility to bond length.
+//     pub k: f64,
+//     /// equilibrium bond length, Å
+//     pub r0: f64,
+// }
 
 // impl From<&Bond> for BondDynamics {
 //     fn from(bond: &Bond) -> Self {
@@ -188,75 +364,75 @@ pub struct BondDynamics {
 //     }
 // }
 
-impl BondDynamics {
-    // fn from(bond: &Bond) -> Self {
-    fn from_bond(bond: &Bond, atoms: &[Atom]) -> Self {
-        // todo: Temp. Figure out how to get this.
-        let init_bond_len = (atoms[bond.atom_0].posit - atoms[bond.atom_1].posit).magnitude();
+// impl BondDynamics {
+//     // fn from(bond: &Bond) -> Self {
+//     fn from_bond(bond: &Bond, atoms: &[Atom]) -> Self {
+//         // todo: Temp. Figure out how to get this.
+//         let init_bond_len = (atoms[bond.atom_0].posit - atoms[bond.atom_1].posit).magnitude();
+//
+//         // todo: Figure this out, once you know how...
+//         // let t0 = &atoms[b.atom_0].amber_type;
+//         // let t1 = &atoms[b.atom_1].amber_type;
+//         // let key = canonical2(t0, t1);
+//         //
+//         // let (k, r0) = ff.bonds.get(&key)
+//         //     .copied()
+//         //     .unwrap_or_else(|| panic!("missing bond param {key:?}"));
+//
+//         Self {
+//             indices: (bond.atom_0, bond.atom_1),
+//             // k: 350., // todo temp. Find out how to get this.
+//             k: 600., // todo temp. Find out how to get this.
+//             r0: init_bond_len,
+//         }
+//     }
+// }
 
-        // todo: Figure this out, once you know how...
-        // let t0 = &atoms[b.atom_0].amber_type;
-        // let t1 = &atoms[b.atom_1].amber_type;
-        // let key = canonical2(t0, t1);
-        //
-        // let (k, r0) = ff.bonds.get(&key)
-        //     .copied()
-        //     .unwrap_or_else(|| panic!("missing bond param {key:?}"));
-
-        Self {
-            atom_0: bond.atom_0,
-            atom_1: bond.atom_1,
-            // k: 350., // todo temp. Find out how to get this.
-            k: 600., // todo temp. Find out how to get this.
-            r0: init_bond_len,
-        }
-    }
-}
-
-/// Harmonic angle.
-#[derive(Debug, Clone, Copy)]
-pub struct Angle {
-    pub i: usize,
-    pub j: usize,
-    pub k: usize,
-    pub kθ: f64, // kcal mol⁻¹ rad⁻²
-    pub θ0: f64, // rad
-}
-
-/// Periodic torsion: V(φ)=∑ (Vn/2)(1+cos(nφ−γ))
-#[derive(Debug, Clone, Copy)]
-pub struct Torsion {
-    pub i: usize,
-    pub j: usize,
-    pub k: usize,
-    pub l: usize,
-    pub vn: f64, // kcal mol⁻¹
-    pub n: u8,
-    pub γ: f64, // rad
-}
+// /// Harmonic angle.
+// #[derive(Debug, Clone, Copy)]
+// pub struct Angle {
+//     pub indices: (usize, usize, usize),
+//     /// kcal mol⁻¹ rad⁻²
+//     pub k_θ: f64,
+//     /// Radians (todo: Make sure that you are converting from degrees, which is what the
+//     /// Amber parameter formats  use.
+//     pub θ_0: f64,
+// }
+//
+// /// Periodic torsion: V(φ)=∑ (Vn/2)(1+cos(nφ−γ)). Synonymous with dihedral angle in this context.
+// #[derive(Debug, Clone, Copy)]
+// pub struct Dihedral {
+//     pub indices: (usize, usize, usize, usize),
+//     pub vn: f64, // kcal mol⁻¹
+//     pub n: u8,
+//     pub γ: f64, // rad
+// }
 
 #[derive(Default)]
 pub struct MdState {
     pub atoms: Vec<AtomDynamics>,
-    pub bonds: Vec<BondDynamics>,
+    pub adjacency_list: Vec<Vec<usize>>,
+    // pub bonds: Vec<BondDynamics>,
     /// Sources that affect atoms in the system, but are not themselves affected by it. E.g.
     /// in docking, this might be a rigid receptor. These are for *non-bonded* interactions (e.g. Coulomb
     /// and VDW) only.
     pub atoms_external: Vec<AtomDynamics>,
-    pub angles: Vec<Angle>,
-    pub torsions: Vec<Torsion>,
-    pub lj_lut: LjTable,
-    /// Sigmas and epsilons are Lennard Jones parameters. Flat here, with outer loop receptor.
+    pub force_field_params: ForceFieldParamsIndexed,
+    /// `lj_lut`, `lj_sigma`, and `lj_eps` are Lennard Jones parameters. Flat here, with outer loop receptor.
     /// Flattened. Separate single-value array facilitate use in CUDA and SIMD, vice a tuple.
+    /// todo: These are from our built-in table. Generalize, e.g. organize appropriately w/Amber.
+    ///     pub lj_lut: LjTable,
     pub lj_sigma: Vec<f64>,
     pub lj_eps: Vec<f64>,
-    /// In femtoseconds,
-    pub time: f64,
-    pub step_count: usize, // increments.
+    // todo: Implment these SIMD variants A/R, bearing in mind the caveat about our built-in ones vs
+    // todo ones loaded from [e.g. Amber] files.
     // #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     // pub lj_sigma_x8: Vec<f64x4>,
     // #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     // pub lj_eps_x8: Vec<f64x4>,
+    /// In femtoseconds,
+    pub time: f64,
+    pub step_count: usize, // increments.
     pub snapshots: Vec<SnapshotDynamics>,
     pub cell: SimBox,
     neighbour: Vec<Vec<usize>>,    // Verlet list
@@ -272,13 +448,14 @@ impl MdState {
     pub fn new(
         atoms: &[Atom],
         atom_posits: &[Vec3],
+        adjacency_list: &[Vec<usize>],
         bonds: &[Bond],
         atoms_external: &[Atom],
         lj_table: &LjTable,
+        ff_params_keyed: &ForceFieldParamsKeyed,
     ) -> Self {
-        // todo: Sort out how to load AMBER data.
-        // let ff = ForceField::from_files("ligand.lib", "gaff2.frcmod")?;
-        // let (atoms, bonds) = build_topology_from_lib(&ff);       // -> Vec<AtomDynamics>, Vec<Bond>
+        // Convert FF params from keyed to index-based.
+        let ff_params = ForceFieldParamsIndexed::new(ff_params_keyed, atoms, bonds, adjacency_list);
 
         // We are using this approach instead of `.into`, so we can use the atom_posits from
         // the positioned ligand. (its atom coords are relative; we need absolute)
@@ -329,7 +506,6 @@ impl MdState {
         }
 
         // 5-b) generate every i–j–k–l path (three consecutive bonds)
-        let mut torsions = Vec::<Torsion>::new();
         let mut seen = HashSet::<(usize, usize, usize, usize)>::new();
 
         for (j, nbrs_j) in nbrs.iter().enumerate() {
@@ -352,14 +528,16 @@ impl MdState {
                         }
 
                         // look-up (or stub-out) the torsion parameters
-                        let (vn, n, gamma) =
-                            lookup_torsion_params(&atoms[i], &atoms[j], &atoms[k], &atoms[l]);
+                        let (vn, n, gamma) = lookup_torsion_params(
+                            &atoms[i],
+                            &atoms[j],
+                            &atoms[k],
+                            &atoms[l],
+                            &ff_params.dihedral,
+                        );
 
-                        torsions.push(Torsion {
-                            i,
-                            j,
-                            k,
-                            l,
+                        torsions.push(Dihedral {
+                            indices: (i, j, k, l),
                             vn,
                             n,
                             γ: gamma,
@@ -378,9 +556,10 @@ impl MdState {
 
         let mut result = Self {
             atoms: atoms_dy,
-            bonds: bonds_dy,
-            torsions,
-            angles,
+            // bonds: bonds_dy,
+            adjacency_list,
+            // dihedrals: torsions,
+            // angles,
             atoms_external: atoms_dy_external,
             lj_lut: lj_table.clone(),
             cell,
@@ -396,7 +575,7 @@ impl MdState {
     }
 
     fn build_masks(&mut self) {
-        // helper to store pairs in canonical (low,high) order
+        // Helper to store pairs in canonical (low,high) order
         let mut push = |set: &mut HashSet<(usize, usize)>, i: usize, j: usize| {
             if i < j {
                 set.insert((i, j));
@@ -405,22 +584,22 @@ impl MdState {
             }
         };
 
-        // 1-2 -----------------------------------------------------------
+        // 1-2
         for b in &self.bonds {
-            push(&mut self.excluded_pairs, b.atom_0, b.atom_1);
+            push(&mut self.excluded_pairs, b.indices.0, b.indices.1);
         }
 
-        // 1-3 -----------------------------------------------------------
+        // 1-3
         for a in &self.angles {
-            push(&mut self.excluded_pairs, a.i, a.k);
+            push(&mut self.excluded_pairs, a.indices.0, a.indices.2);
         }
 
-        // 1-4 -----------------------------------------------------------
-        for t in &self.torsions {
-            push(&mut self.scaled14_pairs, t.i, t.l);
+        // 1-4
+        for t in &self.dihedrals {
+            push(&mut self.scaled14_pairs, t.indices.0, t.indices.3);
         }
 
-        // make sure no 1-4 pair is also in the excluded set
+        // Make sure no 1-4 pair is also in the excluded set
         for p in &self.scaled14_pairs {
             self.excluded_pairs.remove(p);
         }
@@ -477,7 +656,7 @@ impl MdState {
         }
 
         self.apply_bond_forces();
-        self.apply_angle_forces();
+        self.apply_valence_angle_forces();
         self.apply_torsion_forces();
         self.apply_nonbonded_forces();
 
@@ -511,22 +690,16 @@ impl MdState {
     }
 
     fn apply_bond_forces(&mut self) {
-        for &BondDynamics {
-            atom_0,
-            atom_1,
-            k,
-            r0,
-        } in &self.bonds
-        {
-            let (ai, aj) = split2_mut(&mut self.atoms, atom_0, atom_1);
+        for (indices, data) in &self.force_field_params.bond {
+            let (ai, aj) = split2_mut(&mut self.atoms, indices.0, indices.1);
 
             let diff = aj.posit - ai.posit;
             let dist = diff.magnitude();
 
-            let Δ = dist - r0;
+            let Δ = dist - data.r_0;
             // F = -dV/dr = -k 2Δ   (harmonic)
             // let f_mag = -2.0 * k * Δ / dist.max(1e-12);
-            let f_mag = -k * Δ / dist.max(1e-12);
+            let f_mag = -data.k * Δ / dist.max(1e-12);
             let f = diff * f_mag;
             ai.accel -= f / ai.mass;
             aj.accel += f / aj.mass;
@@ -537,11 +710,14 @@ impl MdState {
     /// It reflects this hybridization, steric clashes, and partial double-bond character. This
     /// identifies deviations from the ideal angle, calculates restoring torque, and applies forces
     /// based on this to push the atoms back into their ideal positions in the molecule.
-    fn apply_angle_forces(&mut self) {
-        for &Angle { i, j, k, kθ, θ0 } in &self.angles {
-            println!("ANGLE");
+    ///
+    /// Valence angles, which are the angle formed by two adjacent bonds ba et bc
+    /// in a same molecule; a valence angle tends to maintain constant the anglê
+    /// abc. A valence angle is thus concerned by the positions of three atoms.
+    fn apply_valence_angle_forces(&mut self) {
+        for (indices, data) in &self.force_field_params.angle {
             // r_i —— r_j —— r_k   (θ is ∠ijk)
-            let (ai, aj, ak) = split3_mut(&mut self.atoms, i, j, k);
+            let (ai, aj, ak) = split3_mut(&mut self.atoms, indices.0, indices.1, indices.2);
 
             // Bond vectors with j at the vertex
             let a = ai.posit - aj.posit; // r_ij
@@ -569,8 +745,8 @@ impl MdState {
 
             // Actual angle and its deviation
             let θ = cosθ.acos();
-            let Δθ = θ - θ0;
-            let dV_dθ = 2.0 * kθ * Δθ; // ∂V/∂θ
+            let Δθ = θ - data.angle;
+            let dV_dθ = 2.0 * data.k * Δθ; // ∂V/∂θ
 
             // Helpers reused in both force terms
             let coef = -dV_dθ / sinθ; // −∂V/∂θ  / sinθ
@@ -596,18 +772,10 @@ impl MdState {
     /// effects such as σ-bond overlap (e.g. staggered conformations), π-conjugation, which locks certain
     /// dihedrals near 0 or τ, and steric hindrance. (Bulky groups clashing).
     fn apply_torsion_forces(&mut self) {
-        for &Torsion {
-            i,
-            j,
-            k,
-            l,
-            vn,
-            n,
-            γ,
-        } in &self.torsions
-        {
+        for (indices, dihe) in &self.force_field_params.dihedral {
             // Split the four atoms mutably without aliasing
-            let (ai, aj, ak, al) = split4_mut(&mut self.atoms, i, j, k, l);
+            let (ai, aj, ak, al) =
+                split4_mut(&mut self.atoms, indices.0, indices.1, indices.2, indices.3);
 
             // Convenience aliases for the positions
             let r1 = ai.posit;
@@ -646,7 +814,10 @@ impl MdState {
             let φ = y.atan2(x);
 
             // dV/dφ  (note the minus sign from ∂cos / ∂φ = −sin)
-            let dV_dφ = -0.5 * vn * (n as f64) * ((n as f64) * φ - γ).sin();
+            let dV_dφ = -0.5
+                * dihe.barrier_height_vn as f64
+                * (dihe.periodicity as f64)
+                * ((dihe.periodicity as f64) * φ - dihe.gamma as f64).sin();
 
             // ∂φ/∂r   (see e.g. DOI 10.1016/S0021-9991(97)00040-8)
             let dφ_dr1 = n1 * (b2_len / n1_sq);
@@ -871,30 +1042,39 @@ pub fn split4_mut<T>(
 // todo: One more?
 
 // todo: Populate. Look for amber .dat files, and *frcmod or parm10.dat.
-fn lookup_torsion_params(_ai: &Atom, _aj: &Atom, _ak: &Atom, _al: &Atom) -> (f64, u8, f64) {
+fn lookup_torsion_params(
+    ai: &Atom,
+    aj: &Atom,
+    ak: &Atom,
+    al: &Atom,
+    data: &[DihedralData],
+) -> (f64, u8, f64) {
     // TODO: replace with a real force-field database lookup.
     // The constants below (Cn3, phase = 0) give a mild (~0.15 kcal mol⁻¹) barrier
     // with 3-fold periodicity, so nothing explodes while you wire in a true FF.
-    let vn = 0.15; // kcal·mol⁻¹
-    let n = 3; // periodicity
-    let gamma = 0.0; // rad
-    (vn, n, gamma)
-}
 
-// todo: Move to this a/r:
-fn lookup_torsion_params2(
-    ai: &AtomDynamics,
-    aj: &AtomDynamics,
-    ak: &AtomDynamics,
-    al: &AtomDynamics,
-    ff: &ForceField,
-) -> Vec<(f64, u8, f64)> {
-    // let key = canonical4(
-    //     &ai.amber_type,
-    //     &aj.amber_type,
-    //     &ak.amber_type,
-    //     &al.amber_type,
-    // );
-    // ff.torsions.get(&key).cloned().unwrap_or_default() // could be several terms!
-    Vec::new()
+    let names = (
+        ai.name.clone().unwrap_or_default().to_lowercase(),
+        aj.name.clone().unwrap_or_default().to_lowercase(),
+        ak.name.clone().unwrap_or_default().to_lowercase(),
+        al.name.clone().unwrap_or_default().to_lowercase(),
+    );
+
+    for dihe in data {
+        if dihe.atom_names.0.to_lowercase() == names.0
+            && dihe.atom_names.1.to_lowercase() == names.1
+            && dihe.atom_names.2.to_lowercase() == names.2
+            && dihe.atom_names.3.to_lowercase() == names.3
+        {
+            println!("Found an Amber dihedral match: {:?}", data);
+
+            return (
+                dihe.barrier_height_vn as f64,
+                dihe.periodicity as u8,
+                dihe.gamma as f64,
+            );
+        }
+    }
+
+    (0., 0, 0.) // Fallback
 }

@@ -120,11 +120,11 @@ pub fn event_dev_handler(
                                     &mol.chains,
                                 );
 
-                                if selection == state_.selection {
+                                if selection == state_.ui.selection {
                                     // Toggle.
-                                    state_.selection = Selection::None;
+                                    state_.ui.selection = Selection::None;
                                 } else {
-                                    state_.selection = selection;
+                                    state_.ui.selection = selection;
                                 }
 
                                 if let ControlScheme::Arc { center } =
@@ -160,7 +160,7 @@ pub fn event_dev_handler(
                         redraw_protein = true;
                     }
                     Code(KeyCode::Escape) => {
-                        state_.selection = Selection::None;
+                        state_.ui.selection = Selection::None;
                         redraw_protein = true;
                     }
                     // These lig rotations are temporary.

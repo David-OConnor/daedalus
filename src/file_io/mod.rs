@@ -22,9 +22,12 @@ pub mod cif_sf;
 pub mod mtz;
 pub mod pdbqt;
 
-use bio_files::{Mol2, sdf::Sdf};
+use bio_files::{Mol2, frcmod::ForceFieldParams, sdf::Sdf};
 
-use crate::reflection::{DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityRect, ElectronDensity};
+use crate::{
+    dynamics::ForceFieldParamsKeyed,
+    reflection::{DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityRect, ElectronDensity},
+};
 
 impl State {
     /// A single endpoint to open a number of file types
@@ -38,6 +41,9 @@ impl State {
         {
             "sdf" | "mol2" | "pdbqt" | "pdb" | "cif" => self.open_molecule(path)?,
             "map" => self.open_map(path)?,
+            // todo: lib, .dat etc as required. Using Amber force fields and its format
+            // todo to start. We assume it'll be generalizable later.
+            "frcmod" | "dat" => self.open_force_field(path)?,
             _ => {
                 return Err(io::Error::new(
                     ErrorKind::InvalidData,
@@ -70,7 +76,9 @@ impl State {
             }
             "pdb" | "cif" => {
                 // If a 2fo-fc CIF, use gemmi to convert it to Map data.
-                // Using the filename is rough here, but good enough for now.
+                // Using the filename to determine if this is a 2fo-fc file, vice atom coordinates,
+                // is rough here, but good enough for now.
+                // todo: This isn't really opening a molecule, so is out of place. Good enough for now.
                 if let Some(name) = path.file_name().and_then(|os| os.to_str()) {
                     if name.contains("2fo") && name.contains("fc") {
                         let dm = gemmi_cif_to_map(path.to_str().unwrap())?;
@@ -195,12 +203,77 @@ impl State {
         }
     }
 
+    /// An electron density map file, e.g. a .map file.
+    /// todo: Support opening MTZ files.
     pub fn open_map(&mut self, path: &Path) -> io::Result<()> {
         let dm = DensityMap::load(path)?;
         self.load_density(dm);
 
         self.to_save.last_map_opened = Some(path.to_owned());
         self.update_save_prefs();
+
+        Ok(())
+    }
+
+    /// Open Amber force field parameters, e.g. dat and frcmod.
+    pub fn open_force_field(&mut self, path: &Path) -> io::Result<()> {
+        let binding = path.extension().unwrap_or_default().to_ascii_lowercase();
+        let extension = binding;
+
+        match extension.to_str().unwrap() {
+            "dat" => {
+                self.md_forcefields_lig_general = Some(ForceFieldParamsKeyed::new(
+                    &ForceFieldParams::load_dat(path)?,
+                ));
+
+                println!("\nLoaded forcefields:");
+                let v = &self.md_forcefields_lig_general.as_ref().unwrap();
+                println!("Lin");
+                for di in v.bond.values().take(20) {
+                    println!("Lin: {:?}, {}, {}", di.atom_names, di.k, di.r_0);
+                }
+
+                println!("Angle");
+                for di in v.angle.values().take(20) {
+                    println!("Angle: {:?}, {}, {}", di.atom_names, di.k, di.angle);
+                }
+
+                println!("Dihe:");
+                for di in v.dihedral.values().take(20) {
+                    println!(
+                        "DH: {:?}, {}, {}",
+                        di.atom_names, di.barrier_height_vn, di.gamma
+                    );
+                }
+
+                println!("Dihedral, improper:");
+                for di in v.improper.values().take(20) {
+                    println!("Imp: {:?}, {}, {}", di.atom_names, di.k, di.phase);
+                }
+
+                // todo: Get VDW loading working.
+                println!("Vdw");
+                for di in v.van_der_waals.values().take(20) {
+                    println!("Vdw: {:?}, {}, {}", di.atom_name, di.sigma, di.eps);
+                }
+
+                println!("Loaded general Ligand force fields.");
+            }
+            "frcmod" => {
+                let mol_name = "CPB".to_owned(); // todo temp.
+                self.md_forcefields_lig_specific.insert(
+                    mol_name,
+                    ForceFieldParamsKeyed::new(&ForceFieldParams::load_dat(path)?),
+                );
+                println!("Loaded molecule-specific force fields.");
+            }
+            _ => {
+                return Err(io::Error::new(
+                    ErrorKind::InvalidFilename,
+                    "Attempting to parse non-dat or frcmod mod file as a force field.",
+                ));
+            }
+        };
 
         Ok(())
     }

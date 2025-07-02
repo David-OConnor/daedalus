@@ -319,7 +319,7 @@ impl Molecule {
                 "{:<6}{:>5}  {:<3} {:<3} {:>1}{:>4}    {:>8.3}{:>8.3}{:>8.3}{:>6.2}{:>6.2}    {:>+6.3} {:<2}",
                 record_name,                                 // columns 1-6
                 atom.serial_number,                          // columns 7-11
-                name,                                   // columns 13-14 or 13-16
+                name,                                        // columns 13-14 or 13-16
                 residue_name,                                // columns 18-20
                 chain_id,                                    // column 22
                 res_num,                                     // columns 23-26

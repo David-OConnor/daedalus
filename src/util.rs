@@ -237,18 +237,18 @@ pub fn select_from_search(state: &mut State) {
     if let Some(mol) = &state.molecule {
         for (i, res) in mol.residues.iter().enumerate() {
             if query.contains(&res.serial_number.to_string()) {
-                state.selection = Selection::Residue(i);
+                state.ui.selection = Selection::Residue(i);
             }
             match &res.res_type {
                 ResidueType::AminoAcid(aa) => {
                     if query.contains(&aa.to_str(AaIdent::ThreeLetters).to_lowercase()) {
-                        state.selection = Selection::Residue(i);
+                        state.ui.selection = Selection::Residue(i);
                     }
                 }
                 ResidueType::Water => {} // todo: Select all water with a new selection type
                 ResidueType::Other(name) => {
                     if query.contains(&name.to_lowercase()) {
-                        state.selection = Selection::Residue(i);
+                        state.ui.selection = Selection::Residue(i);
                     }
                 }
             }
@@ -261,7 +261,7 @@ pub fn cycle_res_selected(state: &mut State, scene: &mut Scene, reverse: bool) {
 
     state.ui.view_sel_level = ViewSelLevel::Residue;
 
-    match state.selection {
+    match state.ui.selection {
         Selection::Residue(res_i) => {
             for chain in &mol.chains {
                 if chain.residues.contains(&res_i) {
@@ -274,7 +274,7 @@ pub fn cycle_res_selected(state: &mut State, scene: &mut Scene, reverse: bool) {
                         new_res_i += dir;
                         let nri = new_res_i as usize;
                         if chain.residues.contains(&nri) {
-                            state.selection = Selection::Residue(nri);
+                            state.ui.selection = Selection::Residue(nri);
                             break;
                         }
                     }
@@ -284,7 +284,7 @@ pub fn cycle_res_selected(state: &mut State, scene: &mut Scene, reverse: bool) {
         }
         _ => {
             if !mol.residues.is_empty() {
-                state.selection = Selection::Residue(0);
+                state.ui.selection = Selection::Residue(0);
             }
         }
     }
@@ -396,7 +396,7 @@ pub fn setup_neighbor_pairs(
 /// Based on selection status and if a molecule is open, find the center for the orbit camera.
 pub fn orbit_center(state: &State) -> Vec3F32 {
     if state.ui.orbit_around_selection {
-        match &state.selection {
+        match &state.ui.selection {
             Selection::Atom(i) => {
                 if let Some(mol) = &state.molecule {
                     match mol.atoms.get(*i) {

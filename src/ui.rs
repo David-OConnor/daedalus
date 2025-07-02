@@ -467,7 +467,7 @@ fn residue_selector(state: &mut State, scene: &mut Scene, redraw: &mut bool, ui:
                     };
 
                     let mut color = Color32::GRAY;
-                    if let Selection::Residue(sel_i) = state.selection {
+                    if let Selection::Residue(sel_i) = state.ui.selection {
                         if sel_i == i {
                             color = COLOR_ACTIVE;
                         }
@@ -481,7 +481,7 @@ fn residue_selector(state: &mut State, scene: &mut Scene, redraw: &mut bool, ui:
                         .clicked()
                     {
                         state.ui.view_sel_level = ViewSelLevel::Residue;
-                        state.selection = Selection::Residue(i);
+                        state.ui.selection = Selection::Residue(i);
 
                         update_arc_center = true; // Avoids borrow error.
 
@@ -853,14 +853,14 @@ fn docking(
             }
         }
 
-        if state.selection != Selection::None {
+        if state.ui.selection != Selection::None {
             ui.add_space(COL_SPACING / 2.);
 
             if ui
                 .button(RichText::new("Center on sel").color(COLOR_HIGHLIGHT))
                 .clicked()
             {
-                let atom_sel = mol.get_sel_atom(&state.selection);
+                let atom_sel = mol.get_sel_atom(&state.ui.selection);
 
                 if let Some(atom) = atom_sel {
                     lig.pose.conformation_type = ConformationType::Flexible {
@@ -967,7 +967,7 @@ fn docking(
 
 fn residue_search(state: &mut State, scene: &mut Scene, redraw: &mut bool, ui: &mut Ui) {
     ui.horizontal(|ui| {
-        // let sel_prev = &state.selection;
+        // let sel_prev = &state.ui.selection;
         ui.label("Find residue:");
         if ui
             .add(TextEdit::singleline(&mut state.ui.residue_search).desired_width(60.))
@@ -977,7 +977,7 @@ fn residue_search(state: &mut State, scene: &mut Scene, redraw: &mut bool, ui: &
             *redraw = true;
         }
 
-        // if sel_prev != &state.selection {
+        // if sel_prev != &state.ui.selection {
         //     *redraw = true;
         // }
 
@@ -1060,7 +1060,7 @@ fn selection_section(
         if state.ui.view_sel_level != prev_view {
             *redraw = true;
             // Kludge to prevent surprising behavior.
-            state.selection = Selection::None;
+            state.ui.selection = Selection::None;
         }
 
         if state.ui.view_sel_level == ViewSelLevel::Residue {
@@ -1118,12 +1118,12 @@ fn selection_section(
         if let Some(mol) = &state.molecule {
             ui.add_space(COL_SPACING);
 
-            if state.selection != Selection::None {
+            if state.ui.selection != Selection::None {
                 if ui
                     .button(RichText::new("Move cam to sel").color(COLOR_HIGHLIGHT))
                     .clicked()
                 {
-                    let atom_sel = mol.get_sel_atom(&state.selection);
+                    let atom_sel = mol.get_sel_atom(&state.ui.selection);
 
                     if let Some(atom) = atom_sel {
                         cam_look_at(&mut scene.camera, atom.posit);
@@ -1159,7 +1159,7 @@ fn selection_section(
             }
 
             ui.add_space(COL_SPACING / 2.);
-            selected_data(mol, &state.selection, ui);
+            selected_data(mol, &state.ui.selection, ui);
         }
     });
 }

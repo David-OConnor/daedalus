@@ -62,6 +62,7 @@ use bio_apis::{
     ReqError, rcsb,
     rcsb::{FilesAvailable, PdbDataResults},
 };
+use bio_files::frcmod::ForceFieldParams;
 // #[cfg(feature = "cuda")]
 // use cuda_setup::ComputationDevice;
 #[cfg(feature = "cuda")]
@@ -91,7 +92,7 @@ use crate::{
         BindingEnergy, ConformationType, THETA_BH, dynamics::Snapshot, external::check_adv_avail,
         prep::DockingSetup,
     },
-    dynamics::MdState,
+    dynamics::{ForceFieldParamsKeyed, MdState},
     file_io::{cif_pdb::save_pdb, mtz::load_mtz, pdbqt::load_pdbqt},
     molecule::Ligand,
     navigation::Tab,
@@ -140,16 +141,19 @@ impl Default for FileDialogs {
         let cfg_all = FileDialogConfig::default()
             .add_file_filter_extensions(
                 "All",
-                vec!["pdb", "cif", "sdf", "mol2", "pdbqt", "map", "mtz"],
+                vec![
+                    "pdb", "cif", "sdf", "mol2", "pdbqt", "map", "mtz", "frcmod", "dat",
+                ],
             )
-            .add_file_filter_extensions("Coords", vec!["pdb", "cif", "sdf", "mol2", "pdbqt"])
+            .add_file_filter_extensions("Molecule", vec!["pdb", "cif", "sdf", "mol2", "pdbqt"])
             .add_file_filter_extensions("Protein", vec!["pdb", "cif"])
             .add_file_filter_extensions("Small mol", vec!["sdf", "mol2", "pdbqt"])
-            .add_file_filter_extensions("Xtal", vec!["map", "mtz", "cif"])
+            .add_file_filter_extensions("Density", vec!["map", "mtz", "cif"])
+            .add_file_filter_extensions("Mol dynamics", vec!["frcmod", "dat"])
             .add_save_extension("CIF", "cif")
             .add_save_extension("SDF", "sdf")
             .add_save_extension("Mol2", "mol2")
-            .add_save_extension("Pdbqt", "pdbqt1")
+            .add_save_extension("Pdbqt", "pdbqt")
             .add_save_extension("Map", "map");
 
         let cfg_vina = FileDialogConfig {
@@ -374,6 +378,7 @@ struct StateUi {
     /// Workaround for a bug or limitation in EGUI's `is_pointer_button_down_on`.
     // inputs_commanded: InputsCommanded,
     visibility: Visibility,
+    selection: Selection,
     left_click_down: bool,
     middle_click_down: bool,
     autodock_path_valid: bool,
@@ -441,13 +446,9 @@ struct State {
     pub pdb: Option<PDB>,
     pub cif_pdb_raw: Option<String>,
     pub molecule: Option<Molecule>,
-    // pub ligand: Option<Molecule>,
     pub ligand: Option<Ligand>,
-    // todo: Should selection-related go in StateUi?
-    pub selection: Selection,
     pub cam_snapshots: Vec<CamSnapshot>,
-    // This allows us to keep in-memory data for other molecules.
-    // Key is PDB ident; value is per-item.
+    /// This allows us to keep in-memory data for other molecules.
     pub to_save: ToSave,
     pub tabs_open: Vec<Tab>,
     pub babel_avail: bool,
@@ -455,12 +456,18 @@ struct State {
     pub bh_config: BhConfig,
     pub dev: ComputationDevice,
     pub mol_dynamics: Option<MdState>,
+    /// E.g. parsed from Amber `gaff2.dat`.
+    pub md_forcefields_lig_general: Option<ForceFieldParamsKeyed>,
+    /// todo:ff19SB
+    pub md_forcefields_prot: HashMap<String, ForceFieldParamsKeyed>,
+    /// Key: A unique identifier for the molecule. (e.g. ligand)
+    pub md_forcefields_lig_specific: HashMap<String, ForceFieldParamsKeyed>,
 }
 
 impl State {
     /// E.g. when loading a new molecule.
     pub fn reset_selections(&mut self) {
-        self.selection = Selection::None;
+        self.ui.selection = Selection::None;
         self.cam_snapshots = Vec::new();
         self.ui.cam_snapshot = None;
         self.ui.chain_to_pick_res = None;
