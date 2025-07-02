@@ -46,6 +46,7 @@ regex = "1.11.1"
 # nalgebra: For solving linear systems of equations when generating partial changes.
 nalgebra = "0.33.2"
 
+itertools = "0.14.0" # For combinations when matching angles in MD.
 
 
 # We use these when developing locally to reduce friction.

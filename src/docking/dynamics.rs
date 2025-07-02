@@ -33,7 +33,10 @@ use crate::{
         BindingEnergy, ConformationType, Pose, calc_binding_energy,
         prep::{DockingSetup, Torsion},
     },
-    dynamics::{AtomDynamics, AtomDynamicsx4, MdState, SnapshotDynamics},
+    dynamics::{
+        AtomDynamics, AtomDynamicsx4, ForceFieldParamsIndexed, ForceFieldParamsKeyed, MdState,
+        SnapshotDynamics,
+    },
     forces::force_lj,
     integrate::integrate_verlet_f64,
     molecule::{Atom, Ligand},
@@ -290,6 +293,7 @@ pub fn build_dock_dynamics(
     dev: &ComputationDevice,
     lig: &mut Ligand,
     setup: &DockingSetup,
+    ff_params: &ForceFieldParamsKeyed,
     n_steps: usize,
     // ) -> Vec<Snapshot> {
     // ) -> Vec<SnapshotDynamics> {
@@ -305,9 +309,11 @@ pub fn build_dock_dynamics(
         let mut md_state = MdState::new(
             &lig.molecule.atoms,
             &lig.atom_posits,
+            &lig.molecule.adjacency_list,
             &lig.molecule.bonds,
             &setup.rec_atoms_near_site,
             &setup.lj_lut,
+            ff_params,
         );
 
         let n_steps = 60_000;

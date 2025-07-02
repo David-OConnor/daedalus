@@ -147,19 +147,19 @@ impl Molecule {
         result
     }
 
-    /// We use this as part of our flexible-bond conformation algorithm.
+    /// Build a list of, for each atom, all atoms bonded to it.
+    /// We use this as part of our flexible-bond conformation algorithm, and in setting up
+    /// angles and dihedrals for molecular docking.
     pub fn build_adjacency_list(&self) -> Vec<Vec<usize>> {
-        let n_atoms = self.atoms.len();
-        // Start with empty neighbors for each atom
-        let mut adjacency_list = vec![Vec::new(); n_atoms];
+        let mut result = vec![Vec::new(); self.atoms.len()];
 
         // For each bond, record its atoms as neighbors of each other
         for bond in &self.bonds {
-            adjacency_list[bond.atom_0].push(bond.atom_1);
-            adjacency_list[bond.atom_1].push(bond.atom_0);
+            result[bond.atom_0].push(bond.atom_1);
+            result[bond.atom_1].push(bond.atom_0);
         }
 
-        adjacency_list
+        result
     }
 
     /// If a residue, get the alpha C. If multiple, get an arbtirary one.

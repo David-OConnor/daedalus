@@ -919,6 +919,7 @@ fn docking(
                     &state.dev,
                     lig,
                     state.volatile.docking_setup.as_ref().unwrap(),
+                    &state.md_forcefields_lig_general.as_ref().unwrap(),
                     1_500,
                 ));
 

@@ -23,35 +23,38 @@ fn hydrate(pressure: f64, temp: f64, bounds: (Vec3, Vec3), n_mols: usize) -> Vec
     for _ in 0..n_mols {
         result.push(Water {
             o: AtomDynamics {
+                element: Element::Oxygen,
+                name: "wo".to_string(), // todo: Qc
                 // todo
                 posit: Vec3::new_zero(),
                 // todo: Init vel based on temp and pressure?
                 vel: Vec3::new_zero(),
                 accel: Vec3::new_zero(),
                 mass: 8.,
-                element: Element::Oxygen,
                 partial_charge: 0.,
                 force_field_type: None,
             },
             h0: AtomDynamics {
                 // todo
+                element: Element::Hydrogen,
+                name: "wo".to_string(), // todo: Qc
                 posit: Vec3::new_zero(),
                 // todo: Init vel based on temp and pressure?
                 vel: Vec3::new_zero(),
                 accel: Vec3::new_zero(),
                 mass: 1.,
-                element: Element::Hydrogen,
                 partial_charge: 0.,
                 force_field_type: None,
             },
             h1: AtomDynamics {
+                element: Element::Hydrogen,
+                name: "wo".to_string(), // todo: Qc
                 // todo
                 posit: Vec3::new_zero(),
                 // todo: Init vel based on temp and pressure?
                 vel: Vec3::new_zero(),
                 accel: Vec3::new_zero(),
                 mass: 1.,
-                element: Element::Hydrogen,
                 partial_charge: 0.,
                 force_field_type: None,
             },
@@ -136,13 +139,14 @@ pub fn add_tip3p(state: &mut MdState, n: usize, rng: &mut impl rand::Rng) {
         let h0 = com + z * R_OH;
         let h1 = com + z * (-R_OH * ANG_HOH.cos()) + x * d * 2.;
 
-        let mut make = |pos, mass, q, elem| AtomDynamics {
+        let mut make = |pos, mass, q, element| AtomDynamics {
+            element,
+            name: "".to_string(), // todo
             posit: pos,
             vel: Vec3::new_zero(),
             accel: Vec3::new_zero(),
             mass,
             partial_charge: q,
-            element: elem,
             force_field_type: None,
         };
 
@@ -150,5 +154,5 @@ pub fn add_tip3p(state: &mut MdState, n: usize, rng: &mut impl rand::Rng) {
         state.atoms.push(make(h0, M_H, 0.417, Element::Hydrogen));
         state.atoms.push(make(h1, M_H, 0.417, Element::Hydrogen));
     }
-    state.build_neighbour(); // list is stale now
+    state.build_neighbours(); // list is stale now
 }
