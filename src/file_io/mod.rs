@@ -257,7 +257,7 @@ impl State {
                 // todo: Get VDW loading working.
                 println!("Vdw");
                 for di in v.van_der_waals.values().take(20) {
-                    println!("Vdw: {:?}, {}, {}", di.ff_type, di.sigma, di.eps);
+                    println!("Vdw: {:?}, {}, {}", di.ff_type, di.r_star, di.eps);
                 }
 
                 println!("Loaded general Ligand force fields.");

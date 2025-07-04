@@ -3,6 +3,12 @@
 //! [Good article](https://www.owlposting.com/p/a-primer-on-molecular-dynamics)
 //! [A summary paper](https://arxiv.org/pdf/1401.1181)
 //!
+//! [Amber Force Fields reference](https://ambermd.org/AmberModels.php)
+//! [Small molucules using GAFF2](https://ambermd.org/downloads/amber_geostd.tar.bz2)
+//!
+//! To download .dat files (GAFF2), download Amber source (Option 2) [here](https://ambermd.org/GetAmber.php#ambertools).
+//! Files are in dat -> leap -> parm
+
 //! We are using f64, and CPU-only for now, unless we confirm f32 will work.
 //! Maybe a mixed approach: Coordinates, velocities, and forces in 32-bit; sensitive global
 //! reductions (energy, virial, integration) in 64-bit.
@@ -22,7 +28,6 @@
 
 // Note on timescale: Generally femtosecond (-15)
 
-mod amber;
 mod ambient;
 mod prep;
 
@@ -143,11 +148,13 @@ impl ForceFieldParamsKeyed {
 /// `AtomDynamics` struct.`
 #[derive(Debug, Default)]
 pub struct ForceFieldParamsIndexed {
+    pub mass: HashMap<usize, MassData>,
     pub bond: HashMap<(usize, usize), BondData>,
     pub angle: HashMap<(usize, usize, usize), AngleData>,
     pub dihedral: HashMap<(usize, usize, usize, usize), DihedralData>,
     pub improper: HashMap<(usize, usize, usize, usize), ImproperDihedralData>,
     pub van_der_waals: HashMap<usize, VdwData>,
+    pub partial_charge: HashMap<usize, f32>, // todo: A/r
 }
 
 #[derive(Debug, Default)]
@@ -247,7 +254,6 @@ impl AtomDynamicsx4 {
 pub struct MdState {
     pub atoms: Vec<AtomDynamics>,
     pub adjacency_list: Vec<Vec<usize>>,
-    // pub bonds: Vec<BondDynamics>,
     /// Sources that affect atoms in the system, but are not themselves affected by it. E.g.
     /// in docking, this might be a rigid receptor. These are for *non-bonded* interactions (e.g. Coulomb
     /// and VDW) only.
@@ -284,19 +290,15 @@ impl MdState {
     pub fn step(&mut self, dt_fs: f64) {
         // todo: Is this OK?
         // let dt = dt_fs * 1.0e-15; // s
-        let dt = dt_fs * 0.0001;
+        let dt = dt_fs * 0.001;
 
         let dt_half = 0.5 * dt;
 
         // 1) First half-kick (v += a dt/2) and drift (x += v dt)
         // todo: Do we want traditional verlet instead?
         for a in &mut self.atoms {
-            a.vel += a.accel * dt_half;
-            a.posit += a.vel * dt;
-
-            // todo; Put back, but getting NaNs.
-            // todo: This isn't the only NaN source...
-
+            a.vel += a.accel * dt_half; // Half-kick
+            a.posit += a.vel * dt; // Drift
             a.posit = self.cell.wrap(a.posit);
 
             // track the largest squared displacement to know when to rebuild the list
@@ -306,7 +308,6 @@ impl MdState {
         // Reset acceleration.
         for a in &mut self.atoms {
             a.accel = Vec3::new_zero();
-            // println!("Acc: {}", a.accel);
         }
 
         self.apply_bond_forces();
@@ -401,22 +402,11 @@ impl MdState {
             if sin_θ_sq < EPS {
                 continue; // θ = 0 or τ; gradient ill-defined
             }
-            let sin_θ = sin_θ_sq.sqrt();
 
             // Measured angle, and its deviation from the parameter angle.
             let θ = cos_θ.acos();
-            let Δθ = θ - data.angle as f64;
+            let Δθ = data.angle as f64 - θ;
             let dV_dθ = 2.0 * data.k as f64 * Δθ; // dV/dθ
-
-            // todo: Starting a new approach
-
-            // todo: Our naive approach doesn't work either...
-            // let bond_vec_02 = (a_0.posit - a_2.posit).to_normalized();
-            // let f_0 = bond_vec_02 * dV_dθ;
-            // let f_2 = -f_0;
-            // let f_1 = Vec3::new_zero();
-
-            // todo: End
 
             let c = bond_vec_01.cross(bond_vec_21); // n  ∝  r_ij × r_kj
             let c_len2 = c.magnitude_squared(); // |n|^2
@@ -474,10 +464,12 @@ impl MdState {
             // m1 = n̂1 × (b̂2)
             let m1 = n1_hat.cross(b2 / b2_len);
 
-            // Signed dihedral (−π … π)
+            // Measure the signed dihedral (−π … π)
             let x = n1_hat.dot(n2_hat);
             let y = m1.dot(n2_hat);
             let φ = y.atan2(x);
+
+            println!("Dihe meas: {:?}, expected: {:?}", φ, dihe.gamma);
 
             // dV/dφ  (note the minus sign from ∂cos / ∂φ = −sin)
             let dV_dφ = -0.5

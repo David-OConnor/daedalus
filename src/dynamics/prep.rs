@@ -58,44 +58,42 @@ impl ForceFieldParamsIndexed {
         let params = merge_params(params_general, params_lig_specific);
 
         /* ---------- per–atom tables --------------------------------------------------------- */
-        for (idx, atom) in atoms.iter().enumerate() {
+        for (i, atom) in atoms.iter().enumerate() {
             let ff_type = atom
                 .force_field_type
                 .as_ref()
                 .ok_or_else(|| ParamError::new("Atom missing FF type"))?;
 
-            // todo: A/R: Is this much different from element.atomic_weight()?
-            // // Mass
-            // let mass = params
-            //     .mass
-            //     .get(name)
-            //     .ok_or_else(|| ParamError::new(&format!("No mass entry for '{name}'")))?;
-            //
-            // if result.mass.len() <= idx {
-            //     result.mass.resize(idx + 1, mass.clone());
-            // } else {
-            //     result.mass[idx] = mass.clone();
-            // }
+            // Mass
+            if let Some(mass) = params.mass.get(ff_type) {
+                result.mass.insert(i, mass.clone());
+            } else {
+                return Err(ParamError::new(&format!(
+                    "Missing Van der Waals params for {ff_type}"
+                )));
+            }
 
-            // Partial charge (optional -- leave 0.0 if not given)
+            // Partial charge
             // todo: Add.
-            // if let Some(q) = params.partial_charges.get(name) {
-            //     if result.partial_charges.len() <= idx {
-            //         result.partial_charges.resize(idx + 1, *q);
-            //     } else {
-            //         result.partial_charges[idx] = *q;
-            //     }
-            // }
+            if let Some(q) = params.partial_charges.get(ff_type) {
+                result.partial_charge.insert(i, q.clone());
+            } else {
+                println!("Missing partial charge for {ff_type}; setting to 0");
+                result.partial_charge.insert(i, 0.0);
+                // todo: Set to 0 and warn instead of erroring?
+                // return Err(ParamError::new(&format!(
+                //     "Missing partial charge for {ff_type}"
+                // )))
+            }
 
             // Lennard-Jones / van der Waals
-            // todo: Add.
-            // if let Some(vdw) = params.van_der_waals.get(name) {
-            //     if result.van_der_waals.len() <= idx {
-            //         result.van_der_waals.resize(idx + 1, vdw.clone());
-            //     } else {
-            //         result.van_der_waals[idx] = vdw.clone();
-            //     }
-            // }
+            if let Some(vdw) = params.van_der_waals.get(ff_type) {
+                result.van_der_waals.insert(i, vdw.clone());
+            } else {
+                return Err(ParamError::new(&format!(
+                    "Missing Van der Waals params for {ff_type}"
+                )));
+            }
         }
 
         // Bonds
@@ -156,7 +154,7 @@ impl ForceFieldParamsIndexed {
                     .cloned()
                     .ok_or_else(|| {
                         ParamError::new(&format!(
-                            "No ANGLE parameters for {type_i}-{type_j}-{type_k}"
+                            "Missing valence angle parameters for {type_i}-{type_j}-{type_k}"
                         ))
                     })?;
 
@@ -228,7 +226,7 @@ impl ForceFieldParamsIndexed {
                             None => {
                                 eprintln!(
                                     "No dihedral parameters for \
-                                     {type_i}-{type_j}-{type_k}-{type_l}"
+                                     {type_i}-{type_j}-{type_k}-{type_l}. Using measured values."
                                 );
                                 result.dihedral.insert(idx_key, Default::default());
 
@@ -436,15 +434,27 @@ impl MdState {
         // the positioned ligand. (its atom coords are relative; we need absolute)
         let mut atoms_dy = Vec::with_capacity(atoms.len());
         for (i, atom) in atoms.iter().enumerate() {
+            let ff_type = match &atom.force_field_type {
+                Some(ff_type) => ff_type.clone(),
+                None => {
+                    return Err(ParamError::new(&format!(
+                        "Atom missing FF type; can't run dynamics: {:?}",
+                        atom
+                    )));
+                }
+            };
+
             atoms_dy.push(AtomDynamics {
                 element: atom.element,
                 name: atom.name.clone().unwrap_or_default(),
                 posit: atom_posits[i],
                 vel: Vec3::new_zero(),
                 accel: Vec3::new_zero(),
-                mass: atom.element.atomic_weight() as f64,
-                partial_charge: atom.partial_charge.unwrap_or_default() as f64,
-                force_field_type: Some(atom.force_field_type.clone().unwrap_or_default()),
+                mass: force_field_params.mass.get(&i).unwrap().mass as f64,
+                // todo: A/R for partial charge.
+                // partial_charge: atom.partial_charge.unwrap_or_default() as f64,
+                partial_charge: *force_field_params.partial_charge.get(&i).unwrap() as f64,
+                force_field_type: Some(ff_type),
             });
         }
 
