@@ -32,6 +32,8 @@ fn hydrate(pressure: f64, temp: f64, bounds: (Vec3, Vec3), n_mols: usize) -> Vec
                 accel: Vec3::new_zero(),
                 mass: 8.,
                 partial_charge: 0.,
+                lj_r_star: 0.,
+                lj_eps: 0.,
                 force_field_type: None,
             },
             h0: AtomDynamics {
@@ -44,6 +46,8 @@ fn hydrate(pressure: f64, temp: f64, bounds: (Vec3, Vec3), n_mols: usize) -> Vec
                 accel: Vec3::new_zero(),
                 mass: 1.,
                 partial_charge: 0.,
+                lj_r_star: 0.,
+                lj_eps: 0.,
                 force_field_type: None,
             },
             h1: AtomDynamics {
@@ -56,6 +60,8 @@ fn hydrate(pressure: f64, temp: f64, bounds: (Vec3, Vec3), n_mols: usize) -> Vec
                 accel: Vec3::new_zero(),
                 mass: 1.,
                 partial_charge: 0.,
+                lj_r_star: 0.,
+                lj_eps: 0.,
                 force_field_type: None,
             },
         })
@@ -147,6 +153,8 @@ pub fn add_tip3p(state: &mut MdState, n: usize, rng: &mut impl rand::Rng) {
             accel: Vec3::new_zero(),
             mass,
             partial_charge: q,
+            lj_r_star: 0.,
+            lj_eps: 0.,
             force_field_type: None,
         };
 

@@ -434,28 +434,12 @@ impl MdState {
         // the positioned ligand. (its atom coords are relative; we need absolute)
         let mut atoms_dy = Vec::with_capacity(atoms.len());
         for (i, atom) in atoms.iter().enumerate() {
-            let ff_type = match &atom.force_field_type {
-                Some(ff_type) => ff_type.clone(),
-                None => {
-                    return Err(ParamError::new(&format!(
-                        "Atom missing FF type; can't run dynamics: {:?}",
-                        atom
-                    )));
-                }
-            };
-
-            atoms_dy.push(AtomDynamics {
-                element: atom.element,
-                name: atom.name.clone().unwrap_or_default(),
-                posit: atom_posits[i],
-                vel: Vec3::new_zero(),
-                accel: Vec3::new_zero(),
-                mass: force_field_params.mass.get(&i).unwrap().mass as f64,
-                // todo: A/R for partial charge.
-                // partial_charge: atom.partial_charge.unwrap_or_default() as f64,
-                partial_charge: *force_field_params.partial_charge.get(&i).unwrap() as f64,
-                force_field_type: Some(ff_type),
-            });
+            atoms_dy.push(AtomDynamics::new(
+                atom,
+                atom_posits,
+                &force_field_params,
+                i,
+            )?);
         }
 
         // let atoms_dy = atoms.iter().map(|a| a.into()).collect();

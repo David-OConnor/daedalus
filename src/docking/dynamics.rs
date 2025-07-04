@@ -150,9 +150,9 @@ fn calc_dt_dynamic(
     result
 }
 
-fn bodies_from_atoms(atoms: &[Atom]) -> Vec<AtomDynamics> {
-    atoms.iter().map(|a| a.into()).collect()
-}
+// fn bodies_from_atoms(atoms: &[Atom]) -> Vec<AtomDynamics> {
+//     atoms.iter().map(|a| a.into()).collect()
+// }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 /// Also returns valid lanes in the last item.

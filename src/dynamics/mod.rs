@@ -31,7 +31,10 @@
 mod ambient;
 mod prep;
 
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    string::ParseError,
+};
 
 use ambient::SimBox;
 use bio_files::frcmod::{
@@ -175,23 +178,25 @@ pub struct AtomDynamics {
     /// Daltons
     pub mass: f64,
     pub partial_charge: f64,
+    pub lj_r_star: f64,
+    pub lj_eps: f64,
     pub force_field_type: Option<String>, // todo: Should this be an enum? // todo: Should it be required?
 }
 
-impl AtomDynamics {
-    pub fn new(element: Element) -> Self {
-        Self {
-            element,
-            name: String::new(),
-            posit: Vec3::new_zero(),
-            vel: Vec3::new_zero(),
-            accel: Vec3::new_zero(),
-            mass: element.atomic_weight() as f64,
-            partial_charge: 0.0,
-            force_field_type: None,
-        }
-    }
-}
+// impl AtomDynamics {
+//     pub fn new(element: Element) -> Self {
+//         Self {
+//             element,
+//             name: String::new(),
+//             posit: Vec3::new_zero(),
+//             vel: Vec3::new_zero(),
+//             accel: Vec3::new_zero(),
+//             mass: element.atomic_weight() as f64,
+//             partial_charge: 0.0,
+//             force_field_type: None,
+//         }
+//     }
+// }
 
 impl From<&Atom> for AtomDynamics {
     fn from(atom: &Atom) -> Self {
@@ -203,8 +208,44 @@ impl From<&Atom> for AtomDynamics {
             accel: Vec3::new_zero(),
             mass: atom.element.atomic_weight() as f64,
             partial_charge: atom.partial_charge.unwrap_or_default() as f64,
-            force_field_type: None,
+            lj_r_star: 0.,
+            lj_eps: 0.,
+            force_field_type: atom.force_field_type.clone(),
         }
+    }
+}
+
+impl AtomDynamics {
+    fn new(
+        atom: &Atom,
+        atom_posits: &[Vec3],
+        ff_params: &ForceFieldParamsIndexed,
+        i: usize,
+    ) -> Result<Self, ParamError> {
+        let ff_type = match &atom.force_field_type {
+            Some(ff_type) => ff_type.clone(),
+            None => {
+                return Err(ParamError::new(&format!(
+                    "Atom missing FF type; can't run dynamics: {:?}",
+                    atom
+                )));
+            }
+        };
+
+        Ok(Self {
+            element: atom.element,
+            name: atom.name.clone().unwrap_or_default(),
+            posit: atom_posits[i],
+            vel: Vec3::new_zero(),
+            accel: Vec3::new_zero(),
+            mass: ff_params.mass.get(&i).unwrap().mass as f64,
+            // todo: A/R for partial charge.
+            // partial_charge: atom.partial_charge.unwrap_or_default() as f64,
+            partial_charge: *ff_params.partial_charge.get(&i).unwrap() as f64,
+            lj_r_star: ff_params.van_der_waals.get(&i).unwrap().r_star as f64,
+            lj_eps: ff_params.van_der_waals.get(&i).unwrap().eps as f64,
+            force_field_type: Some(ff_type),
+        })
     }
 }
 
@@ -311,8 +352,8 @@ impl MdState {
         }
 
         self.apply_bond_forces();
-        self.apply_valence_angle_forces();
-        // self.apply_torsion_forces();
+        // self.apply_valence_angle_forces();
+        self.apply_dihedral_forces();
         // self.apply_nonbonded_forces();
 
         // Second half-kick using new accelerations
@@ -427,7 +468,7 @@ impl MdState {
     /// This maintains dihedral angles. (i.e. the angle between four atoms in a sequence). This models
     /// effects such as σ-bond overlap (e.g. staggered conformations), π-conjugation, which locks certain
     /// dihedrals near 0 or τ, and steric hindrance. (Bulky groups clashing).
-    fn apply_torsion_forces(&mut self) {
+    fn apply_dihedral_forces(&mut self) {
         for (indices, dihe) in &self.force_field_params.dihedral {
             // Split the four atoms mutably without aliasing
             let (a_0, a_1, a_2, a_3) =
