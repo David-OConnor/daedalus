@@ -17,7 +17,9 @@ use na_seq::AaIdent;
 static INIT_COMPLETE: AtomicBool = AtomicBool::new(false);
 
 use bio_files::{
-    DensityMap, ResidueType, density_from_2fo_fc_rcsb_gemmi, frcmod::ForceFieldParams,
+    DensityMap, ResidueType,
+    amber_params::{ForceFieldParams, ForceFieldParamsKeyed},
+    density_from_2fo_fc_rcsb_gemmi,
 };
 
 use crate::{
@@ -31,7 +33,6 @@ use crate::{
         find_sites::find_docking_sites,
     },
     download_mols::{load_sdf_drugbank, load_sdf_pubchem},
-    dynamics::{ForceFieldParamsKeyed, MdState},
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
     mol_drawing::{
         COLOR_DOCKING_SITE_MESH, EntityType, MoleculeView, draw_density, draw_density_surface,

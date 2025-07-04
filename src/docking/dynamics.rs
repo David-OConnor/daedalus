@@ -5,6 +5,8 @@
 
 use std::time::Instant;
 
+use bio_files::amber_params::ForceFieldParamsKeyed;
+
 use crate::ComputationDevice;
 
 cfg_if::cfg_if! {
@@ -30,15 +32,11 @@ use rayon::prelude::*;
 use crate::forces::force_lj_gpu;
 use crate::{
     docking::{
-        BindingEnergy, ConformationType, Pose, calc_binding_energy,
+        BindingEnergy, ConformationType, Pose,
         prep::{DockingSetup, Torsion},
     },
-    dynamics::{
-        AtomDynamics, AtomDynamicsx4, ForceFieldParamsIndexed, ForceFieldParamsKeyed, MdState,
-        ParamError, SnapshotDynamics,
-    },
+    dynamics::{AtomDynamics, AtomDynamicsx4, MdState, ParamError, SnapshotDynamics},
     forces::force_lj,
-    integrate::integrate_verlet_f64,
     molecule::{Atom, Ligand},
 };
 // This seems to be how we control rotation vice movement. A higher value means

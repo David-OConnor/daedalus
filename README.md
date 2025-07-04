@@ -29,6 +29,7 @@ in the project directory.
 
 - View the 3D structure of proteins and small molecules
 - Visualize ligand docking
+- Molecular dynamics, using Amber force fields.
 - WIP: This software is a platform for molecular docking, and ab-initio simulations.
 
 ![Protein B](screenshots/protein_b.png)
@@ -51,6 +52,7 @@ from the [RCSB PDB](https://www.rcsb.org/).
 - Proteins: mmCIF and PDB
 - Small molecules: SDF, Mol2, and PDBQT
 - Electron density: 2fo-fc CIF, and Map.
+- Force field parameters: dat, and frcmode (Amber)
 
 ![ELectron density](screenshots/iso_a.png)
 

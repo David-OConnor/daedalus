@@ -37,8 +37,8 @@ use std::{
 };
 
 use ambient::SimBox;
-use bio_files::frcmod::{
-    AngleData, BondData, DihedralData, ForceFieldParams, ImproperDihedralData, MassData, VdwData,
+use bio_files::amber_params::{
+    AngleData, BondData, DihedralData, ForceFieldParams, MassData, VdwData,
 };
 use lin_alg::f64::Vec3;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -71,6 +71,10 @@ const SCALE_COUL_14: f64 = 1.0 / 1.2; // 0.833̅
 
 const SOFTENING_FACTOR_SQ: f64 = 1e-6;
 
+// Conversion factor
+// 2^(5/6); no powf in consts.
+const SIGMA_FROM_RSTAR: f64 = 1.7817974362806785;
+
 // todo: A/R
 const SNAPSHOT_RATIO: usize = 10;
 
@@ -89,59 +93,6 @@ impl ParamError {
     }
 }
 
-/// Force field parameters, e.g. from Amber. Similar to that in `bio_files`, but
-/// with Hashmap-based keys (of atom-name tuples) for fast look-ups.
-///
-/// For descriptions of each field and the units used, reference the structs in bio_files, of which
-/// this uses internally.
-#[derive(Clone, Debug, Default)]
-pub struct ForceFieldParamsKeyed {
-    pub mass: HashMap<String, MassData>,
-    pub bond: HashMap<(String, String), BondData>,
-    pub angle: HashMap<(String, String, String), AngleData>,
-    pub dihedral: HashMap<(String, String, String, String), DihedralData>,
-    pub dihedral_improper: HashMap<(String, String, String, String), ImproperDihedralData>,
-    pub van_der_waals: HashMap<String, VdwData>,
-    // todo: Partial charges here A/R. Note that we also assign them to the atom directly.
-    pub partial_charges: HashMap<String, f32>,
-}
-
-impl ForceFieldParamsKeyed {
-    pub fn new(params: &ForceFieldParams) -> Self {
-        let mut result = Self::default();
-
-        for val in &params.mass {
-            result.mass.insert(val.ff_type.clone(), val.clone());
-        }
-
-        for val in &params.bond {
-            result.bond.insert(val.ff_types.clone(), val.clone());
-        }
-
-        for val in &params.angle {
-            result.angle.insert(val.ff_types.clone(), val.clone());
-        }
-
-        for val in &params.dihedral {
-            result.dihedral.insert(val.ff_types.clone(), val.clone());
-        }
-
-        for val in &params.improper {
-            result
-                .dihedral_improper
-                .insert(val.ff_types.clone(), val.clone());
-        }
-
-        for val in &params.van_der_waals {
-            result
-                .van_der_waals
-                .insert(val.ff_type.clone(), val.clone());
-        }
-
-        result
-    }
-}
-
 /// Todo: Experimenting with using indices. This is a derivative of the `Keyed` variant.
 /// This variant of forcefield parameters offers the fastest lookups. Unlike the Vec and Hashmap
 /// based parameter structs, this is specific to the atom in our docking setup: The incdices are provincial
@@ -154,8 +105,12 @@ pub struct ForceFieldParamsIndexed {
     pub mass: HashMap<usize, MassData>,
     pub bond: HashMap<(usize, usize), BondData>,
     pub angle: HashMap<(usize, usize, usize), AngleData>,
-    pub dihedral: HashMap<(usize, usize, usize, usize), DihedralData>,
-    pub improper: HashMap<(usize, usize, usize, usize), ImproperDihedralData>,
+    // This includes both normal, and improper dihedrals.
+    // todo: Sort out how to handle missing values. Is this expected?
+    // todo: Use wildcards ("X" in param files)
+    // pub dihedral: HashMap<(usize, usize, usize, usize), DihedralData>,
+    pub dihedral: HashMap<(usize, usize, usize, usize), Option<DihedralData>>,
+    // pub improper: HashMap<(usize, usize, usize, usize), DihedralData>,
     pub van_der_waals: HashMap<usize, VdwData>,
     pub partial_charge: HashMap<usize, f32>, // todo: A/r
 }
@@ -176,6 +131,7 @@ pub struct AtomDynamics {
     pub vel: Vec3,
     pub accel: Vec3,
     /// Daltons
+    /// todo: Move these 4 out of this to save memory; use from the params struct directly.
     pub mass: f64,
     pub partial_charge: f64,
     pub lj_r_star: f64,
@@ -469,7 +425,9 @@ impl MdState {
     /// effects such as σ-bond overlap (e.g. staggered conformations), π-conjugation, which locks certain
     /// dihedrals near 0 or τ, and steric hindrance. (Bulky groups clashing).
     fn apply_dihedral_forces(&mut self) {
-        for (indices, dihe) in &self.force_field_params.dihedral {
+        for (indices, dihe_) in &self.force_field_params.dihedral {
+            let Some(dihe) = dihe_ else { continue };
+
             // Split the four atoms mutably without aliasing
             let (a_0, a_1, a_2, a_3) =
                 split4_mut(&mut self.atoms, indices.0, indices.1, indices.2, indices.3);
@@ -510,13 +468,13 @@ impl MdState {
             let y = m1.dot(n2_hat);
             let φ = y.atan2(x);
 
-            println!("Dihe meas: {:?}, expected: {:?}", φ, dihe.gamma);
+            // println!("Dihe meas: {:?}, expected: {:?}", φ, dihe.phase);
 
             // dV/dφ  (note the minus sign from ∂cos / ∂φ = −sin)
             let dV_dφ = -0.5
                 * dihe.barrier_height_vn as f64
                 * (dihe.periodicity as f64)
-                * ((dihe.periodicity as f64) * φ - dihe.gamma as f64).sin();
+                * ((dihe.periodicity as f64) * φ - dihe.phase as f64).sin();
 
             // ∂φ/∂r   (see e.g. DOI 10.1016/S0021-9991(97)00040-8)
             let dφ_dr1 = n1 * (b2_len / n1_sq);
@@ -572,15 +530,11 @@ impl MdState {
                     continue;
                 }
 
-                // println!("ATOMS: {:?} {:?}", self.atoms[i].element, self.atoms[j].element);
-
                 // todo: Put back A/R, or load from amber.
                 // let (σ, ϵ) = self
                 //     .lj_lut
                 //     .get(&(self.atoms[i].element, self.atoms[j].element))
                 //     .unwrap();
-
-                let (σ, ϵ) = (1., 1.); // todo temp!
 
                 let dist = r_sq.sqrt();
                 let dir = diff / dist;
@@ -589,7 +543,10 @@ impl MdState {
                 //     continue;
                 // }
 
-                let mut f_lj = force_lj(dir, dist, σ as f64, ϵ as f64);
+                let σ = SIGMA_FROM_RSTAR * (self.atoms[i].lj_r_star + self.atoms[j].lj_r_star);
+                let ε = 0.25 * (self.atoms[i].lj_eps * self.atoms[j].lj_eps).sqrt();
+
+                let mut f_lj = force_lj(dir, dist, σ, ε);
 
                 let mut f_coulomb = force_coulomb(
                     dir,

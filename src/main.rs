@@ -62,7 +62,7 @@ use bio_apis::{
     ReqError, rcsb,
     rcsb::{FilesAvailable, PdbDataResults},
 };
-use bio_files::frcmod::ForceFieldParams;
+use bio_files::amber_params::{ForceFieldParams, ForceFieldParamsKeyed};
 // #[cfg(feature = "cuda")]
 // use cuda_setup::ComputationDevice;
 #[cfg(feature = "cuda")]
@@ -92,7 +92,7 @@ use crate::{
         BindingEnergy, ConformationType, THETA_BH, dynamics::Snapshot, external::check_adv_avail,
         prep::DockingSetup,
     },
-    dynamics::{ForceFieldParamsKeyed, MdState},
+    dynamics::MdState,
     file_io::{cif_pdb::save_pdb, mtz::load_mtz, pdbqt::load_pdbqt},
     molecule::Ligand,
     navigation::Tab,

@@ -22,12 +22,13 @@ pub mod cif_sf;
 pub mod mtz;
 pub mod pdbqt;
 
-use bio_files::{Mol2, frcmod::ForceFieldParams, sdf::Sdf};
-
-use crate::{
-    dynamics::ForceFieldParamsKeyed,
-    reflection::{DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityRect, ElectronDensity},
+use bio_files::{
+    Mol2,
+    amber_params::{ForceFieldParams, ForceFieldParamsKeyed},
+    sdf::Sdf,
 };
+
+use crate::reflection::{DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityRect, ElectronDensity};
 
 impl State {
     /// A single endpoint to open a number of file types
@@ -242,7 +243,7 @@ impl State {
                 for di in v.dihedral.values().take(20) {
                     println!(
                         "DH: {:?}, {}, {}",
-                        di.ff_types, di.barrier_height_vn, di.gamma
+                        di.ff_types, di.barrier_height_vn, di.phase
                     );
                 }
 
@@ -250,7 +251,7 @@ impl State {
                 for di in v.dihedral_improper.values().take(20) {
                     println!(
                         "Imp: {:?}, {}, {}",
-                        di.ff_types, di.barrier_height_vn, di.gamma
+                        di.ff_types, di.barrier_height_vn, di.phase
                     );
                 }
 

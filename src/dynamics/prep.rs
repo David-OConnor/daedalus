@@ -3,15 +3,14 @@
 
 use std::collections::HashSet;
 
-use bio_files::frcmod::DihedralData;
+use bio_files::amber_params::{DihedralData, ForceFieldParamsKeyed};
 use itertools::Itertools;
 use lin_alg::f64::Vec3;
 use na_seq::element::LjTable;
 
 use crate::{
     dynamics::{
-        AtomDynamics, CUTOFF, ForceFieldParamsIndexed, ForceFieldParamsKeyed, MdState, ParamError,
-        SKIN, ambient::SimBox,
+        AtomDynamics, CUTOFF, ForceFieldParamsIndexed, MdState, ParamError, SKIN, ambient::SimBox,
     },
     molecule::{Atom, Bond},
 };
@@ -203,32 +202,45 @@ impl ForceFieldParamsIndexed {
                                 .ok_or_else(|| ParamError::new("Atom missing FF type"))?,
                         );
 
-                        let mut data = params.dihedral.get(&(
+                        let types_order_0 = (
                             type_i.clone(),
                             type_j.clone(),
                             type_k.clone(),
                             type_l.clone(),
-                        ));
+                        );
+
+                        let types_order_1 = (
+                            type_l.clone(),
+                            type_k.clone(),
+                            type_j.clone(),
+                            type_i.clone(),
+                        );
+
+                        // Try both proper and improper, and in both orders.
+                        let mut data = params.dihedral.get(&types_order_0);
 
                         if data.is_none() {
-                            data = params.dihedral.get(&(
-                                type_l.clone(),
-                                type_k.clone(),
-                                type_j.clone(),
-                                type_i.clone(),
-                            ));
+                            data = params.dihedral.get(&types_order_1);
+                        }
+
+                        if data.is_none() {
+                            data = params.dihedral_improper.get(&types_order_0);
+                        }
+
+                        if data.is_none() {
+                            data = params.dihedral_improper.get(&types_order_1);
                         }
 
                         match data {
                             Some(d) => {
-                                result.dihedral.insert(idx_key, d.clone());
+                                result.dihedral.insert(idx_key, Some(d.clone()));
                             }
                             None => {
                                 eprintln!(
                                     "No dihedral parameters for \
                                      {type_i}-{type_j}-{type_k}-{type_l}. Using measured values."
                                 );
-                                result.dihedral.insert(idx_key, Default::default());
+                                result.dihedral.insert(idx_key, None);
 
                                 // return Err(ParamError::new(&format!(
                                 //     "No dihedral parameters for \
