@@ -3,6 +3,7 @@
 
 use std::collections::HashSet;
 
+use bio_files::frcmod::DihedralData;
 use itertools::Itertools;
 use lin_alg::f64::Vec3;
 use na_seq::element::LjTable;
@@ -15,16 +16,46 @@ use crate::{
     molecule::{Atom, Bond},
 };
 
+/// Build a single lookup table in which ligand-specific parameters
+/// (when given) replace or add to the generic ones.
+fn merge_params(
+    generic: &ForceFieldParamsKeyed,
+    lig_specific: Option<&ForceFieldParamsKeyed>,
+) -> ForceFieldParamsKeyed {
+    // Start with a deep copy of the generic parameters.
+    let mut merged = generic.clone();
+
+    if let Some(lig) = lig_specific {
+        merged.mass.extend(lig.mass.clone());
+        merged.partial_charges.extend(lig.partial_charges.clone());
+        merged.van_der_waals.extend(lig.van_der_waals.clone());
+
+        merged.bond.extend(lig.bond.clone());
+        merged.angle.extend(lig.angle.clone());
+        merged.dihedral.extend(lig.dihedral.clone());
+        merged
+            .dihedral_improper
+            .extend(lig.dihedral_improper.clone());
+    }
+
+    merged
+}
+
 /// Associate loaded Force field data (e.g. from Amber) into the atom indices used in a specific
 /// dynamics sim.
 impl ForceFieldParamsIndexed {
     pub fn new(
-        params: &ForceFieldParamsKeyed,
+        params_general: &ForceFieldParamsKeyed,
+        params_lig_specific: Option<&ForceFieldParamsKeyed>,
         atoms: &[Atom],
         bonds: &[Bond],
         adjacency_list: &[Vec<usize>],
     ) -> Result<Self, ParamError> {
         let mut result = Self::default();
+
+        // Combine the two force field sets. When a value is present in both, refer the lig-specific
+        // one.
+        let params = merge_params(params_general, params_lig_specific);
 
         /* ---------- per–atom tables --------------------------------------------------------- */
         for (idx, atom) in atoms.iter().enumerate() {
@@ -134,7 +165,6 @@ impl ForceFieldParamsIndexed {
         }
 
         // Proper dihedral angles.
-        // todo: Improper?
         let mut seen = HashSet::<(usize, usize, usize, usize)>::new();
 
         for (j, nbr_j) in adjacency_list.iter().enumerate() {
@@ -175,38 +205,47 @@ impl ForceFieldParamsIndexed {
                                 .ok_or_else(|| ParamError::new("Atom missing FF type"))?,
                         );
 
-                        let data = params
-                            .dihedral
-                            .get(&(
-                                type_i.clone(),
-                                type_j.clone(),
-                                type_k.clone(),
+                        let mut data = params.dihedral.get(&(
+                            type_i.clone(),
+                            type_j.clone(),
+                            type_k.clone(),
+                            type_l.clone(),
+                        ));
+
+                        if data.is_none() {
+                            data = params.dihedral.get(&(
                                 type_l.clone(),
-                            ))
-                            // symmetric in the outer pair
-                            .or_else(|| {
-                                params.dihedral.get(&(
-                                    type_l.clone(),
-                                    type_k.clone(),
-                                    type_j.clone(),
-                                    type_i.clone(),
-                                ))
-                            })
-                            .cloned()
-                            .ok_or_else(|| {
-                                ParamError::new(&format!(
+                                type_k.clone(),
+                                type_j.clone(),
+                                type_i.clone(),
+                            ));
+                        }
+
+                        match data {
+                            Some(d) => {
+                                result.dihedral.insert(idx_key, d.clone());
+                            }
+                            None => {
+                                eprintln!(
                                     "No dihedral parameters for \
                                      {type_i}-{type_j}-{type_k}-{type_l}"
-                                ))
-                            })?;
+                                );
+                                result.dihedral.insert(idx_key, Default::default());
 
-                        result.dihedral.insert(idx_key, data);
+                                // return Err(ParamError::new(&format!(
+                                //     "No dihedral parameters for \
+                                //      {type_i}-{type_j}-{type_k}-{type_l}"
+                                // )));
+                            }
+                        }
                     }
                 }
             }
         }
 
-        println!("\n\nFF for this ligand: {:?}", result);
+        // todo: Handle improper. A lot of the missing params you see for dihedral are impropers.
+
+        // println!("\n\nFF for this ligand: {:?}", result);
 
         Ok(result)
     }
@@ -382,21 +421,16 @@ impl MdState {
         atoms_external: &[Atom],
         lj_table: &LjTable,
         ff_params_keyed: &ForceFieldParamsKeyed,
+        ff_params_keyed_lig_specific: Option<&ForceFieldParamsKeyed>,
     ) -> Result<Self, ParamError> {
-        // println!("ATOMS: {:?}", atoms); // temp to eval ff types.
-
-        for (k, v) in ff_params_keyed.bond.iter() {
-            if k.0 == "ca" && k.1 == "ss" {
-                println!("found ca-ss: {:?}", v);
-            }
-            if k.0 == "c" && k.1 == "cd" {
-                println!("found c-cd: {:?}", v);
-            }
-        }
-
         // Convert FF params from keyed to index-based.
-        let force_field_params =
-            ForceFieldParamsIndexed::new(ff_params_keyed, atoms, bonds, adjacency_list)?;
+        let force_field_params = ForceFieldParamsIndexed::new(
+            ff_params_keyed,
+            ff_params_keyed_lig_specific,
+            atoms,
+            bonds,
+            adjacency_list,
+        )?;
 
         // We are using this approach instead of `.into`, so we can use the atom_posits from
         // the positioned ligand. (its atom coords are relative; we need absolute)

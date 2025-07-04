@@ -294,6 +294,7 @@ pub fn build_dock_dynamics(
     lig: &mut Ligand,
     setup: &DockingSetup,
     ff_params: &ForceFieldParamsKeyed,
+    ff_params_lig_specific: Option<&ForceFieldParamsKeyed>,
     n_steps: usize,
     // ) -> Vec<Snapshot> {
     // ) -> Vec<SnapshotDynamics> {
@@ -314,9 +315,12 @@ pub fn build_dock_dynamics(
             &setup.rec_atoms_near_site,
             &setup.lj_lut,
             ff_params,
+            ff_params_lig_specific,
         )?;
 
         let n_steps = 60_000;
+
+        // let n_steps = 1; // todo temp, while we evaluate what's going wrong with our MD consts.
         // In femtoseconds
         let dt = 1.;
 
@@ -328,269 +332,8 @@ pub fn build_dock_dynamics(
             lig.molecule.atoms[i].posit = atom.posit;
         }
 
-        return Ok(md_state);
+        Ok(md_state)
     }
-
-    // todo: You should possibly add your pre-computed LJ pairs, instead of looking up each time.
-    // todo: See this code from docking.
-
-    // An adaptive timestep.
-    let dt_max = 0.0001;
-
-    let dt_dynamic_scaler = 100.;
-
-    let dt = dt_max;
-    //             let rel_velocity = (body_lig.vel - body_rec.vel).magnitude();
-    //             let dt_this = dt_dynamic_scaler_x8 * dist / rel_velocity;
-    //
-    //             // Convert to an array so we can iterate lane by lane:
-    //             let dt_arr = dt_this.to_array();
-
-    let snapshot_ratio = 10;
-    let mut snapshots = Vec::with_capacity(n_steps + 1); // +1 for the initial snapshot.
-    let mut time_elapsed = 0.;
-
-    // todo: We're having trouble fitting dy namic DT into our functional code.
-    // todo: One alternative is to pre-calculate it, but this has an additional distance step.
-    // todo: Make adaptive again; you must pull that logic outside
-    // todo of teh torque/force fn.
-
-    // Static
-
-    let mut body_ligand_rigid = BodyRigid::from_ligand(lig);
-
-    // Initial snapshot
-    snapshots.push(Snapshot {
-        time: time_elapsed,
-        lig_atom_posits: lig.atom_posits.iter().map(|p| (*p).into()).collect(),
-        pose: lig.pose.clone(),
-        energy: None, // todo: Initial energy?
-    });
-
-    let len_rec = setup.rec_atoms_near_site.len();
-    let len_lig = lig.atom_posits.len();
-
-    // todo: CUDA only. setup struct?
-    let posits_rec: Vec<Vec3F32> = setup
-        .rec_atoms_near_site
-        .iter()
-        .map(|r| r.posit.into())
-        .collect();
-
-    for t in 0..n_steps {
-        lig.position_atoms(Some(&body_ligand_rigid.as_pose()));
-        // todo: Split this into a separate fn A/R
-
-        // Cache diffs.
-        let mut diffs = Vec::with_capacity(len_rec * len_lig);
-        // For torque calculations, compared to anchor.
-        let mut lig_posits_by_diff = Vec::with_capacity(len_rec * len_lig);
-
-        for i_rec in 0..len_rec {
-            for i_lig in 0..len_lig {
-                let posit_rec: Vec3 = setup.rec_atoms_near_site[i_rec].posit.into();
-                let posit_lig: Vec3 = lig.atom_posits[i_lig].into();
-
-                diffs.push(posit_rec - posit_lig);
-                lig_posits_by_diff.push(posit_lig);
-            }
-        }
-
-        let anchor_posit = body_ligand_rigid.posit;
-
-        let start = Instant::now();
-
-        let (force, torque) = match dev {
-            #[cfg(feature = "cuda")]
-            // todo: So... CUDA is taking about 1.5x the speed of CPU...
-            ComputationDevice::Gpu((stream, module)) => {
-                let lig_posits_f32: Vec<Vec3F32> =
-                    lig.atom_posits.iter().map(|r| (*r).into()).collect();
-
-                let f_lj_per_tgt = force_lj_gpu(
-                    &stream,
-                    module,
-                    &lig_posits_f32,
-                    &posits_rec,
-                    &setup.lj_sigma,
-                    &setup.lj_eps,
-                );
-
-                let mut f = Vec3F32::new_zero();
-                for f_ in &f_lj_per_tgt {
-                    f += *f_;
-                }
-                // let f = f_lj_per_tgt.iter().sum(); // todo: Impl sum.
-                // todo: Torque: Need in kernel.
-                let t = Vec3::new_zero(); // todo temp!
-                // (f, t)
-                (f.into(), t.into())
-            }
-            ComputationDevice::Cpu => {
-                // todo: x8 isn't saving time here, and is causing invalid results. (not matching scalar)
-                #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-                // if !is_x86_feature_detected!("avx") {
-                if true {
-                    scalar_f_t(&diffs, setup, &lig_posits_by_diff, anchor_posit)
-                } else {
-                    // todo: Put this SIMD code back once you sort out f32 vs f64.
-                    // let (diffs_x8, valid_lanes_last_diff) = pack_vec3(&diffs);
-                    // let (lig_posits_by_diff_x8, _) = pack_vec3(&lig_posits_by_diff);
-                    //
-                    // let anchor_posit_x8 = Vec3x4::splat(anchor_posit);
-                    //
-                    // let (f, t) = diffs_x8
-                    //     .par_iter()
-                    //     .enumerate()
-                    //     .map(|(i, &diff)| {
-                    //         let r = diff.magnitude();
-                    //         let dir = diff / r;
-                    //         let sigma = setup.lj_sigma_x8[i];
-                    //         let eps = setup.lj_eps_x8[i];
-                    //
-                    //         let f = force_lj_x8(dir, r, sigma, eps);
-                    //
-                    //         let diff = lig_posits_by_diff_x8[i] - anchor_posit_x8;
-                    //         let torque = diff.cross(f);
-                    //
-                    //         (f, torque)
-                    //     })
-                    //     .reduce(
-                    //         || (Vec3x4::new_zero(), Vec3x4::new_zero()),
-                    //         |a, b| (a.0 + b.0, a.1 + b.1),
-                    //     );
-                    //
-                    // // todo: Impl sum.
-                    // let mut f_ = Vec3::new_zero();
-                    // let mut t_ = Vec3::new_zero();
-                    // let f_arr = f.to_array();
-                    // let t_arr = t.to_array();
-                    // for i in 0..8 {
-                    //     f_ += f_arr[i];
-                    //     t_ += t_arr[i];
-                    // }
-                    //
-                    // (f_, t_)
-
-                    (Vec3::new_zero(), Vec3::new_zero())
-                }
-
-                #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
-                scalar_f_t(&diffs, setup, &lig_posits_by_diff, anchor_posit)
-            }
-        };
-
-        // todo: Switch to verlet, and use leap-frog between posit and orientation. (As you do)
-
-        // let el = start.elapsed().as_micros();
-        // println!("\nElapsed: {el}");
-
-        // We use these to avoid performing computations on empty (0ed?) values on the final SIMD value.
-        // This causes incorrect results.
-        // Number of real bodies:
-
-        // integrate_rk4_rigid(&mut body_ligand_rigid, &force_torque_fn, dt);
-
-        // let (f, τ, atom_posits) = force_torque_fn(&body_ligand_rigid);
-
-        // Skipping inertia/physics, to just nudge in the *right*? direction.
-        // body_ligand_rigid.posit += f / body_ligand_rigid.mass * dt;
-
-        // This approach of altering position and orientation seems to perform notably better than
-        // combining the two.
-        // todo: If this is how you do it, you can half computation time by alternating computation for torque
-        // todo and force as well.
-
-        // todo: RK4; once you are ready to make an acc fn again.
-        if t % 2 == 0 {
-            // Update position.
-            let acc = force * dt;
-
-            let posit_this = body_ligand_rigid.posit;
-            // body_ligand_rigid.posit = integrate_verlet(
-            body_ligand_rigid.posit = integrate_verlet_f64(
-                body_ligand_rigid.posit,
-                body_ligand_rigid.posit_prev,
-                acc,
-                dt,
-            );
-            body_ligand_rigid.posit_prev = posit_this;
-        } else {
-            // Update orientation.
-
-            // todo: Update this using a verlet-adjacent approach?
-
-            // let rotator = Quaternion::from_axis_angle(
-            //     torque.to_normalized(),
-            //     torque.magnitude() * dt * 0.00001,
-            // );
-            //
-            // todo: QC this approach.
-            body_ligand_rigid.ω += torque * dt;
-
-            // let ω_mag = body_ligand_rigid.ω.magnitude();
-            // if ω_mag > 0.0 {
-            //     let axis = body_ligand_rigid.ω / ω_mag;
-            //     let delta_q = Quaternion::from_axis_angle(axis, ω_mag * dt);
-            //     // semi‐implicit Euler: apply rotation *after* updating ω
-            //     body_ligand_rigid.orientation = (delta_q * body_ligand_rigid.orientation).to_normalized();
-            // }
-            let ω_q = Quaternion::new(
-                0.0,
-                body_ligand_rigid.ω.x,
-                body_ligand_rigid.ω.y,
-                body_ligand_rigid.ω.z,
-            );
-            let q_dot = ω_q * body_ligand_rigid.orientation * 0.5;
-            body_ligand_rigid.orientation =
-                (body_ligand_rigid.orientation + q_dot * dt).to_normalized();
-        }
-
-        // Experimenting with a drag term to prevent inertia from having too much influence.
-        // body_ligand_rigid.vel *= 0.90;
-        body_ligand_rigid.ω *= 0.90;
-
-        time_elapsed += dt;
-
-        if t % snapshot_ratio == 0 {
-            let pose = body_ligand_rigid.as_pose();
-            lig.position_atoms(Some(&pose));
-
-            let posits: Vec<_> = lig.atom_posits.iter().map(|p| (*p).into()).collect();
-
-            let energy = calc_binding_energy(setup, lig, &posits);
-
-            snapshots.push(Snapshot {
-                time: time_elapsed,
-                // lig_atom_posits: posits,
-                lig_atom_posits: lig.atom_posits.clone(),
-                pose,
-                energy,
-            });
-        }
-    }
-
-    // Final snapshot
-    let pose = body_ligand_rigid.as_pose();
-    lig.position_atoms(Some(&pose));
-
-    let posits: Vec<_> = lig.atom_posits.iter().map(|p| (*p).into()).collect();
-
-    let energy = calc_binding_energy(setup, lig, &posits);
-
-    snapshots.push(Snapshot {
-        time: time_elapsed,
-        // lig_atom_posits: posits,
-        lig_atom_posits: lig.atom_posits.clone(),
-        pose,
-        energy,
-    });
-
-    let elapsed = start.elapsed().as_millis();
-    println!("Complete. Time: {elapsed}ms");
-
-    // snapshots
-    // Default::default()
 }
 
 /// Body masses are separate from the snapshot, since it's invariant.

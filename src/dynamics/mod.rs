@@ -86,13 +86,13 @@ impl ParamError {
 ///
 /// For descriptions of each field and the units used, reference the structs in bio_files, of which
 /// this uses internally.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct ForceFieldParamsKeyed {
     pub mass: HashMap<String, MassData>,
     pub bond: HashMap<(String, String), BondData>,
     pub angle: HashMap<(String, String, String), AngleData>,
     pub dihedral: HashMap<(String, String, String, String), DihedralData>,
-    pub improper: HashMap<(String, String, String, String), ImproperDihedralData>,
+    pub dihedral_improper: HashMap<(String, String, String, String), ImproperDihedralData>,
     pub van_der_waals: HashMap<String, VdwData>,
     // todo: Partial charges here A/R. Note that we also assign them to the atom directly.
     pub partial_charges: HashMap<String, f32>,
@@ -119,7 +119,9 @@ impl ForceFieldParamsKeyed {
         }
 
         for val in &params.improper {
-            result.improper.insert(val.ff_types.clone(), val.clone());
+            result
+                .dihedral_improper
+                .insert(val.ff_types.clone(), val.clone());
         }
 
         for val in &params.van_der_waals {
@@ -282,7 +284,7 @@ impl MdState {
     pub fn step(&mut self, dt_fs: f64) {
         // todo: Is this OK?
         // let dt = dt_fs * 1.0e-15; // s
-        let dt = dt_fs * 0.001;
+        let dt = dt_fs * 0.0001;
 
         let dt_half = 0.5 * dt;
 
@@ -301,6 +303,7 @@ impl MdState {
             self.max_disp_sq = self.max_disp_sq.max((a.vel * dt).magnitude_squared());
         }
 
+        // Reset acceleration.
         for a in &mut self.atoms {
             a.accel = Vec3::new_zero();
             // println!("Acc: {}", a.accel);
@@ -308,8 +311,8 @@ impl MdState {
 
         self.apply_bond_forces();
         self.apply_valence_angle_forces();
-        self.apply_torsion_forces();
-        self.apply_nonbonded_forces();
+        // self.apply_torsion_forces();
+        // self.apply_nonbonded_forces();
 
         // Second half-kick using new accelerations
         for a in &mut self.atoms {
@@ -342,18 +345,24 @@ impl MdState {
 
     fn apply_bond_forces(&mut self) {
         for (indices, data) in &self.force_field_params.bond {
-            let (ai, aj) = split2_mut(&mut self.atoms, indices.0, indices.1);
+            let (a_0, a_1) = split2_mut(&mut self.atoms, indices.0, indices.1);
 
-            let diff = aj.posit - ai.posit;
+            let diff = a_1.posit - a_0.posit;
             let dist = diff.magnitude();
 
-            let Δ = dist - data.r_0 as f64;
+            let delta = dist - data.r_0 as f64;
+
+            if delta > 0.1 {
+                // println!("DIST: {:?}, {:?}, d: {:.04}, r0: {:.04}", &ai.force_field_type.as_ref().unwrap(),
+                //          &aj.force_field_type.as_ref().unwrap(), dist, data.r_0);
+            }
+
             // F = -dV/dr = -k 2Δ   (harmonic)
             // let f_mag = -2.0 * k * Δ / dist.max(1e-12);
-            let f_mag = -data.k as f64 * Δ / dist.max(1e-12);
+            let f_mag = -data.k as f64 * delta / dist.max(1e-12);
             let f = diff * f_mag;
-            ai.accel -= f / ai.mass;
-            aj.accel += f / aj.mass;
+            a_0.accel -= f / a_0.mass;
+            a_1.accel += f / a_1.mass;
         }
     }
 
@@ -367,55 +376,61 @@ impl MdState {
     /// abc. A valence angle is thus concerned by the positions of three atoms.
     fn apply_valence_angle_forces(&mut self) {
         for (indices, data) in &self.force_field_params.angle {
-            // r_i —— r_j —— r_k   (θ is ∠ijk)
-            let (ai, aj, ak) = split3_mut(&mut self.atoms, indices.0, indices.1, indices.2);
+            let (a_0, a_1, a_2) = split3_mut(&mut self.atoms, indices.0, indices.1, indices.2);
 
-            // Bond vectors with j at the vertex
-            let a = ai.posit - aj.posit; // r_ij
-            let b = ak.posit - aj.posit; // r_kj (note sign!)
+            // Bond vectors with atom 1 at the vertex.
+            let bond_vec_01 = a_0.posit - a_1.posit;
+            let bond_vec_21 = a_2.posit - a_1.posit;
 
-            let a_sq = a.magnitude_squared();
-            let b_sq = b.magnitude_squared();
+            let b_vec_01_sq = bond_vec_01.magnitude_squared();
+            let b_vec_21_sq = bond_vec_21.magnitude_squared();
 
             // Quit early if atoms are on top of each other
-            if a_sq < EPS || b_sq < EPS {
+            if b_vec_01_sq < EPS || b_vec_21_sq < EPS {
                 continue;
             }
 
-            let a_len = a_sq.sqrt();
-            let b_len = b_sq.sqrt();
-            let inv_ab = 1.0 / (a_len * b_len);
+            let b_vec_01_len = b_vec_01_sq.sqrt();
+            let b_vec_21_len = b_vec_21_sq.sqrt();
 
-            // cosθ and sinθ
-            let cosθ = (a.dot(b) * inv_ab).clamp(-1.0, 1.0);
-            let sinθ_sq = 1.0 - cosθ * cosθ;
-            if sinθ_sq < EPS {
-                continue; // θ ≈ 0° or 180°, gradient ill-defined
+            let inv_ab = 1.0 / (b_vec_01_len * b_vec_21_len);
+
+            let cos_θ = (bond_vec_01.dot(bond_vec_21) * inv_ab).clamp(-1.0, 1.0);
+            let sin_θ_sq = 1.0 - cos_θ * cos_θ;
+
+            if sin_θ_sq < EPS {
+                continue; // θ = 0 or τ; gradient ill-defined
             }
-            let sinθ = sinθ_sq.sqrt();
+            let sin_θ = sin_θ_sq.sqrt();
 
-            // Actual angle and its deviation
-            let θ = cosθ.acos();
+            // Measured angle, and its deviation from the parameter angle.
+            let θ = cos_θ.acos();
             let Δθ = θ - data.angle as f64;
-            let dV_dθ = 2.0 * data.k as f64 * Δθ; // ∂V/∂θ
+            let dV_dθ = 2.0 * data.k as f64 * Δθ; // dV/dθ
 
-            // Helpers reused in both force terms
-            let coef = -dV_dθ / sinθ; // −∂V/∂θ  / sinθ
-            let g1 = coef * inv_ab; // common factor
+            // todo: Starting a new approach
 
-            // ∂θ/∂r_i  and  ∂θ/∂r_k  (Allen & Tildesley Eq. 4.82)
-            let dθ_dri = (b / b_len - a * cosθ / a_len) * g1;
-            let dθ_drk = (a / a_len - b * cosθ / b_len) * g1;
+            // todo: Our naive approach doesn't work either...
+            // let bond_vec_02 = (a_0.posit - a_2.posit).to_normalized();
+            // let f_0 = bond_vec_02 * dV_dθ;
+            // let f_2 = -f_0;
+            // let f_1 = Vec3::new_zero();
 
-            // Forces
-            let f_i = -dθ_dri * dV_dθ;
-            let f_k = -dθ_drk * dV_dθ;
-            let f_j = -(f_i + f_k); // Newton’s third law
+            // todo: End
 
-            // Accelerations
-            ai.accel += f_i / ai.mass;
-            aj.accel += f_j / aj.mass;
-            ak.accel += f_k / ak.mass;
+            let c = bond_vec_01.cross(bond_vec_21); // n  ∝  r_ij × r_kj
+            let c_len2 = c.magnitude_squared(); // |n|^2
+
+            let geom_i = (c.cross(bond_vec_01) * b_vec_21_len) / c_len2;
+            let geom_k = (bond_vec_21.cross(c) * b_vec_01_len) / c_len2;
+
+            let f_0 = -geom_i * dV_dθ;
+            let f_2 = -geom_k * dV_dθ;
+            let f_1 = -(f_0 + f_2);
+
+            a_0.accel += f_0 / a_0.mass;
+            a_1.accel += f_1 / a_1.mass;
+            a_2.accel += f_2 / a_2.mass;
         }
     }
 
@@ -425,19 +440,19 @@ impl MdState {
     fn apply_torsion_forces(&mut self) {
         for (indices, dihe) in &self.force_field_params.dihedral {
             // Split the four atoms mutably without aliasing
-            let (ai, aj, ak, al) =
+            let (a_0, a_1, a_2, a_3) =
                 split4_mut(&mut self.atoms, indices.0, indices.1, indices.2, indices.3);
 
             // Convenience aliases for the positions
-            let r1 = ai.posit;
-            let r2 = aj.posit;
-            let r3 = ak.posit;
-            let r4 = al.posit;
+            let r_0 = a_0.posit;
+            let r_1 = a_1.posit;
+            let r_2 = a_2.posit;
+            let r_3 = a_3.posit;
 
             // Bond vectors (see Allen & Tildesley, chap. 4)
-            let b1 = r1 - r2; // r_ij
-            let b2 = r3 - r2; // r_kj  (note the sign!)
-            let b3 = r4 - r3; // r_lk
+            let b1 = r_0 - r_1; // r_ij
+            let b2 = r_2 - r_1; // r_kj  (note the sign!)
+            let b3 = r_3 - r_2; // r_lk
 
             // Normal vectors to the two planes
             let n1 = b1.cross(b2);
@@ -484,10 +499,10 @@ impl MdState {
             let f4 = -dφ_dr4 * dV_dφ;
 
             // Convert to accelerations
-            ai.accel += f1 / ai.mass;
-            aj.accel += f2 / aj.mass;
-            ak.accel += f3 / ak.mass;
-            al.accel += f4 / al.mass;
+            a_0.accel += f1 / a_0.mass;
+            a_1.accel += f2 / a_1.mass;
+            a_2.accel += f3 / a_2.mass;
+            a_3.accel += f4 / a_3.mass;
         }
     }
 

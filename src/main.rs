@@ -104,7 +104,6 @@ use crate::{
 
 // We include, for now, `gaff2.dat` with the program. This will raise the binary size by 900kb,
 // but makes molecular dyanmics operations more transparent.
-// todo: Note that this might cause your program to always use 900kb of RAM, just for this data.
 const GAFF2_DATA: &str = include_str!("../resources/gaff2.dat");
 
 // todo: Eventually, implement a system that automatically checks for changes, and don't

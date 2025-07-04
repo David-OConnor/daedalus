@@ -936,6 +936,7 @@ fn docking(
                         lig,
                         state.volatile.docking_setup.as_ref().unwrap(),
                         ff,
+                        state.md_forcefields_lig_specific.get("CPB"),
                         1_500,
                     ) {
                         Ok(md) => {

@@ -247,8 +247,11 @@ impl State {
                 }
 
                 println!("Dihedral, improper:");
-                for di in v.improper.values().take(20) {
-                    println!("Imp: {:?}, {}, {}", di.ff_types, di.k, di.phase);
+                for di in v.dihedral_improper.values().take(20) {
+                    println!(
+                        "Imp: {:?}, {}, {}",
+                        di.ff_types, di.barrier_height_vn, di.gamma
+                    );
                 }
 
                 // todo: Get VDW loading working.
