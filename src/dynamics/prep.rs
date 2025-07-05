@@ -41,7 +41,8 @@ fn merge_params(
 }
 
 /// Associate loaded Force field data (e.g. from Amber) into the atom indices used in a specific
-/// dynamics sim.
+/// dynamics sim. This handles combining general and molecule-specific parameter sets, and converting
+/// between atom name, and the specific indices of the atoms we're using.
 impl ForceFieldParamsIndexed {
     pub fn new(
         params_general: &ForceFieldParamsKeyed,
@@ -52,16 +53,14 @@ impl ForceFieldParamsIndexed {
     ) -> Result<Self, ParamError> {
         let mut result = Self::default();
 
+        let err = || ParamError::new("Atom missing FF type");
+
         // Combine the two force field sets. When a value is present in both, refer the lig-specific
         // one.
         let params = merge_params(params_general, params_lig_specific);
 
-        /* ---------- per–atom tables --------------------------------------------------------- */
         for (i, atom) in atoms.iter().enumerate() {
-            let ff_type = atom
-                .force_field_type
-                .as_ref()
-                .ok_or_else(|| ParamError::new("Atom missing FF type"))?;
+            let ff_type = atom.force_field_type.as_ref().ok_or_else(|| err())?;
 
             // Mass
             if let Some(mass) = params.mass.get(ff_type) {
@@ -99,14 +98,8 @@ impl ForceFieldParamsIndexed {
         for bond in bonds {
             let (i, j) = (bond.atom_0, bond.atom_1);
             let (type_i, type_j) = (
-                atoms[i]
-                    .force_field_type
-                    .as_ref()
-                    .ok_or_else(|| ParamError::new("Atom missing FF type"))?,
-                atoms[j]
-                    .force_field_type
-                    .as_ref()
-                    .ok_or_else(|| ParamError::new("Atom missing FF type"))?,
+                atoms[i].force_field_type.as_ref().ok_or_else(|| err())?,
+                atoms[j].force_field_type.as_ref().ok_or_else(|| err())?,
             );
 
             let data = params
@@ -127,33 +120,28 @@ impl ForceFieldParamsIndexed {
                 continue;
             }
             for (&i, &k) in neigh.iter().tuple_combinations() {
-                let (type_i, type_j, type_k) = (
-                    atoms[i]
-                        .force_field_type
-                        .as_ref()
-                        .ok_or_else(|| ParamError::new("Atom missing FF type"))?,
+                let (type_0, type_1, type_2) = (
+                    atoms[i].force_field_type.as_ref().ok_or_else(|| err())?,
                     atoms[center]
                         .force_field_type
                         .as_ref()
-                        .ok_or_else(|| ParamError::new("Atom missing FF type"))?,
-                    atoms[k]
-                        .force_field_type
-                        .as_ref()
-                        .ok_or_else(|| ParamError::new("Atom missing FF type"))?,
+                        .ok_or_else(|| err())?,
+                    atoms[k].force_field_type.as_ref().ok_or_else(|| err())?,
                 );
 
                 let data = params
                     .angle
-                    .get(&(type_i.clone(), type_j.clone(), type_k.clone()))
+                    .get(&(type_0.clone(), type_1.clone(), type_2.clone()))
+                    // Try the other atom order.
                     .or_else(|| {
                         params
                             .angle
-                            .get(&(type_k.clone(), type_j.clone(), type_i.clone()))
+                            .get(&(type_2.clone(), type_1.clone(), type_0.clone()))
                     })
                     .cloned()
                     .ok_or_else(|| {
                         ParamError::new(&format!(
-                            "Missing valence angle parameters for {type_i}-{type_j}-{type_k}"
+                            "Missing valence angle parameters for {type_0}-{type_1}-{type_2}"
                         ))
                     })?;
 
@@ -161,7 +149,7 @@ impl ForceFieldParamsIndexed {
             }
         }
 
-        // Proper dihedral angles.
+        // Proper and improper dihedral angles.
         let mut seen = HashSet::<(usize, usize, usize, usize)>::new();
 
         for (j, nbr_j) in adjacency_list.iter().enumerate() {
@@ -183,64 +171,38 @@ impl ForceFieldParamsIndexed {
                             continue; // already handled through another path
                         }
 
-                        let (type_i, type_j, type_k, type_l) = (
-                            atoms[i]
-                                .force_field_type
-                                .as_ref()
-                                .ok_or_else(|| ParamError::new("Atom missing FF type"))?,
-                            atoms[j]
-                                .force_field_type
-                                .as_ref()
-                                .ok_or_else(|| ParamError::new("Atom missing FF type"))?,
-                            atoms[k]
-                                .force_field_type
-                                .as_ref()
-                                .ok_or_else(|| ParamError::new("Atom missing FF type"))?,
-                            atoms[l]
-                                .force_field_type
-                                .as_ref()
-                                .ok_or_else(|| ParamError::new("Atom missing FF type"))?,
+                        let (type_0, type_1, type_2, type_3) = (
+                            atoms[i].force_field_type.as_ref().ok_or_else(|| err())?,
+                            atoms[j].force_field_type.as_ref().ok_or_else(|| err())?,
+                            atoms[k].force_field_type.as_ref().ok_or_else(|| err())?,
+                            atoms[l].force_field_type.as_ref().ok_or_else(|| err())?,
                         );
 
-                        let types_order_0 = (
-                            type_i.clone(),
-                            type_j.clone(),
-                            type_k.clone(),
-                            type_l.clone(),
+                        let types = (
+                            type_0.clone(),
+                            type_1.clone(),
+                            type_2.clone(),
+                            type_3.clone(),
                         );
 
-                        let types_order_1 = (
-                            type_l.clone(),
-                            type_k.clone(),
-                            type_j.clone(),
-                            type_i.clone(),
-                        );
-
-                        // Try both proper and improper, and in both orders.
-                        let mut data = params.dihedral.get(&types_order_0);
-
-                        if data.is_none() {
-                            data = params.dihedral.get(&types_order_1);
-                        }
-
-                        if data.is_none() {
-                            data = params.dihedral_improper.get(&types_order_0);
-                        }
-
-                        if data.is_none() {
-                            data = params.dihedral_improper.get(&types_order_1);
-                        }
+                        let data = params.get_dihedral(&types);
 
                         match data {
                             Some(d) => {
-                                result.dihedral.insert(idx_key, Some(d.clone()));
+                                let mut dihe = d.clone();
+                                // Cache the divided barrier height.
+                                // todo: Put in when ready (When the dihe calcs work)
+                                // dihe.barrier_height_vn /= dihe.integer_divisor as f32;
+                                // dihe.integer_divisor = 1;
+
+                                result.dihedral.insert(idx_key, dihe);
+                                // result.dihedral.insert(idx_key, Some(dihe));
                             }
                             None => {
-                                eprintln!(
-                                    "No dihedral parameters for \
-                                     {type_i}-{type_j}-{type_k}-{type_l}. Using measured values."
-                                );
-                                result.dihedral.insert(idx_key, None);
+
+                                return Err(ParamError::new(&format!(
+                                    "Missing dihedral parameters for {type_0}-{type_1}-{type_2}-{type_3}"
+                                )))
 
                                 // return Err(ParamError::new(&format!(
                                 //     "No dihedral parameters for \
@@ -253,174 +215,11 @@ impl ForceFieldParamsIndexed {
             }
         }
 
-        // todo: Handle improper. A lot of the missing params you see for dihedral are impropers.
-
         // println!("\n\nFF for this ligand: {:?}", result);
 
         Ok(result)
     }
 }
-
-// impl ForceFieldParamsIndexed {
-//     pub fn new(
-//         params: &ForceFieldParamsKeyed,
-//         atoms: &[Atom],
-//         bonds: &[Bond],
-//         adjacency_list: &[Vec<usize>],
-//     ) -> Result<Self, ParamError> {
-//         let mut result = Self::default();
-//
-//         // todo: Mainly evaluating if we've properly loaded atom names here.
-//         println!("Getting field params for: {:?}", atoms);
-//
-//         // Load mass and partial charge data per atom.
-//         for (i, atom) in atoms.iter().enumerate() {}
-//
-//         // Match bond data to indices.
-//         for bond in bonds {
-//             // todo: Error handling on index range?
-//             let atom_0 = &atoms[bond.atom_0];
-//             let atom_1 = &atoms[bond.atom_1];
-//
-//             let Some((atom_name_0, atom_name_1)) = (atom_0.name.as_ref(), atom_1.name.as_ref())
-//             else {
-//                 return Err(ParamError::new(
-//                     "Missing an atom name when loading bond params.",
-//                 ));
-//             };
-//
-//             // todo: Use the key?
-//             for data in &params.bond.values() {
-//                 let mut found = false;
-//
-//                 if (data.atom_names.0 == atom_name_0 && data.atom_names.1 == atom_name_1)
-//                     || (data.atom_names.1 == atom_name_0 && data.atom_names.0 == atom_name_1)
-//                 {
-//                     result.bond.insert((bond.atom_0, bond.atom_1), data.clone());
-//                     found = true;
-//                 }
-//
-//                 if !found {
-//                     return Err(ParamError::new(&format!(
-//                         "Unable to find bond data for {atom_name_0}-{atom_name_1}"
-//                     )));
-//                 }
-//             }
-//         }
-//
-//         // Set up angles of 3 atoms.
-//         // for (i, atom) in atoms.iter().enumerate() {
-//         for i_outer in 0..atoms.len() {
-//             if adjacency_list[i_outer].len() < 3 {
-//                 continue;
-//             }
-//             // todo: Fill this out properly to get all unique combinations.
-//             for (i, j, k) in adjacency_list[i_outer].combinations() {
-//                 let atom_0 = &atoms[i];
-//                 let atom_1 = &atoms[j];
-//                 let atom_2 = &atoms[k];
-//
-//                 let Some((atom_name_0, atom_name_1, atom_name_2)) = (
-//                     atom_0.name.as_ref(),
-//                     atom_1.name.as_ref(),
-//                     atom_2.name.as_ref(),
-//                 ) else {
-//                     return Err(ParamError::new(
-//                         "Missing an atom name when loading angle params.",
-//                     ));
-//                 };
-//
-//                 // todo: Use the key?
-//                 for data in &params.angle.values() {
-//                     let mut found = false;
-//
-//                     // todo: Fix this logic; n eeds to be order-invariant to all (6?) combinations.
-//                     if (data.atom_names.0 == atom_name_0
-//                         && data.atom_names.1 == atom_name_1
-//                         && data.atom_names.2 == atom_name_2)
-//                         || (data.atom_names.1 == atom_name_0 && data.atom_names.0 == atom_name_1)
-//                     {
-//                         result.angle.insert((i, j, k), data.clone());
-//                         found = true;
-//                     }
-//
-//                     if !found {
-//                         return Err(ParamError::new(&format!(
-//                             "Unable to find angle data for {atom_name_0}-{atom_name_1}-{atom_name_2}"
-//                         )));
-//                     }
-//                 }
-//
-//                 // Set up dihedral angles.
-//
-//                 // Generate every i–j–k–l path (three consecutive bonds)
-//                 let mut seen = HashSet::<(usize, usize, usize, usize)>::new();
-//
-//                 for (j, adjacency_list_j) in adjacency_list.iter().enumerate() {
-//                     for &k in adjacency_list_j {
-//                         if j >= k {
-//                             continue;
-//                         } // treat each central bond once
-//                         for &i in &adjacency_list[j] {
-//                             if i == k {
-//                                 continue;
-//                             } // same bond
-//                             for &l in &adjacency_list[k] {
-//                                 if l == j {
-//                                     continue;
-//                                 }
-//                                 // canonical ordering keeps i-j-k-l as unique key
-//                                 let key = (i, j, k, l);
-//                                 if !seen.insert(key) {
-//                                     continue;
-//                                 }
-//
-//                                 let atom_0 = &atoms[i];
-//                                 let atom_1 = &atoms[j];
-//                                 let atom_2 = &atoms[k];
-//                                 let atom_3 = &atoms[l];
-//
-//                                 let Some((atom_name_0, atom_name_1, atom_name_2, atom_name_3)) = (
-//                                     atom_0.name.as_ref(),
-//                                     atom_1.name.as_ref(),
-//                                     atom_2.name.as_ref(),
-//                                     atom_3.name.as_ref(),
-//                                 ) else {
-//                                     return Err(ParamError::new(
-//                                         "Missing an atom name when loading dihedral params.",
-//                                     ));
-//                                 };
-//
-//                                 // todo: Use the key?
-//                                 for data in &params.angle.values() {
-//                                     let mut found = false;
-//
-//                                     // todo: Fix this logic; n eeds to be order-invariant to all (6?) combinations.
-//                                     if (data.atom_names.0 == atom_name_0
-//                                         && data.atom_names.1 == atom_name_1
-//                                         && data.atom_names.2 == atom_name_2)
-//                                         || (data.atom_names.1 == atom_name_0 && data.atom_names.0 == atom_name_1)
-//                                     {
-//                                         result.dihedral.insert((i, j, k, l), data.clone());
-//                                         found = true;
-//                                     }
-//
-//                                     if !found {
-//                                         return Err(ParamError::new(&format!(
-//                                             "Unable to find dihedral data for {atom_name_0}-{atom_name_1}-{atom_name_2}-{atom_name_3}"
-//                                         )));
-//                                     }
-//                                 }
-//                             }
-//                         }
-//                     }
-//                 }
-//             }
-//         }
-//
-//         Ok(result)
-//     }
-// }
 
 impl MdState {
     pub fn new(

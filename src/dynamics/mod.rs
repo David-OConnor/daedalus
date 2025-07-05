@@ -40,7 +40,7 @@ use ambient::SimBox;
 use bio_files::amber_params::{
     AngleData, BondData, DihedralData, ForceFieldParams, MassData, VdwData,
 };
-use lin_alg::f64::Vec3;
+use lin_alg::f64::{Vec3, calc_dihedral_angle, calc_dihedral_angle_v2};
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use lin_alg::f64::{Vec3x4, f64x4};
 use na_seq::{Element, element::LjTable};
@@ -105,11 +105,17 @@ pub struct ForceFieldParamsIndexed {
     pub mass: HashMap<usize, MassData>,
     pub bond: HashMap<(usize, usize), BondData>,
     pub angle: HashMap<(usize, usize, usize), AngleData>,
-    // This includes both normal, and improper dihedrals.
-    // todo: Sort out how to handle missing values. Is this expected?
-    // todo: Use wildcards ("X" in param files)
-    // pub dihedral: HashMap<(usize, usize, usize, usize), DihedralData>,
-    pub dihedral: HashMap<(usize, usize, usize, usize), Option<DihedralData>>,
+    /// This includes both normal, and improper dihedrals.
+    pub dihedral: HashMap<(usize, usize, usize, usize), DihedralData>,
+    // pub dihedral: HashMap<(usize, usize, usize, usize), Option<DihedralData>>,
+
+    // Dihedrals are represented in Amber params as a fourier series; this Vec indlues all matches.
+    // e.g. X-ca-ca-X may be present multiple times in gaff2.dat. (Although seems to be uncommon)
+    //
+    // X -nh-sx-X    4    3.000         0.000          -2.000
+    // X -nh-sx-X    4    0.400       180.000           3.000
+
+    // pub dihedral: HashMap<(usize, usize, usize, usize), Vec<DihedralData>>,
     // pub improper: HashMap<(usize, usize, usize, usize), DihedralData>,
     pub van_der_waals: HashMap<usize, VdwData>,
     pub partial_charge: HashMap<usize, f32>, // todo: A/r
@@ -425,8 +431,8 @@ impl MdState {
     /// effects such as σ-bond overlap (e.g. staggered conformations), π-conjugation, which locks certain
     /// dihedrals near 0 or τ, and steric hindrance. (Bulky groups clashing).
     fn apply_dihedral_forces(&mut self) {
-        for (indices, dihe_) in &self.force_field_params.dihedral {
-            let Some(dihe) = dihe_ else { continue };
+        for (indices, dihe) in &self.force_field_params.dihedral {
+            // let Some(dihe) = dihe_ else { continue };
 
             // Split the four atoms mutably without aliasing
             let (a_0, a_1, a_2, a_3) =
@@ -440,7 +446,7 @@ impl MdState {
 
             // Bond vectors (see Allen & Tildesley, chap. 4)
             let b1 = r_0 - r_1; // r_ij
-            let b2 = r_2 - r_1; // r_kj  (note the sign!)
+            let b2 = r_2 - r_1; // r_kj
             let b3 = r_3 - r_2; // r_lk
 
             // Normal vectors to the two planes
@@ -456,25 +462,26 @@ impl MdState {
                 continue;
             }
 
-            // Unit normals
-            let n1_hat = n1 / n1_sq.sqrt();
-            let n2_hat = n2 / n2_sq.sqrt();
+            let dihe_measured = calc_dihedral_angle_v2(&(r_0, r_1, r_2, r_3));
 
-            // m1 = n̂1 × (b̂2)
-            let m1 = n1_hat.cross(b2 / b2_len);
+            if self.step_count == 0 {
+                println!(
+                    "{:?} - Ms: {:.2}, exp: {:.2}/{} sin: {:.2}",
+                    &dihe.ff_types,
+                    dihe_measured,
+                    dihe.phase,
+                    dihe.periodicity,
+                    (dihe.periodicity as f64) * dihe_measured - dihe.phase as f64
+                );
+            }
 
-            // Measure the signed dihedral (−π … π)
-            let x = n1_hat.dot(n2_hat);
-            let y = m1.dot(n2_hat);
-            let φ = y.atan2(x);
-
-            // println!("Dihe meas: {:?}, expected: {:?}", φ, dihe.phase);
-
-            // dV/dφ  (note the minus sign from ∂cos / ∂φ = −sin)
+            // dV/dφ
             let dV_dφ = -0.5
-                * dihe.barrier_height_vn as f64
+                // todo: Precompute this barrier height when loading to the indexed variant.
+                // todo: Do that once this all owrks.
+                * (dihe.barrier_height_vn as f64) / (dihe.integer_divisor as f64)
                 * (dihe.periodicity as f64)
-                * ((dihe.periodicity as f64) * φ - dihe.phase as f64).sin();
+                * ((dihe.periodicity as f64) * dihe_measured - dihe.phase as f64).sin();
 
             // ∂φ/∂r   (see e.g. DOI 10.1016/S0021-9991(97)00040-8)
             let dφ_dr1 = n1 * (b2_len / n1_sq);

@@ -3,7 +3,7 @@
 use std::{f64::consts::TAU, fmt, fmt::Formatter};
 
 use bio_files::ResidueType;
-use lin_alg::f64::{Quaternion, Vec3, det_from_cols};
+use lin_alg::f64::{Quaternion, Vec3, calc_dihedral_angle, calc_dihedral_angle_v2};
 use na_seq::{Element, Element::Hydrogen};
 
 use crate::{
@@ -91,26 +91,6 @@ impl fmt::Display for Dihedral {
         write!(f, "{result}")?;
         Ok(())
     }
-}
-
-/// Calculate the dihedral angle between 4 positions (3 bonds).
-/// The `bonds` are one atom's position, substracted from the next. Order matters.
-/// todo: Move to `lin_alg` lib?
-pub fn calc_dihedral_angle(bond_middle: Vec3, bond_adjacent1: Vec3, bond_adjacent2: Vec3) -> f64 {
-    // Project the next and previous bonds onto the plane that has this bond as its normal.
-    // Re-normalize after projecting.
-    let bond1_on_plane = bond_adjacent1.project_to_plane(bond_middle).to_normalized();
-    let bond2_on_plane = bond_adjacent2.project_to_plane(bond_middle).to_normalized();
-
-    // Not sure why we need to offset by 𝜏/2 here, but it seems to be the case
-    let result = bond1_on_plane.dot(bond2_on_plane).acos() + TAU / 2.;
-
-    // The dot product approach to angles between vectors only covers half of possible
-    // rotations; use a determinant of the 3 vectors as matrix columns to determine if what we
-    // need to modify is on the second half.
-    let det = det_from_cols(bond1_on_plane, bond2_on_plane, bond_middle);
-
-    if det < 0. { result } else { TAU - result }
 }
 
 /// Given three tetrahedron legs, find the final one.
@@ -285,42 +265,6 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
                             if angle > PLANAR_ANGLE_THRESH {
                                 planar = true;
                             }
-
-                            // // Check the atoms in both directions for a flat dihedral angle.
-                            // for bonded in [atoms_bonded[0], atoms_bonded[1]] {
-                            //     // todo: Perhaps you have to try the opposit eorder
-                            //     let (bond_prev, bond_back2) =
-                            //         match get_prev_bonds(atom, atoms, i, bonded) {
-                            //             Ok(v) => v,
-                            //             Err(_) => {
-                            //                 eprintln!("Error: Could not find prev bonds when examining ring config");
-                            //                 continue; // todo: Don't continue, just assume tetra. (?)
-                            //             }
-                            //         };
-                            //
-                            //
-                            //
-                            //     let dihedral = calc_dihedral_angle(bond_prev, -bond_next, -bond_back2);
-                            //
-                            //     if let ResidueType::AminoAcid(aa) = atom.residue_type {
-                            //         if aa == AminoAcid::Tyr || aa == AminoAcid::Phe {
-                            //             println!("Dihedral: {:?}", dihedral);
-                            //             println!("Angle: {:?}", angle);
-                            //         }
-                            //     }
-                            //
-                            //     // todo: Adjust this thresh A/R.
-                            //     // todo: I'm not sure why we need to check for both tau/2 and tau.
-                            //     //     if (dihedral - TAU/2.).abs() < PLANAR_ANGLE_THRESH || dihedral.abs() < PLANAR_ANGLE_THRESH ||(TAU - dihedral.abs()) < PLANAR_ANGLE_THRESH {
-                            //     if dihedral < PLANAR_ANGLE_THRESH || (TAU - dihedral).abs() < PLANAR_ANGLE_THRESH {
-                            //         planar_dist = Some(LEN_C_H);
-                            //         println!("Planar due to ring");
-                            //         if let ResidueType::AminoAcid(aa) = atom.residue_type {
-                            //             println!("AA: {:?}", aa);
-                            //         }
-                            //         break;
-                            //     }
-                            // }
                         }
 
                         if planar {
@@ -521,35 +465,30 @@ fn handle_backbone(
         return (dihedral, None);
     };
 
-    // /// Dihedral angle between C' and N
-    // /// Tor (Cα, C', N, Cα) is the ω torsion angle
-    // /// Assumed to be TAU/2 for most cases
-    // pub ω: f64,
-    // /// Dihedral angle between Cα and N.
-    // /// Tor (C', N, Cα, C') is the φ torsion angle
-    // pub φ: f64,
-    // /// Dihedral angle, between Cα and C'
-    // ///  Tor (N, Cα, C', N) is the ψ torsion angle
-    // pub ψ: f64,
-
     let bond_ca_n = c_alpha_posit - n_posit;
     let bond_cp_ca = c_p_posit - c_alpha_posit;
 
+    // Dihedral angle sequence: ca_prev - cp_prev - n - cα - cp - n_next
+
     // For residues after the first.
-    if let Some((prev_cp, prev_ca)) = prev_cp_ca {
-        let bond_cp_prev_ca_prev = prev_cp - prev_ca;
-        let bond_n_cp_prev = n_posit - prev_cp;
-        dihedral.φ = Some(calc_dihedral_angle(bond_ca_n, bond_n_cp_prev, bond_cp_ca));
-        dihedral.ω = Some(calc_dihedral_angle(
-            bond_n_cp_prev,
-            bond_cp_prev_ca_prev,
-            bond_ca_n,
-        ));
+    if let Some((cp_prev, ca_prev)) = prev_cp_ca {
+        let bond_n_cp_prev = n_posit - cp_prev;
+        dihedral.φ = Some(calc_dihedral_angle_v2(&(
+            cp_prev,
+            n_posit,
+            c_alpha_posit,
+            c_p_posit,
+        )));
+        dihedral.ω = Some(calc_dihedral_angle_v2(&(
+            ca_prev,
+            cp_prev,
+            n_posit,
+            c_alpha_posit,
+        )));
 
         // todo temp: C' Gly #154 is showing as the coords for Calpha.
         if dihedral.ω.unwrap().is_nan() {
-            // println!("\nomega NAN. n_cp: {bond_n_cp_prev}, cp_prev_ca_prev: {bond_cp_prev_ca_prev}, ca-n: {bond_ca_n}");
-            println!("NAN: prev_cp: {prev_cp} prev_ca: {prev_ca}\n")
+            println!("NAN: prev_cp: {cp_prev} prev_ca: {ca_prev}\n")
         }
 
         // Add a H to the backbone N. (Amine) Sp2/Planar.
@@ -560,9 +499,13 @@ fn handle_backbone(
     }
 
     // For residues prior to the last.
-    if let Some(next_n) = next_n {
-        let bond_n_next_cp = next_n - c_p_posit;
-        dihedral.ψ = Some(calc_dihedral_angle(bond_cp_ca, bond_ca_n, bond_n_next_cp));
+    if let Some(n_next) = next_n {
+        dihedral.ψ = Some(calc_dihedral_angle_v2(&(
+            n_posit,
+            c_alpha_posit,
+            c_p_posit,
+            n_next,
+        )));
     }
 
     if posits_sc.is_empty() {
