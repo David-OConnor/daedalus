@@ -3,7 +3,7 @@
 
 use std::collections::HashSet;
 
-use bio_files::amber_params::{DihedralData, ForceFieldParamsKeyed};
+use bio_files::amber_params::{DihedralParams, ForceFieldParamsKeyed};
 use itertools::Itertools;
 use lin_alg::f64::Vec3;
 use na_seq::element::LjTable;
@@ -26,7 +26,7 @@ fn merge_params(
 
     if let Some(lig) = lig_specific {
         merged.mass.extend(lig.mass.clone());
-        merged.partial_charges.extend(lig.partial_charges.clone());
+        // merged.partial_charges.extend(lig.partial_charges.clone());
         merged.van_der_waals.extend(lig.van_der_waals.clone());
 
         merged.bond.extend(lig.bond.clone());
@@ -71,18 +71,16 @@ impl ForceFieldParamsIndexed {
                 )));
             }
 
-            // Partial charge
-            // todo: Add.
-            if let Some(q) = params.partial_charges.get(ff_type) {
-                result.partial_charge.insert(i, q.clone());
-            } else {
-                println!("Missing partial charge for {ff_type}; setting to 0");
-                result.partial_charge.insert(i, 0.0);
-                // todo: Set to 0 and warn instead of erroring?
-                // return Err(ParamError::new(&format!(
-                //     "Missing partial charge for {ff_type}"
-                // )))
-            }
+            // if let Some(q) = params.partial_charges.get(ff_type) {
+            //     result.partial_charge.insert(i, q.clone());
+            // } else {
+            //     println!("Missing partial charge for {ff_type}; setting to 0");
+            //     result.partial_charge.insert(i, 0.0);
+            //     // todo: Set to 0 and warn instead of erroring?
+            //     // return Err(ParamError::new(&format!(
+            //     //     "Missing partial charge for {ff_type}"
+            //     // )))
+            // }
 
             // Lennard-Jones / van der Waals
             if let Some(vdw) = params.van_der_waals.get(ff_type) {
@@ -111,7 +109,7 @@ impl ForceFieldParamsIndexed {
                     ParamError::new(&format!("Missing bond parameters for {type_i}-{type_j}"))
                 })?;
 
-            result.bond.insert((i.min(j), i.max(j)), data);
+            result.bond_stretching.insert((i.min(j), i.max(j)), data);
         }
 
         // Angles. (Between 3 atoms)
@@ -152,70 +150,163 @@ impl ForceFieldParamsIndexed {
         // Proper and improper dihedral angles.
         let mut seen = HashSet::<(usize, usize, usize, usize)>::new();
 
+        // for (j, nbr_j) in adjacency_list.iter().enumerate() {
+        //     for &k in nbr_j {
+        //         if j >= k {
+        //             continue; // treat each central bond j-k once
+        //         }
+        //         for &i in &adjacency_list[j] {
+        //             if i == k {
+        //                 continue;
+        //             }
+        //             for &l in &adjacency_list[k] {
+        //                 if l == j {
+        //                     continue;
+        //                 }
+        //
+        //                 // let idx_key = (i, j, k, l);
+        //                 let idx_key = if i < l { (i, j, k, l) } else { (l, k, j, i) };
+        //
+        //                 if !seen.insert(idx_key) {
+        //                     continue; // already handled through another path
+        //                 }
+        //
+        //                 let (type_0, type_1, type_2, type_3) = (
+        //                     atoms[i].force_field_type.as_ref().ok_or_else(|| err())?,
+        //                     atoms[j].force_field_type.as_ref().ok_or_else(|| err())?,
+        //                     atoms[k].force_field_type.as_ref().ok_or_else(|| err())?,
+        //                     atoms[l].force_field_type.as_ref().ok_or_else(|| err())?,
+        //                 );
+        //
+        //                 let types = (
+        //                     type_0.clone(),
+        //                     type_1.clone(),
+        //                     type_2.clone(),
+        //                     type_3.clone(),
+        //                 );
+        //
+        //                 let data = params.get_dihedral(&types);
+        //
+        //                 match data {
+        //                     Some(d) => {
+        //                         let mut dihe = d.clone();
+        //                         // Cache the divided barrier height.
+        //                         // Pre-divide, to reduce computations later.
+        //                         dihe.barrier_height_vn /= dihe.integer_divisor as f32;
+        //                         dihe.integer_divisor = 1;
+        //
+        //                         result.dihedral.insert(idx_key, dihe);
+        //                         // result.dihedral.insert(idx_key, Some(dihe));
+        //                     }
+        //                     None => {
+        //
+        //                         return Err(ParamError::new(&format!(
+        //                             "Missing dihedral parameters for {type_0}-{type_1}-{type_2}-{type_3}"
+        //                         )))
+        //
+        //                         // return Err(ParamError::new(&format!(
+        //                         //     "No dihedral parameters for \
+        //                         //      {type_i}-{type_j}-{type_k}-{type_l}"
+        //                         // )));
+        //                     }
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
+
+        // ---------------------------
+        // 1. Proper dihedrals i-j-k-l
+        // ---------------------------
         for (j, nbr_j) in adjacency_list.iter().enumerate() {
             for &k in nbr_j {
                 if j >= k {
-                    continue; // treat each central bond j-k once
-                }
-                for &i in &adjacency_list[j] {
-                    if i == k {
-                        continue;
-                    }
-                    for &l in &adjacency_list[k] {
-                        if l == j {
+                    continue;
+                } // handle each j-k bond once
+
+                // fan out the two outer atoms
+                for &i in adjacency_list[j].iter().filter(|&&x| x != k) {
+                    for &l in adjacency_list[k].iter().filter(|&&x| x != j) {
+                        if i == l {
+                            continue;
+                        } // skip self-torsions
+
+                        // canonicalise so (i,l) is always (min,max)
+                        let idx_key = if i < l { (i, j, k, l) } else { (l, k, j, i) };
+                        if !seen.insert(idx_key) {
                             continue;
                         }
 
-                        let idx_key = (i, j, k, l);
-                        if !seen.insert(idx_key) {
-                            continue; // already handled through another path
-                        }
-
-                        let (type_0, type_1, type_2, type_3) = (
-                            atoms[i].force_field_type.as_ref().ok_or_else(|| err())?,
-                            atoms[j].force_field_type.as_ref().ok_or_else(|| err())?,
-                            atoms[k].force_field_type.as_ref().ok_or_else(|| err())?,
-                            atoms[l].force_field_type.as_ref().ok_or_else(|| err())?,
+                        // look up FF types
+                        let (ti, tj, tk, tl) = (
+                            atoms[i].force_field_type.as_ref().ok_or_else(err)?,
+                            atoms[j].force_field_type.as_ref().ok_or_else(err)?,
+                            atoms[k].force_field_type.as_ref().ok_or_else(err)?,
+                            atoms[l].force_field_type.as_ref().ok_or_else(err)?,
                         );
 
-                        let types = (
-                            type_0.clone(),
-                            type_1.clone(),
-                            type_2.clone(),
-                            type_3.clone(),
-                        );
-
-                        let data = params.get_dihedral(&types);
-
-                        match data {
-                            Some(d) => {
-                                let mut dihe = d.clone();
-                                // Cache the divided barrier height.
-                                // todo: Put in when ready (When the dihe calcs work)
-                                // dihe.barrier_height_vn /= dihe.integer_divisor as f32;
-                                // dihe.integer_divisor = 1;
-
-                                result.dihedral.insert(idx_key, dihe);
-                                // result.dihedral.insert(idx_key, Some(dihe));
-                            }
-                            None => {
-
-                                return Err(ParamError::new(&format!(
-                                    "Missing dihedral parameters for {type_0}-{type_1}-{type_2}-{type_3}"
-                                )))
-
-                                // return Err(ParamError::new(&format!(
-                                //     "No dihedral parameters for \
-                                //      {type_i}-{type_j}-{type_k}-{type_l}"
-                                // )));
-                            }
+                        if let Some(dihe) = params
+                            .get_dihedral(&(ti.clone(), tj.clone(), tk.clone(), tl.clone()), true)
+                        {
+                            let mut dihe = dihe.clone();
+                            // I believe this may be pri-divided.
+                            // dihe.barrier_height /= dihe.divider as f32; // pre-divide
+                            dihe.divider = 1;
+                            result.dihedral.insert(idx_key, dihe);
+                        } else {
+                            // return Err(ParamError::new(&format!(
+                            //     "Missing dihedral parameters for {ti}-{tj}-{tk}-{tl}"
+                            // )));
                         }
                     }
                 }
             }
         }
 
-        // println!("\n\nFF for this ligand: {:?}", result);
+        // ---------------------------
+        // 2. Improper dihedrals 2-1-3-4
+        // ---------------------------
+        for (c, satellites) in adjacency_list.iter().enumerate() {
+            if satellites.len() < 3 {
+                continue;
+            }
+
+            // unique unordered triples of neighbours
+            for a in 0..satellites.len() - 2 {
+                for b in a + 1..satellites.len() - 1 {
+                    for d in b + 1..satellites.len() {
+                        let (i, k, l) = (satellites[a], satellites[b], satellites[d]);
+                        let idx_key = (i, c, k, l); // order is fixed → no swap
+                        if !seen.insert(idx_key) {
+                            continue;
+                        }
+
+                        let (ti, tc, tk, tl) = (
+                            atoms[i].force_field_type.as_ref().ok_or_else(err)?,
+                            atoms[c].force_field_type.as_ref().ok_or_else(err)?,
+                            atoms[k].force_field_type.as_ref().ok_or_else(err)?,
+                            atoms[l].force_field_type.as_ref().ok_or_else(err)?,
+                        );
+
+                        // fetch parameters (improper torsion)
+                        if let Some(mut dihe) = params
+                            .get_dihedral(&(ti.clone(), tc.clone(), tk.clone(), tl.clone()), false)
+                        {
+                            let mut dihe = dihe.clone();
+
+                            // todo: I believe it's already divided ?
+                            // dihe.barrier_height /= dihe.divider as f32;
+                            dihe.divider = 1;
+                            result.dihedral.insert(idx_key, dihe);
+                        } else {
+                            // return Err(ParamError::new(&format!(
+                            //     "Missing improper parameters for {ti}-{tc}-{tk}-{tl}"
+                            // )));
+                        }
+                    }
+                }
+            }
+        }
 
         Ok(result)
     }
@@ -310,7 +401,7 @@ impl MdState {
         };
 
         // 1-2
-        for (indices, _) in &self.force_field_params.bond {
+        for (indices, _) in &self.force_field_params.bond_stretching {
             push(&mut self.excluded_pairs, indices.0, indices.1);
         }
 

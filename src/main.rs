@@ -38,7 +38,6 @@ mod sa_surface;
 mod save_load;
 mod ui;
 mod util;
-mod vibrations;
 
 mod cli;
 mod dynamics;
@@ -102,9 +101,20 @@ use crate::{
     util::handle_err,
 };
 
-// We include, for now, `gaff2.dat` with the program. This will raise the binary size by 900kb,
-// but makes molecular dyanmics operations more transparent.
-const GAFF2_DATA: &str = include_str!("../resources/gaff2.dat");
+// Include general Amber forcefield params with our program. See the Reference Manual, section ]
+// 3.1.1 for details on which we include. (The recommended ones for Proteins, and ligands).
+
+// Proteins and amino acids:
+const AMINO_19: &str = include_str!("../resources/amino19.lib");
+const PARM_19: &str = include_str!("../resources/parm19.dat");
+const FRCMOD_FF19SB: &str = include_str!("../resources/frcmod.ff19SB");
+const AMINONT12: &str = include_str!("../resources/aminont12.lib");
+const AMINOCT12: &str = include_str!("../resources/aminoct12.lib");
+
+// Ligands/small organic molecules:
+const GAFF2: &str = include_str!("../resources/gaff2.dat");
+
+// Note: Water parameters are concise; we store them directly.
 
 // todo: Eventually, implement a system that automatically checks for changes, and don't
 // todo save to disk if there are no changes.
@@ -610,6 +620,11 @@ fn main() {
         let posit = state.to_save.per_mol[&mol.ident].docking_site.site_center;
         state.update_docking_site(posit);
     }
+
+    // todo temp
+    state
+        .open(&PathBuf::from_str("molecules/CPB.frcmod").unwrap())
+        .unwrap();
 
     // todo temp
     // let mtz = load_mtz(&PathBuf::from_str("../../../Desktop/1fat_2fo.mtz").unwrap());

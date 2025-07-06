@@ -1,4 +1,5 @@
 #![allow(non_snake_case)]
+// todo: Deprecate this module A/R.
 
 //! Experimental molecular dynamics, with a playback system. Starting with fixed-ligand position only,
 //! referencing the anchor.
@@ -318,8 +319,7 @@ pub fn build_dock_dynamics(
 
         let n_steps = 60_000;
 
-        // let n_steps = 1; // todo temp, while we evaluate what's going wrong with our MD consts.
-        let dt = 1.;
+        let dt = 0.001;
 
         for _ in 0..n_steps {
             md_state.step(dt)

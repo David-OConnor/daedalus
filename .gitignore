@@ -22,6 +22,8 @@ Cargo.lock
 *.map
 *.frcmod
 *.dat
+*.ff19SB
+*.opc
 
 # Our prefs format.
 # todo: Old fmt; delete bcv

@@ -30,20 +30,21 @@
 
 mod ambient;
 mod prep;
+mod water_opc;
 
 use std::{
     collections::{HashMap, HashSet},
-    string::ParseError,
+    f64::consts::TAU,
 };
 
 use ambient::SimBox;
 use bio_files::amber_params::{
-    AngleData, BondData, DihedralData, ForceFieldParams, MassData, VdwData,
+    AngleBendingParams, BondStretchingParams, DihedralParams, MassParams, VdwParams,
 };
-use lin_alg::f64::{Vec3, calc_dihedral_angle, calc_dihedral_angle_v2};
+use lin_alg::f64::{Vec3, calc_dihedral_angle_v2};
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use lin_alg::f64::{Vec3x4, f64x4};
-use na_seq::{Element, element::LjTable};
+use na_seq::Element;
 use rand_distr::Distribution;
 
 use crate::{
@@ -73,7 +74,7 @@ const SOFTENING_FACTOR_SQ: f64 = 1e-6;
 
 // Conversion factor
 // 2^(5/6); no powf in consts.
-const SIGMA_FROM_RSTAR: f64 = 1.7817974362806785;
+const SIGMA_FROM_R_MIN: f64 = 1.7817974362806785;
 
 // todo: A/R
 const SNAPSHOT_RATIO: usize = 10;
@@ -102,11 +103,11 @@ impl ParamError {
 /// `AtomDynamics` struct.`
 #[derive(Debug, Default)]
 pub struct ForceFieldParamsIndexed {
-    pub mass: HashMap<usize, MassData>,
-    pub bond: HashMap<(usize, usize), BondData>,
-    pub angle: HashMap<(usize, usize, usize), AngleData>,
+    pub mass: HashMap<usize, MassParams>,
+    pub bond_stretching: HashMap<(usize, usize), BondStretchingParams>,
+    pub angle: HashMap<(usize, usize, usize), AngleBendingParams>,
     /// This includes both normal, and improper dihedrals.
-    pub dihedral: HashMap<(usize, usize, usize, usize), DihedralData>,
+    pub dihedral: HashMap<(usize, usize, usize, usize), DihedralParams>,
     // pub dihedral: HashMap<(usize, usize, usize, usize), Option<DihedralData>>,
 
     // Dihedrals are represented in Amber params as a fourier series; this Vec indlues all matches.
@@ -117,8 +118,8 @@ pub struct ForceFieldParamsIndexed {
 
     // pub dihedral: HashMap<(usize, usize, usize, usize), Vec<DihedralData>>,
     // pub improper: HashMap<(usize, usize, usize, usize), DihedralData>,
-    pub van_der_waals: HashMap<usize, VdwData>,
-    pub partial_charge: HashMap<usize, f32>, // todo: A/r
+    pub van_der_waals: HashMap<usize, VdwParams>,
+    // pub partial_charge: HashMap<usize, f32>, // todo: A/r
 }
 
 #[derive(Debug, Default)]
@@ -129,8 +130,10 @@ pub struct SnapshotDynamics {
 }
 
 #[derive(Clone, Debug)]
-/// A trimmed-down atom for use with molecular dynamics.
+/// A trimmed-down atom for use with molecular dynamics. Contains parameters for single-atom,
+/// but we use ParametersIndex for multi-atom parameters.
 pub struct AtomDynamics {
+    pub force_field_type: Option<String>, // todo: Should this be an enum? // todo: Should it be required?
     pub element: Element,
     pub name: String,
     pub posit: Vec3,
@@ -140,29 +143,16 @@ pub struct AtomDynamics {
     /// todo: Move these 4 out of this to save memory; use from the params struct directly.
     pub mass: f64,
     pub partial_charge: f64,
-    pub lj_r_star: f64,
+    /// Å
+    pub lj_r_min: f64,
+    /// kcal/mol
     pub lj_eps: f64,
-    pub force_field_type: Option<String>, // todo: Should this be an enum? // todo: Should it be required?
 }
-
-// impl AtomDynamics {
-//     pub fn new(element: Element) -> Self {
-//         Self {
-//             element,
-//             name: String::new(),
-//             posit: Vec3::new_zero(),
-//             vel: Vec3::new_zero(),
-//             accel: Vec3::new_zero(),
-//             mass: element.atomic_weight() as f64,
-//             partial_charge: 0.0,
-//             force_field_type: None,
-//         }
-//     }
-// }
 
 impl From<&Atom> for AtomDynamics {
     fn from(atom: &Atom) -> Self {
         Self {
+            force_field_type: atom.force_field_type.clone(),
             element: atom.element,
             name: atom.name.clone().unwrap_or_default(),
             posit: atom.posit.into(),
@@ -170,9 +160,8 @@ impl From<&Atom> for AtomDynamics {
             accel: Vec3::new_zero(),
             mass: atom.element.atomic_weight() as f64,
             partial_charge: atom.partial_charge.unwrap_or_default() as f64,
-            lj_r_star: 0.,
+            lj_r_min: 0.,
             lj_eps: 0.,
-            force_field_type: atom.force_field_type.clone(),
         }
     }
 }
@@ -201,10 +190,10 @@ impl AtomDynamics {
             vel: Vec3::new_zero(),
             accel: Vec3::new_zero(),
             mass: ff_params.mass.get(&i).unwrap().mass as f64,
-            // todo: A/R for partial charge.
-            // partial_charge: atom.partial_charge.unwrap_or_default() as f64,
-            partial_charge: *ff_params.partial_charge.get(&i).unwrap() as f64,
-            lj_r_star: ff_params.van_der_waals.get(&i).unwrap().r_star as f64,
+            // We get partial charge for ligands from (e.g. Amber-provided) Mol files, so we load it from the atom, vice
+            // the loaded FF params. They are not in the dat or frcmod files that angle, bond-length etc params are from.
+            partial_charge: atom.partial_charge.unwrap_or_default() as f64,
+            lj_r_min: ff_params.van_der_waals.get(&i).unwrap().sigma as f64,
             lj_eps: ff_params.van_der_waals.get(&i).unwrap().eps as f64,
             force_field_type: Some(ff_type),
         })
@@ -290,11 +279,7 @@ pub struct MdState {
 
 impl MdState {
     /// One **Velocity-Verlet** step (leap-frog style) of length `dt_fs` femtoseconds.
-    pub fn step(&mut self, dt_fs: f64) {
-        // todo: Is this OK?
-        // let dt = dt_fs * 1.0e-15; // s
-        let dt = dt_fs * 0.001;
-
+    pub fn step(&mut self, dt: f64) {
         let dt_half = 0.5 * dt;
 
         // 1) First half-kick (v += a dt/2) and drift (x += v dt)
@@ -313,9 +298,10 @@ impl MdState {
             a.accel = Vec3::new_zero();
         }
 
-        self.apply_bond_forces();
-        // self.apply_valence_angle_forces();
-        self.apply_dihedral_forces();
+        self.apply_bond_stretching_forces();
+        self.apply_angle_bending_forces();
+        // todo: Dihedral not working. Skipping for now. Our measured and expected angles aren't lining up.
+        // self.apply_dihedral_forces();
         // self.apply_nonbonded_forces();
 
         // Second half-kick using new accelerations
@@ -347,26 +333,17 @@ impl MdState {
         }
     }
 
-    fn apply_bond_forces(&mut self) {
-        for (indices, data) in &self.force_field_params.bond {
+    fn apply_bond_stretching_forces(&mut self) {
+        for (indices, params) in &self.force_field_params.bond_stretching {
             let (a_0, a_1) = split2_mut(&mut self.atoms, indices.0, indices.1);
 
-            let diff = a_1.posit - a_0.posit;
-            let dist = diff.magnitude();
+            let f = f_bond_stretching(a_0.posit, a_1.posit, params);
 
-            let delta = dist - data.r_0 as f64;
+            const KCALMOL_A_TO_A_FS2_PER_AMU: f64 = 4.184e-4;
+            // todo: Multiply accels by this?? Or are our units self-consistent.
 
-            if delta > 0.1 {
-                // println!("DIST: {:?}, {:?}, d: {:.04}, r0: {:.04}", &ai.force_field_type.as_ref().unwrap(),
-                //          &aj.force_field_type.as_ref().unwrap(), dist, data.r_0);
-            }
-
-            // F = -dV/dr = -k 2Δ   (harmonic)
-            // let f_mag = -2.0 * k * Δ / dist.max(1e-12);
-            let f_mag = -data.k as f64 * delta / dist.max(1e-12);
-            let f = diff * f_mag;
-            a_0.accel -= f / a_0.mass;
-            a_1.accel += f / a_1.mass;
+            a_0.accel += f / a_0.mass;
+            a_1.accel -= f / a_1.mass;
         }
     }
 
@@ -378,48 +355,11 @@ impl MdState {
     /// Valence angles, which are the angle formed by two adjacent bonds ba et bc
     /// in a same molecule; a valence angle tends to maintain constant the anglê
     /// abc. A valence angle is thus concerned by the positions of three atoms.
-    fn apply_valence_angle_forces(&mut self) {
-        for (indices, data) in &self.force_field_params.angle {
+    fn apply_angle_bending_forces(&mut self) {
+        for (indices, params) in &self.force_field_params.angle {
             let (a_0, a_1, a_2) = split3_mut(&mut self.atoms, indices.0, indices.1, indices.2);
 
-            // Bond vectors with atom 1 at the vertex.
-            let bond_vec_01 = a_0.posit - a_1.posit;
-            let bond_vec_21 = a_2.posit - a_1.posit;
-
-            let b_vec_01_sq = bond_vec_01.magnitude_squared();
-            let b_vec_21_sq = bond_vec_21.magnitude_squared();
-
-            // Quit early if atoms are on top of each other
-            if b_vec_01_sq < EPS || b_vec_21_sq < EPS {
-                continue;
-            }
-
-            let b_vec_01_len = b_vec_01_sq.sqrt();
-            let b_vec_21_len = b_vec_21_sq.sqrt();
-
-            let inv_ab = 1.0 / (b_vec_01_len * b_vec_21_len);
-
-            let cos_θ = (bond_vec_01.dot(bond_vec_21) * inv_ab).clamp(-1.0, 1.0);
-            let sin_θ_sq = 1.0 - cos_θ * cos_θ;
-
-            if sin_θ_sq < EPS {
-                continue; // θ = 0 or τ; gradient ill-defined
-            }
-
-            // Measured angle, and its deviation from the parameter angle.
-            let θ = cos_θ.acos();
-            let Δθ = data.angle as f64 - θ;
-            let dV_dθ = 2.0 * data.k as f64 * Δθ; // dV/dθ
-
-            let c = bond_vec_01.cross(bond_vec_21); // n  ∝  r_ij × r_kj
-            let c_len2 = c.magnitude_squared(); // |n|^2
-
-            let geom_i = (c.cross(bond_vec_01) * b_vec_21_len) / c_len2;
-            let geom_k = (bond_vec_21.cross(c) * b_vec_01_len) / c_len2;
-
-            let f_0 = -geom_i * dV_dθ;
-            let f_2 = -geom_k * dV_dθ;
-            let f_1 = -(f_0 + f_2);
+            let (f_0, f_1, f_2) = f_angle_bending(a_0.posit, a_1.posit, a_2.posit, params);
 
             a_0.accel += f_0 / a_0.mass;
             a_1.accel += f_1 / a_1.mass;
@@ -434,6 +374,10 @@ impl MdState {
         for (indices, dihe) in &self.force_field_params.dihedral {
             // let Some(dihe) = dihe_ else { continue };
 
+            if &dihe.atom_types.0 == "X" || &dihe.atom_types.3 == "X" {
+                continue; // todo temp, until we sum.
+            }
+
             // Split the four atoms mutably without aliasing
             let (a_0, a_1, a_2, a_3) =
                 split4_mut(&mut self.atoms, indices.0, indices.1, indices.2, indices.3);
@@ -445,7 +389,7 @@ impl MdState {
             let r_3 = a_3.posit;
 
             // Bond vectors (see Allen & Tildesley, chap. 4)
-            let b1 = r_0 - r_1; // r_ij
+            let b1 = r_1 - r_0; // r_ij
             let b2 = r_2 - r_1; // r_kj
             let b3 = r_3 - r_2; // r_lk
 
@@ -464,28 +408,33 @@ impl MdState {
 
             let dihe_measured = calc_dihedral_angle_v2(&(r_0, r_1, r_2, r_3));
 
+            // Note: We assume that vn has already been divided by the integer divisor.
+            // let dV_dφ = -0.5
+            // todo: Precompute this barrier height when loading to the indexed variant.
+            // todo: Do that once this all owrks.
+            // let dV_dφ =  -(dihe.barrier_height_vn as f64) / (dihe.integer_divisor as f64)
+
+            let k = -dihe.barrier_height as f64;
+            let per = dihe.periodicity as f64;
+            let arg = per * dihe_measured - dihe.phase as f64;
+
+            let dV_dφ = k * per * arg.sin();
+
             if self.step_count == 0 {
                 println!(
-                    "{:?} - Ms: {:.2}, exp: {:.2}/{} sin: {:.2}",
-                    &dihe.ff_types,
-                    dihe_measured,
-                    dihe.phase,
+                    "{:?} - Ms: {:.2}, exp: {:.2}/{} dV_dφ: {:.2}",
+                    &dihe.atom_types,
+                    dihe_measured / TAU,
+                    dihe.phase / TAU as f32,
                     dihe.periodicity,
-                    (dihe.periodicity as f64) * dihe_measured - dihe.phase as f64
+                    dV_dφ,
                 );
             }
 
-            // dV/dφ
-            let dV_dφ = -0.5
-                // todo: Precompute this barrier height when loading to the indexed variant.
-                // todo: Do that once this all owrks.
-                * (dihe.barrier_height_vn as f64) / (dihe.integer_divisor as f64)
-                * (dihe.periodicity as f64)
-                * ((dihe.periodicity as f64) * dihe_measured - dihe.phase as f64).sin();
-
             // ∂φ/∂r   (see e.g. DOI 10.1016/S0021-9991(97)00040-8)
-            let dφ_dr1 = n1 * (b2_len / n1_sq);
-            let dφ_dr4 = -n2 * (b2_len / n2_sq);
+            let dφ_dr1 = -n1 * (b2_len / n1_sq);
+            let dφ_dr4 = n2 * (b2_len / n2_sq);
+
             let dφ_dr2 =
                 -n1 * (b1.dot(b2) / (b2_len * n1_sq)) + n2 * (b3.dot(b2) / (b2_len * n2_sq));
             let dφ_dr3 = -dφ_dr1 - dφ_dr2 - dφ_dr4; // Newton’s third law
@@ -504,7 +453,11 @@ impl MdState {
         }
     }
 
-    /// Coulomb and Van der Waals.
+    /// Coulomb and Van der Waals. (Lennard-Jones)
+    ///
+    /// todo: See Amber RM, 15.1: 1-4: Non-Bonded Interaction Scaling. This may be why
+    /// todo you're having trouble with LJ. Applies to Coulomb as well.
+    /// todo: Are these already applied in the params, or do you need to scale? Likely; see that RM section.
     ///
     /// todo: If required, build a neighbors list for interactions with external atoms.
     fn apply_nonbonded_forces(&mut self) {
@@ -546,14 +499,22 @@ impl MdState {
                 let dist = r_sq.sqrt();
                 let dir = diff / dist;
 
-                // if dist < EPS {
-                //     continue;
-                // }
+                // todo: Not req?
+                if dist < EPS {
+                    continue;
+                }
 
-                let σ = SIGMA_FROM_RSTAR * (self.atoms[i].lj_r_star + self.atoms[j].lj_r_star);
-                let ε = 0.25 * (self.atoms[i].lj_eps * self.atoms[j].lj_eps).sqrt();
+                // Note: Amber params are loaded using R_min instead of σ, but we address
+                // this when parsing them.
+                let σ = 0.5 * (self.atoms[i].lj_r_min + self.atoms[j].lj_r_min);
+                let ε = (self.atoms[i].lj_eps * self.atoms[j].lj_eps).sqrt();
 
                 let mut f_lj = force_lj(dir, dist, σ, ε);
+
+                // if self.step_count == 0 {
+                //     println!("LJ. r0: {:.2} r1: {:.2} Eps. r0: {:.2} r1: {:.2}. σ: {:.2}, ε: {:.2}, f: {:.2}", self.atoms[i].lj_r_star, self.atoms[j].lj_r_star,
+                //              self.atoms[i].lj_eps, self.atoms[j].lj_eps, σ, ε, f_lj);
+                // }
 
                 let mut f_coulomb = force_coulomb(
                     dir,
@@ -579,6 +540,8 @@ impl MdState {
 
                 let accel_0 = f / self.atoms[i].mass;
                 let accel_1 = f / self.atoms[j].mass;
+
+                println!("ACC 0: {}", accel_0);
 
                 self.atoms[i].accel += accel_0;
                 self.atoms[j].accel -= accel_1;
@@ -706,4 +669,67 @@ pub fn split4_mut<T>(
             &mut *base.add(i3),
         )
     }
+}
+
+/// Returns the force on the atom at position 0. Negate this for the force on posit 1.
+pub fn f_bond_stretching(posit_0: Vec3, posit_1: Vec3, params: &BondStretchingParams) -> Vec3 {
+    let diff = posit_1 - posit_0;
+    let dist_measured = diff.magnitude();
+
+    let r_delta = dist_measured - params.r_0 as f64;
+
+    // todo: Do I need to multiply by 2?
+    // Unit check: kcal/mol/Å² * Å² = kcal/mol. (Energy).
+    let f_mag = params.k_b as f64 * r_delta / dist_measured.max(1e-12);
+    diff * f_mag
+}
+
+/// Returns the forces.
+pub fn f_angle_bending(
+    posit_0: Vec3,
+    posit_1: Vec3,
+    posit_2: Vec3,
+    params: &AngleBendingParams,
+) -> (Vec3, Vec3, Vec3) {
+    // Bond vectors with atom 1 at the vertex.
+    let bond_vec_01 = posit_0 - posit_1;
+    let bond_vec_21 = posit_2 - posit_1;
+
+    let b_vec_01_sq = bond_vec_01.magnitude_squared();
+    let b_vec_21_sq = bond_vec_21.magnitude_squared();
+
+    // Quit early if atoms are on top of each other
+    if b_vec_01_sq < EPS || b_vec_21_sq < EPS {
+        return (Vec3::new_zero(), Vec3::new_zero(), Vec3::new_zero());
+    }
+
+    let b_vec_01_len = b_vec_01_sq.sqrt();
+    let b_vec_21_len = b_vec_21_sq.sqrt();
+
+    let inv_ab = 1.0 / (b_vec_01_len * b_vec_21_len);
+
+    let cos_θ = (bond_vec_01.dot(bond_vec_21) * inv_ab).clamp(-1.0, 1.0);
+    let sin_θ_sq = 1.0 - cos_θ * cos_θ;
+
+    if sin_θ_sq < EPS {
+        // θ = 0 or τ; gradient ill-defined
+        return (Vec3::new_zero(), Vec3::new_zero(), Vec3::new_zero());
+    }
+
+    // Measured angle, and its deviation from the parameter angle.
+    let θ = cos_θ.acos();
+    let Δθ = params.theta_0 as f64 - θ;
+    let dV_dθ = 2.0 * params.k as f64 * Δθ; // dV/dθ
+
+    let c = bond_vec_01.cross(bond_vec_21); // n  ∝  r_ij × r_kj
+    let c_len2 = c.magnitude_squared(); // |n|^2
+
+    let geom_i = (c.cross(bond_vec_01) * b_vec_21_len) / c_len2;
+    let geom_k = (bond_vec_21.cross(c) * b_vec_01_len) / c_len2;
+
+    let f_0 = -geom_i * dV_dθ;
+    let f_2 = -geom_k * dV_dθ;
+    let f_1 = -(f_0 + f_2);
+
+    (f_0, f_1, f_2)
 }

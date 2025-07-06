@@ -231,19 +231,19 @@ impl State {
                 let v = &self.md_forcefields_lig_general.as_ref().unwrap();
                 println!("Lin");
                 for di in v.bond.values().take(20) {
-                    println!("Lin: {:?}, {}, {}", di.ff_types, di.k, di.r_0);
+                    println!("Lin: {:?}, {}, {}", di.atom_types, di.k_b, di.r_0);
                 }
 
                 println!("Angle");
                 for di in v.angle.values().take(20) {
-                    println!("Angle: {:?}, {}, {}", di.ff_types, di.k, di.angle);
+                    println!("Angle: {:?}, {}, {}", di.atom_types, di.k, di.theta_0);
                 }
 
                 println!("Dihe:");
                 for di in v.dihedral.values().take(20) {
                     println!(
                         "DH: {:?}, {}, {}",
-                        di.ff_types, di.barrier_height_vn, di.phase
+                        di.atom_types, di.barrier_height, di.phase
                     );
                 }
 
@@ -251,14 +251,14 @@ impl State {
                 for di in v.dihedral_improper.values().take(20) {
                     println!(
                         "Imp: {:?}, {}, {}",
-                        di.ff_types, di.barrier_height_vn, di.phase
+                        di.atom_types, di.barrier_height, di.phase
                     );
                 }
 
                 // todo: Get VDW loading working.
                 println!("Vdw");
                 for di in v.van_der_waals.values().take(20) {
-                    println!("Vdw: {:?}, {}, {}", di.ff_type, di.r_star, di.eps);
+                    println!("Vdw: {:?}, {}, {}", di.atom_type, di.sigma, di.eps);
                 }
 
                 println!("Loaded general Ligand force fields.");

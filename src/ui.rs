@@ -23,7 +23,7 @@ use bio_files::{
 };
 
 use crate::{
-    CamSnapshot, GAFF2_DATA, MsaaSetting, Selection, State, ViewSelLevel, cli,
+    CamSnapshot, GAFF2, MsaaSetting, Selection, State, ViewSelLevel, cli,
     cli::autocomplete_cli,
     docking::{
         ConformationType, calc_binding_energy,
@@ -899,7 +899,7 @@ fn docking(
             if ui.button("Run MD docking").clicked() {
                 // If not already loaded from static string to state, do so now.
                 if state.md_forcefields_lig_general.is_none() {
-                    match ForceFieldParams::from_dat(GAFF2_DATA) {
+                    match ForceFieldParams::from_dat(GAFF2) {
                         Ok(ff) => {
                             state.md_forcefields_lig_general = Some(ForceFieldParamsKeyed::new(&ff))
                         }

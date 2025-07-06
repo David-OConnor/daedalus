@@ -211,66 +211,64 @@ pub fn force_coulomb_x8(
 }
 
 /// Calculate the Lennard-Jones potential between two atoms.
+/// σ is in Å. ε is in kcal/mol.
 ///
-/// \[ V_{LJ}(r) = 4 \epsilon \left[\left(\frac{\sigma}{r}\right)^{12}
-///     - \left(\frac{\sigma}{r}\right)^{6}\right] \]
-///
-/// In a real system, you’d want to parameterize \(\sigma\) and \(\epsilon\)
-/// based on the atom types (i.e. from a force field lookup). Here, we’ll
-/// just demonstrate the structure of the calculation with made-up constants.
+/// σ_min (i, j) = 0.5(σ_min_i + σ_min_j)
+/// ε(i, j) = sqrt(ε_i * ε_j)
 pub fn V_lj(dist: f32, sigma: f32, eps: f32) -> f32 {
     if dist < f32::EPSILON {
         return 0.;
     }
 
     let sr = sigma / dist;
-    let sr6 = sr.powi(6);
-    let sr12 = sr6.powi(2);
+    let s_r_6 = sr.powi(6);
+    let s_r_12 = s_r_6.powi(2);
 
-    4. * eps * (sr12 - sr6)
+    4. * eps * (s_r_12 - s_r_6)
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+/// See notes on `V_lj()`.
 pub fn V_lj_x8(dist: f32x8, sigma: f32x8, eps: f32x8) -> f32x8 {
     // if r < f32::EPSILON {
     //     return f32x8::splat(0.);
     // }
 
-    let sr = sigma / dist;
-    let sr6 = sr.powi(6);
-    let sr12 = sr6.powi(2);
+    let s_r = sigma / dist;
+    let s_r_6 = s_r.powi(6);
+    let s_r_12 = s_r_6.powi(2);
 
-    f32x8::splat(4.) * eps * (sr12 - sr6)
+    f32x8::splat(4.) * eps * (s_r_12 - s_r_6)
 }
 
-/// Calculate the Lennard Jones force; a Newtonian force based on the LJ potential.
+/// See notes on `V_lj()`.
 pub fn force_lj_f32(dir: Vec3F32, dist: f32, sigma: f32, eps: f32) -> Vec3F32 {
-    let sr = sigma / dist;
-    let sr6 = sr.powi(6);
-    let sr12 = sr6.powi(2);
+    let s_r = sigma / dist;
+    let s_r_6 = s_r.powi(6);
+    let s_r_12 = s_r_6.powi(2);
 
-    let mag = 24. * eps * (2. * sr12 - sr6) / dist.powi(2);
+    let mag = 24. * eps * (2. * s_r_12 - s_r_6) / dist.powi(2);
     -dir * mag
 }
 
-/// Note: Can't make generic due to Vec3 not being generic, but of two types.
+/// See notes on `V_lj()`.
 pub fn force_lj(dir: Vec3, dist: f64, sigma: f64, eps: f64) -> Vec3 {
-    let sr = sigma / dist;
-    let sr6 = sr.powi(6);
-    let sr12 = sr6.powi(2);
+    let s_r = sigma / dist;
+    let s_r_6 = s_r.powi(6);
+    let s_r_12 = s_r_6.powi(2);
 
-    let mag = 24. * eps * (2. * sr12 - sr6) / dist.powi(2);
+    let mag = 24. * eps * (2. * s_r_12 - s_r_6) / dist.powi(2);
     -dir * mag
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-/// Calculate the Lennard Jones force; a Newtonian force based on the LJ potential.
+/// See notes on `V_lj()`.
 pub fn force_lj_x8(dir: Vec3x8, dist: f32x8, sigma: f32x8, eps: f32x8) -> Vec3x8 {
-    let sr = sigma / dist;
-    let sr6 = sr.powi(6);
-    let sr12 = sr6.powi(2);
+    let s_r = sigma / dist;
+    let s_r_6 = s_r.powi(6);
+    let s_r_12 = s_r_6.powi(2);
 
-    let mag = f32x8::splat(24.) * eps * (f32x8::splat(2.) * sr12 - sr6) / dist.powi(2);
+    let mag = f32x8::splat(24.) * eps * (f32x8::splat(2.) * s_r_12 - s_r_6) / dist.powi(2);
 
     -dir * mag
 }
