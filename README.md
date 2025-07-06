@@ -68,7 +68,7 @@ Integrates the following [Amber parameters](https://ambermd.org/AmberModels.php)
 
 Moleucule-specific overrides to these general parameters can can loaded from `.frcmod` and `.dat` files.
 
-We load partial charges for ligands from `*mol2*, *PDBQT* etc files. Protein dynamics and water can be simulated
+We load partial charges for ligands from *mol2*, *PDBQT* etc files. Protein dynamics and water can be simulated
 using parameters built-in to the program (The Amber one above). Simulating ligands requires the loaded
 file (e.g. `mol2`) include partial charges. we recommend including ligand-specific override
 files as well, e.g. to load dihedral angles from `.frcmod` that aren't present in *Gaff2*.
