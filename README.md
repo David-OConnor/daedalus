@@ -1,8 +1,9 @@
-# Daedalus molecular viewer
+# Daedalus molecule viewer
 
 [//]: # ([![Crate]&#40;https://img.shields.io/crates/v/daedalus.svg&#41;]&#40;https://crates.io/crates/daedalus&#41;)
 
-For viewing and performing minor edits on moleculars; espsecially proteins and nucleic acids.
+For viewing and exploring proteins and small molecules. View atom positions, bonds, solvent-accessible-surfaces, and
+electron density. Perform and visualize molecular dynamics using [Amber](https://ambermd.org/) parameters.
 
 Conceptually similar to [PyMol](https://www.pymol.org/), [Chimera](https://www.cgl.ucsf.edu/chimera/), and Discovery Studio.
 Designed to be as easy to use, and fast as possible.
@@ -57,6 +58,21 @@ from the [RCSB PDB](https://www.rcsb.org/).
 ![ELectron density](screenshots/iso_a.png)
 
 ![Docking A](screenshots/docking_a.png)
+
+
+## Molecular dynamics
+Integrates the following [Amber parameters](https://ambermd.org/AmberModels.php):
+- Small organic molecules, e.g. ligands: [GAFF2](https://ambermd.org/antechamber/gaff.html)
+- Protein/AA: [FF19SB](https://pubs.acs.org/doi/10.1021/acs.jctc.9b00591)
+- Water: [OPC](https://arxiv.org/abs/1408.1679)
+
+Moleucule-specific overrides to these general parameters can can loaded from `.frcmod` and `.dat` files.
+
+We load partial charges for ligands from `*mol2*, *PDBQT* etc files. Protein dynamics and water can be simulated
+using parameters built-in to the program (The Amber one above). Simulating ligands requires the loaded
+file (e.g. `mol2`) include partial charges. we recommend including ligand-specific override
+files as well, e.g. to load dihedral angles from `.frcmod` that aren't present in *Gaff2*.
+
 
 ## The camera
 
