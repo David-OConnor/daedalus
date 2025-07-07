@@ -105,13 +105,13 @@ use crate::{
 // 3.1.1 for details on which we include. (The recommended ones for Proteins, and ligands).
 
 // Proteins and amino acids:
-const AMINO_19: &str = include_str!("../resources/amino19.lib");
-const PARM_19: &str = include_str!("../resources/parm19.dat");
-const FRCMOD_FF19SB: &str = include_str!("../resources/frcmod.ff19SB");
-const AMINONT12: &str = include_str!("../resources/aminont12.lib");
-const AMINOCT12: &str = include_str!("../resources/aminoct12.lib");
+const AMINO_19: &str = include_str!("../resources/amino19.lib"); // Charge; internal residues
+const PARM_19: &str = include_str!("../resources/parm19.dat"); // Van der Waals
+const FRCMOD_FF19SB: &str = include_str!("../resources/frcmod.ff19SB"); // Van der Waals: overrides and new types
+const AMINONT12: &str = include_str!("../resources/aminont12.lib"); // Charge; protonated N-terminus residues
+const AMINOCT12: &str = include_str!("../resources/aminoct12.lib"); // Charge; protonated C-terminus residues
 
-// Ligands/small organic molecules:
+// Ligands/small organic molecules: *General Amber Force Fields*.
 const GAFF2: &str = include_str!("../resources/gaff2.dat");
 
 // Note: Water parameters are concise; we store them directly.
@@ -472,8 +472,8 @@ struct State {
     pub mol_dynamics: Option<MdState>,
     /// E.g. parsed from Amber `gaff2.dat`.
     pub md_forcefields_lig_general: Option<ForceFieldParamsKeyed>,
-    /// todo:ff19SB
-    pub md_forcefields_prot: HashMap<String, ForceFieldParamsKeyed>,
+    /// E.g. ff19SB. Loaded at init.
+    pub md_forcefields_prot_general: Option<ForceFieldParamsKeyed>,
     /// Key: A unique identifier for the molecule. (e.g. ligand)
     pub md_forcefields_lig_specific: HashMap<String, ForceFieldParamsKeyed>,
 }

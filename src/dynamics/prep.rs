@@ -320,40 +320,49 @@ impl MdState {
         bonds: &[Bond],
         atoms_external: &[Atom],
         lj_table: &LjTable,
-        ff_params_keyed: &ForceFieldParamsKeyed,
+        ff_params_lig_keyed: &ForceFieldParamsKeyed,
+        ff_params_prot_keyed: &ForceFieldParamsKeyed,
         ff_params_keyed_lig_specific: Option<&ForceFieldParamsKeyed>,
     ) -> Result<Self, ParamError> {
         // Convert FF params from keyed to index-based.
-        let force_field_params = ForceFieldParamsIndexed::new(
-            ff_params_keyed,
+        let ff_params_lig = ForceFieldParamsIndexed::new(
+            ff_params_lig_keyed,
             ff_params_keyed_lig_specific,
             atoms,
             bonds,
             adjacency_list,
         )?;
 
+        // This assumes nonbonded interactions only with external atoms; this is fine for
+        // rigid protein models, and is how this is currently structured.
+        let bonds_ext = Vec::new();
+        let adj_list_ext = Vec::new();
+        let ff_params_prot = ForceFieldParamsIndexed::new(
+            ff_params_prot_keyed,
+            None,
+            atoms_external,
+            &bonds_ext,
+            &adj_list_ext,
+        )?;
+
         // We are using this approach instead of `.into`, so we can use the atom_posits from
         // the positioned ligand. (its atom coords are relative; we need absolute)
         let mut atoms_dy = Vec::with_capacity(atoms.len());
         for (i, atom) in atoms.iter().enumerate() {
-            atoms_dy.push(AtomDynamics::new(
+            atoms_dy.push(AtomDynamics::new(atom, atom_posits, &ff_params_lig, i)?);
+        }
+
+        let mut atoms_dy_external = Vec::with_capacity(atoms_external.len());
+        let atom_posits_external: Vec<_> = atoms_external.iter().map(|a| a.posit).collect();
+
+        for (i, atom) in atoms_external.iter().enumerate() {
+            atoms_dy_external.push(AtomDynamics::new(
                 atom,
-                atom_posits,
-                &force_field_params,
+                &atom_posits_external,
+                &ff_params_prot,
                 i,
             )?);
         }
-
-        // let atoms_dy = atoms.iter().map(|a| a.into()).collect();
-        // let bonds_dy = bonds.iter().map(|b| b.into()).collect();
-
-        // // todo: Temp on bonds this way until we know how to init r0.
-        // let bonds_dy = bonds
-        //     .iter()
-        //     .map(|b| BondDynamics::from_bond(b, atoms))
-        //     .collect();
-
-        let atoms_dy_external: Vec<_> = atoms_external.iter().map(|a| a.into()).collect();
 
         let cell = {
             let (mut min, mut max) = (Vec3::splat(f64::INFINITY), Vec3::splat(f64::NEG_INFINITY));
@@ -379,7 +388,7 @@ impl MdState {
             cell,
             excluded_pairs: HashSet::new(),
             scaled14_pairs: HashSet::new(),
-            force_field_params,
+            force_field_params: ff_params_lig,
             ..Default::default()
         };
 

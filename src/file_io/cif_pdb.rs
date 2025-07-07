@@ -43,11 +43,13 @@ impl Atom {
             // residue_type = res_type.clone();
         }
 
+        let name = atom_pdb.name().to_owned();
+
         Self {
             serial_number: atom_pdb.serial_number(),
             posit: Vec3::new(atom_pdb.x(), atom_pdb.y(), atom_pdb.z()),
             element: el_from_pdb(atom_pdb.element()),
-            name: Some(atom_pdb.name().to_owned()),
+            name: Some(name.clone()),
             role,
             residue,
             // residue_type,
@@ -55,7 +57,7 @@ impl Atom {
             occupancy: None,
             temperature_factor: None,
             partial_charge: None,
-            force_field_type: None,
+            force_field_type: Some(name),
             dock_type: Some(DockType::from_str(atom_pdb.name())), // Updated later with Donor/Acceptor
         }
     }

@@ -66,7 +66,7 @@ const M_H: f64 = 1.008; // Da
 const R_OH: f64 = 0.9572; // Å
 const ANG_HOH: f64 = 104.52_f64.to_radians();
 
-// For exclusions.
+// See Amber RM, sectcion 15, "1-4 Non-Bonded Interaction Scaling"
 const SCALE_LJ_14: f64 = 0.5; // AMBER default
 const SCALE_COUL_14: f64 = 1.0 / 1.2; // 0.833̅
 
@@ -101,7 +101,7 @@ impl ParamError {
 ///
 /// Note: The single-atom fields of `mass` and `partial_charges` are ommitted: They're part of our
 /// `AtomDynamics` struct.`
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct ForceFieldParamsIndexed {
     pub mass: HashMap<usize, MassParams>,
     pub bond_stretching: HashMap<(usize, usize), BondStretchingParams>,
@@ -147,23 +147,6 @@ pub struct AtomDynamics {
     pub lj_r_min: f64,
     /// kcal/mol
     pub lj_eps: f64,
-}
-
-impl From<&Atom> for AtomDynamics {
-    fn from(atom: &Atom) -> Self {
-        Self {
-            force_field_type: atom.force_field_type.clone(),
-            element: atom.element,
-            name: atom.name.clone().unwrap_or_default(),
-            posit: atom.posit.into(),
-            vel: Vec3::new_zero(),
-            accel: Vec3::new_zero(),
-            mass: atom.element.atomic_weight() as f64,
-            partial_charge: atom.partial_charge.unwrap_or_default() as f64,
-            lj_r_min: 0.,
-            lj_eps: 0.,
-        }
-    }
 }
 
 impl AtomDynamics {
@@ -274,6 +257,7 @@ pub struct MdState {
     pub target_temp: f64,
     /// Exclusions / masks optimization.
     excluded_pairs: HashSet<(usize, usize)>, // 1-2 and 1-3
+    /// See Amber RM, sectcion 15, "1-4 Non-Bonded Interaction Scaling"
     scaled14_pairs: HashSet<(usize, usize)>, // 1-4
 }
 
@@ -302,7 +286,7 @@ impl MdState {
         self.apply_angle_bending_forces();
         // todo: Dihedral not working. Skipping for now. Our measured and expected angles aren't lining up.
         // self.apply_dihedral_forces();
-        // self.apply_nonbonded_forces();
+        self.apply_nonbonded_forces();
 
         // Second half-kick using new accelerations
         for a in &mut self.atoms {
@@ -490,19 +474,8 @@ impl MdState {
                     continue;
                 }
 
-                // todo: Put back A/R, or load from amber.
-                // let (σ, ϵ) = self
-                //     .lj_lut
-                //     .get(&(self.atoms[i].element, self.atoms[j].element))
-                //     .unwrap();
-
                 let dist = r_sq.sqrt();
                 let dir = diff / dist;
-
-                // todo: Not req?
-                if dist < EPS {
-                    continue;
-                }
 
                 // Note: Amber params are loaded using R_min instead of σ, but we address
                 // this when parsing them.
@@ -510,11 +483,6 @@ impl MdState {
                 let ε = (self.atoms[i].lj_eps * self.atoms[j].lj_eps).sqrt();
 
                 let mut f_lj = force_lj(dir, dist, σ, ε);
-
-                // if self.step_count == 0 {
-                //     println!("LJ. r0: {:.2} r1: {:.2} Eps. r0: {:.2} r1: {:.2}. σ: {:.2}, ε: {:.2}, f: {:.2}", self.atoms[i].lj_r_star, self.atoms[j].lj_r_star,
-                //              self.atoms[i].lj_eps, self.atoms[j].lj_eps, σ, ε, f_lj);
-                // }
 
                 let mut f_coulomb = force_coulomb(
                     dir,
@@ -531,17 +499,8 @@ impl MdState {
 
                 let f = f_lj + f_coulomb;
 
-                if self.atoms[i].mass < 0.0001 {
-                    println!("Mass problem: {:?}", self.atoms[i]);
-                }
-                if self.atoms[j].mass < 0.0001 {
-                    println!("Mass problem: {:?}", self.atoms[j]);
-                }
-
                 let accel_0 = f / self.atoms[i].mass;
                 let accel_1 = f / self.atoms[j].mass;
-
-                println!("ACC 0: {}", accel_0);
 
                 self.atoms[i].accel += accel_0;
                 self.atoms[j].accel -= accel_1;

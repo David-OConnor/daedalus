@@ -23,7 +23,7 @@ use bio_files::{
 };
 
 use crate::{
-    CamSnapshot, GAFF2, MsaaSetting, Selection, State, ViewSelLevel, cli,
+    CamSnapshot, GAFF2, MsaaSetting, PARM_19, Selection, State, ViewSelLevel, cli,
     cli::autocomplete_cli,
     docking::{
         ConformationType, calc_binding_energy,
@@ -895,56 +895,57 @@ fn docking(
     }
 
     ui.horizontal(|ui| {
+        // Workaround for double-borrow.
+        let mut run_clicked = false;
+        if state.ligand.is_some() {
+            run_clicked = ui.button("Run MD docking").clicked();
+        }
+        if run_clicked {
+            // If not already loaded from static string to state, do so now.
+            // We load on demand to save computation.
+            state.load_ffs_general();
+        }
         if let Some(lig) = &mut state.ligand {
-            if ui.button("Run MD docking").clicked() {
-                // If not already loaded from static string to state, do so now.
-                if state.md_forcefields_lig_general.is_none() {
-                    match ForceFieldParams::from_dat(GAFF2) {
-                        Ok(ff) => {
-                            state.md_forcefields_lig_general = Some(ForceFieldParamsKeyed::new(&ff))
+            if run_clicked {
+                // todo: This nesting is sloppy. if let something, with an early return?
+                if let Some(ff_lig) = &state.md_forcefields_lig_general {
+                    if let Some(ff_prot) = &state.md_forcefields_prot_general {
+                        // state.volatile.snapshots = build_dock_dynamics(
+                        //     &state.dev,
+                        //     lig,
+                        //     state.volatile.docking_setup.as_ref().unwrap(),
+                        //     1_500,
+                        // );
+
+                        // Set up the atom posits to be IOC the pose.
+                        // println!("P before: {}", lig.atom_posits[0]);
+                        // lig.position_atoms(None);
+
+                        // // Sync atom posits with pose.
+                        // match &lig.pose.conformation_type {
+                        //     ConformationType::AbsolutePosits => {
+                        //         println!("Abs")
+                        //     }
+                        //     ConformationType::Flexible { torsions} => {
+                        //         println!("Flexible");
+                        //     }
+                        // }
+
+                        match build_dock_dynamics(
+                            &state.dev,
+                            lig,
+                            state.volatile.docking_setup.as_ref().unwrap(),
+                            ff_lig,
+                            ff_prot,
+                            state.md_forcefields_lig_specific.get("CPB"), // todo!
+                            1_500,
+                        ) {
+                            Ok(md) => {
+                                state.mol_dynamics = Some(md);
+                                state.ui.current_snapshot = 0;
+                            }
+                            Err(e) => handle_err(&mut state.ui, e.descrip),
                         }
-                        Err(e) => handle_err(
-                            &mut state.ui,
-                            format!("Unable to load FF params (static): {e}"),
-                        ),
-                    }
-                }
-
-                if let Some(ff) = &state.md_forcefields_lig_general {
-                    // state.volatile.snapshots = build_dock_dynamics(
-                    //     &state.dev,
-                    //     lig,
-                    //     state.volatile.docking_setup.as_ref().unwrap(),
-                    //     1_500,
-                    // );
-
-                    // Set up the atom posits to be IOC the pose.
-                    // println!("P before: {}", lig.atom_posits[0]);
-                    // lig.position_atoms(None);
-
-                    // // Sync atom posits with pose.
-                    // match &lig.pose.conformation_type {
-                    //     ConformationType::AbsolutePosits => {
-                    //         println!("Abs")
-                    //     }
-                    //     ConformationType::Flexible { torsions} => {
-                    //         println!("Flexible");
-                    //     }
-                    // }
-
-                    match build_dock_dynamics(
-                        &state.dev,
-                        lig,
-                        state.volatile.docking_setup.as_ref().unwrap(),
-                        ff,
-                        state.md_forcefields_lig_specific.get("CPB"),
-                        1_500,
-                    ) {
-                        Ok(md) => {
-                            state.mol_dynamics = Some(md);
-                            state.ui.current_snapshot = 0;
-                        }
-                        Err(e) => handle_err(&mut state.ui, e.descrip),
                     }
                 }
             }

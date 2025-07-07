@@ -62,7 +62,7 @@ from the [RCSB PDB](https://www.rcsb.org/).
 
 ## Molecular dynamics
 Integrates the following [Amber parameters](https://ambermd.org/AmberModels.php):
-- Small organic molecules, e.g. ligands: [GAFF2](https://ambermd.org/antechamber/gaff.html)
+- Small organic molecules, e.g. ligands: [General Amber Force Fields: GAFF2](https://ambermd.org/antechamber/gaff.html)
 - Protein/AA: [FF19SB](https://pubs.acs.org/doi/10.1021/acs.jctc.9b00591)
 - Water: [OPC](https://arxiv.org/abs/1408.1679)
 

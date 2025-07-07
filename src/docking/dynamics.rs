@@ -292,7 +292,8 @@ pub fn build_dock_dynamics(
     dev: &ComputationDevice,
     lig: &mut Ligand,
     setup: &DockingSetup,
-    ff_params: &ForceFieldParamsKeyed,
+    ff_params_lig: &ForceFieldParamsKeyed,
+    ff_params_prot: &ForceFieldParamsKeyed,
     ff_params_lig_specific: Option<&ForceFieldParamsKeyed>,
     n_steps: usize,
     // ) -> Vec<Snapshot> {
@@ -313,7 +314,8 @@ pub fn build_dock_dynamics(
             &lig.molecule.bonds,
             &setup.rec_atoms_near_site,
             &setup.lj_lut,
-            ff_params,
+            ff_params_lig,
+            ff_params_prot,
             ff_params_lig_specific,
         )?;
 

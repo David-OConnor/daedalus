@@ -11,7 +11,7 @@ use lin_alg::f64::Vec3;
 use na_seq::{AaIdent, Element};
 
 use crate::{
-    State,
+    GAFF2, PARM_19, State,
     file_io::{cif_pdb::load_cif_pdb, pdbqt::load_pdbqt},
     molecule::{Ligand, Molecule},
 };
@@ -28,7 +28,10 @@ use bio_files::{
     sdf::Sdf,
 };
 
-use crate::reflection::{DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityRect, ElectronDensity};
+use crate::{
+    reflection::{DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityRect, ElectronDensity},
+    util::handle_err,
+};
 
 impl State {
     /// A single endpoint to open a number of file types
@@ -340,5 +343,32 @@ impl State {
         }
 
         Ok(())
+    }
+
+    /// Load parameter files for general organic molecules (GAFF2), and proteins/amino acids (PARM19)
+    pub fn load_ffs_general(&mut self) {
+        if self.md_forcefields_prot_general.is_none() {
+            match ForceFieldParams::from_dat(PARM_19) {
+                Ok(ff) => {
+                    self.md_forcefields_prot_general = Some(ForceFieldParamsKeyed::new(&ff));
+                }
+                Err(e) => handle_err(
+                    &mut self.ui,
+                    format!("Unable to load protein FF params (static): {e}"),
+                ),
+            }
+        }
+
+        if self.md_forcefields_lig_general.is_none() {
+            match ForceFieldParams::from_dat(GAFF2) {
+                Ok(ff) => {
+                    self.md_forcefields_lig_general = Some(ForceFieldParamsKeyed::new(&ff));
+                }
+                Err(e) => handle_err(
+                    &mut self.ui,
+                    format!("Unable to load ligand FF params (static): {e}"),
+                ),
+            }
+        }
     }
 }

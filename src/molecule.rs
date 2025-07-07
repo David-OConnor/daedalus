@@ -35,6 +35,7 @@ use crate::{
         ConformationType, DockingSite, Pose,
         prep::{DockType, Torsion, UnitCellDims, setup_flexibility},
     },
+    dynamics::ForceFieldParamsIndexed,
     reflection::{DensityRect, ElectronDensity, ReflectionsData},
     ribbon_mesh::BackboneSS,
     util::mol_center_size,
@@ -80,6 +81,7 @@ pub struct Molecule {
     pub density_rect: Option<DensityRect>,
     pub aa_seq: Vec<AminoAcid>,
     pub method: Option<ExperimentalMethod>,
+    pub ff_params: Option<ForceFieldParamsIndexed>,
 }
 
 impl Molecule {
