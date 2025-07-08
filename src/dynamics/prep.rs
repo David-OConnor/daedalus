@@ -1,23 +1,21 @@
 //! Contains setup code, including applying forcefield data to our specific
 //! atoms.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
-use bio_files::amber_params::{DihedralParams, ForceFieldParamsKeyed};
+use bio_files::amber_params::{ChargeParams, DihedralParams, ForceFieldParamsKeyed};
 use itertools::Itertools;
 use lin_alg::f64::Vec3;
+use na_seq::AminoAcid;
 use na_seq::element::LjTable;
 
-use crate::{
-    dynamics::{
-        AtomDynamics, CUTOFF, ForceFieldParamsIndexed, MdState, ParamError, SKIN, ambient::SimBox,
-    },
-    molecule::{Atom, Bond},
-};
+use crate::{dynamics::{
+    AtomDynamics, CUTOFF, ForceFieldParamsIndexed, MdState, ParamError, SKIN, ambient::SimBox,
+}, molecule::{Atom, Bond}, FfParamSet};
 
 /// Build a single lookup table in which ligand-specific parameters
 /// (when given) replace or add to the generic ones.
-fn merge_params(
+pub fn merge_params(
     generic: &ForceFieldParamsKeyed,
     lig_specific: Option<&ForceFieldParamsKeyed>,
 ) -> ForceFieldParamsKeyed {
@@ -320,10 +318,22 @@ impl MdState {
         bonds: &[Bond],
         atoms_external: &[Atom],
         lj_table: &LjTable,
-        ff_params_lig_keyed: &ForceFieldParamsKeyed,
-        ff_params_prot_keyed: &ForceFieldParamsKeyed,
-        ff_params_keyed_lig_specific: Option<&ForceFieldParamsKeyed>,
+        ff_params: &FfParamSet,
     ) -> Result<Self, ParamError> {
+        let Some(ff_params_lig_keyed) = &ff_params.lig_general else {
+            return Err(ParamError::new("Missing lig general params"));
+        };
+        let Some(ff_params_prot_keyed) = &ff_params.prot_general else {
+            return Err(ParamError::new("Missing prot params general params"));
+        };
+
+        let Some(ff_charge_prot_keyed) = &ff_params.prot_charge_general else {
+            return Err(ParamError::new("Missing prot charge general"));
+        };
+
+        // todo temp!
+        let ff_params_keyed_lig_specific= ff_params.lig_specific.get("CPB");
+
         // Convert FF params from keyed to index-based.
         let ff_params_lig = ForceFieldParamsIndexed::new(
             ff_params_lig_keyed,
@@ -352,10 +362,39 @@ impl MdState {
             atoms_dy.push(AtomDynamics::new(atom, atom_posits, &ff_params_lig, i)?);
         }
 
+        // todo: Make sure atoms_external is populate here, from dock dynamics.
+
+        // todo: Indeed it is empty.
+        println!("Num ext atoms: {:?}", atoms_external.len());
+
+        // todo temp way of handling this.
+        let mut atoms_external2 = atoms_external.to_vec();
+        for atom in &mut atoms_external2 {
+            //atom.residue
+            let res = AminoAcid::Arg; // todo: Lookup
+            let charges = ff_charge_prot_keyed.get(&res).unwrap();
+            let mut found = false;
+            let Some(name) = &atom.name else {
+                return Err(ParamError::new("Missing protein atom name"));
+            };
+            for charge in charges {
+                if &charge.atom_type == name {
+                    atom.partial_charge = Some(charge.charge);
+                    found = true;
+                }
+            }
+
+            if !found {
+                return Err(ParamError::new(&format!("Can't find charge for protein atom: {:?}", atom));
+            }
+
+        }
+
         let mut atoms_dy_external = Vec::with_capacity(atoms_external.len());
         let atom_posits_external: Vec<_> = atoms_external.iter().map(|a| a.posit).collect();
 
-        for (i, atom) in atoms_external.iter().enumerate() {
+        // for (i, atom) in atoms_external.iter().enumerate() {
+        for (i, atom) in atoms_external2.iter().enumerate() {
             atoms_dy_external.push(AtomDynamics::new(
                 atom,
                 &atom_posits_external,

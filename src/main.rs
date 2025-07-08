@@ -61,7 +61,7 @@ use bio_apis::{
     ReqError, rcsb,
     rcsb::{FilesAvailable, PdbDataResults},
 };
-use bio_files::amber_params::{ForceFieldParams, ForceFieldParamsKeyed};
+use bio_files::amber_params::{ChargeParams, ForceFieldParams, ForceFieldParamsKeyed};
 // #[cfg(feature = "cuda")]
 // use cuda_setup::ComputationDevice;
 #[cfg(feature = "cuda")]
@@ -79,10 +79,7 @@ use lin_alg::{
 };
 use mol_drawing::MoleculeView;
 use molecule::Molecule;
-use na_seq::{
-    Element,
-    element::{LjTable, init_lj_lut},
-};
+use na_seq::{Element, element::{LjTable, init_lj_lut}, AminoAcid};
 use pdbtbx::{self, PDB};
 
 use crate::{
@@ -105,9 +102,9 @@ use crate::{
 // 3.1.1 for details on which we include. (The recommended ones for Proteins, and ligands).
 
 // Proteins and amino acids:
+const PARM_19: &str = include_str!("../resources/parm19.dat"); // Bonded, and Van der Waals.
+const FRCMOD_FF19SB: &str = include_str!("../resources/frcmod.ff19SB"); // Bonded, and Van der Waals: overrides and new types
 const AMINO_19: &str = include_str!("../resources/amino19.lib"); // Charge; internal residues
-const PARM_19: &str = include_str!("../resources/parm19.dat"); // Van der Waals
-const FRCMOD_FF19SB: &str = include_str!("../resources/frcmod.ff19SB"); // Van der Waals: overrides and new types
 const AMINONT12: &str = include_str!("../resources/aminont12.lib"); // Charge; protonated N-terminus residues
 const AMINOCT12: &str = include_str!("../resources/aminoct12.lib"); // Charge; protonated C-terminus residues
 
@@ -454,6 +451,18 @@ impl CamSnapshot {
 }
 
 #[derive(Default)]
+/// Force field parameters (e.g. Amber) for molecular dynamics.
+pub struct FfParamSet {
+    /// E.g. parsed from Amber `gaff2.dat`.
+    pub lig_general: Option<ForceFieldParamsKeyed>,
+    /// E.g. ff19SB. Loaded at init.
+    pub prot_general: Option<ForceFieldParamsKeyed>,
+    pub prot_charge_general: Option<HashMap<AminoAcid, Vec<ChargeParams>>>,
+    /// Key: A unique identifier for the molecule. (e.g. ligand)
+    pub lig_specific: HashMap<String, ForceFieldParamsKeyed>,
+}
+
+#[derive(Default)]
 struct State {
     pub ui: StateUi,
     pub volatile: StateVolatile,
@@ -470,12 +479,8 @@ struct State {
     pub bh_config: BhConfig,
     pub dev: ComputationDevice,
     pub mol_dynamics: Option<MdState>,
-    /// E.g. parsed from Amber `gaff2.dat`.
-    pub md_forcefields_lig_general: Option<ForceFieldParamsKeyed>,
-    /// E.g. ff19SB. Loaded at init.
-    pub md_forcefields_prot_general: Option<ForceFieldParamsKeyed>,
-    /// Key: A unique identifier for the molecule. (e.g. ligand)
-    pub md_forcefields_lig_specific: HashMap<String, ForceFieldParamsKeyed>,
+    // todo: Combine these params in a single struct.
+    pub ff_params: FfParamSet,
 }
 
 impl State {

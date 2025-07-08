@@ -908,45 +908,39 @@ fn docking(
         if let Some(lig) = &mut state.ligand {
             if run_clicked {
                 // todo: This nesting is sloppy. if let something, with an early return?
-                if let Some(ff_lig) = &state.md_forcefields_lig_general {
-                    if let Some(ff_prot) = &state.md_forcefields_prot_general {
-                        // state.volatile.snapshots = build_dock_dynamics(
-                        //     &state.dev,
-                        //     lig,
-                        //     state.volatile.docking_setup.as_ref().unwrap(),
-                        //     1_500,
-                        // );
+                // state.volatile.snapshots = build_dock_dynamics(
+                //     &state.dev,
+                //     lig,
+                //     state.volatile.docking_setup.as_ref().unwrap(),
+                //     1_500,
+                // );
 
-                        // Set up the atom posits to be IOC the pose.
-                        // println!("P before: {}", lig.atom_posits[0]);
-                        // lig.position_atoms(None);
+                // Set up the atom posits to be IOC the pose.
+                // println!("P before: {}", lig.atom_posits[0]);
+                // lig.position_atoms(None);
 
-                        // // Sync atom posits with pose.
-                        // match &lig.pose.conformation_type {
-                        //     ConformationType::AbsolutePosits => {
-                        //         println!("Abs")
-                        //     }
-                        //     ConformationType::Flexible { torsions} => {
-                        //         println!("Flexible");
-                        //     }
-                        // }
+                // // Sync atom posits with pose.
+                // match &lig.pose.conformation_type {
+                //     ConformationType::AbsolutePosits => {
+                //         println!("Abs")
+                //     }
+                //     ConformationType::Flexible { torsions} => {
+                //         println!("Flexible");
+                //     }
+                // }
 
-                        match build_dock_dynamics(
-                            &state.dev,
-                            lig,
-                            state.volatile.docking_setup.as_ref().unwrap(),
-                            ff_lig,
-                            ff_prot,
-                            state.md_forcefields_lig_specific.get("CPB"), // todo!
-                            1_500,
-                        ) {
-                            Ok(md) => {
-                                state.mol_dynamics = Some(md);
-                                state.ui.current_snapshot = 0;
-                            }
-                            Err(e) => handle_err(&mut state.ui, e.descrip),
-                        }
+                match build_dock_dynamics(
+                    &state.dev,
+                    lig,
+                    state.volatile.docking_setup.as_ref().unwrap(),
+                    &state.ff_params,
+                    1_500,
+                ) {
+                    Ok(md) => {
+                        state.mol_dynamics = Some(md);
+                        state.ui.current_snapshot = 0;
                     }
+                    Err(e) => handle_err(&mut state.ui, e.descrip),
                 }
             }
 

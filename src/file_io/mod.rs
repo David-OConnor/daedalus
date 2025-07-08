@@ -8,13 +8,9 @@ use std::{
 
 use bio_files::{DensityMap, gemmi_cif_to_map};
 use lin_alg::f64::Vec3;
-use na_seq::{AaIdent, Element};
+use na_seq::{AaIdent, AminoAcid, Element};
 
-use crate::{
-    GAFF2, PARM_19, State,
-    file_io::{cif_pdb::load_cif_pdb, pdbqt::load_pdbqt},
-    molecule::{Ligand, Molecule},
-};
+use crate::{GAFF2, PARM_19, State, file_io::{cif_pdb::load_cif_pdb, pdbqt::load_pdbqt}, molecule::{Ligand, Molecule}, FRCMOD_FF19SB, AMINO_19};
 
 pub mod cif_aux;
 pub mod cif_pdb;
@@ -27,11 +23,12 @@ use bio_files::{
     amber_params::{ForceFieldParams, ForceFieldParamsKeyed},
     sdf::Sdf,
 };
-
+use bio_files::amber_params::parse_amino_charges;
 use crate::{
     reflection::{DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityRect, ElectronDensity},
     util::handle_err,
 };
+use crate::dynamics::prep::merge_params;
 
 impl State {
     /// A single endpoint to open a number of file types
@@ -226,12 +223,12 @@ impl State {
 
         match extension.to_str().unwrap() {
             "dat" => {
-                self.md_forcefields_lig_general = Some(ForceFieldParamsKeyed::new(
+                self.ff_params.lig_general = Some(ForceFieldParamsKeyed::new(
                     &ForceFieldParams::load_dat(path)?,
                 ));
 
                 println!("\nLoaded forcefields:");
-                let v = &self.md_forcefields_lig_general.as_ref().unwrap();
+                let v = &self.ff_params.lig_general.as_ref().unwrap();
                 println!("Lin");
                 for di in v.bond.values().take(20) {
                     println!("Lin: {:?}, {}, {}", di.atom_types, di.k_b, di.r_0);
@@ -269,7 +266,7 @@ impl State {
             "frcmod" => {
                 let mol_name = "CPB".to_owned(); // todo temp.
 
-                self.md_forcefields_lig_specific.insert(
+                self.ff_params.lig_specific.insert(
                     mol_name,
                     ForceFieldParamsKeyed::new(&ForceFieldParams::load_frcmod(path)?),
                 );
@@ -347,10 +344,28 @@ impl State {
 
     /// Load parameter files for general organic molecules (GAFF2), and proteins/amino acids (PARM19)
     pub fn load_ffs_general(&mut self) {
-        if self.md_forcefields_prot_general.is_none() {
+        if self.ff_params.prot_general.is_none() {
+            // Load general parameters for proteins and AAs.
             match ForceFieldParams::from_dat(PARM_19) {
                 Ok(ff) => {
-                    self.md_forcefields_prot_general = Some(ForceFieldParamsKeyed::new(&ff));
+                    self.ff_params.prot_general = Some(ForceFieldParamsKeyed::new(&ff));
+                }
+                Err(e) => handle_err(
+                    &mut self.ui,
+                    format!("Unable to load protein FF params (static): {e}"),
+                ),
+            }
+
+            // Load (updated/patched) general parameters for proteins and AAs.
+            match ForceFieldParams::from_frcmod(FRCMOD_FF19SB) {
+                Ok(ff) => {
+                    let ff_keyed = ForceFieldParamsKeyed::new(&ff);
+
+                    // We just loaded this above.
+                    if let Some(ffs) = &mut self.ff_params.prot_general {
+                        let params_updated = merge_params(ffs, Some(&ff_keyed));
+                        self.ff_params.prot_general = Some(params_updated);
+                    }
                 }
                 Err(e) => handle_err(
                     &mut self.ui,
@@ -359,10 +374,24 @@ impl State {
             }
         }
 
-        if self.md_forcefields_lig_general.is_none() {
+        if self.ff_params.prot_charge_general.is_none() {
+            match parse_amino_charges(AMINO_19) {
+                Ok(amino_charges) => {
+                    self.ff_params.prot_charge_general = Some(amino_charges);
+                }
+                Err(e) => handle_err(
+                    &mut self.ui,
+                    format!("Unable to load protein charges (static): {e}"),
+                ),
+            }
+            // todo: Handle C and N-terminal files (aminoct12.lib and aminont12.lib)
+        }
+
+        // Load general organic molecule, e.g. ligand, parameters.
+        if self.ff_params.lig_general.is_none() {
             match ForceFieldParams::from_dat(GAFF2) {
                 Ok(ff) => {
-                    self.md_forcefields_lig_general = Some(ForceFieldParamsKeyed::new(&ff));
+                    self.ff_params.lig_general = Some(ForceFieldParamsKeyed::new(&ff));
                 }
                 Err(e) => handle_err(
                     &mut self.ui,

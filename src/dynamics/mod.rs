@@ -29,7 +29,7 @@
 // Note on timescale: Generally femtosecond (-15)
 
 mod ambient;
-mod prep;
+pub mod prep;
 mod water_opc;
 
 use std::{
@@ -144,7 +144,7 @@ pub struct AtomDynamics {
     pub mass: f64,
     pub partial_charge: f64,
     /// Å
-    pub lj_r_min: f64,
+    pub lj_sigma: f64,
     /// kcal/mol
     pub lj_eps: f64,
 }
@@ -176,7 +176,7 @@ impl AtomDynamics {
             // We get partial charge for ligands from (e.g. Amber-provided) Mol files, so we load it from the atom, vice
             // the loaded FF params. They are not in the dat or frcmod files that angle, bond-length etc params are from.
             partial_charge: atom.partial_charge.unwrap_or_default() as f64,
-            lj_r_min: ff_params.van_der_waals.get(&i).unwrap().sigma as f64,
+            lj_sigma: ff_params.van_der_waals.get(&i).unwrap().sigma as f64,
             lj_eps: ff_params.van_der_waals.get(&i).unwrap().eps as f64,
             force_field_type: Some(ff_type),
         })
@@ -479,7 +479,7 @@ impl MdState {
 
                 // Note: Amber params are loaded using R_min instead of σ, but we address
                 // this when parsing them.
-                let σ = 0.5 * (self.atoms[i].lj_r_min + self.atoms[j].lj_r_min);
+                let σ = 0.5 * (self.atoms[i].lj_sigma + self.atoms[j].lj_sigma);
                 let ε = (self.atoms[i].lj_eps * self.atoms[j].lj_eps).sqrt();
 
                 let mut f_lj = force_lj(dir, dist, σ, ε);
@@ -508,46 +508,45 @@ impl MdState {
         }
 
         // Second pass: External atoms.
-        for ai in &mut self.atoms {
-            for aj in &self.atoms_external {
-                let dv = self.cell.min_image(aj.posit - ai.posit);
+        for a_lig in &mut self.atoms {
+            for a_ext in &self.atoms_external {
+                let dv = self.cell.min_image(a_ext.posit - a_lig.posit);
 
-                // let dv = Vec3::new_zero();
+                // todo: This section DRY with non-external interactions.
 
                 let r_sq = dv.magnitude_squared();
                 if r_sq > cutoff_sq {
                     continue;
                 }
 
-                // let (σ, ϵ) = self.lj_lut.get(&(ai.element, aj.element)).unwrap();
-                // todo: Update this for amber.
-                let (σ, ϵ) = (0., 0.);
+                println!("Lig σ: {:.3} lig ε: {:.3} ext σ: {:.3} ext ε: {:.3} lig q: {:.3} ext q: {:.3}",
+                    a_lig.lj_sigma, a_lig.lj_eps,
+                    a_ext.lj_sigma, a_ext.lj_eps,
+                    a_lig.partial_charge, a_ext.partial_charge,
+                );
 
-                // todo: Instead of your LUT above, once you figure out how to load these.
-                // let (σ, ϵ, _) = force_field.lj[&ai.amber_type];   // (_,_,mass)
-                // let (σ2,ϵ2, _) = force_field.lj[&aj.amber_type];
-                // let (σ,ϵ) = mix_lorentz_berthelot(σ,σ2, ϵ,ϵ2);    // same rule as AMBER
+                let σ = 0.5 * (a_lig.lj_sigma + a_ext.lj_sigma);
+                let ε = (a_lig.lj_eps * a_ext.lj_eps).sqrt();
 
                 let dist = r_sq.sqrt();
                 let dir = dv / dist;
 
-                if dist < EPS {
-                    continue;
-                }
+                let f_lj = force_lj(dir, dist, σ, ε);
 
-                let f = force_lj(dir, dist, σ as f64, ϵ as f64)
-                    + force_coulomb(
-                        dir,
-                        dist,
-                        ai.partial_charge,
-                        aj.partial_charge,
-                        SOFTENING_FACTOR_SQ,
-                    );
+                let f_coulomb = force_coulomb(
+                    dir,
+                    dist,
+                    a_lig.partial_charge,
+                    a_ext.partial_charge,
+                    SOFTENING_FACTOR_SQ,
+                );
+
+                let f = f_lj + f_coulomb;
 
                 // todo: Experimenting with a scaler for docking trial+error.
-                let scaler = 10.;
+                let scaler = 1.;
 
-                ai.accel += f / ai.mass * scaler;
+                a_lig.accel += f / a_lig.mass * scaler;
             }
         }
     }

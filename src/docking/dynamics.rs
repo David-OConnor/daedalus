@@ -4,11 +4,12 @@
 //! Experimental molecular dynamics, with a playback system. Starting with fixed-ligand position only,
 //! referencing the anchor.
 
+use std::collections::HashMap;
 use std::time::Instant;
 
-use bio_files::amber_params::ForceFieldParamsKeyed;
+use bio_files::amber_params::{ChargeParams, ForceFieldParamsKeyed};
 
-use crate::ComputationDevice;
+use crate::{ComputationDevice, FfParamSet};
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "cuda")] {
@@ -27,6 +28,7 @@ use lin_alg::{
     // f32::{Vec3x8, f32x8, pack_slice, pack_vec3},
     f64::{Vec3x4, f64x4, pack_slice, pack_vec3},
 };
+use na_seq::AminoAcid;
 use rayon::prelude::*;
 
 #[cfg(feature = "cuda")]
@@ -292,9 +294,7 @@ pub fn build_dock_dynamics(
     dev: &ComputationDevice,
     lig: &mut Ligand,
     setup: &DockingSetup,
-    ff_params_lig: &ForceFieldParamsKeyed,
-    ff_params_prot: &ForceFieldParamsKeyed,
-    ff_params_lig_specific: Option<&ForceFieldParamsKeyed>,
+    ff_params: &FfParamSet,
     n_steps: usize,
     // ) -> Vec<Snapshot> {
     // ) -> Vec<SnapshotDynamics> {
@@ -314,9 +314,7 @@ pub fn build_dock_dynamics(
             &lig.molecule.bonds,
             &setup.rec_atoms_near_site,
             &setup.lj_lut,
-            ff_params_lig,
-            ff_params_prot,
-            ff_params_lig_specific,
+            ff_params,
         )?;
 
         let n_steps = 60_000;
