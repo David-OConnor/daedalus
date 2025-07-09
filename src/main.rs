@@ -79,7 +79,10 @@ use lin_alg::{
 };
 use mol_drawing::MoleculeView;
 use molecule::Molecule;
-use na_seq::{Element, element::{LjTable, init_lj_lut}, AminoAcid};
+use na_seq::{
+    AminoAcid, Element,
+    element::{LjTable, init_lj_lut},
+};
 use pdbtbx::{self, PDB};
 
 use crate::{
@@ -514,6 +517,16 @@ impl State {
             self.ui.docking_site_x = posit.x.to_string();
             self.ui.docking_site_y = posit.y.to_string();
             self.ui.docking_site_z = posit.z.to_string();
+
+            // todo: Make sure this isn't too computationally intensive to put here.
+            if let Some(mol) = &self.molecule {
+                self.volatile.docking_setup = Some(DockingSetup::new(
+                    mol,
+                    lig,
+                    &self.volatile.lj_lookup_table,
+                    &self.bh_config,
+                ));
+            }
         }
     }
 }

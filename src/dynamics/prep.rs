@@ -3,15 +3,21 @@
 
 use std::collections::{HashMap, HashSet};
 
-use bio_files::amber_params::{ChargeParams, DihedralParams, ForceFieldParamsKeyed};
+use bio_files::{
+    ResidueType,
+    amber_params::{ChargeParams, DihedralParams, ForceFieldParamsKeyed, MassParams, VdwParams},
+};
 use itertools::Itertools;
 use lin_alg::f64::Vec3;
-use na_seq::AminoAcid;
-use na_seq::element::LjTable;
+use na_seq::{AminoAcid, element::LjTable};
 
-use crate::{dynamics::{
-    AtomDynamics, CUTOFF, ForceFieldParamsIndexed, MdState, ParamError, SKIN, ambient::SimBox,
-}, molecule::{Atom, Bond}, FfParamSet};
+use crate::{
+    FfParamSet,
+    dynamics::{
+        AtomDynamics, CUTOFF, ForceFieldParamsIndexed, MdState, ParamError, SKIN, ambient::SimBox,
+    },
+    molecule::{Atom, Bond, Residue},
+};
 
 /// Build a single lookup table in which ligand-specific parameters
 /// (when given) replace or add to the generic ones.
@@ -44,7 +50,7 @@ pub fn merge_params(
 impl ForceFieldParamsIndexed {
     pub fn new(
         params_general: &ForceFieldParamsKeyed,
-        params_lig_specific: Option<&ForceFieldParamsKeyed>,
+        params_specific: Option<&ForceFieldParamsKeyed>,
         atoms: &[Atom],
         bonds: &[Bond],
         adjacency_list: &[Vec<usize>],
@@ -55,18 +61,43 @@ impl ForceFieldParamsIndexed {
 
         // Combine the two force field sets. When a value is present in both, refer the lig-specific
         // one.
-        let params = merge_params(params_general, params_lig_specific);
+        let params = merge_params(params_general, params_specific);
 
         for (i, atom) in atoms.iter().enumerate() {
+            println!("ATOM: {:?} - {:?}", atom.name, atom.force_field_type);
+
             let ff_type = atom.force_field_type.as_ref().ok_or_else(|| err())?;
 
             // Mass
             if let Some(mass) = params.mass.get(ff_type) {
                 result.mass.insert(i, mass.clone());
             } else {
-                return Err(ParamError::new(&format!(
-                    "Missing Van der Waals params for {ff_type}"
-                )));
+                if ff_type.starts_with("C") {
+                    result.mass.insert(i, params.mass.get("C").unwrap().clone());
+                    println!("Using C fallback mass for {ff_type}");
+                } else if ff_type.starts_with("N") {
+                    result.mass.insert(i, params.mass.get("N").unwrap().clone());
+                    println!("Using N fallback mass for {ff_type}");
+                } else if ff_type.starts_with("O") {
+                    result.mass.insert(i, params.mass.get("O").unwrap().clone());
+                    println!("Using O fallback mass for {ff_type}");
+                } else {
+                    // todo: This is not a good way to do it. Fall back to element-derived etc.
+                    result.mass.insert(
+                        i,
+                        MassParams {
+                            atom_type: "".to_string(),
+                            mass: 12.001, // todo: Not great...
+                            comment: None,
+                        },
+                    );
+
+                    println!("Missing mass params for {ff_type}");
+
+                    // return Err(ParamError::new(&format!(
+                    //     "Missing mass params for {ff_type}"
+                    // )));
+                }
             }
 
             // if let Some(q) = params.partial_charges.get(ff_type) {
@@ -84,9 +115,38 @@ impl ForceFieldParamsIndexed {
             if let Some(vdw) = params.van_der_waals.get(ff_type) {
                 result.van_der_waals.insert(i, vdw.clone());
             } else {
-                return Err(ParamError::new(&format!(
-                    "Missing Van der Waals params for {ff_type}"
-                )));
+                if ff_type.starts_with("C") {
+                    result
+                        .van_der_waals
+                        .insert(i, params.van_der_waals.get("C*").unwrap().clone());
+                    println!("Using C* fallback VdW for {ff_type}");
+                } else if ff_type.starts_with("N") {
+                    result
+                        .van_der_waals
+                        .insert(i, params.van_der_waals.get("N").unwrap().clone());
+                    println!("Using N fallback VdW for {ff_type}");
+                } else if ff_type.starts_with("O") {
+                    result
+                        .van_der_waals
+                        .insert(i, params.van_der_waals.get("O").unwrap().clone());
+                    println!("Using O fallback VdW for {ff_type}");
+                } else {
+                    println!("Missing Van der Waals params for {ff_type}");
+                    // 0. no interaction.
+                    // todo: If this is "CG" etc, fall back to other carbon params instead.
+                    result.van_der_waals.insert(
+                        i,
+                        VdwParams {
+                            atom_type: "".to_string(),
+                            sigma: 0.,
+                            eps: 0.,
+                        },
+                    );
+                }
+
+                // return Err(ParamError::new(&format!(
+                //     "Missing Van der Waals params for {ff_type}"
+                // )));
             }
         }
 
@@ -317,8 +377,9 @@ impl MdState {
         adjacency_list: &[Vec<usize>],
         bonds: &[Bond],
         atoms_external: &[Atom],
-        lj_table: &LjTable,
+        // lj_table: &LjTable,
         ff_params: &FfParamSet,
+        residues: &[Residue], // For protein charge LU
     ) -> Result<Self, ParamError> {
         let Some(ff_params_lig_keyed) = &ff_params.lig_general else {
             return Err(ParamError::new("Missing lig general params"));
@@ -332,7 +393,7 @@ impl MdState {
         };
 
         // todo temp!
-        let ff_params_keyed_lig_specific= ff_params.lig_specific.get("CPB");
+        let ff_params_keyed_lig_specific = ff_params.lig_specific.get("CPB");
 
         // Convert FF params from keyed to index-based.
         let ff_params_lig = ForceFieldParamsIndexed::new(
@@ -347,6 +408,7 @@ impl MdState {
         // rigid protein models, and is how this is currently structured.
         let bonds_ext = Vec::new();
         let adj_list_ext = Vec::new();
+
         let ff_params_prot = ForceFieldParamsIndexed::new(
             ff_params_prot_keyed,
             None,
@@ -370,24 +432,40 @@ impl MdState {
         // todo temp way of handling this.
         let mut atoms_external2 = atoms_external.to_vec();
         for atom in &mut atoms_external2 {
-            //atom.residue
-            let res = AminoAcid::Arg; // todo: Lookup
-            let charges = ff_charge_prot_keyed.get(&res).unwrap();
-            let mut found = false;
-            let Some(name) = &atom.name else {
-                return Err(ParamError::new("Missing protein atom name"));
-            };
-            for charge in charges {
-                if &charge.atom_type == name {
-                    atom.partial_charge = Some(charge.charge);
-                    found = true;
+            let res_i = atom.residue.unwrap();
+
+            // let Some(res_i) = atom.residue else {
+            //     continue;
+            // };
+
+            let res = &residues[res_i].res_type;
+
+            match res {
+                ResidueType::AminoAcid(aa) => {
+                    let charges = ff_charge_prot_keyed.get(aa).unwrap();
+                    let mut found = false;
+                    let Some(name) = &atom.name else {
+                        return Err(ParamError::new("Missing protein atom name"));
+                    };
+                    for charge in charges {
+                        if &charge.atom_type == name {
+                            atom.partial_charge = Some(charge.charge);
+                            found = true;
+                        }
+                    }
+
+                    if !found {
+                        return Err(ParamError::new(&format!(
+                            "Can't find charge for protein atom: {:?}",
+                            atom
+                        )));
+                    }
+                }
+                _ => {
+                    // todo: Probalby just continue or something. let else.
+                    eprintln!("Unsuitable res type: {:?}", res);
                 }
             }
-
-            if !found {
-                return Err(ParamError::new(&format!("Can't find charge for protein atom: {:?}", atom));
-            }
-
         }
 
         let mut atoms_dy_external = Vec::with_capacity(atoms_external.len());
@@ -422,7 +500,7 @@ impl MdState {
             atoms: atoms_dy,
             // bonds: bonds_dy,
             adjacency_list: adjacency_list.to_vec(),
-            atoms_external: atoms_dy_external,
+            atoms_static: atoms_dy_external,
             // lj_lut: lj_table.clone(),
             cell,
             excluded_pairs: HashSet::new(),

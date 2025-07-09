@@ -129,8 +129,9 @@ impl DockingSetup {
             .cloned()
             .collect();
 
-        let partial_charges_rec =
-            setup_eem_charges(receptor, ligand, &mut rec_atoms_near_site, &rec_indices);
+        // todo: Rem in favor of Amber.
+        // let partial_charges_rec =
+        //     setup_eem_charges(receptor, ligand, &mut rec_atoms_near_site, &rec_indices);
 
         // Set up the LJ data that doesn't change with pose.
         let pair_count = rec_atoms_near_site.len() * ligand.molecule.atoms.len();
@@ -164,18 +165,18 @@ impl DockingSetup {
         // than over the ligand, as we expect the receptor nearby atoms to be more numerous.
         // We can set up our tree once for the whole simulation, as for the case of fixed
         // receptor, one side of the charge pairs doesn't change.
-        let charge_tree = {
-            // For the Barnes Hut electrostatics tree.
-            let bh_bounding_box = Cube::from_bodies(&partial_charges_rec, 0., true);
-
-            match &bh_bounding_box {
-                Some(bb) => Tree::new(&partial_charges_rec, bb, bh_config),
-                None => {
-                    eprintln!("Error while setting up BH tree: Unable to create a bounding box.");
-                    Default::default()
-                }
-            }
-        };
+        // let charge_tree = {
+        //     // For the Barnes Hut electrostatics tree.
+        //     let bh_bounding_box = Cube::from_bodies(&partial_charges_rec, 0., true);
+        //
+        //     match &bh_bounding_box {
+        //         Some(bb) => Tree::new(&partial_charges_rec, bb, bh_config),
+        //         None => {
+        //             eprintln!("Error while setting up BH tree: Unable to create a bounding box.");
+        //             Default::default()
+        //         }
+        //     }
+        // };
 
         // Ligand positions are per-pose; we can't pre-create them like we do for receptor.
         let rec_posits: Vec<Vec3> = rec_atoms_near_site.iter().map(|a| a.posit.into()).collect();
@@ -187,6 +188,9 @@ impl DockingSetup {
             .filter(|(i, a)| a.element == Element::Carbon && i % REC_SAMPLE_RATIO == 0)
             .map(|(_, a)| a.clone())
             .collect();
+
+        let partial_charges_rec = Vec::new(); // todo: Load from Amber.
+        let charge_tree = Tree::default(); // todo temp; handle once you apply amber params here.
 
         Self {
             rec_atoms_near_site,
@@ -563,6 +567,8 @@ fn find_rec_atoms_near_site(receptor: &Molecule, site: &DockingSite) -> (Vec<Ato
     let dist_thresh = ATOM_NEAR_SITE_DIST_THRESH * site.site_radius;
 
     let mut indices = Vec::new();
+
+    println!("\n\nIn find rec. Site center: {:?}", site.site_center);
 
     let atoms = receptor
         .atoms

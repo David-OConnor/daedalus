@@ -4,8 +4,7 @@
 //! Experimental molecular dynamics, with a playback system. Starting with fixed-ligand position only,
 //! referencing the anchor.
 
-use std::collections::HashMap;
-use std::time::Instant;
+use std::{collections::HashMap, time::Instant};
 
 use bio_files::amber_params::{ChargeParams, ForceFieldParamsKeyed};
 
@@ -40,7 +39,7 @@ use crate::{
     },
     dynamics::{AtomDynamics, AtomDynamicsx4, MdState, ParamError, SnapshotDynamics},
     forces::force_lj,
-    molecule::{Atom, Ligand},
+    molecule::{Atom, Ligand, Residue},
 };
 // This seems to be how we control rotation vice movement. A higher value means
 // more movement, less rotation for a given dt.
@@ -295,6 +294,7 @@ pub fn build_dock_dynamics(
     lig: &mut Ligand,
     setup: &DockingSetup,
     ff_params: &FfParamSet,
+    residues: &[Residue],
     n_steps: usize,
     // ) -> Vec<Snapshot> {
     // ) -> Vec<SnapshotDynamics> {
@@ -313,8 +313,9 @@ pub fn build_dock_dynamics(
             &lig.molecule.adjacency_list,
             &lig.molecule.bonds,
             &setup.rec_atoms_near_site,
-            &setup.lj_lut,
+            // &setup.lj_lut,
             ff_params,
+            residues,
         )?;
 
         let n_steps = 60_000;

@@ -10,7 +10,11 @@ use bio_files::{DensityMap, gemmi_cif_to_map};
 use lin_alg::f64::Vec3;
 use na_seq::{AaIdent, AminoAcid, Element};
 
-use crate::{GAFF2, PARM_19, State, file_io::{cif_pdb::load_cif_pdb, pdbqt::load_pdbqt}, molecule::{Ligand, Molecule}, FRCMOD_FF19SB, AMINO_19};
+use crate::{
+    AMINO_19, FRCMOD_FF19SB, GAFF2, PARM_19, State,
+    file_io::{cif_pdb::load_cif_pdb, pdbqt::load_pdbqt},
+    molecule::{Ligand, Molecule},
+};
 
 pub mod cif_aux;
 pub mod cif_pdb;
@@ -20,15 +24,15 @@ pub mod pdbqt;
 
 use bio_files::{
     Mol2,
-    amber_params::{ForceFieldParams, ForceFieldParamsKeyed},
+    amber_params::{ForceFieldParams, ForceFieldParamsKeyed, parse_amino_charges},
     sdf::Sdf,
 };
-use bio_files::amber_params::parse_amino_charges;
+
 use crate::{
+    dynamics::prep::merge_params,
     reflection::{DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityRect, ElectronDensity},
     util::handle_err,
 };
-use crate::dynamics::prep::merge_params;
 
 impl State {
     /// A single endpoint to open a number of file types

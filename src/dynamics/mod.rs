@@ -232,7 +232,7 @@ pub struct MdState {
     /// Sources that affect atoms in the system, but are not themselves affected by it. E.g.
     /// in docking, this might be a rigid receptor. These are for *non-bonded* interactions (e.g. Coulomb
     /// and VDW) only.
-    pub atoms_external: Vec<AtomDynamics>,
+    pub atoms_static: Vec<AtomDynamics>,
     pub force_field_params: ForceFieldParamsIndexed,
     /// `lj_lut`, `lj_sigma`, and `lj_eps` are Lennard Jones parameters. Flat here, with outer loop receptor.
     /// Flattened. Separate single-value array facilitate use in CUDA and SIMD, vice a tuple.
@@ -507,10 +507,10 @@ impl MdState {
             }
         }
 
-        // Second pass: External atoms.
+        // Second pass: Static atoms.
         for a_lig in &mut self.atoms {
-            for a_ext in &self.atoms_external {
-                let dv = self.cell.min_image(a_ext.posit - a_lig.posit);
+            for a_static in &self.atoms_static {
+                let dv = self.cell.min_image(a_static.posit - a_lig.posit);
 
                 // todo: This section DRY with non-external interactions.
 
@@ -519,14 +519,18 @@ impl MdState {
                     continue;
                 }
 
-                println!("Lig σ: {:.3} lig ε: {:.3} ext σ: {:.3} ext ε: {:.3} lig q: {:.3} ext q: {:.3}",
-                    a_lig.lj_sigma, a_lig.lj_eps,
-                    a_ext.lj_sigma, a_ext.lj_eps,
-                    a_lig.partial_charge, a_ext.partial_charge,
+                println!(
+                    "Lig σ: {:.3} lig ε: {:.3} ext σ: {:.3} ext ε: {:.3} lig q: {:.3} ext q: {:.3}",
+                    a_lig.lj_sigma,
+                    a_lig.lj_eps,
+                    a_static.lj_sigma,
+                    a_static.lj_eps,
+                    a_lig.partial_charge,
+                    a_static.partial_charge,
                 );
 
-                let σ = 0.5 * (a_lig.lj_sigma + a_ext.lj_sigma);
-                let ε = (a_lig.lj_eps * a_ext.lj_eps).sqrt();
+                let σ = 0.5 * (a_lig.lj_sigma + a_static.lj_sigma);
+                let ε = (a_lig.lj_eps * a_static.lj_eps).sqrt();
 
                 let dist = r_sq.sqrt();
                 let dir = dv / dist;
@@ -537,7 +541,7 @@ impl MdState {
                     dir,
                     dist,
                     a_lig.partial_charge,
-                    a_ext.partial_charge,
+                    a_static.partial_charge,
                     SOFTENING_FACTOR_SQ,
                 );
 
