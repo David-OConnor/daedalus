@@ -519,15 +519,15 @@ impl MdState {
                     continue;
                 }
 
-                println!(
-                    "Lig σ: {:.3} lig ε: {:.3} ext σ: {:.3} ext ε: {:.3} lig q: {:.3} ext q: {:.3}",
-                    a_lig.lj_sigma,
-                    a_lig.lj_eps,
-                    a_static.lj_sigma,
-                    a_static.lj_eps,
-                    a_lig.partial_charge,
-                    a_static.partial_charge,
-                );
+                // println!(
+                //     "Lig σ: {:.3} lig ε: {:.3} ext σ: {:.3} ext ε: {:.3} lig q: {:.3} ext q: {:.3}",
+                //     a_lig.lj_sigma,
+                //     a_lig.lj_eps,
+                //     a_static.lj_sigma,
+                //     a_static.lj_eps,
+                //     a_lig.partial_charge,
+                //     a_static.partial_charge,
+                // );
 
                 let σ = 0.5 * (a_lig.lj_sigma + a_static.lj_sigma);
                 let ε = (a_lig.lj_eps * a_static.lj_eps).sqrt();

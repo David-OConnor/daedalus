@@ -2,9 +2,12 @@
 
 use std::{f64::consts::TAU, fmt, fmt::Formatter};
 
-use bio_files::ResidueType;
+use bio_files::{BondGeneric, ResidueType};
 use lin_alg::f64::{Quaternion, Vec3, calc_dihedral_angle, calc_dihedral_angle_v2};
-use na_seq::{Element, Element::Hydrogen};
+use na_seq::{
+    Element,
+    Element::{Carbon, Hydrogen, Nitrogen, Oxygen},
+};
 
 use crate::{
     aa_coords::{
@@ -14,6 +17,7 @@ use crate::{
         },
         sidechain::Sidechain,
     },
+    add_hydrogens::{BondGeometry, bonded_heavy_atoms, h_atom_type},
     molecule::{Atom, AtomRole},
 };
 
@@ -209,8 +213,10 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
 
         let atoms_bonded = find_bonded_atoms(atom, atoms, i);
 
+        let neighbor_count = bonded_heavy_atoms(&atoms_bonded).len();
+
         match atom.element {
-            Element::Carbon => {
+            Carbon => {
                 // todo: Handle O bonded (double bonds).
                 match atoms_bonded.len() {
                     1 => unsafe {
@@ -238,16 +244,20 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
                         let rotator = rotator_b * rotator_a;
 
                         for tetra_bond in [TETRA_B, TETRA_C, TETRA_D] {
+                            let name =
+                                h_atom_type(Carbon, BondGeometry::Tetrahedral, neighbor_count);
                             hydrogens.push(Atom {
                                 posit: atom.posit + rotator.rotate_vec(tetra_bond) * LEN_C_H,
+                                name: Some(name.clone()),
+                                force_field_type: Some(name),
                                 ..h_default_sc.clone()
                             });
                         }
                     },
                     2 => {
                         let mut planar = false;
-                        if atoms_bonded[0].1.element == Element::Nitrogen
-                            && atoms_bonded[1].1.element == Element::Nitrogen
+                        if atoms_bonded[0].1.element == Nitrogen
+                            && atoms_bonded[1].1.element == Nitrogen
                         {
                             planar = true;
                         } else {
@@ -270,9 +280,13 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
                         if planar {
                             let bond_0 = atom.posit - atoms_bonded[0].1.posit;
                             let bond_1 = atoms_bonded[1].1.posit - atom.posit;
+
+                            let name = h_atom_type(Carbon, BondGeometry::Planar, neighbor_count);
                             // Add a single H in planar config.
                             hydrogens.push(Atom {
                                 posit: planar_posit(atom.posit, bond_0, bond_1, LEN_C_H),
+                                name: Some(name.clone()),
+                                force_field_type: Some(name),
                                 ..h_default_sc.clone()
                             });
 
@@ -288,24 +302,28 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
                         );
 
                         for posit in [h_0, h_1] {
+                            let name =
+                                h_atom_type(Carbon, BondGeometry::Tetrahedral, neighbor_count);
                             hydrogens.push(Atom {
                                 posit,
+                                name: Some(name.clone()),
+                                force_field_type: Some(name),
                                 ..h_default_sc.clone()
                             });
                         }
                     }
                     3 => {
-                        if atoms_bonded[0].1.element == Element::Oxygen
-                            || atoms_bonded[1].1.element == Element::Oxygen
-                            || atoms_bonded[2].1.element == Element::Oxygen
+                        if atoms_bonded[0].1.element == Oxygen
+                            || atoms_bonded[1].1.element == Oxygen
+                            || atoms_bonded[2].1.element == Oxygen
                         {
                             continue;
                         }
 
                         // Planar N arrangement.
-                        if atoms_bonded[0].1.element == Element::Nitrogen
-                            && atoms_bonded[1].1.element == Element::Nitrogen
-                            && atoms_bonded[2].1.element == Element::Nitrogen
+                        if atoms_bonded[0].1.element == Nitrogen
+                            && atoms_bonded[1].1.element == Nitrogen
+                            && atoms_bonded[2].1.element == Nitrogen
                         {
                             continue;
                         }
@@ -322,6 +340,8 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
 
                         // Add 1 H.
                         // todo: If planar geometry, don't add a H!
+                        let name = h_atom_type(Carbon, BondGeometry::Tetrahedral, neighbor_count);
+
                         hydrogens.push(Atom {
                             posit: atom.posit
                                 - tetra_atoms(
@@ -330,13 +350,16 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
                                     atoms_bonded[1].1.posit,
                                     atoms_bonded[2].1.posit,
                                 ) * LEN_CALPHA_H,
+                            // todo: QC the tetrahedral here.
+                            name: Some(name.clone()),
+                            force_field_type: Some(name),
                             ..h_default_sc.clone()
                         });
                     }
                     _ => (),
                 }
             }
-            Element::Nitrogen => {
+            Nitrogen => {
                 match atoms_bonded.len() {
                     1 => unsafe {
                         // Add 2 H. (Amine)
@@ -361,8 +384,11 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
                         let rotator = rotator_b * rotator_a;
 
                         for planar_bond in [PLANAR3_B, PLANAR3_C] {
+                            let name = h_atom_type(Nitrogen, BondGeometry::Planar, neighbor_count);
                             hydrogens.push(Atom {
                                 posit: atom.posit + rotator.rotate_vec(planar_bond) * LEN_N_H,
+                                name: Some(name.clone()),
+                                force_field_type: Some(name),
                                 ..h_default_sc.clone()
                             });
                         }
@@ -372,15 +398,18 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
                         let bond_0 = atom.posit - atoms_bonded[0].1.posit;
                         let bond_1 = atoms_bonded[1].1.posit - atom.posit;
 
+                        let name = h_atom_type(Nitrogen, BondGeometry::Planar, neighbor_count);
                         hydrogens.push(Atom {
                             posit: planar_posit(atom.posit, bond_0, bond_1, LEN_N_H),
+                            name: Some(name.clone()),
+                            force_field_type: Some(name),
                             ..h_default_sc.clone()
                         });
                     }
                     _ => (),
                 }
             }
-            Element::Oxygen => {
+            Oxygen => {
                 match atoms_bonded.len() {
                     1 => unsafe {
                         // Hydroxyl. Add a single H with tetrahedral geometry.
@@ -412,8 +441,11 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
                             Quaternion::from_axis_angle(bond_prev, -dihedral + TAU / 6.);
                         let rotator = rotator_b * rotator_a;
 
+                        let name = h_atom_type(Oxygen, BondGeometry::Tetrahedral, neighbor_count);
                         hydrogens.push(Atom {
                             posit: atom.posit + rotator.rotate_vec(TETRA_B) * LEN_O_H,
+                            name: Some(name.clone()),
+                            force_field_type: Some(name),
                             ..h_default_sc.clone()
                         });
                     },
@@ -492,8 +524,13 @@ fn handle_backbone(
         }
 
         // Add a H to the backbone N. (Amine) Sp2/Planar.
+        let name = h_atom_type(Nitrogen, BondGeometry::Planar, 0);
+
         hydrogens.push(Atom {
             posit: planar_posit(n_posit, bond_n_cp_prev, bond_ca_n, LEN_N_H),
+            // No neighbors required for N.
+            name: Some(name.clone()),
+            force_field_type: Some(name),
             ..h_default.clone()
         });
     }
@@ -529,6 +566,7 @@ fn handle_backbone(
     }
     let bond_ca_sidechain = c_alpha_posit - closest_sc;
 
+    // H attached to the α carbon.
     hydrogens.push(Atom {
         posit: c_alpha_posit
             + tetra_legs(
@@ -536,6 +574,9 @@ fn handle_backbone(
                 bond_cp_ca.to_normalized(),
                 -bond_ca_sidechain.to_normalized(),
             ) * LEN_CALPHA_H,
+
+        // Bonded to N, C', and R group.
+        force_field_type: Some(h_atom_type(Carbon, BondGeometry::Tetrahedral, 3)),
         ..h_default.clone()
     });
 
@@ -549,6 +590,7 @@ fn handle_backbone(
 pub fn aa_data_from_coords(
     atoms: &[&Atom],
     residue_type: &ResidueType,
+    res_i: usize,
     prev_cp_ca: Option<(Vec3, Vec3)>,
     next_n: Option<Vec3>,
 ) -> (Dihedral, Vec<Atom>, Option<(Vec3, Vec3)>) {
@@ -562,13 +604,13 @@ pub fn aa_data_from_coords(
         element: Hydrogen,
         name: Some("H".to_string()),
         role: Some(AtomRole::H_Backbone),
-        residue: None, // todo?
+        residue: Some(res_i),
         // residue_type: residue_type.clone(),
         hetero: false,
         dock_type: None,
         occupancy: None,
         partial_charge: None,
-        force_field_type: None,
+        force_field_type: Some("H".to_owned()), // todo: Do this properly. H1, H2, HA etc.
         temperature_factor: None,
     };
 
@@ -592,7 +634,7 @@ pub fn aa_data_from_coords(
         let Some(role) = atom_sc.role else {
             continue;
         };
-        if role == AtomRole::Sidechain && atom_sc.element == Element::Carbon {
+        if role == AtomRole::Sidechain && atom_sc.element == Carbon {
             posits_sc.push(atom_sc.posit);
         }
     }

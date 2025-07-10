@@ -64,8 +64,6 @@ impl ForceFieldParamsIndexed {
         let params = merge_params(params_general, params_specific);
 
         for (i, atom) in atoms.iter().enumerate() {
-            println!("ATOM: {:?} - {:?}", atom.name, atom.force_field_type);
-
             let ff_type = atom.force_field_type.as_ref().ok_or_else(|| err())?;
 
             // Mass
@@ -430,23 +428,36 @@ impl MdState {
         println!("Num ext atoms: {:?}", atoms_external.len());
 
         // todo temp way of handling this.
-        let mut atoms_external2 = atoms_external.to_vec();
-        for atom in &mut atoms_external2 {
-            let res_i = atom.residue.unwrap();
+        let mut atoms_static_ = atoms_external.to_vec();
+        for atom in &mut atoms_static_ {
+            let Some(res_i) = atom.residue else {
+                return Err(ParamError::new(&format!("Missing residue: {:?}", atom)));
+            };
 
-            // let Some(res_i) = atom.residue else {
-            //     continue;
+            // todo: Sort out "name" vs "forcefield_params", for ligands and AAs. (Loaded from their
+            // todo respective sources)
+            let Some(name) = &atom.name else {
+                return Err(ParamError::new("Missing protein atom name"));
+            };
+
+            // let res_type = match atom.residue {
+            //     Ok(res_i) => &residues[res_i].res_type,
+            //     None => &ResidueType::AminoAcid(AminoAcid::Ala),
             // };
 
-            let res = &residues[res_i].res_type;
+            let res_type = &residues[res_i].res_type;
 
-            match res {
+            match res_type {
                 ResidueType::AminoAcid(aa) => {
                     let charges = ff_charge_prot_keyed.get(aa).unwrap();
+
+                    // println!("\n\nCHARGES:");
+                    // for c in charges {
+                    //     println!("-{:?}", c);
+                    // }
+
                     let mut found = false;
-                    let Some(name) = &atom.name else {
-                        return Err(ParamError::new("Missing protein atom name"));
-                    };
+
                     for charge in charges {
                         if &charge.atom_type == name {
                             atom.partial_charge = Some(charge.charge);
@@ -455,15 +466,30 @@ impl MdState {
                     }
 
                     if !found {
-                        return Err(ParamError::new(&format!(
-                            "Can't find charge for protein atom: {:?}",
-                            atom
-                        )));
+                        // todo: This is a workaround for having trouble with H types. LIkely
+                        // todo when we create them. For now, this meets the intent.
+
+                        eprintln!("Failed to match H type {name}. Falling back to a generic H");
+                        if name.starts_with("H") {
+                            for charge in charges {
+                                if &charge.atom_type == "H" || &charge.atom_type == "HA" {
+                                    atom.partial_charge = Some(charge.charge);
+                                    found = true;
+                                }
+                            }
+                        }
+
+                        if !found {
+                            return Err(ParamError::new(&format!(
+                                "Can't find charge for protein atom: {:?}",
+                                atom
+                            )));
+                        }
                     }
                 }
                 _ => {
                     // todo: Probalby just continue or something. let else.
-                    eprintln!("Unsuitable res type: {:?}", res);
+                    eprintln!("Unsuitable res type: {:?}", res_type);
                 }
             }
         }
@@ -472,7 +498,7 @@ impl MdState {
         let atom_posits_external: Vec<_> = atoms_external.iter().map(|a| a.posit).collect();
 
         // for (i, atom) in atoms_external.iter().enumerate() {
-        for (i, atom) in atoms_external2.iter().enumerate() {
+        for (i, atom) in atoms_static_.iter().enumerate() {
             atoms_dy_external.push(AtomDynamics::new(
                 atom,
                 &atom_posits_external,

@@ -318,7 +318,7 @@ pub fn build_dock_dynamics(
             residues,
         )?;
 
-        let n_steps = 60_000;
+        let n_steps = 10_000;
 
         let dt = 0.001;
 
