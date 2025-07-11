@@ -547,15 +547,12 @@ impl MdState {
 
 /// Populate forcefield type, and partial charge.
 /// `residues` must be the full set; this is relevant to how we index it.
-pub fn popuplate_ff_and_q(
+pub fn populate_ff_and_q(
     atoms: &mut [Atom],
     residues: &[Residue],
     prot_charge: &HashMap<AminoAcid, Vec<ChargeParams>>,
 ) -> Result<(), ParamError> {
-    // todo temp way of handling this re the .to_vec() clone.
-    let mut atoms_static_ = atoms.to_vec();
-
-    for atom in &mut atoms_static_ {
+    for atom in atoms {
         if atom.hetero {
             continue;
         }
@@ -572,45 +569,49 @@ pub fn popuplate_ff_and_q(
 
         let atom_res_type = &residues[res_i].res_type;
 
-        match atom_res_type {
-            ResidueType::AminoAcid(aa) => {
-                let charges = prot_charge.get(aa).unwrap();
-                let mut found = false;
+        let ResidueType::AminoAcid(aa) = atom_res_type else {
+            // e.g. water or other hetero atoms; skip.
+            continue;
+        };
 
-                for charge in charges {
-                    if &charge.type_in_res == type_in_res {
-                        atom.force_field_type = Some(charge.ff_type.clone());
-                        atom.partial_charge = Some(charge.charge);
-                        // println!("Applied: {} {} {:?} {:?}", atom.serial_number, atom.posit, atom.element, atom.force_field_type.as_ref().unwrap());
-                        found = true;
-                    }
-                }
+        let charges = prot_charge.get(aa).unwrap();
+        let mut found = false;
 
-                if !found {
-                    // todo: This is a workaround for having trouble with H types. LIkely
-                    // todo when we create them. For now, this meets the intent.
+        for charge in charges {
+            // todo: Note that we have multiple branches in some case, due to Amber names like
+            // todo: "HYP" for variants on AAs for different protenation states. Handle this.
+            if &charge.type_in_res == type_in_res {
+                atom.force_field_type = Some(charge.ff_type.clone());
+                atom.partial_charge = Some(charge.charge);
 
-                    // eprintln!("Failed to match H type {ff_type}. Falling back to a generic H");
-                    // if ff_type.starts_with("H") {
-                    //     for charge in charges {
-                    //         if &charge.type_in_res == "H" || &charge.type_in_res == "HA" {
-                    //             atom.partial_charge = Some(charge.charge);
-                    //             found = true;
-                    //         }
-                    //     }
-                    // }
-
-                    if !found {
-                        return Err(ParamError::new(&format!(
-                            "Can't find charge for protein atom: {:?}",
-                            atom
-                        )));
-                    }
-                }
+                found = true;
+                break;
             }
-            _ => {
-                // e.g. water or other hetero atoms; skip.
-            }
+        }
+
+        if !found {
+            // todo: This is a workaround for having trouble with H types. LIkely
+            // todo when we create them. For now, this meets the intent.
+
+            // eprintln!("Failed to match H type {ff_type}. Falling back to a generic H");
+            // if ff_type.starts_with("H") {
+            //     for charge in charges {
+            //         if &charge.type_in_res == "H" || &charge.type_in_res == "HA" {
+            //             atom.partial_charge = Some(charge.charge);
+            //             found = true;
+            //         }
+            //     }
+            // }
+
+            eprintln!(
+                "Can't find charge for protein atom: {}, {:?}, {:?}",
+                atom.serial_number, atom.element, atom.type_in_res
+            );
+            //  todo temp?
+            // return Err(ParamError::new(&format!(
+            //     "Can't find charge for protein atom: {:?}",
+            //     atom
+            // )));
         }
     }
 

@@ -66,10 +66,15 @@ Integrates the following [Amber parameters](https://ambermd.org/AmberModels.php)
 - Protein/AA: [FF19SB](https://pubs.acs.org/doi/10.1021/acs.jctc.9b00591)
 - Water: [OPC](https://arxiv.org/abs/1408.1679)
 
+These general parameters do not need to be loaded externally; they provide the information needed to perform
+MD with any amino acid sequence, and provide a baseline for dynamics of small organic molecules. You may wish to load
+frcmod data over these that have overrides for specific small molecules.
+
+(todo: info on loading mol-specific frcmod data automatically)
+
 For details on how dynamics using this parameterized approach works, see the 
 [Amber Reference Manual](https://ambermd.org/doc12/Amber25.pdf). Section 3 and 15 are of particular
 interest, regarding force field parameters.
-
 
 Moleucule-specific overrides to these general parameters can be loaded from *.frcmod* and *.dat* files.
 We delegate this to the [bio files](https://github.com/david-OConnor/bio_files) library.

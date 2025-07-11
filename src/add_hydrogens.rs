@@ -1,4 +1,4 @@
-use na_seq::{Element, Element::*};
+use na_seq::{AtomTypeInRes, Element, Element::*};
 
 use crate::{
     aa_coords::aa_data_from_coords,
@@ -30,35 +30,42 @@ pub enum BondGeometry {
 /// H3: On aliphatic carbon with 3 EWD groups
 ///
 /// See [this unofficial page](https://emleddin.github.io/comp-chem-website/AMBERguide-AMBER-atom-types.html)
-/// for more info.
-pub fn h_ff_type(element: Element, geometry: BondGeometry, neighbor_count: usize) -> String {
+/// todo: We apply the residue atom type (e.g. "HB2", "HD23", "HA" etc, and
+/// use the amber params to load ff type. So, not described as above.
+pub fn h_at_type_in_res(
+    element: Element,
+    geometry: BondGeometry,
+    neighbor_count: usize,
+) -> AtomTypeInRes {
     // `neighbor_count` is # of` atoms bound to the *parent* carbon
     // This is equivalent to "electron-withdrawing-group". (EWG)
 
-    // todo: QC these bindings.
-    match element {
-        Nitrogen => "H",
-        Oxygen => "HO",
-        Sulfur => "HS",
-        Phosphorus => "HP",
-        Carbon => match geometry {
-            BondGeometry::Planar => match neighbor_count {
-                0 => "HA", // Aromatic
-                1 => "H4", // Aliphatic with 4 EWG
-                _ => "H5",
-            },
-            BondGeometry::Linear => "HZ",
-            _ => match neighbor_count {
-                // Aliphatic.
-                0 => "HC",
-                1 => "H1", // 1 EWG
-                2 => "H2", // 2 EWG etc
-                _ => "H3",
-            },
-        },
-        _ => "H", // Default.
-    }
-    .to_string()
+    return AtomTypeInRes::H("HA".to_string()); // todo temp!
+    //
+    // // todo: QC these bindings.
+    // match element {
+    //     Nitrogen => "H",
+    //     Oxygen => "HO",
+    //     Sulfur => "HS",
+    //     Phosphorus => "HP",
+    //     Carbon => match geometry {
+    //         BondGeometry::Planar => match neighbor_count {
+    //             0 => "HA", // Aromatic
+    //             1 => "H4", // Aliphatic with 4 EWG
+    //             _ => "H5",
+    //         },
+    //         BondGeometry::Linear => "HZ",
+    //         _ => match neighbor_count {
+    //             // Aliphatic.
+    //             0 => "HC",
+    //             1 => "H1", // 1 EWG
+    //             2 => "H2", // 2 EWG etc
+    //             _ => "H3",
+    //         },
+    //     },
+    //     _ => "H", // Default.
+    // }
+    // .to_string()
 }
 
 /// Helper? todo: Figure out this thing's deal...

@@ -29,7 +29,7 @@ use bio_files::{
 };
 
 use crate::{
-    dynamics::prep::{merge_params, popuplate_ff_and_q},
+    dynamics::prep::{merge_params, populate_ff_and_q},
     reflection::{DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityRect, ElectronDensity},
     util::handle_err,
 };
@@ -94,12 +94,24 @@ impl State {
                 let pdb = load_cif_pdb(path)?;
                 let mut file = File::open(path)?;
 
-                let mol = Molecule::from_cif_pdb(&pdb, &file)?;
+                let mut mol = Molecule::from_cif_pdb(&pdb, &file)?;
                 self.pdb = Some(pdb);
 
                 let mut data_str = String::new();
                 file.read_to_string(&mut data_str)?;
                 self.cif_pdb_raw = Some(data_str);
+
+                // If we've loaded general FF params, apply them to get FF type and charge.
+                if let Some(charge_ff_data) = &self.ff_params.prot_charge_general {
+                    if let Err(e) =
+                        populate_ff_and_q(&mut mol.atoms, &mol.residues, &charge_ff_data)
+                    {
+                        eprintln!(
+                            "Unable to populate FF charge and FF type for protein atoms: {:?}",
+                            e
+                        );
+                    }
+                }
 
                 Ok(mol)
             }
@@ -382,10 +394,9 @@ impl State {
         if self.ff_params.prot_charge_general.is_none() {
             match parse_amino_charges(AMINO_19) {
                 Ok(charge_ff_data) => {
-                    println!("A");
                     if let Some(mol) = &mut self.molecule {
                         if let Err(e) =
-                            popuplate_ff_and_q(&mut mol.atoms, &mol.residues, &charge_ff_data)
+                            populate_ff_and_q(&mut mol.atoms, &mol.residues, &charge_ff_data)
                         {
                             eprintln!(
                                 "Unable to populate FF charge and FF type for protein atoms: {:?}",
@@ -393,9 +404,6 @@ impl State {
                             );
                         }
                     }
-                    println!("B");
-                    // todo: Make sure to handle loading ff type and charge if we load a new
-                    // todo protein after loading these.
 
                     self.ff_params.prot_charge_general = Some(charge_ff_data);
                 }
