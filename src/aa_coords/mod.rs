@@ -1,11 +1,11 @@
 //! Adapted from `peptide`. Operations related to the geometry of atomic coordinates.
 
-use std::{f64::consts::TAU, fmt, fmt::Formatter};
+use std::{f64::consts::TAU, fmt, fmt::Formatter, str::FromStr};
 
 use bio_files::{BondGeneric, ResidueType};
 use lin_alg::f64::{Quaternion, Vec3, calc_dihedral_angle, calc_dihedral_angle_v2};
 use na_seq::{
-    Element,
+    AtomTypeInRes, Element,
     Element::{Carbon, Hydrogen, Nitrogen, Oxygen},
 };
 
@@ -17,7 +17,7 @@ use crate::{
         },
         sidechain::Sidechain,
     },
-    add_hydrogens::{BondGeometry, bonded_heavy_atoms, h_atom_type},
+    add_hydrogens::{BondGeometry, bonded_heavy_atoms, h_ff_type},
     molecule::{Atom, AtomRole},
 };
 
@@ -244,11 +244,10 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
                         let rotator = rotator_b * rotator_a;
 
                         for tetra_bond in [TETRA_B, TETRA_C, TETRA_D] {
-                            let name =
-                                h_atom_type(Carbon, BondGeometry::Tetrahedral, neighbor_count);
+                            let name = h_ff_type(Carbon, BondGeometry::Tetrahedral, neighbor_count);
                             hydrogens.push(Atom {
                                 posit: atom.posit + rotator.rotate_vec(tetra_bond) * LEN_C_H,
-                                name: Some(name.clone()),
+                                type_in_res: AtomTypeInRes::from_str(&name).ok(),
                                 force_field_type: Some(name),
                                 ..h_default_sc.clone()
                             });
@@ -281,11 +280,11 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
                             let bond_0 = atom.posit - atoms_bonded[0].1.posit;
                             let bond_1 = atoms_bonded[1].1.posit - atom.posit;
 
-                            let name = h_atom_type(Carbon, BondGeometry::Planar, neighbor_count);
+                            let name = h_ff_type(Carbon, BondGeometry::Planar, neighbor_count);
                             // Add a single H in planar config.
                             hydrogens.push(Atom {
                                 posit: planar_posit(atom.posit, bond_0, bond_1, LEN_C_H),
-                                name: Some(name.clone()),
+                                type_in_res: AtomTypeInRes::from_str(&name).ok(),
                                 force_field_type: Some(name),
                                 ..h_default_sc.clone()
                             });
@@ -302,11 +301,10 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
                         );
 
                         for posit in [h_0, h_1] {
-                            let name =
-                                h_atom_type(Carbon, BondGeometry::Tetrahedral, neighbor_count);
+                            let name = h_ff_type(Carbon, BondGeometry::Tetrahedral, neighbor_count);
                             hydrogens.push(Atom {
                                 posit,
-                                name: Some(name.clone()),
+                                type_in_res: AtomTypeInRes::from_str(&name).ok(),
                                 force_field_type: Some(name),
                                 ..h_default_sc.clone()
                             });
@@ -340,7 +338,7 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
 
                         // Add 1 H.
                         // todo: If planar geometry, don't add a H!
-                        let name = h_atom_type(Carbon, BondGeometry::Tetrahedral, neighbor_count);
+                        let name = h_ff_type(Carbon, BondGeometry::Tetrahedral, neighbor_count);
 
                         hydrogens.push(Atom {
                             posit: atom.posit
@@ -351,7 +349,7 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
                                     atoms_bonded[2].1.posit,
                                 ) * LEN_CALPHA_H,
                             // todo: QC the tetrahedral here.
-                            name: Some(name.clone()),
+                            type_in_res: AtomTypeInRes::from_str(&name).ok(),
                             force_field_type: Some(name),
                             ..h_default_sc.clone()
                         });
@@ -384,10 +382,10 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
                         let rotator = rotator_b * rotator_a;
 
                         for planar_bond in [PLANAR3_B, PLANAR3_C] {
-                            let name = h_atom_type(Nitrogen, BondGeometry::Planar, neighbor_count);
+                            let name = h_ff_type(Nitrogen, BondGeometry::Planar, neighbor_count);
                             hydrogens.push(Atom {
                                 posit: atom.posit + rotator.rotate_vec(planar_bond) * LEN_N_H,
-                                name: Some(name.clone()),
+                                type_in_res: AtomTypeInRes::from_str(&name).ok(),
                                 force_field_type: Some(name),
                                 ..h_default_sc.clone()
                             });
@@ -398,10 +396,10 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
                         let bond_0 = atom.posit - atoms_bonded[0].1.posit;
                         let bond_1 = atoms_bonded[1].1.posit - atom.posit;
 
-                        let name = h_atom_type(Nitrogen, BondGeometry::Planar, neighbor_count);
+                        let name = h_ff_type(Nitrogen, BondGeometry::Planar, neighbor_count);
                         hydrogens.push(Atom {
                             posit: planar_posit(atom.posit, bond_0, bond_1, LEN_N_H),
-                            name: Some(name.clone()),
+                            type_in_res: AtomTypeInRes::from_str(&name).ok(),
                             force_field_type: Some(name),
                             ..h_default_sc.clone()
                         });
@@ -441,10 +439,10 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
                             Quaternion::from_axis_angle(bond_prev, -dihedral + TAU / 6.);
                         let rotator = rotator_b * rotator_a;
 
-                        let name = h_atom_type(Oxygen, BondGeometry::Tetrahedral, neighbor_count);
+                        let name = h_ff_type(Oxygen, BondGeometry::Tetrahedral, neighbor_count);
                         hydrogens.push(Atom {
                             posit: atom.posit + rotator.rotate_vec(TETRA_B) * LEN_O_H,
-                            name: Some(name.clone()),
+                            type_in_res: AtomTypeInRes::from_str(&name).ok(),
                             force_field_type: Some(name),
                             ..h_default_sc.clone()
                         });
@@ -524,12 +522,12 @@ fn handle_backbone(
         }
 
         // Add a H to the backbone N. (Amine) Sp2/Planar.
-        let name = h_atom_type(Nitrogen, BondGeometry::Planar, 0);
+        let name = h_ff_type(Nitrogen, BondGeometry::Planar, 0);
 
         hydrogens.push(Atom {
             posit: planar_posit(n_posit, bond_n_cp_prev, bond_ca_n, LEN_N_H),
             // No neighbors required for N.
-            name: Some(name.clone()),
+            type_in_res: AtomTypeInRes::from_str(&name).ok(),
             force_field_type: Some(name),
             ..h_default.clone()
         });
@@ -576,7 +574,7 @@ fn handle_backbone(
             ) * LEN_CALPHA_H,
 
         // Bonded to N, C', and R group.
-        force_field_type: Some(h_atom_type(Carbon, BondGeometry::Tetrahedral, 3)),
+        force_field_type: Some(h_ff_type(Carbon, BondGeometry::Tetrahedral, 3)),
         ..h_default.clone()
     });
 
@@ -602,7 +600,9 @@ pub fn aa_data_from_coords(
         serial_number: 0,
         posit: Vec3::new_zero(),
         element: Hydrogen,
-        name: Some("H".to_string()),
+        // We will update type_in_res and ff_type later.
+        type_in_res: Some(AtomTypeInRes::H("H".to_string())),
+        force_field_type: Some("H".to_owned()),
         role: Some(AtomRole::H_Backbone),
         residue: Some(res_i),
         // residue_type: residue_type.clone(),
@@ -610,7 +610,6 @@ pub fn aa_data_from_coords(
         dock_type: None,
         occupancy: None,
         partial_charge: None,
-        force_field_type: Some("H".to_owned()), // todo: Do this properly. H1, H2, HA etc.
         temperature_factor: None,
     };
 

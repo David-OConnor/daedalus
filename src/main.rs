@@ -45,6 +45,7 @@ mod integrate;
 mod reflection;
 #[cfg(test)]
 mod tests;
+mod ui_aux;
 
 use std::{
     collections::HashMap,
@@ -460,6 +461,8 @@ pub struct FfParamSet {
     pub lig_general: Option<ForceFieldParamsKeyed>,
     /// E.g. ff19SB. Loaded at init.
     pub prot_general: Option<ForceFieldParamsKeyed>,
+    /// In addition to charge, this also contains the mapping of res type to FF type; required to map
+    /// other parameters to protein atoms.
     pub prot_charge_general: Option<HashMap<AminoAcid, Vec<ChargeParams>>>,
     /// Key: A unique identifier for the molecule. (e.g. ligand)
     pub lig_specific: HashMap<String, ForceFieldParamsKeyed>,

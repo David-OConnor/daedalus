@@ -3,11 +3,15 @@ use std::{
     io,
     io::{BufReader, ErrorKind, Read, Seek},
     path::Path,
+    str::FromStr,
 };
 
 use bio_files::{Chain, ResidueType};
 use lin_alg::f64::Vec3;
-use na_seq::Element::{self, *};
+use na_seq::{
+    AtomTypeInRes,
+    Element::{self, *},
+};
 use pdbtbx::{Format, PDB, ReadOptions, StrictnessLevel};
 use rayon::prelude::*;
 
@@ -46,10 +50,11 @@ impl Atom {
         let name = atom_pdb.name().to_owned();
 
         Self {
-            serial_number: atom_pdb.serial_number(),
+            serial_number: atom_pdb.serial_number() + 1,
             posit: Vec3::new(atom_pdb.x(), atom_pdb.y(), atom_pdb.z()),
             element: el_from_pdb(atom_pdb.element()),
-            name: Some(name.clone()),
+            type_in_res: AtomTypeInRes::from_str(&name).ok(),
+            force_field_type: None,
             role,
             residue,
             // residue_type,
@@ -57,7 +62,6 @@ impl Atom {
             occupancy: None,
             temperature_factor: None,
             partial_charge: None,
-            force_field_type: Some(name),
             dock_type: Some(DockType::from_str(atom_pdb.name())), // Updated later with Donor/Acceptor
         }
     }
@@ -68,6 +72,8 @@ impl Molecule {
     pub fn from_cif_pdb<R: Read + Seek>(pdb: &PDB, raw: R) -> io::Result<Self> {
         // todo: Maybe return the PDB type here, and store that. Also have a way to
         // todo get molecules from it
+
+        println!("Loading mol"); // todo tmep
 
         // todo: Pdbtbx doesn't implm this yet for CIF.
         for remark in pdb.remarks() {}

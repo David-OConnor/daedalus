@@ -29,7 +29,7 @@ use bio_files::{
 };
 
 use crate::{
-    dynamics::prep::merge_params,
+    dynamics::prep::{merge_params, popuplate_ff_and_q},
     reflection::{DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityRect, ElectronDensity},
     util::handle_err,
 };
@@ -346,7 +346,8 @@ impl State {
         Ok(())
     }
 
-    /// Load parameter files for general organic molecules (GAFF2), and proteins/amino acids (PARM19)
+    /// Load parameter files for general organic molecules (GAFF2), and proteins/amino acids (PARM19).
+    /// This also populates ff type and charge on our protein atoms.
     pub fn load_ffs_general(&mut self) {
         if self.ff_params.prot_general.is_none() {
             // Load general parameters for proteins and AAs.
@@ -380,8 +381,23 @@ impl State {
 
         if self.ff_params.prot_charge_general.is_none() {
             match parse_amino_charges(AMINO_19) {
-                Ok(amino_charges) => {
-                    self.ff_params.prot_charge_general = Some(amino_charges);
+                Ok(charge_ff_data) => {
+                    println!("A");
+                    if let Some(mol) = &mut self.molecule {
+                        if let Err(e) =
+                            popuplate_ff_and_q(&mut mol.atoms, &mol.residues, &charge_ff_data)
+                        {
+                            eprintln!(
+                                "Unable to populate FF charge and FF type for protein atoms: {:?}",
+                                e
+                            );
+                        }
+                    }
+                    println!("B");
+                    // todo: Make sure to handle loading ff type and charge if we load a new
+                    // todo protein after loading these.
+
+                    self.ff_params.prot_charge_general = Some(charge_ff_data);
                 }
                 Err(e) => handle_err(
                     &mut self.ui,

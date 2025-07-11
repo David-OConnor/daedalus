@@ -9,25 +9,20 @@ use std::{
 
 use bio_apis::{drugbank, pubchem, rcsb};
 use egui::{Color32, ComboBox, Context, Key, RichText, Slider, TextEdit, TopBottomPanel, Ui};
-use graphics::{ControlScheme, EngineUpdates, Entity, Mesh, RIGHT_VEC, Scene, UP_VEC, Vertex};
+use graphics::{ControlScheme, EngineUpdates, RIGHT_VEC, Scene, UP_VEC};
 use lin_alg::f32::{Quaternion, Vec3};
-use mcubes::{MarchingCubes, MeshSide};
 use na_seq::AaIdent;
 
 static INIT_COMPLETE: AtomicBool = AtomicBool::new(false);
 
-use bio_files::{
-    DensityMap, ResidueType,
-    amber_params::{ForceFieldParams, ForceFieldParamsKeyed},
-    density_from_2fo_fc_rcsb_gemmi,
-};
+use bio_files::{DensityMap, ResidueType, density_from_2fo_fc_rcsb_gemmi};
 
 use crate::{
-    CamSnapshot, GAFF2, MsaaSetting, PARM_19, Selection, State, ViewSelLevel, cli,
+    CamSnapshot, MsaaSetting, Selection, State, ViewSelLevel, cli,
     cli::autocomplete_cli,
     docking::{
         ConformationType, calc_binding_energy,
-        dynamics::{build_dock_dynamics, change_snapshot, change_snapshot_md},
+        dynamics::{build_dock_dynamics, change_snapshot_md},
         external::check_adv_avail,
         find_optimal_pose,
         find_sites::find_docking_sites,
@@ -35,21 +30,18 @@ use crate::{
     download_mols::{load_sdf_drugbank, load_sdf_pubchem},
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
     mol_drawing::{
-        COLOR_DOCKING_SITE_MESH, EntityType, MoleculeView, draw_density, draw_density_surface,
-        draw_ligand, draw_molecule,
+        EntityType, MoleculeView, draw_density, draw_density_surface, draw_ligand, draw_molecule,
     },
     molecule::{Ligand, Molecule},
     render::{
-        CAM_INIT_OFFSET, MESH_DOCKING_SURFACE, MESH_SECONDARY_STRUCTURE, MESH_SOLVENT_SURFACE,
-        RENDER_DIST_FAR, RENDER_DIST_NEAR, set_docking_light, set_flashlight, set_static_light,
+        CAM_INIT_OFFSET, RENDER_DIST_FAR, RENDER_DIST_NEAR, set_docking_light, set_flashlight,
+        set_static_light,
     },
-    ribbon_mesh::build_cartoon_mesh,
-    sa_surface::make_sas_mesh,
-    util,
+    ui_aux, util,
     util::{
         cam_look_at, cam_look_at_outside, check_prefs_save, close_lig, close_mol,
-        cycle_res_selected, handle_err, handle_scene_flags, load_atom_coords_rcsb,
-        make_density_mesh, orbit_center, reset_camera, select_from_search,
+        cycle_res_selected, handle_err, handle_scene_flags, load_atom_coords_rcsb, orbit_center,
+        reset_camera, select_from_search,
     },
 };
 
@@ -69,44 +61,16 @@ const DENS_ISO_MAX: f32 = 3.0;
 const NEARBY_THRESH_MIN: u16 = 5;
 const NEARBY_THRESH_MAX: u16 = 60;
 
-// todo: Teese aren't reacting correctly; too slow for the values set.
-// const CAM_BUTTON_POS_STEP: f32 = 30.;
-// const CAM_BUTTON_ROT_STEP: f32 = TAU / 3.;
-// const CAM_BUTTON_POS_STEP: f32 = 30. * 3.;
-// const CAM_BUTTON_ROT_STEP: f32 = TAU / 3. * 3.;
-
-const COLOR_INACTIVE: Color32 = Color32::GRAY;
-const COLOR_ACTIVE: Color32 = Color32::LIGHT_GREEN;
+pub const COLOR_INACTIVE: Color32 = Color32::GRAY;
+pub const COLOR_ACTIVE: Color32 = Color32::LIGHT_GREEN;
 const COLOR_HIGHLIGHT: Color32 = Color32::LIGHT_BLUE;
-const COLOR_ACTIVE_RADIO: Color32 = Color32::LIGHT_BLUE;
+pub const COLOR_ACTIVE_RADIO: Color32 = Color32::LIGHT_BLUE;
 const COLOR_OUT_ERROR: Color32 = Color32::LIGHT_RED;
 const COLOR_OUT_NORMAL: Color32 = Color32::WHITE;
 const COLOR_OUT_SUCCESS: Color32 = Color32::LIGHT_GREEN; // Unused for now
 
 // Number of characters to display. E.g. the molecular description. Often long.
 const MAX_TITLE_LEN: usize = 80;
-
-fn active_color(val: bool) -> Color32 {
-    if val { COLOR_ACTIVE } else { COLOR_INACTIVE }
-}
-
-/// Visually distinct; fore buttons that operate as radio buttons
-fn active_color_sel(val: bool) -> Color32 {
-    if val {
-        COLOR_ACTIVE_RADIO
-    } else {
-        COLOR_INACTIVE
-    }
-}
-
-/// A checkbox to show or hide a category.
-fn vis_check(val: &mut bool, text: &str, ui: &mut Ui, redraw: &mut bool) {
-    let color = active_color(!*val);
-    if ui.button(RichText::new(text).color(color)).clicked() {
-        *val = !*val;
-        *redraw = true;
-    }
-}
 
 /// Update the tilebar to reflect the current molecule
 fn set_window_title(title: &str, scene: &mut Scene) {
@@ -286,7 +250,7 @@ fn cam_controls(
         let arc_active = scene.input_settings.control_scheme != ControlScheme::FreeCamera;
 
         if ui
-            .button(RichText::new("Free").color(active_color_sel(free_active)))
+            .button(RichText::new("Free").color(ui_aux::active_color_sel(free_active)))
             .clicked()
         {
             scene.input_settings.control_scheme = ControlScheme::FreeCamera;
@@ -294,7 +258,7 @@ fn cam_controls(
         }
 
         if ui
-            .button(RichText::new("Arc").color(active_color_sel(arc_active)))
+            .button(RichText::new("Arc").color(ui_aux::active_color_sel(arc_active)))
             .clicked()
         {
             let center = match &state.molecule {
@@ -308,7 +272,8 @@ fn cam_controls(
         if arc_active {
             if ui
                 .button(
-                    RichText::new("Orbit sel").color(active_color(state.ui.orbit_around_selection)),
+                    RichText::new("Orbit sel")
+                        .color(ui_aux::active_color(state.ui.orbit_around_selection)),
                 )
                 .clicked()
             {
@@ -365,73 +330,6 @@ fn cam_controls(
         engine_updates.lighting = true; // flashlight.
 
         state.ui.cam_snapshot = None;
-    }
-}
-
-/// Display text of the selected atom
-fn selected_data(mol: &Molecule, selection: &Selection, ui: &mut Ui) {
-    match selection {
-        Selection::Atom(sel_i) => {
-            if *sel_i >= mol.atoms.len() {
-                return;
-            }
-
-            let atom = &mol.atoms[*sel_i];
-
-            let mut aa = String::new();
-            if let Some(res_i) = atom.residue {
-                let res = &mol.residues[res_i];
-                aa = match res.res_type {
-                    ResidueType::AminoAcid(a) => format!("AA: {}", a.to_str(AaIdent::OneLetter)),
-                    _ => String::new(),
-                };
-            }
-
-            let role = match atom.role {
-                Some(r) => format!("Role: {r}"),
-                None => String::new(),
-            };
-
-            // Similar to `Vec3`'s format impl, but with fewer digits.
-            let posit_txt = format!(
-                "|{:.3}, {:.3}, {:.3}|",
-                atom.posit.x, atom.posit.y, atom.posit.z
-            );
-
-            // Split so we can color-code by element.
-            let text_a = format!("{}  {}  El:", posit_txt, atom.serial_number);
-
-            let text_b = atom.element.to_letter();
-
-            let mut text_c = format!("{aa}  {role}",);
-
-            if let Some(res_i) = atom.residue {
-                let res = &mol.residues[res_i];
-                text_c += &format!("  {}", res.descrip());
-            }
-
-            ui.label(RichText::new(text_a).color(Color32::GOLD));
-            let (r, g, b) = atom.element.color();
-            ui.label(RichText::new(text_b).color(Color32::from_rgb(
-                (r * 255.) as u8,
-                (g * 255.) as u8,
-                (b * 255.) as u8,
-            )));
-            ui.label(RichText::new(text_c).color(Color32::GOLD));
-        }
-        Selection::Residue(sel_i) => {
-            if *sel_i >= mol.residues.len() {
-                return;
-            }
-
-            let res = &mol.residues[*sel_i];
-            ui.label(RichText::new(res.descrip()).color(Color32::GOLD));
-        }
-        Selection::Atoms(is) => {
-            // todo: A/R
-            ui.label(RichText::new(format!("{} atoms", is.len())).color(Color32::GOLD));
-        }
-        Selection::None => (),
     }
 }
 
@@ -509,7 +407,7 @@ fn chain_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
         ui.label("Chain vis:");
         if let Some(mol) = &mut state.molecule {
             for chain in &mut mol.chains {
-                let color = active_color(chain.visible);
+                let color = ui_aux::active_color(chain.visible);
 
                 if ui
                     .button(RichText::new(chain.id.clone()).color(color))
@@ -1175,7 +1073,7 @@ fn selection_section(
             }
 
             ui.add_space(COL_SPACING / 2.);
-            selected_data(mol, &state.ui.selection, ui);
+            ui_aux::selected_data(mol, &state.ui.selection, ui);
         }
     });
 }
@@ -1257,19 +1155,19 @@ fn view_settings(
 
         ui.label("Vis:");
 
-        vis_check(
+        ui_aux::vis_check(
             &mut state.ui.visibility.hide_non_hetero,
             "Peptide",
             ui,
             redraw,
         );
-        vis_check(&mut state.ui.visibility.hide_hetero, "Hetero", ui, redraw);
+        ui_aux::vis_check(&mut state.ui.visibility.hide_hetero, "Hetero", ui, redraw);
 
         ui.add_space(COL_SPACING / 2.);
 
         if !state.ui.visibility.hide_non_hetero {
             // Subset of peptide.
-            vis_check(
+            ui_aux::vis_check(
                 &mut state.ui.visibility.hide_sidechains,
                 "Sidechains",
                 ui,
@@ -1277,15 +1175,15 @@ fn view_settings(
             );
         }
 
-        vis_check(&mut state.ui.visibility.hide_hydrogen, "H", ui, redraw);
+        ui_aux::vis_check(&mut state.ui.visibility.hide_hydrogen, "H", ui, redraw);
 
         if !state.ui.visibility.hide_hetero {
             // Subset of hetero.
-            vis_check(&mut state.ui.visibility.hide_water, "Water", ui, redraw);
+            ui_aux::vis_check(&mut state.ui.visibility.hide_water, "Water", ui, redraw);
         }
 
         if state.ligand.is_some() {
-            let color = active_color(!state.ui.visibility.hide_ligand);
+            let color = ui_aux::active_color(!state.ui.visibility.hide_ligand);
             if ui.button(RichText::new("Lig").color(color)).clicked() {
                 state.ui.visibility.hide_ligand = !state.ui.visibility.hide_ligand;
 
@@ -1303,13 +1201,13 @@ fn view_settings(
             }
         }
 
-        vis_check(&mut state.ui.visibility.hide_h_bonds, "H bonds", ui, redraw);
+        ui_aux::vis_check(&mut state.ui.visibility.hide_h_bonds, "H bonds", ui, redraw);
         // vis_check(&mut state.ui.visibility.dim_peptide, "Dim peptide", ui, redraw);
 
         if state.ligand.is_some() {
             ui.add_space(COL_SPACING / 2.);
             // Not using `vis_check` for this because its semantics are inverted.
-            let color = active_color(state.ui.visibility.dim_peptide);
+            let color = ui_aux::active_color(state.ui.visibility.dim_peptide);
             if ui
                 .button(RichText::new("Dim peptide").color(color))
                 .clicked()
@@ -1322,7 +1220,7 @@ fn view_settings(
         if let Some(mol) = &state.molecule {
             if let Some(dens) = &mol.elec_density {
                 let mut redraw_dens = false;
-                vis_check(
+                ui_aux::vis_check(
                     &mut state.ui.visibility.hide_density,
                     "Density",
                     ui,
@@ -1341,7 +1239,7 @@ fn view_settings(
                 }
 
                 let mut redraw_dens_surface = false;
-                vis_check(
+                ui_aux::vis_check(
                     &mut state.ui.visibility.hide_density_surface,
                     "Density sfc",
                     ui,
@@ -1364,7 +1262,7 @@ fn view_settings(
                 // todo
                 if redraw_dens_surface {
                     if state.ui.visibility.hide_density_surface {
-                        &mut scene
+                        let _ = &mut scene
                             .entities
                             .retain(|ent| ent.class != EntityType::DensitySurface as u32);
                     } else {

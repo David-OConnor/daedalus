@@ -7,11 +7,12 @@ use std::{
     io,
     io::{ErrorKind, Read, Write},
     path::Path,
+    str::FromStr,
 };
 
 use bio_files::{Chain, ResidueType};
 use lin_alg::f64::Vec3;
-use na_seq::{AaIdent, Element};
+use na_seq::{AaIdent, AtomTypeInRes, Element};
 use regex::Regex;
 
 use crate::{
@@ -169,7 +170,7 @@ impl Molecule {
                     serial_number,
                     posit: Vec3 { x, y, z },
                     element,
-                    name: Some(name.to_owned()),
+                    type_in_res: AtomTypeInRes::from_str(&name).ok(),
                     role,
                     residue: None,
                     // residue_type,
@@ -309,8 +310,8 @@ impl Molecule {
                 dock_type = dt.to_str();
             }
 
-            let name = match &atom.name {
-                Some(name) => name.clone(),
+            let name = match &atom.type_in_res {
+                Some(name) => name.to_string(),
                 None => atom.element.to_letter(),
             };
 

@@ -133,9 +133,9 @@ pub struct SnapshotDynamics {
 /// A trimmed-down atom for use with molecular dynamics. Contains parameters for single-atom,
 /// but we use ParametersIndex for multi-atom parameters.
 pub struct AtomDynamics {
-    pub force_field_type: Option<String>, // todo: Should this be an enum? // todo: Should it be required?
+    pub force_field_type: String,
     pub element: Element,
-    pub name: String,
+    // pub name: String,
     pub posit: Vec3,
     pub vel: Vec3,
     pub accel: Vec3,
@@ -168,7 +168,7 @@ impl AtomDynamics {
 
         Ok(Self {
             element: atom.element,
-            name: atom.name.clone().unwrap_or_default(),
+            // name: atom.type_in_res.clone().unwrap_or_default(),
             posit: atom_posits[i],
             vel: Vec3::new_zero(),
             accel: Vec3::new_zero(),
@@ -178,7 +178,7 @@ impl AtomDynamics {
             partial_charge: atom.partial_charge.unwrap_or_default() as f64,
             lj_sigma: ff_params.van_der_waals.get(&i).unwrap().sigma as f64,
             lj_eps: ff_params.van_der_waals.get(&i).unwrap().eps as f64,
-            force_field_type: Some(ff_type),
+            force_field_type: ff_type,
         })
     }
 }

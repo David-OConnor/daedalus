@@ -28,8 +28,12 @@ pub enum BondGeometry {
 /// H1: On aliphatic carbon with 1 EWD group
 /// H2: On aliphatic carbon with 2 EWD groups
 /// H3: On aliphatic carbon with 3 EWD groups
-pub fn h_atom_type(element: Element, geometry: BondGeometry, neighbor_count: usize) -> String {
-    // Count hetero atoms bound to the *parent* carbon
+///
+/// See [this unofficial page](https://emleddin.github.io/comp-chem-website/AMBERguide-AMBER-atom-types.html)
+/// for more info.
+pub fn h_ff_type(element: Element, geometry: BondGeometry, neighbor_count: usize) -> String {
+    // `neighbor_count` is # of` atoms bound to the *parent* carbon
+    // This is equivalent to "electron-withdrawing-group". (EWG)
 
     // todo: QC these bindings.
     match element {
@@ -39,15 +43,16 @@ pub fn h_atom_type(element: Element, geometry: BondGeometry, neighbor_count: usi
         Phosphorus => "HP",
         Carbon => match geometry {
             BondGeometry::Planar => match neighbor_count {
-                0 => "HA",
-                1 => "H4",
+                0 => "HA", // Aromatic
+                1 => "H4", // Aliphatic with 4 EWG
                 _ => "H5",
             },
             BondGeometry::Linear => "HZ",
             _ => match neighbor_count {
+                // Aliphatic.
                 0 => "HC",
-                1 => "H1",
-                2 => "H2",
+                1 => "H1", // 1 EWG
+                2 => "H2", // 2 EWG etc
                 _ => "H3",
             },
         },

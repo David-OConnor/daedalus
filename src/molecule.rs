@@ -24,7 +24,7 @@ use lin_alg::{
     f32::Vec3 as Vec3F32,
     f64::{Quaternion, Vec3},
 };
-use na_seq::{AminoAcid, Element};
+use na_seq::{AminoAcid, AtomTypeInRes, Element};
 use rayon::prelude::*;
 
 use crate::{
@@ -323,7 +323,7 @@ impl AtomRole {
     }
 }
 
-impl fmt::Display for AtomRole {
+impl Display for AtomRole {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             AtomRole::C_Alpha => write!(f, "Cα"),
@@ -331,7 +331,7 @@ impl fmt::Display for AtomRole {
             AtomRole::N_Backbone => write!(f, "N (bb)"),
             AtomRole::O_Backbone => write!(f, "O (bb)"),
             AtomRole::H_Backbone => write!(f, "H (bb)"),
-            AtomRole::Sidechain => write!(f, "Sidechain"),
+            AtomRole::Sidechain => write!(f, "Side"),
             AtomRole::H_Sidechain => write!(f, "H SC"),
             AtomRole::Water => write!(f, "Water"),
             AtomRole::Other => write!(f, "Other"),
@@ -703,7 +703,15 @@ pub struct Atom {
     pub posit: Vec3,
     pub element: Element,
     /// e.g. "HA", "C", "N", "HB3" etc.
-    pub name: Option<String>,
+    pub type_in_res: Option<AtomTypeInRes>,
+    /// "Type 2" for proteins/AA. For ligands and small molecules, this
+    /// is a "Type 3".
+    /// E.g. "c6", "ca", "n3", "ha", "h0" etc, as seen in Mol2 files from AMBER.
+    pub force_field_type: Option<String>,
+    // todo: Review what DockType does.
+    /// todo: Consider a substruct for docking fields.
+    pub dock_type: Option<DockType>,
+    // todo: Note that `role` is a subset of `type_in_res`.
     pub role: Option<AtomRole>,
     // todo: We should have a residue *pointer* etc to speed up computations;
     // todo: We shouldn't have to iterate through residues checking for atom membership.
@@ -713,12 +721,8 @@ pub struct Atom {
     // pub residue_type: ResidueType, // todo: Duplicate with the residue association.
     pub hetero: bool,
     /// For docking.
-    /// // todo: Consider a substruct for docking fields.
-    pub dock_type: Option<DockType>,
     pub occupancy: Option<f32>,
     pub partial_charge: Option<f32>,
-    /// E.g. "c6", "ca", "n3", "ha", "h0" etc, as seen in Mol2 files from AMBER.
-    pub force_field_type: Option<String>,
     pub temperature_factor: Option<f32>,
     // todo: Impl this, for various calculations
     // /// Atoms relatively close to this; simplifies  certain calculations.
@@ -743,12 +747,12 @@ impl Atom {
     pub fn to_generic(&self) -> AtomGeneric {
         AtomGeneric {
             serial_number: self.serial_number,
-            name: self.name.clone(),
+            type_in_res: self.type_in_res.clone(),
             posit: self.posit,
             element: self.element,
             // name: String::new(),
             partial_charge: self.partial_charge,
-            force_field_atom_type: self.force_field_type.clone(),
+            force_field_type: self.force_field_type.clone(),
             ..Default::default()
         }
     }
@@ -760,9 +764,9 @@ impl From<&AtomGeneric> for Atom {
             serial_number: atom.serial_number,
             posit: atom.posit,
             element: atom.element,
-            name: atom.name.clone(),
+            type_in_res: atom.type_in_res.clone(),
             partial_charge: atom.partial_charge,
-            force_field_type: atom.force_field_atom_type.clone(),
+            force_field_type: atom.force_field_type.clone(),
             ..Default::default()
         }
     }
