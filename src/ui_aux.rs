@@ -1,15 +1,14 @@
 //! Misc utility-related UI functionality.
 
 use bio_files::ResidueType;
-use egui::{Color32, RichText, Ui};
+use egui::{Color32, RichText, Slider, Ui};
+use graphics::{EngineUpdates, Scene};
 use na_seq::AaIdent;
 
-use crate::{
-    Selection, mol_drawing,
-    mol_drawing::{CHARGE_MAP_MAX, CHARGE_MAP_MIN},
-    molecule::{Atom, Ligand, Molecule, Residue},
-    ui::{COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_INACTIVE},
-};
+use crate::{Selection, mol_drawing, mol_drawing::{CHARGE_MAP_MAX, CHARGE_MAP_MIN}, molecule::{Atom, Ligand, Molecule, Residue}, ui::{COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_INACTIVE}, State};
+use crate::docking::dynamics::change_snapshot_md;
+use crate::mol_drawing::draw_ligand;
+use crate::ui::ROW_SPACING;
 
 fn disp_atom_data(atom: &Atom, residues: &[Residue], ui: &mut Ui) {
     let mut aa = String::new();
@@ -124,5 +123,47 @@ pub fn active_color_sel(val: bool) -> Color32 {
         COLOR_ACTIVE_RADIO
     } else {
         COLOR_INACTIVE
+    }
+}
+
+
+pub fn dynamics_player(state: &mut State, scene: &mut Scene, engine_updates: &mut EngineUpdates,  ui: &mut Ui) {
+    if let Some(md) = &state.mol_dynamics {
+        if !md.snapshots.is_empty() {
+            // if !state.volatile.snapshots.is_empty() {
+            ui.add_space(ROW_SPACING);
+
+            let snapshot_prev = state.ui.current_snapshot;
+            ui.spacing_mut().slider_width = ui.available_width() - 100.;
+            ui.add(Slider::new(
+                &mut state.ui.current_snapshot,
+                // 0..=state.volatile.snapshots.len() - 1,
+                0..=md.snapshots.len() - 1, // todo exper
+            ));
+
+            if state.ui.current_snapshot != snapshot_prev {
+                // change_snapshot(
+                //     &mut scene.entities,
+                //     lig,
+                //     &Vec::new(),
+                //     &mut state.ui.binding_energy_disp,
+                //     &state.volatile.snapshots[state.ui.current_snapshot],
+                // );
+
+                let lig = state.ligand.as_mut().unwrap();
+
+                change_snapshot_md(
+                    &mut scene.entities,
+                    lig,
+                    &Vec::new(),
+                    &mut state.ui.binding_energy_disp,
+                    &md.snapshots[state.ui.current_snapshot],
+                );
+
+                draw_ligand(state, scene);
+
+                engine_updates.entities = true;
+            }
+        }
     }
 }

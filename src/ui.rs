@@ -22,7 +22,7 @@ use crate::{
     cli::autocomplete_cli,
     docking::{
         ConformationType, calc_binding_energy,
-        dynamics::{build_dock_dynamics, change_snapshot_md},
+        dynamics::{build_dynamics_docking, change_snapshot_md},
         external::check_adv_avail,
         find_optimal_pose,
         find_sites::find_docking_sites,
@@ -44,6 +44,8 @@ use crate::{
         reset_camera, select_from_search,
     },
 };
+use crate::docking::dynamics::build_dynamics_peptide;
+use crate::ui_aux::dynamics_player;
 
 pub const ROW_SPACING: f32 = 10.;
 pub const COL_SPACING: f32 = 30.;
@@ -800,83 +802,26 @@ fn docking(
             state.load_ffs_general();
         }
         if run_clicked {
-            // todo: This nesting is sloppy. if let something, with an early return?
-            // state.volatile.snapshots = build_dock_dynamics(
-            //     &state.dev,
-            //     lig,
-            //     state.volatile.docking_setup.as_ref().unwrap(),
-            //     1_500,
-            // );
-
-            // Set up the atom posits to be IOC the pose.
-            // println!("P before: {}", lig.atom_posits[0]);
-            // lig.position_atoms(None);
-
-            // // Sync atom posits with pose.
-            // match &lig.pose.conformation_type {
-            //     ConformationType::AbsolutePosits => {
-            //         println!("Abs")
-            //     }
-            //     ConformationType::Flexible { torsions} => {
-            //         println!("Flexible");
-            //     }
-            // }
-
             let mol = state.molecule.as_ref().unwrap();
             let lig = state.ligand.as_mut().unwrap();
 
-            match build_dock_dynamics(
+            let n_steps = 50_000;
+            let dt = 0.001;
+
+            match build_dynamics_docking(
                 &state.dev,
                 lig,
                 state.volatile.docking_setup.as_ref().unwrap(),
                 &state.ff_params,
                 &mol.residues,
-                1_500,
+                n_steps,
+                dt,
             ) {
                 Ok(md) => {
                     state.mol_dynamics = Some(md);
                     state.ui.current_snapshot = 0;
                 }
                 Err(e) => handle_err(&mut state.ui, e.descrip),
-            }
-        }
-
-        if let Some(md) = &state.mol_dynamics {
-            if !md.snapshots.is_empty() {
-                // if !state.volatile.snapshots.is_empty() {
-                ui.add_space(ROW_SPACING);
-
-                let snapshot_prev = state.ui.current_snapshot;
-                ui.spacing_mut().slider_width = ui.available_width() - 100.;
-                ui.add(Slider::new(
-                    &mut state.ui.current_snapshot,
-                    // 0..=state.volatile.snapshots.len() - 1,
-                    0..=md.snapshots.len() - 1, // todo exper
-                ));
-
-                if state.ui.current_snapshot != snapshot_prev {
-                    // change_snapshot(
-                    //     &mut scene.entities,
-                    //     lig,
-                    //     &Vec::new(),
-                    //     &mut state.ui.binding_energy_disp,
-                    //     &state.volatile.snapshots[state.ui.current_snapshot],
-                    // );
-
-                    let lig = state.ligand.as_mut().unwrap();
-
-                    change_snapshot_md(
-                        &mut scene.entities,
-                        lig,
-                        &Vec::new(),
-                        &mut state.ui.binding_energy_disp,
-                        &md.snapshots[state.ui.current_snapshot],
-                    );
-
-                    draw_ligand(state, scene);
-
-                    engine_updates.entities = true;
-                }
             }
         }
     });
@@ -1824,6 +1769,51 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         ui.add_space(ROW_SPACING);
 
         residue_search(state, scene, &mut redraw_mol, ui);
+
+        // todo: Move A/R
+        ui.horizontal(|ui| {
+            // Workaround for double-borrow.
+            let mut run_clicked = false;
+
+            run_clicked = ui.button("Run MD on peptide").clicked();
+            if run_clicked {
+                // If not already loaded from static string to state, do so now.
+                // We load on demand to save computation.
+                state.load_ffs_general();
+            }
+            if run_clicked {
+                let mol = state.molecule.as_mut().unwrap();
+
+                let n_steps = 100;
+                let dt = 0.001;
+
+                // todo: Fix this; borrow error workaround.
+                let residues = mol.residues.clone();
+
+                match build_dynamics_peptide(
+                    &state.dev,
+                    mol,
+                    &state.ff_params,
+                    // &mol.residues,
+                    &residues,
+                    n_steps,
+                    dt,
+                ) {
+                    Ok(md) => {
+                        state.mol_dynamics = Some(md);
+                        state.ui.current_snapshot = 0;
+                    }
+                    Err(e) => handle_err(&mut state.ui, e.descrip),
+                }
+            }
+
+            ui.add_space(COL_SPACING);
+
+            dynamics_player(state, scene, &mut engine_updates, ui);
+        });
+
+        // end btn for docking
+
 
         if state.ui.show_docking_tools {
             ui.add_space(ROW_SPACING);

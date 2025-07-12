@@ -29,7 +29,7 @@ use bio_files::{
 };
 use itertools::Itertools;
 use lin_alg::f64::Vec3;
-use na_seq::{AminoAcid, AminoAcidGeneral, AminoAcidProtenationVariant, element::LjTable};
+use na_seq::{AminoAcid, AminoAcidGeneral, AminoAcidProtenationVariant, element::LjTable, AtomTypeInRes};
 
 use crate::{
     FfParamSet,
@@ -556,13 +556,19 @@ pub fn populate_ff_and_q(
             continue;
         }
         let Some(res_i) = atom.residue else {
-            return Err(ParamError::new(&format!("Missing residue: {:?}", atom)));
+            // return Err(ParamError::new(&format!("Missing residue when populating ff name and q: {atom}")));
+
+            // todo We are continuing instead of returning an error; occasionally see this when parsing
+            // todo from PDBTBX. We need to get rid of that lib; it's unmaintained, owner doesn't respond
+            // todo to issue, and it's full of minor problems and omissions.
+            // todo: Fix this, then make this return an error.
+            println!("Missing residue when populating ff name and q. (PDBTBX error?): {atom}");
+            continue
         };
 
         let Some(type_in_res) = &atom.type_in_res else {
             return Err(ParamError::new(&format!(
-                "Missing type in residue for SN: {}, {}, {:?}",
-                atom.serial_number, atom.posit, atom.element
+                "Missing type in residue for atom: {atom}"
             )));
         };
 
@@ -601,30 +607,46 @@ pub fn populate_ff_and_q(
             }
         }
 
-        if atom.serial_number == 2212 {
-            println!("Charge data for {atom}");
-        }
-
         if !found {
             // todo: This is a workaround for having trouble with H types. LIkely
             // todo when we create them. For now, this meets the intent.
 
-            // eprintln!("Failed to match H type {ff_type}. Falling back to a generic H");
-            // if ff_type.starts_with("H") {
-            //     for charge in charges {
-            //         if &charge.type_in_res == "H" || &charge.type_in_res == "HA" {
-            //             atom.partial_charge = Some(charge.charge);
-            //             found = true;
-            //         }
-            //     }
-            // }
+            match type_in_res {
+                AtomTypeInRes::H(_) => {
+                    eprintln!("Failed to match H type {type_in_res}, {aa_gen:?}. Falling back to a generic H");
 
-            eprintln!("Can't find charge for protein atom: {}", atom);
-            //  todo temp?
-            // return Err(ParamError::new(&format!(
-            //     "Can't find charge for protein atom: {:?}",
-            //     atom
-            // )));
+                    for charge in charges {
+                        if &charge.type_in_res == &AtomTypeInRes::H("H".to_string()) ||
+                            &charge.type_in_res == &AtomTypeInRes::H("HA".to_string()) {
+                            atom.partial_charge = Some(charge.charge);
+
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+                AtomTypeInRes::OXT => {
+                    eprintln!("OXT present in residue; we don't have a parameter binding; falling back to 'O'");
+
+                    for charge in charges {
+                        if &charge.type_in_res == &AtomTypeInRes::O {
+                            atom.partial_charge = Some(charge.charge);
+
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+                _ => ()
+            }
+
+            // i.e. if still not found after our specific workarounds above.
+            if !found {
+                return Err(ParamError::new(&format!(
+                    "Can't find charge for protein atom: {:?}",
+                    atom
+                )));
+            }
         }
     }
 

@@ -7,6 +7,7 @@ use std::{
 };
 
 use bio_files::{Chain, ResidueType};
+use itertools::Itertools;
 use lin_alg::f64::Vec3;
 use na_seq::{
     AtomTypeInRes,
@@ -80,7 +81,7 @@ impl Molecule {
 
         let mut residues: Vec<Residue> = pdb
             .par_residues()
-            .map(|res| Residue::from_pdb(res, &atoms_pdb))
+            .map(|res| Residue::from_cif_pdb(res, &atoms_pdb))
             .collect();
 
         residues.sort_by_key(|r| r.serial_number);
@@ -167,7 +168,7 @@ impl Molecule {
 }
 
 impl Residue {
-    pub fn from_pdb(res_pdb: &pdbtbx::Residue, atoms_pdb: &[&pdbtbx::Atom]) -> Self {
+    pub fn from_cif_pdb(res_pdb: &pdbtbx::Residue, atoms_pdb: &[&pdbtbx::Atom]) -> Self {
         let res_name = res_pdb.name().unwrap_or_default();
 
         let res_type = ResidueType::from_str(res_name);

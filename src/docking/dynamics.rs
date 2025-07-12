@@ -41,6 +41,7 @@ use crate::{
     forces::force_lj,
     molecule::{Atom, Ligand, Residue},
 };
+use crate::molecule::Molecule;
 // This seems to be how we control rotation vice movement. A higher value means
 // more movement, less rotation for a given dt.
 
@@ -284,27 +285,23 @@ fn scalar_f_t(
         )
 }
 
-/// Keeps orientation fixed and body rigid, for now.
-///
-/// Observation: We can use analytic VDW force to position individual atoms, but once we treat
-/// the molecule together, we seem to get bogus results using this approach. Instead, we use a numerical
-/// derivative of the total VDW potential, and use gradient descent.
-pub fn build_dock_dynamics(
+/// Perform MD on the ligand, with nearby protein (receptor) atoms, from the docking setup as static
+/// non-bonded contributors. (Vdw and coulomb)
+pub fn build_dynamics_docking(
     dev: &ComputationDevice,
     lig: &mut Ligand,
     setup: &DockingSetup,
     ff_params: &FfParamSet,
     residues: &[Residue],
     n_steps: usize,
-    // ) -> Vec<Snapshot> {
-    // ) -> Vec<SnapshotDynamics> {
+    dt: f64,
+
 ) -> Result<MdState, ParamError> {
     println!("Building docking dyanmics...");
     let start = Instant::now();
 
     lig.pose.conformation_type = ConformationType::AbsolutePosits;
 
-    // todo: Startign new approach
     {
         // todo: Use state dynamics state
         let mut md_state = MdState::new(
@@ -313,21 +310,60 @@ pub fn build_dock_dynamics(
             &lig.molecule.adjacency_list,
             &lig.molecule.bonds,
             &setup.rec_atoms_near_site,
-            // &setup.lj_lut,
             ff_params,
             residues,
         )?;
 
-        // todo: Expose these in the GUI.
-        let n_steps = 50_000;
-        let dt = 0.001;
 
         for _ in 0..n_steps {
             md_state.step(dt)
         }
 
         for (i, atom) in md_state.atoms.iter().enumerate() {
-            lig.molecule.atoms[i].posit = atom.posit;
+            lig.atom_posits[i] = atom.posit;
+        }
+
+        Ok(md_state)
+    }
+}
+
+/// Perform MD on the peptide (protein) only. Can be very computationally intensive due to the large
+/// number of atoms.
+pub fn build_dynamics_peptide(
+    dev: &ComputationDevice,
+    mol: &mut Molecule,
+    ff_params: &FfParamSet,
+    residues: &[Residue],
+    n_steps: usize,
+    dt: f64,
+
+) -> Result<MdState, ParamError> {
+    println!("Building docking dyanmics...");
+    let start = Instant::now();
+
+    let posits: Vec<_> = mol.atoms.iter().map(|a| a.posit).collect();
+
+    {
+        // todo: Use state dynamics state
+        let mut md_state = MdState::new(
+            &mol.atoms,
+            &posits,
+            &mol.adjacency_list,
+            &mol.bonds,
+            &[],
+            ff_params,
+            residues,
+        )?;
+
+
+        for _ in 0..n_steps {
+            md_state.step(dt)
+        }
+
+        for (i, atom) in md_state.atoms.iter().enumerate() {
+            // todo: Sort this out. The quick + dirty is change positions in place, but we need a better
+            // todo way that retains the original positions. For example, see how we do it for ligands.
+            mol.atoms[i].posit = atom.posit;
         }
 
         Ok(md_state)

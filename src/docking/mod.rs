@@ -58,7 +58,7 @@ use crate::{
     ComputationDevice,
     bond_inference::create_hydrogen_bonds_one_way,
     docking::{
-        dynamics::build_dock_dynamics,
+        dynamics::build_dynamics_docking,
         prep::{DockingSetup, LIGAND_SAMPLE_RATIO, Torsion},
     },
     forces,

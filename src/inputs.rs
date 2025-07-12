@@ -31,7 +31,7 @@ const SELECTION_DIST_THRESH_SMALL: f32 = 0.7; // e.g. ball + stick, or stick.
 // Setting this high rel to `THRESH_SMALL` will cause more accidental selections of nearby atoms that
 // the cursor is closer to the center of, but are behind the desired one.
 // Setting it too low will cause the selector to "miss", even though the cursor is on an atom visual.
-const SELECTION_DIST_THRESH_LARGE: f32 = 0.1; // e.g. VDW views.
+const SELECTION_DIST_THRESH_LARGE: f32 = 1.1; // e.g. VDW views like spheres.
 
 const SEL_NEAR_PAD: f32 = 4.;
 
