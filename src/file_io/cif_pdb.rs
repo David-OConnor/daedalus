@@ -73,15 +73,10 @@ impl Molecule {
         // todo: Maybe return the PDB type here, and store that. Also have a way to
         // todo get molecules from it
 
-        println!("Loading mol"); // todo tmep
-
         // todo: Pdbtbx doesn't implm this yet for CIF.
-        for remark in pdb.remarks() {}
+        // for remark in pdb.remarks() {}
 
         let atoms_pdb: Vec<&pdbtbx::Atom> = pdb.par_atoms().collect();
-
-        // println!("Gather residues...");
-        // let res_pdb: Vec<&pdbtbx::Residue> = pdb.par_residues().collect();
 
         let mut residues: Vec<Residue> = pdb
             .par_residues()
@@ -92,8 +87,6 @@ impl Molecule {
 
         let mut chains = Vec::with_capacity(pdb.chain_count());
         for chain_pdb in pdb.chains() {
-            // println!("Chain: {chain_pdb:?}");
-
             let mut chain = Chain {
                 id: chain_pdb.id().to_owned(),
                 atoms: Vec::with_capacity(chain_pdb.atom_count()),
@@ -129,14 +122,6 @@ impl Molecule {
                         }
                     }
                 }
-
-                // let res = residues
-                //     .iter()
-                //     .enumerate()
-                //     .find(|(i, r)| r.serial_number == res_c.serial_number() && r.atoms );
-                // if let Some((i, _res)) = res {
-                //     chain.residues.push(i);
-                // }
             }
 
             chains.push(chain);

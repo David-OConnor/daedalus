@@ -4,6 +4,7 @@ use std::{
     io,
     io::{ErrorKind, Read},
     path::Path,
+    time::Instant,
 };
 
 use bio_files::{DensityMap, gemmi_cif_to_map};
@@ -29,6 +30,7 @@ use bio_files::{
 };
 
 use crate::{
+    docking::prep::DockingSetup,
     dynamics::prep::{merge_params, populate_ff_and_q},
     reflection::{DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityRect, ElectronDensity},
     util::handle_err,
@@ -110,6 +112,17 @@ impl State {
                             "Unable to populate FF charge and FF type for protein atoms: {:?}",
                             e
                         );
+                    } else {
+                        // Run this to update the ff name and charge data on the set of receptor
+                        // atoms near the docking site.
+                        if let Some(lig) = &mut self.ligand {
+                            self.volatile.docking_setup = Some(DockingSetup::new(
+                                &mol,
+                                lig,
+                                &self.volatile.lj_lookup_table,
+                                &self.bh_config,
+                            ));
+                        }
                     }
                 }
 
@@ -358,6 +371,42 @@ impl State {
         Ok(())
     }
 
+    /// Load amimo acid partial charges and forcefields from our built-in string. This is fast and
+    /// light; do it at init. If we have a molecule loaded, populate its force field and Q data
+    /// using it.
+    pub fn load_aa_charges_ff(&mut self) {
+        match parse_amino_charges(AMINO_19) {
+            Ok(charge_ff_data) => {
+                if let Some(mol) = &mut self.molecule {
+                    if let Err(e) =
+                        populate_ff_and_q(&mut mol.atoms, &mol.residues, &charge_ff_data)
+                    {
+                        eprintln!(
+                            "Unable to populate FF charge and FF type for protein atoms: {:?}",
+                            e
+                        );
+                    } else {
+                        // Update ff and charges in the receptor atoms.
+                        if let Some(lig) = &mut self.ligand {
+                            self.volatile.docking_setup = Some(DockingSetup::new(
+                                &mol,
+                                lig,
+                                &self.volatile.lj_lookup_table,
+                                &self.bh_config,
+                            ));
+                        }
+                    }
+                }
+
+                self.ff_params.prot_charge_general = Some(charge_ff_data);
+            }
+            Err(e) => handle_err(
+                &mut self.ui,
+                format!("Unable to load protein charges (static): {e}"),
+            ),
+        }
+    }
+
     /// Load parameter files for general organic molecules (GAFF2), and proteins/amino acids (PARM19).
     /// This also populates ff type and charge on our protein atoms.
     pub fn load_ffs_general(&mut self) {
@@ -391,27 +440,9 @@ impl State {
             }
         }
 
+        // Note: We may load this at program init
         if self.ff_params.prot_charge_general.is_none() {
-            match parse_amino_charges(AMINO_19) {
-                Ok(charge_ff_data) => {
-                    if let Some(mol) = &mut self.molecule {
-                        if let Err(e) =
-                            populate_ff_and_q(&mut mol.atoms, &mol.residues, &charge_ff_data)
-                        {
-                            eprintln!(
-                                "Unable to populate FF charge and FF type for protein atoms: {:?}",
-                                e
-                            );
-                        }
-                    }
-
-                    self.ff_params.prot_charge_general = Some(charge_ff_data);
-                }
-                Err(e) => handle_err(
-                    &mut self.ui,
-                    format!("Unable to load protein charges (static): {e}"),
-                ),
-            }
+            self.load_aa_charges_ff();
             // todo: Handle C and N-terminal files (aminoct12.lib and aminont12.lib)
         }
 

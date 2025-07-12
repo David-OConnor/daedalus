@@ -29,7 +29,7 @@ use bio_files::{
 };
 use itertools::Itertools;
 use lin_alg::f64::Vec3;
-use na_seq::{AminoAcid, element::LjTable};
+use na_seq::{AminoAcid, AminoAcidGeneral, AminoAcidProtenationVariant, element::LjTable};
 
 use crate::{
     FfParamSet,
@@ -84,8 +84,7 @@ impl ForceFieldParamsIndexed {
         let params = merge_params(params_general, params_specific);
 
         for (i, atom) in atoms.iter().enumerate() {
-            let err = || ParamError::new(&format!("Atom missing FF type: {atom:?}"));
-
+            let err = || ParamError::new(&format!("Atom missing FF type: {atom}"));
             let ff_type = atom.force_field_type.as_ref().ok_or_else(|| err())?;
 
             // Mass
@@ -550,7 +549,7 @@ impl MdState {
 pub fn populate_ff_and_q(
     atoms: &mut [Atom],
     residues: &[Residue],
-    prot_charge: &HashMap<AminoAcid, Vec<ChargeParams>>,
+    prot_charge: &HashMap<AminoAcidGeneral, Vec<ChargeParams>>,
 ) -> Result<(), ParamError> {
     for atom in atoms {
         if atom.hetero {
@@ -574,7 +573,20 @@ pub fn populate_ff_and_q(
             continue;
         };
 
-        let charges = prot_charge.get(aa).unwrap();
+        // todo: Eventually, determine how to load non-standard AA variants from files; set up your
+        // todo state to use those labels. They are available in the params.
+        let aa_gen = AminoAcidGeneral::Standard(*aa);
+
+        let charges = match prot_charge.get(&aa_gen) {
+            Some(c) => c,
+            // A specific workaround to plain "HIS" being absent from amino19.lib (2025.
+            // Choose one of "HID", "HIE", "HIP arbitrarily.
+            None if aa_gen == AminoAcidGeneral::Standard(AminoAcid::His) => prot_charge
+                .get(&AminoAcidGeneral::Variant(AminoAcidProtenationVariant::Hid))
+                .ok_or_else(|| ParamError::new("Unable to find AA mapping"))?,
+            None => return Err(ParamError::new("Unable to find AA mapping")),
+        };
+
         let mut found = false;
 
         for charge in charges {
@@ -587,6 +599,10 @@ pub fn populate_ff_and_q(
                 found = true;
                 break;
             }
+        }
+
+        if atom.serial_number == 2212 {
+            println!("Charge data for {atom}");
         }
 
         if !found {
@@ -603,10 +619,7 @@ pub fn populate_ff_and_q(
             //     }
             // }
 
-            eprintln!(
-                "Can't find charge for protein atom: {}, {:?}, {:?}",
-                atom.serial_number, atom.element, atom.type_in_res
-            );
+            eprintln!("Can't find charge for protein atom: {}", atom);
             //  todo temp?
             // return Err(ParamError::new(&format!(
             //     "Can't find charge for protein atom: {:?}",

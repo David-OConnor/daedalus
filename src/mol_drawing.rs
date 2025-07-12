@@ -54,6 +54,13 @@ const DIMMED_PEPTIDE_AMT: f32 = 0.92; // Higher value means more dim.
 pub const DENSITY_ISO_OPACITY: f32 = 0.5;
 pub const SAS_ISO_OPACITY: f32 = 0.75;
 
+// We use this for mapping partial charge (e.g. as loaded from Amber) to colors.
+// This should tightly span the range of expected charges.
+// Note that we observe some charges out of this range, but have it narrower
+// to show better constrast.
+const CHARGE_MAP_MIN: f32 = -0.9;
+const CHARGE_MAP_MAX: f32 = 0.65;
+
 // pub const DENSITY_ISO_OPACITY: f32 = 1.0; // todo temp
 // pub const SAS_ISO_OPACITY: f32 = 1.0; // todo temp
 
@@ -190,19 +197,47 @@ fn color_viridis(i: usize, min: usize, max: usize) -> Color {
     (r, g, b)
 }
 
+fn color_viridis_float(i: f32, min: f32, max: f32) -> Color {
+    const RESOLUTION: usize = 2_048;
+
+    // Normalize i into [0.0, 1.0]
+    let t = if max > min {
+        ((i - min) / (max - min)).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+
+    let idx = (t * (RESOLUTION as f32)).round() as usize;
+
+    color_viridis(idx, 0, RESOLUTION)
+}
+
 fn atom_color(
     atom: &Atom,
     i: usize,
     residues: &[Residue],
+    aa_count: usize, // # AA residues; used for color-mapping.
     selection: &Selection,
     view_sel_level: ViewSelLevel,
     dimmed: bool,
     res_color_by_index: bool,
+    atom_color_by_q: bool,
+    is_ligand: bool,
 ) -> Color {
     let mut result = match view_sel_level {
-        ViewSelLevel::Atom => atom.element.color(),
+        ViewSelLevel::Atom => {
+            if atom_color_by_q {
+                if let Some(q) = atom.partial_charge {
+                    color_viridis_float(q, CHARGE_MAP_MIN, CHARGE_MAP_MAX)
+                } else {
+                    // Don't revert to atom color, as that could be misinterpreted.
+                    (0.5, 0.5, 0.5)
+                }
+            } else {
+                atom.element.color()
+            }
+        }
         ViewSelLevel::Residue => {
-            // let mut color = COLOR_AA_NON_RESIDUE;
             let mut color = Element::Hydrogen.color(); // todo temp workaround for a bug we haven't tracked down.
 
             if let Some(res_i) = &atom.residue {
@@ -211,7 +246,7 @@ fn atom_color(
                     ResidueType::AminoAcid(aa) => {
                         if res_color_by_index {
                             match atom.residue {
-                                Some(res_i) => color_viridis(res_i, 0, residues.len()),
+                                Some(res_i) => color_viridis(res_i, 0, aa_count),
                                 None => aa_color(*aa),
                             }
                         } else {
@@ -236,7 +271,7 @@ fn atom_color(
     // If selected, the selected color overrides the element or residue color.
     match selection {
         Selection::Atom(sel_i) => {
-            if *sel_i == i {
+            if !is_ligand && *sel_i == i {
                 result = COLOR_SELECTED;
             }
         }
@@ -249,6 +284,11 @@ fn atom_color(
         }
         Selection::Atoms(sel_is) => {
             if sel_is.contains(&i) {
+                result = COLOR_SELECTED;
+            }
+        }
+        Selection::AtomLigand(sel_i) => {
+            if is_ligand && *sel_i == i {
                 result = COLOR_SELECTED;
             }
         }
@@ -583,38 +623,46 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene) {
 
         let mut color_0 = atom_color(
             atom_0,
+            bond.atom_0,
+            &[],
             0,
-            &mol.residues,
-            &Selection::None,
+            &state.ui.selection,
             state.ui.view_sel_level,
             false,
             false,
+            false,
+            true,
         );
         let mut color_1 = atom_color(
             atom_1,
+            bond.atom_1,
+            &[],
             0,
-            &mol.residues,
-            &Selection::None,
+            &state.ui.selection,
             state.ui.view_sel_level,
             false,
             false,
+            false,
+            true,
         );
 
-        color_0 = mod_color_for_ligand(&color_0);
-        color_1 = mod_color_for_ligand(&color_1);
+        if color_0 != COLOR_SELECTED && color_1 != COLOR_SELECTED {
+            color_0 = mod_color_for_ligand(&color_0);
+            color_1 = mod_color_for_ligand(&color_1);
 
-        if lig.flexible_bonds.contains(&i) {
-            color_0 = LIGAND_COLOR_FLEX;
-            color_1 = LIGAND_COLOR_FLEX;
-        }
+            if lig.flexible_bonds.contains(&i) {
+                color_0 = LIGAND_COLOR_FLEX;
+                color_1 = LIGAND_COLOR_FLEX;
+            }
 
-        // Highlight the anchor.
-        if bond.atom_0 == lig.anchor_atom {
-            color_0 = LIGAND_COLOR_ANCHOR;
-        }
+            // Highlight the anchor.
+            if bond.atom_0 == lig.anchor_atom {
+                color_0 = LIGAND_COLOR_ANCHOR;
+            }
 
-        if bond.atom_1 == lig.anchor_atom {
-            color_1 = LIGAND_COLOR_ANCHOR;
+            if bond.atom_1 == lig.anchor_atom {
+                color_1 = LIGAND_COLOR_ANCHOR;
+            }
         }
 
         bond_entities(
@@ -780,6 +828,19 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
         return;
     };
 
+    // todo:  Unless colored by res #, set to 0 to save teh computation.
+    let aa_count = mol
+        .residues
+        .iter()
+        .filter(|r| {
+            if let ResidueType::AminoAcid(_) = r.res_type {
+                true
+            } else {
+                false
+            }
+        })
+        .count();
+
     // todo: You may wish to integrate Cartoon into this workflow.
     scene.entities.retain(|ent| {
         ent.class != EntityType::Protein as u32 && ent.class != EntityType::SaSurface as u32
@@ -828,8 +889,11 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
                             atom,
                             i,
                             &mol.residues,
+                            aa_count,
                             &state.ui.selection,
                             state.ui.view_sel_level,
+                            false,
+                            false,
                             false,
                             false,
                         );
@@ -942,10 +1006,13 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
                 atom,
                 i,
                 &mol.residues,
+                aa_count,
                 &state.ui.selection,
                 state.ui.view_sel_level,
                 dim_peptide,
                 state.ui.res_color_by_index,
+                state.ui.atom_color_by_charge,
+                false,
             );
 
             let mut entity = Entity::new(
@@ -1044,19 +1111,25 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
             atom_0,
             bond.atom_0,
             &mol.residues,
+            aa_count,
             &state.ui.selection,
             state.ui.view_sel_level,
             dim_peptide,
             state.ui.res_color_by_index,
+            state.ui.atom_color_by_charge,
+            false,
         );
         let color_1 = atom_color(
             atom_1,
             bond.atom_1,
             &mol.residues,
+            aa_count,
             &state.ui.selection,
             state.ui.view_sel_level,
             dim_peptide,
             state.ui.res_color_by_index,
+            state.ui.atom_color_by_charge,
+            false,
         );
 
         bond_entities(

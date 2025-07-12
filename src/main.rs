@@ -81,7 +81,7 @@ use lin_alg::{
 use mol_drawing::MoleculeView;
 use molecule::Molecule;
 use na_seq::{
-    AminoAcid, Element,
+    AminoAcid, AminoAcidGeneral, Element,
     element::{LjTable, init_lj_lut},
 };
 use pdbtbx::{self, PDB};
@@ -131,8 +131,8 @@ pub enum ComputationDevice {
 
 #[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]
 pub enum ViewSelLevel {
-    Atom,
     #[default]
+    Atom,
     Residue,
 }
 
@@ -420,6 +420,7 @@ struct StateUi {
     /// Use a viridis or simialar colr scheme to color residues gradually based on their
     /// position in the sequence.
     res_color_by_index: bool,
+    atom_color_by_charge: bool,
     /// Affects the electron density mesh.
     density_iso_level: f32,
 }
@@ -428,9 +429,13 @@ struct StateUi {
 pub enum Selection {
     #[default]
     None,
+    /// Of the protein
     Atom(usize),
+    /// Of the protein
     Residue(usize),
+    /// Of the protein
     Atoms(Vec<usize>),
+    AtomLigand(usize),
 }
 
 #[derive(Clone, Debug, Encode, Decode)]
@@ -463,7 +468,7 @@ pub struct FfParamSet {
     pub prot_general: Option<ForceFieldParamsKeyed>,
     /// In addition to charge, this also contains the mapping of res type to FF type; required to map
     /// other parameters to protein atoms.
-    pub prot_charge_general: Option<HashMap<AminoAcid, Vec<ChargeParams>>>,
+    pub prot_charge_general: Option<HashMap<AminoAcidGeneral, Vec<ChargeParams>>>,
     /// Key: A unique identifier for the molecule. (e.g. ligand)
     pub lig_specific: HashMap<String, ForceFieldParamsKeyed>,
 }
@@ -511,7 +516,6 @@ impl State {
     }
 
     pub fn update_docking_site(&mut self, posit: Vec3F64) {
-        println!("In UDS: {:?}", posit);
         if let Some(lig) = &mut self.ligand {
             lig.docking_site.site_center = posit;
             lig.pose.anchor_posit = lig.docking_site.site_center;
@@ -539,8 +543,7 @@ fn main() {
     let dev = {
         let runtime_v = cudarc::runtime::result::version::get_runtime_version();
         let driver_v = cudarc::runtime::result::version::get_driver_version();
-        println!("CUDA runtime: {runtime_v:?}");
-        println!("CUDA driver: {driver_v:?}");
+        println!("CUDA runtime: {runtime_v:?}. Driver: {driver_v:?}");
 
         if runtime_v.is_ok() && driver_v.is_ok() {
             // This is compiled in `build_`.
@@ -580,11 +583,11 @@ fn main() {
     #[cfg(target_arch = "x86_64")]
     {
         if is_x86_feature_detected!("avx512f") {
-            println!("AVX-512 is available");
+            println!("AVX-512 is available\n");
         } else if is_x86_feature_detected!("avx") {
-            println!("AVX (256-bit) is available");
+            println!("AVX (256-bit) is available\n");
         } else {
-            println!("AVX is not available.");
+            println!("AVX is not available.\n");
         }
     }
 
@@ -641,6 +644,8 @@ fn main() {
         let posit = state.to_save.per_mol[&mol.ident].docking_site.site_center;
         state.update_docking_site(posit);
     }
+
+    state.load_aa_charges_ff();
 
     // todo temp
     state

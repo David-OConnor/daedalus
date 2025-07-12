@@ -14,9 +14,9 @@ cfg-if = "1.0.1"
 
 lin_alg = { version = "1.2.2", features = ["encode"] }
 barnes_hut = { version = "1.0.8"}  # enc temp rem
-na_seq = "0.2.12"
+na_seq = "0.2.13"
 bio_apis = {  version = "0.1.4", features = ["encode"] }
-bio_files = "0.1.3"
+bio_files = "0.1.10"
 mcubes = "0.1.4"
 
 # For loading and saving config

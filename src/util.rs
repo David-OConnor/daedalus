@@ -6,6 +6,7 @@ use std::{collections::HashMap, io::Cursor, time::Instant};
 
 use bio_files::{Chain, ResidueType};
 use graphics::{Camera, ControlScheme, EngineUpdates, FWD_VEC, Mesh, Scene, Vertex};
+use itertools::Itertools;
 use lin_alg::{
     f32::{Quaternion, Vec3 as Vec3F32},
     f64::Vec3,
@@ -30,54 +31,75 @@ use crate::{
 const MOVE_TO_TARGET_DIST: f32 = 15.;
 const MOVE_CAM_TO_LIG_DIST: f32 = 30.;
 
-/// Used for cursor selection.
+/// Helper
+fn points_along_ray_inner(
+    result: &mut Vec<usize>,
+    ray: &(Vec3F32, Vec3F32),
+    ray_dir: Vec3F32,
+    dist_thresh: f32,
+    i: usize,
+    atom: &Atom,
+) {
+    let atom_pos: Vec3F32 = atom.posit.into();
+
+    // Compute the closest point on the ray to the atom position
+    let to_atom: Vec3F32 = atom_pos - ray.0;
+    let t = to_atom.dot(ray_dir);
+    let closest_point = ray.0 + ray_dir * t;
+
+    // Compute the perpendicular distance to the ray
+    let dist_to_ray = (atom_pos - closest_point).magnitude();
+
+    // todo: take atom radius into account. E.g. Hydrogens should required a smaller dist.
+    // todo: This approach is a bit sloppy, but probably better than not including it.
+    if atom.element == Element::Hydrogen {
+        // todo: This seems to prevent selecting at all; not sure why.
+        // dist_thresh *= 0.9;
+    }
+    if dist_to_ray < dist_thresh {
+        result.push(i);
+    }
+}
+
+/// Used for cursor selection. Returns (atom indices prot, atom indices lig)
 pub fn points_along_ray(
     ray: (Vec3F32, Vec3F32),
     atoms: &[Atom],
-    mut dist_thresh: f32,
-) -> Vec<usize> {
-    let mut result = Vec::new();
+    atoms_lig: &[Atom],
+    dist_thresh: f32,
+) -> (Vec<usize>, Vec<usize>) {
+    let mut result_prot = Vec::new();
+    let mut result_lig = Vec::new();
 
     let ray_dir = (ray.1 - ray.0).to_normalized();
 
     for (i, atom) in atoms.iter().enumerate() {
-        let atom_pos: Vec3F32 = atom.posit.into();
-
-        // Compute the closest point on the ray to the atom position
-        let to_atom: Vec3F32 = atom_pos - ray.0;
-        let t = to_atom.dot(ray_dir);
-        let closest_point = ray.0 + ray_dir * t;
-
-        // Compute the perpendicular distance to the ray
-        let dist_to_ray = (atom_pos - closest_point).magnitude();
-
-        // todo: take atom radius into account. E.g. Hydrogens should required a smaller dist.
-        // todo: This approach is a bit sloppy, but probably better than not including it.
-        if atom.element == Element::Hydrogen {
-            // todo: This seems to prevent selecting at all; not sure why.
-            // dist_thresh *= 0.9;
-        }
-        if dist_to_ray < dist_thresh {
-            result.push(i);
-        }
+        points_along_ray_inner(&mut result_prot, &ray, ray_dir, dist_thresh, i, atom);
+    }
+    for (i, atom) in atoms_lig.iter().enumerate() {
+        points_along_ray_inner(&mut result_lig, &ray, ray_dir, dist_thresh, i, atom);
     }
 
-    result
+    (result_prot, result_lig)
 }
 
 /// From under the cursor; pick the one near the ray, closest to the camera. This function is
 /// run after the ray geometry is calculated, and is responsible for determing which atoms, residues, etc
 /// are available for selection. It takes into account graphical filters, so only visible items
 /// are selected.
+///
+/// Can select atoms from the protein, or ligand.
 pub fn find_selected_atom(
     atoms_along_ray: &[usize],
-    atoms: &[Atom],
+    atoms_lig_along_ray: &[usize],
+    atoms_prot: &[Atom],
     ress: &[Residue],
+    atoms_lig: &[Atom],
     ray: &(Vec3F32, Vec3F32),
     ui: &StateUi,
     chains: &[Chain],
 ) -> Selection {
-    if atoms_along_ray.is_empty() {
+    if atoms_along_ray.is_empty() && atoms_lig_along_ray.is_empty() {
         return Selection::None;
     }
 
@@ -106,7 +128,7 @@ pub fn find_selected_atom(
             continue;
         }
 
-        let atom = &atoms[*atom_i];
+        let atom = &atoms_prot[*atom_i];
 
         if ui.visibility.hide_sidechains
             || matches!(
@@ -150,23 +172,49 @@ pub fn find_selected_atom(
 
         let posit: Vec3F32 = atom.posit.into();
         let dist = (posit - ray.0).magnitude();
+
         if dist < near_dist {
             near_i = *atom_i;
             near_dist = dist;
         }
     }
 
+    // Second pass for ligands; we skip most of the hidden checks here that apply to protein atoms.
+
+    let mut near_i_lig = 0;
+    let mut near_dist_lig = 99_999.;
+
+    for atom_i in atoms_lig_along_ray {
+        let atom = &atoms_lig[*atom_i];
+
+        if ui.visibility.hide_hydrogen && atom.element == Element::Hydrogen {
+            continue;
+        }
+
+        let posit: Vec3F32 = atom.posit.into();
+        let dist = (posit - ray.0).magnitude();
+
+        if dist < near_dist_lig {
+            near_i_lig = *atom_i;
+            near_dist_lig = dist;
+        }
+    }
+
     // This is equivalent to our empty check above, but catches the case of the atom count being
     // empty due to hidden chains.
-    if near_dist == 99_999. {
+    if near_dist == 99_999. && near_dist_lig == 99_999. {
         return Selection::None;
+    }
+
+    if near_dist_lig < near_dist {
+        return Selection::AtomLigand(near_i_lig);
     }
 
     match ui.view_sel_level {
         ViewSelLevel::Atom => Selection::Atom(near_i),
         ViewSelLevel::Residue => {
             for (i_res, res) in ress.iter().enumerate() {
-                let atom_near = &atoms[near_i];
+                let atom_near = &atoms_prot[near_i];
                 if let Some(res_i) = atom_near.residue {
                     if res_i == i_res {
                         return Selection::Residue(i_res);
@@ -403,6 +451,13 @@ pub fn orbit_center(state: &State) -> Vec3F32 {
                         Some(a) => a.posit.into(),
                         None => Vec3F32::new_zero(),
                     }
+                } else {
+                    Vec3F32::new_zero()
+                }
+            }
+            Selection::AtomLigand(i) => {
+                if let Some(lig) = &state.ligand {
+                    lig.atom_posits[*i].into()
                 } else {
                     Vec3F32::new_zero()
                 }

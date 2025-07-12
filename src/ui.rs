@@ -748,7 +748,10 @@ fn docking(
             }
         }
 
-        if state.ui.selection != Selection::None {
+        if !matches!(
+            state.ui.selection,
+            Selection::None | Selection::AtomLigand(_)
+        ) {
             ui.add_space(COL_SPACING / 2.);
 
             if ui
@@ -977,18 +980,40 @@ fn selection_section(
             state.ui.selection = Selection::None;
         }
 
-        if state.ui.view_sel_level == ViewSelLevel::Residue {
-            ui.add_space(COL_SPACING / 2.);
-            let dock_seq_text = if state.ui.res_color_by_index {
-                "Color by res AA"
-            } else {
-                "Color by res #"
-            };
+        // Buttons to alter the color profile, e.g. for res position, or partial charge.
+        ui.add_space(COL_SPACING / 2.);
+        match state.ui.view_sel_level {
+            ViewSelLevel::Atom => {
+                let color = if state.ui.atom_color_by_charge {
+                    COLOR_ACTIVE
+                } else {
+                    COLOR_INACTIVE
+                };
 
-            if ui.button(RichText::new(dock_seq_text)).clicked() {
-                state.ui.res_color_by_index = !state.ui.res_color_by_index;
-                state.ui.view_sel_level = ViewSelLevel::Residue;
-                *redraw = true;
+                if ui
+                    .button(RichText::new("Color by q").color(color))
+                    .clicked()
+                {
+                    state.ui.atom_color_by_charge = !state.ui.atom_color_by_charge;
+                    state.ui.view_sel_level = ViewSelLevel::Atom;
+                    *redraw = true;
+                }
+            }
+            ViewSelLevel::Residue => {
+                let color = if state.ui.res_color_by_index {
+                    COLOR_ACTIVE
+                } else {
+                    COLOR_INACTIVE
+                };
+
+                if ui
+                    .button(RichText::new("Color by res #").color(color))
+                    .clicked()
+                {
+                    state.ui.res_color_by_index = !state.ui.res_color_by_index;
+                    state.ui.view_sel_level = ViewSelLevel::Residue;
+                    *redraw = true;
+                }
             }
         }
 
@@ -1037,12 +1062,20 @@ fn selection_section(
                     .button(RichText::new("Move cam to sel").color(COLOR_HIGHLIGHT))
                     .clicked()
                 {
-                    let atom_sel = mol.get_sel_atom(&state.ui.selection);
+                    if let Selection::AtomLigand(i) = &state.ui.selection {
+                        if let Some(lig) = &state.ligand {
+                            cam_look_at(&mut scene.camera, lig.atom_posits[*i]);
+                            engine_updates.camera = true;
+                            state.ui.cam_snapshot = None;
+                        }
+                    } else {
+                        let atom_sel = mol.get_sel_atom(&state.ui.selection);
 
-                    if let Some(atom) = atom_sel {
-                        cam_look_at(&mut scene.camera, atom.posit);
-                        engine_updates.camera = true;
-                        state.ui.cam_snapshot = None;
+                        if let Some(atom) = atom_sel {
+                            cam_look_at(&mut scene.camera, atom.posit);
+                            engine_updates.camera = true;
+                            state.ui.cam_snapshot = None;
+                        }
                     }
                 }
             }
@@ -1073,7 +1106,7 @@ fn selection_section(
             }
 
             ui.add_space(COL_SPACING / 2.);
-            ui_aux::selected_data(mol, &state.ui.selection, ui);
+            ui_aux::selected_data(mol, &state.ligand, &state.ui.selection, ui);
         }
     });
 }

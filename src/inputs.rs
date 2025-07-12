@@ -14,6 +14,7 @@ use lin_alg::{
 use crate::{
     Selection, State, mol_drawing,
     mol_drawing::MoleculeView,
+    molecule::Atom,
     render::{BODY_SHINYNESS, MESH_BOND, set_flashlight},
     util::{cycle_res_selected, find_selected_atom, orbit_center, points_along_ray},
 };
@@ -108,13 +109,37 @@ pub fn event_dev_handler(
                                     }
                                     _ => SELECTION_DIST_THRESH_SMALL,
                                 };
-                                let atoms_along_ray =
-                                    points_along_ray(selected_ray, &mol.atoms, dist_thresh);
+
+                                let mut lig_atoms_temp = Vec::new();
+                                // todo: You must use lig.atom_posits!
+                                let lig_atoms = if let Some(lig) = &state_.ligand {
+                                    // Not sure how else to do this.
+                                    for (i, atom) in lig.molecule.atoms.iter().enumerate() {
+                                        // Just the fields we need.
+                                        lig_atoms_temp.push(Atom {
+                                            posit: lig.atom_posits[i],
+                                            element: atom.element,
+                                            ..Default::default()
+                                        });
+                                    }
+                                    &lig_atoms_temp
+                                } else {
+                                    &lig_atoms_temp
+                                };
+
+                                let (atoms_along_ray, atoms_along_ray_lig) = points_along_ray(
+                                    selected_ray,
+                                    &mol.atoms,
+                                    lig_atoms,
+                                    dist_thresh,
+                                );
 
                                 let selection = find_selected_atom(
                                     &atoms_along_ray,
+                                    &atoms_along_ray_lig,
                                     &mol.atoms,
                                     &mol.residues,
+                                    lig_atoms,
                                     &selected_ray,
                                     &state_.ui,
                                     &mol.chains,
@@ -134,6 +159,7 @@ pub fn event_dev_handler(
                                 }
 
                                 redraw_protein = true;
+                                redraw_lig = true;
                             }
                         }
                     }

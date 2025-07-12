@@ -167,7 +167,7 @@ impl Molecule {
     /// If a residue, get the alpha C. If multiple, get an arbtirary one.
     pub fn get_sel_atom(&self, sel: &Selection) -> Option<&Atom> {
         match sel {
-            Selection::Atom(i) => self.atoms.get(*i),
+            Selection::Atom(i) | Selection::AtomLigand(i) => self.atoms.get(*i),
             Selection::Residue(i) => {
                 let res = &self.residues[*i];
                 if !res.atoms.is_empty() {
@@ -375,7 +375,6 @@ impl Ligand {
                 .collect(),
         };
 
-        println!("Torsions: {:?}", result.pose.conformation_type);
         // todo: Temp for testing.
         // {
         //     result.docking_site = DockingSite {
@@ -769,6 +768,21 @@ impl From<&AtomGeneric> for Atom {
             force_field_type: atom.force_field_type.clone(),
             ..Default::default()
         }
+    }
+}
+
+impl Display for Atom {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Atom {}: {}, {}. {:?}, ff: {:?}, q: {:?}",
+            self.serial_number,
+            self.element.to_letter(),
+            self.posit,
+            self.type_in_res,
+            self.force_field_type,
+            self.partial_charge
+        )
     }
 }
 

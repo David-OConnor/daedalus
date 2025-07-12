@@ -75,6 +75,7 @@ pub struct PerMolToSave {
     pub docking_site: DockingSite,
     show_docking_tools: bool,
     res_color_by_index: bool,
+    aatom_color_by_charge: bool,
     show_aa_seq: bool,
     rcsb_data: Option<PdbDataResults>,
     rcsb_files_avail: Option<FilesAvailable>,
@@ -124,6 +125,7 @@ impl PerMolToSave {
             docking_site,
             show_docking_tools: state.ui.show_docking_tools,
             res_color_by_index: state.ui.res_color_by_index,
+            aatom_color_by_charge: state.ui.atom_color_by_charge,
             show_aa_seq: state.ui.show_aa_seq,
             rcsb_data,
             rcsb_files_avail,
@@ -180,6 +182,7 @@ impl State {
                 self.ui.visibility = data.visibility.clone();
                 self.ui.show_docking_tools = data.show_docking_tools;
                 self.ui.res_color_by_index = data.res_color_by_index;
+                self.ui.atom_color_by_charge = data.aatom_color_by_charge;
                 self.ui.show_aa_seq = data.show_aa_seq;
 
                 if let Some(lig) = &mut self.ligand {

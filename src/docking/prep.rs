@@ -568,7 +568,7 @@ fn find_rec_atoms_near_site(receptor: &Molecule, site: &DockingSite) -> (Vec<Ato
 
     let mut indices = Vec::new();
 
-    println!("\n\nIn find rec. Site center: {:?}", site.site_center);
+    // println!("\n\nIn find rec. Site center: {:?}", site.site_center);
 
     let atoms = receptor
         .atoms
