@@ -130,12 +130,7 @@ pub fn find_selected_atom(
 
         let atom = &atoms_prot[*atom_i];
 
-        if ui.visibility.hide_sidechains
-            || matches!(
-                ui.mol_view,
-                MoleculeView::SpaceFill | MoleculeView::Backbone
-            )
-        {
+        if ui.visibility.hide_sidechains || matches!(ui.mol_view, MoleculeView::Backbone) {
             if let Some(role) = atom.role {
                 if role == AtomRole::Sidechain || role == AtomRole::H_Sidechain {
                     continue;
@@ -213,7 +208,7 @@ pub fn find_selected_atom(
     match ui.view_sel_level {
         ViewSelLevel::Atom => Selection::Atom(near_i),
         ViewSelLevel::Residue => {
-            for (i_res, res) in ress.iter().enumerate() {
+            for (i_res, _res) in ress.iter().enumerate() {
                 let atom_near = &atoms_prot[near_i];
                 if let Some(res_i) = atom_near.residue {
                     if res_i == i_res {

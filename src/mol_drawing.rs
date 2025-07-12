@@ -58,8 +58,8 @@ pub const SAS_ISO_OPACITY: f32 = 0.75;
 // This should tightly span the range of expected charges.
 // Note that we observe some charges out of this range, but have it narrower
 // to show better constrast.
-const CHARGE_MAP_MIN: f32 = -0.9;
-const CHARGE_MAP_MAX: f32 = 0.65;
+pub const CHARGE_MAP_MIN: f32 = -0.9;
+pub const CHARGE_MAP_MAX: f32 = 0.65;
 
 // pub const DENSITY_ISO_OPACITY: f32 = 1.0; // todo temp
 // pub const SAS_ISO_OPACITY: f32 = 1.0; // todo temp
@@ -197,7 +197,7 @@ fn color_viridis(i: usize, min: usize, max: usize) -> Color {
     (r, g, b)
 }
 
-fn color_viridis_float(i: f32, min: f32, max: f32) -> Color {
+pub fn color_viridis_float(i: f32, min: f32, max: f32) -> Color {
     const RESOLUTION: usize = 2_048;
 
     // Normalize i into [0.0, 1.0]

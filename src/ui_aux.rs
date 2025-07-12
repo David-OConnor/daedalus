@@ -5,7 +5,8 @@ use egui::{Color32, RichText, Ui};
 use na_seq::AaIdent;
 
 use crate::{
-    Selection,
+    Selection, mol_drawing,
+    mol_drawing::{CHARGE_MAP_MAX, CHARGE_MAP_MIN},
     molecule::{Atom, Ligand, Molecule, Residue},
     ui::{COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_INACTIVE},
 };
@@ -58,10 +59,11 @@ fn disp_atom_data(atom: &Atom, residues: &[Residue], ui: &mut Ui) {
         ui.label(RichText::new(format!("FF: {ff}")).color(Color32::LIGHT_YELLOW));
     }
 
-    // todo: Apply your viridis color code.
     if let Some(q) = &atom.partial_charge {
         let plus = if *q > 0. { "+" } else { "" };
-        ui.label(RichText::new(format!("{plus}q: {q:.2}")).color(Color32::LIGHT_YELLOW));
+        let (r, g, b) = mol_drawing::color_viridis_float(*q, CHARGE_MAP_MIN, CHARGE_MAP_MAX);
+        let color = Color32::from_rgb((r * 255.) as u8, (g * 255.) as u8, (b * 255.) as u8);
+        ui.label(RichText::new(format!("{plus}q: {q:.2}")).color(color));
     }
 }
 

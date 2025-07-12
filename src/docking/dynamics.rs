@@ -318,8 +318,8 @@ pub fn build_dock_dynamics(
             residues,
         )?;
 
-        let n_steps = 10_000;
-
+        // todo: Expose these in the GUI.
+        let n_steps = 50_000;
         let dt = 0.001;
 
         for _ in 0..n_steps {

@@ -731,7 +731,7 @@ fn docking(
                     ui.add_space(COL_SPACING / 2.);
 
                     if ui
-                        .button(RichText::new(format!("Center on {name}")).color(COLOR_HIGHLIGHT))
+                        .button(RichText::new(format!("Move lig to {name}")).color(COLOR_HIGHLIGHT))
                         .clicked()
                     {
                         // todo: Pick center-of-mass atom, or better yet, match it to the anchor atom.
@@ -755,7 +755,7 @@ fn docking(
             ui.add_space(COL_SPACING / 2.);
 
             if ui
-                .button(RichText::new("Center on sel").color(COLOR_HIGHLIGHT))
+                .button(RichText::new("Move lig to sel").color(COLOR_HIGHLIGHT))
                 .clicked()
             {
                 let atom_sel = mol.get_sel_atom(&state.ui.selection);

@@ -27,12 +27,13 @@ pub const RUN_FACTOR: f32 = 6.; // i.e. shift key multiplier
 pub const SCROLL_MOVE_AMT: f32 = 4.;
 pub const SCROLL_ROTATE_AMT: f32 = 12.;
 
-const SELECTION_DIST_THRESH_SMALL: f32 = 0.7; // e.g. ball + stick
-const SELECTION_DIST_THRESH_LARGE: f32 = 1.3; // e.g. VDW views.
+const SELECTION_DIST_THRESH_SMALL: f32 = 0.7; // e.g. ball + stick, or stick.
+// Setting this high rel to `THRESH_SMALL` will cause more accidental selections of nearby atoms that
+// the cursor is closer to the center of, but are behind the desired one.
+// Setting it too low will cause the selector to "miss", even though the cursor is on an atom visual.
+const SELECTION_DIST_THRESH_LARGE: f32 = 0.1; // e.g. VDW views.
 
 const SEL_NEAR_PAD: f32 = 4.;
-
-// todo: Consider moving the selection code from util to here.
 
 pub fn event_dev_handler(
     state_: &mut State,
@@ -104,9 +105,7 @@ pub fn event_dev_handler(
                                 // behind the desired one, but closer to the ray, may be selected; likely
                                 // this is undesired.
                                 let dist_thresh = match state_.ui.mol_view {
-                                    MoleculeView::Dots | MoleculeView::SpaceFill => {
-                                        SELECTION_DIST_THRESH_LARGE
-                                    }
+                                    MoleculeView::SpaceFill => SELECTION_DIST_THRESH_LARGE,
                                     _ => SELECTION_DIST_THRESH_SMALL,
                                 };
 
