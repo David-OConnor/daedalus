@@ -47,6 +47,9 @@ pub const ATOM_NEIGHBOR_DIST_THRESH: f64 = 5.; // todo: Adjust A/R.
 pub struct Molecule {
     pub ident: String,
     pub atoms: Vec<Atom>,
+    /// Similar to for the ligand. Used for molecular dynamics position, and could be applied
+    /// to having multiple peptides open.
+    pub atom_posits: Option<Vec<Vec3>>,
     pub bonds: Vec<Bond>,
     /// Relating covalent bonds. For each atom, a list of atoms bonded to it.
     pub adjacency_list: Vec<Vec<usize>>,

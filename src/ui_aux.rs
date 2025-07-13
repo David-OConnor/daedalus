@@ -5,10 +5,14 @@ use egui::{Color32, RichText, Slider, Ui};
 use graphics::{EngineUpdates, Scene};
 use na_seq::AaIdent;
 
-use crate::{Selection, mol_drawing, mol_drawing::{CHARGE_MAP_MAX, CHARGE_MAP_MIN}, molecule::{Atom, Ligand, Molecule, Residue}, ui::{COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_INACTIVE}, State};
-use crate::docking::dynamics::change_snapshot_md;
-use crate::mol_drawing::draw_ligand;
-use crate::ui::ROW_SPACING;
+use crate::{
+    Selection, State,
+    docking::dynamics::change_snapshot_md,
+    mol_drawing,
+    mol_drawing::{CHARGE_MAP_MAX, CHARGE_MAP_MIN, draw_ligand},
+    molecule::{Atom, Ligand, Molecule, Residue},
+    ui::{COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_INACTIVE, ROW_SPACING},
+};
 
 fn disp_atom_data(atom: &Atom, residues: &[Residue], ui: &mut Ui) {
     let mut aa = String::new();
@@ -126,8 +130,12 @@ pub fn active_color_sel(val: bool) -> Color32 {
     }
 }
 
-
-pub fn dynamics_player(state: &mut State, scene: &mut Scene, engine_updates: &mut EngineUpdates,  ui: &mut Ui) {
+pub fn dynamics_player(
+    state: &mut State,
+    scene: &mut Scene,
+    engine_updates: &mut EngineUpdates,
+    ui: &mut Ui,
+) {
     if let Some(md) = &state.mol_dynamics {
         if !md.snapshots.is_empty() {
             // if !state.volatile.snapshots.is_empty() {

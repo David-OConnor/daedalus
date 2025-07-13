@@ -29,7 +29,9 @@ use bio_files::{
 };
 use itertools::Itertools;
 use lin_alg::f64::Vec3;
-use na_seq::{AminoAcid, AminoAcidGeneral, AminoAcidProtenationVariant, element::LjTable, AtomTypeInRes};
+use na_seq::{
+    AminoAcid, AminoAcidGeneral, AminoAcidProtenationVariant, AtomTypeInRes, element::LjTable,
+};
 
 use crate::{
     FfParamSet,
@@ -87,6 +89,7 @@ impl ForceFieldParamsIndexed {
             let err = || ParamError::new(&format!("Atom missing FF type: {atom}"));
             let ff_type = atom.force_field_type.as_ref().ok_or_else(|| err())?;
 
+            println!("-{atom}");
             // Mass
             if let Some(mass) = params.mass.get(ff_type) {
                 result.mass.insert(i, mass.clone());
@@ -95,6 +98,7 @@ impl ForceFieldParamsIndexed {
                     result.mass.insert(i, params.mass.get("C").unwrap().clone());
                     println!("Using C fallback mass for {ff_type}");
                 } else if ff_type.starts_with("N") {
+                    println!("TS. {atom}");
                     result.mass.insert(i, params.mass.get("N").unwrap().clone());
                     println!("Using N fallback mass for {ff_type}");
                 } else if ff_type.starts_with("O") {
@@ -390,15 +394,14 @@ impl ForceFieldParamsIndexed {
 }
 
 impl MdState {
-    pub fn new(
+    /// For a dynamic ligand, and static (set of a) peptide.
+    pub fn new_docking(
         atoms: &[Atom],
         atom_posits: &[Vec3],
         adjacency_list: &[Vec<usize>],
         bonds: &[Bond],
         atoms_static: &[Atom],
-        // lj_table: &LjTable,
         ff_params: &FfParamSet,
-        residues: &[Residue], // For protein charge LU
     ) -> Result<Self, ParamError> {
         let Some(ff_params_lig_keyed) = &ff_params.lig_general else {
             return Err(ParamError::new("Missing lig general params"));
@@ -414,7 +417,7 @@ impl MdState {
         let ff_params_keyed_lig_specific = ff_params.lig_specific.get("CPB");
 
         // Convert FF params from keyed to index-based.
-        let ff_params_lig = ForceFieldParamsIndexed::new(
+        let ff_params_non_static = ForceFieldParamsIndexed::new(
             ff_params_lig_keyed,
             ff_params_keyed_lig_specific,
             atoms,
@@ -427,7 +430,7 @@ impl MdState {
         let bonds_static = Vec::new();
         let adj_list_static = Vec::new();
 
-        let ff_params_prot = ForceFieldParamsIndexed::new(
+        let ff_params_static = ForceFieldParamsIndexed::new(
             ff_params_prot_keyed,
             None,
             atoms_static,
@@ -439,18 +442,23 @@ impl MdState {
         // the positioned ligand. (its atom coords are relative; we need absolute)
         let mut atoms_dy = Vec::with_capacity(atoms.len());
         for (i, atom) in atoms.iter().enumerate() {
-            atoms_dy.push(AtomDynamics::new(atom, atom_posits, &ff_params_lig, i)?);
+            atoms_dy.push(AtomDynamics::new(
+                atom,
+                atom_posits,
+                &ff_params_non_static,
+                i,
+            )?);
         }
 
-        let mut atoms_dy_external = Vec::with_capacity(atoms_static.len());
-        let atom_posits_external: Vec<_> = atoms_static.iter().map(|a| a.posit).collect();
+        let mut atoms_dy_static = Vec::with_capacity(atoms_static.len());
+        let atom_posits_static: Vec<_> = atoms_static.iter().map(|a| a.posit).collect();
 
         // for (i, atom) in atoms_external.iter().enumerate() {
         for (i, atom) in atoms_static.iter().enumerate() {
-            atoms_dy_external.push(AtomDynamics::new(
+            atoms_dy_static.push(AtomDynamics::new(
                 atom,
-                &atom_posits_external,
-                &ff_params_prot,
+                &atom_posits_static,
+                &ff_params_static,
                 i,
             )?);
         }
@@ -472,14 +480,75 @@ impl MdState {
 
         let mut result = Self {
             atoms: atoms_dy,
-            // bonds: bonds_dy,
             adjacency_list: adjacency_list.to_vec(),
-            atoms_static: atoms_dy_external,
-            // lj_lut: lj_table.clone(),
+            atoms_static: atoms_dy_static,
             cell,
             excluded_pairs: HashSet::new(),
             scaled14_pairs: HashSet::new(),
-            force_field_params: ff_params_lig,
+            force_field_params: ff_params_non_static,
+            ..Default::default()
+        };
+
+        result.build_masks();
+        result.build_neighbours();
+
+        Ok(result)
+    }
+
+    /// For a dynamic peptide, and no ligand.
+    pub fn new_peptide(
+        atoms: &[Atom],
+        atom_posits: &[Vec3],
+        adjacency_list: &[Vec<usize>],
+        bonds: &[Bond],
+        ff_params: &FfParamSet,
+    ) -> Result<Self, ParamError> {
+        let Some(ff_params_prot_keyed) = &ff_params.prot_general else {
+            return Err(ParamError::new("Missing prot params general params"));
+        };
+
+        // Assign FF type and charge to protein atoms; FF type must be assigned prior to initializing `ForceFieldParamsIndexed`.
+        // (Ligand atoms will already have FF type assigned).
+
+        // Convert FF params from keyed to index-based.
+        let ff_params_non_static =
+            ForceFieldParamsIndexed::new(ff_params_prot_keyed, None, atoms, bonds, adjacency_list)?;
+
+        // We are using this approach instead of `.into`, so we can use the atom_posits from
+        // the positioned ligand. (its atom coords are relative; we need absolute)
+        let mut atoms_dy = Vec::with_capacity(atoms.len());
+        for (i, atom) in atoms.iter().enumerate() {
+            atoms_dy.push(AtomDynamics::new(
+                atom,
+                atom_posits,
+                &ff_params_non_static,
+                i,
+            )?);
+        }
+
+        let cell = {
+            let (mut min, mut max) = (Vec3::splat(f64::INFINITY), Vec3::splat(f64::NEG_INFINITY));
+            for a in &atoms_dy {
+                min = min.min(a.posit);
+                max = max.max(a.posit);
+            }
+            let pad = 15.0; // Å
+            let lo = min - Vec3::splat(pad);
+            let hi = max + Vec3::splat(pad);
+
+            println!("Initizing sim box. L: {lo} H: {hi}");
+
+            SimBox { lo, hi }
+        };
+
+        let mut result = Self {
+            atoms: atoms_dy,
+            adjacency_list: adjacency_list.to_vec(),
+            atoms_static: Vec::new(),
+            cell,
+            excluded_pairs: HashSet::new(),
+            scaled14_pairs: HashSet::new(),
+            force_field_params: ff_params_non_static,
             ..Default::default()
         };
 
@@ -563,7 +632,7 @@ pub fn populate_ff_and_q(
             // todo to issue, and it's full of minor problems and omissions.
             // todo: Fix this, then make this return an error.
             println!("Missing residue when populating ff name and q. (PDBTBX error?): {atom}");
-            continue
+            continue;
         };
 
         let Some(type_in_res) = &atom.type_in_res else {
@@ -613,11 +682,14 @@ pub fn populate_ff_and_q(
 
             match type_in_res {
                 AtomTypeInRes::H(_) => {
-                    eprintln!("Failed to match H type {type_in_res}, {aa_gen:?}. Falling back to a generic H");
+                    eprintln!(
+                        "Failed to match H type {type_in_res}, {aa_gen:?}. Falling back to a generic H"
+                    );
 
                     for charge in charges {
-                        if &charge.type_in_res == &AtomTypeInRes::H("H".to_string()) ||
-                            &charge.type_in_res == &AtomTypeInRes::H("HA".to_string()) {
+                        if &charge.type_in_res == &AtomTypeInRes::H("H".to_string())
+                            || &charge.type_in_res == &AtomTypeInRes::H("HA".to_string())
+                        {
                             atom.partial_charge = Some(charge.charge);
 
                             found = true;
@@ -626,7 +698,9 @@ pub fn populate_ff_and_q(
                     }
                 }
                 AtomTypeInRes::OXT => {
-                    eprintln!("OXT present in residue; we don't have a parameter binding; falling back to 'O'");
+                    eprintln!(
+                        "OXT present in residue; we don't have a parameter binding; falling back to 'O'"
+                    );
 
                     for charge in charges {
                         if &charge.type_in_res == &AtomTypeInRes::O {
@@ -637,7 +711,7 @@ pub fn populate_ff_and_q(
                         }
                     }
                 }
-                _ => ()
+                _ => (),
             }
 
             // i.e. if still not found after our specific workarounds above.

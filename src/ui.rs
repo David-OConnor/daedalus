@@ -22,7 +22,7 @@ use crate::{
     cli::autocomplete_cli,
     docking::{
         ConformationType, calc_binding_energy,
-        dynamics::{build_dynamics_docking, change_snapshot_md},
+        dynamics::{build_dynamics_docking, build_dynamics_peptide, change_snapshot_md},
         external::check_adv_avail,
         find_optimal_pose,
         find_sites::find_docking_sites,
@@ -37,15 +37,15 @@ use crate::{
         CAM_INIT_OFFSET, RENDER_DIST_FAR, RENDER_DIST_NEAR, set_docking_light, set_flashlight,
         set_static_light,
     },
-    ui_aux, util,
+    ui_aux,
+    ui_aux::dynamics_player,
+    util,
     util::{
         cam_look_at, cam_look_at_outside, check_prefs_save, close_lig, close_mol,
         cycle_res_selected, handle_err, handle_scene_flags, load_atom_coords_rcsb, orbit_center,
         reset_camera, select_from_search,
     },
 };
-use crate::docking::dynamics::build_dynamics_peptide;
-use crate::ui_aux::dynamics_player;
 
 pub const ROW_SPACING: f32 = 10.;
 pub const COL_SPACING: f32 = 30.;
@@ -813,7 +813,6 @@ fn docking(
                 lig,
                 state.volatile.docking_setup.as_ref().unwrap(),
                 &state.ff_params,
-                &mol.residues,
                 n_steps,
                 dt,
             ) {
@@ -1787,18 +1786,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 let n_steps = 100;
                 let dt = 0.001;
 
-                // todo: Fix this; borrow error workaround.
-                let residues = mol.residues.clone();
-
-                match build_dynamics_peptide(
-                    &state.dev,
-                    mol,
-                    &state.ff_params,
-                    // &mol.residues,
-                    &residues,
-                    n_steps,
-                    dt,
-                ) {
+                match build_dynamics_peptide(&state.dev, mol, &state.ff_params, n_steps, dt) {
                     Ok(md) => {
                         state.mol_dynamics = Some(md);
                         state.ui.current_snapshot = 0;
@@ -1813,7 +1801,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         });
 
         // end btn for docking
-
 
         if state.ui.show_docking_tools {
             ui.add_space(ROW_SPACING);
@@ -1837,36 +1824,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             if state.molecule.is_some() {
                 add_aa_seq(&state.volatile.aa_seq_text, ui);
             }
-        }
-
-        // todo: Move this A/R
-        if let Some(mol) = &state.molecule {
-            // if ui.button("Run MD").clicked() {
-            //     if let Some(mol) = &state.molecule {
-            //         let dynamics = match &mut state.mol_dynamics {
-            //             Some(md) => md,
-            //             None => {
-            //                 state.mol_dynamics = Some(MdState::new(&mol.atoms));
-            //                 &state.dy
-            //             }
-            //         };
-            //     }
-            //
-            //     todo: We don't need to gen each time? But this is cheap.
-            //     state.mol_dynamics =
-            //         Some(MdState::new(&mol.atoms, &state.volatile.lj_lookup_table));
-            //
-            //     let dynamics = &mut state.mol_dynamics.as_mut().unwrap();
-            //
-            //     println!("Running dynamics...");
-            //     let num_steps = 1_000;
-            //     let dt = 0.001;
-            //     for t in 0..num_steps {
-            //         dynamics.step(dt)
-            //     }
-            //
-            //     println!("Complete.");
-            // }
         }
 
         // todo: Move A/r.
