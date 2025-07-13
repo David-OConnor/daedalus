@@ -345,10 +345,18 @@ pub fn build_dynamics_peptide(
         md_state.step(dt)
     }
 
+    mol.atom_posits = Some(Vec::with_capacity(mol.atoms.len()));
+
+    let atom_posits = mol.atom_posits.as_mut().unwrap();
+
     for (i, atom) in md_state.atoms.iter().enumerate() {
         // todo: Sort this out. The quick + dirty is change positions in place, but we need a better
         // todo way that retains the original positions. For example, see how we do it for ligands.
+
+        // todo: Sort this out, once you have a setup to render the atom_posit. don't change the
+        // todo main atom position when this happens.
         mol.atoms[i].posit = atom.posit;
+        atom_posits[i] = atom.posit;
     }
 
     Ok(md_state)

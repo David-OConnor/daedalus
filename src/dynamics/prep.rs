@@ -25,13 +25,13 @@ use std::collections::{HashMap, HashSet};
 
 use bio_files::{
     ResidueType,
-    amber_params::{ChargeParams, ForceFieldParamsKeyed, MassParams, VdwParams},
+    amber_params::{
+        BondStretchingParams, ChargeParams, ForceFieldParamsKeyed, MassParams, VdwParams,
+    },
 };
 use itertools::Itertools;
 use lin_alg::f64::Vec3;
-use na_seq::{
-    AminoAcid, AminoAcidGeneral, AminoAcidProtenationVariant, AtomTypeInRes, element::LjTable,
-};
+use na_seq::{AminoAcid, AminoAcidGeneral, AminoAcidProtenationVariant, AtomTypeInRes, Element};
 
 use crate::{
     FfParamSet,
@@ -79,17 +79,48 @@ impl ForceFieldParamsIndexed {
     ) -> Result<Self, ParamError> {
         let mut result = Self::default();
 
-        let err = || ParamError::new("Atom missing FF type");
+        // let err = || ParamError::new("Atom missing FF type");
 
         // Combine the two force field sets. When a value is present in both, refer the lig-specific
         // one.
         let params = merge_params(params_general, params_specific);
 
         for (i, atom) in atoms.iter().enumerate() {
-            let err = || ParamError::new(&format!("Atom missing FF type: {atom}"));
-            let ff_type = atom.force_field_type.as_ref().ok_or_else(|| err())?;
+            let err = || ParamError::new(&format!("Error: Atom missing FF type: {atom}"));
+            let ff_type = match &atom.force_field_type {
+                Some(ff_t) => ff_t,
+                None => {
+                    eprintln!("Atom missing FF type: {atom}");
+                    match atom.element {
+                        Element::Carbon => {
+                            eprintln!(
+                                "Indexing: Atom missing FF type: {atom}; Falling back to generic C"
+                            );
+                            "C"
+                        }
+                        Element::Nitrogen => {
+                            eprintln!(
+                                "Indexing: Atom missing FF type: {atom}; Falling back to generic N"
+                            );
+                            "N"
+                        }
+                        Element::Oxygen => {
+                            eprintln!(
+                                "Indexing: Atom missing FF type: {atom}; Falling back to generic O"
+                            );
+                            "O"
+                        }
+                        Element::Hydrogen => {
+                            eprintln!(
+                                "Indexing: Atom missing FF type: {atom}; Falling back to generic H"
+                            );
+                            "H"
+                        }
+                        _ => return Err(err()),
+                    }
+                }
+            };
 
-            println!("-{atom}");
             // Mass
             if let Some(mass) = params.mass.get(ff_type) {
                 result.mass.insert(i, mass.clone());
@@ -138,23 +169,23 @@ impl ForceFieldParamsIndexed {
             if let Some(vdw) = params.van_der_waals.get(ff_type) {
                 result.van_der_waals.insert(i, vdw.clone());
             } else {
-                if ff_type.starts_with("C") {
+                if ff_type.starts_with("C") || ff_type.starts_with("2C") {
                     result
                         .van_der_waals
                         .insert(i, params.van_der_waals.get("C*").unwrap().clone());
-                    println!("Using C* fallback VdW for {ff_type}");
+                    println!("Using C* fallback VdW for {atom}");
                 } else if ff_type.starts_with("N") {
                     result
                         .van_der_waals
                         .insert(i, params.van_der_waals.get("N").unwrap().clone());
-                    println!("Using N fallback VdW for {ff_type}");
+                    println!("Using N fallback VdW for {atom}");
                 } else if ff_type.starts_with("O") {
                     result
                         .van_der_waals
                         .insert(i, params.van_der_waals.get("O").unwrap().clone());
-                    println!("Using O fallback VdW for {ff_type}");
+                    println!("Using O fallback VdW for {atom}");
                 } else {
-                    println!("Missing Van der Waals params for {ff_type}");
+                    println!("Missing Vdw params for {atom}; using 0 values");
                     // 0. no interaction.
                     // todo: If this is "CG" etc, fall back to other carbon params instead.
                     result.van_der_waals.insert(
@@ -177,18 +208,31 @@ impl ForceFieldParamsIndexed {
         for bond in bonds {
             let (i, j) = (bond.atom_0, bond.atom_1);
             let (type_i, type_j) = (
-                atoms[i].force_field_type.as_ref().ok_or_else(|| err())?,
-                atoms[j].force_field_type.as_ref().ok_or_else(|| err())?,
+                atoms[i].force_field_type.as_ref().ok_or_else(|| {
+                    ParamError::new(&format!("Atom missing FF type on bond: {}", atoms[i]))
+                })?,
+                atoms[j].force_field_type.as_ref().ok_or_else(|| {
+                    ParamError::new(&format!("Atom missing FF type on bond: {}", atoms[j]))
+                })?,
             );
 
             let data = params
                 .bond
                 .get(&(type_i.clone(), type_j.clone()))
                 .or_else(|| params.bond.get(&(type_j.clone(), type_i.clone())))
-                .cloned()
-                .ok_or_else(|| {
-                    ParamError::new(&format!("Missing bond parameters for {type_i}-{type_j}"))
-                })?;
+                .cloned();
+
+            let data = data.unwrap_or_else(|| {
+                // todo: See note. Fix the ingest problem (?) that is triggering this.
+                eprintln!("(todo: fix ingest, and make this fail) Missing bond parameters for {type_i}-{type_j}");
+                // return Err(ParamError::new(&format!("Missing bond parameters for {type_i}-{type_j}")));
+                BondStretchingParams {
+                    atom_types: (String::new(), String::new()),
+                    k_b: 340.,
+                    r_0: 1.09,
+                    comment: None,
+                }
+            });
 
             result.bond_stretching.insert((i.min(j), i.max(j)), data);
         }
@@ -200,12 +244,15 @@ impl ForceFieldParamsIndexed {
             }
             for (&i, &k) in neigh.iter().tuple_combinations() {
                 let (type_0, type_1, type_2) = (
-                    atoms[i].force_field_type.as_ref().ok_or_else(|| err())?,
-                    atoms[center]
-                        .force_field_type
-                        .as_ref()
-                        .ok_or_else(|| err())?,
-                    atoms[k].force_field_type.as_ref().ok_or_else(|| err())?,
+                    atoms[i].force_field_type.as_ref().ok_or_else(|| {
+                        ParamError::new(&format!("Atom missing FF type on bond: {}", atoms[i]))
+                    })?,
+                    atoms[center].force_field_type.as_ref().ok_or_else(|| {
+                        ParamError::new(&format!("Atom missing FF type on bond: {}", atoms[center]))
+                    })?,
+                    atoms[k].force_field_type.as_ref().ok_or_else(|| {
+                        ParamError::new(&format!("Atom missing FF type on bond: {}", atoms[k]))
+                    })?,
                 );
 
                 let data = params
@@ -320,10 +367,30 @@ impl ForceFieldParamsIndexed {
 
                         // look up FF types
                         let (ti, tj, tk, tl) = (
-                            atoms[i].force_field_type.as_ref().ok_or_else(err)?,
-                            atoms[j].force_field_type.as_ref().ok_or_else(err)?,
-                            atoms[k].force_field_type.as_ref().ok_or_else(err)?,
-                            atoms[l].force_field_type.as_ref().ok_or_else(err)?,
+                            atoms[i].force_field_type.as_ref().ok_or_else(|| {
+                                ParamError::new(&format!(
+                                    "Atom missing FF type on bond: {}",
+                                    atoms[i]
+                                ))
+                            })?,
+                            atoms[j].force_field_type.as_ref().ok_or_else(|| {
+                                ParamError::new(&format!(
+                                    "Atom missing FF type on bond: {}",
+                                    atoms[j]
+                                ))
+                            })?,
+                            atoms[k].force_field_type.as_ref().ok_or_else(|| {
+                                ParamError::new(&format!(
+                                    "Atom missing FF type on bond: {}",
+                                    atoms[k]
+                                ))
+                            })?,
+                            atoms[l].force_field_type.as_ref().ok_or_else(|| {
+                                ParamError::new(&format!(
+                                    "Atom missing FF type on bond: {}",
+                                    atoms[l]
+                                ))
+                            })?,
                         );
 
                         if let Some(dihe) = params
@@ -363,10 +430,30 @@ impl ForceFieldParamsIndexed {
                         }
 
                         let (ti, tc, tk, tl) = (
-                            atoms[i].force_field_type.as_ref().ok_or_else(err)?,
-                            atoms[c].force_field_type.as_ref().ok_or_else(err)?,
-                            atoms[k].force_field_type.as_ref().ok_or_else(err)?,
-                            atoms[l].force_field_type.as_ref().ok_or_else(err)?,
+                            atoms[i].force_field_type.as_ref().ok_or_else(|| {
+                                ParamError::new(&format!(
+                                    "Atom missing FF type on bond: {}",
+                                    atoms[i]
+                                ))
+                            })?,
+                            atoms[c].force_field_type.as_ref().ok_or_else(|| {
+                                ParamError::new(&format!(
+                                    "Atom missing FF type on bond: {}",
+                                    atoms[c]
+                                ))
+                            })?,
+                            atoms[k].force_field_type.as_ref().ok_or_else(|| {
+                                ParamError::new(&format!(
+                                    "Atom missing FF type on bond: {}",
+                                    atoms[k]
+                                ))
+                            })?,
+                            atoms[l].force_field_type.as_ref().ok_or_else(|| {
+                                ParamError::new(&format!(
+                                    "Atom missing FF type on bond: {}",
+                                    atoms[l]
+                                ))
+                            })?,
                         );
 
                         // fetch parameters (improper torsion)
