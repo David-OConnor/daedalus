@@ -72,7 +72,7 @@ use cudarc::{
 };
 use egui::RichText;
 use egui_file_dialog::{FileDialog, FileDialogConfig};
-use file_io::cif_pdb::load_cif_pdb;
+// use file_io::cif_pdb::load_cif_pdb;
 use graphics::{Camera, InputsCommanded};
 use lin_alg::{
     f32::{Quaternion, Vec3},
@@ -84,8 +84,8 @@ use na_seq::{
     AminoAcid, AminoAcidGeneral, Element,
     element::{LjTable, init_lj_lut},
 };
-use pdbtbx::{self, PDB};
 
+// use pdbtbx::{self, PDB};
 use crate::{
     aa_coords::bond_vecs::init_local_bond_vecs,
     docking::{
@@ -93,7 +93,7 @@ use crate::{
         prep::DockingSetup,
     },
     dynamics::MdState,
-    file_io::{cif_pdb::save_pdb, mtz::load_mtz, pdbqt::load_pdbqt},
+    file_io::{mtz::load_mtz, pdbqt::load_pdbqt},
     molecule::Ligand,
     navigation::Tab,
     prefs::ToSave,
@@ -477,7 +477,7 @@ pub struct FfParamSet {
 struct State {
     pub ui: StateUi,
     pub volatile: StateVolatile,
-    pub pdb: Option<PDB>,
+    // pub pdb: Option<PDB>,
     pub cif_pdb_raw: Option<String>,
     pub molecule: Option<Molecule>,
     pub ligand: Option<Ligand>,

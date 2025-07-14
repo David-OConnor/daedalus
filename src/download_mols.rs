@@ -1,21 +1,25 @@
 //! Allows downloading PDB files from various APIs.
 
 use bio_apis::{ReqError, drugbank, pubchem, rcsb};
-use bio_files::Mol2;
-use pdbtbx::PDB;
+use bio_files::{MmCif, Mol2};
 
-use crate::{file_io::cif_pdb::read_pdb, molecule::Molecule};
+// use pdbtbx::PDB;
+
+// use crate::{file_io::cif_pdb::read_pdb, molecule::Molecule};
+use crate::molecule::Molecule;
 
 /// Download a CIF file from the RSCB, and parse as PDB.
-pub fn load_cif_rcsb(ident: &str) -> Result<(PDB, String), ReqError> {
+// pub fn load_cif_rcsb(ident: &str) -> Result<(PDB, String), ReqError> {
+pub fn load_cif_rcsb(ident: &str) -> Result<(MmCif, String), ReqError> {
     let cif_data = rcsb::load_cif(ident)?;
 
-    let pdb = read_pdb(&cif_data).map_err(|e| {
+    // let pdb = read_pdb(&cif_data).map_err(|e| {
+    let mmcif = MmCif::new(&cif_data).map_err(|e| {
         eprintln!("Error parsing mmCIF file: {e}");
         e
     });
 
-    Ok((pdb?, cif_data))
+    Ok((mmcif?, cif_data))
 }
 
 /// Download an SDF file from DrugBank, and parse as a molecule.

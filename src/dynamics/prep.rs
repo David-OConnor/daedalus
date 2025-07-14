@@ -248,7 +248,10 @@ impl ForceFieldParamsIndexed {
                         ParamError::new(&format!("Atom missing FF type on angle: {}", atoms[i]))
                     })?,
                     atoms[center].force_field_type.as_ref().ok_or_else(|| {
-                        ParamError::new(&format!("Atom missing FF type on angle: {}", atoms[center]))
+                        ParamError::new(&format!(
+                            "Atom missing FF type on angle: {}",
+                            atoms[center]
+                        ))
                     })?,
                     atoms[k].force_field_type.as_ref().ok_or_else(|| {
                         ParamError::new(&format!("Atom missing FF type on angle: {}", atoms[k]))

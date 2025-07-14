@@ -3,7 +3,7 @@
 use std::{fmt, io, io::ErrorKind, str::FromStr};
 
 use bincode::{Decode, Encode};
-use bio_files::{Chain, ResidueType};
+use bio_files::ResidueType;
 use graphics::{ControlScheme, Entity, FWD_VEC, Scene, UP_VEC};
 use lin_alg::{
     f32::{Quaternion, Vec3},
@@ -13,7 +13,7 @@ use na_seq::Element;
 
 use crate::{
     Selection, State, ViewSelLevel,
-    molecule::{Atom, AtomRole, BondCount, BondType, Residue, aa_color},
+    molecule::{Atom, AtomRole, BondCount, BondType, Chain, Residue, aa_color},
     reflection::ElectronDensity,
     render::{
         ATOM_SHININESS, BACKGROUND_COLOR, BALL_RADIUS_WATER, BALL_STICK_RADIUS,

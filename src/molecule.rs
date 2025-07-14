@@ -17,8 +17,8 @@ use bio_apis::{
     rcsb::{FilesAvailable, PdbDataResults, PdbMetaData},
 };
 use bio_files::{
-    AtomGeneric, BondGeneric, Chain, ChargeType, DensityMap, Mol2, MolType, ResidueGeneric,
-    ResidueType, Sdf, MmCif,
+    AtomGeneric, BondGeneric, ChainGeneric, ChargeType, DensityMap, MmCif, Mol2, MolType,
+    ResidueGeneric, ResidueType, Sdf,
 };
 use lin_alg::{
     f32::Vec3 as Vec3F32,
@@ -103,7 +103,7 @@ impl Molecule {
         println!("Loading atoms into mol");
         for (i, atom) in atoms.iter().enumerate() {
             if atom.serial_number > 187 && atom.serial_number < 194 {
-            // if i > 186 && i < 195 {
+                // if i > 186 && i < 195 {
                 println!("A Atom sns: {:?}, i: {}", atom.serial_number, i);
             }
         }
@@ -664,8 +664,10 @@ pub struct HydrogenBond {
 pub struct Residue {
     /// We use serial number of display, search etc, and array index to select. Residue serial number is not
     /// unique in the molecule; only in the chain.
-    pub serial_number: isize, // pdbtbx uses isize. Negative allowed?
+    pub serial_number: u32,
     pub res_type: ResidueType,
+    /// Serial number
+    pub atom_sns: Vec<u32>,
     pub atoms: Vec<usize>, // Atom index
     pub dihedral: Option<Dihedral>,
 }
@@ -675,20 +677,119 @@ impl Residue {
         ResidueGeneric {
             serial_number: self.serial_number,
             res_type: self.res_type.clone(),
-            atoms: self.atoms.clone(),
+            atom_sns: self.atom_sns.clone(),
         }
     }
 }
 
-impl From<&ResidueGeneric> for Residue {
-    fn from(res: &ResidueGeneric) -> Self {
-        Self {
+// impl From<&ResidueGeneric> for Residue {
+//     fn from(res: &ResidueGeneric) -> Self {
+impl Residue {
+    fn from_generic(res: &ResidueGeneric, atom_set: &[Atom]) -> io::Result<Self> {
+        let mut atoms = Vec::with_capacity(res.atom_sns.len());
+
+        for sn in res.atom_sns {
+            match atom_sns_to_indices(sn, atom_set) {
+                Some(i) => atoms.push(i),
+                None => {
+                    return Err(io::Error::new(
+                        ErrorKind::InvalidData,
+                        "Unable to find atom SN when loading from generic res",
+                    ));
+                }
+            }
+        }
+
+        Ok(Self {
             serial_number: res.serial_number,
             res_type: res.res_type.clone(),
-            atoms: res.atoms.clone(),
+            atom_sns: res.atom_sns.clone(),
+            atoms,
             dihedral: None,
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Chain {
+    pub id: String,
+    // todo: Do we want both residues and atoms stored here? It's an overconstraint.
+    /// Serial number
+    pub residue_sns: Vec<u32>,
+    pub residues: Vec<usize>,
+    /// Serial number
+    pub atoms_sns: Vec<u32>,
+    pub atoms: Vec<usize>,
+    pub visible: bool,
+}
+
+// impl From<&ChainGeneric> for Residue {
+impl Chain {
+    // fn from(res: &ChainGeneric) -> Self {
+    fn from_generic(
+        chain: &ChainGeneric,
+        atom_set: &[Atom],
+        res_set: &[Residue],
+    ) -> io::Result<Self> {
+        // todo: DRY with res code above.
+        let mut atoms = Vec::with_capacity(chain.atom_sns.len());
+        let mut residues = Vec::with_capacity(chain.residue_sns.len());
+
+        for sn in chain.atom_sns {
+            match atom_sns_to_indices(sn, atom_set) {
+                Some(i) => atoms.push(i),
+                None => {
+                    return Err(io::Error::new(
+                        ErrorKind::InvalidData,
+                        "Unable to find atom SN when loading from generic res",
+                    ));
+                }
+            }
+        }
+
+        for sn in chain.residue_sns {
+            match res_sns_to_indices(sn, res_set) {
+                Some(i) => atoms.push(i),
+                None => {
+                    return Err(io::Error::new(
+                        ErrorKind::InvalidData,
+                        "Unable to find res SN when loading from generic res",
+                    ));
+                }
+            }
+        }
+
+        Ok(Self {
+            id: chain.id.clone(),
+            residue_sns: chain.residue_sns.clone(),
+            residues,
+            atoms_sns: chain.atom_sns.clone(),
+            atoms,
+            visible: true,
+        })
+    }
+}
+
+/// Helper
+fn atom_sns_to_indices(sn_tgt: u32, atom_set: &[Atom]) -> Option<usize> {
+    for (i, atom) in atom_set.iter().enumerate() {
+        if atom.serial_number == sn_tgt {
+            return Some(i);
         }
     }
+
+    None
+}
+
+/// Helper, and dry
+fn res_sns_to_indices(sn_tgt: u32, res_set: &[Residue]) -> Option<usize> {
+    for (i, atom) in res_set.iter().enumerate() {
+        if atom.serial_number == sn_tgt {
+            return Some(i);
+        }
+    }
+
+    None
 }
 
 impl Residue {
@@ -709,7 +810,7 @@ impl Residue {
 
 #[derive(Debug, Clone, Default)]
 pub struct Atom {
-    pub serial_number: usize,
+    pub serial_number: u32,
     pub posit: Vec3,
     pub element: Element,
     /// e.g. "HA", "C", "N", "HB3" etc.
@@ -725,18 +826,15 @@ pub struct Atom {
     pub role: Option<AtomRole>,
     // todo: We should have a residue *pointer* etc to speed up computations;
     // todo: We shouldn't have to iterate through residues checking for atom membership.
-    /// We include this reference to the residue for speed; iterating through residues to check for
-    /// atom membership is slow.
+    /// We include these references to the residue and chain indices for speed; iterating through
+    /// residues (or chains) to check for atom membership is slow.
     pub residue: Option<usize>,
-    // pub residue_type: ResidueType, // todo: Duplicate with the residue association.
+    pub chain: Option<usize>,
     pub hetero: bool,
     /// For docking.
     pub occupancy: Option<f32>,
     pub partial_charge: Option<f32>,
     pub temperature_factor: Option<f32>,
-    // todo: Impl this, for various calculations
-    // /// Atoms relatively close to this; simplifies  certain calculations.
-    // pub neighbors: Vec<usize>,
 }
 
 impl Atom {
@@ -749,7 +847,7 @@ impl Atom {
                 AtomRole::C_Prime,
                 AtomRole::O_Backbone,
             ]
-                .contains(&r),
+            .contains(&r),
             None => false,
         }
     }
@@ -760,7 +858,6 @@ impl Atom {
             type_in_res: self.type_in_res.clone(),
             posit: self.posit,
             element: self.element,
-            // name: String::new(),
             partial_charge: self.partial_charge,
             force_field_type: self.force_field_type.clone(),
             ..Default::default()
@@ -846,15 +943,26 @@ pub const fn aa_color(aa: AminoAcid) -> (f32, f32, f32) {
 // }
 
 impl From<MmCif> for Molecule {
-    fn from(m: MmCif) -> Self {
-        let atoms = m.atoms.iter().map(|a| a.into()).collect();
+    fn from(m: MmCif) -> io::Result<Self> {
+        let atoms: Vec<_> = m.atoms.iter().map(|a| a.into()).collect();
 
-        let mut result = Self::new(m.ident, atoms, m.chains, m.residues, None, None);
+        let residues: Vec<_> = m
+            .residues
+            .iter()
+            .map(|r| Residue::from_generic(r, &atoms)?)
+            .collect();
+        let chains: Vec<_> = m
+            .chains
+            .iter()
+            .map(|c| Chain::from_generic(c, &atoms, &residues)?)
+            .collect();
+
+        let mut result = Self::new(m.ident, atoms, chains, residues, None, None);
 
         result.bonds_hydrogen = Vec::new();
         result.adjacency_list = result.build_adjacency_list();
 
-        result
+        Ok(result)
     }
 }
 
@@ -951,7 +1059,7 @@ impl ExperimentalMethod {
             Self::ElectronMicroscopy => "EM",
             Self::SolutionNmr => "NMR",
         }
-            .to_owned()
+        .to_owned()
     }
 }
 

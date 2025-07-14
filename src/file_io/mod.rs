@@ -7,13 +7,18 @@ use std::{
     time::Instant,
 };
 
-use bio_files::{DensityMap, gemmi_cif_to_map};
+use bio_files::{DensityMap, MmCif, gemmi_cif_to_map};
 use lin_alg::f64::Vec3;
 use na_seq::{AaIdent, AminoAcid, Element};
 
 use crate::{
-    AMINO_19, FRCMOD_FF19SB, GAFF2, PARM_19, State,
-    file_io::{cif_pdb::load_cif_pdb, pdbqt::load_pdbqt},
+    AMINO_19,
+    FRCMOD_FF19SB,
+    GAFF2,
+    PARM_19,
+    State,
+    // file_io::{cif_pdb::load_cif_pdb, pdbqt::load_pdbqt},
+    file_io::pdbqt::load_pdbqt,
     molecule::{Ligand, Molecule},
 };
 
@@ -93,14 +98,18 @@ impl State {
                     }
                 }
 
-                let pdb = load_cif_pdb(path)?;
+                // let pdb = load_cif_pdb(path)?;
                 let mut file = File::open(path)?;
 
-                let mut mol = Molecule::from_cif_pdb(&pdb, &file)?;
-                self.pdb = Some(pdb);
+                // let mut mol = Molecule::from_cif_pdb(&pdb, &file)?;
+                // self.pdb = Some(pdb);
 
                 let mut data_str = String::new();
                 file.read_to_string(&mut data_str)?;
+
+                let cif_data = MmCif::new(&data_str);
+                let mut mol: Molecule = cif_data.into()?;
+
                 self.cif_pdb_raw = Some(data_str);
 
                 // If we've loaded general FF params, apply them to get FF type and charge.

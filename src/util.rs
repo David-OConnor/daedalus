@@ -4,7 +4,7 @@
 
 use std::{collections::HashMap, io::Cursor, time::Instant};
 
-use bio_files::{Chain, ResidueType};
+use bio_files::{MmCif, ResidueType};
 use graphics::{Camera, ControlScheme, EngineUpdates, FWD_VEC, Mesh, Scene, Vertex};
 use itertools::Itertools;
 use lin_alg::{
@@ -18,7 +18,7 @@ use crate::{
     CamSnapshot, PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel,
     download_mols::load_cif_rcsb,
     mol_drawing::{EntityType, MoleculeView, draw_density, draw_density_surface, draw_molecule},
-    molecule::{Atom, AtomRole, Bond, Molecule, Residue},
+    molecule::{Atom, AtomRole, Bond, Chain, Molecule, Residue},
     render::{
         CAM_INIT_OFFSET, MESH_DENSITY_SURFACE, MESH_SECONDARY_STRUCTURE, MESH_SOLVENT_SURFACE,
         RENDER_DIST_FAR, RENDER_DIST_NEAR, set_flashlight, set_static_light,
@@ -524,10 +524,14 @@ pub fn load_atom_coords_rcsb(
     match load_cif_rcsb(ident) {
         // tood: For organization purposes, move thi scode out of the UI.
         Ok((pdb, cif_data)) => {
-            let cursor = Cursor::new(&cif_data);
+            // let cursor = Cursor::new(&cif_data);
 
-            match Molecule::from_cif_pdb(&pdb, cursor) {
-                Ok(mol) => {
+            let cif = MmCif::new(&cif_data);
+
+            match cif {
+                Ok(cif) => {
+                    let mol: Molecule = cif.into();
+
                     state.volatile.aa_seq_text = String::with_capacity(mol.atoms.len());
                     for aa in &mol.aa_seq {
                         state
@@ -554,7 +558,7 @@ pub fn load_atom_coords_rcsb(
                 Err(e) => eprintln!("Problem loading molecule from CIF: {e:?}"),
             }
 
-            state.pdb = Some(pdb);
+            // state.pdb = Some(pdb);
             state.cif_pdb_raw = Some(cif_data);
             state.update_from_prefs();
 

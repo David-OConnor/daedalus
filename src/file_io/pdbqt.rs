@@ -10,7 +10,7 @@ use std::{
     str::FromStr,
 };
 
-use bio_files::{Chain, ResidueType};
+use bio_files::{ChainGeneric, ResidueType};
 use lin_alg::f64::Vec3;
 use na_seq::{AaIdent, AtomTypeInRes, Element};
 use regex::Regex;
@@ -20,7 +20,7 @@ use crate::{
         ConformationType,
         prep::{DockType, UnitCellDims},
     },
-    molecule::{Atom, AtomRole, Ligand, Molecule, Residue},
+    molecule::{Atom, AtomRole, Chain, Ligand, Molecule, Residue},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -42,6 +42,10 @@ impl Display for TorsionStatus {
 /// Helpers for parsing
 fn parse_usize(s: &str) -> io::Result<usize> {
     s.parse::<usize>()
+        .map_err(|_| io::Error::new(ErrorKind::InvalidData, "Invalid integer"))
+}
+fn parse_u32(s: &str) -> io::Result<u32> {
+    s.parse::<u32>()
         .map_err(|_| io::Error::new(ErrorKind::InvalidData, "Invalid integer"))
 }
 fn parse_f64(s: &str) -> io::Result<f64> {
@@ -94,7 +98,7 @@ impl Molecule {
             // todo: Parse Ligand torsions.
 
             if record_type == "ATOM" || record_type == "HETATM" {
-                let serial_number = parse_usize(line[6..11].trim())?;
+                let serial_number = parse_u32(line[6..11].trim())?;
 
                 let atom_id = atoms.len(); // index for assigning residues and chains.
 
@@ -173,7 +177,7 @@ impl Molecule {
                     type_in_res: AtomTypeInRes::from_str(&name).ok(),
                     role,
                     residue: None,
-                    // residue_type,
+                    chain: None,
                     hetero,
                     occupancy,
                     temperature_factor,
