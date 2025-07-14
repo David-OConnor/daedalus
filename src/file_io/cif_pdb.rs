@@ -1,3 +1,6 @@
+// todo: Delete this lib.
+
+
 use std::{
     collections::HashMap,
     io,
@@ -26,11 +29,9 @@ impl Atom {
     pub fn from_cif_pdb(
         atom_pdb: &pdbtbx::Atom,
         atom_i: usize,
-        // aa_map: &HashMap<usize, ResidueType>,
-        aa_map: &HashMap<usize, usize>, // atom_i: res_i
+        aa_map: &HashMap<usize, usize>,
         residues: &[Residue],
     ) -> Self {
-        // let mut residue_type = ResidueType::Other("".to_owned());
         let mut residue = None;
         let mut role = None;
 
@@ -38,27 +39,23 @@ impl Atom {
             let res = &residues[*res_i];
             residue = Some(*res_i);
 
-            // if let Some(res_type) = aa_map.get(&atom_i) {
             role = match res.res_type {
                 ResidueType::AminoAcid(_aa) => Some(AtomRole::from_name(atom_pdb.name())),
                 ResidueType::Water => Some(AtomRole::Water),
                 _ => None,
             };
-
-            // residue_type = res_type.clone();
         }
 
         let name = atom_pdb.name().to_owned();
 
         Self {
-            serial_number: atom_pdb.serial_number() + 1,
+            serial_number: atom_pdb.serial_number(),
             posit: Vec3::new(atom_pdb.x(), atom_pdb.y(), atom_pdb.z()),
             element: el_from_pdb(atom_pdb.element()),
             type_in_res: AtomTypeInRes::from_str(&name).ok(),
             force_field_type: None,
             role,
             residue,
-            // residue_type,
             hetero: atom_pdb.hetero(),
             occupancy: None,
             temperature_factor: None,
@@ -70,6 +67,8 @@ impl Atom {
 
 impl Molecule {
     /// From `pdbtbx`'s format. Uses raw data too to add secondary structure, which pdbtbx doesn't handle.
+    /// todo: Ditch this. PDBTBX has too many errors and missing functionality, and the maintainer isn't responding on Github.
+    /// todo: Patching it is more trouble than it's worth.
     pub fn from_cif_pdb<R: Read + Seek>(pdb: &PDB, raw: R) -> io::Result<Self> {
         // todo: Maybe return the PDB type here, and store that. Also have a way to
         // todo get molecules from it
@@ -77,11 +76,20 @@ impl Molecule {
         // todo: Pdbtbx doesn't implm this yet for CIF.
         // for remark in pdb.remarks() {}
 
-        let atoms_pdb: Vec<&pdbtbx::Atom> = pdb.par_atoms().collect();
+        let mut atoms_pdb: Vec<pdbtbx::Atom> = pdb.par_atoms().map(|a| a.clone()).collect();
+        let mut residues_pdb: Vec<pdbtbx::Residue> = pdb.par_residues().map(|r| r.clone()).collect();
 
-        let mut residues: Vec<Residue> = pdb
-            .par_residues()
-            .map(|res| Residue::from_cif_pdb(res, &atoms_pdb))
+        // Fix an error in pdbtbx.
+        for atom in &mut atoms_pdb {
+            atom.set_serial_number(atom.serial_number() + 1);
+        }
+
+        for res in &mut residues_pdb {
+            res.set_serial_number(res.serial_number() + 1);
+        }
+
+        let mut residues: Vec<Residue> = residues_pdb.into_iter()
+            .map(|res| Residue::from_cif_pdb(&res, &atoms_pdb))
             .collect();
 
         residues.sort_by_key(|r| r.serial_number);
@@ -132,25 +140,52 @@ impl Molecule {
         let mut aa_map = HashMap::new();
         for (res_i, res) in residues.iter().enumerate() {
             for atom_i in &res.atoms {
-                // aa_map.insert(*atom_i, res.res_type.clone());
                 aa_map.insert(*atom_i, res_i);
             }
         }
 
-        // todo: This is taking a while.
-        let atoms: Vec<Atom> = atoms_pdb
-            .into_iter()
-            .enumerate()
-            .map(|(i, atom)| Atom::from_cif_pdb(atom, i, &aa_map, &residues))
-            .collect();
+        for (i, atom) in atoms_pdb.iter().enumerate() {
+            // if atom.serial_number > 187 && atom.serial_number < 194 {
+            if i > 180 && i < 195 {
+            // if atom.serial_number() > 187 && atom.serial_number() < 194 {
+                println!("1 Atom sns: {:?}, i: {} name: {}", atom.serial_number(), i, atom.name());
+            }
+        }
 
-        // todo: We use our own bond inference, since most PDBs seem to lack bond information.
+        // This extra logic is to workaround an error of duplicate atoms produced by pdbtbx.
+        // This can cause hidden trauma, like when assigning residues.
+        let mut atoms = Vec::new();
+        let mut added_sns = Vec::new();
+        for (i, atom_pdb) in atoms_pdb.into_iter().enumerate() {
+            if added_sns.contains(&atom_pdb.serial_number()) {
+                println!("Duplicate SN blocked from pdbtbx: {}", atom_pdb.serial_number()); // todo temp print
+                continue
+            } else {
+                atoms.push( Atom::from_cif_pdb(&atom_pdb, i, &aa_map, &residues));
+                added_sns.push(atom_pdb.serial_number());
+            }
 
-        // todo: Check modern ones?
-        // let mut bonds = Vec::new();
-        // for (a0, a1, bond) in pdb.bonds() {
-        //     bonds.push((Atom::from_pdb(a0), Atom::from_pdb(a1), bond));
-        // }
+        }
+
+        // // todo: This is taking a while.
+        // let atoms: Vec<Atom> = atoms_pdb
+        //     .into_iter()
+        //     .enumerate()
+        //     .map(|(i, atom)| Atom::from_cif_pdb(atom, i, &aa_map, &residues))
+        //     .collect();
+
+        // todo: What the heck?
+        println!("\n---");
+        for (i, atom) in atoms.iter().enumerate() {
+            // if atom.serial_number > 187 && atom.serial_number < 194 {
+            if i > 180 && i < 195 {
+            // if atom.serial_number > 187 && atom.serial_number < 194 {
+                println!("2 Atom sns: {:?}, i: {}, {:?}", atom.serial_number, i, atom.type_in_res);
+            }
+        }
+
+        // We use our own bond inference, since most PDB and cif files lack bond information.
+        // This may be a better or more robust approach even if bonds are included (?)
 
         let mut result = Molecule::new(
             pdb.identifier.clone().unwrap_or_default(),
@@ -168,7 +203,7 @@ impl Molecule {
 }
 
 impl Residue {
-    pub fn from_cif_pdb(res_pdb: &pdbtbx::Residue, atoms_pdb: &[&pdbtbx::Atom]) -> Self {
+    pub fn from_cif_pdb(res_pdb: &pdbtbx::Residue, atoms_pdb: &[pdbtbx::Atom]) -> Self {
         let res_name = res_pdb.name().unwrap_or_default();
 
         let res_type = ResidueType::from_str(res_name);

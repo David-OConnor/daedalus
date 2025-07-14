@@ -18,7 +18,7 @@ use crate::{
 };
 
 pub mod cif_aux;
-pub mod cif_pdb;
+// pub mod cif_pdb;
 pub mod cif_sf;
 pub mod mtz;
 pub mod pdbqt;

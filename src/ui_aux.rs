@@ -35,6 +35,8 @@ fn disp_atom_data(atom: &Atom, residues: &[Residue], ui: &mut Ui) {
         atom.posit.x, atom.posit.y, atom.posit.z
     );
 
+    let text_0 = format!("#{}", atom.serial_number);
+
     // Split so we can color-code by element.
     let text_a = format!("{}  {}  El:", posit_txt, atom.serial_number);
 
@@ -46,6 +48,8 @@ fn disp_atom_data(atom: &Atom, residues: &[Residue], ui: &mut Ui) {
         let res = &residues[res_i];
         text_c += &format!("  {}", res.descrip());
     }
+
+    ui.label(RichText::new(text_0).color(Color32::WHITE));
 
     ui.label(RichText::new(text_a).color(Color32::GOLD));
     let (r, g, b) = atom.element.color();

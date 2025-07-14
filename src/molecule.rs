@@ -18,7 +18,7 @@ use bio_apis::{
 };
 use bio_files::{
     AtomGeneric, BondGeneric, Chain, ChargeType, DensityMap, Mol2, MolType, ResidueGeneric,
-    ResidueType, sdf::Sdf,
+    ResidueType, Sdf, MmCif,
 };
 use lin_alg::{
     f32::Vec3 as Vec3F32,
@@ -99,6 +99,14 @@ impl Molecule {
         drugbank_id: Option<String>,
     ) -> Self {
         let (center, size) = mol_center_size(&atoms);
+
+        println!("Loading atoms into mol");
+        for (i, atom) in atoms.iter().enumerate() {
+            if atom.serial_number > 187 && atom.serial_number < 194 {
+            // if i > 186 && i < 195 {
+                println!("A Atom sns: {:?}, i: {}", atom.serial_number, i);
+            }
+        }
 
         let mut result = Self {
             ident,
@@ -741,7 +749,7 @@ impl Atom {
                 AtomRole::C_Prime,
                 AtomRole::O_Backbone,
             ]
-            .contains(&r),
+                .contains(&r),
             None => false,
         }
     }
@@ -837,6 +845,19 @@ pub const fn aa_color(aa: AminoAcid) -> (f32, f32, f32) {
 //     pub fn from
 // }
 
+impl From<MmCif> for Molecule {
+    fn from(m: MmCif) -> Self {
+        let atoms = m.atoms.iter().map(|a| a.into()).collect();
+
+        let mut result = Self::new(m.ident, atoms, m.chains, m.residues, None, None);
+
+        result.bonds_hydrogen = Vec::new();
+        result.adjacency_list = result.build_adjacency_list();
+
+        result
+    }
+}
+
 impl From<Mol2> for Molecule {
     fn from(m: Mol2) -> Self {
         let atoms = m.atoms.iter().map(|a| a.into()).collect();
@@ -930,7 +951,7 @@ impl ExperimentalMethod {
             Self::ElectronMicroscopy => "EM",
             Self::SolutionNmr => "NMR",
         }
-        .to_owned()
+            .to_owned()
     }
 }
 

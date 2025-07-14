@@ -245,13 +245,13 @@ impl ForceFieldParamsIndexed {
             for (&i, &k) in neigh.iter().tuple_combinations() {
                 let (type_0, type_1, type_2) = (
                     atoms[i].force_field_type.as_ref().ok_or_else(|| {
-                        ParamError::new(&format!("Atom missing FF type on bond: {}", atoms[i]))
+                        ParamError::new(&format!("Atom missing FF type on angle: {}", atoms[i]))
                     })?,
                     atoms[center].force_field_type.as_ref().ok_or_else(|| {
-                        ParamError::new(&format!("Atom missing FF type on bond: {}", atoms[center]))
+                        ParamError::new(&format!("Atom missing FF type on angle: {}", atoms[center]))
                     })?,
                     atoms[k].force_field_type.as_ref().ok_or_else(|| {
-                        ParamError::new(&format!("Atom missing FF type on bond: {}", atoms[k]))
+                        ParamError::new(&format!("Atom missing FF type on angle: {}", atoms[k]))
                     })?,
                 );
 
@@ -369,25 +369,25 @@ impl ForceFieldParamsIndexed {
                         let (ti, tj, tk, tl) = (
                             atoms[i].force_field_type.as_ref().ok_or_else(|| {
                                 ParamError::new(&format!(
-                                    "Atom missing FF type on bond: {}",
+                                    "Atom missing FF type on dihedral: {}",
                                     atoms[i]
                                 ))
                             })?,
                             atoms[j].force_field_type.as_ref().ok_or_else(|| {
                                 ParamError::new(&format!(
-                                    "Atom missing FF type on bond: {}",
+                                    "Atom missing FF type on dihedral: {}",
                                     atoms[j]
                                 ))
                             })?,
                             atoms[k].force_field_type.as_ref().ok_or_else(|| {
                                 ParamError::new(&format!(
-                                    "Atom missing FF type on bond: {}",
+                                    "Atom missing FF type on dihedral: {}",
                                     atoms[k]
                                 ))
                             })?,
                             atoms[l].force_field_type.as_ref().ok_or_else(|| {
                                 ParamError::new(&format!(
-                                    "Atom missing FF type on bond: {}",
+                                    "Atom missing FF type on dihderal: {}",
                                     atoms[l]
                                 ))
                             })?,
@@ -432,25 +432,25 @@ impl ForceFieldParamsIndexed {
                         let (ti, tc, tk, tl) = (
                             atoms[i].force_field_type.as_ref().ok_or_else(|| {
                                 ParamError::new(&format!(
-                                    "Atom missing FF type on bond: {}",
+                                    "Atom missing FF type on improper: {}",
                                     atoms[i]
                                 ))
                             })?,
                             atoms[c].force_field_type.as_ref().ok_or_else(|| {
                                 ParamError::new(&format!(
-                                    "Atom missing FF type on bond: {}",
+                                    "Atom missing FF type on improper: {}",
                                     atoms[c]
                                 ))
                             })?,
                             atoms[k].force_field_type.as_ref().ok_or_else(|| {
                                 ParamError::new(&format!(
-                                    "Atom missing FF type on bond: {}",
+                                    "Atom missing FF type on improper: {}",
                                     atoms[k]
                                 ))
                             })?,
                             atoms[l].force_field_type.as_ref().ok_or_else(|| {
                                 ParamError::new(&format!(
-                                    "Atom missing FF type on bond: {}",
+                                    "Atom missing FF type on improper: {}",
                                     atoms[l]
                                 ))
                             })?,
@@ -711,6 +711,17 @@ pub fn populate_ff_and_q(
         if atom.hetero {
             continue;
         }
+
+        if atom.serial_number == 190 {
+            println!("Atom 190: {atom}, res: {:?}", atom.residue);
+        }
+
+        // todo: OK: It seems the nature of this may be related to multiple copies of certain atoms. Why?
+        // todo: And more so, the second will be missing res typel;.
+        if atom.serial_number == 191 {
+            println!("Atom 191: {atom}, res: {:?}", atom.residue);
+        }
+
         let Some(res_i) = atom.residue else {
             // return Err(ParamError::new(&format!("Missing residue when populating ff name and q: {atom}")));
 
@@ -770,7 +781,7 @@ pub fn populate_ff_and_q(
             match type_in_res {
                 AtomTypeInRes::H(_) => {
                     eprintln!(
-                        "Failed to match H type {type_in_res}, {aa_gen:?}. Falling back to a generic H"
+                        "Error populating FF: Failed to match H type {type_in_res}, {aa_gen:?}. Falling back to a generic H"
                     );
 
                     for charge in charges {
@@ -786,7 +797,7 @@ pub fn populate_ff_and_q(
                 }
                 AtomTypeInRes::OXT => {
                     eprintln!(
-                        "OXT present in residue; we don't have a parameter binding; falling back to 'O'"
+                        "Error populating FF: OXT present in residue; we don't have a parameter binding; falling back to 'O'"
                     );
 
                     for charge in charges {
@@ -804,7 +815,7 @@ pub fn populate_ff_and_q(
             // i.e. if still not found after our specific workarounds above.
             if !found {
                 return Err(ParamError::new(&format!(
-                    "Can't find charge for protein atom: {:?}",
+                    "Error populating FF: Can't find charge for protein atom: {:?}",
                     atom
                 )));
             }
