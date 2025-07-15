@@ -16,10 +16,7 @@ use bio_apis::{
     ReqError, rcsb,
     rcsb::{FilesAvailable, PdbDataResults, PdbMetaData},
 };
-use bio_files::{
-    AtomGeneric, BondGeneric, ChainGeneric, ChargeType, DensityMap, MmCif, Mol2, MolType,
-    ResidueGeneric, ResidueType, Sdf,
-};
+use bio_files::{AtomGeneric, BondGeneric, ChainGeneric, ChargeType, DensityMap, MmCif, Mol2, MolType, ResidueGeneric, ResidueType, Sdf, ExperimentalMethod, BackboneSS};
 use lin_alg::{
     f32::Vec3 as Vec3F32,
     f64::{Quaternion, Vec3},
@@ -37,7 +34,6 @@ use crate::{
     },
     dynamics::ForceFieldParamsIndexed,
     reflection::{DensityRect, ElectronDensity, ReflectionsData},
-    ribbon_mesh::BackboneSS,
     util::mol_center_size,
 };
 
@@ -83,7 +79,7 @@ pub struct Molecule {
     pub density_map: Option<DensityMap>,
     pub density_rect: Option<DensityRect>,
     pub aa_seq: Vec<AminoAcid>,
-    pub method: Option<ExperimentalMethod>,
+    pub experimental_method: Option<ExperimentalMethod>,
     pub ff_params: Option<ForceFieldParamsIndexed>,
 }
 
@@ -688,8 +684,8 @@ impl Residue {
     fn from_generic(res: &ResidueGeneric, atom_set: &[Atom]) -> io::Result<Self> {
         let mut atoms = Vec::with_capacity(res.atom_sns.len());
 
-        for sn in res.atom_sns {
-            match atom_sns_to_indices(sn, atom_set) {
+        for sn in &res.atom_sns {
+            match atom_sns_to_indices(*sn, atom_set) {
                 Some(i) => atoms.push(i),
                 None => {
                     return Err(io::Error::new(
@@ -718,14 +714,12 @@ pub struct Chain {
     pub residue_sns: Vec<u32>,
     pub residues: Vec<usize>,
     /// Serial number
-    pub atoms_sns: Vec<u32>,
+    pub atom_sns: Vec<u32>,
     pub atoms: Vec<usize>,
     pub visible: bool,
 }
 
-// impl From<&ChainGeneric> for Residue {
 impl Chain {
-    // fn from(res: &ChainGeneric) -> Self {
     fn from_generic(
         chain: &ChainGeneric,
         atom_set: &[Atom],
@@ -735,8 +729,8 @@ impl Chain {
         let mut atoms = Vec::with_capacity(chain.atom_sns.len());
         let mut residues = Vec::with_capacity(chain.residue_sns.len());
 
-        for sn in chain.atom_sns {
-            match atom_sns_to_indices(sn, atom_set) {
+        for sn in &chain.atom_sns {
+            match atom_sns_to_indices(*sn, atom_set) {
                 Some(i) => atoms.push(i),
                 None => {
                     return Err(io::Error::new(
@@ -747,9 +741,9 @@ impl Chain {
             }
         }
 
-        for sn in chain.residue_sns {
-            match res_sns_to_indices(sn, res_set) {
-                Some(i) => atoms.push(i),
+        for sn in &chain.residue_sns {
+            match res_sns_to_indices(*sn, res_set) {
+                Some(i) => residues.push(i),
                 None => {
                     return Err(io::Error::new(
                         ErrorKind::InvalidData,
@@ -763,12 +757,21 @@ impl Chain {
             id: chain.id.clone(),
             residue_sns: chain.residue_sns.clone(),
             residues,
-            atoms_sns: chain.atom_sns.clone(),
+            atom_sns: chain.atom_sns.clone(),
             atoms,
             visible: true,
         })
     }
+
+    pub fn to_generic(&self) -> ChainGeneric {
+        ChainGeneric {
+            id: self.id.clone(),
+            residue_sns: self.residue_sns.clone(),
+            atom_sns: self.atom_sns.clone(),
+        }
+    }
 }
+
 
 /// Helper
 fn atom_sns_to_indices(sn_tgt: u32, atom_set: &[Atom]) -> Option<usize> {
@@ -921,43 +924,27 @@ pub const fn aa_color(aa: AminoAcid) -> (f32, f32, f32) {
     }
 }
 
-// todo: A/R.
 
-// #[derive(Debug, Clone, PartialEq)]
-// /// http://www.bmsc.washington.edu/CrystaLinks/man/pdb/part_42.html
-// pub enum HelixClass {
-//     Right-handed alpha (default)                1
-// Right-handed omega                          2
-// Right-handed pi                             3
-// Right-handed gamma                          4
-// Right-handed 310                            5
-// Left-handed alpha                           6
-// Left-handed omega                           7
-// Left-handed gamma                           8
-// 27 ribbon/helix                             9
-// Polyproline                                10
-// }
-//
-// impl HelixClass {
-//     pub fn from
-// }
+impl TryFrom<MmCif> for Molecule {
+    type Error = io::Error;
 
-impl From<MmCif> for Molecule {
-    fn from(m: MmCif) -> io::Result<Self> {
+    fn try_from(m: MmCif) -> Result<Self, Self::Error> {
         let atoms: Vec<_> = m.atoms.iter().map(|a| a.into()).collect();
 
-        let residues: Vec<_> = m
-            .residues
-            .iter()
-            .map(|r| Residue::from_generic(r, &atoms)?)
-            .collect();
-        let chains: Vec<_> = m
-            .chains
-            .iter()
-            .map(|c| Chain::from_generic(c, &atoms, &residues)?)
-            .collect();
+        let mut residues = Vec::with_capacity(m.residues.len());
+        for res in &m.residues {
+            residues.push(Residue::from_generic(res, &atoms)?);
+        }
 
-        let mut result = Self::new(m.ident, atoms, chains, residues, None, None);
+        let mut chains = Vec::with_capacity(m.chains.len());
+        for c in &m.chains {
+            chains.push(Chain::from_generic(c, &atoms, &residues)?);
+        }
+
+        let mut result = Self::new(m.ident.clone(), atoms, chains, residues, None, None);
+
+        result.experimental_method = m.experimental_method.clone();
+        result.secondary_structure = m.secondary_structure.clone();
 
         result.bonds_hydrogen = Vec::new();
         result.adjacency_list = result.build_adjacency_list();
@@ -984,12 +971,22 @@ impl From<Mol2> for Molecule {
     }
 }
 
-impl From<Sdf> for Molecule {
-    fn from(m: Sdf) -> Self {
-        let atoms = m.atoms.iter().map(|a| a.into()).collect();
-        let residues = m.residues.iter().map(|r| r.into()).collect();
+impl TryFrom<Sdf> for Molecule {
+    type Error = io::Error;
+    fn try_from(m: Sdf) -> Result<Self, Self::Error> {
+        let atoms: Vec<_> = m.atoms.iter().map(|a| a.into()).collect();
 
-        let mut result = Self::new(m.ident, atoms, m.chains.clone(), residues, None, None);
+        let mut residues = Vec::with_capacity(m.residues.len());
+        for res in &m.residues {
+            residues.push(Residue::from_generic(res, &atoms)?);
+        }
+
+        let mut chains = Vec::with_capacity(m.chains.len());
+        for c in &m.chains {
+            chains.push(Chain::from_generic(c, &atoms, &residues)?);
+        }
+
+        let mut result = Self::new(m.ident, atoms, chains, residues, None, None);
 
         let bonds = m.bonds.iter().map(|b| b.into()).collect();
 
@@ -998,7 +995,7 @@ impl From<Sdf> for Molecule {
         result.bonds_hydrogen = Vec::new();
         result.adjacency_list = result.build_adjacency_list();
 
-        result
+        Ok(result)
     }
 }
 
@@ -1022,12 +1019,13 @@ impl Molecule {
         let atoms = self.atoms.iter().map(|a| a.to_generic()).collect();
         let bonds = self.bonds.iter().map(|b| b.to_generic()).collect();
         let residues = self.residues.iter().map(|r| r.to_generic()).collect();
+        let chains = self.chains.iter().map(|c| c.to_generic()).collect();
 
         Sdf {
             ident: self.ident.clone(),
             atoms,
             bonds,
-            chains: self.chains.clone(),
+            chains,
             residues,
             metadata: HashMap::new(), // todo?
             pubchem_cid: self.pubchem_cid,
@@ -1036,66 +1034,3 @@ impl Molecule {
     }
 }
 
-// todo: Move to na_seq?
-#[derive(Clone, Copy, PartialEq, Debug)]
-/// The method used to find a given molecular structure. This data is present in mmCIF files
-/// as the `_exptl.method` field.
-pub enum ExperimentalMethod {
-    XRayDiffraction,
-    ElectronDiffraction,
-    NeutronDiffraction,
-    /// i.e. Cryo-EM
-    ElectronMicroscopy,
-    SolutionNmr,
-}
-
-impl ExperimentalMethod {
-    /// E.g. for displaying in the space-constrained UI.
-    pub fn to_str_short(&self) -> String {
-        match self {
-            Self::XRayDiffraction => "X-ray",
-            Self::NeutronDiffraction => "ND",
-            Self::ElectronDiffraction => "ED",
-            Self::ElectronMicroscopy => "EM",
-            Self::SolutionNmr => "NMR",
-        }
-        .to_owned()
-    }
-}
-
-impl Display for ExperimentalMethod {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let val = match self {
-            Self::XRayDiffraction => "X-Ray diffraction",
-            Self::NeutronDiffraction => "Neutron diffraction",
-            Self::ElectronDiffraction => "Electron diffraction",
-            Self::ElectronMicroscopy => "Electron microscopy",
-            Self::SolutionNmr => "Solution NMR",
-        };
-        write!(f, "{val}")
-    }
-}
-
-impl FromStr for ExperimentalMethod {
-    type Err = io::Error;
-
-    /// Parse an mmCIF‐style method string into an ExperimentalMethod.
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let normalized = s.to_lowercase();
-        let s = normalized.trim();
-        let method = match s {
-            "x-ray diffraction" => ExperimentalMethod::XRayDiffraction,
-            "neutron diffraction" => ExperimentalMethod::NeutronDiffraction,
-            "electron diffraction" => ExperimentalMethod::ElectronDiffraction,
-            "electron microscopy" => ExperimentalMethod::ElectronMicroscopy,
-            "solution nmr" => ExperimentalMethod::SolutionNmr,
-            other => {
-                return Err(io::Error::new(
-                    ErrorKind::InvalidData,
-                    format!("Error parsing experimental method: {other}"),
-                ));
-            }
-        };
-        Ok(method)
-    }
-}

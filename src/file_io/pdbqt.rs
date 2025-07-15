@@ -128,16 +128,18 @@ impl Molecule {
                 if !chain_found {
                     chains.push(Chain {
                         id: chain_id.to_string(),
+                        residue_sns: Vec::new(), // todo temp
                         residues: Vec::new(), // todo temp
+                        atom_sns: vec![atom_id as u32],
                         atoms: vec![atom_id],
                         visible: true,
                     });
                 }
 
-                let res_id = parse_usize(line[22..26].trim()).unwrap_or_default() as isize;
+                let serial_number = parse_usize(line[22..26].trim()).unwrap_or_default() as u32;
                 let mut res_found = false;
                 for res in &mut residues {
-                    if res.serial_number == res_id {
+                    if res.serial_number == serial_number {
                         res.atoms.push(atom_id);
                         res_found = true;
                         break;
@@ -147,6 +149,7 @@ impl Molecule {
                     residues.push(Residue {
                         serial_number: 0, // todo temp
                         res_type: residue_type.clone(),
+                        atom_sns: vec![atom_id as u32],
                         atoms: vec![atom_id],
                         dihedral: None,
                     });

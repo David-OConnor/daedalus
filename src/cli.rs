@@ -368,7 +368,7 @@ pub fn handle_cmd(
 
     if let Some(caps) = re_sel_resi.captures(&input) {
         if let Some(mol) = &state.molecule {
-            let i: isize = caps[1]
+            let i: u32 = caps[1]
                 .parse()
                 .map_err(|_| io::Error::new(ErrorKind::InvalidData, "Invalid index."))?;
 

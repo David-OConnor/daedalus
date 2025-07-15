@@ -38,7 +38,6 @@ cudarc = { version = "0.16.6", features = ["cuda-12060"], optional=true }
 #    "std", "cublas", "cublaslt", "curand", "driver", "runtime", "nvrtc", "dynamic-linking", "cuda-12060"
 #], default-features = false, optional=true }
 
-#pdbtbx = "0.12.0"
 rand = "0.9.1"
 rand_distr  = "0.5.1"  # todo: Used in ML. Eval!
 regex = "1.11.1"
@@ -53,7 +52,6 @@ itertools = "0.14.0" # For combinations when matching angles in MD.
 [patch.crates-io]
 # graphics = { path = "../../graphics" }
 #lin_alg = { path = "../../lin_alg" }
-#pdbtbx = { git = "https://github.com/David-OConnor/pdbtbx", branch = "Fix-symmetry-error-newer-CIFs" }
 #barnes_hut = { path = "../../barnes_hut" }
 #na_seq = { path = "../na_seq" }
 #bio_apis = { path = "../bio_apis" }

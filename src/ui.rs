@@ -556,9 +556,7 @@ fn draw_cli(
 fn docking(
     state: &mut State,
     scene: &mut Scene,
-    // redraw_mol: &mut bool,
     redraw_lig: &mut bool,
-    reset_cam: bool,
     engine_updates: &mut EngineUpdates,
     ui: &mut Ui,
 ) {
@@ -793,16 +791,13 @@ fn docking(
 
     ui.horizontal(|ui| {
         // Workaround for double-borrow.
-        let mut run_clicked = false;
-
-        run_clicked = ui.button("Run MD docking").clicked();
+        let mut run_clicked = ui.button("Run MD docking").clicked();
         if run_clicked {
             // If not already loaded from static string to state, do so now.
             // We load on demand to save computation.
             state.load_ffs_general();
         }
         if run_clicked {
-            let mol = state.molecule.as_ref().unwrap();
             let lig = state.ligand.as_mut().unwrap();
 
             let n_steps = 50_000;
@@ -1060,7 +1055,7 @@ fn mol_descrip(mol: &Molecule, ui: &mut Ui) {
 
     ui.label(format!("{} atoms", mol.atoms.len()));
 
-    if let Some(method) = mol.method {
+    if let Some(method) = mol.experimental_method {
         ui.label(method.to_str_short());
     }
 
@@ -1398,7 +1393,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
             let mut dm_loaded = None; // avoids a double-borrow error.
             if let Some(mol) = &mut state.molecule {
-                if state.pdb.is_some() {
                     if ui.button("Save").clicked() {
                         let extension = "cif";
 
@@ -1415,7 +1409,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                             filename.to_string();
                         state.volatile.dialogs.save.save_file();
                     }
-                }
 
                 // todo: Move these A/R. LIkely in a sub menu.
                 if let Some(files_avail) = &mol.rcsb_files_avail {
@@ -1808,9 +1801,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             docking(
                 state,
                 scene,
-                // &mut redraw_mol,
                 &mut redraw_lig,
-                reset_cam,
                 &mut engine_updates,
                 ui,
             );

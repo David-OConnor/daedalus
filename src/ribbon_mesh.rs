@@ -1,13 +1,12 @@
 //! Gets a cartoon mesh for secondary structure.
 
-use std::{f32::consts::TAU, f64::consts::PI};
-
-use bio_files::ResidueType;
+use std::{f32::consts::TAU};
+use bio_files::{BackboneSS, SecondaryStructure};
 use graphics::{Mesh, Vertex};
-use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
-use na_seq::{AminoAcid, Element};
+use lin_alg::{f32::Vec3 as Vec3F32};
+use na_seq::{Element};
 
-use crate::molecule::{Atom, AtomRole, Residue};
+use crate::molecule::{Atom};
 
 /// Radii / dimensions for each cartoon element (Å).
 const HELIX_RADIUS: f32 = 0.6;
@@ -19,22 +18,6 @@ const CYLINDER_SEGMENTS: usize = 12;
 
 // todo: Eval if you want a second cyilnder mesh of different parameters.
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum SecondaryStructure {
-    Helix,
-    Sheet,
-    Coil,
-}
-
-#[derive(Clone, Debug)]
-pub struct BackboneSS {
-    // pub start: Vec3,
-    // pub end: Vec3,
-    /// Start and end are atom indices.
-    pub start: usize,
-    pub end: usize,
-    pub sec_struct: SecondaryStructure,
-}
 
 /// Build a (closed) cylinder running from `a → b`.
 fn cylinder(a: Vec3F32, b: Vec3F32, radius: f32, segments: usize) -> (Vec<Vertex>, Vec<usize>) {
@@ -175,14 +158,15 @@ pub fn build_cartoon_mesh(backbone: &[BackboneSS], atoms: &[Atom]) -> Mesh {
     for seg in backbone {
         // let mut atom_posits: Vec<Vec3F32> = Vec::with_capacity(seg.end - seg.start);
         let mut atom_posits: Vec<Vec3F32> = Vec::new();
-        for i in seg.start..seg.end + 1 {
+        for sn in seg.start_sn..seg.end_sn + 1 {
+            let i = sn as usize - 1; // todo: Fragile.
             if atoms[i].element == Element::Oxygen {
                 continue;
             }
             atom_posits.push(atoms[i].posit.into());
         }
 
-        let (mut vtx, mut idx) = match seg.sec_struct {
+        let (vtx, mut idx) = match seg.sec_struct {
             SecondaryStructure::Helix =>
             // todo: Do better than a cylinder...
             {

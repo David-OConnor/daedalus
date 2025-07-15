@@ -540,7 +540,7 @@ impl State {
 
 fn main() {
     #[cfg(feature = "cuda")]
-    let dev = {
+    let _dev = {
         let runtime_v = cudarc::runtime::result::version::get_runtime_version();
         let driver_v = cudarc::runtime::result::version::get_driver_version();
         println!("CUDA runtime: {runtime_v:?}. Driver: {driver_v:?}");
@@ -575,7 +575,7 @@ fn main() {
     };
 
     #[cfg(not(feature = "cuda"))]
-    let dev = ComputationDevice::Cpu;
+    let _dev = ComputationDevice::Cpu;
 
     // todo For now. GPU currently is going slower than CPU for VDW.
     let dev = ComputationDevice::Cpu;
@@ -648,9 +648,9 @@ fn main() {
     state.load_aa_charges_ff();
 
     // todo temp
-    state
-        .open(&PathBuf::from_str("molecules/CPB.frcmod").unwrap())
-        .unwrap();
+    // state
+    //     .open(&PathBuf::from_str("molecules/CPB.frcmod").unwrap())
+    //     .unwrap();
 
     // todo temp
     // let mtz = load_mtz(&PathBuf::from_str("../../../Desktop/1fat_2fo.mtz").unwrap());

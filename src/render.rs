@@ -84,7 +84,7 @@ pub fn set_static_light(scene: &mut Scene, center: Vec3, size: f32) {
 
 /// Set lighting based on the docking location.
 pub fn set_docking_light(scene: &mut Scene, docking_init: Option<&DockingSite>) {
-    let mut light = &mut scene.lighting.point_lights[2];
+    let light = &mut scene.lighting.point_lights[2];
 
     match docking_init {
         Some(docking_init) => {

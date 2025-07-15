@@ -594,6 +594,7 @@ pub fn aa_data_from_coords(
     atoms: &[&Atom],
     residue_type: &ResidueType,
     res_i: usize,
+    chain_i: usize,
     prev_cp_ca: Option<(Vec3, Vec3)>,
     next_n: Option<Vec3>,
 ) -> (Dihedral, Vec<Atom>, Option<(Vec3, Vec3)>) {
@@ -611,6 +612,7 @@ pub fn aa_data_from_coords(
         force_field_type: None,
         role: Some(AtomRole::H_Backbone),
         residue: Some(res_i),
+        chain: Some(chain_i),
         // residue_type: residue_type.clone(),
         hetero: false,
         dock_type: None,

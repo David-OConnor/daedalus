@@ -460,7 +460,7 @@ impl ForceFieldParamsIndexed {
                         );
 
                         // fetch parameters (improper torsion)
-                        if let Some(mut dihe) = params
+                        if let Some(dihe) = params
                             .get_dihedral(&(ti.clone(), tc.clone(), tk.clone(), tl.clone()), false)
                         {
                             let mut dihe = dihe.clone();
@@ -651,7 +651,7 @@ impl MdState {
     // todo: Evaluate whtaq this does, and if you keep it, document.
     fn build_masks(&mut self) {
         // Helper to store pairs in canonical (low,high) order
-        let mut push = |set: &mut HashSet<(usize, usize)>, i: usize, j: usize| {
+        let push = |set: &mut HashSet<(usize, usize)>, i: usize, j: usize| {
             if i < j {
                 set.insert((i, j));
             } else {

@@ -144,7 +144,7 @@ pub fn find_selected_atom(
             }
             if role == AtomRole::Water
                 && (ui.visibility.hide_water
-                    || matches!(
+                || matches!(
                         ui.mol_view,
                         MoleculeView::SpaceFill | MoleculeView::Backbone
                     ))
@@ -523,62 +523,58 @@ pub fn load_atom_coords_rcsb(
 ) {
     match load_cif_rcsb(ident) {
         // tood: For organization purposes, move thi scode out of the UI.
-        Ok((pdb, cif_data)) => {
-            // let cursor = Cursor::new(&cif_data);
-
-            let cif = MmCif::new(&cif_data);
-
-            match cif {
-                Ok(cif) => {
-                    let mol: Molecule = cif.into();
-
-                    state.volatile.aa_seq_text = String::with_capacity(mol.atoms.len());
-                    for aa in &mol.aa_seq {
-                        state
-                            .volatile
-                            .aa_seq_text
-                            .push_str(&aa.to_str(AaIdent::OneLetter));
-                    }
-
-                    // todo: DRY from `open_molecule`. Refactor into shared code?
-
-                    state.volatile.aa_seq_text = String::with_capacity(mol.atoms.len());
-                    for aa in &mol.aa_seq {
-                        state
-                            .volatile
-                            .aa_seq_text
-                            .push_str(&aa.to_str(AaIdent::OneLetter));
-                    }
-
-                    state.volatile.flags.ss_mesh_created = false;
-                    state.volatile.flags.sas_mesh_created = false;
-                    state.volatile.flags.clear_density_drawing = true;
-                    state.molecule = Some(mol)
+        Ok((cif, cif_text)) => {
+            let mol: Molecule = match cif.try_into() {
+                Ok(m) => m,
+                Err(e) => {
+                    eprintln!("Problem parsing mmCif data into molecule: {e:?}");
+                    return;
                 }
-                Err(e) => eprintln!("Problem loading molecule from CIF: {e:?}"),
+            };
+
+            state.volatile.aa_seq_text = String::with_capacity(mol.atoms.len());
+            for aa in &mol.aa_seq {
+                state
+                    .volatile
+                    .aa_seq_text
+                    .push_str(&aa.to_str(AaIdent::OneLetter));
             }
 
-            // state.pdb = Some(pdb);
-            state.cif_pdb_raw = Some(cif_data);
-            state.update_from_prefs();
+            // todo: DRY from `open_molecule`. Refactor into shared code?
 
-            *redraw = true;
-            *reset_cam = true;
-            set_flashlight(scene);
-            engine_updates.lighting = true;
+            state.volatile.aa_seq_text = String::with_capacity(mol.atoms.len());
+            for aa in &mol.aa_seq {
+                state
+                    .volatile
+                    .aa_seq_text
+                    .push_str(&aa.to_str(AaIdent::OneLetter));
+            }
 
-            // todo: async
-            // Only after updating from prefs (to prevent unecesasary loading) do we update data avail.
-            state
-                .molecule
-                .as_mut()
-                .unwrap()
-                .updates_rcsb_data(&mut state.volatile.mol_pending_data_avail);
+            state.volatile.flags.ss_mesh_created = false;
+            state.volatile.flags.sas_mesh_created = false;
+            state.volatile.flags.clear_density_drawing = true;
+            state.molecule = Some(mol);
+            state.cif_pdb_raw = Some(cif_text);
         }
-        Err(_e) => {
-            eprintln!("Error loading CIF file");
-        }
+        Err(e) => eprintln!("Problem loading molecule from CIF: {e:?}"),
     }
+
+
+    state.update_from_prefs();
+
+    *redraw = true;
+    *reset_cam = true;
+    set_flashlight(scene);
+    engine_updates.lighting = true;
+
+    // todo: async
+    // Only after updating from prefs (to prevent unecesasary loading) do we update data avail.
+    state
+        .molecule
+        .as_mut()
+        .unwrap()
+        .updates_rcsb_data(&mut state.volatile.mol_pending_data_avail);
+
 }
 
 pub fn save_snap(state: &mut State, cam: &Camera, name: &str) {

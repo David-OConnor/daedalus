@@ -41,9 +41,9 @@ const EP_EPS: f64 = 0.;
 
 // Partial charges
 // todo: Fill out.
-const charge_o: f64 = 1.;
-const charge_h: f64 = 1.;
-const charge_ep: f64 = 1.;
+const Q_O: f64 = 1.;
+const Q_H: f64 = 1.;
+const Q_EP: f64 = 1.;
 
 /// Amber RM: "OPC is a non-polarizable, 4-point, 3-charge rigid water model. Geometrically, it resembles TIP4P-like mod-
 /// els, although the values of OPC point charges and charge-charge distances are quite different.

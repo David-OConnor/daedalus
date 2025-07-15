@@ -82,7 +82,7 @@ pub fn read_main_headers(buf: &[u8], save_headers: Option<&mut Vec<String>>) -> 
 
     // Counters and flags
     let mut ncol = 0;
-    let mut has_batch = false;
+    // let mut has_batch = false;
 
     let mut i = 0;
     loop {

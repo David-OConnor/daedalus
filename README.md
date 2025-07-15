@@ -50,7 +50,7 @@ from the [RCSB PDB](https://www.rcsb.org/).
 
 
 ## File formats
-- Proteins: mmCIF and PDB
+- Proteins: mmCIF (.pdb supported removed; use mmCIF instead)
 - Small molecules: SDF, Mol2, and PDBQT
 - Electron density: 2fo-fc CIF, and Map.
 - Force field parameters: dat, and frcmode (Amber)
@@ -180,6 +180,21 @@ Daedalus supports a very limited subset of PyMol's CLI interface. Supported comm
 - `reset`
 
 ![Protein A](screenshots/protein_a.png)
+
+
+### Compiling
+This application is pure rust, so compiles normally using `cargo build`, which produces a standalone executable.
+It requires these 5 Amber parameter files to be present under the project's `resources` folder at compile time.
+These are available in [Amber tools](https://ambermd.org/GetAmber.php). Download, unpack, then copy these files from
+`dat/leap/parm` and `dat/leap/lib`:
+
+- `amino19.lib`
+- `aminoct12.lib`
+- `aminont12.lib`
+- `parm19.dat`
+- `frcmod.ff19SB`
+- `gaff2.dat`
+
 
 ### Erratta
 - Ribbon view is currently unavailable.

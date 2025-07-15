@@ -8,18 +8,16 @@ use bio_files::{MmCif, Mol2};
 // use crate::{file_io::cif_pdb::read_pdb, molecule::Molecule};
 use crate::molecule::Molecule;
 
-/// Download a CIF file from the RSCB, and parse as PDB.
-// pub fn load_cif_rcsb(ident: &str) -> Result<(PDB, String), ReqError> {
+/// Download mmCIF file from the RSCB, parse into a struct.
 pub fn load_cif_rcsb(ident: &str) -> Result<(MmCif, String), ReqError> {
-    let cif_data = rcsb::load_cif(ident)?;
+    let cif_text = rcsb::load_cif(ident)?;
 
-    // let pdb = read_pdb(&cif_data).map_err(|e| {
-    let mmcif = MmCif::new(&cif_data).map_err(|e| {
+    let mmcif = MmCif::new(&cif_text).map_err(|e| {
         eprintln!("Error parsing mmCIF file: {e}");
         e
     });
 
-    Ok((mmcif?, cif_data))
+    Ok((mmcif?, cif_text))
 }
 
 /// Download an SDF file from DrugBank, and parse as a molecule.
