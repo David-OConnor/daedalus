@@ -308,7 +308,6 @@ pub enum AtomRole {
     Sidechain,
     H_Sidechain,
     Water,
-    Other,
 }
 
 impl AtomRole {
@@ -340,7 +339,6 @@ impl Display for AtomRole {
             AtomRole::Sidechain => write!(f, "Side"),
             AtomRole::H_Sidechain => write!(f, "H SC"),
             AtomRole::Water => write!(f, "Water"),
-            AtomRole::Other => write!(f, "Other"),
         }
     }
 }
@@ -655,6 +653,13 @@ pub struct HydrogenBond {
     pub hydrogen: usize,
 }
 
+#[derive(Clone, Copy, PartialEq)]
+pub enum ResidueEnd {
+    Internal,
+    NTerminus,
+    CTerminus,
+}
+
 #[derive(Debug, Clone)]
 pub struct Residue {
     /// We use serial number of display, search etc, and array index to select. Residue serial number is not
@@ -665,6 +670,7 @@ pub struct Residue {
     pub atom_sns: Vec<u32>,
     pub atoms: Vec<usize>, // Atom index
     pub dihedral: Option<Dihedral>,
+    pub end: ResidueEnd,
 }
 
 impl Residue {
@@ -677,8 +683,6 @@ impl Residue {
     }
 }
 
-// impl From<&ResidueGeneric> for Residue {
-//     fn from(res: &ResidueGeneric) -> Self {
 impl Residue {
     fn from_generic(res: &ResidueGeneric, atom_set: &[Atom]) -> io::Result<Self> {
         let mut atoms = Vec::with_capacity(res.atom_sns.len());
@@ -892,16 +896,30 @@ impl From<&AtomGeneric> for Atom {
 
 impl Display for Atom {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let ff_type = match &self.force_field_type {
+            Some(f) => f,
+            None => "None"
+        };
+
+        let q = match &self.partial_charge {
+            Some(q_) => format!("{q_:.3}"),
+            None => "None".to_string()
+        };
+
         write!(
             f,
-            "Atom {}: {}, {}. {:?}, ff: {:?}, q: {:?}",
+            "Atom {}: {}, {}. {:?}, ff: {ff_type}, q: {q}",
             self.serial_number,
             self.element.to_letter(),
             self.posit,
             self.type_in_res,
-            self.force_field_type,
-            self.partial_charge
-        )
+        )?;
+
+        if self.hetero {
+            write!(f, ", Het");
+        }
+
+        Ok(())
     }
 }
 

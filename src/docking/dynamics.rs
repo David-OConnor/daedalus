@@ -4,12 +4,6 @@
 //! Experimental molecular dynamics, with a playback system. Starting with fixed-ligand position only,
 //! referencing the anchor.
 
-use std::{collections::HashMap, time::Instant};
-
-use bio_files::amber_params::{ChargeParams, ForceFieldParamsKeyed};
-
-use crate::{ComputationDevice, FfParamSet};
-
 cfg_if::cfg_if! {
     if #[cfg(feature = "cuda")] {
         use cudarc::driver::{CudaModule, CudaStream, LaunchConfig, PushKernelArg};
@@ -18,28 +12,22 @@ cfg_if::cfg_if! {
 }
 
 use graphics::Entity;
-use lin_alg::{
-    f32::Vec3 as Vec3F32,
-    f64::{Mat3, Quaternion, Vec3},
-};
+use lin_alg::f64::{Mat3, Quaternion, Vec3};
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use lin_alg::{
     // f32::{Vec3x8, f32x8, pack_slice, pack_vec3},
-    f64::{Vec3x4, f64x4, pack_slice, pack_vec3},
+    f64::{f64x4, pack_slice, pack_vec3, Vec3x4},
 };
-use na_seq::AminoAcid;
 use rayon::prelude::*;
 
-#[cfg(feature = "cuda")]
-use crate::forces::force_lj_gpu;
 use crate::{
     docking::{
-        BindingEnergy, ConformationType, Pose,
-        prep::{DockingSetup, Torsion},
+        prep::{DockingSetup, Torsion}, BindingEnergy, ConformationType,
+        Pose,
     },
-    dynamics::{AtomDynamics, AtomDynamicsx4, MdState, ParamError, SnapshotDynamics},
+    dynamics::{AtomDynamics, AtomDynamicsx4},
     forces::force_lj,
-    molecule::{Atom, Ligand, Molecule, Residue},
+    molecule::{Atom, Ligand},
 };
 // This seems to be how we control rotation vice movement. A higher value means
 // more movement, less rotation for a given dt.
@@ -284,84 +272,6 @@ fn scalar_f_t(
         )
 }
 
-/// Perform MD on the ligand, with nearby protein (receptor) atoms, from the docking setup as static
-/// non-bonded contributors. (Vdw and coulomb)
-pub fn build_dynamics_docking(
-    dev: &ComputationDevice,
-    lig: &mut Ligand,
-    setup: &DockingSetup,
-    ff_params: &FfParamSet,
-    n_steps: usize,
-    dt: f64,
-) -> Result<MdState, ParamError> {
-    println!("Building docking dyanmics...");
-    let start = Instant::now();
-
-    lig.pose.conformation_type = ConformationType::AbsolutePosits;
-
-    let mut md_state = MdState::new_docking(
-        &lig.molecule.atoms,
-        &lig.atom_posits,
-        &lig.molecule.adjacency_list,
-        &lig.molecule.bonds,
-        &setup.rec_atoms_near_site,
-        ff_params,
-    )?;
-
-    for _ in 0..n_steps {
-        md_state.step(dt)
-    }
-
-    for (i, atom) in md_state.atoms.iter().enumerate() {
-        lig.atom_posits[i] = atom.posit;
-    }
-
-    Ok(md_state)
-}
-
-/// Perform MD on the peptide (protein) only. Can be very computationally intensive due to the large
-/// number of atoms.
-pub fn build_dynamics_peptide(
-    dev: &ComputationDevice,
-    mol: &mut Molecule,
-    ff_params: &FfParamSet,
-    n_steps: usize,
-    dt: f64,
-) -> Result<MdState, ParamError> {
-    println!("Building peptide dyanmics...");
-    let start = Instant::now();
-
-    let posits: Vec<_> = mol.atoms.iter().map(|a| a.posit).collect();
-
-    let mut md_state = MdState::new_peptide(
-        &mol.atoms,
-        &posits,
-        &mol.adjacency_list,
-        &mol.bonds,
-        ff_params,
-    )?;
-
-    for _ in 0..n_steps {
-        md_state.step(dt)
-    }
-
-    mol.atom_posits = Some(Vec::with_capacity(mol.atoms.len()));
-
-    let atom_posits = mol.atom_posits.as_mut().unwrap();
-
-    for (i, atom) in md_state.atoms.iter().enumerate() {
-        // todo: Sort this out. The quick + dirty is change positions in place, but we need a better
-        // todo way that retains the original positions. For example, see how we do it for ligands.
-
-        // todo: Sort this out, once you have a setup to render the atom_posit. don't change the
-        // todo main atom position when this happens.
-        mol.atoms[i].posit = atom.posit;
-        atom_posits[i] = atom.posit;
-    }
-
-    Ok(md_state)
-}
-
 /// Body masses are separate from the snapshot, since it's invariant.
 pub fn change_snapshot(
     entities: &mut [Entity],
@@ -387,20 +297,3 @@ pub fn change_snapshot(
     *energy_disp = snapshot.energy.clone();
 }
 
-/// Body masses are separate from the snapshot, since it's invariant.
-pub fn change_snapshot_md(
-    entities: &mut [Entity],
-    lig: &mut Ligand,
-    lig_entity_ids: &[usize],
-    energy_disp: &mut Option<BindingEnergy>,
-    snapshot: &SnapshotDynamics,
-) {
-    lig.pose.conformation_type = ConformationType::AbsolutePosits; // Should alreayd be set?
-
-    // Position atoms from pose  here? You could, but the snapshot has them pre-positioned.
-    // This may make changing snapshots faster. But uses more memory from storing each
-
-    lig.atom_posits = snapshot.atom_posits.iter().map(|p| (*p).into()).collect();
-
-    // *energy_disp = snapshot.energy.clone();
-}

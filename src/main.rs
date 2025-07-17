@@ -111,8 +111,8 @@ use crate::{
 const PARM_19: &str = include_str!("../resources/parm19.dat"); // Bonded, and Van der Waals.
 const FRCMOD_FF19SB: &str = include_str!("../resources/frcmod.ff19SB"); // Bonded, and Van der Waals: overrides and new types
 const AMINO_19: &str = include_str!("../resources/amino19.lib"); // Charge; internal residues
-const AMINONT12: &str = include_str!("../resources/aminont12.lib"); // Charge; protonated N-terminus residues
-const AMINOCT12: &str = include_str!("../resources/aminoct12.lib"); // Charge; protonated C-terminus residues
+const AMINO_NT12: &str = include_str!("../resources/aminont12.lib"); // Charge; protonated N-terminus residues
+const AMINO_CT12: &str = include_str!("../resources/aminoct12.lib"); // Charge; protonated C-terminus residues
 
 // Ligands/small organic molecules: *General Amber Force Fields*.
 const GAFF2: &str = include_str!("../resources/gaff2.dat");
@@ -461,6 +461,15 @@ impl CamSnapshot {
     }
 }
 
+/// Maps type-in-residue (found in, e.g. mmCIF and PDB files) to Amber FF type, and partial charge.
+/// We assume that if one of these is loaded, so are the others. So, these aren't `Options`s, but
+/// the field that holds this struct should be one.
+pub struct ProtFFTypeChargeData {
+    pub interal: HashMap<AminoAcidGeneral, Vec<ChargeParams>>,
+    pub n_terminus: HashMap<AminoAcidGeneral, Vec<ChargeParams>>,
+    pub c_terminus: HashMap<AminoAcidGeneral, Vec<ChargeParams>>,
+}
+
 #[derive(Default)]
 /// Force field parameters (e.g. Amber) for molecular dynamics.
 pub struct FfParamSet {
@@ -470,7 +479,7 @@ pub struct FfParamSet {
     pub prot_general: Option<ForceFieldParamsKeyed>,
     /// In addition to charge, this also contains the mapping of res type to FF type; required to map
     /// other parameters to protein atoms.
-    pub prot_charge_general: Option<HashMap<AminoAcidGeneral, Vec<ChargeParams>>>,
+    pub prot_charge: Option<ProtFFTypeChargeData>,
     /// Key: A unique identifier for the molecule. (e.g. ligand)
     pub lig_specific: HashMap<String, ForceFieldParamsKeyed>,
 }

@@ -72,11 +72,6 @@ const SCALE_COUL_14: f64 = 1.0 / 1.2; // 0.833̅
 
 const SOFTENING_FACTOR_SQ: f64 = 1e-6;
 
-// Conversion factor
-// 2^(5/6); no powf in consts.
-const SIGMA_FROM_R_MIN: f64 = 1.7817974362806785;
-
-// todo: A/R
 const SNAPSHOT_RATIO: usize = 10;
 
 const EPS: f64 = 1.0e-8;

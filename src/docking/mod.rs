@@ -46,7 +46,7 @@ use bincode::{Decode, Encode};
 use lin_alg::f32::{f32x8, pack_float, pack_vec3};
 use lin_alg::{
     f32::Vec3 as Vec3F32,
-    f64::{FORWARD, Quaternion, RIGHT, UP, Vec3},
+    f64::{Quaternion, Vec3, FORWARD, RIGHT, UP},
     linspace,
 };
 use na_seq::Element;
@@ -55,16 +55,14 @@ use rand::Rng;
 use rayon::prelude::*;
 
 use crate::{
-    ComputationDevice,
     bond_inference::create_hydrogen_bonds_one_way,
-    docking::{
-        dynamics::build_dynamics_docking,
-        prep::{DockingSetup, LIGAND_SAMPLE_RATIO, Torsion},
-    },
+    docking::prep::{DockingSetup, Torsion, LIGAND_SAMPLE_RATIO},
     forces,
     forces::{V_lj, V_lj_x8},
     molecule::{Atom, Ligand},
+    ComputationDevice,
 };
+use crate::dynamics::prep::build_dynamics_docking;
 
 pub mod dynamics;
 pub mod external;

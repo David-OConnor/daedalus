@@ -6,21 +6,12 @@ use std::{
     path::Path,
     time::Instant,
 };
-
+use std::collections::HashMap;
 use bio_files::{DensityMap, MmCif, gemmi_cif_to_map};
 use lin_alg::f64::Vec3;
-use na_seq::{AaIdent, AminoAcid, Element};
+use na_seq::{AaIdent, AminoAcid, AminoAcidGeneral, Element};
 
-use crate::{
-    AMINO_19,
-    FRCMOD_FF19SB,
-    GAFF2,
-    PARM_19,
-    State,
-    // file_io::{cif_pdb::load_cif_pdb, pdbqt::load_pdbqt},
-    file_io::pdbqt::load_pdbqt,
-    molecule::{Ligand, Molecule},
-};
+use crate::{AMINO_19, FRCMOD_FF19SB, GAFF2, PARM_19, State, file_io::pdbqt::load_pdbqt, molecule::{Ligand, Molecule}, AMINO_NT12, AMINO_CT12};
 
 
 pub mod cif_sf;
@@ -32,7 +23,7 @@ use bio_files::{
     amber_params::{ForceFieldParams, ForceFieldParamsKeyed, parse_amino_charges},
     sdf::Sdf,
 };
-
+use bio_files::amber_params::ChargeParams;
 use crate::{
     docking::prep::DockingSetup,
     dynamics::prep::{merge_params, populate_ff_and_q},
@@ -375,11 +366,13 @@ impl State {
         Ok(())
     }
 
-    /// Load amimo acid partial charges and forcefields from our built-in string. This is fast and
-    /// light; do it at init. If we have a molecule loaded, populate its force field and Q data
-    /// using it.
-    pub fn load_aa_charges_ff(&mut self) {
-        match parse_amino_charges(AMINO_19) {
+    /// Helper, called for normal, C-terminus, and N-terminus.
+    fn load_amino_charges(
+        &mut self,
+        prot_charge: &mut Option<HashMap<AminoAcidGeneral, Vec<ChargeParams>>>,
+        data: &str,
+    ) {
+        match parse_amino_charges(data) {
             Ok(charge_ff_data) => {
                 if let Some(mol) = &mut self.molecule {
                     if let Err(e) =
@@ -399,16 +392,28 @@ impl State {
                                 &self.bh_config,
                             ));
                         }
+
+                        // todo: You might need to re-init MD here as well.
                     }
                 }
 
-                self.ff_params.prot_charge_general = Some(charge_ff_data);
+                *prot_charge = Some(charge_ff_data);
             }
             Err(e) => handle_err(
                 &mut self.ui,
                 format!("Unable to load protein charges (static): {e}"),
             ),
         }
+    }
+
+    /// Load amimo acid partial charges and forcefields from our built-in string. This is fast and
+    /// light; do it at init. If we have a molecule loaded, populate its force field and Q data
+    /// using it. We load normal values, C-terminal values, and N-terminal values to different
+    /// fields
+    pub fn load_aa_charges_ff(&mut self) {
+        self.load_amino_charges(&mut self.ff_params.prot_charge_general, AMINO_19);
+        self.load_amino_charges(&mut self.ff_params.prot_charge_n_terminus, AMINO_NT12);
+        self.load_amino_charges(&mut self.ff_params.prot_charge_c_terminus, AMINO_CT12);
     }
 
     /// Load parameter files for general organic molecules (GAFF2), and proteins/amino acids (PARM19).

@@ -9,33 +9,28 @@ use std::{
 
 use bio_apis::{drugbank, pubchem, rcsb};
 use egui::{Color32, ComboBox, Context, Key, RichText, Slider, TextEdit, TopBottomPanel, Ui};
-use graphics::{ControlScheme, EngineUpdates, RIGHT_VEC, Scene, UP_VEC};
+use graphics::{ControlScheme, EngineUpdates, Scene, RIGHT_VEC, UP_VEC};
 use lin_alg::f32::{Quaternion, Vec3};
 use na_seq::AaIdent;
 
 static INIT_COMPLETE: AtomicBool = AtomicBool::new(false);
 
-use bio_files::{DensityMap, ResidueType, density_from_2fo_fc_rcsb_gemmi};
+use bio_files::{density_from_2fo_fc_rcsb_gemmi, DensityMap, ResidueType};
 
 use crate::{
-    CamSnapshot, MsaaSetting, Selection, State, ViewSelLevel, cli,
-    cli::autocomplete_cli,
-    docking::{
-        ConformationType, calc_binding_energy,
-        dynamics::{build_dynamics_docking, build_dynamics_peptide, change_snapshot_md},
-        external::check_adv_avail,
+    cli, cli::autocomplete_cli, docking::{
+        calc_binding_energy, external::check_adv_avail
+        ,
         find_optimal_pose,
         find_sites::find_docking_sites,
-    },
-    download_mols::{load_sdf_drugbank, load_sdf_pubchem},
-    inputs::{MOVEMENT_SENS, ROTATE_SENS},
-    mol_drawing::{
-        EntityType, MoleculeView, draw_density, draw_density_surface, draw_ligand, draw_molecule,
+        ConformationType,
+    }, download_mols::{load_sdf_drugbank, load_sdf_pubchem}, inputs::{MOVEMENT_SENS, ROTATE_SENS}, mol_drawing::{
+        draw_density, draw_density_surface, draw_ligand, draw_molecule, EntityType, MoleculeView,
     },
     molecule::{Ligand, Molecule},
     render::{
-        CAM_INIT_OFFSET, RENDER_DIST_FAR, RENDER_DIST_NEAR, set_docking_light, set_flashlight,
-        set_static_light,
+        set_docking_light, set_flashlight, set_static_light, CAM_INIT_OFFSET, RENDER_DIST_FAR,
+        RENDER_DIST_NEAR,
     },
     ui_aux,
     ui_aux::dynamics_player,
@@ -45,7 +40,13 @@ use crate::{
         cycle_res_selected, handle_err, handle_scene_flags, load_atom_coords_rcsb, orbit_center,
         reset_camera, select_from_search,
     },
+    CamSnapshot,
+    MsaaSetting,
+    Selection,
+    State,
+    ViewSelLevel,
 };
+use crate::dynamics::prep::{build_dynamics_docking, build_dynamics_peptide};
 
 pub const ROW_SPACING: f32 = 10.;
 pub const COL_SPACING: f32 = 30.;

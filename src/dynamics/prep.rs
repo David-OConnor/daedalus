@@ -24,22 +24,23 @@
 use std::collections::{HashMap, HashSet};
 
 use bio_files::{
-    ResidueType,
     amber_params::{
         BondStretchingParams, ChargeParams, ForceFieldParamsKeyed, MassParams, VdwParams,
     },
+    ResidueType,
 };
 use itertools::Itertools;
 use lin_alg::f64::Vec3;
 use na_seq::{AminoAcid, AminoAcidGeneral, AminoAcidProtenationVariant, AtomTypeInRes, Element};
-
-use crate::{
-    FfParamSet,
-    dynamics::{
-        AtomDynamics, CUTOFF, ForceFieldParamsIndexed, MdState, ParamError, SKIN, ambient::SimBox,
-    },
-    molecule::{Atom, Bond, Residue},
-};
+use graphics::Entity;
+use std::time::Instant;
+use crate::{dynamics::{
+    ambient::SimBox, AtomDynamics, ForceFieldParamsIndexed, MdState, ParamError, CUTOFF, SKIN,
+}, molecule::{Atom, Bond, Residue}, ComputationDevice, FfParamSet, ProtFFTypeChargeData};
+use crate::docking::{BindingEnergy, ConformationType};
+use crate::docking::prep::DockingSetup;
+use crate::dynamics::SnapshotDynamics;
+use crate::molecule::{Ligand, Molecule, ResidueEnd};
 
 /// Build a single lookup table in which ligand-specific parameters
 /// (when given) replace or add to the generic ones.
@@ -154,26 +155,27 @@ impl ForceFieldParamsIndexed {
                 }
             }
 
-            // if let Some(q) = params.partial_charges.get(ff_type) {
-            //     result.partial_charge.insert(i, q.clone());
-            // } else {
-            //     println!("Missing partial charge for {ff_type}; setting to 0");
-            //     result.partial_charge.insert(i, 0.0);
-            //     // todo: Set to 0 and warn instead of erroring?
-            //     // return Err(ParamError::new(&format!(
-            //     //     "Missing partial charge for {ff_type}"
-            //     // )))
-            // }
-
             // Lennard-Jones / van der Waals
             if let Some(vdw) = params.van_der_waals.get(ff_type) {
                 result.van_der_waals.insert(i, vdw.clone());
+                // If the key is missing for the given FF type in our loaded data, check for certain
+                // special cases.
             } else {
-                if ff_type.starts_with("C") || ff_type.starts_with("2C") {
+                // ChatGpt seems to think this is the move. I only asked it about "2C", and it inferred
+                // I should also map 3C and C8 to this so, good sign. Note that the mass values
+                // for all 4 of these are present in frcmod.ff19sb.
+                if ff_type == "2C" || ff_type == "3C" || ff_type == "C8" {
                     result
                         .van_der_waals
-                        .insert(i, params.van_der_waals.get("C*").unwrap().clone());
-                    println!("Using C* fallback VdW for {atom}");
+                        .insert(i, params.van_der_waals.get("CT").unwrap().clone());
+                } else if ff_type == "CO" {
+                    result
+                        .van_der_waals
+                        .insert(i, params.van_der_waals.get("C").unwrap().clone());
+                } else if ff_type == "OXT" {
+                    result
+                        .van_der_waals
+                        .insert(i, params.van_der_waals.get("O2").unwrap().clone());
                 } else if ff_type.starts_with("N") {
                     result
                         .van_der_waals
@@ -206,13 +208,13 @@ impl ForceFieldParamsIndexed {
 
         // Bonds
         for bond in bonds {
-            let (i, j) = (bond.atom_0, bond.atom_1);
+            let (i0, i1) = (bond.atom_0, bond.atom_1);
             let (type_i, type_j) = (
-                atoms[i].force_field_type.as_ref().ok_or_else(|| {
-                    ParamError::new(&format!("Atom missing FF type on bond: {}", atoms[i]))
+                atoms[i0].force_field_type.as_ref().ok_or_else(|| {
+                    ParamError::new(&format!("Atom missing FF type on bond: {}", atoms[i0]))
                 })?,
-                atoms[j].force_field_type.as_ref().ok_or_else(|| {
-                    ParamError::new(&format!("Atom missing FF type on bond: {}", atoms[j]))
+                atoms[i1].force_field_type.as_ref().ok_or_else(|| {
+                    ParamError::new(&format!("Atom missing FF type on bond: {}", atoms[i1]))
                 })?,
             );
 
@@ -234,7 +236,7 @@ impl ForceFieldParamsIndexed {
                 }
             });
 
-            result.bond_stretching.insert((i.min(j), i.max(j)), data);
+            result.bond_stretching.insert((i0.min(i1), i0.max(i1)), data);
         }
 
         // Angles. (Between 3 atoms)
@@ -585,7 +587,8 @@ impl MdState {
         Ok(result)
     }
 
-    /// For a dynamic peptide, and no ligand.
+    /// For a dynamic peptide, and no ligand. There is no need to filter by hetero only
+    /// atoms upstream.
     pub fn new_peptide(
         atoms: &[Atom],
         atom_posits: &[Vec3],
@@ -600,9 +603,13 @@ impl MdState {
         // Assign FF type and charge to protein atoms; FF type must be assigned prior to initializing `ForceFieldParamsIndexed`.
         // (Ligand atoms will already have FF type assigned).
 
+        // I don't like this clone, but I'm not sure how to do it without changing downstream
+        // APIs to accept &[&Atom].
+        let atoms: Vec<_> = atoms.iter().filter(|a| !a.hetero).cloned().collect();
+
         // Convert FF params from keyed to index-based.
         let ff_params_non_static =
-            ForceFieldParamsIndexed::new(ff_params_prot_keyed, None, atoms, bonds, adjacency_list)?;
+            ForceFieldParamsIndexed::new(ff_params_prot_keyed, None, &atoms, bonds, adjacency_list)?;
 
         // We are using this approach instead of `.into`, so we can use the atom_posits from
         // the positioned ligand. (its atom coords are relative; we need absolute)
@@ -708,32 +715,15 @@ impl MdState {
 pub fn populate_ff_and_q(
     atoms: &mut [Atom],
     residues: &[Residue],
-    prot_charge: &HashMap<AminoAcidGeneral, Vec<ChargeParams>>,
+    ff_type_charge: &ProtFFTypeChargeData,
 ) -> Result<(), ParamError> {
     for atom in atoms {
         if atom.hetero {
             continue;
         }
 
-        if atom.serial_number == 190 {
-            println!("Atom 190: {atom}, res: {:?}", atom.residue);
-        }
-
-        // todo: OK: It seems the nature of this may be related to multiple copies of certain atoms. Why?
-        // todo: And more so, the second will be missing res typel;.
-        if atom.serial_number == 191 {
-            println!("Atom 191: {atom}, res: {:?}", atom.residue);
-        }
-
         let Some(res_i) = atom.residue else {
-            // return Err(ParamError::new(&format!("Missing residue when populating ff name and q: {atom}")));
-
-            // todo We are continuing instead of returning an error; occasionally see this when parsing
-            // todo from PDBTBX. We need to get rid of that lib; it's unmaintained, owner doesn't respond
-            // todo to issue, and it's full of minor problems and omissions.
-            // todo: Fix this, then make this return an error.
-            println!("Missing residue when populating ff name and q. (PDBTBX error?): {atom}");
-            continue;
+            return Err(ParamError::new(&format!("Missing residue when populating ff name and q: {atom}")));
         };
 
         let Some(type_in_res) = &atom.type_in_res else {
@@ -753,11 +743,18 @@ pub fn populate_ff_and_q(
         // todo state to use those labels. They are available in the params.
         let aa_gen = AminoAcidGeneral::Standard(*aa);
 
-        let charges = match prot_charge.get(&aa_gen) {
+        let charge_map = match residues[res_i].end {
+            ResidueEnd::Internal => &ff_type_charge.interal,
+            ResidueEnd::NTerminus => &ff_type_charge.n_terminus,
+            ResidueEnd::CTerminus => &ff_type_charge.c_terminus,
+        };
+        
+        let charges = match charge_map.get(&aa_gen) {
             Some(c) => c,
             // A specific workaround to plain "HIS" being absent from amino19.lib (2025.
             // Choose one of "HID", "HIE", "HIP arbitrarily.
-            None if aa_gen == AminoAcidGeneral::Standard(AminoAcid::His) => prot_charge
+            // todo: Re-evaluate this, e.g. which one of the three to load.
+            None if aa_gen == AminoAcidGeneral::Standard(AminoAcid::His) => charge_map
                 .get(&AminoAcidGeneral::Variant(AminoAcidProtenationVariant::Hid))
                 .ok_or_else(|| ParamError::new("Unable to find AA mapping"))?,
             None => return Err(ParamError::new("Unable to find AA mapping")),
@@ -777,20 +774,24 @@ pub fn populate_ff_and_q(
             }
         }
 
-        if !found {
-            // todo: This is a workaround for having trouble with H types. LIkely
-            // todo when we create them. For now, this meets the intent.
+        // Code below is mainly for the case of missing data; otherwise, the logic for this operation
+        // is complete.
 
+        if !found {
             match type_in_res {
+                // todo: This is a workaround for having trouble with H types. LIkely
+                // todo when we create them. For now, this meets the intent.
                 AtomTypeInRes::H(_) => {
                     eprintln!(
-                        "Error populating FF: Failed to match H type {type_in_res}, {aa_gen:?}. Falling back to a generic H"
+                        "Error populating FF type and q: Failed to match H type {type_in_res}, {aa_gen:?}.\
+                         Falling back to a generic H"
                     );
 
                     for charge in charges {
                         if &charge.type_in_res == &AtomTypeInRes::H("H".to_string())
                             || &charge.type_in_res == &AtomTypeInRes::H("HA".to_string())
                         {
+                            // atom.force_field_type = Some("H");
                             atom.partial_charge = Some(charge.charge);
 
                             found = true;
@@ -798,27 +799,28 @@ pub fn populate_ff_and_q(
                         }
                     }
                 }
-                AtomTypeInRes::OXT => {
-                    eprintln!(
-                        "Error populating FF: OXT present in residue; we don't have a parameter binding; falling back to 'O'"
-                    );
-
-                    for charge in charges {
-                        if &charge.type_in_res == &AtomTypeInRes::O {
-                            atom.partial_charge = Some(charge.charge);
-
-                            found = true;
-                            break;
-                        }
-                    }
-                }
+                // // This is an N-terminal oxygen of a C-terminal carboxyl group.
+                // // todo: You should parse `aminoct12.lib`, and `aminont12.lib`, then delete this.
+                // AtomTypeInRes::OXT => {
+                //     match atom_res_type {
+                //         // todo: QC that it's the N-terminal Met too, or return an error.
+                //         ResidueType::AminoAcid(AminoAcid::Met) => {
+                //             atom.force_field_type = Some("O2".to_owned());
+                //             // Fm amino12ct.lib
+                //             atom.partial_charge = Some(-0.804100);
+                //             found = true;
+                //         }
+                //         _ => return Err(ParamError::new("Error populating FF type: OXT atom-in-res type,\
+                //         not at the C terminal")),
+                //     }
+                // }
                 _ => (),
             }
 
             // i.e. if still not found after our specific workarounds above.
             if !found {
                 return Err(ParamError::new(&format!(
-                    "Error populating FF: Can't find charge for protein atom: {:?}",
+                    "Error populating FF type and q: {:?}",
                     atom
                 )));
             }
@@ -826,4 +828,100 @@ pub fn populate_ff_and_q(
     }
 
     Ok(())
+}
+
+/// Perform MD on the ligand, with nearby protein (receptor) atoms, from the docking setup as static
+/// non-bonded contributors. (Vdw and coulomb)
+pub fn build_dynamics_docking(
+    dev: &ComputationDevice,
+    lig: &mut Ligand,
+    setup: &DockingSetup,
+    ff_params: &FfParamSet,
+    n_steps: usize,
+    dt: f64,
+) -> Result<MdState, ParamError> {
+    println!("Building docking dyanmics...");
+    let start = Instant::now();
+
+    lig.pose.conformation_type = ConformationType::AbsolutePosits;
+
+    let mut md_state = MdState::new_docking(
+        &lig.molecule.atoms,
+        &lig.atom_posits,
+        &lig.molecule.adjacency_list,
+        &lig.molecule.bonds,
+        &setup.rec_atoms_near_site,
+        ff_params,
+    )?;
+
+    for _ in 0..n_steps {
+        md_state.step(dt)
+    }
+
+    for (i, atom) in md_state.atoms.iter().enumerate() {
+        lig.atom_posits[i] = atom.posit;
+    }
+
+    Ok(md_state)
+}
+
+/// Perform MD on the peptide (protein) only. Can be very computationally intensive due to the large
+/// number of atoms.
+pub fn build_dynamics_peptide(
+    dev: &ComputationDevice,
+    mol: &mut Molecule,
+    ff_params: &FfParamSet,
+    n_steps: usize,
+    dt: f64,
+) -> Result<MdState, ParamError> {
+    println!("Building peptide dynamics...");
+    let start = Instant::now();
+
+    let posits: Vec<_> = mol.atoms.iter().map(|a| a.posit).collect();
+
+    let mut md_state = MdState::new_peptide(
+        &mol.atoms,
+        &posits,
+        &mol.adjacency_list,
+        &mol.bonds,
+        ff_params,
+    )?;
+
+    for _ in 0..n_steps {
+        md_state.step(dt)
+    }
+
+    mol.atom_posits = Some(Vec::with_capacity(mol.atoms.len()));
+
+    let atom_posits = mol.atom_posits.as_mut().unwrap();
+
+    for (i, atom) in md_state.atoms.iter().enumerate() {
+        // todo: Sort this out. The quick + dirty is change positions in place, but we need a better
+        // todo way that retains the original positions. For example, see how we do it for ligands.
+
+        // todo: Sort this out, once you have a setup to render the atom_posit. don't change the
+        // todo main atom position when this happens.
+        mol.atoms[i].posit = atom.posit;
+        atom_posits[i] = atom.posit;
+    }
+
+    Ok(md_state)
+}
+
+/// Body masses are separate from the snapshot, since it's invariant.
+pub fn change_snapshot_md(
+    entities: &mut [Entity],
+    lig: &mut Ligand,
+    lig_entity_ids: &[usize],
+    energy_disp: &mut Option<BindingEnergy>,
+    snapshot: &SnapshotDynamics,
+) {
+    lig.pose.conformation_type = ConformationType::AbsolutePosits; // Should alreayd be set?
+
+    // Position atoms from pose  here? You could, but the snapshot has them pre-positioned.
+    // This may make changing snapshots faster. But uses more memory from storing each
+
+    lig.atom_posits = snapshot.atom_posits.iter().map(|p| (*p).into()).collect();
+
+    // *energy_disp = snapshot.energy.clone();
 }
