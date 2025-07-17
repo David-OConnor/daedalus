@@ -110,8 +110,10 @@ impl Molecule {
                 let residue_type = ResidueType::from_str(res_name);
                 let mut role = None;
 
+                let type_in_res = AtomTypeInRes::from_str(name)?;
+
                 role = match residue_type {
-                    ResidueType::AminoAcid(_aa) => Some(AtomRole::from_name(res_name)),
+                    ResidueType::AminoAcid(_aa) => Some(AtomRole::from_type_in_res(&type_in_res)),
                     ResidueType::Water => Some(AtomRole::Water),
                     _ => None,
                 };
@@ -177,7 +179,7 @@ impl Molecule {
                     serial_number,
                     posit: Vec3 { x, y, z },
                     element,
-                    type_in_res: AtomTypeInRes::from_str(&name).ok(),
+                    type_in_res: Some(type_in_res),
                     role,
                     residue: None,
                     chain: None,

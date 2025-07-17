@@ -901,7 +901,7 @@ fn selection_section(
     ui: &mut Ui,
 ) {
     // todo: DRY with view.
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         ui.label("View/Select:");
         let prev_view = state.ui.view_sel_level;
         ComboBox::from_id_salt(1)

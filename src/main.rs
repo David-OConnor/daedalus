@@ -43,9 +43,11 @@ mod cli;
 mod dynamics;
 mod integrate;
 mod reflection;
+
+mod ui_aux;
+
 #[cfg(test)]
 mod tests;
-mod ui_aux;
 
 use std::{
     collections::HashMap,

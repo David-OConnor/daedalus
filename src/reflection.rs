@@ -1,6 +1,8 @@
 //! For displaying electron density as measured by crytalographics reflection data. From precomputed
 //! data, or from Miller indices.
 
+#![allow(unused)]
+
 use std::{f64::consts::TAU, time::Instant};
 
 use bio_apis::{ReqError, rcsb};

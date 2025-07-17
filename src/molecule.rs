@@ -97,12 +97,6 @@ impl Molecule {
         let (center, size) = mol_center_size(&atoms);
 
         println!("Loading atoms into mol");
-        for (i, atom) in atoms.iter().enumerate() {
-            if atom.serial_number > 187 && atom.serial_number < 194 {
-                // if i > 186 && i < 195 {
-                println!("A Atom sns: {:?}, i: {}", atom.serial_number, i);
-            }
-        }
 
         let mut result = Self {
             ident,
@@ -318,13 +312,18 @@ pub enum AtomRole {
 }
 
 impl AtomRole {
-    pub fn from_name(name: &str) -> Self {
-        match name {
-            "CA" => Self::C_Alpha,
-            "C" => Self::C_Prime,
-            "N" => Self::N_Backbone,
-            "O" => Self::O_Backbone,
-            "H" | "H1" | "H2" | "H3" | "HA" | "HA2" | "HA3" => Self::H_Backbone,
+    pub fn from_type_in_res(tir: &AtomTypeInRes) -> Self {
+        match tir {
+            AtomTypeInRes::CA => AtomRole::C_Alpha,
+            AtomTypeInRes::C => AtomRole::C_Prime,
+            AtomTypeInRes::N => AtomRole::N_Backbone,
+            AtomTypeInRes::O => AtomRole::O_Backbone,
+            AtomTypeInRes::H(h_type) => {
+                match h_type.as_ref() {
+                    "H" | "H1" | "H2" | "H3" | "HA" | "HA2" | "HA3" | "HN" | "HT1" | "HT2" | "HT3" => Self::H_Backbone,
+                    _ => Self::Sidechain,
+                }
+            }
             _ => Self::Sidechain,
         }
     }
@@ -870,13 +869,22 @@ impl Atom {
 
 impl From<&AtomGeneric> for Atom {
     fn from(atom: &AtomGeneric) -> Self {
+        let role = match &atom.type_in_res {
+            Some(tir) => Some(AtomRole::from_type_in_res(tir)),
+            None => None,
+        };
+
+        // We will fill out chain and residue later, after chains and residue are loaded.
+
         Self {
             serial_number: atom.serial_number,
             posit: atom.posit,
             element: atom.element,
             type_in_res: atom.type_in_res.clone(),
+            role,
             partial_charge: atom.partial_charge,
             force_field_type: atom.force_field_type.clone(),
+            hetero: atom.hetero,
             ..Default::default()
         }
     }
@@ -929,7 +937,7 @@ impl TryFrom<MmCif> for Molecule {
     type Error = io::Error;
 
     fn try_from(m: MmCif) -> Result<Self, Self::Error> {
-        let atoms: Vec<_> = m.atoms.iter().map(|a| a.into()).collect();
+        let mut atoms: Vec<_> = m.atoms.iter().map(|a| a.into()).collect();
 
         let mut residues = Vec::with_capacity(m.residues.len());
         for res in &m.residues {
@@ -939,6 +947,23 @@ impl TryFrom<MmCif> for Molecule {
         let mut chains = Vec::with_capacity(m.chains.len());
         for c in &m.chains {
             chains.push(Chain::from_generic(c, &atoms, &residues)?);
+        }
+
+        // Now that chains and residues are loaded, update atoms with their back-ref index.
+        for atom in &mut atoms {
+            for (i, res) in residues.iter().enumerate() {
+                if res.atom_sns.contains(&atom.serial_number) {
+                    atom.residue = Some(i);
+                    break;
+                }
+            }
+
+            for (i, chain) in chains.iter().enumerate() {
+                if chain.atom_sns.contains(&atom.serial_number) {
+                    atom.chain = Some(i);
+                    break;
+                }
+            }
         }
 
         let mut result = Self::new(m.ident.clone(), atoms, chains, residues, None, None);
