@@ -6,13 +6,13 @@ use graphics::{EngineUpdates, Scene};
 use na_seq::AaIdent;
 
 use crate::{
-    mol_drawing, mol_drawing::{draw_ligand, CHARGE_MAP_MAX, CHARGE_MAP_MIN},
+    Selection, State,
+    dynamics::prep::change_snapshot_md,
+    mol_drawing,
+    mol_drawing::{CHARGE_MAP_MAX, CHARGE_MAP_MIN, draw_ligand},
     molecule::{Atom, Ligand, Molecule, Residue},
     ui::{COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_INACTIVE, ROW_SPACING},
-    Selection,
-    State,
 };
-use crate::dynamics::prep::change_snapshot_md;
 
 fn disp_atom_data(atom: &Atom, residues: &[Residue], ui: &mut Ui) {
     let mut aa = String::new();

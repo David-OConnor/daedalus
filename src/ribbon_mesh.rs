@@ -1,12 +1,13 @@
 //! Gets a cartoon mesh for secondary structure.
 
-use std::{f32::consts::TAU};
+use std::f32::consts::TAU;
+
 use bio_files::{BackboneSS, SecondaryStructure};
 use graphics::{Mesh, Vertex};
-use lin_alg::{f32::Vec3 as Vec3F32};
-use na_seq::{Element};
+use lin_alg::f32::Vec3 as Vec3F32;
+use na_seq::Element;
 
-use crate::molecule::{Atom};
+use crate::molecule::Atom;
 
 /// Radii / dimensions for each cartoon element (Å).
 const HELIX_RADIUS: f32 = 0.6;
@@ -17,7 +18,6 @@ const SHEET_THICK: f32 = 0.2;
 const CYLINDER_SEGMENTS: usize = 12;
 
 // todo: Eval if you want a second cyilnder mesh of different parameters.
-
 
 /// Build a (closed) cylinder running from `a → b`.
 fn cylinder(a: Vec3F32, b: Vec3F32, radius: f32, segments: usize) -> (Vec<Vertex>, Vec<usize>) {

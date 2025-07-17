@@ -22,6 +22,7 @@ use crate::{
     },
     molecule::{Atom, AtomRole, Chain, Ligand, Molecule, Residue},
 };
+use crate::molecule::ResidueEnd;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum TorsionStatus {
@@ -131,7 +132,7 @@ impl Molecule {
                     chains.push(Chain {
                         id: chain_id.to_string(),
                         residue_sns: Vec::new(), // todo temp
-                        residues: Vec::new(), // todo temp
+                        residues: Vec::new(),    // todo temp
                         atom_sns: vec![atom_id as u32],
                         atoms: vec![atom_id],
                         visible: true,
@@ -154,6 +155,7 @@ impl Molecule {
                         atom_sns: vec![atom_id as u32],
                         atoms: vec![atom_id],
                         dihedral: None,
+                        end: ResidueEnd::Hetero,
                     });
                 }
 

@@ -465,7 +465,7 @@ impl CamSnapshot {
 /// We assume that if one of these is loaded, so are the others. So, these aren't `Options`s, but
 /// the field that holds this struct should be one.
 pub struct ProtFFTypeChargeData {
-    pub interal: HashMap<AminoAcidGeneral, Vec<ChargeParams>>,
+    pub internal: HashMap<AminoAcidGeneral, Vec<ChargeParams>>,
     pub n_terminus: HashMap<AminoAcidGeneral, Vec<ChargeParams>>,
     pub c_terminus: HashMap<AminoAcidGeneral, Vec<ChargeParams>>,
 }
@@ -656,7 +656,12 @@ fn main() {
         state.update_docking_site(posit);
     }
 
-    state.load_aa_charges_ff();
+    if let Err(e) = state.load_aa_charges_ff() {
+        handle_err(
+            &mut state.ui,
+            format!("Unable to load protein charges (static): {e}"),
+        );
+    }
 
     // todo temp
     // state

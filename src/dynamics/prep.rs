@@ -21,26 +21,31 @@
 //
 // Best guess: Type 1 identifies labels within the residue only. Type 2 (AA) and Type 3 (small mol) are the FF types.
 
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    time::Instant,
+};
 
 use bio_files::{
+    ResidueType,
     amber_params::{
         BondStretchingParams, ChargeParams, ForceFieldParamsKeyed, MassParams, VdwParams,
     },
-    ResidueType,
 };
+use graphics::Entity;
 use itertools::Itertools;
 use lin_alg::f64::Vec3;
 use na_seq::{AminoAcid, AminoAcidGeneral, AminoAcidProtenationVariant, AtomTypeInRes, Element};
-use graphics::Entity;
-use std::time::Instant;
-use crate::{dynamics::{
-    ambient::SimBox, AtomDynamics, ForceFieldParamsIndexed, MdState, ParamError, CUTOFF, SKIN,
-}, molecule::{Atom, Bond, Residue}, ComputationDevice, FfParamSet, ProtFFTypeChargeData};
-use crate::docking::{BindingEnergy, ConformationType};
-use crate::docking::prep::DockingSetup;
-use crate::dynamics::SnapshotDynamics;
-use crate::molecule::{Ligand, Molecule, ResidueEnd};
+
+use crate::{
+    ComputationDevice, FfParamSet, ProtFFTypeChargeData,
+    docking::{BindingEnergy, ConformationType, prep::DockingSetup},
+    dynamics::{
+        AtomDynamics, CUTOFF, ForceFieldParamsIndexed, MdState, ParamError, SKIN, SnapshotDynamics,
+        ambient::SimBox,
+    },
+    molecule::{Atom, Bond, Ligand, Molecule, Residue, ResidueEnd},
+};
 
 /// Build a single lookup table in which ligand-specific parameters
 /// (when given) replace or add to the generic ones.
@@ -236,7 +241,9 @@ impl ForceFieldParamsIndexed {
                 }
             });
 
-            result.bond_stretching.insert((i0.min(i1), i0.max(i1)), data);
+            result
+                .bond_stretching
+                .insert((i0.min(i1), i0.max(i1)), data);
         }
 
         // Angles. (Between 3 atoms)
@@ -608,8 +615,13 @@ impl MdState {
         let atoms: Vec<_> = atoms.iter().filter(|a| !a.hetero).cloned().collect();
 
         // Convert FF params from keyed to index-based.
-        let ff_params_non_static =
-            ForceFieldParamsIndexed::new(ff_params_prot_keyed, None, &atoms, bonds, adjacency_list)?;
+        let ff_params_non_static = ForceFieldParamsIndexed::new(
+            ff_params_prot_keyed,
+            None,
+            &atoms,
+            bonds,
+            adjacency_list,
+        )?;
 
         // We are using this approach instead of `.into`, so we can use the atom_posits from
         // the positioned ligand. (its atom coords are relative; we need absolute)
@@ -723,7 +735,9 @@ pub fn populate_ff_and_q(
         }
 
         let Some(res_i) = atom.residue else {
-            return Err(ParamError::new(&format!("Missing residue when populating ff name and q: {atom}")));
+            return Err(ParamError::new(&format!(
+                "Missing residue when populating ff name and q: {atom}"
+            )));
         };
 
         let Some(type_in_res) = &atom.type_in_res else {
@@ -744,11 +758,16 @@ pub fn populate_ff_and_q(
         let aa_gen = AminoAcidGeneral::Standard(*aa);
 
         let charge_map = match residues[res_i].end {
-            ResidueEnd::Internal => &ff_type_charge.interal,
+            ResidueEnd::Internal => &ff_type_charge.internal,
             ResidueEnd::NTerminus => &ff_type_charge.n_terminus,
             ResidueEnd::CTerminus => &ff_type_charge.c_terminus,
+            ResidueEnd::Hetero => {
+                return Err(ParamError::new(&format!(
+                    "Error: Encountered hetero atom when parsing amino acid FF types: {atom}"
+                )));
+            }
         };
-        
+
         let charges = match charge_map.get(&aa_gen) {
             Some(c) => c,
             // A specific workaround to plain "HIS" being absent from amino19.lib (2025.

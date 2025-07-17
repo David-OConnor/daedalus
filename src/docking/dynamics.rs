@@ -16,14 +16,14 @@ use lin_alg::f64::{Mat3, Quaternion, Vec3};
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use lin_alg::{
     // f32::{Vec3x8, f32x8, pack_slice, pack_vec3},
-    f64::{f64x4, pack_slice, pack_vec3, Vec3x4},
+    f64::{Vec3x4, f64x4, pack_slice, pack_vec3},
 };
 use rayon::prelude::*;
 
 use crate::{
     docking::{
-        prep::{DockingSetup, Torsion}, BindingEnergy, ConformationType,
-        Pose,
+        BindingEnergy, ConformationType, Pose,
+        prep::{DockingSetup, Torsion},
     },
     dynamics::{AtomDynamics, AtomDynamicsx4},
     forces::force_lj,
@@ -296,4 +296,3 @@ pub fn change_snapshot(
 
     *energy_disp = snapshot.energy.clone();
 }
-

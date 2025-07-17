@@ -16,7 +16,10 @@ use bio_apis::{
     ReqError, rcsb,
     rcsb::{FilesAvailable, PdbDataResults, PdbMetaData},
 };
-use bio_files::{AtomGeneric, BondGeneric, ChainGeneric, ChargeType, DensityMap, MmCif, Mol2, MolType, ResidueGeneric, ResidueType, Sdf, ExperimentalMethod, BackboneSS};
+use bio_files::{
+    AtomGeneric, BackboneSS, BondGeneric, ChainGeneric, ChargeType, DensityMap, ExperimentalMethod,
+    MmCif, Mol2, MolType, ResidueGeneric, ResidueType, Sdf,
+};
 use lin_alg::{
     f32::Vec3 as Vec3F32,
     f64::{Quaternion, Vec3},
@@ -317,12 +320,12 @@ impl AtomRole {
             AtomTypeInRes::C => AtomRole::C_Prime,
             AtomTypeInRes::N => AtomRole::N_Backbone,
             AtomTypeInRes::O => AtomRole::O_Backbone,
-            AtomTypeInRes::H(h_type) => {
-                match h_type.as_ref() {
-                    "H" | "H1" | "H2" | "H3" | "HA" | "HA2" | "HA3" | "HN" | "HT1" | "HT2" | "HT3" => Self::H_Backbone,
-                    _ => Self::Sidechain,
+            AtomTypeInRes::H(h_type) => match h_type.as_ref() {
+                "H" | "H1" | "H2" | "H3" | "HA" | "HA2" | "HA3" | "HN" | "HT1" | "HT2" | "HT3" => {
+                    Self::H_Backbone
                 }
-            }
+                _ => Self::Sidechain,
+            },
             _ => Self::Sidechain,
         }
     }
@@ -653,11 +656,13 @@ pub struct HydrogenBond {
     pub hydrogen: usize,
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub enum ResidueEnd {
     Internal,
     NTerminus,
     CTerminus,
+    /// Not part of a protein/polypeptide.
+    Hetero,
 }
 
 #[derive(Debug, Clone)]
@@ -684,7 +689,7 @@ impl Residue {
 }
 
 impl Residue {
-    fn from_generic(res: &ResidueGeneric, atom_set: &[Atom]) -> io::Result<Self> {
+    fn from_generic(res: &ResidueGeneric, atom_set: &[Atom], end: ResidueEnd) -> io::Result<Self> {
         let mut atoms = Vec::with_capacity(res.atom_sns.len());
 
         for sn in &res.atom_sns {
@@ -705,6 +710,7 @@ impl Residue {
             atom_sns: res.atom_sns.clone(),
             atoms,
             dihedral: None,
+            end,
         })
     }
 }
@@ -774,7 +780,6 @@ impl Chain {
         }
     }
 }
-
 
 /// Helper
 fn atom_sns_to_indices(sn_tgt: u32, atom_set: &[Atom]) -> Option<usize> {
@@ -898,12 +903,12 @@ impl Display for Atom {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let ff_type = match &self.force_field_type {
             Some(f) => f,
-            None => "None"
+            None => "None",
         };
 
         let q = match &self.partial_charge {
             Some(q_) => format!("{q_:.3}"),
-            None => "None".to_string()
+            None => "None".to_string(),
         };
 
         write!(
@@ -950,17 +955,46 @@ pub const fn aa_color(aa: AminoAcid) -> (f32, f32, f32) {
     }
 }
 
-
 impl TryFrom<MmCif> for Molecule {
     type Error = io::Error;
 
     fn try_from(m: MmCif) -> Result<Self, Self::Error> {
         let mut atoms: Vec<_> = m.atoms.iter().map(|a| a.into()).collect();
 
-        let mut residues = Vec::with_capacity(m.residues.len());
-        for res in &m.residues {
-            residues.push(Residue::from_generic(res, &atoms)?);
+        // todo: Crude logic for finding the C terminus. Relies on atom position,
+        // todo, and dodens't take chains into account. (Which we may need to?)
+        // todo: Also assumes all non-het are listed prior to het.
+        let mut last_non_het = 0;
+        for (i, res) in m.residues.iter().enumerate() {
+            match res.res_type {
+                ResidueType::AminoAcid(_) => last_non_het = i,
+                _ => break,
+            }
         }
+
+        // todo: Check out the below logic; RustRover is greying out the last_non_het arm,
+        // todo and saing the _ arm is unreachable.
+
+        let mut residues = Vec::with_capacity(m.residues.len());
+        for (i, res) in m.residues.iter().enumerate() {
+            let mut end  = ResidueEnd::Internal;
+
+            // Match arm won't work due to non-constant arms, e.g. non_hetero?
+            if i == 0 {
+                end = ResidueEnd::CTerminus;
+            } else if i == last_non_het {
+                end = ResidueEnd::NTerminus;
+            }
+
+            match res.res_type {
+                ResidueType::AminoAcid(_) => (),
+                _ => end = ResidueEnd::Hetero
+            }
+
+            residues.push(Residue::from_generic(res, &atoms, end)?);
+        }
+
+        // Populate the residue end.
 
         let mut chains = Vec::with_capacity(m.chains.len());
         for c in &m.chains {
@@ -1021,7 +1055,7 @@ impl TryFrom<Sdf> for Molecule {
 
         let mut residues = Vec::with_capacity(m.residues.len());
         for res in &m.residues {
-            residues.push(Residue::from_generic(res, &atoms)?);
+            residues.push(Residue::from_generic(res, &atoms, ResidueEnd::Hetero)?);
         }
 
         let mut chains = Vec::with_capacity(m.chains.len());
@@ -1076,4 +1110,3 @@ impl Molecule {
         }
     }
 }
-

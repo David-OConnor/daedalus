@@ -106,10 +106,18 @@ impl Molecule {
 
             // Get the first atom's chain; probably OK for assigning a chain to H.
             let chain_i = if !atoms.is_empty() {
-            atoms[0].chain.unwrap_or_default()
-        } else {0 };
-        let (dihedral, hydrogens, this_cp_ca) =
-                aa_data_from_coords(&atoms, &res.res_type, res_i, chain_i, prev_cp_ca, n_next_pos);
+                atoms[0].chain.unwrap_or_default()
+            } else {
+                0
+            };
+            let (dihedral, hydrogens, this_cp_ca) = aa_data_from_coords(
+                &atoms,
+                &res.res_type,
+                res_i,
+                chain_i,
+                prev_cp_ca,
+                n_next_pos,
+            );
 
             for h in hydrogens {
                 self.atoms.push(h);

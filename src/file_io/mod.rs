@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     fs,
     fs::File,
     io,
@@ -6,13 +7,16 @@ use std::{
     path::Path,
     time::Instant,
 };
-use std::collections::HashMap;
+
 use bio_files::{DensityMap, MmCif, gemmi_cif_to_map};
 use lin_alg::f64::Vec3;
 use na_seq::{AaIdent, AminoAcid, AminoAcidGeneral, Element};
 
-use crate::{AMINO_19, FRCMOD_FF19SB, GAFF2, PARM_19, State, file_io::pdbqt::load_pdbqt, molecule::{Ligand, Molecule}, AMINO_NT12, AMINO_CT12};
-
+use crate::{
+    AMINO_19, AMINO_CT12, AMINO_NT12, FRCMOD_FF19SB, GAFF2, PARM_19, ProtFFTypeChargeData, State,
+    file_io::pdbqt::load_pdbqt,
+    molecule::{Ligand, Molecule},
+};
 
 pub mod cif_sf;
 pub mod mtz;
@@ -20,10 +24,10 @@ pub mod pdbqt;
 
 use bio_files::{
     Mol2,
-    amber_params::{ForceFieldParams, ForceFieldParamsKeyed, parse_amino_charges},
+    amber_params::{ChargeParams, ForceFieldParams, ForceFieldParamsKeyed, parse_amino_charges},
     sdf::Sdf,
 };
-use bio_files::amber_params::ChargeParams;
+
 use crate::{
     docking::prep::DockingSetup,
     dynamics::prep::{merge_params, populate_ff_and_q},
@@ -99,7 +103,7 @@ impl State {
                 self.cif_pdb_raw = Some(data_str);
 
                 // If we've loaded general FF params, apply them to get FF type and charge.
-                if let Some(charge_ff_data) = &self.ff_params.prot_charge_general {
+                if let Some(charge_ff_data) = &self.ff_params.prot_charge {
                     if let Err(e) =
                         populate_ff_and_q(&mut mol.atoms, &mol.residues, &charge_ff_data)
                     {
@@ -366,54 +370,45 @@ impl State {
         Ok(())
     }
 
-    /// Helper, called for normal, C-terminus, and N-terminus.
-    fn load_amino_charges(
-        &mut self,
-        prot_charge: &mut Option<HashMap<AminoAcidGeneral, Vec<ChargeParams>>>,
-        data: &str,
-    ) {
-        match parse_amino_charges(data) {
-            Ok(charge_ff_data) => {
-                if let Some(mol) = &mut self.molecule {
-                    if let Err(e) =
-                        populate_ff_and_q(&mut mol.atoms, &mol.residues, &charge_ff_data)
-                    {
-                        eprintln!(
-                            "Unable to populate FF charge and FF type for protein atoms: {:?}",
-                            e
-                        );
-                    } else {
-                        // Update ff and charges in the receptor atoms.
-                        if let Some(lig) = &mut self.ligand {
-                            self.volatile.docking_setup = Some(DockingSetup::new(
-                                &mol,
-                                lig,
-                                &self.volatile.lj_lookup_table,
-                                &self.bh_config,
-                            ));
-                        }
-
-                        // todo: You might need to re-init MD here as well.
-                    }
-                }
-
-                *prot_charge = Some(charge_ff_data);
-            }
-            Err(e) => handle_err(
-                &mut self.ui,
-                format!("Unable to load protein charges (static): {e}"),
-            ),
-        }
-    }
-
     /// Load amimo acid partial charges and forcefields from our built-in string. This is fast and
     /// light; do it at init. If we have a molecule loaded, populate its force field and Q data
     /// using it. We load normal values, C-terminal values, and N-terminal values to different
     /// fields
-    pub fn load_aa_charges_ff(&mut self) {
-        self.load_amino_charges(&mut self.ff_params.prot_charge_general, AMINO_19);
-        self.load_amino_charges(&mut self.ff_params.prot_charge_n_terminus, AMINO_NT12);
-        self.load_amino_charges(&mut self.ff_params.prot_charge_c_terminus, AMINO_CT12);
+    pub fn load_aa_charges_ff(&mut self) -> io::Result<()> {
+        let internal = parse_amino_charges(AMINO_19)?;
+        let n_terminus = parse_amino_charges(AMINO_NT12)?;
+        let c_terminus = parse_amino_charges(AMINO_CT12)?;
+
+        let ff_charge_data = ProtFFTypeChargeData {
+            internal,
+            n_terminus,
+            c_terminus,
+        };
+
+        if let Some(mol) = &mut self.molecule {
+            if let Err(e) = populate_ff_and_q(&mut mol.atoms, &mol.residues, &ff_charge_data) {
+                eprintln!(
+                    "Unable to populate FF charge and FF type for protein atoms: {:?}",
+                    e
+                );
+            } else {
+                // Update ff and charges in the receptor atoms.
+                if let Some(lig) = &mut self.ligand {
+                    self.volatile.docking_setup = Some(DockingSetup::new(
+                        &mol,
+                        lig,
+                        &self.volatile.lj_lookup_table,
+                        &self.bh_config,
+                    ));
+                }
+
+                // todo: You might need to re-init MD here as well.
+            }
+        }
+
+        self.ff_params.prot_charge = Some(ff_charge_data);
+
+        Ok(())
     }
 
     /// Load parameter files for general organic molecules (GAFF2), and proteins/amino acids (PARM19).
@@ -450,9 +445,13 @@ impl State {
         }
 
         // Note: We may load this at program init
-        if self.ff_params.prot_charge_general.is_none() {
-            self.load_aa_charges_ff();
-            // todo: Handle C and N-terminal files (aminoct12.lib and aminont12.lib)
+        if self.ff_params.prot_charge.is_none() {
+            if let Err(e) = self.load_aa_charges_ff() {
+                handle_err(
+                    &mut self.ui,
+                    format!("Unable to load protein charges (static): {e}"),
+                );
+            }
         }
 
         // Load general organic molecule, e.g. ligand, parameters.

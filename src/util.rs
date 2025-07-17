@@ -144,7 +144,7 @@ pub fn find_selected_atom(
             }
             if role == AtomRole::Water
                 && (ui.visibility.hide_water
-                || matches!(
+                    || matches!(
                         ui.mol_view,
                         MoleculeView::SpaceFill | MoleculeView::Backbone
                     ))
@@ -559,7 +559,6 @@ pub fn load_atom_coords_rcsb(
         Err(e) => eprintln!("Problem loading molecule from CIF: {e:?}"),
     }
 
-
     state.update_from_prefs();
 
     *redraw = true;
@@ -574,7 +573,6 @@ pub fn load_atom_coords_rcsb(
         .as_mut()
         .unwrap()
         .updates_rcsb_data(&mut state.volatile.mol_pending_data_avail);
-
 }
 
 pub fn save_snap(state: &mut State, cam: &Camera, name: &str) {
