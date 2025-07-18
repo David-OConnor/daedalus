@@ -46,7 +46,7 @@ fn disp_atom_data(atom: &Atom, residues: &[Residue], ui: &mut Ui) {
 
     if let Some(res_i) = atom.residue {
         let res = &residues[res_i];
-        text_c += &format!("  {}", res.descrip());
+        text_c += &format!("  {res}");
     }
 
     ui.label(RichText::new(text_0).color(Color32::WHITE));
@@ -102,7 +102,8 @@ pub fn selected_data(mol: &Molecule, ligand: &Option<Ligand>, selection: &Select
             }
 
             let res = &mol.residues[*sel_i];
-            ui.label(RichText::new(res.descrip()).color(Color32::GOLD));
+            // todo: Color-coding by part like atom, to make easier to view.
+            ui.label(RichText::new(res.to_string()).color(Color32::GOLD));
         }
         Selection::Atoms(is) => {
             // todo: A/R

@@ -803,19 +803,27 @@ fn res_sns_to_indices(sn_tgt: u32, res_set: &[Residue]) -> Option<usize> {
     None
 }
 
-impl Residue {
-    pub fn descrip(&self) -> String {
+impl fmt::Display for Residue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let name = match &self.res_type {
             ResidueType::AminoAcid(aa) => aa.to_string(),
-            ResidueType::Water => "Water".to_owned(),
+            ResidueType::Water        => "Water".to_owned(),
             ResidueType::Other(name) => name.clone(),
         };
 
-        let mut result = format!("Res: {}: {name}", self.serial_number);
+        write!(f, "Res: {}: {}", self.serial_number, name)?;
+
         if let Some(dihedral) = &self.dihedral {
-            result += &format!("   {dihedral}");
+            write!(f, "   {}", dihedral)?;
         }
-        result
+
+        match self.end {
+            ResidueEnd::CTerminus => write!(f, " C-term")?,
+            ResidueEnd::NTerminus => write!(f, " N-term")?,
+            _ => ()
+        }
+
+        Ok(())
     }
 }
 
