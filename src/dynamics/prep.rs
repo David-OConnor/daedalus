@@ -229,17 +229,9 @@ impl ForceFieldParamsIndexed {
                 .or_else(|| params.bond.get(&(type_j.clone(), type_i.clone())))
                 .cloned();
 
-            let data = data.unwrap_or_else(|| {
-                // todo: See note. Fix the ingest problem (?) that is triggering this.
-                eprintln!("(todo: fix ingest, and make this fail) Missing bond parameters for {type_i}-{type_j}");
-                // return Err(ParamError::new(&format!("Missing bond parameters for {type_i}-{type_j}")));
-                BondStretchingParams {
-                    atom_types: (String::new(), String::new()),
-                    k_b: 340.,
-                    r_0: 1.09,
-                    comment: None,
-                }
-            });
+            let Some(data) = data else {
+                return Err(ParamError::new(&format!("Missing bond parameters for {type_i}-{type_j}")));
+            };
 
             result
                 .bond_stretching
@@ -802,7 +794,7 @@ pub fn populate_ff_and_q(
                 // todo when we create them. For now, this meets the intent.
                 AtomTypeInRes::H(_) => {
                     eprintln!(
-                        "Error populating FF type and q: Failed to match H type {type_in_res}, {aa_gen:?}.\
+                        "Error assigning FF type and q based on atom type in res: Failed to match H type {type_in_res}, {aa_gen:?}.\
                          Falling back to a generic H"
                     );
 
@@ -839,8 +831,7 @@ pub fn populate_ff_and_q(
             // i.e. if still not found after our specific workarounds above.
             if !found {
                 return Err(ParamError::new(&format!(
-                    "Error populating FF type and q: {:?}",
-                    atom
+                    "Error assigning FF type and q based on atom type in res: {atom}",
                 )));
             }
         }

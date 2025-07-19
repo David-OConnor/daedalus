@@ -989,9 +989,9 @@ impl TryFrom<MmCif> for Molecule {
 
             // Match arm won't work due to non-constant arms, e.g. non_hetero?
             if i == 0 {
-                end = ResidueEnd::CTerminus;
-            } else if i == last_non_het {
                 end = ResidueEnd::NTerminus;
+            } else if i == last_non_het {
+                end = ResidueEnd::CTerminus;
             }
 
             match res.res_type {

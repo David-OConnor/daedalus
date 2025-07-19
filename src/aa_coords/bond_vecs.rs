@@ -15,16 +15,18 @@ use lin_alg::f64::{Quaternion, Vec3};
 
 // Some info here: https://www.ruppweb.org/Xray/tutorial/protein_structure.htm
 
+// For these lengths, reference Amber's `parm19.dat`. All are in Å. Annotated in comments as
+// found in `parm19.dat`.
 // Double bond len of C' to N.
-pub const LEN_CP_N: f64 = 1.33; // angstrom
-pub const LEN_N_CALPHA: f64 = 1.46; // angstrom
-pub const LEN_CALPHA_CP: f64 = 1.53; // angstrom
+pub const LEN_CP_N: f64 = 1.335; // C -N
+pub const LEN_N_CALPHA: f64 = 1.46;
+pub const LEN_CALPHA_CP: f64 = 1.409; // C - CA
 
-pub const LEN_CP_O: f64 = 1.2; // angstrom
-pub const LEN_CALPHA_H: f64 = 1.09; // angstrom
-pub const LEN_N_H: f64 = 1.01; // angstrom
-pub const LEN_C_H: f64 = 1.09; // angstrom
-pub const LEN_O_H: f64 = 0.9572; // angstrom // In water molecules. In proteins, maybe 1.01?
+pub const LEN_CP_O: f64 = 1.229; // C -O
+pub const LEN_CALPHA_H: f64 = 1.080; // CA-CH
+pub const LEN_N_H: f64 = 1.010; // H -N;
+pub const LEN_C_H: f64 = 1.09; // Note: This varies depending on the side chain.
+pub const LEN_O_H: f64 = 0.9572; // In water molecules. In proteins, maybe 1.01?
 
 // Called in the creation of our bond vecs
 pub const θ_HOH_ANGLE: f64 = 1.82421813;

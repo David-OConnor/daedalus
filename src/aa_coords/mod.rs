@@ -4,11 +4,7 @@ use std::{f64::consts::TAU, fmt, fmt::Formatter, str::FromStr};
 
 use bio_files::{BondGeneric, ResidueType};
 use lin_alg::f64::{Quaternion, Vec3, calc_dihedral_angle, calc_dihedral_angle_v2};
-use na_seq::{
-    AtomTypeInRes, Element,
-    Element::{Carbon, Hydrogen, Nitrogen, Oxygen},
-};
-
+use na_seq::{AminoAcid, AtomTypeInRes, Element, Element::{Carbon, Hydrogen, Nitrogen, Oxygen}};
 use crate::{
     aa_coords::{
         bond_vecs::{
@@ -17,9 +13,10 @@ use crate::{
         },
         sidechain::Sidechain,
     },
-    add_hydrogens::{BondGeometry, bonded_heavy_atoms, h_at_type_in_res},
+    add_hydrogens::{BondGeometry, bonded_heavy_atoms, h_at_type_in_res_sidechain},
     molecule::{Atom, AtomRole},
 };
+use crate::dynamics::ParamError;
 
 pub mod bond_vecs;
 pub mod sc_atom_placement;
@@ -193,7 +190,7 @@ fn get_prev_bonds(
 
 /// Add hydrogens for side chains; this is more general than the initial logic that takes
 /// care of backbone hydrogens. It doesn't have to be used exclusively for sidechains.
-fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom) {
+fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom) -> Result<(), ParamError> {
     // Handle sidechains.
     // todo: If this algorithm proves general enough, perhaps apply it to the backbone as well (?)
 
@@ -245,11 +242,10 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
 
                         for tetra_bond in [TETRA_B, TETRA_C, TETRA_D] {
                             let at =
-                                h_at_type_in_res(Carbon, BondGeometry::Tetrahedral, neighbor_count);
+                                h_at_type_in_res_sidechain(Carbon, BondGeometry::Tetrahedral, neighbor_count)?;
                             hydrogens.push(Atom {
                                 posit: atom.posit + rotator.rotate_vec(tetra_bond) * LEN_C_H,
                                 type_in_res: Some(at),
-                                // force_field_type: Some(name),
                                 ..h_default_sc.clone()
                             });
                         }
@@ -270,7 +266,7 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
                             let bond_next = (atoms_bonded[1].1.posit - atom.posit).to_normalized();
                             let bond_prev = (atoms_bonded[0].1.posit - atom.posit).to_normalized();
 
-                            let angle = (bond_next.dot(bond_prev)).acos();
+                            let angle = bond_next.dot(bond_prev).acos();
 
                             if angle > PLANAR_ANGLE_THRESH {
                                 planar = true;
@@ -281,12 +277,11 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
                             let bond_0 = atom.posit - atoms_bonded[0].1.posit;
                             let bond_1 = atoms_bonded[1].1.posit - atom.posit;
 
-                            let at = h_at_type_in_res(Carbon, BondGeometry::Planar, neighbor_count);
+                            let at = h_at_type_in_res_sidechain(Carbon, BondGeometry::Planar, neighbor_count)?;
                             // Add a single H in planar config.
                             hydrogens.push(Atom {
                                 posit: planar_posit(atom.posit, bond_0, bond_1, LEN_C_H),
                                 type_in_res: Some(at),
-                                // force_field_type: Some(name),
                                 ..h_default_sc.clone()
                             });
 
@@ -303,11 +298,10 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
 
                         for posit in [h_0, h_1] {
                             let at =
-                                h_at_type_in_res(Carbon, BondGeometry::Tetrahedral, neighbor_count);
+                                h_at_type_in_res_sidechain(Carbon, BondGeometry::Tetrahedral, neighbor_count)?;
                             hydrogens.push(Atom {
                                 posit,
                                 type_in_res: Some(at),
-                                // force_field_type: Some(name),
                                 ..h_default_sc.clone()
                             });
                         }
@@ -341,7 +335,7 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
                         // Add 1 H.
                         // todo: If planar geometry, don't add a H!
                         let at =
-                            h_at_type_in_res(Carbon, BondGeometry::Tetrahedral, neighbor_count);
+                            h_at_type_in_res_sidechain(Carbon, BondGeometry::Tetrahedral, neighbor_count)?;
 
                         hydrogens.push(Atom {
                             posit: atom.posit
@@ -353,7 +347,6 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
                                 ) * LEN_CALPHA_H,
                             // todo: QC the tetrahedral here.
                             type_in_res: Some(at),
-                            // force_field_type: Some(name),
                             ..h_default_sc.clone()
                         });
                     }
@@ -386,11 +379,10 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
 
                         for planar_bond in [PLANAR3_B, PLANAR3_C] {
                             let at =
-                                h_at_type_in_res(Nitrogen, BondGeometry::Planar, neighbor_count);
+                                h_at_type_in_res_sidechain(Nitrogen, BondGeometry::Planar, neighbor_count)?;
                             hydrogens.push(Atom {
                                 posit: atom.posit + rotator.rotate_vec(planar_bond) * LEN_N_H,
                                 type_in_res: Some(at),
-                                // force_field_type: Some(name),
                                 ..h_default_sc.clone()
                             });
                         }
@@ -400,11 +392,10 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
                         let bond_0 = atom.posit - atoms_bonded[0].1.posit;
                         let bond_1 = atoms_bonded[1].1.posit - atom.posit;
 
-                        let at = h_at_type_in_res(Nitrogen, BondGeometry::Planar, neighbor_count);
+                        let at = h_at_type_in_res_sidechain(Nitrogen, BondGeometry::Planar, neighbor_count)?;
                         hydrogens.push(Atom {
                             posit: planar_posit(atom.posit, bond_0, bond_1, LEN_N_H),
                             type_in_res: Some(at),
-                            // force_field_type: Some(name),
                             ..h_default_sc.clone()
                         });
                     }
@@ -444,11 +435,10 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
                         let rotator = rotator_b * rotator_a;
 
                         let at =
-                            h_at_type_in_res(Oxygen, BondGeometry::Tetrahedral, neighbor_count);
+                            h_at_type_in_res_sidechain(Oxygen, BondGeometry::Tetrahedral, neighbor_count)?;
                         hydrogens.push(Atom {
                             posit: atom.posit + rotator.rotate_vec(TETRA_B) * LEN_O_H,
                             type_in_res: Some(at),
-                            // force_field_type: Some(name),
                             ..h_default_sc.clone()
                         });
                     },
@@ -458,6 +448,8 @@ fn add_h_sidechain(hydrogens: &mut Vec<Atom>, atoms: &[&Atom], h_default: &Atom)
             _ => {}
         }
     }
+
+    Ok(())
 }
 
 /// Add hydrogens to AA backbone atoms, and update the dihedral angles.
@@ -469,7 +461,8 @@ fn handle_backbone(
     prev_cp_ca: Option<(Vec3, Vec3)>,
     next_n: Option<Vec3>,
     h_default: &Atom,
-) -> (Dihedral, Option<(Vec3, Vec3)>) {
+    aa: &AminoAcid,
+) -> Result<(Dihedral, Option<(Vec3, Vec3)>), ParamError> {
     let mut dihedral = Dihedral::default();
 
     // Find the positions of the backbone atoms.
@@ -497,7 +490,7 @@ fn handle_backbone(
     let (Some(c_alpha_posit), Some(c_p_posit), Some(n_posit)) = (c_alpha_posit, c_p_posit, n_posit)
     else {
         eprintln!("Error: Missing backbone atoms in coords.");
-        return (dihedral, None);
+        return Ok((dihedral, None));
     };
 
     let bond_ca_n = c_alpha_posit - n_posit;
@@ -521,19 +514,15 @@ fn handle_backbone(
             c_alpha_posit,
         )));
 
-        // todo temp: C' Gly #154 is showing as the coords for Calpha.
         if dihedral.ω.unwrap().is_nan() {
             println!("NAN: prev_cp: {cp_prev} prev_ca: {ca_prev}\n")
         }
 
         // Add a H to the backbone N. (Amine) Sp2/Planar.
-        let at = h_at_type_in_res(Nitrogen, BondGeometry::Planar, 0);
-
         hydrogens.push(Atom {
             posit: planar_posit(n_posit, bond_n_cp_prev, bond_ca_n, LEN_N_H),
-            // No neighbors required for N.
-            type_in_res: Some(at),
-            // force_field_type: Some(name),
+            // todo "H" for N backbone always, for now at least.
+            type_in_res: Some(AtomTypeInRes::H("H".to_string())),
             ..h_default.clone()
         });
     }
@@ -550,11 +539,34 @@ fn handle_backbone(
 
     if posits_sc.is_empty() {
         // This generally means the residue is Glycine, which doesn't have a sidechain.
+        // Glycine is unique, having 2 H atoms attached to its Cα. It has correspondingly
+        // different HA labels. (HA2 and HA3, vice the plain HA).
 
-        // Note: This will also populate hydrogens on first and last backbones, and potentially
-        // on residues that don't have roles marked.
-        add_h_sidechain(hydrogens, atoms, h_default);
-        return (dihedral, Some((c_p_posit, c_alpha_posit)));
+        //todo: DRY with code in sidechain for 2 atoms in tetra cfg.
+
+        // Add 2 H in a tetrahedral config.
+        let (h_0, h_1) = tetra_atoms_2(
+            c_alpha_posit,
+            c_p_posit,
+            n_posit,
+            LEN_CALPHA_H, // todo: QC that this is correct still. Might be the regularly one instead of C_ALPHA.
+        );
+
+        hydrogens.push(Atom {
+            posit: h_0,
+            type_in_res: Some(AtomTypeInRes::H("HA2".to_string())),
+            ..h_default.clone()
+        });
+
+        for posit in [h_0, h_1] {
+            hydrogens.push(Atom {
+                posit: h_1,
+                type_in_res: Some(AtomTypeInRes::H("HA3".to_string())),
+                ..h_default.clone()
+            });
+        }
+
+        return Ok((dihedral, Some((c_p_posit, c_alpha_posit))));
     }
 
     let mut closest = (posits_sc[0] - c_alpha_posit).magnitude();
@@ -569,21 +581,21 @@ fn handle_backbone(
     }
     let bond_ca_sidechain = c_alpha_posit - closest_sc;
 
+    let posit_ha = c_alpha_posit
+        + tetra_legs(
+        -bond_ca_n.to_normalized(),
+        bond_cp_ca.to_normalized(),
+        -bond_ca_sidechain.to_normalized(),
+    ) * LEN_CALPHA_H;
+
     // H attached to the α carbon.
     hydrogens.push(Atom {
-        posit: c_alpha_posit
-            + tetra_legs(
-                -bond_ca_n.to_normalized(),
-                bond_cp_ca.to_normalized(),
-                -bond_ca_sidechain.to_normalized(),
-            ) * LEN_CALPHA_H,
-
-        // Bonded to N, C', and R group.
-        // force_field_type: Some(h_at_type_in_res(Carbon, BondGeometry::Tetrahedral, 3)),
+        posit: posit_ha,
+        type_in_res: Some(AtomTypeInRes::H("HA".to_string())),
         ..h_default.clone()
     });
 
-    (dihedral, Some((c_p_posit, c_alpha_posit)))
+    Ok((dihedral, Some((c_p_posit, c_alpha_posit))))
 }
 
 /// todo: Rename, etc.
@@ -597,7 +609,7 @@ pub fn aa_data_from_coords(
     chain_i: usize,
     prev_cp_ca: Option<(Vec3, Vec3)>,
     next_n: Option<Vec3>,
-) -> (Dihedral, Vec<Atom>, Option<(Vec3, Vec3)>) {
+) -> Result<(Dihedral, Vec<Atom>, Option<(Vec3, Vec3)>), ParamError> {
     // todo: With_capacity based on aa?
 
     // todo: Maybe split this into separate functions.
@@ -606,14 +618,13 @@ pub fn aa_data_from_coords(
         serial_number: 0,
         posit: Vec3::new_zero(),
         element: Hydrogen,
-        // We will update type_in_res and ff_type later.
-        type_in_res: Some(AtomTypeInRes::H("H".to_string())),
-        // force_field_type: Some("H".to_owned()),
+        // We update type_in_res when overriding this default, and ff_type downstream based on it, in the
+        // same way we populate FF type (and partial charge) for non-H atoms.
+        type_in_res: None,
         force_field_type: None,
         role: Some(AtomRole::H_Backbone),
         residue: Some(res_i),
         chain: Some(chain_i),
-        // residue_type: residue_type.clone(),
         hetero: false,
         dock_type: None,
         occupancy: None,
@@ -646,7 +657,7 @@ pub fn aa_data_from_coords(
         }
     }
 
-    if let ResidueType::AminoAcid(_) = residue_type {
+    if let ResidueType::AminoAcid(aa) = residue_type {
         (dihedral, this_cp_ca) = handle_backbone(
             &mut hydrogens,
             atoms,
@@ -654,10 +665,11 @@ pub fn aa_data_from_coords(
             prev_cp_ca,
             next_n,
             &h_default,
-        );
+            aa,
+        )?;
     }
 
-    add_h_sidechain(&mut hydrogens, atoms, &h_default);
+    add_h_sidechain(&mut hydrogens, atoms, &h_default)?;
 
-    (dihedral, hydrogens, this_cp_ca)
+    Ok((dihedral, hydrogens, this_cp_ca))
 }
