@@ -18,7 +18,7 @@ use crate::{
         },
         sidechain::Sidechain,
     },
-    add_hydrogens::h_type_in_res_sidechain,
+    add_hydrogens::{DigitMap, h_type_in_res_sidechain},
     dynamics::ParamError,
     molecule::{Atom, AtomRole, Residue},
 };
@@ -201,6 +201,7 @@ fn add_h_sidechain(
     h_default: &Atom,
     residues: &[Residue],
     ff_map: &ProtFfMap,
+    digit_map: &DigitMap,
 ) -> Result<(), ParamError> {
     let h_default_sc = Atom {
         role: Some(AtomRole::H_Sidechain),
@@ -265,7 +266,8 @@ fn add_h_sidechain(
                         let rotator = rotator_b * rotator_a;
 
                         for (i, tetra_bond) in [TETRA_B, TETRA_C, TETRA_D].into_iter().enumerate() {
-                            let at = h_type_in_res_sidechain(i + 1, parent_tir, *aa, ff_map)?;
+                            let at =
+                                h_type_in_res_sidechain(i, parent_tir, *aa, ff_map, digit_map)?;
                             hydrogens.push(Atom {
                                 posit: atom.posit + rotator.rotate_vec(tetra_bond) * LEN_C_H,
                                 type_in_res: Some(at),
@@ -300,7 +302,8 @@ fn add_h_sidechain(
                             let bond_0 = atom.posit - atoms_bonded[0].1.posit;
                             let bond_1 = atoms_bonded[1].1.posit - atom.posit;
 
-                            let at = h_type_in_res_sidechain(1, parent_tir, *aa, ff_map)?;
+                            let at =
+                                h_type_in_res_sidechain(1, parent_tir, *aa, ff_map, digit_map)?;
                             // Add a single H in planar config.
                             hydrogens.push(Atom {
                                 posit: planar_posit(atom.posit, bond_0, bond_1, LEN_C_H),
@@ -320,7 +323,8 @@ fn add_h_sidechain(
                         );
 
                         for (i, posit) in [h_0, h_1].into_iter().enumerate() {
-                            let at = h_type_in_res_sidechain(i + 1, parent_tir, *aa, ff_map)?;
+                            let at =
+                                h_type_in_res_sidechain(i, parent_tir, *aa, ff_map, digit_map)?;
                             hydrogens.push(Atom {
                                 posit,
                                 type_in_res: Some(at),
@@ -356,7 +360,7 @@ fn add_h_sidechain(
 
                         // Add 1 H.
                         // todo: If planar geometry, don't add a H!
-                        let at = h_type_in_res_sidechain(1, parent_tir, *aa, ff_map)?;
+                        let at = h_type_in_res_sidechain(1, parent_tir, *aa, ff_map, digit_map)?;
 
                         hydrogens.push(Atom {
                             posit: atom.posit
@@ -399,7 +403,8 @@ fn add_h_sidechain(
                         let rotator = rotator_b * rotator_a;
 
                         for (i, planar_bond) in [PLANAR3_B, PLANAR3_C].into_iter().enumerate() {
-                            let at = h_type_in_res_sidechain(i + 1, parent_tir, *aa, ff_map)?;
+                            let at =
+                                h_type_in_res_sidechain(i, parent_tir, *aa, ff_map, digit_map)?;
                             hydrogens.push(Atom {
                                 posit: atom.posit + rotator.rotate_vec(planar_bond) * LEN_N_H,
                                 type_in_res: Some(at),
@@ -412,7 +417,7 @@ fn add_h_sidechain(
                         let bond_0 = atom.posit - atoms_bonded[0].1.posit;
                         let bond_1 = atoms_bonded[1].1.posit - atom.posit;
 
-                        let at = h_type_in_res_sidechain(1, parent_tir, *aa, ff_map)?;
+                        let at = h_type_in_res_sidechain(1, parent_tir, *aa, ff_map, digit_map)?;
                         hydrogens.push(Atom {
                             posit: planar_posit(atom.posit, bond_0, bond_1, LEN_N_H),
                             type_in_res: Some(at),
@@ -454,7 +459,7 @@ fn add_h_sidechain(
                             Quaternion::from_axis_angle(bond_prev, -dihedral + TAU / 6.);
                         let rotator = rotator_b * rotator_a;
 
-                        let at = h_type_in_res_sidechain(1, parent_tir, *aa, ff_map)?;
+                        let at = h_type_in_res_sidechain(1, parent_tir, *aa, ff_map, digit_map)?;
                         hydrogens.push(Atom {
                             posit: atom.posit + rotator.rotate_vec(TETRA_B) * LEN_O_H,
                             type_in_res: Some(at),
@@ -620,6 +625,7 @@ pub fn aa_data_from_coords(
     next_n: Option<Vec3>,
     residues: &[Residue],
     ff_map: &ProtFfMap,
+    digit_map: &DigitMap,
 ) -> Result<(Dihedral, Vec<Atom>, Option<(Vec3, Vec3)>), ParamError> {
     // todo: With_capacity based on aa?
 
@@ -680,7 +686,14 @@ pub fn aa_data_from_coords(
         )?;
     }
 
-    add_h_sidechain(&mut hydrogens, atoms, &h_default, residues, ff_map)?;
+    add_h_sidechain(
+        &mut hydrogens,
+        atoms,
+        &h_default,
+        residues,
+        ff_map,
+        digit_map,
+    )?;
 
     Ok((dihedral, hydrogens, this_cp_ca))
 }
