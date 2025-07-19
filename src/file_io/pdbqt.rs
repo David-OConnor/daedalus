@@ -16,13 +16,13 @@ use na_seq::{AaIdent, AtomTypeInRes, Element};
 use regex::Regex;
 
 use crate::{
+    ProtFfMap,
     docking::{
         ConformationType,
         prep::{DockType, UnitCellDims},
     },
-    molecule::{Atom, AtomRole, Chain, Ligand, Molecule, Residue},
+    molecule::{Atom, AtomRole, Chain, Ligand, Molecule, Residue, ResidueEnd},
 };
-use crate::molecule::ResidueEnd;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum TorsionStatus {
@@ -215,7 +215,7 @@ impl Molecule {
         }
 
         Ok((
-            Molecule::new(ident, atoms, chains, residues, None, None),
+            Molecule::new(ident, atoms, chains, residues, None, None, None),
             ligand,
         ))
     }

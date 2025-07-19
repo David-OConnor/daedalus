@@ -15,7 +15,8 @@ use mcubes::{MarchingCubes, MeshSide};
 use na_seq::{AaIdent, Element};
 
 use crate::{
-    CamSnapshot, PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel,
+    CamSnapshot, PREFS_SAVE_INTERVAL, ProtFFTypeChargeMap, ProtFfMap, Selection, State, StateUi,
+    ViewSelLevel,
     download_mols::load_cif_rcsb,
     mol_drawing::{EntityType, MoleculeView, draw_density, draw_density_surface, draw_molecule},
     molecule::{Atom, AtomRole, Bond, Chain, Molecule, Residue},
@@ -524,7 +525,12 @@ pub fn load_atom_coords_rcsb(
     match load_cif_rcsb(ident) {
         // tood: For organization purposes, move thi scode out of the UI.
         Ok((cif, cif_text)) => {
-            let mol: Molecule = match cif.try_into() {
+            // let mol: Molecule = match cif.try_into() {
+
+
+            let ff_map = &state.ff_params.prot_ff_q_map.as_ref().unwrap().internal;
+
+            let mol: Molecule = match Molecule::from_mmcif(cif, ff_map) {
                 Ok(m) => m,
                 Err(e) => {
                     eprintln!("Problem parsing mmCif data into molecule: {e:?}");

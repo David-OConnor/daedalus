@@ -69,7 +69,7 @@ impl Molecule {
     /// From `pdbtbx`'s format. Uses raw data too to add secondary structure, which pdbtbx doesn't handle.
     /// todo: Ditch this. PDBTBX has too many errors and missing functionality, and the maintainer isn't responding on Github.
     /// todo: Patching it is more trouble than it's worth.
-    pub fn from_cif_pdb<R: Read + Seek>(pdb: &PDB, raw: R) -> io::Result<Self> {
+    pub fn from_cif_pdb<R: Read + Seek>(pdb: &PDB, raw: R, ff_map: &ProtFfMap,) -> io::Result<Self> {
         // todo: Maybe return the PDB type here, and store that. Also have a way to
         // todo get molecules from it
 
@@ -194,6 +194,7 @@ impl Molecule {
             residues,
             None,
             None,
+            ff_map,
         );
 
         (result.secondary_structure, result.method) = load_data(raw)?;

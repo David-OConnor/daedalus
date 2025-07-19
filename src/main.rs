@@ -20,7 +20,6 @@
 
 mod aa_coords;
 mod add_hydrogens;
-// mod amino_acid_coords;
 mod bond_inference;
 mod docking;
 mod download_mols;
@@ -122,6 +121,8 @@ const GAFF2: &str = include_str!("../resources/gaff2.dat");
 // todo: Eventually, implement a system that automatically checks for changes, and don't
 // todo save to disk if there are no changes.
 const PREFS_SAVE_INTERVAL: u64 = 60; // Save user preferences this often, in seconds.
+
+pub type ProtFfMap = HashMap<AminoAcidGeneral, Vec<ChargeParams>>;
 
 #[derive(Debug, Clone, Default)]
 pub enum ComputationDevice {
@@ -464,10 +465,10 @@ impl CamSnapshot {
 /// Maps type-in-residue (found in, e.g. mmCIF and PDB files) to Amber FF type, and partial charge.
 /// We assume that if one of these is loaded, so are the others. So, these aren't `Options`s, but
 /// the field that holds this struct should be one.
-pub struct ProtFFTypeChargeData {
-    pub internal: HashMap<AminoAcidGeneral, Vec<ChargeParams>>,
-    pub n_terminus: HashMap<AminoAcidGeneral, Vec<ChargeParams>>,
-    pub c_terminus: HashMap<AminoAcidGeneral, Vec<ChargeParams>>,
+pub struct ProtFFTypeChargeMap {
+    pub internal: ProtFfMap,
+    pub n_terminus: ProtFfMap,
+    pub c_terminus: ProtFfMap,
 }
 
 #[derive(Default)]
@@ -478,8 +479,8 @@ pub struct FfParamSet {
     /// E.g. ff19SB. Loaded at init.
     pub prot_general: Option<ForceFieldParamsKeyed>,
     /// In addition to charge, this also contains the mapping of res type to FF type; required to map
-    /// other parameters to protein atoms.
-    pub prot_charge: Option<ProtFFTypeChargeData>,
+    /// other parameters to protein atoms. From `amino19.lib`, and its N and C-terminus variants.
+    pub prot_ff_q_map: Option<ProtFFTypeChargeMap>,
     /// Key: A unique identifier for the molecule. (e.g. ligand)
     pub lig_specific: HashMap<String, ForceFieldParamsKeyed>,
 }

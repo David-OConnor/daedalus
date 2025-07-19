@@ -13,7 +13,7 @@ use lin_alg::f64::Vec3;
 use na_seq::{AaIdent, AminoAcid, AminoAcidGeneral, Element};
 
 use crate::{
-    AMINO_19, AMINO_CT12, AMINO_NT12, FRCMOD_FF19SB, GAFF2, PARM_19, ProtFFTypeChargeData, State,
+    AMINO_19, AMINO_CT12, AMINO_NT12, FRCMOD_FF19SB, GAFF2, PARM_19, ProtFFTypeChargeMap, State,
     file_io::pdbqt::load_pdbqt,
     molecule::{Ligand, Molecule},
 };
@@ -98,12 +98,20 @@ impl State {
                 file.read_to_string(&mut data_str)?;
 
                 let cif_data = MmCif::new(&data_str)?;
-                let mut mol: Molecule = cif_data.try_into()?;
+                // let mut mol: Molecule = cif_data.try_into()?;
+                // todo: DOn't unwrap.
+                let Some(ff_map) = &self.ff_params.prot_ff_q_map else {
+                    return Err(io::Error::new(
+                        ErrorKind::Other,
+                        "Missing FF map when opening protein; can't validate H",
+                    ));
+                };
+                let mut mol = Molecule::from_mmcif(cif_data, &ff_map.internal)?;
 
                 self.cif_pdb_raw = Some(data_str);
 
                 // If we've loaded general FF params, apply them to get FF type and charge.
-                if let Some(charge_ff_data) = &self.ff_params.prot_charge {
+                if let Some(charge_ff_data) = &self.ff_params.prot_ff_q_map {
                     if let Err(e) =
                         populate_ff_and_q(&mut mol.atoms, &mol.residues, &charge_ff_data)
                     {
@@ -379,7 +387,7 @@ impl State {
         let n_terminus = parse_amino_charges(AMINO_NT12)?;
         let c_terminus = parse_amino_charges(AMINO_CT12)?;
 
-        let ff_charge_data = ProtFFTypeChargeData {
+        let ff_charge_data = ProtFFTypeChargeMap {
             internal,
             n_terminus,
             c_terminus,
@@ -406,7 +414,7 @@ impl State {
             }
         }
 
-        self.ff_params.prot_charge = Some(ff_charge_data);
+        self.ff_params.prot_ff_q_map = Some(ff_charge_data);
 
         Ok(())
     }
@@ -445,7 +453,7 @@ impl State {
         }
 
         // Note: We may load this at program init
-        if self.ff_params.prot_charge.is_none() {
+        if self.ff_params.prot_ff_q_map.is_none() {
             if let Err(e) = self.load_aa_charges_ff() {
                 handle_err(
                     &mut self.ui,

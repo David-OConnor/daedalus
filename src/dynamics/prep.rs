@@ -38,7 +38,7 @@ use lin_alg::f64::Vec3;
 use na_seq::{AminoAcid, AminoAcidGeneral, AminoAcidProtenationVariant, AtomTypeInRes, Element};
 
 use crate::{
-    ComputationDevice, FfParamSet, ProtFFTypeChargeData,
+    ComputationDevice, FfParamSet, ProtFFTypeChargeMap,
     docking::{BindingEnergy, ConformationType, prep::DockingSetup},
     dynamics::{
         AtomDynamics, CUTOFF, ForceFieldParamsIndexed, MdState, ParamError, SKIN, SnapshotDynamics,
@@ -230,7 +230,9 @@ impl ForceFieldParamsIndexed {
                 .cloned();
 
             let Some(data) = data else {
-                return Err(ParamError::new(&format!("Missing bond parameters for {type_i}-{type_j}")));
+                return Err(ParamError::new(&format!(
+                    "Missing bond parameters for {type_i}-{type_j}"
+                )));
             };
 
             result
@@ -719,7 +721,7 @@ impl MdState {
 pub fn populate_ff_and_q(
     atoms: &mut [Atom],
     residues: &[Residue],
-    ff_type_charge: &ProtFFTypeChargeData,
+    ff_type_charge: &ProtFFTypeChargeMap,
 ) -> Result<(), ParamError> {
     for atom in atoms {
         if atom.hetero {

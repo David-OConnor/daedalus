@@ -1,10 +1,14 @@
-use na_seq::{AtomTypeInRes, Element, Element::*};
+use std::collections::HashMap;
+
+use bio_files::amber_params::ChargeParams;
+use na_seq::{AminoAcid, AminoAcidGeneral, AtomTypeInRes, Element, Element::*};
 
 use crate::{
+    ProtFfMap,
     aa_coords::aa_data_from_coords,
+    dynamics::ParamError,
     molecule::{Atom, AtomRole, Molecule},
 };
-use crate::dynamics::ParamError;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum BondGeometry {
@@ -12,6 +16,33 @@ pub enum BondGeometry {
     Linear,
     Tetrahedral,
     Other,
+}
+
+/// We use this to validate H atom type assignments. We derive this directly from `amino19.lib` (Amber)
+/// Returns `true` if valid.
+/// Note that this does not ensure completeness of the H set for a given AA; only if a given
+/// value is valid for that AA.
+/// h_num=0 means it's just "HE" or similar.
+fn validate_h_atom_type(
+    tir: &AtomTypeInRes,
+    aa: AminoAcid,
+    ff_map: &ProtFfMap,
+) -> Result<bool, ParamError> {
+    // Our protein files only contains "standard" AA data. I.e. "HIS" vice "HIE".
+    let data = ff_map.get(&AminoAcidGeneral::Standard(aa)).ok_or_else(|| {
+        ParamError::new(&format!(
+            "No parm19_data entry for amino acid {:?}",
+            AminoAcidGeneral::Standard(aa)
+        ))
+    })?;
+
+    for cp in data {
+        if &cp.type_in_res == tir {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
 }
 
 /// Assign atom-type-in-res for hydrogen atoms in polypeptides. This is not for small molecules,
@@ -29,61 +60,37 @@ pub enum BondGeometry {
 /// partial charge downstream.
 ///
 /// Example. For Asp, we should have one each of "H", "HA", "HB2", and "HB3".
-// pub fn h_at_type_in_res_sidechain(parent_name: &str, ordinal: usize, total_h: usize) -> Result<AtomTypeInRes, ParamError> {
-pub fn h_at_type_in_res_sidechain(element: Element, geom: BondGeometry, neighbor_count: usize) -> Result<AtomTypeInRes, ParamError> {
-    let result = String::from("H");
+///
+/// `h_num_this_parent` is 1, 2, or sometimes 3. Increments for a given parent that has multiple H.
+/// Assigns the numerical value in the result, e.g. the "2" in "NE2". `parent_depth` provides the letter
+/// e.g. the "D" in "HD1". (WHere "H" means Hydrogen, and "1" means the first hydrogen attached to this parent.
+pub fn h_type_in_res_sidechain(
+    h_num_this_parent: usize,
+    parent_depth: usize,
+    aa: AminoAcid,
+    ff_map: &ProtFfMap,
+) -> Result<AtomTypeInRes, ParamError> {
+    let depths = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 
-    // if total_h < 1 || total_h > 3 {
-    //     return Err(ParamError::new("Invalid total H count when assigning atom type to H"));
-    // }
-    //
-    // let rest = &parent_name[1..];                 // strip the leading C/N/O/S/P
-    // let first_char = parent_name.chars().next().unwrap();
-    //
-    // let result = match first_char {
-    //     // Backbone
-    //     'N' if parent_name == "N" => {
-    //         if total_h == 1 {
-    //             "H".into()
-    //         } else {
-    //             format!("H{}", ordinal + 1)       // H1 / H2 / H3
-    //         }
-    //     }
-    //     'C' if parent_name == "CA" => {
-    //         if total_h == 1 {
-    //             "HA".into()
-    //         } else {
-    //             // Gly: ordinal 0→HA2  , 1→HA3
-    //             format!("HA{}", ordinal + 2)
-    //         }
-    //     }
-    //
-    //     // Side-chain & hetero atoms ─────────────────────────────────────────────
-    //     'C' | 'N' | 'O' | 'S' | 'P' => {
-    //         let mut name = String::from("H");
-    //         name.push_str(rest);
-    //
-    //         match total_h {
-    //             1 => name,                        // HB, HG, HD1, HG2, HH, …
-    //             2 => {
-    //                 // CB → HB2/HB3; CG1 → HG12/HG13
-    //                 name.push(char::from(b'2' + ordinal as u8));
-    //                 name
-    //             }
-    //             3 => {
-    //                 // methyl: HG21/HG22/HG23, HD11/HD12/HD13 …
-    //                 name.push(char::from(b'1' + ordinal as u8));
-    //                 name
-    //             }
-    //             _ => unreachable!(),
-    //         }
-    //     }
-    //     _ => {
-    //         return Err(ParamError::new(&format!("Unsupported parent atom when finding H atom type: {parent_name}")));
-    //     }
-    // };
+    if parent_depth >= depths.len() {
+        return Err(ParamError::new(&format!(
+            "Invalid parent depth on H assignment: {:?}",
+            parent_depth
+        )));
+    }
 
-    Ok(AtomTypeInRes::H(result))
+    // todo: Consider adding a completeness validator for the AA, ensuring all expected
+    // Hs are present.
+
+    let result = AtomTypeInRes::H(format!("H{}{h_num_this_parent}", depths[parent_depth]));
+
+    if !validate_h_atom_type(&result, aa, ff_map)? {
+        return Err(ParamError::new(&format!(
+            "Invalid H type: {result} for {aa}"
+        )));
+    }
+
+    Ok(result)
 }
 
 /// Helper? todo: Figure out this thing's deal...
@@ -93,7 +100,7 @@ pub fn bonded_heavy_atoms<'a>(atoms_bonded: &'a [(usize, &'a Atom)]) -> Vec<&'a 
 
 impl Molecule {
     /// Adds hydrogens, and populdates residue dihedral angles.
-    pub fn populate_hydrogens_angles(&mut self) -> Result<(), ParamError> {
+    pub fn populate_hydrogens_angles(&mut self, ff_map: &ProtFfMap) -> Result<(), ParamError> {
         // todo: Move this fn to this module? Split this and its diehdral component, or not?
 
         let mut prev_cp_ca = None;
@@ -135,6 +142,8 @@ impl Molecule {
                 chain_i,
                 prev_cp_ca,
                 n_next_pos,
+                &res_clone,
+                ff_map,
             )?;
 
             for h in hydrogens {

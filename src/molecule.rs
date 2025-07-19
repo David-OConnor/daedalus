@@ -28,7 +28,7 @@ use na_seq::{AminoAcid, AtomTypeInRes, Element};
 use rayon::prelude::*;
 
 use crate::{
-    Selection,
+    ProtFfMap, Selection,
     aa_coords::Dihedral,
     bond_inference::{create_bonds, create_hydrogen_bonds},
     docking::{
@@ -96,6 +96,9 @@ impl Molecule {
         residues: Vec<Residue>,
         pubchem_cid: Option<u32>,
         drugbank_id: Option<String>,
+        // Populate this with the Amino19.lib map, if we wish to add Hydrogens. (e.g. for mmCif protein
+        // data, but not for small molecules).
+        add_hydrogens: Option<&ProtFfMap>,
     ) -> Self {
         let (center, size) = mol_center_size(&atoms);
 
@@ -116,17 +119,19 @@ impl Molecule {
 
         result.aa_seq = result.get_seq();
 
-        // todo: Perhaps you still want to calculate dihedral angles if hydrogens are populated already.
-        // todo; For now, you are skipping both. Example when this comes up: Ligands.
-        // Attempt to only populate Hydrogens if there aren't many.
-        if result
-            .atoms
-            .iter()
-            .filter(|a| a.element == Element::Hydrogen)
-            .count()
-            < 4
-        {
-            result.populate_hydrogens_angles();
+        if let Some(ff_map) = add_hydrogens {
+            // todo: Perhaps you still want to calculate dihedral angles if hydrogens are populated already.
+            // todo; For now, you are skipping both. Example when this comes up: Ligands.
+            // Attempt to only populate Hydrogens if there aren't many.
+            if result
+                .atoms
+                .iter()
+                .filter(|a| a.element == Element::Hydrogen)
+                .count()
+                < 4
+            {
+                result.populate_hydrogens_angles(ff_map);
+            }
         }
 
         let bonds = create_bonds(&result.atoms);
@@ -807,7 +812,7 @@ impl fmt::Display for Residue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let name = match &self.res_type {
             ResidueType::AminoAcid(aa) => aa.to_string(),
-            ResidueType::Water        => "Water".to_owned(),
+            ResidueType::Water => "Water".to_owned(),
             ResidueType::Other(name) => name.clone(),
         };
 
@@ -820,7 +825,7 @@ impl fmt::Display for Residue {
         match self.end {
             ResidueEnd::CTerminus => write!(f, " C-term")?,
             ResidueEnd::NTerminus => write!(f, " N-term")?,
-            _ => ()
+            _ => (),
         }
 
         Ok(())
@@ -963,10 +968,12 @@ pub const fn aa_color(aa: AminoAcid) -> (f32, f32, f32) {
     }
 }
 
-impl TryFrom<MmCif> for Molecule {
-    type Error = io::Error;
+impl Molecule {
+    // impl TryFrom<MmCif> for Molecule {
+    //     type Error = io::Error;
 
-    fn try_from(m: MmCif) -> Result<Self, Self::Error> {
+    pub fn from_mmcif(m: MmCif, ff_map: &ProtFfMap) -> Result<Self, io::Error> {
+        // fn try_from(m: MmCif) -> Result<Self, Self::Error> {
         let mut atoms: Vec<_> = m.atoms.iter().map(|a| a.into()).collect();
 
         // todo: Crude logic for finding the C terminus. Relies on atom position,
@@ -985,7 +992,7 @@ impl TryFrom<MmCif> for Molecule {
 
         let mut residues = Vec::with_capacity(m.residues.len());
         for (i, res) in m.residues.iter().enumerate() {
-            let mut end  = ResidueEnd::Internal;
+            let mut end = ResidueEnd::Internal;
 
             // Match arm won't work due to non-constant arms, e.g. non_hetero?
             if i == 0 {
@@ -996,7 +1003,7 @@ impl TryFrom<MmCif> for Molecule {
 
             match res.res_type {
                 ResidueType::AminoAcid(_) => (),
-                _ => end = ResidueEnd::Hetero
+                _ => end = ResidueEnd::Hetero,
             }
 
             residues.push(Residue::from_generic(res, &atoms, end)?);
@@ -1026,7 +1033,15 @@ impl TryFrom<MmCif> for Molecule {
             }
         }
 
-        let mut result = Self::new(m.ident.clone(), atoms, chains, residues, None, None);
+        let mut result = Self::new(
+            m.ident.clone(),
+            atoms,
+            chains,
+            residues,
+            None,
+            None,
+            Some(ff_map),
+        );
 
         result.experimental_method = m.experimental_method.clone();
         result.secondary_structure = m.secondary_structure.clone();
@@ -1042,7 +1057,7 @@ impl From<Mol2> for Molecule {
     fn from(m: Mol2) -> Self {
         let atoms = m.atoms.iter().map(|a| a.into()).collect();
 
-        let mut result = Self::new(m.ident, atoms, Vec::new(), Vec::new(), None, None);
+        let mut result = Self::new(m.ident, atoms, Vec::new(), Vec::new(), None, None, None);
 
         let bonds = m.bonds.iter().map(|b| b.into()).collect();
 
@@ -1071,7 +1086,7 @@ impl TryFrom<Sdf> for Molecule {
             chains.push(Chain::from_generic(c, &atoms, &residues)?);
         }
 
-        let mut result = Self::new(m.ident, atoms, chains, residues, None, None);
+        let mut result = Self::new(m.ident, atoms, chains, residues, None, None, None);
 
         let bonds = m.bonds.iter().map(|b| b.into()).collect();
 
