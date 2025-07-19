@@ -527,7 +527,6 @@ pub fn load_atom_coords_rcsb(
         Ok((cif, cif_text)) => {
             // let mol: Molecule = match cif.try_into() {
 
-
             let ff_map = &state.ff_params.prot_ff_q_map.as_ref().unwrap().internal;
 
             let mol: Molecule = match Molecule::from_mmcif(cif, ff_map) {

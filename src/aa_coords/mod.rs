@@ -18,7 +18,7 @@ use crate::{
         },
         sidechain::Sidechain,
     },
-    add_hydrogens::{bonded_heavy_atoms, h_type_in_res_sidechain},
+    add_hydrogens::h_type_in_res_sidechain,
     dynamics::ParamError,
     molecule::{Atom, AtomRole, Residue},
 };
@@ -229,7 +229,12 @@ fn add_h_sidechain(
         let atoms_bonded = find_bonded_atoms(atom, atoms, i);
 
         // todo: QC this; likely not correct.
-        let depth = bonded_heavy_atoms(&atoms_bonded).len();
+        // let depth = bonded_heavy_atoms(&atoms_bonded).len();
+        let Some(parent_tir) = atom.type_in_res.as_ref() else {
+            return Err(ParamError::new(&format!(
+                "Missing parent type in res when adding H: {atom}"
+            )));
+        };
 
         match atom.element {
             Carbon => {
@@ -260,7 +265,7 @@ fn add_h_sidechain(
                         let rotator = rotator_b * rotator_a;
 
                         for (i, tetra_bond) in [TETRA_B, TETRA_C, TETRA_D].into_iter().enumerate() {
-                            let at = h_type_in_res_sidechain(i + 1, depth, *aa, ff_map)?;
+                            let at = h_type_in_res_sidechain(i + 1, parent_tir, *aa, ff_map)?;
                             hydrogens.push(Atom {
                                 posit: atom.posit + rotator.rotate_vec(tetra_bond) * LEN_C_H,
                                 type_in_res: Some(at),
@@ -295,7 +300,7 @@ fn add_h_sidechain(
                             let bond_0 = atom.posit - atoms_bonded[0].1.posit;
                             let bond_1 = atoms_bonded[1].1.posit - atom.posit;
 
-                            let at = h_type_in_res_sidechain(1, depth, *aa, ff_map)?;
+                            let at = h_type_in_res_sidechain(1, parent_tir, *aa, ff_map)?;
                             // Add a single H in planar config.
                             hydrogens.push(Atom {
                                 posit: planar_posit(atom.posit, bond_0, bond_1, LEN_C_H),
@@ -315,7 +320,7 @@ fn add_h_sidechain(
                         );
 
                         for (i, posit) in [h_0, h_1].into_iter().enumerate() {
-                            let at = h_type_in_res_sidechain(i + 1, depth, *aa, ff_map)?;
+                            let at = h_type_in_res_sidechain(i + 1, parent_tir, *aa, ff_map)?;
                             hydrogens.push(Atom {
                                 posit,
                                 type_in_res: Some(at),
@@ -351,7 +356,7 @@ fn add_h_sidechain(
 
                         // Add 1 H.
                         // todo: If planar geometry, don't add a H!
-                        let at = h_type_in_res_sidechain(1, depth, *aa, ff_map)?;
+                        let at = h_type_in_res_sidechain(1, parent_tir, *aa, ff_map)?;
 
                         hydrogens.push(Atom {
                             posit: atom.posit
@@ -394,7 +399,7 @@ fn add_h_sidechain(
                         let rotator = rotator_b * rotator_a;
 
                         for (i, planar_bond) in [PLANAR3_B, PLANAR3_C].into_iter().enumerate() {
-                            let at = h_type_in_res_sidechain(i + 1, depth, *aa, ff_map)?;
+                            let at = h_type_in_res_sidechain(i + 1, parent_tir, *aa, ff_map)?;
                             hydrogens.push(Atom {
                                 posit: atom.posit + rotator.rotate_vec(planar_bond) * LEN_N_H,
                                 type_in_res: Some(at),
@@ -407,7 +412,7 @@ fn add_h_sidechain(
                         let bond_0 = atom.posit - atoms_bonded[0].1.posit;
                         let bond_1 = atoms_bonded[1].1.posit - atom.posit;
 
-                        let at = h_type_in_res_sidechain(1, depth, *aa, ff_map)?;
+                        let at = h_type_in_res_sidechain(1, parent_tir, *aa, ff_map)?;
                         hydrogens.push(Atom {
                             posit: planar_posit(atom.posit, bond_0, bond_1, LEN_N_H),
                             type_in_res: Some(at),
@@ -449,7 +454,7 @@ fn add_h_sidechain(
                             Quaternion::from_axis_angle(bond_prev, -dihedral + TAU / 6.);
                         let rotator = rotator_b * rotator_a;
 
-                        let at = h_type_in_res_sidechain(1, depth, *aa, ff_map)?;
+                        let at = h_type_in_res_sidechain(1, parent_tir, *aa, ff_map)?;
                         hydrogens.push(Atom {
                             posit: atom.posit + rotator.rotate_vec(TETRA_B) * LEN_O_H,
                             type_in_res: Some(at),

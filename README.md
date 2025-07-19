@@ -3,9 +3,12 @@
 [//]: # ([![Crate]&#40;https://img.shields.io/crates/v/daedalus.svg&#41;]&#40;https://crates.io/crates/daedalus&#41;)
 
 For viewing and exploring proteins and small molecules. View atom positions, bonds, solvent-accessible-surfaces, and
-electron density. Perform and visualize molecular dynamics using [Amber](https://ambermd.org/) parameters.
+electron density. Perform and visualize molecular dynamics using built-in [Amber](https://ambermd.org/) parameters.
 
-Conceptually similar to [PyMol](https://www.pymol.org/), [Chimera](https://www.cgl.ucsf.edu/chimera/), and Discovery Studio.
+Conceptually similar to [PyMol](https://www.pymol.org/), [Chimera](https://www.cgl.ucsf.edu/chimera/), and Discovery Studio, with functionality similar to
+[Coot](https://www2.mrc-lmb.cam.ac.uk/personal/pemsley/coot/)
+and [VMD](https://www.ks.uiuc.edu/Research/vmd/) as well.
+
 Designed to be as easy to use, and fast as possible.
 
 

@@ -66,36 +66,47 @@ fn validate_h_atom_type(
 /// e.g. the "D" in "HD1". (WHere "H" means Hydrogen, and "1" means the first hydrogen attached to this parent.
 pub fn h_type_in_res_sidechain(
     h_num_this_parent: usize,
-    parent_depth: usize,
+    parent_tir: &AtomTypeInRes,
     aa: AminoAcid,
     ff_map: &ProtFfMap,
 ) -> Result<AtomTypeInRes, ParamError> {
-    let depths = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+    // todo: Assign the number based on parent type as well??
+    let depth = match parent_tir {
+        AtomTypeInRes::CB => 'B',
+        AtomTypeInRes::CD | AtomTypeInRes::CD1 | AtomTypeInRes::CD2 => 'D',
+        AtomTypeInRes::CE | AtomTypeInRes::CE1 | AtomTypeInRes::CE2 | AtomTypeInRes::CE3 => 'E',
+        AtomTypeInRes::CG | AtomTypeInRes::CG1 | AtomTypeInRes::CG2 => 'G',
+        AtomTypeInRes::CH2 | AtomTypeInRes::CH3 => 'H',
+        AtomTypeInRes::CZ | AtomTypeInRes::CZ1 | AtomTypeInRes::CZ2 | AtomTypeInRes::CZ3 => 'Z',
+        AtomTypeInRes::OD1 | AtomTypeInRes::OD2 => 'D',
+        AtomTypeInRes::OG | AtomTypeInRes::OG1 | AtomTypeInRes::OG2 => 'G',
+        AtomTypeInRes::OE1 | AtomTypeInRes::OE2 => 'E',
+        AtomTypeInRes::ND1 | AtomTypeInRes::ND2 => 'D',
+        AtomTypeInRes::NH1 | AtomTypeInRes::NH2 => 'H',
+        AtomTypeInRes::NE | AtomTypeInRes::NE1 | AtomTypeInRes::NE2 => 'E',
+        AtomTypeInRes::SE => 'E',
+        AtomTypeInRes::SG => 'G',
+        _ => {
+            return Err(ParamError::new(&format!(
+                "Invalid parent type in res on H assignment: {parent_tir:?}",
+            )));
+        }
+    };
 
-    if parent_depth >= depths.len() {
-        return Err(ParamError::new(&format!(
-            "Invalid parent depth on H assignment: {:?}",
-            parent_depth
-        )));
-    }
+    // todo: Handle the N term and C term cases; pass those params in.
 
     // todo: Consider adding a completeness validator for the AA, ensuring all expected
-    // Hs are present.
+    // todo: Hs are present.
 
-    let result = AtomTypeInRes::H(format!("H{}{h_num_this_parent}", depths[parent_depth]));
+    let result = AtomTypeInRes::H(format!("H{depth}{h_num_this_parent}"));
 
     if !validate_h_atom_type(&result, aa, ff_map)? {
         return Err(ParamError::new(&format!(
-            "Invalid H type: {result} for {aa}"
+            "Invalid H type: {result} on {aa}. Parent: {parent_tir}"
         )));
     }
 
     Ok(result)
-}
-
-/// Helper? todo: Figure out this thing's deal...
-pub fn bonded_heavy_atoms<'a>(atoms_bonded: &'a [(usize, &'a Atom)]) -> Vec<&'a Atom> {
-    atoms_bonded.iter().map(|(_, a)| *a).collect()
 }
 
 impl Molecule {
@@ -135,6 +146,8 @@ impl Molecule {
             } else {
                 0
             };
+
+            // todo: Handle the N term and C term cases; pass those params in.
             let (dihedral, hydrogens, this_cp_ca) = aa_data_from_coords(
                 &atoms,
                 &res.res_type,

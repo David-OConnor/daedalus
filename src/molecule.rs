@@ -130,7 +130,9 @@ impl Molecule {
                 .count()
                 < 4
             {
-                result.populate_hydrogens_angles(ff_map);
+                if let Err(e) = result.populate_hydrogens_angles(ff_map) {
+                    eprintln!("Unable to populate Hydrogens and residue dihedral angles: {e:?}");
+                };
             }
         }
 

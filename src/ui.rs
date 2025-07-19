@@ -793,7 +793,7 @@ fn docking(
         if run_clicked {
             // If not already loaded from static string to state, do so now.
             // We load on demand to save computation.
-            state.load_ffs_general();
+            // state.load_ffs_general();
         }
         if run_clicked {
             let lig = state.ligand.as_mut().unwrap();
@@ -1769,7 +1769,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             if run_clicked {
                 // If not already loaded from static string to state, do so now.
                 // We load on demand to save computation.
-                state.load_ffs_general();
+                // state.load_ffs_general();
             }
             if run_clicked {
                 let mol = state.molecule.as_mut().unwrap();

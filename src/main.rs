@@ -622,6 +622,9 @@ fn main() {
         ..Default::default()
     };
 
+    // todo: Consider if you want this here. Currently required when adding H to a molecule.
+    // In release mode, takes 20ms on a fast CPU. (todo: Test on a slow CPU.)
+    state.load_ffs_general();
     state.load_prefs();
 
     let last_opened = state.to_save.last_opened.clone();

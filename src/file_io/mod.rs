@@ -1,5 +1,4 @@
 use std::{
-    collections::HashMap,
     fs,
     fs::File,
     io,
@@ -10,7 +9,7 @@ use std::{
 
 use bio_files::{DensityMap, MmCif, gemmi_cif_to_map};
 use lin_alg::f64::Vec3;
-use na_seq::{AaIdent, AminoAcid, AminoAcidGeneral, Element};
+use na_seq::{AaIdent, Element};
 
 use crate::{
     AMINO_19, AMINO_CT12, AMINO_NT12, FRCMOD_FF19SB, GAFF2, PARM_19, ProtFFTypeChargeMap, State,
@@ -99,11 +98,11 @@ impl State {
 
                 let cif_data = MmCif::new(&data_str)?;
                 // let mut mol: Molecule = cif_data.try_into()?;
-                // todo: DOn't unwrap.
+
                 let Some(ff_map) = &self.ff_params.prot_ff_q_map else {
                     return Err(io::Error::new(
                         ErrorKind::Other,
-                        "Missing FF map when opening protein; can't validate H",
+                        "Missing FF map when opening a protein; can't validate H",
                     ));
                 };
                 let mut mol = Molecule::from_mmcif(cif_data, &ff_map.internal)?;
@@ -193,8 +192,10 @@ impl State {
                 // if we update the molecule here, e.g. with docking site posit.
                 self.update_save_prefs_no_mol();
 
-                if self.get_make_docking_setup().is_none() {
-                    eprintln!("Problem making or getting docking setup.");
+                if self.ligand.is_some() {
+                    if self.get_make_docking_setup().is_none() {
+                        eprintln!("Problem making or getting docking setup.");
+                    }
                 }
 
                 self.volatile.flags.new_mol_loaded = true;
@@ -420,8 +421,13 @@ impl State {
     }
 
     /// Load parameter files for general organic molecules (GAFF2), and proteins/amino acids (PARM19).
-    /// This also populates ff type and charge on our protein atoms.
+    /// This also populates ff type and charge on our protein atoms. These are built into the application
+    /// as static strings.
+    ///
+    /// This only loads params that haven't already been loaded.
     pub fn load_ffs_general(&mut self) {
+        let start = Instant::now();
+
         if self.ff_params.prot_general.is_none() {
             // Load general parameters for proteins and AAs.
             match ForceFieldParams::from_dat(PARM_19) {
@@ -474,5 +480,8 @@ impl State {
                 ),
             }
         }
+
+        let elapsed = start.elapsed().as_millis();
+        println!("Loaded static FF data in {elapsed}ms");
     }
 }
