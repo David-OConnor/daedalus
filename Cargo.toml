@@ -14,9 +14,9 @@ cfg-if = "1.0.1"
 
 lin_alg = { version = "1.2.2", features = ["encode"] }
 barnes_hut = { version = "1.0.8"}  # enc temp rem
-na_seq = "0.2.13"
+na_seq = "0.3.0"
 bio_apis = {  version = "0.1.4", features = ["encode"] }
-bio_files = "0.2.0"
+bio_files = "0.2.2"
 mcubes = "0.1.4"
 
 # For loading and saving config
@@ -53,10 +53,10 @@ itertools = "0.14.0" # For combinations when matching angles in MD.
 # graphics = { path = "../../graphics" }
 #lin_alg = { path = "../../lin_alg" }
 #barnes_hut = { path = "../../barnes_hut" }
-na_seq = { path = "../na_seq" }
+#na_seq = { path = "../na_seq" }
 #bio_apis = { path = "../bio_apis" }
 #mcubes = { path = "../mcubes" }
-bio_files = { path = "../bio_files" }
+#bio_files = { path = "../bio_files" }
 
 
 

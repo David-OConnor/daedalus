@@ -2,10 +2,10 @@
 
 use std::{f64::consts::TAU, fmt, fmt::Formatter, str::FromStr};
 
-use bio_files::{BondGeneric, ResidueType};
+use bio_files::{ResidueType};
 use lin_alg::f64::{Quaternion, Vec3, calc_dihedral_angle, calc_dihedral_angle_v2};
 use na_seq::{
-    AminoAcid, AtomTypeInRes, Element,
+    AminoAcid, AtomTypeInRes,
     Element::{Carbon, Hydrogen, Nitrogen, Oxygen},
 };
 
@@ -234,8 +234,6 @@ fn add_h_sidechain(
 
         let atoms_bonded = find_bonded_atoms(atom, atoms, i);
 
-        // todo: QC this; likely not correct.
-        // let depth = bonded_heavy_atoms(&atoms_bonded).len();
         let Some(parent_tir) = atom.type_in_res.as_ref() else {
             return Err(ParamError::new(&format!(
                 "Missing parent type in res when adding H: {atom}"
@@ -548,12 +546,15 @@ fn handle_backbone(
         }
 
         // Add a H to the backbone N. (Amine) Sp2/Planar.
-        hydrogens.push(Atom {
-            posit: planar_posit(n_posit, bond_n_cp_prev, bond_ca_n, LEN_N_H),
-            // todo "H" for N backbone always, for now at least.
-            type_in_res: Some(AtomTypeInRes::H("H".to_string())),
-            ..h_default.clone()
-        });
+        // Proline's N is part of a ring, so it's bonded to a C in lieu of H.
+        if aa != &AminoAcid::Pro {
+            hydrogens.push(Atom {
+                posit: planar_posit(n_posit, bond_n_cp_prev, bond_ca_n, LEN_N_H),
+                // todo "H" for N backbone always, for now at least.
+                type_in_res: Some(AtomTypeInRes::H("H".to_string())),
+                ..h_default.clone()
+            });
+        }
     }
 
     // For residues prior to the last.

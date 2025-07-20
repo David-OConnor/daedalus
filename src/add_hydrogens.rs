@@ -1,7 +1,13 @@
+//! Handles adding hydrogen based on geometry (See also aa_coords/mod.rs, which this calls),
+//! and assigns H types that map to Amber params.
+//!
+//! todo: Handle differnet protenation states, and assign atom-types in a way that's
+//! , todo for a given residue, consistent with a single protenation state. The current approach
+//! is an innacurate hybrid.
+
 use std::collections::HashMap;
 
-use bio_files::amber_params::ChargeParams;
-use na_seq::{AminoAcid, AminoAcidGeneral, AtomTypeInRes, Element, Element::*};
+use na_seq::{AminoAcid, AminoAcidGeneral, AtomTypeInRes, Element::*};
 
 use crate::{
     ProtFfMap,
@@ -37,13 +43,6 @@ fn validate_h_atom_type(
     // ff_map: &ProtFfMap,
     digit_map: &DigitMap,
 ) -> Result<bool, ParamError> {
-    // Our protein files only contains "standard" AA data. I.e. "HIS" vice "HIE".
-    // let data = ff_map.get(&AminoAcidGeneral::Standard(aa)).ok_or_else(|| {
-    //     ParamError::new(&format!(
-    //         "No parm19_data entry for amino acid {:?}",
-    //         AminoAcidGeneral::Standard(aa)
-    //     ))
-    // })?;
 
     let data = digit_map.get(&aa).ok_or_else(|| {
         ParamError::new(&format!(
@@ -51,13 +50,6 @@ fn validate_h_atom_type(
             AminoAcidGeneral::Standard(aa)
         ))
     })?;
-    //
-    // for cp in data {
-    //     if &cp.type_in_res == tir {
-    //         return Ok(true);
-    //     }
-    // }
-
 
     let data_this_depth = data.get(&depth).ok_or_else(|| {
         ParamError::new(&format!(
@@ -221,16 +213,6 @@ pub fn h_type_in_res_sidechain(
             );
 
             &digits[digits.len() - 1]
-
-            // let highest_avail = digits[digits.len() - 1];
-            // if highest_avail == 0 {
-            //
-            // }
-            // return Ok(AtomTypeInRes::H(format!("H{depth}{highest_avail}")));
-
-            // return Err(ParamError::new(&format!(
-            //     "H Digit out of range. Digit: {h_num_this_parent} not in {digits:?} - {parent_tir:?} , {aa}",
-            // )));
         }
     };
 
@@ -247,7 +229,6 @@ pub fn h_type_in_res_sidechain(
 
     let result = AtomTypeInRes::H(val);
 
-    // if !validate_h_atom_type(&result, aa, ff_map)? {
     if !validate_h_atom_type(depth, *digit, aa, &h_digit_map)? {
         return Err(ParamError::new(&format!(
             "Invalid H type: {result} on {aa}. Parent: {parent_tir}"
