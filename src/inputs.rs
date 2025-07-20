@@ -16,7 +16,7 @@ use crate::{
     mol_drawing::MoleculeView,
     molecule::Atom,
     render::{BODY_SHINYNESS, MESH_BOND, set_flashlight},
-    util::{cycle_res_selected, find_selected_atom, orbit_center, points_along_ray},
+    util::{cycle_selected, find_selected_atom, orbit_center, points_along_ray},
 };
 
 // These are defaults; overridden by the user A/R, and saved to prefs.
@@ -177,11 +177,11 @@ pub fn event_dev_handler(
             match key.state {
                 ElementState::Pressed => match key.physical_key {
                     Code(KeyCode::ArrowLeft) => {
-                        cycle_res_selected(state_, scene, true);
+                        cycle_selected(state_, scene, true);
                         redraw_protein = true;
                     }
                     Code(KeyCode::ArrowRight) => {
-                        cycle_res_selected(state_, scene, false);
+                        cycle_selected(state_, scene, false);
                         redraw_protein = true;
                     }
                     Code(KeyCode::Escape) => {

@@ -40,7 +40,7 @@ use crate::{
     util,
     util::{
         cam_look_at, cam_look_at_outside, check_prefs_save, close_lig, close_mol,
-        cycle_res_selected, handle_err, handle_scene_flags, load_atom_coords_rcsb, orbit_center,
+        cycle_selected, handle_err, handle_scene_flags, load_atom_coords_rcsb, orbit_center,
         reset_camera, select_from_search,
     },
 };
@@ -839,22 +839,31 @@ fn residue_search(state: &mut State, scene: &mut Scene, redraw: &mut bool, ui: &
         // if key_up_is_down {
         //     up_button.highlight();
         // }
+        let btn_text = match state.ui.view_sel_level {
+            ViewSelLevel::Atom => "Prev atom",
+            ViewSelLevel::Residue => "Prev AA",
+        };
         if state.molecule.is_some() {
             if ui
-                .button("Prev AA")
+                .button(btn_text)
                 .on_hover_text("Hotkey: Left arrow")
                 .clicked()
             {
-                cycle_res_selected(state, scene, true);
+                cycle_selected(state, scene, true);
                 *redraw = true;
             }
             // todo: DRY
+
+            let btn_text = match state.ui.view_sel_level {
+                ViewSelLevel::Atom => "Next atom",
+                ViewSelLevel::Residue => "Next AA",
+            };
             if ui
-                .button("Next AA")
+                .button(btn_text)
                 .on_hover_text("Hotkey: Right arrow")
                 .clicked()
             {
-                cycle_res_selected(state, scene, false);
+                cycle_selected(state, scene, false);
                 *redraw = true;
             }
 

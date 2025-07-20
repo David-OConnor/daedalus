@@ -168,7 +168,6 @@ pub fn h_type_in_res_sidechain(
     h_num_this_parent: usize,
     parent_tir: &AtomTypeInRes,
     aa: AminoAcid,
-    ff_map: &ProtFfMap,
     h_digit_map: &DigitMap,
 ) -> Result<AtomTypeInRes, ParamError> {
     // todo: Assign the number based on parent type as well??
@@ -211,15 +210,27 @@ pub fn h_type_in_res_sidechain(
     let digit = match digits.get(h_num_this_parent) {
         Some(d) => d,
         None => {
-            // todo temp while debugging; return the error and abort.
+            // We encounter this error, for example, where a Leucine is missing one of its CD atoms
+            // (A methyl group). Unknown cause, but might be a measurement error.
+            // We've also seen, for example, a CD termining Lysine as a methyl, missing CE.
+            // Rather than assigning a new H #, we duplicate the previous one, so that it correctly
+            // maps to a FF param downstream.
             eprintln!(
-                "H Digit out of range. Digit: {h_num_this_parent} not in {digits:?} - {parent_tir:?} , {aa}",
+                "H Digit out of range (Likely a truncated sidechain). Digit: {h_num_this_parent} not in {digits:?} - {parent_tir:?} , {aa}. \
+                 Assigning a duplicate digit type-in-res",
             );
-            return Ok(AtomTypeInRes::H(format!("H{depth}1")));
 
-            return Err(ParamError::new(&format!(
-                "H Digit out of range. Digit: {h_num_this_parent} not in {digits:?} - {parent_tir:?} , {aa}",
-            )));
+            &digits[digits.len() - 1]
+
+            // let highest_avail = digits[digits.len() - 1];
+            // if highest_avail == 0 {
+            //
+            // }
+            // return Ok(AtomTypeInRes::H(format!("H{depth}{highest_avail}")));
+
+            // return Err(ParamError::new(&format!(
+            //     "H Digit out of range. Digit: {h_num_this_parent} not in {digits:?} - {parent_tir:?} , {aa}",
+            // )));
         }
     };
 
@@ -242,6 +253,8 @@ pub fn h_type_in_res_sidechain(
             "Invalid H type: {result} on {aa}. Parent: {parent_tir}"
         )));
     }
+
+
 
     Ok(result)
 }

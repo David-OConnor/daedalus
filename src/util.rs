@@ -300,39 +300,68 @@ pub fn select_from_search(state: &mut State) {
     }
 }
 
-pub fn cycle_res_selected(state: &mut State, scene: &mut Scene, reverse: bool) {
+pub fn cycle_selected(state: &mut State, scene: &mut Scene, reverse: bool) {
     let Some(mol) = &state.molecule else { return };
 
-    state.ui.view_sel_level = ViewSelLevel::Residue;
+    let dir = if reverse { -1 } else { 1 };
 
-    match state.ui.selection {
-        Selection::Residue(res_i) => {
-            for chain in &mol.chains {
-                if chain.residues.contains(&res_i) {
-                    // Pick a residue from the chain the current selection is on.
-                    let mut new_res_i = res_i as isize;
+    // todo: DRY between atom and res.
+    match state.ui.view_sel_level {
+        ViewSelLevel::Atom => {
+            match state.ui.selection {
+                Selection::Atom(atom_i) => {
+                    for chain in &mol.chains {
+                        if chain.atoms.contains(&atom_i) {
+                            let mut new_atom_i = atom_i as isize;
 
-                    let dir = if reverse { -1 } else { 1 };
-
-                    while new_res_i < (mol.residues.len() as isize) - 1 && new_res_i >= 0 {
-                        new_res_i += dir;
-                        let nri = new_res_i as usize;
-                        if chain.residues.contains(&nri) {
-                            state.ui.selection = Selection::Residue(nri);
+                            while new_atom_i < (mol.atoms.len() as isize) - 1 && new_atom_i >= 0 {
+                                new_atom_i += dir;
+                                let nri = new_atom_i as usize;
+                                if chain.atoms.contains(&nri) {
+                                    state.ui.selection = Selection::Atom(nri);
+                                    break;
+                                }
+                            }
                             break;
                         }
                     }
-                    break;
+                }
+                _ => {
+                    if !mol.atoms.is_empty() {
+                        state.ui.selection = Selection::Atom(0);
+                    }
                 }
             }
         }
-        _ => {
-            if !mol.residues.is_empty() {
-                state.ui.selection = Selection::Residue(0);
+        ViewSelLevel::Residue => {
+            match state.ui.selection {
+                Selection::Residue(res_i) => {
+                    for chain in &mol.chains {
+                        if chain.residues.contains(&res_i) {
+                            // Pick a residue from the chain the current selection is on.
+                            let mut new_res_i = res_i as isize;
+
+                            while new_res_i < (mol.residues.len() as isize) - 1 && new_res_i >= 0 {
+                                new_res_i += dir;
+                                let nri = new_res_i as usize;
+                                if chain.residues.contains(&nri) {
+                                    state.ui.selection = Selection::Residue(nri);
+                                    break;
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }
+                _ => {
+                    if !mol.residues.is_empty() {
+                        state.ui.selection = Selection::Residue(0);
+                    }
+                }
             }
         }
     }
-
+    
     if let ControlScheme::Arc { center } = &mut scene.input_settings.control_scheme {
         *center = orbit_center(state);
     }
