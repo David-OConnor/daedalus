@@ -281,7 +281,12 @@ fn add_h_sidechain(
                     2 => {
                         let mut planar = false;
                         if atoms_bonded[0].1.element == Nitrogen
-                            && atoms_bonded[1].1.element == Nitrogen
+                            && atoms_bonded[1].1.element == Nitrogen ||
+                            // Ring overrides, changing from 2 H in tetra to 1 in planar config.
+                            // todo: In the case of His, thsi might depend on the protonation state.
+                            (*aa == AminoAcid::Trp && *parent_tir == AtomTypeInRes::CD1)||
+                            (*aa == AminoAcid::His && *parent_tir == AtomTypeInRes::CD2)
+
                         {
                             planar = true;
                         } else {
@@ -301,6 +306,7 @@ fn add_h_sidechain(
                             }
                         }
 
+                        // Add a single H
                         if planar {
                             let bond_0 = atom.posit - atoms_bonded[0].1.posit;
                             let bond_1 = atoms_bonded[1].1.posit - atom.posit;
@@ -349,6 +355,11 @@ fn add_h_sidechain(
                             continue;
                         }
 
+                        // Trp planar ring junctions; don't add an H.
+                        if *aa == AminoAcid::Trp && matches!(parent_tir, AtomTypeInRes::CD2 | AtomTypeInRes::CE2) {
+                            continue;
+                        }
+
                         // Planar C arrangement.
                         let bond_next = (atoms_bonded[1].1.posit - atom.posit).to_normalized();
                         let bond_prev = (atoms_bonded[0].1.posit - atom.posit).to_normalized();
@@ -380,6 +391,11 @@ fn add_h_sidechain(
                 }
             }
             Nitrogen => {
+                // No H on this His ring N. (There is on NE2 though)
+                // todo: this might depend on the protonation state.
+                if *aa == AminoAcid::His && *parent_tir == AtomTypeInRes::ND1 {
+                    continue
+                }
                 match atoms_bonded.len() {
                     1 => unsafe {
                         // Add 2 H. (Amine)

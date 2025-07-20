@@ -82,16 +82,21 @@ impl ForceFieldParamsIndexed {
         atoms: &[Atom],
         bonds: &[Bond],
         adjacency_list: &[Vec<usize>],
+        skip_hetero: bool
     ) -> Result<Self, ParamError> {
         let mut result = Self::default();
-
-        // let err = || ParamError::new("Atom missing FF type");
 
         // Combine the two force field sets. When a value is present in both, refer the lig-specific
         // one.
         let params = merge_params(params_general, params_specific);
 
+        // todo: Handle hetero when required, e.g. if part of a protein.
+
         for (i, atom) in atoms.iter().enumerate() {
+            if skip_hetero && atom.hetero { // This approach keeps bond indices intact over filtering atoms ahead of time.
+                continue;
+            }
+
             let err = || ParamError::new(&format!("Error: Atom missing FF type: {atom}"));
             let ff_type = match &atom.force_field_type {
                 Some(ff_t) => ff_t,
@@ -212,6 +217,11 @@ impl ForceFieldParamsIndexed {
 
         // Bonds
         for bond in bonds {
+            // See note above out not pre-filtering.
+            if skip_hetero && (atoms[bond.atom_0].hetero || atoms[bond.atom_1].hetero) {
+                continue
+            }
+
             let (i0, i1) = (bond.atom_0, bond.atom_1);
             let (type_i, type_j) = (
                 atoms[i0].force_field_type.as_ref().ok_or_else(|| {
@@ -242,10 +252,18 @@ impl ForceFieldParamsIndexed {
 
         // Angles. (Between 3 atoms)
         for (center, neigh) in adjacency_list.iter().enumerate() {
+            if skip_hetero && atoms[center].hetero {
+                continue
+            }
+
             if neigh.len() < 2 {
                 continue;
             }
             for (&i, &k) in neigh.iter().tuple_combinations() {
+                if skip_hetero && (atoms[i].hetero || atoms[k].hetero) {
+                    continue
+                }
+
                 let (type_0, type_1, type_2) = (
                     atoms[i].force_field_type.as_ref().ok_or_else(|| {
                         ParamError::new(&format!("Atom missing FF type on angle: {}", atoms[i]))
@@ -348,6 +366,8 @@ impl ForceFieldParamsIndexed {
         //         }
         //     }
         // }
+
+        // todo: Skip het here.
 
         // ---------------------------
         // 1. Proper dihedrals i-j-k-l
@@ -510,12 +530,14 @@ impl MdState {
         let ff_params_keyed_lig_specific = ff_params.lig_specific.get("CPB");
 
         // Convert FF params from keyed to index-based.
+        println!("Building FF params indexed ligand for docking...");
         let ff_params_non_static = ForceFieldParamsIndexed::new(
             ff_params_lig_keyed,
             ff_params_keyed_lig_specific,
             atoms,
             bonds,
             adjacency_list,
+            false,
         )?;
 
         // This assumes nonbonded interactions only with external atoms; this is fine for
@@ -523,12 +545,14 @@ impl MdState {
         let bonds_static = Vec::new();
         let adj_list_static = Vec::new();
 
+        println!("Building FF params indexed static for docking...");
         let ff_params_static = ForceFieldParamsIndexed::new(
             ff_params_prot_keyed,
             None,
             atoms_static,
             &bonds_static,
             &adj_list_static,
+            true,
         )?;
 
         // We are using this approach instead of `.into`, so we can use the atom_posits from
@@ -604,17 +628,15 @@ impl MdState {
         // Assign FF type and charge to protein atoms; FF type must be assigned prior to initializing `ForceFieldParamsIndexed`.
         // (Ligand atoms will already have FF type assigned).
 
-        // I don't like this clone, but I'm not sure how to do it without changing downstream
-        // APIs to accept &[&Atom].
-        let atoms: Vec<_> = atoms.iter().filter(|a| !a.hetero).cloned().collect();
-
         // Convert FF params from keyed to index-based.
+        println!("Building FF params indexed for peptide...");
         let ff_params_non_static = ForceFieldParamsIndexed::new(
             ff_params_prot_keyed,
             None,
             &atoms,
             bonds,
             adjacency_list,
+            true,
         )?;
 
         // We are using this approach instead of `.into`, so we can use the atom_posits from

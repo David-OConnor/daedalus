@@ -1,5 +1,7 @@
 //! Handles adding hydrogen based on geometry (See also aa_coords/mod.rs, which this calls),
-//! and assigns H types that map to Amber params.
+//! and assigns H types that map to Amber params. Note that in addition to using these types to
+//! assign FF params, we can also use them to QC which H atoms should be present on specific
+//! parents in each AA. (It has helped us catch several errors, like extra Hs in Proline and Trp rings.)
 //!
 //! todo: Handle differnet protenation states, and assign atom-types in a way that's
 //! , todo for a given residue, consistent with a single protenation state. The current approach
