@@ -314,6 +314,9 @@ impl MdState {
 
     fn apply_bond_stretching_forces(&mut self) {
         for (indices, params) in &self.force_field_params.bond_stretching {
+
+            println!("A len: {:?}, i{} j{}", self.atoms.len(), indices.0, indices.1); // todo TS
+
             let (a_0, a_1) = split2_mut(&mut self.atoms, indices.0, indices.1);
 
             let f = f_bond_stretching(a_0.posit, a_1.posit, params);

@@ -32,6 +32,7 @@ use bio_files::{
         BondStretchingParams, ChargeParams, ForceFieldParamsKeyed, MassParams, VdwParams,
     },
 };
+use bio_files::amber_params::AngleBendingParams;
 use graphics::Entity;
 use itertools::Itertools;
 use lin_alg::f64::Vec3;
@@ -239,10 +240,27 @@ impl ForceFieldParamsIndexed {
                 .cloned();
 
             let Some(data) = data else {
-                return Err(ParamError::new(&format!(
-                    "Missing bond parameters for {type_i}-{type_j} on {} - {}",
+                // todo: We get this sometimes with glitched mmCIF files that have duplicate atoms
+                // todo in slightly different positions.
+                eprintln!(
+                    "Missing bond parameters for {type_i}-{type_j} on {} - {}. Using a safe default.",
                     atoms[i0], atoms[i1]
-                )));
+                );
+                result
+                    .bond_stretching
+                    .insert((i0.min(i1), i0.max(i1)), BondStretchingParams {
+                        atom_types: (String::new(), String::new()),
+                        k_b: 300.,
+                        r_0: (atoms[i0].posit - atoms[i1].posit).magnitude() as f32,
+                        comment: None,
+                    });
+                continue;
+
+
+                // return Err(ParamError::new(&format!(
+                //     "Missing bond parameters for {type_i}-{type_j} on {} - {}",
+                //     atoms[i0], atoms[i1]
+                // )));
             };
 
             result
@@ -279,21 +297,29 @@ impl ForceFieldParamsIndexed {
                     })?,
                 );
 
-                let data = params
-                    .angle
-                    .get(&(type_0.clone(), type_1.clone(), type_2.clone()))
+                let data = match params.angle.get(&(type_0.clone(), type_1.clone(), type_2.clone())) {
+                    Some(param) => param.clone(),
                     // Try the other atom order.
-                    .or_else(|| {
-                        params
-                            .angle
-                            .get(&(type_2.clone(), type_1.clone(), type_0.clone()))
-                    })
-                    .cloned()
-                    .ok_or_else(|| {
-                        ParamError::new(&format!(
-                            "Missing valence angle parameters for {type_0}-{type_1}-{type_2}"
-                        ))
-                    })?;
+                    None => match params.angle.get(&(type_2.clone(), type_1.clone(), type_0.clone())) {
+                        Some(param) => param.clone(),
+                        None => {
+                            // todo: Get to the bottom of this.
+                            // todo: In at least some cases, it's caused by duplicate atoms in the MMCIf file. Consider
+                            // todo: sanitizing it on load.
+                            println!(
+                                "Missing valence angle params {type_0}-{type_1}-{type_2} on {} - {} - {}. Using a safe default.",
+                                atoms[i], atoms[center], atoms[k]
+                            );
+                            // parm19.dat, HC-CT-HC
+                            AngleBendingParams {
+                                atom_types: (String::new(), String::new(), String::new()),
+                                k: 35.,
+                                theta_0: 1.91113,
+                                comment: None,
+                            }
+                        }
+                    }
+                };
 
                 result.angle.insert((i, center, k), data);
             }
@@ -628,13 +654,18 @@ impl MdState {
         // Assign FF type and charge to protein atoms; FF type must be assigned prior to initializing `ForceFieldParamsIndexed`.
         // (Ligand atoms will already have FF type assigned).
 
+        // Note: We don't filter atoms here to keep the bond references intact.
+        let bonds: Vec<_> = bonds.iter().filter(|b| {
+            !atoms[b.atom_0].hetero && !atoms[b.atom_1].hetero
+        }).cloned().collect();
+
         // Convert FF params from keyed to index-based.
         println!("Building FF params indexed for peptide...");
         let ff_params_non_static = ForceFieldParamsIndexed::new(
             ff_params_prot_keyed,
             None,
-            &atoms,
-            bonds,
+            atoms,
+            &bonds,
             adjacency_list,
             true,
         )?;
@@ -643,6 +674,9 @@ impl MdState {
         // the positioned ligand. (its atom coords are relative; we need absolute)
         let mut atoms_dy = Vec::with_capacity(atoms.len());
         for (i, atom) in atoms.iter().enumerate() {
+            if atom.hetero {
+                continue;
+            }
             atoms_dy.push(AtomDynamics::new(
                 atom,
                 atom_posits,

@@ -920,8 +920,33 @@ fn selection_section(
 
         if state.ui.view_sel_level != prev_view {
             *redraw = true;
-            // Kludge to prevent surprising behavior.
-            state.ui.selection = Selection::None;
+            // If we change from atom to res, select the prev-selected atom's res. If vice-versa,
+            // select that residue's Cα.
+            // state.ui.selection = Selection::None;
+            if let Some(mol) = &state.molecule {
+                match state.ui.view_sel_level {
+                    ViewSelLevel::Residue => {
+                        state.ui.selection = match state.ui.selection {
+                            Selection::Atom(i) => Selection::Residue(mol.atoms[i].residue.unwrap_or_default()),
+                            _ => Selection::None
+                        };
+                    },
+                    ViewSelLevel::Atom => {
+                        state.ui.selection = match state.ui.selection {
+                            // It seems [0] is often N, and [1] is Cα
+                            Selection::Residue(i) => {
+                                if mol.residues[i].atoms.len() <= 2 {
+                                    Selection::Atom(mol.residues[i].atoms[1])
+                                } else {
+                                    Selection::None
+                                }
+                            }
+
+                            _ => Selection::None
+                        };
+                    }
+                }
+            }
         }
 
         // Buttons to alter the color profile, e.g. for res position, or partial charge.

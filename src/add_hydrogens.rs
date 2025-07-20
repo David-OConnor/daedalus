@@ -7,6 +7,21 @@
 //! , todo for a given residue, consistent with a single protenation state. The current approach
 //! is an innacurate hybrid.
 
+// todo notes to patch: (2025-07-20)
+// - Met: good
+// - Arg: good
+// - Asn: good
+// - Phe: good
+// - Pro: good
+// - Leu: good
+// - Ile: good
+//
+// - Asp  Missing one of the HB atoms? Seems to be based on the geometry we assess;
+// bond angle more planar; not sure how to proceed. Glu: Same, but missing Hg.
+// - Thr missing HB.
+// - Cys missing H on S. ("HS")
+// - Leucine sometimes missing one of its Methyl groups
+
 use std::collections::HashMap;
 
 use na_seq::{AminoAcid, AminoAcidGeneral, AminoAcidProtenationVariant, AtomTypeInRes, Element::*};
@@ -197,6 +212,64 @@ pub fn h_type_in_res_sidechain(
             )));
         }
     };
+
+    // Manual overrides here. Perhaps a more general algorithm will prevent needing these.
+    // The naive approach of always applying 21 incremented to Cx2 doesn't always work,
+    // so these individual overrides may be the easiest approach.
+    // todo: See teh pattern here? Put in a mechanism to add the 2 prefix.
+    match aa {
+       AminoAcid::Thr => {
+            match parent_tir {
+                AtomTypeInRes::CG2 => {
+                    // HG21, 22, 23
+                    let digit = h_num_this_parent + 21;
+                    return Ok(AtomTypeInRes::H(format!("HG{digit}")));
+                }
+                _ => ()
+            }
+       }
+        AminoAcid::Arg => {
+            match parent_tir {
+                AtomTypeInRes::NH2 => {
+                    let digit = h_num_this_parent + 21;
+                    return Ok(AtomTypeInRes::H(format!("HH{digit}")));
+                }
+                _ => ()
+            }
+        }
+        AminoAcid::Phe => {
+            match parent_tir {
+                AtomTypeInRes::CD2 => {
+                    let digit = h_num_this_parent + 2;
+                    return Ok(AtomTypeInRes::H(format!("HD{digit}")));
+                }
+                AtomTypeInRes::CE2 => {
+                    let digit = h_num_this_parent + 2;
+                    return Ok(AtomTypeInRes::H(format!("HE{digit}")));
+                }
+                _ => ()
+            }
+        }
+        AminoAcid::Leu => {
+            match parent_tir {
+                AtomTypeInRes::CD2 => {
+                    let digit = h_num_this_parent + 21;
+                    return Ok(AtomTypeInRes::H(format!("HD{digit}")));
+                }
+                _ => ()
+            }
+        }
+        AminoAcid::Ile => {
+            match parent_tir {
+                AtomTypeInRes::CG2 => {
+                    let digit = h_num_this_parent + 21;
+                    return Ok(AtomTypeInRes::H(format!("HG{digit}")));
+                }
+                _ => ()
+            }
+        }
+        _ => ()
+    }
 
     let Some(digits_this_aa) = h_digit_map.get(&aa) else {
         return Err(ParamError::new(&format!(
