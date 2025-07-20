@@ -13,17 +13,11 @@ use crate::{
     molecule::{Atom, Ligand, Molecule, Residue},
     ui::{COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_INACTIVE, ROW_SPACING},
 };
+use crate::mol_drawing::{COLOR_AA_NON_RESIDUE, COLOR_AA_NON_RESIDUE_EGUI};
+use crate::molecule::aa_color;
+use crate::util::make_egui_color;
 
 fn disp_atom_data(atom: &Atom, residues: &[Residue], ui: &mut Ui) {
-    let mut aa = String::new();
-    if let Some(res_i) = atom.residue {
-        let res = &residues[res_i];
-        aa = match res.res_type {
-            ResidueType::AminoAcid(a) => format!("AA: {}", a.to_str(AaIdent::OneLetter)),
-            _ => String::new(),
-        };
-    }
-
     let role = match atom.role {
         Some(r) => format!("Role: {r}"),
         None => String::new(),
@@ -36,30 +30,33 @@ fn disp_atom_data(atom: &Atom, residues: &[Residue], ui: &mut Ui) {
     );
 
     let text_0 = format!("#{}", atom.serial_number);
-
-    // Split so we can color-code by element.
-    let text_a = format!("{}  {}  El:", posit_txt, atom.serial_number);
-
     let text_b = atom.element.to_letter();
 
-    let mut text_c = format!("{aa}  {role}",);
+    let mut text_c = String::new();
+    // Placeholder for water etc.
+    let mut res_color = COLOR_AA_NON_RESIDUE_EGUI;
 
     if let Some(res_i) = atom.residue {
         let res = &residues[res_i];
         text_c += &format!("  {res}");
+
+        if let ResidueType::AminoAcid(aa) = res.res_type {
+            res_color = make_egui_color(aa_color(aa));
+        }
     }
 
     ui.label(RichText::new(text_0).color(Color32::WHITE));
 
-    ui.label(RichText::new(text_a).color(Color32::GOLD));
-    let (r, g, b) = atom.element.color();
-    let white = Color32::from_rgb((r * 255.) as u8, (g * 255.) as u8, (b * 255.) as u8);
+    ui.label(RichText::new(posit_txt).color(Color32::GOLD));
 
-    ui.label(RichText::new(text_b).color(white));
-    ui.label(RichText::new(text_c).color(Color32::GOLD));
+    let atom_color = make_egui_color( atom.element.color());
+
+    ui.label(RichText::new(text_b).color(atom_color));
+    ui.label(RichText::new(text_c).color(res_color));
+    ui.label(RichText::new(role).color(Color32::LIGHT_GRAY));
 
     if let Some(tir) = &atom.type_in_res {
-        ui.label(RichText::new(format!("Type: {tir}")).color(Color32::LIGHT_YELLOW));
+        ui.label(RichText::new(format!("{tir}")).color(Color32::LIGHT_YELLOW));
     }
 
     if let Some(ff) = &atom.force_field_type {
@@ -68,8 +65,8 @@ fn disp_atom_data(atom: &Atom, residues: &[Residue], ui: &mut Ui) {
 
     if let Some(q) = &atom.partial_charge {
         let plus = if *q > 0. { "+" } else { "" };
-        let (r, g, b) = mol_drawing::color_viridis_float(*q, CHARGE_MAP_MIN, CHARGE_MAP_MAX);
-        let color = Color32::from_rgb((r * 255.) as u8, (g * 255.) as u8, (b * 255.) as u8);
+        let color = make_egui_color(mol_drawing::color_viridis_float(*q, CHARGE_MAP_MIN, CHARGE_MAP_MAX));
+
         ui.label(RichText::new(format!("{plus}q: {q:.2}")).color(color));
     }
 }
@@ -103,7 +100,13 @@ pub fn selected_data(mol: &Molecule, ligand: &Option<Ligand>, selection: &Select
 
             let res = &mol.residues[*sel_i];
             // todo: Color-coding by part like atom, to make easier to view.
-            ui.label(RichText::new(res.to_string()).color(Color32::GOLD));
+
+            let mut res_color = COLOR_AA_NON_RESIDUE_EGUI;
+
+            if let ResidueType::AminoAcid(aa) = res.res_type {
+                res_color = make_egui_color(aa_color(aa));
+            }
+            ui.label(RichText::new(res.to_string()).color(res_color));
         }
         Selection::Atoms(is) => {
             // todo: A/R

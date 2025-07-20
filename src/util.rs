@@ -5,6 +5,7 @@
 use std::{collections::HashMap, io::Cursor, time::Instant};
 
 use bio_files::{MmCif, ResidueType};
+use egui::Color32;
 use graphics::{Camera, ControlScheme, EngineUpdates, FWD_VEC, Mesh, Scene, Vertex};
 use itertools::Itertools;
 use lin_alg::{
@@ -28,6 +29,7 @@ use crate::{
     sa_surface::make_sas_mesh,
     ui::{VIEW_DEPTH_FAR_MAX, VIEW_DEPTH_NEAR_MIN},
 };
+use crate::render::Color;
 
 const MOVE_TO_TARGET_DIST: f32 = 15.;
 const MOVE_CAM_TO_LIG_DIST: f32 = 30.;
@@ -145,7 +147,7 @@ pub fn find_selected_atom(
             }
             if role == AtomRole::Water
                 && (ui.visibility.hide_water
-                    || matches!(
+                || matches!(
                         ui.mol_view,
                         MoleculeView::SpaceFill | MoleculeView::Backbone
                     ))
@@ -276,23 +278,41 @@ pub fn cam_look_at_outside(cam: &mut Camera, target: Vec3F32, mol_center: Vec3F3
 }
 
 pub fn select_from_search(state: &mut State) {
-    let query = &state.ui.residue_search.to_lowercase();
+    let query = &state.ui.atom_res_search.to_lowercase();
 
-    if let Some(mol) = &state.molecule {
-        for (i, res) in mol.residues.iter().enumerate() {
-            if query.contains(&res.serial_number.to_string()) {
-                state.ui.selection = Selection::Residue(i);
-            }
-            match &res.res_type {
-                ResidueType::AminoAcid(aa) => {
-                    if query.contains(&aa.to_str(AaIdent::ThreeLetters).to_lowercase()) {
-                        state.ui.selection = Selection::Residue(i);
-                    }
+    let Some(mol) = &state.molecule else {
+        return;
+    };
+
+    match state.ui.view_sel_level {
+        ViewSelLevel::Atom => {
+            for (i, atom) in mol.atoms.iter().enumerate() {
+                // if query.contains(&atom.serial_number.to_string()) {
+                if query == &atom.serial_number.to_string() {
+                    state.ui.selection = Selection::Atom(i);
+                    return;
                 }
-                ResidueType::Water => {} // todo: Select all water with a new selection type
-                ResidueType::Other(name) => {
-                    if query.contains(&name.to_lowercase()) {
-                        state.ui.selection = Selection::Residue(i);
+            }
+        }
+        ViewSelLevel::Residue => {
+            for (i, res) in mol.residues.iter().enumerate() {
+                if query.contains(&res.serial_number.to_string()) {
+                    state.ui.selection = Selection::Residue(i);
+                    return;
+                }
+                match &res.res_type {
+                    ResidueType::AminoAcid(aa) => {
+                        if query.contains(&aa.to_str(AaIdent::ThreeLetters).to_lowercase()) {
+                            state.ui.selection = Selection::Residue(i);
+                            return;
+                        }
+                    }
+                    ResidueType::Water => {}
+                    ResidueType::Other(name) => {
+                        if query.contains(&name.to_lowercase()) {
+                            state.ui.selection = Selection::Residue(i);
+                            return;
+                        }
                     }
                 }
             }
@@ -361,7 +381,7 @@ pub fn cycle_selected(state: &mut State, scene: &mut Scene, reverse: bool) {
             }
         }
     }
-    
+
     if let ControlScheme::Arc { center } = &mut scene.input_settings.control_scheme {
         *center = orbit_center(state);
     }
@@ -853,4 +873,8 @@ pub fn handle_scene_flags(
             }
         }
     }
+}
+
+pub fn make_egui_color(color: Color) -> Color32 {
+    Color32::from_rgb((color.0 * 255.) as u8, (color.1 * 255.) as u8, (color.2 * 255.) as u8)
 }

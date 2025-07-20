@@ -4,6 +4,7 @@ use std::{fmt, io, io::ErrorKind, str::FromStr};
 
 use bincode::{Decode, Encode};
 use bio_files::ResidueType;
+use egui::Color32;
 use graphics::{ControlScheme, Entity, FWD_VEC, Scene, UP_VEC};
 use lin_alg::{
     f32::{Quaternion, Vec3},
@@ -26,9 +27,11 @@ use crate::{
 
 const LIGAND_COLOR: Color = (0., 0.4, 1.);
 const LIGAND_COLOR_ANCHOR: Color = (1., 0., 1.);
+
 // i.e a flexible bond.
 const LIGAND_COLOR_FLEX: Color = (1., 1., 0.);
-const COLOR_AA_NON_RESIDUE: Color = (0., 0.8, 1.0);
+pub const COLOR_AA_NON_RESIDUE: Color = (0., 0.8, 1.0);
+pub const COLOR_AA_NON_RESIDUE_EGUI: Color32 = Color32::from_rgb(0, 204, 255);
 
 const COLOR_SELECTED: Color = (1., 0., 0.);
 const COLOR_H_BOND: Color = (1., 0.5, 0.1);

@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 
-use na_seq::{AminoAcid, AminoAcidGeneral, AtomTypeInRes, Element::*};
+use na_seq::{AminoAcid, AminoAcidGeneral, AminoAcidProtenationVariant, AtomTypeInRes, Element::*};
 
 use crate::{
     ProtFfMap,
@@ -71,6 +71,13 @@ pub fn make_h_digit_map(ff_map: &ProtFfMap) -> DigitMap {
     let mut result: DigitMap = HashMap::new();
 
     for (&aa_gen, params) in ff_map {
+        if aa_gen == AminoAcidGeneral::Variant(AminoAcidProtenationVariant::Hyp) {
+            // todo: Sort this out. FOr now, it will allow your code to work better with
+            // todo most prolines we observe in mmCIF data. You need a more robust algo
+            // todo to deal with multiple variants of this, and e.g. His to do it properly.
+            continue
+        }
+
         let mut per_heavy: HashMap<char, Vec<u8>> = HashMap::new();
 
         for cp in params {
@@ -106,7 +113,7 @@ pub fn make_h_digit_map(ff_map: &ProtFfMap) -> DigitMap {
 
         let aa = match aa_gen {
             AminoAcidGeneral::Standard(a) => a,
-            AminoAcidGeneral::Variant(av) => av.get_standard().unwrap() // todo: Unwrap OK?\
+            AminoAcidGeneral::Variant(av) => av.get_standard().unwrap() // todo: Unwrap OK?
         };
 
         // Make the relationship deterministic (ordinal 0 → smallest digit, …)
@@ -208,7 +215,7 @@ pub fn h_type_in_res_sidechain(
             // Rather than assigning a new H #, we duplicate the previous one, so that it correctly
             // maps to a FF param downstream.
             eprintln!(
-                "H Digit out of range (Likely a truncated sidechain). Digit: {h_num_this_parent} not in {digits:?} - {parent_tir:?} , {aa}. \
+                "H atom type num out of range (Truncated sidechain?). Digit: {h_num_this_parent} not in {digits:?} - {parent_tir:?} , {aa}. \
                  Assigning a duplicate digit type-in-res",
             );
 
@@ -243,6 +250,7 @@ pub fn h_type_in_res_sidechain(
 impl Molecule {
     /// Adds hydrogens, and populdates residue dihedral angles.
     pub fn populate_hydrogens_angles(&mut self, ff_map: &ProtFfMap) -> Result<(), ParamError> {
+        println!("Populating hydrogens and measuring dihedrals...");
         // todo: Move this fn to this module? Split this and its diehdral component, or not?
 
         let mut prev_cp_ca = None;
@@ -254,9 +262,9 @@ impl Molecule {
 
         let digit_map = make_h_digit_map(ff_map);
 
-        for (k, v) in &digit_map {
-            println!("-{k}, {v:?}");
-        }
+        // for (k, v) in &digit_map {
+        //     println!("-{k}, {v:?}");
+        // }
 
         for (res_i, res) in self.residues.iter_mut().enumerate() {
             let atoms: Vec<&Atom> = res.atoms.iter().map(|i| &self.atoms[*i]).collect();

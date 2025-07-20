@@ -382,7 +382,7 @@ struct StateUi {
     cursor_pos: Option<(f32, f32)>,
     db_input: String,
     cam_snapshot_name: String,
-    residue_search: String,
+    atom_res_search: String,
     /// To selection.
     show_near_sel_only: bool,
     show_near_lig_only: bool,

@@ -820,11 +820,16 @@ fn docking(
 }
 
 fn residue_search(state: &mut State, scene: &mut Scene, redraw: &mut bool, ui: &mut Ui) {
+    let (btn_text_p, btn_text_n, search_text) = match state.ui.view_sel_level {
+        ViewSelLevel::Atom => ("Prev atom", "Next atom", "Find atom:"),
+        ViewSelLevel::Residue => ("Prev AA", "Next AA", "Find res:"),
+    };
+
     ui.horizontal(|ui| {
         // let sel_prev = &state.ui.selection;
-        ui.label("Find residue:");
+        ui.label(search_text);
         if ui
-            .add(TextEdit::singleline(&mut state.ui.residue_search).desired_width(60.))
+            .add(TextEdit::singleline(&mut state.ui.atom_res_search).desired_width(60.))
             .changed()
         {
             select_from_search(state);
@@ -839,13 +844,10 @@ fn residue_search(state: &mut State, scene: &mut Scene, redraw: &mut bool, ui: &
         // if key_up_is_down {
         //     up_button.highlight();
         // }
-        let btn_text = match state.ui.view_sel_level {
-            ViewSelLevel::Atom => "Prev atom",
-            ViewSelLevel::Residue => "Prev AA",
-        };
+
         if state.molecule.is_some() {
             if ui
-                .button(btn_text)
+                .button(btn_text_p)
                 .on_hover_text("Hotkey: Left arrow")
                 .clicked()
             {
@@ -854,12 +856,8 @@ fn residue_search(state: &mut State, scene: &mut Scene, redraw: &mut bool, ui: &
             }
             // todo: DRY
 
-            let btn_text = match state.ui.view_sel_level {
-                ViewSelLevel::Atom => "Next atom",
-                ViewSelLevel::Residue => "Next AA",
-            };
             if ui
-                .button(btn_text)
+                .button(btn_text_n)
                 .on_hover_text("Hotkey: Right arrow")
                 .clicked()
             {

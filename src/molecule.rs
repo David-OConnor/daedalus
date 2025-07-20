@@ -102,7 +102,7 @@ impl Molecule {
     ) -> Self {
         let (center, size) = mol_center_size(&atoms);
 
-        println!("Loading atoms into mol");
+        println!("Loading atoms into mol...");
 
         let mut result = Self {
             ident,
@@ -818,7 +818,7 @@ impl fmt::Display for Residue {
             ResidueType::Other(name) => name.clone(),
         };
 
-        write!(f, "Res: {}: {}", self.serial_number, name)?;
+        write!(f, "#{}: {}", self.serial_number, name)?;
 
         if let Some(dihedral) = &self.dihedral {
             write!(f, "   {}", dihedral)?;
@@ -949,7 +949,7 @@ pub const fn aa_color(aa: AminoAcid) -> (f32, f32, f32) {
         AminoAcid::Arg => (0.7, 0.2, 0.9),
         AminoAcid::His => (0.2, 1., 0.2),
         AminoAcid::Lys => (1., 0.3, 0.3),
-        AminoAcid::Asp => (0.2, 0.2, 1.0),
+        AminoAcid::Asp => (0.4, 0.4, 1.0),
         AminoAcid::Glu => (0.701, 0.7, 0.2),
         AminoAcid::Ser => (177. / 255., 187. / 255., 161. / 255.),
         AminoAcid::Thr => (1.0, 0.502, 0.),
@@ -958,13 +958,13 @@ pub const fn aa_color(aa: AminoAcid) -> (f32, f32, f32) {
         AminoAcid::Cys => (0.239, 1.0, 0.),
         AminoAcid::Sec => (0.561, 0.251, 0.831),
         AminoAcid::Gly => (0.749, 0.651, 0.651),
-        AminoAcid::Pro => (0.341, 0.349, 0.380),
+        AminoAcid::Pro => (0.74, 0.6, 0.4),
         AminoAcid::Ala => (1., 0.820, 0.137),
         AminoAcid::Val => (0.753, 0.753, 0.753),
-        AminoAcid::Ile => (0.322, 0.722, 0.916),
-        AminoAcid::Leu => (0.4, 0.502, 0.502),
+        AminoAcid::Ile => (0.322, 0.722, 0.716),
+        AminoAcid::Leu => (0.5, 0.702, 0.602),
         AminoAcid::Met => (0.490, 0.502, 0.690),
-        AminoAcid::Phe => (0.580, 0., 0.580),
+        AminoAcid::Phe => (0.780, 0., 0.780),
         AminoAcid::Tyr => (0.541, 1., 0.),
         AminoAcid::Trp => (0.121, 0.941, 0.121),
     }

@@ -142,17 +142,16 @@ impl ForceFieldParamsIndexed {
                     result.mass.insert(i, params.mass.get("O").unwrap().clone());
                     println!("Using O fallback mass for {ff_type}");
                 } else {
-                    // todo: This is not a good way to do it. Fall back to element-derived etc.
                     result.mass.insert(
                         i,
                         MassParams {
                             atom_type: "".to_string(),
-                            mass: 12.001, // todo: Not great...
+                            mass: atom.element.atomic_weight(),
                             comment: None,
                         },
                     );
 
-                    println!("Missing mass params for {ff_type}");
+                    println!("Missing mass params on {atom}; using element default.");
 
                     // return Err(ParamError::new(&format!(
                     //     "Missing mass params for {ff_type}"
@@ -192,7 +191,7 @@ impl ForceFieldParamsIndexed {
                         .insert(i, params.van_der_waals.get("O").unwrap().clone());
                     println!("Using O fallback VdW for {atom}");
                 } else {
-                    println!("Missing Vdw params for {atom}; using 0 values");
+                    println!("Missing Vdw params for {atom}; setting to 0.");
                     // 0. no interaction.
                     // todo: If this is "CG" etc, fall back to other carbon params instead.
                     result.van_der_waals.insert(
@@ -231,7 +230,7 @@ impl ForceFieldParamsIndexed {
 
             let Some(data) = data else {
                 return Err(ParamError::new(&format!(
-                    "Missing bond parameters for {type_i}-{type_j}"
+                    "Missing bond parameters for {type_i}-{type_j} on {} - {}", atoms[i0], atoms[i1]
                 )));
             };
 
@@ -795,16 +794,17 @@ pub fn populate_ff_and_q(
                 // todo: This is a workaround for having trouble with H types. LIkely
                 // todo when we create them. For now, this meets the intent.
                 AtomTypeInRes::H(_) => {
+                    // Note: We've witnessed this due to errors in the mmCIF file, e.g. on ASP #88 on 9GLS.
                     eprintln!(
-                        "Error assigning FF type and q based on atom type in res: Failed to match H type {type_in_res}, {aa_gen:?}. \
-                         Falling back to a generic H"
+                        "Error assigning FF type and q based on atom type in res: Failed to match H type. #{}, {type_in_res}, {aa_gen:?}. \
+                         Falling back to a generic H", &residues[res_i].serial_number
                     );
 
                     for charge in charges {
                         if &charge.type_in_res == &AtomTypeInRes::H("H".to_string())
                             || &charge.type_in_res == &AtomTypeInRes::H("HA".to_string())
                         {
-                            // atom.force_field_type = Some("H");
+                            atom.force_field_type = Some("HB2".to_string());
                             atom.partial_charge = Some(charge.charge);
 
                             found = true;
