@@ -9,13 +9,14 @@ use crate::{
     Selection, State,
     dynamics::prep::change_snapshot_md,
     mol_drawing,
-    mol_drawing::{CHARGE_MAP_MAX, CHARGE_MAP_MIN, draw_ligand},
-    molecule::{Atom, Ligand, Molecule, Residue},
+    mol_drawing::{
+        CHARGE_MAP_MAX, CHARGE_MAP_MIN, COLOR_AA_NON_RESIDUE, COLOR_AA_NON_RESIDUE_EGUI,
+        draw_ligand,
+    },
+    molecule::{Atom, Ligand, Molecule, Residue, aa_color},
     ui::{COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_INACTIVE, ROW_SPACING},
+    util::make_egui_color,
 };
-use crate::mol_drawing::{COLOR_AA_NON_RESIDUE, COLOR_AA_NON_RESIDUE_EGUI};
-use crate::molecule::aa_color;
-use crate::util::make_egui_color;
 
 fn disp_atom_data(atom: &Atom, residues: &[Residue], ui: &mut Ui) {
     let role = match atom.role {
@@ -49,7 +50,7 @@ fn disp_atom_data(atom: &Atom, residues: &[Residue], ui: &mut Ui) {
 
     ui.label(RichText::new(posit_txt).color(Color32::GOLD));
 
-    let atom_color = make_egui_color( atom.element.color());
+    let atom_color = make_egui_color(atom.element.color());
 
     ui.label(RichText::new(text_b).color(atom_color));
     ui.label(RichText::new(text_c).color(res_color));
@@ -65,7 +66,11 @@ fn disp_atom_data(atom: &Atom, residues: &[Residue], ui: &mut Ui) {
 
     if let Some(q) = &atom.partial_charge {
         let plus = if *q > 0. { "+" } else { "" };
-        let color = make_egui_color(mol_drawing::color_viridis_float(*q, CHARGE_MAP_MIN, CHARGE_MAP_MAX));
+        let color = make_egui_color(mol_drawing::color_viridis_float(
+            *q,
+            CHARGE_MAP_MIN,
+            CHARGE_MAP_MAX,
+        ));
 
         ui.label(RichText::new(format!("{plus}q: {q:.2}")).color(color));
     }

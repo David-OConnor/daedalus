@@ -43,7 +43,6 @@ fn validate_h_atom_type(
     // ff_map: &ProtFfMap,
     digit_map: &DigitMap,
 ) -> Result<bool, ParamError> {
-
     let data = digit_map.get(&aa).ok_or_else(|| {
         ParamError::new(&format!(
             "No parm19_data entry for amino acid {:?}",
@@ -58,7 +57,7 @@ fn validate_h_atom_type(
         ))
     })?;
     if data_this_depth.contains(&digit) {
-        return Ok(true)
+        return Ok(true);
     }
 
     Ok(false)
@@ -75,7 +74,7 @@ pub fn make_h_digit_map(ff_map: &ProtFfMap) -> DigitMap {
             // todo: Sort this out. FOr now, it will allow your code to work better with
             // todo most prolines we observe in mmCIF data. You need a more robust algo
             // todo to deal with multiple variants of this, and e.g. His to do it properly.
-            continue
+            continue;
         }
 
         let mut per_heavy: HashMap<char, Vec<u8>> = HashMap::new();
@@ -113,7 +112,7 @@ pub fn make_h_digit_map(ff_map: &ProtFfMap) -> DigitMap {
 
         let aa = match aa_gen {
             AminoAcidGeneral::Standard(a) => a,
-            AminoAcidGeneral::Variant(av) => av.get_standard().unwrap() // todo: Unwrap OK?
+            AminoAcidGeneral::Variant(av) => av.get_standard().unwrap(), // todo: Unwrap OK?
         };
 
         // Make the relationship deterministic (ordinal 0 → smallest digit, …)
@@ -126,7 +125,10 @@ pub fn make_h_digit_map(ff_map: &ProtFfMap) -> DigitMap {
         if !per_heavy.is_empty() {
             if let Some(existing) = result.get_mut(&aa) {
                 for (designator, mut digits) in per_heavy {
-                    existing.entry(designator).or_default().extend(digits.drain(..));
+                    existing
+                        .entry(designator)
+                        .or_default()
+                        .extend(digits.drain(..));
                 }
                 for v in existing.values_mut() {
                     v.sort_unstable();
@@ -196,7 +198,8 @@ pub fn h_type_in_res_sidechain(
 
     let Some(digits_this_aa) = h_digit_map.get(&aa) else {
         return Err(ParamError::new(&format!(
-            "Missing AA {aa} in digits map, which has {:?}", h_digit_map.keys()
+            "Missing AA {aa} in digits map, which has {:?}",
+            h_digit_map.keys()
         )));
     };
 
@@ -223,7 +226,7 @@ pub fn h_type_in_res_sidechain(
         }
     };
 
-// todo: Handle the N term and C term cases; pass those params in?
+    // todo: Handle the N term and C term cases; pass those params in?
 
     // todo: Consider adding a completeness validator for the AA, ensuring all expected
     // todo: Hs are present.
@@ -241,8 +244,6 @@ pub fn h_type_in_res_sidechain(
             "Invalid H type: {result} on {aa}. Parent: {parent_tir}"
         )));
     }
-
-
 
     Ok(result)
 }
@@ -265,6 +266,15 @@ impl Molecule {
         // for (k, v) in &digit_map {
         //     println!("-{k}, {v:?}");
         // }
+
+        // Increment H serial number, starting with the final atom present prior to adding H + 1)
+        let mut highest_sn = 0;
+        for atom in &self.atoms {
+            if atom.serial_number > highest_sn {
+                highest_sn = atom.serial_number;
+            }
+        }
+        let mut next_sn = highest_sn + 1;
 
         for (res_i, res) in self.residues.iter_mut().enumerate() {
             let atoms: Vec<&Atom> = res.atoms.iter().map(|i| &self.atoms[*i]).collect();
@@ -293,7 +303,7 @@ impl Molecule {
             };
 
             // todo: Handle the N term and C term cases; pass those params in.
-            let (dihedral, hydrogens, this_cp_ca) = aa_data_from_coords(
+            let (dihedral, h_added_this_res, this_cp_ca) = aa_data_from_coords(
                 &atoms,
                 &res.res_type,
                 res_i,
@@ -305,11 +315,13 @@ impl Molecule {
                 &digit_map,
             )?;
 
-            for h in hydrogens {
+            for mut h in h_added_this_res {
+                h.serial_number = next_sn;
                 self.atoms.push(h);
                 res.atoms.push(self.atoms.len() - 1);
 
                 // todo: Add to the chains
+                next_sn += 1;
             }
 
             prev_cp_ca = this_cp_ca;

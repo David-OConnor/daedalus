@@ -39,9 +39,9 @@ use crate::{
     ui_aux::dynamics_player,
     util,
     util::{
-        cam_look_at, cam_look_at_outside, check_prefs_save, close_lig, close_mol,
-        cycle_selected, handle_err, handle_scene_flags, load_atom_coords_rcsb, orbit_center,
-        reset_camera, select_from_search,
+        cam_look_at, cam_look_at_outside, check_prefs_save, close_lig, close_mol, cycle_selected,
+        handle_err, handle_scene_flags, load_atom_coords_rcsb, orbit_center, reset_camera,
+        select_from_search,
     },
 };
 

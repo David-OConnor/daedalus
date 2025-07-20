@@ -230,7 +230,8 @@ impl ForceFieldParamsIndexed {
 
             let Some(data) = data else {
                 return Err(ParamError::new(&format!(
-                    "Missing bond parameters for {type_i}-{type_j} on {} - {}", atoms[i0], atoms[i1]
+                    "Missing bond parameters for {type_i}-{type_j} on {} - {}",
+                    atoms[i0], atoms[i1]
                 )));
             };
 
@@ -797,7 +798,8 @@ pub fn populate_ff_and_q(
                     // Note: We've witnessed this due to errors in the mmCIF file, e.g. on ASP #88 on 9GLS.
                     eprintln!(
                         "Error assigning FF type and q based on atom type in res: Failed to match H type. #{}, {type_in_res}, {aa_gen:?}. \
-                         Falling back to a generic H", &residues[res_i].serial_number
+                         Falling back to a generic H",
+                        &residues[res_i].serial_number
                     );
 
                     for charge in charges {

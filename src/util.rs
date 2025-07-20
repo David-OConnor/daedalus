@@ -22,14 +22,13 @@ use crate::{
     mol_drawing::{EntityType, MoleculeView, draw_density, draw_density_surface, draw_molecule},
     molecule::{Atom, AtomRole, Bond, Chain, Molecule, Residue},
     render::{
-        CAM_INIT_OFFSET, MESH_DENSITY_SURFACE, MESH_SECONDARY_STRUCTURE, MESH_SOLVENT_SURFACE,
-        RENDER_DIST_FAR, RENDER_DIST_NEAR, set_flashlight, set_static_light,
+        CAM_INIT_OFFSET, Color, MESH_DENSITY_SURFACE, MESH_SECONDARY_STRUCTURE,
+        MESH_SOLVENT_SURFACE, RENDER_DIST_FAR, RENDER_DIST_NEAR, set_flashlight, set_static_light,
     },
     ribbon_mesh::build_cartoon_mesh,
     sa_surface::make_sas_mesh,
     ui::{VIEW_DEPTH_FAR_MAX, VIEW_DEPTH_NEAR_MIN},
 };
-use crate::render::Color;
 
 const MOVE_TO_TARGET_DIST: f32 = 15.;
 const MOVE_CAM_TO_LIG_DIST: f32 = 30.;
@@ -147,7 +146,7 @@ pub fn find_selected_atom(
             }
             if role == AtomRole::Water
                 && (ui.visibility.hide_water
-                || matches!(
+                    || matches!(
                         ui.mol_view,
                         MoleculeView::SpaceFill | MoleculeView::Backbone
                     ))
@@ -327,32 +326,30 @@ pub fn cycle_selected(state: &mut State, scene: &mut Scene, reverse: bool) {
 
     // todo: DRY between atom and res.
     match state.ui.view_sel_level {
-        ViewSelLevel::Atom => {
-            match state.ui.selection {
-                Selection::Atom(atom_i) => {
-                    for chain in &mol.chains {
-                        if chain.atoms.contains(&atom_i) {
-                            let mut new_atom_i = atom_i as isize;
+        ViewSelLevel::Atom => match state.ui.selection {
+            Selection::Atom(atom_i) => {
+                for chain in &mol.chains {
+                    if chain.atoms.contains(&atom_i) {
+                        let mut new_atom_i = atom_i as isize;
 
-                            while new_atom_i < (mol.atoms.len() as isize) - 1 && new_atom_i >= 0 {
-                                new_atom_i += dir;
-                                let nri = new_atom_i as usize;
-                                if chain.atoms.contains(&nri) {
-                                    state.ui.selection = Selection::Atom(nri);
-                                    break;
-                                }
+                        while new_atom_i < (mol.atoms.len() as isize) - 1 && new_atom_i >= 0 {
+                            new_atom_i += dir;
+                            let nri = new_atom_i as usize;
+                            if chain.atoms.contains(&nri) {
+                                state.ui.selection = Selection::Atom(nri);
+                                break;
                             }
-                            break;
                         }
-                    }
-                }
-                _ => {
-                    if !mol.atoms.is_empty() {
-                        state.ui.selection = Selection::Atom(0);
+                        break;
                     }
                 }
             }
-        }
+            _ => {
+                if !mol.atoms.is_empty() {
+                    state.ui.selection = Selection::Atom(0);
+                }
+            }
+        },
         ViewSelLevel::Residue => {
             match state.ui.selection {
                 Selection::Residue(res_i) => {
@@ -876,5 +873,9 @@ pub fn handle_scene_flags(
 }
 
 pub fn make_egui_color(color: Color) -> Color32 {
-    Color32::from_rgb((color.0 * 255.) as u8, (color.1 * 255.) as u8, (color.2 * 255.) as u8)
+    Color32::from_rgb(
+        (color.0 * 255.) as u8,
+        (color.1 * 255.) as u8,
+        (color.2 * 255.) as u8,
+    )
 }
