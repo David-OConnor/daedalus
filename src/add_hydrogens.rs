@@ -18,6 +18,8 @@ pub enum BondGeometry {
     Other,
 }
 
+// We use the normal AA, vice general form here, as that's the one available in the mmCIF files
+// we're parsing. This is despite the Amber data we are using for the source using the general versions.
 pub type DigitMap = HashMap<AminoAcid, HashMap<char, Vec<u8>>>;
 
 /// We use this to validate H atom type assignments. We derive this directly from `amino19.lib` (Amber)
@@ -25,23 +27,46 @@ pub type DigitMap = HashMap<AminoAcid, HashMap<char, Vec<u8>>>;
 /// Note that this does not ensure completeness of the H set for a given AA; only if a given
 /// value is valid for that AA.
 /// h_num=0 means it's just "HE" or similar.
+///
+/// We use the `digit_map` vice the `ff_map` directly, so we can merge protenation variants, e.g. for  His.
 fn validate_h_atom_type(
-    tir: &AtomTypeInRes,
+    // tir: &AtomTypeInRes,
+    depth: char,
+    digit: u8,
     aa: AminoAcid,
-    ff_map: &ProtFfMap,
+    // ff_map: &ProtFfMap,
+    digit_map: &DigitMap,
 ) -> Result<bool, ParamError> {
     // Our protein files only contains "standard" AA data. I.e. "HIS" vice "HIE".
-    let data = ff_map.get(&AminoAcidGeneral::Standard(aa)).ok_or_else(|| {
+    // let data = ff_map.get(&AminoAcidGeneral::Standard(aa)).ok_or_else(|| {
+    //     ParamError::new(&format!(
+    //         "No parm19_data entry for amino acid {:?}",
+    //         AminoAcidGeneral::Standard(aa)
+    //     ))
+    // })?;
+
+    let data = digit_map.get(&aa).ok_or_else(|| {
         ParamError::new(&format!(
             "No parm19_data entry for amino acid {:?}",
             AminoAcidGeneral::Standard(aa)
         ))
     })?;
+    //
+    // for cp in data {
+    //     if &cp.type_in_res == tir {
+    //         return Ok(true);
+    //     }
+    // }
 
-    for cp in data {
-        if &cp.type_in_res == tir {
-            return Ok(true);
-        }
+
+    let data_this_depth = data.get(&depth).ok_or_else(|| {
+        ParamError::new(&format!(
+            "No parm19_data entry for amino acid (Depth) {:?}",
+            AminoAcidGeneral::Standard(aa)
+        ))
+    })?;
+    if data_this_depth.contains(&digit) {
+        return Ok(true)
     }
 
     Ok(false)
@@ -53,8 +78,6 @@ fn validate_h_atom_type(
 pub fn make_h_digit_map(ff_map: &ProtFfMap) -> DigitMap {
     let mut result: DigitMap = HashMap::new();
 
-    // ff_map is assumed to be something like
-    // HashMap<AminoAcid, Vec<AtomData>>
     for (&aa_gen, params) in ff_map {
         let mut per_heavy: HashMap<char, Vec<u8>> = HashMap::new();
 
@@ -63,11 +86,6 @@ pub fn make_h_digit_map(ff_map: &ProtFfMap) -> DigitMap {
 
             match tir {
                 AtomTypeInRes::H(name) => {
-                    // No room for designator or digit – skip "H" or "HA" etc.
-                    if name.len() < 3 {
-                        continue;
-                    }
-
                     // Split:  H  <designator-char>  <digits...>
                     let mut chars = name.chars();
                     chars.next(); // discard the leading 'H'
@@ -81,13 +99,13 @@ pub fn make_h_digit_map(ff_map: &ProtFfMap) -> DigitMap {
                     // Collect *all* trailing digits (handles "11", "21", ...)
                     let digits: String = chars.filter(|c| c.is_ascii_digit()).collect();
                     if digits.is_empty() {
-                        continue;
+                        // We will handle this designation appropriately downstream. For "HG", for example.
+                        per_heavy.entry(designator).or_default().push(0);
+                    } else {
+                        // Safe because Amber never goes beyond two digits
+                        let num: u8 = digits.parse().unwrap();
+                        per_heavy.entry(designator).or_default().push(num);
                     }
-
-                    // Safe because Amber never goes beyond two digits
-                    let num: u8 = digits.parse().unwrap();
-
-                    per_heavy.entry(designator).or_default().push(num);
                 }
                 // We only care about hydrogens that *do* carry a numeric suffix
                 _ => (),
@@ -96,7 +114,7 @@ pub fn make_h_digit_map(ff_map: &ProtFfMap) -> DigitMap {
 
         let aa = match aa_gen {
             AminoAcidGeneral::Standard(a) => a,
-            _ => continue,
+            AminoAcidGeneral::Variant(av) => av.get_standard().unwrap() // todo: Unwrap OK?\
         };
 
         // Make the relationship deterministic (ordinal 0 → smallest digit, …)
@@ -104,10 +122,24 @@ pub fn make_h_digit_map(ff_map: &ProtFfMap) -> DigitMap {
             v.sort_unstable();
         }
 
+        // This combines entries in the case of duplicates: This happens in the case of protenation
+        // variants, like HIE and HID for HIS.
         if !per_heavy.is_empty() {
-            result.insert(aa, per_heavy);
+            if let Some(existing) = result.get_mut(&aa) {
+                for (designator, mut digits) in per_heavy {
+                    existing.entry(designator).or_default().extend(digits.drain(..));
+                }
+                for v in existing.values_mut() {
+                    v.sort_unstable();
+                    v.dedup();
+                }
+            } else {
+                result.insert(aa, per_heavy);
+            }
         }
     }
+
+    // Override for His, to combine
 
     result
 }
@@ -149,39 +181,63 @@ pub fn h_type_in_res_sidechain(
         AtomTypeInRes::CZ | AtomTypeInRes::CZ1 | AtomTypeInRes::CZ2 | AtomTypeInRes::CZ3 => 'Z',
         AtomTypeInRes::OD1 | AtomTypeInRes::OD2 => 'D',
         AtomTypeInRes::OG | AtomTypeInRes::OG1 | AtomTypeInRes::OG2 => 'G',
+        AtomTypeInRes::OH => 'H',
         AtomTypeInRes::OE1 | AtomTypeInRes::OE2 => 'E',
         AtomTypeInRes::ND1 | AtomTypeInRes::ND2 => 'D',
         AtomTypeInRes::NH1 | AtomTypeInRes::NH2 => 'H',
         AtomTypeInRes::NE | AtomTypeInRes::NE1 | AtomTypeInRes::NE2 => 'E',
+        AtomTypeInRes::NZ => 'Z',
         AtomTypeInRes::SE => 'E',
         AtomTypeInRes::SG => 'G',
         _ => {
             return Err(ParamError::new(&format!(
-                "Invalid parent type in res on H assignment: {parent_tir:?}",
+                "Invalid parent type in res on H assignment. AA: {aa}. {parent_tir:?}",
             )));
         }
     };
 
-    // todo: Don't unwrap.
-    let digits = h_digit_map.get(&aa).unwrap().get(&depth).unwrap();
+    let Some(digits_this_aa) = h_digit_map.get(&aa) else {
+        return Err(ParamError::new(&format!(
+            "Missing AA {aa} in digits map, which has {:?}", h_digit_map.keys()
+        )));
+    };
+
+    let Some(digits) = digits_this_aa.get(&depth) else {
+        return Err(ParamError::new(&format!(
+            "Missing H digits: Depth: {depth} not in {digits_this_aa:?} - {parent_tir:?} , {aa}",
+        )));
+    };
 
     let digit = match digits.get(h_num_this_parent) {
         Some(d) => d,
         None => {
+            // todo temp while debugging; return the error and abort.
+            eprintln!(
+                "H Digit out of range. Digit: {h_num_this_parent} not in {digits:?} - {parent_tir:?} , {aa}",
+            );
+            return Ok(AtomTypeInRes::H(format!("H{depth}1")));
+
             return Err(ParamError::new(&format!(
-                "H Digit out of range. Digit: {h_num_this_parent} not in {digits:?} - {parent_tir:?}",
+                "H Digit out of range. Digit: {h_num_this_parent} not in {digits:?} - {parent_tir:?} , {aa}",
             )));
         }
     };
 
-    // todo: Handle the N term and C term cases; pass those params in.
+// todo: Handle the N term and C term cases; pass those params in?
 
     // todo: Consider adding a completeness validator for the AA, ensuring all expected
     // todo: Hs are present.
 
-    let result = AtomTypeInRes::H(format!("H{depth}{digit}"));
+    let val = if *digit == 0 {
+        format!("H{depth}") // e.g. HG. We use 0 as a flag when building the map.
+    } else {
+        format!("H{depth}{digit}")
+    };
 
-    if !validate_h_atom_type(&result, aa, ff_map)? {
+    let result = AtomTypeInRes::H(val);
+
+    // if !validate_h_atom_type(&result, aa, ff_map)? {
+    if !validate_h_atom_type(depth, *digit, aa, &h_digit_map)? {
         return Err(ParamError::new(&format!(
             "Invalid H type: {result} on {aa}. Parent: {parent_tir}"
         )));
@@ -203,6 +259,10 @@ impl Molecule {
         let res_clone = self.residues.clone();
 
         let digit_map = make_h_digit_map(ff_map);
+
+        for (k, v) in &digit_map {
+            println!("-{k}, {v:?}");
+        }
 
         for (res_i, res) in self.residues.iter_mut().enumerate() {
             let atoms: Vec<&Atom> = res.atoms.iter().map(|i| &self.atoms[*i]).collect();

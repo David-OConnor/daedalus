@@ -796,7 +796,7 @@ pub fn populate_ff_and_q(
                 // todo when we create them. For now, this meets the intent.
                 AtomTypeInRes::H(_) => {
                     eprintln!(
-                        "Error assigning FF type and q based on atom type in res: Failed to match H type {type_in_res}, {aa_gen:?}.\
+                        "Error assigning FF type and q based on atom type in res: Failed to match H type {type_in_res}, {aa_gen:?}. \
                          Falling back to a generic H"
                     );
 
