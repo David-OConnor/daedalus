@@ -211,6 +211,8 @@ pub fn create_bonds(atoms: &[Atom]) -> Vec<Bond> {
                 if matches_elements && (dist - spec.len).abs() < COV_BOND_LEN_THRESH {
                     Some(Bond {
                         bond_type: spec.bond_type,
+                        atom_0_sn: atom_0.serial_number,
+                        atom_1_sn: atom_1.serial_number,
                         atom_0: *i,
                         atom_1: *j,
                         is_backbone: atom_0.is_backbone() && atom_1.is_backbone(),

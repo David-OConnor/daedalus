@@ -25,7 +25,7 @@ pub fn load_sdf_drugbank(ident: &str) -> Result<Molecule, ReqError> {
     let sdf_data = drugbank::load_sdf(ident)?;
 
     match Mol2::new(&sdf_data) {
-        Ok(m) => Ok(m.into()),
+        Ok(m) => Ok(m.try_into().map_err(|e| ReqError::from(e))?),
         Err(e) => Err(ReqError::Http),
     }
 }
@@ -35,7 +35,7 @@ pub fn load_sdf_pubchem(ident: &str) -> Result<Molecule, ReqError> {
     let sdf_data = pubchem::load_sdf(ident)?;
 
     match Mol2::new(&sdf_data) {
-        Ok(m) => Ok(m.into()),
+        Ok(m) => Ok(m.try_into().map_err(|e| ReqError::from(e))?),
         Err(e) => Err(ReqError::Http),
     }
 }

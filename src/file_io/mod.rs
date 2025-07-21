@@ -69,7 +69,7 @@ impl State {
         let mut ligand = None;
         let molecule = match extension.to_str().unwrap() {
             "sdf" => Ok(Sdf::load(path)?.try_into()?),
-            "mol2" => Ok(Mol2::load(path)?.into()),
+            "mol2" => Ok(Mol2::load(path)?.try_into()?),
             "pdbqt" => {
                 load_pdbqt(path).map(|(molecule, mut lig_loaded)| {
                     if lig_loaded.is_some() {

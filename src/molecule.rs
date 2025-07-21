@@ -622,6 +622,8 @@ impl BondCount {
 #[derive(Debug, Clone)]
 pub struct Bond {
     pub bond_type: BondType,
+    pub atom_0_sn: u32,
+    pub atom_1_sn: u32,
     /// Index
     pub atom_0: usize,
     /// Index
@@ -633,25 +635,53 @@ impl Bond {
     pub fn to_generic(&self) -> BondGeneric {
         BondGeneric {
             bond_type: "1".to_owned(), // todo!
-            // todo: Map serial num to index incase these don't ascend by one.
-            atom_0: self.atom_0 + 1,
-            atom_1: self.atom_1 + 1,
+            atom_0_sn: self.atom_0_sn,
+            atom_1_sn: self.atom_1_sn,
         }
     }
 }
 
-impl From<&BondGeneric> for Bond {
-    fn from(bond: &BondGeneric) -> Self {
-        Self {
+// impl From<&BondGeneric> for Bond {
+impl Bond {
+    // fn from(bond: &BondGeneric) -> Self {
+    fn from_generic(bond: &BondGeneric, atom_set: &[Atom]) -> io::Result<Self> {
+        let mut atom_0 = 0;
+        let mut atom_1 = 0;
+
+        match atom_sns_to_indices(bond.atom_0_sn, atom_set) {
+            Some(i) => {
+                atom_0 = i;
+            }
+            None => {
+                return Err(io::Error::new(
+                    ErrorKind::InvalidData,
+                    "Unable to find atom SN when loading from generic res",
+                ));
+            }
+        }
+        // todo DRY
+        match atom_sns_to_indices(bond.atom_1_sn, atom_set) {
+            Some(i) => {
+                atom_1 = i;
+            }
+            None => {
+                return Err(io::Error::new(
+                    ErrorKind::InvalidData,
+                    "Unable to find atom SN when loading from generic res",
+                ));
+            }
+        }
+
+        Ok(Self {
             bond_type: BondType::Covalent {
                 count: BondCount::from_str(&bond.bond_type),
             },
-            // Our bonds are by index; these are by serial number. This should align them in most cases.
-            // todo: Map serial num to index incase these don't ascend by one.
-            atom_0: bond.atom_0 - 1,
-            atom_1: bond.atom_1 - 1,
+            atom_0_sn: bond.atom_0_sn,
+            atom_1_sn: bond.atom_1_sn,
+            atom_0,
+            atom_1,
             is_backbone: false,
-        }
+        })
     }
 }
 
@@ -1055,13 +1085,17 @@ impl Molecule {
     }
 }
 
-impl From<Mol2> for Molecule {
-    fn from(m: Mol2) -> Self {
-        let atoms = m.atoms.iter().map(|a| a.into()).collect();
+impl TryFrom<Mol2> for Molecule {
+    type Error = io::Error;
+    fn try_from(m: Mol2) -> Result<Self, Self::Error> {
+        let atoms: Vec<_> = m.atoms.iter().map(|a| a.into()).collect();
+
+        let bonds: Vec<Bond> = m.bonds
+            .iter()
+            .map(|b| Bond::from_generic(b, &atoms))
+            .collect::<Result<_, _>>()?;
 
         let mut result = Self::new(m.ident, atoms, Vec::new(), Vec::new(), None, None, None);
-
-        let bonds = m.bonds.iter().map(|b| b.into()).collect();
 
         // This replaces the built-in bond computation with our own. Ideally, we don't even calculate
         // those for performance reasons.
@@ -1069,7 +1103,7 @@ impl From<Mol2> for Molecule {
         result.bonds_hydrogen = Vec::new();
         result.adjacency_list = result.build_adjacency_list();
 
-        result
+        Ok(result)
     }
 }
 
@@ -1088,9 +1122,12 @@ impl TryFrom<Sdf> for Molecule {
             chains.push(Chain::from_generic(c, &atoms, &residues)?);
         }
 
-        let mut result = Self::new(m.ident, atoms, chains, residues, None, None, None);
+        let bonds: Vec<Bond> = m.bonds
+            .iter()
+            .map(|b| Bond::from_generic(b, &atoms))
+            .collect::<Result<_, _>>()?;
 
-        let bonds = m.bonds.iter().map(|b| b.into()).collect();
+        let mut result = Self::new(m.ident, atoms, chains, residues, None, None, None);
 
         // See note in Mol2's method.
         result.bonds = bonds;
