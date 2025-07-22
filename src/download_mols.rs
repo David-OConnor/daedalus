@@ -3,9 +3,6 @@
 use bio_apis::{ReqError, drugbank, pubchem, rcsb};
 use bio_files::{MmCif, Mol2};
 
-// use pdbtbx::PDB;
-
-// use crate::{file_io::cif_pdb::read_pdb, molecule::Molecule};
 use crate::molecule::Molecule;
 
 /// Download mmCIF file from the RSCB, parse into a struct.

@@ -86,23 +86,20 @@ use na_seq::{
     element::{LjTable, init_lj_lut},
 };
 
-// use pdbtbx::{self, PDB};
 use crate::{
     aa_coords::bond_vecs::init_local_bond_vecs,
     docking::{
-        BindingEnergy, ConformationType, THETA_BH, dynamics::Snapshot, external::check_adv_avail,
-        prep::DockingSetup,
+        BindingEnergy, ConformationType, THETA_BH, external::check_adv_avail, prep::DockingSetup,
     },
     dynamics::MdState,
     file_io::{mtz::load_mtz, pdbqt::load_pdbqt},
-    molecule::Ligand,
+    molecule::{Ligand, PeptideAtomPosits},
     navigation::Tab,
     prefs::ToSave,
     render::render,
     ui::{COL_SPACING, VIEW_DEPTH_FAR_MAX, VIEW_DEPTH_NEAR_MIN},
     util::handle_err,
 };
-
 // Include general Amber forcefield params with our program. See the Reference Manual, section ]
 // 3.1.1 for details on which we include. (The recommended ones for Proteins, and ligands).
 
@@ -282,7 +279,7 @@ struct StateVolatile {
     inputs_commanded: InputsCommanded,
     /// (Sigma, Epsilon). Initialize once at startup. Not-quite-static.
     lj_lookup_table: LjTable,
-    snapshots: Vec<Snapshot>,
+    // snapshots: Vec<Snapshot>,
     docking_setup: Option<DockingSetup>,
     /// e.g. waiting for the data avail thread to return
     mol_pending_data_avail: Option<
@@ -308,7 +305,7 @@ impl Default for StateVolatile {
             ui_height: Default::default(),
             inputs_commanded: Default::default(),
             lj_lookup_table: init_lj_lut(),
-            snapshots: Default::default(),
+            // snapshots: Default::default(),
             docking_setup: Default::default(),
             mol_pending_data_avail: Default::default(),
             prefs_dir: env::current_dir().unwrap(),
@@ -426,6 +423,7 @@ struct StateUi {
     atom_color_by_charge: bool,
     /// Affects the electron density mesh.
     density_iso_level: f32,
+    peptide_atom_posits: PeptideAtomPosits,
 }
 
 #[derive(Clone, PartialEq, Debug, Default, Encode, Decode)]

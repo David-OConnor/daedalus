@@ -29,10 +29,11 @@ use std::{
 use bio_files::{
     ResidueType,
     amber_params::{
-        BondStretchingParams, ChargeParams, ForceFieldParamsKeyed, MassParams, VdwParams,
+        AngleBendingParams, BondStretchingParams, ChargeParams, ForceFieldParamsKeyed, MassParams,
+        VdwParams,
     },
 };
-use bio_files::amber_params::AngleBendingParams;
+use cudarc::driver::HostSlice;
 use graphics::Entity;
 use itertools::Itertools;
 use lin_alg::f64::Vec3;
@@ -42,12 +43,11 @@ use crate::{
     ComputationDevice, FfParamSet, ProtFFTypeChargeMap,
     docking::{BindingEnergy, ConformationType, prep::DockingSetup},
     dynamics::{
-        AtomDynamics, CUTOFF, ForceFieldParamsIndexed, MdState, ParamError, SKIN, SnapshotDynamics,
-        ambient::SimBox,
+        AtomDynamics, CUTOFF, ForceFieldParamsIndexed, MdMode, MdState, ParamError, SKIN,
+        SnapshotDynamics, ambient::SimBox,
     },
-    molecule::{Atom, Bond, Ligand, Molecule, Residue, ResidueEnd},
+    molecule::{Atom, Bond, Ligand, Molecule, Residue, ResidueEnd, build_adjacency_list},
 };
-use crate::molecule::build_adjacency_list;
 
 /// Build a single lookup table in which ligand-specific parameters
 /// (when given) replace or add to the generic ones.
@@ -212,8 +212,13 @@ impl ForceFieldParamsIndexed {
 
         // Bonds
         for bond in bonds {
-            if bond.atom_0  > 2328 || bond.atom_1 > 2328 {
-                println!("UHOH exeeded len. Atom len: {}, b0: {} b1: {}", atoms.len(), bond.atom_0, bond.atom_1); // todo temp
+            if bond.atom_0 > 2328 || bond.atom_1 > 2328 {
+                println!(
+                    "UHOH exeeded len. Atom len: {}, b0: {} b1: {}",
+                    atoms.len(),
+                    bond.atom_0,
+                    bond.atom_1
+                ); // todo temp
             }
 
             let (i0, i1) = (bond.atom_0, bond.atom_1);
@@ -239,16 +244,16 @@ impl ForceFieldParamsIndexed {
                     "Missing bond parameters for {type_i}-{type_j} on {} - {}. Using a safe default.",
                     atoms[i0], atoms[i1]
                 );
-                result
-                    .bond_stretching
-                    .insert((i0.min(i1), i0.max(i1)), BondStretchingParams {
+                result.bond_stretching.insert(
+                    (i0.min(i1), i0.max(i1)),
+                    BondStretchingParams {
                         atom_types: (String::new(), String::new()),
                         k_b: 300.,
                         r_0: (atoms[i0].posit - atoms[i1].posit).magnitude() as f32,
                         comment: None,
-                    });
+                    },
+                );
                 continue;
-
 
                 // return Err(ParamError::new(&format!(
                 //     "Missing bond parameters for {type_i}-{type_j} on {} - {}",
@@ -263,12 +268,10 @@ impl ForceFieldParamsIndexed {
 
         // Angles. (Between 3 atoms)
         for (center, neigh) in adjacency_list.iter().enumerate() {
-
             if neigh.len() < 2 {
                 continue;
             }
             for (&i, &k) in neigh.iter().tuple_combinations() {
-
                 let (type_0, type_1, type_2) = (
                     atoms[i].force_field_type.as_ref().ok_or_else(|| {
                         ParamError::new(&format!("Atom missing FF type on angle: {}", atoms[i]))
@@ -284,25 +287,33 @@ impl ForceFieldParamsIndexed {
                     })?,
                 );
 
-                let data = match params.angle.get(&(type_0.clone(), type_1.clone(), type_2.clone())) {
+                let data = match params
+                    .angle
+                    .get(&(type_0.clone(), type_1.clone(), type_2.clone()))
+                {
                     Some(param) => param.clone(),
                     // Try the other atom order.
-                    None => match params.angle.get(&(type_2.clone(), type_1.clone(), type_0.clone())) {
-                        Some(param) => param.clone(),
-                        None => {
-                            // todo: Get to the bottom of this.
-                            // todo: In at least some cases, it's caused by duplicate atoms in the MMCIf file. Consider
-                            // todo: sanitizing it on load.
-                            println!(
-                                "Missing valence angle params {type_0}-{type_1}-{type_2} on {} - {} - {}. Using a safe default.",
-                                atoms[i], atoms[center], atoms[k]
-                            );
-                            // parm19.dat, HC-CT-HC
-                            AngleBendingParams {
-                                atom_types: (String::new(), String::new(), String::new()),
-                                k: 35.,
-                                theta_0: 1.91113,
-                                comment: None,
+                    None => {
+                        match params
+                            .angle
+                            .get(&(type_2.clone(), type_1.clone(), type_0.clone()))
+                        {
+                            Some(param) => param.clone(),
+                            None => {
+                                // todo: Get to the bottom of this.
+                                // todo: In at least some cases, it's caused by duplicate atoms in the MMCIf file. Consider
+                                // todo: sanitizing it on load.
+                                println!(
+                                    "Missing valence angle params {type_0}-{type_1}-{type_2} on {} - {} - {}. Using a safe default.",
+                                    atoms[i], atoms[center], atoms[k]
+                                );
+                                // parm19.dat, HC-CT-HC
+                                AngleBendingParams {
+                                    atom_types: (String::new(), String::new(), String::new()),
+                                    k: 35.,
+                                    theta_0: 1.91113,
+                                    comment: None,
+                                }
                             }
                         }
                     }
@@ -609,6 +620,7 @@ impl MdState {
         };
 
         let mut result = Self {
+            mode: MdMode::Docking,
             atoms: atoms_dy,
             adjacency_list: adjacency_list.to_vec(),
             atoms_static: atoms_dy_static,
@@ -651,7 +663,7 @@ impl MdState {
             for (i, atom) in atoms.iter().enumerate() {
                 if bond.atom_0_sn == atom.serial_number {
                     atom_0 = Some(i);
-                } else  if bond.atom_1_sn == atom.serial_number {
+                } else if bond.atom_1_sn == atom.serial_number {
                     atom_1 = Some(i);
                 }
             }
@@ -663,7 +675,9 @@ impl MdState {
                     ..bond.clone()
                 })
             } else {
-                return Err(ParamError::new("Problem remapping bonds to filtered atoms."));
+                return Err(ParamError::new(
+                    "Problem remapping bonds to filtered atoms.",
+                ));
             }
         }
 
@@ -705,6 +719,7 @@ impl MdState {
         };
 
         let mut result = Self {
+            mode: MdMode::Peptide,
             atoms: atoms_dy,
             adjacency_list: adjacency_list.to_vec(),
             atoms_static: Vec::new(),
@@ -935,6 +950,7 @@ pub fn build_dynamics_docking(
     for (i, atom) in md_state.atoms.iter().enumerate() {
         lig.atom_posits[i] = atom.posit;
     }
+    change_snapshot_docking(lig, &md_state.snapshots[0], &mut None);
 
     Ok(md_state)
 }
@@ -953,48 +969,51 @@ pub fn build_dynamics_peptide(
 
     let posits: Vec<_> = mol.atoms.iter().map(|a| a.posit).collect();
 
-    let mut md_state = MdState::new_peptide(
-        &mol.atoms,
-        &posits,
-        &mol.bonds,
-        ff_params,
-    )?;
+    let mut md_state = MdState::new_peptide(&mol.atoms, &posits, &mol.bonds, ff_params)?;
 
     for _ in 0..n_steps {
         md_state.step(dt)
     }
 
-    mol.atom_posits = Some(Vec::with_capacity(mol.atoms.len()));
-
-    let atom_posits = mol.atom_posits.as_mut().unwrap();
-
-    for (i, atom) in md_state.atoms.iter().enumerate() {
-        // todo: Sort this out. The quick + dirty is change positions in place, but we need a better
-        // todo way that retains the original positions. For example, see how we do it for ligands.
-
-        // todo: Sort this out, once you have a setup to render the atom_posit. don't change the
-        // todo main atom position when this happens.
-        mol.atoms[i].posit = atom.posit;
-        atom_posits[i] = atom.posit;
-    }
+    change_snapshot_peptide(mol, &md_state.atoms, &md_state.snapshots[0]);
 
     Ok(md_state)
 }
 
+/// Set ligand atom positions to that of a snapshot. We assume a rigid receptor.
 /// Body masses are separate from the snapshot, since it's invariant.
-pub fn change_snapshot_md(
-    entities: &mut [Entity],
+pub fn change_snapshot_docking(
     lig: &mut Ligand,
-    lig_entity_ids: &[usize],
+    snapshot: &SnapshotDynamics,
     energy_disp: &mut Option<BindingEnergy>,
+) {
+    lig.pose.conformation_type = ConformationType::AbsolutePosits;
+    lig.atom_posits = snapshot.atom_posits.iter().map(|p| (*p).into()).collect();
+    // *energy_disp = snapshot.energy.clone();
+}
+
+pub fn change_snapshot_peptide(
+    mol: &mut Molecule,
+    atoms_dy: &[AtomDynamics],
     snapshot: &SnapshotDynamics,
 ) {
-    lig.pose.conformation_type = ConformationType::AbsolutePosits; // Should alreayd be set?
+    let mut posits = Vec::with_capacity(mol.atoms.len());
 
-    // Position atoms from pose  here? You could, but the snapshot has them pre-positioned.
-    // This may make changing snapshots faster. But uses more memory from storing each
+    // todo: This is slow. Use a predefined mapping; much faster.
+    // If the atom's SN is present in the snap, use it; otherwise, use the original posit (e.g. hetero)
+    for atom in &mol.atoms {
+        let mut found = false;
+        for (i_dy, atom_dy) in atoms_dy.iter().enumerate() {
+            if atom_dy.serial_number == atom.serial_number {
+                posits.push(snapshot.atom_posits[i_dy]);
+                found = true;
+                break;
+            }
+        }
+        if !found {
+            posits.push(atom.posit); // Fallback to the orig.
+        }
+    }
 
-    lig.atom_posits = snapshot.atom_posits.iter().map(|p| (*p).into()).collect();
-
-    // *energy_disp = snapshot.energy.clone();
+    mol.atom_posits = Some(posits);
 }

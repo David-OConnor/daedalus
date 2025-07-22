@@ -1,19 +1,22 @@
 //! Misc utility-related UI functionality.
 
 use bio_files::ResidueType;
-use egui::{Color32, RichText, Slider, Ui};
+use egui::{Color32, ComboBox, RichText, Slider, Ui};
 use graphics::{EngineUpdates, Scene};
 use na_seq::AaIdent;
 
 use crate::{
-    Selection, State,
-    dynamics::prep::change_snapshot_md,
+    Selection, State, ViewSelLevel,
+    dynamics::{
+        MdMode,
+        prep::{change_snapshot_docking, change_snapshot_peptide},
+    },
     mol_drawing,
     mol_drawing::{
         CHARGE_MAP_MAX, CHARGE_MAP_MIN, COLOR_AA_NON_RESIDUE, COLOR_AA_NON_RESIDUE_EGUI,
-        draw_ligand,
+        draw_ligand, draw_molecule,
     },
-    molecule::{Atom, Ligand, Molecule, Residue, aa_color},
+    molecule::{Atom, Ligand, Molecule, PeptideAtomPosits, Residue, aa_color},
     ui::{COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_INACTIVE, ROW_SPACING},
     util::make_egui_color,
 };
@@ -149,42 +152,66 @@ pub fn dynamics_player(
     engine_updates: &mut EngineUpdates,
     ui: &mut Ui,
 ) {
-    if let Some(md) = &state.mol_dynamics {
-        if !md.snapshots.is_empty() {
-            // if !state.volatile.snapshots.is_empty() {
-            ui.add_space(ROW_SPACING);
-
-            let snapshot_prev = state.ui.current_snapshot;
-            ui.spacing_mut().slider_width = ui.available_width() - 100.;
-            ui.add(Slider::new(
-                &mut state.ui.current_snapshot,
-                // 0..=state.volatile.snapshots.len() - 1,
-                0..=md.snapshots.len() - 1, // todo exper
-            ));
-
-            if state.ui.current_snapshot != snapshot_prev {
-                // change_snapshot(
-                //     &mut scene.entities,
-                //     lig,
-                //     &Vec::new(),
-                //     &mut state.ui.binding_energy_disp,
-                //     &state.volatile.snapshots[state.ui.current_snapshot],
-                // );
-
-                let lig = state.ligand.as_mut().unwrap();
-
-                change_snapshot_md(
-                    &mut scene.entities,
-                    lig,
-                    &Vec::new(),
-                    &mut state.ui.binding_energy_disp,
-                    &md.snapshots[state.ui.current_snapshot],
-                );
-
-                draw_ligand(state, scene);
-
-                engine_updates.entities = true;
+    let prev = state.ui.peptide_atom_posits;
+    ui.label("Show atoms:");
+    ComboBox::from_id_salt(3)
+        .width(80.)
+        .selected_text(state.ui.peptide_atom_posits.to_string())
+        .show_ui(ui, |ui| {
+            for view in &[PeptideAtomPosits::Original, PeptideAtomPosits::Dynamics] {
+                ui.selectable_value(&mut state.ui.peptide_atom_posits, *view, view.to_string());
             }
+        });
+
+    if state.ui.peptide_atom_posits != prev {
+        draw_molecule(state, scene);
+        engine_updates.entities = true;
+    }
+
+    let Some(md) = &state.mol_dynamics else {
+        return;
+    };
+
+    if !md.snapshots.is_empty() {
+        // if !state.volatile.snapshots.is_empty() {
+        ui.add_space(ROW_SPACING);
+
+        let snapshot_prev = state.ui.current_snapshot;
+        ui.spacing_mut().slider_width = ui.available_width() - 100.;
+        ui.add(Slider::new(
+            &mut state.ui.current_snapshot,
+            0..=md.snapshots.len() - 1,
+        ));
+
+        if state.ui.current_snapshot != snapshot_prev {
+            match md.mode {
+                MdMode::Docking => {
+                    let lig = state.ligand.as_mut().unwrap();
+
+                    change_snapshot_docking(
+                        // &mut scene.entities,
+                        lig,
+                        // &Vec::new(),
+                        &md.snapshots[state.ui.current_snapshot],
+                        &mut state.ui.binding_energy_disp,
+                    );
+
+                    draw_ligand(state, scene);
+                }
+                MdMode::Peptide => {
+                    let mol = state.molecule.as_mut().unwrap();
+
+                    change_snapshot_peptide(
+                        mol,
+                        &md.atoms,
+                        &md.snapshots[state.ui.current_snapshot],
+                    );
+
+                    draw_molecule(state, scene);
+                }
+            }
+
+            engine_updates.entities = true;
         }
     }
 }

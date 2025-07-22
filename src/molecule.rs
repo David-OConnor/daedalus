@@ -529,7 +529,6 @@ impl Ligand {
 #[allow(unused)]
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum BondType {
-    // C+P from pdbtbx for now
     Covalent {
         count: BondCount,
     },
@@ -1072,7 +1071,8 @@ impl TryFrom<Mol2> for Molecule {
     fn try_from(m: Mol2) -> Result<Self, Self::Error> {
         let atoms: Vec<_> = m.atoms.iter().map(|a| a.into()).collect();
 
-        let bonds: Vec<Bond> = m.bonds
+        let bonds: Vec<Bond> = m
+            .bonds
             .iter()
             .map(|b| Bond::from_generic(b, &atoms))
             .collect::<Result<_, _>>()?;
@@ -1104,7 +1104,8 @@ impl TryFrom<Sdf> for Molecule {
             chains.push(Chain::from_generic(c, &atoms, &residues)?);
         }
 
-        let bonds: Vec<Bond> = m.bonds
+        let bonds: Vec<Bond> = m
+            .bonds
             .iter()
             .map(|b| Bond::from_generic(b, &atoms))
             .collect::<Result<_, _>>()?;
@@ -1168,4 +1169,23 @@ pub fn build_adjacency_list(bonds: &[Bond], atoms_len: usize) -> Vec<Vec<usize>>
     }
 
     result
+}
+
+#[derive(Clone, Copy, PartialEq, Default)]
+pub enum PeptideAtomPosits {
+    #[default]
+    /// E.g. as imported from a mmCIF file, from experimental data
+    Original,
+    /// As calculated in a snapshot from a MD sim
+    Dynamics,
+}
+
+impl Display for PeptideAtomPosits {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let val = match self {
+            Self::Original => "Original",
+            Self::Dynamics => "Dynamics",
+        };
+        write!(f, "{val}")
+    }
 }

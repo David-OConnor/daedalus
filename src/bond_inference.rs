@@ -1,5 +1,5 @@
 //! This module creates bonds between protein components. Most macromolecule PDB/CIF files don't include
-//! explicit bond information, and the `pdbtbx` library doesn't handle this. Infer bond lengths
+//! explicit bond information. Infer bond lengths
 //! by comparing each interactomic bond distance, and matching against known amino acid bond lengths.
 //!
 //! Some info here: https://www.ruppweb.org/Xray/tutorial/protein_structure.htm

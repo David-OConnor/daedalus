@@ -8,13 +8,14 @@ use egui::Color32;
 use graphics::{ControlScheme, Entity, FWD_VEC, Scene, UP_VEC};
 use lin_alg::{
     f32::{Quaternion, Vec3},
+    f64::Vec3 as Vec3F64,
     map_linear,
 };
 use na_seq::Element;
 
 use crate::{
     Selection, State, ViewSelLevel,
-    molecule::{Atom, AtomRole, BondCount, BondType, Chain, Residue, aa_color},
+    molecule::{Atom, AtomRole, BondCount, BondType, Chain, PeptideAtomPosits, Residue, aa_color},
     reflection::ElectronDensity,
     render::{
         ATOM_SHININESS, BACKGROUND_COLOR, BALL_RADIUS_WATER, BALL_STICK_RADIUS,
@@ -595,21 +596,6 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene) {
 
     let mut atoms_positioned = mol.atoms.clone();
 
-    // for (i, atom) in mol.atoms.iter().enumerate() {
-    //         let posit = lig.atom_posits[i].into();
-    //         let mut ent = Entity::new(
-    //             MESH_BALL_STICK_SPHERE,
-    //             posit,
-    //             Quaternion::new_identity(),
-    //             BALL_STICK_RADIUS,
-    //             atom.element.color(),
-    //             ATOM_SHININESS
-    //         );
-    //
-    //         ent.class = EntityType::Ligand as u32;
-    //         scene.entities.push(ent);
-    // }
-
     // todo: C+P from draw_molecule. With some removed, but a lot of repeated.
     for (i, bond) in mol.bonds.iter().enumerate() {
         let atom_0 = &mol.atoms[bond.atom_0];
@@ -824,10 +810,26 @@ pub fn draw_secondary_structure(update_mesh: &mut bool, mesh_created: bool, scen
     scene.entities.push(ent);
 }
 
+/// Helper
+fn get_atom_posit<'a>(
+    mode: PeptideAtomPosits,
+    posits: &'a Option<Vec<Vec3F64>>,
+    i: usize,
+    atom: &'a Atom,
+) -> &'a Vec3F64 {
+    match mode {
+        PeptideAtomPosits::Original => &atom.posit,
+        PeptideAtomPosits::Dynamics => match posits {
+            Some(p) => &p[i],
+            None => &atom.posit,
+        },
+    }
+}
+
 /// Refreshes entities with the model passed.
 /// Sensitive to various view configuration parameters.
 pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
-    let Some(mol) = state.molecule.as_mut() else {
+    let Some(mol) = state.molecule.as_ref() else {
         return;
     };
 
@@ -920,6 +922,9 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
     // Draw atoms.
     if [MoleculeView::BallAndStick, MoleculeView::SpaceFill].contains(&ui.mol_view) {
         for (i, atom) in mol.atoms.iter().enumerate() {
+            let atom_posit =
+                get_atom_posit(state.ui.peptide_atom_posits, &mol.atom_posits, i, atom);
+
             if atom.hetero {
                 let mut water = false;
                 if let Some(role) = atom.role {
@@ -971,7 +976,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
             if ui.show_near_sel_only {
                 let atom_sel = mol.get_sel_atom(&state.ui.selection);
                 if let Some(a) = atom_sel {
-                    if (atom.posit - a.posit).magnitude() as f32 > ui.nearby_dist_thresh as f32 {
+                    if (*atom_posit - a.posit).magnitude() as f32 > ui.nearby_dist_thresh as f32 {
                         continue;
                     }
                 }
@@ -979,7 +984,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
             if let Some(lig) = &state.ligand {
                 if ui.show_near_lig_only {
                     let atom_sel = lig.atom_posits[lig.anchor_atom];
-                    if (atom.posit - atom_sel).magnitude() as f32 > ui.nearby_dist_thresh as f32 {
+                    if (*atom_posit - atom_sel).magnitude() as f32 > ui.nearby_dist_thresh as f32 {
                         continue;
                     }
                 }
@@ -1020,7 +1025,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
 
             let mut entity = Entity::new(
                 mesh,
-                atom.posit.into(),
+                (*atom_posit).into(),
                 Quaternion::new_identity(),
                 radius,
                 color_atom,
@@ -1045,6 +1050,19 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
         let atom_0 = &mol.atoms[bond.atom_0];
         let atom_1 = &mol.atoms[bond.atom_1];
 
+        let atom_0_posit = get_atom_posit(
+            state.ui.peptide_atom_posits,
+            &mol.atom_posits,
+            bond.atom_0,
+            atom_0,
+        );
+        let atom_1_posit = get_atom_posit(
+            state.ui.peptide_atom_posits,
+            &mol.atom_posits,
+            bond.atom_1,
+            atom_1,
+        );
+
         // Don't draw bonds if on the spacefill view, and the atoms aren't hetero.
         if ui.mol_view == MoleculeView::SpaceFill && !atom_0.hetero && !atom_1.hetero {
             continue;
@@ -1053,7 +1071,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
         if ui.show_near_sel_only {
             let atom_sel = mol.get_sel_atom(&state.ui.selection);
             if let Some(a) = atom_sel {
-                if (atom_0.posit - a.posit).magnitude() as f32 > ui.nearby_dist_thresh as f32 {
+                if (*atom_0_posit - a.posit).magnitude() as f32 > ui.nearby_dist_thresh as f32 {
                     continue;
                 }
             }
@@ -1061,7 +1079,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
         if let Some(lig) = &state.ligand {
             if ui.show_near_lig_only {
                 let atom_sel = lig.atom_posits[lig.anchor_atom];
-                if (atom_0.posit - atom_sel).magnitude() as f32 > ui.nearby_dist_thresh as f32 {
+                if (*atom_0_posit - atom_sel).magnitude() as f32 > ui.nearby_dist_thresh as f32 {
                     continue;
                 }
             }
@@ -1101,8 +1119,8 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
             continue;
         }
 
-        let posit_0: Vec3 = atom_0.posit.into();
-        let posit_1: Vec3 = atom_1.posit.into();
+        let posit_0: Vec3 = (*atom_0_posit).into();
+        let posit_1: Vec3 = (*atom_1_posit).into();
 
         let dim_peptide = if state.ligand.is_some() && !&mol.atoms[bond.atom_0].hetero {
             state.ui.visibility.dim_peptide

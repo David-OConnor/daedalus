@@ -18,9 +18,10 @@ use na_seq::{AaIdent, Element};
 use crate::{
     CamSnapshot, PREFS_SAVE_INTERVAL, ProtFFTypeChargeMap, ProtFfMap, Selection, State, StateUi,
     ViewSelLevel,
+    docking::ConformationType,
     download_mols::load_cif_rcsb,
     mol_drawing::{EntityType, MoleculeView, draw_density, draw_density_surface, draw_molecule},
-    molecule::{Atom, AtomRole, Bond, Chain, Molecule, Residue},
+    molecule::{Atom, AtomRole, Bond, Chain, Ligand, Molecule, Residue},
     render::{
         CAM_INIT_OFFSET, Color, MESH_DENSITY_SURFACE, MESH_SECONDARY_STRUCTURE,
         MESH_SOLVENT_SURFACE, RENDER_DIST_FAR, RENDER_DIST_NEAR, set_flashlight, set_static_light,
@@ -878,4 +879,62 @@ pub fn make_egui_color(color: Color) -> Color32 {
         (color.1 * 255.) as u8,
         (color.2 * 255.) as u8,
     )
+}
+
+/// Align the ligand to a residue on a molecule. This is generally a hetero copy of the ligand,
+/// as part of the protein's coordinate file. Attempt to match atoms exactly; this requires the ligand's
+/// atom labels to match that in the residue.. If not,
+/// use a flexible conformation, or match partly.
+///
+/// Return a center suitable for docking.
+pub fn move_lig_to_res(lig: &mut Ligand, mol: &Molecule, res: &Residue) -> Vec3 {
+    // todo: Pick center-of-mass atom, or better yet, match it to the anchor atom.
+    let posit = mol.atoms[res.atoms[0]].posit;
+
+    // todo: YOu need to add hydrogens to hetero atoms.
+
+    let mut all_found = false;
+    for (lig_i, atom_lig) in lig.molecule.atoms.iter().enumerate() {
+        if atom_lig.type_in_res.is_none() {
+            continue;
+        }
+        let mut found = false;
+
+        for i in &res.atoms {
+            let atom_res = &mol.atoms[*i];
+            if atom_res.type_in_res.is_none() {
+                continue;
+            }
+
+            if atom_res.type_in_res == atom_lig.type_in_res {
+                lig.atom_posits[lig_i] = atom_res.posit;
+                println!("Found match: {}", atom_res);
+                found = true;
+                break;
+            }
+        }
+        if !found {
+            // todo: If it's just a few, automatically position based on geometry to the positioned atoms.
+            eprintln!("Unable to position a ligand atom based on the residue: {atom_lig}");
+            all_found = false;
+            // todo: Temp break rm until we can add het Hydrogens or find a workaround.
+            // break;
+        }
+    }
+
+    println!("Atom posits: {:?}", lig.atom_posits);
+
+    lig.pose.conformation_type = if all_found {
+        println!("Found all atoms required to position ligand to residue.");
+        ConformationType::AbsolutePosits
+    } else {
+        // todo temp abs until we populate het Hydrogens or find a workaround
+        ConformationType::AbsolutePosits
+
+        // ConformationType::Flexible {
+        //     torsions: Vec::new(),
+        // }
+    };
+
+    posit
 }

@@ -64,7 +64,7 @@ use crate::{
     molecule::{Atom, Ligand},
 };
 
-pub mod dynamics;
+// pub mod dynamics;
 pub mod external;
 pub mod find_sites;
 pub mod partial_charge;

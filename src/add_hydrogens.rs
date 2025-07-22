@@ -218,57 +218,49 @@ pub fn h_type_in_res_sidechain(
     // so these individual overrides may be the easiest approach.
     // todo: See teh pattern here? Put in a mechanism to add the 2 prefix.
     match aa {
-       AminoAcid::Thr => {
+        AminoAcid::Thr => {
             match parent_tir {
                 AtomTypeInRes::CG2 => {
                     // HG21, 22, 23
                     let digit = h_num_this_parent + 21;
                     return Ok(AtomTypeInRes::H(format!("HG{digit}")));
                 }
-                _ => ()
-            }
-       }
-        AminoAcid::Arg => {
-            match parent_tir {
-                AtomTypeInRes::NH2 => {
-                    let digit = h_num_this_parent + 21;
-                    return Ok(AtomTypeInRes::H(format!("HH{digit}")));
-                }
-                _ => ()
+                _ => (),
             }
         }
-        AminoAcid::Phe => {
-            match parent_tir {
-                AtomTypeInRes::CD2 => {
-                    let digit = h_num_this_parent + 2;
-                    return Ok(AtomTypeInRes::H(format!("HD{digit}")));
-                }
-                AtomTypeInRes::CE2 => {
-                    let digit = h_num_this_parent + 2;
-                    return Ok(AtomTypeInRes::H(format!("HE{digit}")));
-                }
-                _ => ()
+        AminoAcid::Arg => match parent_tir {
+            AtomTypeInRes::NH2 => {
+                let digit = h_num_this_parent + 21;
+                return Ok(AtomTypeInRes::H(format!("HH{digit}")));
             }
-        }
-        AminoAcid::Leu => {
-            match parent_tir {
-                AtomTypeInRes::CD2 => {
-                    let digit = h_num_this_parent + 21;
-                    return Ok(AtomTypeInRes::H(format!("HD{digit}")));
-                }
-                _ => ()
+            _ => (),
+        },
+        AminoAcid::Phe => match parent_tir {
+            AtomTypeInRes::CD2 => {
+                let digit = h_num_this_parent + 2;
+                return Ok(AtomTypeInRes::H(format!("HD{digit}")));
             }
-        }
-        AminoAcid::Ile => {
-            match parent_tir {
-                AtomTypeInRes::CG2 => {
-                    let digit = h_num_this_parent + 21;
-                    return Ok(AtomTypeInRes::H(format!("HG{digit}")));
-                }
-                _ => ()
+            AtomTypeInRes::CE2 => {
+                let digit = h_num_this_parent + 2;
+                return Ok(AtomTypeInRes::H(format!("HE{digit}")));
             }
-        }
-        _ => ()
+            _ => (),
+        },
+        AminoAcid::Leu => match parent_tir {
+            AtomTypeInRes::CD2 => {
+                let digit = h_num_this_parent + 21;
+                return Ok(AtomTypeInRes::H(format!("HD{digit}")));
+            }
+            _ => (),
+        },
+        AminoAcid::Ile => match parent_tir {
+            AtomTypeInRes::CG2 => {
+                let digit = h_num_this_parent + 21;
+                return Ok(AtomTypeInRes::H(format!("HG{digit}")));
+            }
+            _ => (),
+        },
+        _ => (),
     }
 
     let Some(digits_this_aa) = h_digit_map.get(&aa) else {

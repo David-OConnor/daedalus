@@ -128,6 +128,7 @@ pub struct SnapshotDynamics {
 /// A trimmed-down atom for use with molecular dynamics. Contains parameters for single-atom,
 /// but we use ParametersIndex for multi-atom parameters.
 pub struct AtomDynamics {
+    pub serial_number: u32,
     pub force_field_type: String,
     pub element: Element,
     // pub name: String,
@@ -162,6 +163,7 @@ impl AtomDynamics {
         };
 
         Ok(Self {
+            serial_number: atom.serial_number,
             element: atom.element,
             // name: atom.type_in_res.clone().unwrap_or_default(),
             posit: atom_posits[i],
@@ -220,8 +222,17 @@ impl AtomDynamicsx4 {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Default)]
+pub enum MdMode {
+    #[default]
+    Docking,
+    Peptide,
+}
+
 #[derive(Default)]
 pub struct MdState {
+    // todo: Update how we handle mode A/R.
+    pub mode: MdMode,
     pub atoms: Vec<AtomDynamics>,
     pub adjacency_list: Vec<Vec<usize>>,
     /// Sources that affect atoms in the system, but are not themselves affected by it. E.g.
@@ -259,6 +270,7 @@ pub struct MdState {
 impl MdState {
     /// One **Velocity-Verlet** step (leap-frog style) of length `dt_fs` femtoseconds.
     pub fn step(&mut self, dt: f64) {
+        // println!("STEP {}", self.step_count);
         let dt_half = 0.5 * dt;
 
         // 1) First half-kick (v += a dt/2) and drift (x += v dt)

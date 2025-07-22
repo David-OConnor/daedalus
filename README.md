@@ -140,10 +140,11 @@ If *orbit sel* is set in the GUI, the orbit center will be the selected atom or 
 
 ## Reflections and electron density
 Supports volumetric and isosurface views for electron density data, e.g. from Cryo-EM and X-Ray crystallography data. 
-It can download this data from RCSB PDB, or load files directly. Currently, to convert *2fo-fc* files to map data, it
-requires Gemmi available on the *Path*. Can import Map files directly.
+It can download this data from RCSB PDB, or load files directly. Currently, to convert *2fo-fc* files to map data, you must
+have [Gemmi](https://gemmi.readthedocs.io/en/latest/install.html) available on your PC's *Path*. We include the Windows version
+of Gemmi with the release packages. 
 
-MTZ support is not yet available.
+Can import Map files directly. MTZ support is not yet available.
 
 
 ## PyMol-like Command line interface
@@ -200,11 +201,9 @@ These are available in [Amber tools](https://ambermd.org/GetAmber.php). Download
 
 
 ### Erratta
+- Molecular dynamics dihedral-angle parameters are temporarily disabled.
 - Ribbon view is currently unavailable.
 - Opening a molecule by drag + drop may not work until minimizing/unminimizing the program
 - Loading map files that are very large (e.g. high detail, especially Map files directly available
 on RCSB, vice created from 2fo-fc) may crash the program.
 - The GUI doesn't handle proteins with many chains well.
-- Docking is inop.
-
-

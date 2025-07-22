@@ -286,7 +286,6 @@ fn add_h_sidechain(
                             // todo: In the case of His, thsi might depend on the protonation state.
                             (*aa == AminoAcid::Trp && *parent_tir == AtomTypeInRes::CD1)||
                             (*aa == AminoAcid::His && *parent_tir == AtomTypeInRes::CD2)
-
                         {
                             planar = true;
                         } else {
@@ -356,7 +355,9 @@ fn add_h_sidechain(
                         }
 
                         // Trp planar ring junctions; don't add an H.
-                        if *aa == AminoAcid::Trp && matches!(parent_tir, AtomTypeInRes::CD2 | AtomTypeInRes::CE2) {
+                        if *aa == AminoAcid::Trp
+                            && matches!(parent_tir, AtomTypeInRes::CD2 | AtomTypeInRes::CE2)
+                        {
                             continue;
                         }
 
@@ -394,7 +395,7 @@ fn add_h_sidechain(
                 // No H on this His ring N. (There is on NE2 though)
                 // todo: this might depend on the protonation state.
                 if *aa == AminoAcid::His && *parent_tir == AtomTypeInRes::ND1 {
-                    continue
+                    continue;
                 }
                 match atoms_bonded.len() {
                     1 => unsafe {

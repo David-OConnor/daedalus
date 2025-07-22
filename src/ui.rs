@@ -40,15 +40,15 @@ use crate::{
     util,
     util::{
         cam_look_at, cam_look_at_outside, check_prefs_save, close_lig, close_mol, cycle_selected,
-        handle_err, handle_scene_flags, load_atom_coords_rcsb, orbit_center, reset_camera,
-        select_from_search,
+        handle_err, handle_scene_flags, load_atom_coords_rcsb, move_lig_to_res, orbit_center,
+        reset_camera, select_from_search,
     },
 };
 
 pub const ROW_SPACING: f32 = 10.;
 pub const COL_SPACING: f32 = 30.;
 
-// These are divided by 10.
+// These are Å multiplied by 10.
 pub const VIEW_DEPTH_NEAR_MIN: u16 = 2;
 pub const VIEW_DEPTH_NEAR_MAX: u16 = 300;
 
@@ -732,14 +732,9 @@ fn docking(
                         .button(RichText::new(format!("Move lig to {name}")).color(COLOR_HIGHLIGHT))
                         .clicked()
                     {
-                        // todo: Pick center-of-mass atom, or better yet, match it to the anchor atom.
-                        let posit = mol.atoms[res.atoms[0]].posit;
-                        lig.pose.conformation_type = ConformationType::Flexible {
-                            torsions: Vec::new(),
-                        }; // todo: Risky to init to new?
-                        *redraw_lig = true;
+                        let docking_center = move_lig_to_res(lig, mol, res);
 
-                        docking_posit_update = Some(posit);
+                        docking_posit_update = Some(docking_center);
                         docking_init_changed = true;
                     }
                 }
@@ -762,7 +757,6 @@ fn docking(
                     lig.pose.conformation_type = ConformationType::Flexible {
                         torsions: Vec::new(),
                     }; // todo: Risky to init to new?
-                    *redraw_lig = true;
 
                     docking_posit_update = Some(atom.posit);
                     docking_init_changed = true;
@@ -798,7 +792,8 @@ fn docking(
         if run_clicked {
             let lig = state.ligand.as_mut().unwrap();
 
-            let n_steps = 50_000;
+            // let n_steps = 50_000;
+            let n_steps = 10_000;
             let dt = 0.001;
 
             match build_dynamics_docking(
@@ -826,7 +821,6 @@ fn residue_search(state: &mut State, scene: &mut Scene, redraw: &mut bool, ui: &
     };
 
     ui.horizontal(|ui| {
-        // let sel_prev = &state.ui.selection;
         ui.label(search_text);
         if ui
             .add(TextEdit::singleline(&mut state.ui.atom_res_search).desired_width(60.))
@@ -835,15 +829,6 @@ fn residue_search(state: &mut State, scene: &mut Scene, redraw: &mut bool, ui: &
             select_from_search(state);
             *redraw = true;
         }
-
-        // if sel_prev != &state.ui.selection {
-        //     *redraw = true;
-        // }
-
-        // todo: for UI adccessbility
-        // if key_up_is_down {
-        //     up_button.highlight();
-        // }
 
         if state.molecule.is_some() {
             if ui
@@ -927,10 +912,12 @@ fn selection_section(
                 match state.ui.view_sel_level {
                     ViewSelLevel::Residue => {
                         state.ui.selection = match state.ui.selection {
-                            Selection::Atom(i) => Selection::Residue(mol.atoms[i].residue.unwrap_or_default()),
-                            _ => Selection::None
+                            Selection::Atom(i) => {
+                                Selection::Residue(mol.atoms[i].residue.unwrap_or_default())
+                            }
+                            _ => Selection::None,
                         };
-                    },
+                    }
                     ViewSelLevel::Atom => {
                         state.ui.selection = match state.ui.selection {
                             // It seems [0] is often N, and [1] is Cα
@@ -942,7 +929,7 @@ fn selection_section(
                                 }
                             }
 
-                            _ => Selection::None
+                            _ => Selection::None,
                         };
                     }
                 }
@@ -1807,7 +1794,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 let mol = state.molecule.as_mut().unwrap();
 
                 let n_steps = 100;
-                let dt = 0.001;
+                let dt = 0.00001;
 
                 match build_dynamics_peptide(&state.dev, mol, &state.ff_params, n_steps, dt) {
                     Ok(md) => {
