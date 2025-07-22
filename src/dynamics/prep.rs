@@ -47,6 +47,7 @@ use crate::{
     },
     molecule::{Atom, Bond, Ligand, Molecule, Residue, ResidueEnd},
 };
+use crate::molecule::build_adjacency_list;
 
 /// Build a single lookup table in which ligand-specific parameters
 /// (when given) replace or add to the generic ones.
@@ -83,7 +84,6 @@ impl ForceFieldParamsIndexed {
         atoms: &[Atom],
         bonds: &[Bond],
         adjacency_list: &[Vec<usize>],
-        // skip_hetero: bool
     ) -> Result<Self, ParamError> {
         let mut result = Self::default();
 
@@ -91,13 +91,7 @@ impl ForceFieldParamsIndexed {
         // one.
         let params = merge_params(params_general, params_specific);
 
-        // todo: Handle hetero when required, e.g. if part of a protein.
-
         for (i, atom) in atoms.iter().enumerate() {
-            // if skip_hetero && atom.hetero { // This approach keeps bond indices intact over filtering atoms ahead of time.
-            //     continue;
-            // }
-
             let err = || ParamError::new(&format!("Error: Atom missing FF type: {atom}"));
             let ff_type = match &atom.force_field_type {
                 Some(ff_t) => ff_t,
@@ -218,11 +212,6 @@ impl ForceFieldParamsIndexed {
 
         // Bonds
         for bond in bonds {
-            // See note above out not pre-filtering.
-            // if skip_hetero && (atoms[bond.atom_0].hetero || atoms[bond.atom_1].hetero) {
-            //     continue
-            // }
-
             if bond.atom_0  > 2328 || bond.atom_1 > 2328 {
                 println!("UHOH exeeded len. Atom len: {}, b0: {} b1: {}", atoms.len(), bond.atom_0, bond.atom_1); // todo temp
             }
@@ -274,17 +263,11 @@ impl ForceFieldParamsIndexed {
 
         // Angles. (Between 3 atoms)
         for (center, neigh) in adjacency_list.iter().enumerate() {
-            // if skip_hetero && atoms[center].hetero {
-            //     continue
-            // }
 
             if neigh.len() < 2 {
                 continue;
             }
             for (&i, &k) in neigh.iter().tuple_combinations() {
-                // if skip_hetero && (atoms[i].hetero || atoms[k].hetero) {
-                //     continue
-                // }
 
                 let (type_0, type_1, type_2) = (
                     atoms[i].force_field_type.as_ref().ok_or_else(|| {
@@ -647,7 +630,6 @@ impl MdState {
     pub fn new_peptide(
         atoms: &[Atom],
         atom_posits: &[Vec3],
-        adjacency_list: &[Vec<usize>],
         bonds: &[Bond],
         ff_params: &FfParamSet,
     ) -> Result<Self, ParamError> {
@@ -658,10 +640,9 @@ impl MdState {
         // Assign FF type and charge to protein atoms; FF type must be assigned prior to initializing `ForceFieldParamsIndexed`.
         // (Ligand atoms will already have FF type assigned).
 
-        // Filter for only hetero atoms.
         let atoms: Vec<_> = atoms.iter().filter(|a| !a.hetero).cloned().collect();
 
-        // Re-assign bond indices. Theoriginal indices no longer work due to the filter above, but we
+        // Re-assign bond indices. The original indices no longer work due to the filter above, but we
         // can still use serial numbers to reassign.
         let mut bonds_filtered = Vec::new();
         for bond in bonds {
@@ -686,6 +667,8 @@ impl MdState {
             }
         }
 
+        let adjacency_list = build_adjacency_list(&bonds_filtered, atoms.len());
+
         // Convert FF params from keyed to index-based.
         println!("Building FF params indexed for peptide...");
         let ff_params_non_static = ForceFieldParamsIndexed::new(
@@ -693,17 +676,11 @@ impl MdState {
             None,
             &atoms,
             &bonds_filtered,
-            adjacency_list,
-            // true,
+            &adjacency_list,
         )?;
 
-        // We are using this approach instead of `.into`, so we can use the atom_posits from
-        // the positioned ligand. (its atom coords are relative; we need absolute)
         let mut atoms_dy = Vec::with_capacity(atoms.len());
         for (i, atom) in atoms.iter().enumerate() {
-            if atom.hetero {
-                continue;
-            }
             atoms_dy.push(AtomDynamics::new(
                 atom,
                 atom_posits,
@@ -979,7 +956,6 @@ pub fn build_dynamics_peptide(
     let mut md_state = MdState::new_peptide(
         &mol.atoms,
         &posits,
-        &mol.adjacency_list,
         &mol.bonds,
         ff_params,
     )?;

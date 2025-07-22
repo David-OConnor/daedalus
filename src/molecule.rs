@@ -141,7 +141,7 @@ impl Molecule {
 
         result.bonds_hydrogen = create_hydrogen_bonds(&result.atoms, &result.bonds);
 
-        result.adjacency_list = result.build_adjacency_list();
+        result.adjacency_list = build_adjacency_list(&result.bonds, result.atoms.len());
 
         for res in &result.residues {
             if let ResidueType::Other(_) = &res.res_type {
@@ -155,21 +155,6 @@ impl Molecule {
         let atoms_clone = result.atoms.clone();
         for atom in &mut result.atoms {
             atom.dock_type = Some(DockType::infer(atom, &result.bonds, &atoms_clone));
-        }
-
-        result
-    }
-
-    /// Build a list of, for each atom, all atoms bonded to it.
-    /// We use this as part of our flexible-bond conformation algorithm, and in setting up
-    /// angles and dihedrals for molecular docking.
-    pub fn build_adjacency_list(&self) -> Vec<Vec<usize>> {
-        let mut result = vec![Vec::new(); self.atoms.len()];
-
-        // For each bond, record its atoms as neighbors of each other
-        for bond in &self.bonds {
-            result[bond.atom_0].push(bond.atom_1);
-            result[bond.atom_1].push(bond.atom_0);
         }
 
         result
@@ -1078,9 +1063,6 @@ impl Molecule {
         result.experimental_method = m.experimental_method.clone();
         result.secondary_structure = m.secondary_structure.clone();
 
-        result.bonds_hydrogen = Vec::new();
-        result.adjacency_list = result.build_adjacency_list();
-
         Ok(result)
     }
 }
@@ -1101,7 +1083,7 @@ impl TryFrom<Mol2> for Molecule {
         // those for performance reasons.
         result.bonds = bonds;
         result.bonds_hydrogen = Vec::new();
-        result.adjacency_list = result.build_adjacency_list();
+        result.adjacency_list = build_adjacency_list(&result.bonds, result.atoms.len());
 
         Ok(result)
     }
@@ -1132,7 +1114,7 @@ impl TryFrom<Sdf> for Molecule {
         // See note in Mol2's method.
         result.bonds = bonds;
         result.bonds_hydrogen = Vec::new();
-        result.adjacency_list = result.build_adjacency_list();
+        result.adjacency_list = build_adjacency_list(&result.bonds, result.atoms.len());
 
         Ok(result)
     }
@@ -1171,4 +1153,19 @@ impl Molecule {
             drugbank_id: self.drugbank_id.clone(),
         }
     }
+}
+
+/// Build a list of, for each atom, all atoms bonded to it.
+/// We use this as part of our flexible-bond conformation algorithm, and in setting up
+/// angles and dihedrals for molecular docking.
+pub fn build_adjacency_list(bonds: &[Bond], atoms_len: usize) -> Vec<Vec<usize>> {
+    let mut result = vec![Vec::new(); atoms_len];
+
+    // For each bond, record its atoms as neighbors of each other
+    for bond in bonds {
+        result[bond.atom_0].push(bond.atom_1);
+        result[bond.atom_1].push(bond.atom_0);
+    }
+
+    result
 }
