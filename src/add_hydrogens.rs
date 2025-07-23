@@ -18,12 +18,12 @@
 //
 // - Asp  Missing one of the HB atoms? Seems to be based on the geometry we assess;
 // bond angle more planar; not sure how to proceed. Glu: Same, but missing Hg.
-// - Thr missing HB.
 // - Cys missing H on S. ("HS")
 // - Leucine sometimes missing one of its Methyl groups
 
 use std::collections::HashMap;
 
+use bio_files::ResidueType;
 use na_seq::{AminoAcid, AminoAcidGeneral, AminoAcidProtenationVariant, AtomTypeInRes, Element::*};
 
 use crate::{
@@ -182,12 +182,42 @@ pub fn make_h_digit_map(ff_map: &ProtFfMap) -> DigitMap {
 /// `2` and `3` in "HB2" and "HB3". Increments for a given parent that has multiple H.
 /// Assigns the numerical value in the result, e.g. the "2" in "NE2". `parent_depth` provides the letter
 /// e.g. the "D" in "HD1". (WHere "H" means Hydrogen, and "1" means the first hydrogen attached to this parent.
+///
+/// This can also be used for hetero atoms, or for that matter, ligands.
 pub fn h_type_in_res_sidechain(
     h_num_this_parent: usize,
     parent_tir: &AtomTypeInRes,
-    aa: AminoAcid,
+    aa: Option<AminoAcid>, // None for hetero/ligand.
     h_digit_map: &DigitMap,
 ) -> Result<AtomTypeInRes, ParamError> {
+    let Some(aa) = aa else {
+        // Hetero. We can determine the naming scheme directly from the parent.
+        let val = match parent_tir {
+            AtomTypeInRes::Hetero(name_parent) => {
+                // if parent looks like "C<digits>" (e.g. "C23"), drop the "C" and append the H‑index
+                let mut chars = name_parent.chars();
+                let elem = chars.next().unwrap(); // the leading letter, e.g. 'C' or 'O'
+                let rest: String = chars.collect(); // the trailing digits, e.g. "23" or "5"
+
+                if elem == 'C' && rest.chars().all(|c| c.is_ascii_digit()) {
+                    // C23 → H231, H232, … depending on h_num_this_parent
+                    let idx = h_num_this_parent + 1;
+                    format!("H{}{}", rest, idx)
+                } else {
+                    // everything else → just prefix with "H", so "O5" → "HO5"
+                    format!("H{}", name_parent)
+                }
+            }
+            _ => {
+                return Err(ParamError::new(&format!(
+                    "Error assigning H type: Non-hetero parent, but missing AA."
+                )));
+            }
+        };
+
+        return Ok(AtomTypeInRes::Hetero(val));
+    };
+
     // todo: Assign the number based on parent type as well??
     let depth = match parent_tir {
         AtomTypeInRes::CB => 'B',
@@ -330,10 +360,6 @@ impl Molecule {
 
         let digit_map = make_h_digit_map(ff_map);
 
-        // for (k, v) in &digit_map {
-        //     println!("-{k}, {v:?}");
-        // }
-
         // Increment H serial number, starting with the final atom present prior to adding H + 1)
         let mut highest_sn = 0;
         for atom in &self.atoms {
@@ -378,7 +404,6 @@ impl Molecule {
                 prev_cp_ca,
                 n_next_pos,
                 &res_clone,
-                ff_map,
                 &digit_map,
             )?;
 

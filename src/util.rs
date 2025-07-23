@@ -908,7 +908,6 @@ pub fn move_lig_to_res(lig: &mut Ligand, mol: &Molecule, res: &Residue) -> Vec3 
 
             if atom_res.type_in_res == atom_lig.type_in_res {
                 lig.atom_posits[lig_i] = atom_res.posit;
-                println!("Found match: {}", atom_res);
                 found = true;
                 break;
             }
@@ -921,8 +920,6 @@ pub fn move_lig_to_res(lig: &mut Ligand, mol: &Molecule, res: &Residue) -> Vec3 
             // break;
         }
     }
-
-    println!("Atom posits: {:?}", lig.atom_posits);
 
     lig.pose.conformation_type = if all_found {
         println!("Found all atoms required to position ligand to residue.");

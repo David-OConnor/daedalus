@@ -423,7 +423,9 @@ struct StateUi {
     atom_color_by_charge: bool,
     /// Affects the electron density mesh.
     density_iso_level: f32,
+    /// E.g. set to original for from the mmCIF file, or Dynamics to view it after MD.
     peptide_atom_posits: PeptideAtomPosits,
+    num_md_steps: u32,
 }
 
 #[derive(Clone, PartialEq, Debug, Default, Encode, Decode)]
@@ -615,6 +617,7 @@ fn main() {
             view_depth: (VIEW_DEPTH_NEAR_MIN, VIEW_DEPTH_FAR_MAX),
             nearby_dist_thresh: 15,
             density_iso_level: 1.8,
+            num_md_steps: 10_000,
             ..Default::default()
         },
         ..Default::default()

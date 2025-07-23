@@ -864,8 +864,6 @@ pub struct Atom {
     pub dock_type: Option<DockType>,
     // todo: Note that `role` is a subset of `type_in_res`.
     pub role: Option<AtomRole>,
-    // todo: We should have a residue *pointer* etc to speed up computations;
-    // todo: We shouldn't have to iterate through residues checking for atom membership.
     /// We include these references to the residue and chain indices for speed; iterating through
     /// residues (or chains) to check for atom membership is slow.
     pub residue: Option<usize>,
@@ -1187,5 +1185,38 @@ impl Display for PeptideAtomPosits {
             Self::Dynamics => "Dynamics",
         };
         write!(f, "{val}")
+    }
+}
+
+impl Molecule {
+    /// For example, this can be used to create a ligand from a residue that was loaded with a mmCIF
+    /// file from RCSB. It can then be used for docking, or saving to a Mol2 or SDF file.
+    ///
+    /// `atoms` here should be the full set, as indexed by `res`, unless `use_sns` is true.
+    /// `use_sns` = false is faster.
+    ///
+    /// We assume the residue is already populate with hydrogens.
+    pub fn from_res(res: &Residue, atoms: &[Atom], use_sns: bool) -> Self {
+        let name: String = match &res.res_type {
+            ResidueType::Other(n) => n.clone(),
+            ResidueType::Water => "Water".to_string(),
+            ResidueType::AminoAcid(aa) => aa.to_string(),
+        };
+
+        let atoms_this = if use_sns {
+            unimplemented!()
+        } else {
+            res.atoms.iter().map(|i| atoms[*i].clone()).collect()
+        };
+        Self::new(
+            name,
+            atoms_this,
+            // No chains, residues, or pubchem/drugbank identifiers.
+            Vec::new(),
+            Vec::new(),
+            None,
+            None,
+            None,
+        )
     }
 }

@@ -926,7 +926,7 @@ pub fn build_dynamics_docking(
     lig: &mut Ligand,
     setup: &DockingSetup,
     ff_params: &FfParamSet,
-    n_steps: usize,
+    n_steps: u32,
     dt: f64,
 ) -> Result<MdState, ParamError> {
     println!("Building docking dyanmics...");
@@ -961,7 +961,7 @@ pub fn build_dynamics_peptide(
     dev: &ComputationDevice,
     mol: &mut Molecule,
     ff_params: &FfParamSet,
-    n_steps: usize,
+    n_steps: u32,
     dt: f64,
 ) -> Result<MdState, ParamError> {
     println!("Building peptide dynamics...");

@@ -99,7 +99,7 @@ pub fn load_file(
     Ok(())
 }
 
-fn _int_field(val: &mut usize, label: &str, redraw: &mut bool, ui: &mut Ui) {
+pub fn int_field(val: &mut u32, label: &str, redraw: &mut bool, ui: &mut Ui) {
     ui.label(label);
     ui.label(label);
     let mut val_str = val.to_string();
@@ -110,7 +110,7 @@ fn _int_field(val: &mut usize, label: &str, redraw: &mut bool, ui: &mut Ui) {
         )
         .changed()
     {
-        if let Ok(v) = val_str.parse::<usize>() {
+        if let Ok(v) = val_str.parse::<u32>() {
             *val = v;
             *redraw = true;
         }
@@ -792,8 +792,6 @@ fn docking(
         if run_clicked {
             let lig = state.ligand.as_mut().unwrap();
 
-            // let n_steps = 50_000;
-            let n_steps = 10_000;
             let dt = 0.001;
 
             match build_dynamics_docking(
@@ -801,7 +799,7 @@ fn docking(
                 lig,
                 state.volatile.docking_setup.as_ref().unwrap(),
                 &state.ff_params,
-                n_steps,
+                state.ui.num_md_steps,
                 dt,
             ) {
                 Ok(md) => {
@@ -1793,10 +1791,15 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             if run_clicked {
                 let mol = state.molecule.as_mut().unwrap();
 
-                let n_steps = 100;
                 let dt = 0.00001;
 
-                match build_dynamics_peptide(&state.dev, mol, &state.ff_params, n_steps, dt) {
+                match build_dynamics_peptide(
+                    &state.dev,
+                    mol,
+                    &state.ff_params,
+                    state.ui.num_md_steps,
+                    dt,
+                ) {
                     Ok(md) => {
                         state.mol_dynamics = Some(md);
                         state.ui.current_snapshot = 0;
@@ -1804,6 +1807,9 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     Err(e) => handle_err(&mut state.ui, e.descrip),
                 }
             }
+
+            ui.add_space(COL_SPACING);
+            int_field(&mut state.ui.num_md_steps, "Steps:", &mut false, ui);
 
             ui.add_space(COL_SPACING);
 

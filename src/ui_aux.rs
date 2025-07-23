@@ -17,7 +17,7 @@ use crate::{
         draw_ligand, draw_molecule,
     },
     molecule::{Atom, Ligand, Molecule, PeptideAtomPosits, Residue, aa_color},
-    ui::{COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_INACTIVE, ROW_SPACING},
+    ui::{COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_INACTIVE, ROW_SPACING, int_field},
     util::make_egui_color,
 };
 
@@ -36,27 +36,26 @@ fn disp_atom_data(atom: &Atom, residues: &[Residue], ui: &mut Ui) {
     let text_0 = format!("#{}", atom.serial_number);
     let text_b = atom.element.to_letter();
 
-    let mut text_c = String::new();
-    // Placeholder for water etc.
-    let mut res_color = COLOR_AA_NON_RESIDUE_EGUI;
-
-    if let Some(res_i) = atom.residue {
-        let res = &residues[res_i];
-        text_c += &format!("  {res}");
-
-        if let ResidueType::AminoAcid(aa) = res.res_type {
-            res_color = make_egui_color(aa_color(aa));
-        }
-    }
-
     ui.label(RichText::new(text_0).color(Color32::WHITE));
 
     ui.label(RichText::new(posit_txt).color(Color32::GOLD));
 
     let atom_color = make_egui_color(atom.element.color());
-
     ui.label(RichText::new(text_b).color(atom_color));
-    ui.label(RichText::new(text_c).color(res_color));
+
+    if let Some(res_i) = atom.residue {
+        // Placeholder for water etc.
+        let mut res_color = COLOR_AA_NON_RESIDUE_EGUI;
+        let res = &residues[res_i];
+        let res_txt = &format!("  {res}");
+
+        if let ResidueType::AminoAcid(aa) = res.res_type {
+            res_color = make_egui_color(aa_color(aa));
+        }
+
+        ui.label(RichText::new(res_txt).color(res_color));
+    }
+
     ui.label(RichText::new(role).color(Color32::LIGHT_GRAY));
 
     if let Some(tir) = &atom.type_in_res {

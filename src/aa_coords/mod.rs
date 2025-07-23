@@ -10,7 +10,6 @@ use na_seq::{
 };
 
 use crate::{
-    ProtFfMap,
     aa_coords::{
         bond_vecs::{
             LEN_C_H, LEN_CALPHA_H, LEN_N_H, LEN_O_H, PLANAR3_A, PLANAR3_B, PLANAR3_C, TETRA_A,
@@ -199,14 +198,13 @@ fn get_prev_bonds(
     Ok((this_to_next, next_to_2after))
 }
 
-/// Add hydrogens for side chains; this is more general than the initial logic that takes
+/// Add hydrogens for side chains or hetero atoms; this is more general than the initial logic that takes
 /// care of backbone hydrogens. It doesn't have to be used exclusively for sidechains.
-fn add_h_sidechain(
+fn add_h_sc_het(
     hydrogens: &mut Vec<Atom>,
     atoms: &[&Atom],
     h_default: &Atom,
     residues: &[Residue],
-    ff_map: &ProtFfMap,
     digit_map: &DigitMap,
 ) -> Result<(), ParamError> {
     let h_default_sc = Atom {
@@ -223,14 +221,9 @@ fn add_h_sidechain(
             continue;
         }
 
-        // todo: Don't unwrap! Map to an error.
         let aa = match &residues[*atom.residue.as_ref().unwrap()].res_type {
-            ResidueType::AminoAcid(aa) => aa,
-            _ => {
-                return Err(ParamError::new(&format!(
-                    "Attempting to add H to non-AA residue: {atom}"
-                )));
-            }
+            ResidueType::AminoAcid(aa) => Some(*aa),
+            _ => None,
         };
 
         let atoms_bonded = find_bonded_atoms(atom, atoms, i);
@@ -270,22 +263,31 @@ fn add_h_sidechain(
                         let rotator = rotator_b * rotator_a;
 
                         for (i, tetra_bond) in [TETRA_B, TETRA_C, TETRA_D].into_iter().enumerate() {
-                            let at = h_type_in_res_sidechain(i, parent_tir, *aa, digit_map)?;
+                            let at = h_type_in_res_sidechain(i, parent_tir, aa, digit_map)?;
                             hydrogens.push(Atom {
                                 posit: atom.posit + rotator.rotate_vec(tetra_bond) * LEN_C_H,
                                 type_in_res: Some(at),
+                                hetero: aa.is_none(),
                                 ..h_default_sc.clone()
                             });
                         }
                     },
                     2 => {
                         let mut planar = false;
-                        if atoms_bonded[0].1.element == Nitrogen
-                            && atoms_bonded[1].1.element == Nitrogen ||
+                        let mut exemption = false;
+                        if let Some(a) = aa {
                             // Ring overrides, changing from 2 H in tetra to 1 in planar config.
                             // todo: In the case of His, thsi might depend on the protonation state.
-                            (*aa == AminoAcid::Trp && *parent_tir == AtomTypeInRes::CD1)||
-                            (*aa == AminoAcid::His && *parent_tir == AtomTypeInRes::CD2)
+                            if (a == AminoAcid::Trp && *parent_tir == AtomTypeInRes::CD1)
+                                || (a == AminoAcid::His && *parent_tir == AtomTypeInRes::CD2)
+                            {
+                                exemption = true;
+                            }
+                        }
+
+                        if atoms_bonded[0].1.element == Nitrogen
+                            && atoms_bonded[1].1.element == Nitrogen
+                            || exemption
                         {
                             planar = true;
                         } else {
@@ -310,11 +312,12 @@ fn add_h_sidechain(
                             let bond_0 = atom.posit - atoms_bonded[0].1.posit;
                             let bond_1 = atoms_bonded[1].1.posit - atom.posit;
 
-                            let at = h_type_in_res_sidechain(0, parent_tir, *aa, digit_map)?;
+                            let at = h_type_in_res_sidechain(0, parent_tir, aa, digit_map)?;
                             // Add a single H in planar config.
                             hydrogens.push(Atom {
                                 posit: planar_posit(atom.posit, bond_0, bond_1, LEN_C_H),
                                 type_in_res: Some(at),
+                                hetero: aa.is_none(),
                                 ..h_default_sc.clone()
                             });
 
@@ -330,22 +333,16 @@ fn add_h_sidechain(
                         );
 
                         for (i, posit) in [h_0, h_1].into_iter().enumerate() {
-                            let at = h_type_in_res_sidechain(i, parent_tir, *aa, digit_map)?;
+                            let at = h_type_in_res_sidechain(i, parent_tir, aa, digit_map)?;
                             hydrogens.push(Atom {
                                 posit,
                                 type_in_res: Some(at),
+                                hetero: aa.is_none(),
                                 ..h_default_sc.clone()
                             });
                         }
                     }
                     3 => {
-                        if atoms_bonded[0].1.element == Oxygen
-                            || atoms_bonded[1].1.element == Oxygen
-                            || atoms_bonded[2].1.element == Oxygen
-                        {
-                            continue;
-                        }
-
                         // Planar N arrangement.
                         if atoms_bonded[0].1.element == Nitrogen
                             && atoms_bonded[1].1.element == Nitrogen
@@ -355,10 +352,12 @@ fn add_h_sidechain(
                         }
 
                         // Trp planar ring junctions; don't add an H.
-                        if *aa == AminoAcid::Trp
-                            && matches!(parent_tir, AtomTypeInRes::CD2 | AtomTypeInRes::CE2)
-                        {
-                            continue;
+                        if let Some(aa) = aa {
+                            if aa == AminoAcid::Trp
+                                && matches!(parent_tir, AtomTypeInRes::CD2 | AtomTypeInRes::CE2)
+                            {
+                                continue;
+                            }
                         }
 
                         // Planar C arrangement.
@@ -373,7 +372,7 @@ fn add_h_sidechain(
 
                         // Add 1 H.
                         // todo: If planar geometry, don't add a H!
-                        let at = h_type_in_res_sidechain(0, parent_tir, *aa, digit_map)?;
+                        let at = h_type_in_res_sidechain(0, parent_tir, aa, digit_map)?;
 
                         hydrogens.push(Atom {
                             posit: atom.posit
@@ -385,6 +384,7 @@ fn add_h_sidechain(
                                 ) * LEN_CALPHA_H,
                             // todo: QC the tetrahedral here.
                             type_in_res: Some(at),
+                            hetero: aa.is_none(),
                             ..h_default_sc.clone()
                         });
                     }
@@ -394,8 +394,10 @@ fn add_h_sidechain(
             Nitrogen => {
                 // No H on this His ring N. (There is on NE2 though)
                 // todo: this might depend on the protonation state.
-                if *aa == AminoAcid::His && *parent_tir == AtomTypeInRes::ND1 {
-                    continue;
+                if let Some(aa) = aa {
+                    if aa == AminoAcid::His && *parent_tir == AtomTypeInRes::ND1 {
+                        continue;
+                    }
                 }
                 match atoms_bonded.len() {
                     1 => unsafe {
@@ -421,10 +423,11 @@ fn add_h_sidechain(
                         let rotator = rotator_b * rotator_a;
 
                         for (i, planar_bond) in [PLANAR3_B, PLANAR3_C].into_iter().enumerate() {
-                            let at = h_type_in_res_sidechain(i, parent_tir, *aa, digit_map)?;
+                            let at = h_type_in_res_sidechain(i, parent_tir, aa, digit_map)?;
                             hydrogens.push(Atom {
                                 posit: atom.posit + rotator.rotate_vec(planar_bond) * LEN_N_H,
                                 type_in_res: Some(at),
+                                hetero: aa.is_none(),
                                 ..h_default_sc.clone()
                             });
                         }
@@ -434,10 +437,11 @@ fn add_h_sidechain(
                         let bond_0 = atom.posit - atoms_bonded[0].1.posit;
                         let bond_1 = atoms_bonded[1].1.posit - atom.posit;
 
-                        let at = h_type_in_res_sidechain(0, parent_tir, *aa, digit_map)?;
+                        let at = h_type_in_res_sidechain(0, parent_tir, aa, digit_map)?;
                         hydrogens.push(Atom {
                             posit: planar_posit(atom.posit, bond_0, bond_1, LEN_N_H),
                             type_in_res: Some(at),
+                            hetero: aa.is_none(),
                             ..h_default_sc.clone()
                         });
                     }
@@ -476,10 +480,11 @@ fn add_h_sidechain(
                             Quaternion::from_axis_angle(bond_prev, -dihedral + TAU / 6.);
                         let rotator = rotator_b * rotator_a;
 
-                        let at = h_type_in_res_sidechain(0, parent_tir, *aa, digit_map)?;
+                        let at = h_type_in_res_sidechain(0, parent_tir, aa, digit_map)?;
                         hydrogens.push(Atom {
                             posit: atom.posit + rotator.rotate_vec(TETRA_B) * LEN_O_H,
                             type_in_res: Some(at),
+                            hetero: aa.is_none(),
                             ..h_default_sc.clone()
                         });
                     },
@@ -644,7 +649,6 @@ pub fn aa_data_from_coords(
     prev_cp_ca: Option<(Vec3, Vec3)>,
     next_n: Option<Vec3>,
     residues: &[Residue],
-    ff_map: &ProtFfMap,
     digit_map: &DigitMap,
 ) -> Result<(Dihedral, Vec<Atom>, Option<(Vec3, Vec3)>), ParamError> {
     // todo: With_capacity based on aa?
@@ -676,25 +680,25 @@ pub fn aa_data_from_coords(
     let mut dihedral = Dihedral::default();
     let mut this_cp_ca = None;
 
-    // Find the nearest sidechain atom
-
-    // Add a H to the C alpha atom. Tetrahedral.
-    // let ca_plane_normal = bond_ca_n.cross(bond_cp_ca).to_normalized();
-    // todo: There are two possible settings available for the rotator; one will be taken up by
-    // a sidechain carbon.
-    // let rotator = Quaternion::from_axis_angle(ca_plane_normal, TETRA_ANGLE);
-    // todo: Another step required using sidechain carbon?
-    let mut posits_sc = Vec::new();
-    for atom_sc in atoms {
-        let Some(role) = atom_sc.role else {
-            continue;
-        };
-        if role == AtomRole::Sidechain && atom_sc.element == Carbon {
-            posits_sc.push(atom_sc.posit);
-        }
-    }
-
     if let ResidueType::AminoAcid(aa) = residue_type {
+        // Find the nearest sidechain atom
+
+        // Add a H to the C alpha atom. Tetrahedral.
+        // let ca_plane_normal = bond_ca_n.cross(bond_cp_ca).to_normalized();
+        // todo: There are two possible settings available for the rotator; one will be taken up by
+        // a sidechain carbon.
+        // let rotator = Quaternion::from_axis_angle(ca_plane_normal, TETRA_ANGLE);
+        // todo: Another step required using sidechain carbon?
+        let mut posits_sc = Vec::new();
+        for atom_sc in atoms {
+            let Some(role) = atom_sc.role else {
+                continue;
+            };
+            if role == AtomRole::Sidechain && atom_sc.element == Carbon {
+                posits_sc.push(atom_sc.posit);
+            }
+        }
+
         (dihedral, this_cp_ca) = handle_backbone(
             &mut hydrogens,
             atoms,
@@ -706,14 +710,7 @@ pub fn aa_data_from_coords(
         )?;
     }
 
-    add_h_sidechain(
-        &mut hydrogens,
-        atoms,
-        &h_default,
-        residues,
-        ff_map,
-        digit_map,
-    )?;
+    add_h_sc_het(&mut hydrogens, atoms, &h_default, residues, digit_map)?;
 
     Ok((dihedral, hydrogens, this_cp_ca))
 }
