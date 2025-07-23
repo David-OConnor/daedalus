@@ -9,7 +9,7 @@ use crate::{
     Selection, State, ViewSelLevel,
     dynamics::{
         MdMode,
-        prep::{change_snapshot_docking, change_snapshot_peptide},
+        prep::{build_dynamics_peptide, change_snapshot_docking, change_snapshot_peptide},
     },
     mol_drawing,
     mol_drawing::{
@@ -17,9 +17,11 @@ use crate::{
         draw_ligand, draw_molecule,
     },
     molecule::{Atom, Ligand, Molecule, PeptideAtomPosits, Residue, aa_color},
-    ui::{COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_INACTIVE, ROW_SPACING, int_field},
-    util::make_egui_color,
+    ui::{COL_SPACING, COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_INACTIVE, ROW_SPACING, int_field},
+    util::{handle_err, make_egui_color},
 };
+use crate::ui::COLOR_HIGHLIGHT;
+use crate::util::move_lig_to_res;
 
 fn disp_atom_data(atom: &Atom, residues: &[Residue], ui: &mut Ui) {
     let role = match atom.role {
@@ -172,7 +174,6 @@ pub fn dynamics_player(
     };
 
     if !md.snapshots.is_empty() {
-        // if !state.volatile.snapshots.is_empty() {
         ui.add_space(ROW_SPACING);
 
         let snapshot_prev = state.ui.current_snapshot;
@@ -213,4 +214,76 @@ pub fn dynamics_player(
             engine_updates.entities = true;
         }
     }
+
+    ui.add_space(COL_SPACING);
+}
+
+pub fn md_setup(
+    state: &mut State,
+    scene: &mut Scene,
+    engine_updates: &mut EngineUpdates,
+    redraw_lig: &mut bool,
+    ui: &mut Ui,
+) {
+    // todo: Move A/R
+    // Workaround for double-borrow.
+    let mut run_clicked = false;
+
+    run_clicked = ui.button("Run MD on peptide").clicked();
+    if run_clicked {
+        // If not already loaded from static string to state, do so now.
+        // We load on demand to save computation.
+        // state.load_ffs_general();
+    }
+    if run_clicked {
+        let mol = state.molecule.as_mut().unwrap();
+
+        let dt = 0.00001;
+
+        match build_dynamics_peptide(&state.dev, mol, &state.ff_params, state.ui.num_md_steps, dt) {
+            Ok(md) => {
+                state.mol_dynamics = Some(md);
+                state.ui.current_snapshot = 0;
+            }
+            Err(e) => handle_err(&mut state.ui, e.descrip),
+        }
+    }
+
+    ui.add_space(COL_SPACING);
+    int_field(&mut state.ui.num_md_steps, "Steps:", &mut false, ui);
+
+    ui.add_space(COL_SPACING);
+
+    match state.ui.selection {
+        Selection::Residue(sel_i) => {
+            if let Some(mol) = &state.molecule {
+                let res = &mol.residues[sel_i];
+
+                if ui
+                    .button(RichText::new(format!("Make lig from {}", res.res_type)).color(COLOR_HIGHLIGHT))
+                    .clicked()
+                {
+                    let mol_fm_res = Molecule::from_res(res, &mol.atoms, false);
+                    let mut lig = Ligand::new(mol_fm_res);
+                    let docking_center = move_lig_to_res(&mut lig, mol, res);
+
+                    state.ligand = Some(lig);
+                    *redraw_lig = true;
+
+                    // todo: Update this.
+                    // docking_posit_update = Some(docking_center);
+                    // docking_init_changed = true;
+
+                    // Make it clear that we've added the ligand by showing it, and hiding hetero.
+                    state.ui.visibility.hide_ligand = false;
+                    state.ui.visibility.hide_hetero = true;
+                }
+            }
+        }
+        _ => (),
+    }
+
+    ui.add_space(COL_SPACING);
+
+    dynamics_player(state, scene, engine_updates, ui);
 }

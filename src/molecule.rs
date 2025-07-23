@@ -1197,19 +1197,14 @@ impl Molecule {
     ///
     /// We assume the residue is already populate with hydrogens.
     pub fn from_res(res: &Residue, atoms: &[Atom], use_sns: bool) -> Self {
-        let name: String = match &res.res_type {
-            ResidueType::Other(n) => n.clone(),
-            ResidueType::Water => "Water".to_string(),
-            ResidueType::AminoAcid(aa) => aa.to_string(),
-        };
-
         let atoms_this = if use_sns {
             unimplemented!()
         } else {
             res.atoms.iter().map(|i| atoms[*i].clone()).collect()
         };
+
         Self::new(
-            name,
+            res.res_type.to_string(),
             atoms_this,
             // No chains, residues, or pubchem/drugbank identifiers.
             Vec::new(),

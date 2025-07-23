@@ -36,7 +36,7 @@ use crate::{
         set_static_light,
     },
     ui_aux,
-    ui_aux::dynamics_player,
+    ui_aux::{dynamics_player, md_setup},
     util,
     util::{
         cam_look_at, cam_look_at_outside, check_prefs_save, close_lig, close_mol, cycle_selected,
@@ -63,7 +63,7 @@ const NEARBY_THRESH_MAX: u16 = 60;
 
 pub const COLOR_INACTIVE: Color32 = Color32::GRAY;
 pub const COLOR_ACTIVE: Color32 = Color32::LIGHT_GREEN;
-const COLOR_HIGHLIGHT: Color32 = Color32::LIGHT_BLUE;
+pub const COLOR_HIGHLIGHT: Color32 = Color32::LIGHT_BLUE;
 pub const COLOR_ACTIVE_RADIO: Color32 = Color32::LIGHT_BLUE;
 const COLOR_OUT_ERROR: Color32 = Color32::LIGHT_RED;
 const COLOR_OUT_NORMAL: Color32 = Color32::WHITE;
@@ -101,8 +101,8 @@ pub fn load_file(
 
 pub fn int_field(val: &mut u32, label: &str, redraw: &mut bool, ui: &mut Ui) {
     ui.label(label);
-    ui.label(label);
     let mut val_str = val.to_string();
+
     if ui
         .add_sized(
             [60., Ui::available_height(ui)],
@@ -818,61 +818,59 @@ fn residue_search(state: &mut State, scene: &mut Scene, redraw: &mut bool, ui: &
         ViewSelLevel::Residue => ("Prev AA", "Next AA", "Find res:"),
     };
 
-    ui.horizontal(|ui| {
-        ui.label(search_text);
+    ui.label(search_text);
+    if ui
+        .add(TextEdit::singleline(&mut state.ui.atom_res_search).desired_width(60.))
+        .changed()
+    {
+        select_from_search(state);
+        *redraw = true;
+    }
+
+    if state.molecule.is_some() {
         if ui
-            .add(TextEdit::singleline(&mut state.ui.atom_res_search).desired_width(60.))
-            .changed()
+            .button(btn_text_p)
+            .on_hover_text("Hotkey: Left arrow")
+            .clicked()
         {
-            select_from_search(state);
+            cycle_selected(state, scene, true);
+            *redraw = true;
+        }
+        // todo: DRY
+
+        if ui
+            .button(btn_text_n)
+            .on_hover_text("Hotkey: Right arrow")
+            .clicked()
+        {
+            cycle_selected(state, scene, false);
             *redraw = true;
         }
 
-        if state.molecule.is_some() {
-            if ui
-                .button(btn_text_p)
-                .on_hover_text("Hotkey: Left arrow")
-                .clicked()
-            {
-                cycle_selected(state, scene, true);
-                *redraw = true;
-            }
-            // todo: DRY
+        ui.add_space(COL_SPACING * 2.);
 
-            if ui
-                .button(btn_text_n)
-                .on_hover_text("Hotkey: Right arrow")
-                .clicked()
-            {
-                cycle_selected(state, scene, false);
-                *redraw = true;
-            }
+        let dock_tools_text = if state.ui.show_docking_tools {
+            "Hide docking tools"
+        } else {
+            "Show docking tools (Broken/WIP)"
+        };
 
-            ui.add_space(COL_SPACING * 2.);
-
-            let dock_tools_text = if state.ui.show_docking_tools {
-                "Hide docking tools"
-            } else {
-                "Show docking tools (Broken/WIP)"
-            };
-
-            if ui.button(RichText::new(dock_tools_text)).clicked() {
-                state.ui.show_docking_tools = !state.ui.show_docking_tools;
-            }
-
-            ui.add_space(COL_SPACING / 2.);
-
-            let dock_seq_text = if state.ui.show_aa_seq {
-                "Hide seq"
-            } else {
-                "Show seq"
-            };
-
-            if ui.button(RichText::new(dock_seq_text)).clicked() {
-                state.ui.show_aa_seq = !state.ui.show_aa_seq;
-            }
+        if ui.button(RichText::new(dock_tools_text)).clicked() {
+            state.ui.show_docking_tools = !state.ui.show_docking_tools;
         }
-    });
+
+        ui.add_space(COL_SPACING / 2.);
+
+        let dock_seq_text = if state.ui.show_aa_seq {
+            "Hide seq"
+        } else {
+            "Show seq"
+        };
+
+        if ui.button(RichText::new(dock_seq_text)).clicked() {
+            state.ui.show_aa_seq = !state.ui.show_aa_seq;
+        }
+    }
 }
 
 fn add_aa_seq(seq_text: &str, ui: &mut Ui) {
@@ -1775,48 +1773,11 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         ui.add_space(ROW_SPACING);
 
-        residue_search(state, scene, &mut redraw_mol, ui);
-
-        // todo: Move A/R
         ui.horizontal(|ui| {
-            // Workaround for double-borrow.
-            let mut run_clicked = false;
-
-            run_clicked = ui.button("Run MD on peptide").clicked();
-            if run_clicked {
-                // If not already loaded from static string to state, do so now.
-                // We load on demand to save computation.
-                // state.load_ffs_general();
-            }
-            if run_clicked {
-                let mol = state.molecule.as_mut().unwrap();
-
-                let dt = 0.00001;
-
-                match build_dynamics_peptide(
-                    &state.dev,
-                    mol,
-                    &state.ff_params,
-                    state.ui.num_md_steps,
-                    dt,
-                ) {
-                    Ok(md) => {
-                        state.mol_dynamics = Some(md);
-                        state.ui.current_snapshot = 0;
-                    }
-                    Err(e) => handle_err(&mut state.ui, e.descrip),
-                }
-            }
-
+            residue_search(state, scene, &mut redraw_mol, ui);
             ui.add_space(COL_SPACING);
-            int_field(&mut state.ui.num_md_steps, "Steps:", &mut false, ui);
-
-            ui.add_space(COL_SPACING);
-
-            dynamics_player(state, scene, &mut engine_updates, ui);
+            md_setup(state, scene, &mut engine_updates, &mut redraw_lig, ui);
         });
-
-        // end btn for docking
 
         if state.ui.show_docking_tools {
             ui.add_space(ROW_SPACING);
@@ -1921,7 +1882,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         }
 
         if redraw_lig {
-            draw_ligand(state, scene); // todo: Hmm.
+            draw_ligand(state, scene);
 
             engine_updates.entities = true;
 
