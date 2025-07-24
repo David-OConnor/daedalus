@@ -616,7 +616,8 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene) {
             &[],
             0,
             &state.ui.selection,
-            state.ui.view_sel_level,
+            // state.ui.view_sel_level,
+            ViewSelLevel::Atom, // Always color ligands by atom.
             false,
             false,
             false,
@@ -628,7 +629,8 @@ pub fn draw_ligand(state: &mut State, scene: &mut Scene) {
             &[],
             0,
             &state.ui.selection,
-            state.ui.view_sel_level,
+            // state.ui.view_sel_level,
+            ViewSelLevel::Atom, // Always color ligands by atom.
             false,
             false,
             false,

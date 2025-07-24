@@ -29,12 +29,11 @@ use std::{
 use bio_files::{
     ResidueType,
     amber_params::{
-        AngleBendingParams, BondStretchingParams, ChargeParams, ForceFieldParamsKeyed, MassParams,
+        AngleBendingParams, BondStretchingParams, ForceFieldParamsKeyed, MassParams,
         VdwParams,
     },
 };
 use cudarc::driver::HostSlice;
-use graphics::Entity;
 use itertools::Itertools;
 use lin_alg::f64::Vec3;
 use na_seq::{AminoAcid, AminoAcidGeneral, AminoAcidProtenationVariant, AtomTypeInRes, Element};

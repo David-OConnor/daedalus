@@ -3,6 +3,7 @@
 use bio_files::ResidueType;
 use egui::{Color32, ComboBox, RichText, Slider, Ui};
 use graphics::{EngineUpdates, Scene};
+use lin_alg::f64::Vec3;
 use na_seq::AaIdent;
 
 use crate::{
@@ -20,6 +21,7 @@ use crate::{
     ui::{COL_SPACING, COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_INACTIVE, ROW_SPACING, int_field},
     util::{handle_err, make_egui_color},
 };
+use crate::render::set_docking_light;
 use crate::ui::COLOR_HIGHLIGHT;
 use crate::util::move_lig_to_res;
 
@@ -254,36 +256,47 @@ pub fn md_setup(
 
     ui.add_space(COL_SPACING);
 
-    match state.ui.selection {
-        Selection::Residue(sel_i) => {
-            if let Some(mol) = &state.molecule {
-                let res = &mol.residues[sel_i];
-
-                if ui
-                    .button(RichText::new(format!("Make lig from {}", res.res_type)).color(COLOR_HIGHLIGHT))
-                    .clicked()
-                {
-                    let mol_fm_res = Molecule::from_res(res, &mol.atoms, false);
-                    let mut lig = Ligand::new(mol_fm_res);
-                    let docking_center = move_lig_to_res(&mut lig, mol, res);
-
-                    state.ligand = Some(lig);
-                    *redraw_lig = true;
-
-                    // todo: Update this.
-                    // docking_posit_update = Some(docking_center);
-                    // docking_init_changed = true;
-
-                    // Make it clear that we've added the ligand by showing it, and hiding hetero.
-                    state.ui.visibility.hide_ligand = false;
-                    state.ui.visibility.hide_hetero = true;
+    if let Some(mol) = &state.molecule {
+        let res_selected = match state.ui.selection {
+            Selection::Atom(sel_i) => {
+                let atom = &mol.atoms[sel_i];
+                if let Some(res_i) = &atom.residue {
+                    Some(&mol.residues[*res_i])
+                } else {
+                    None
                 }
             }
+            Selection::Residue(sel_i) => Some(&mol.residues[sel_i]),
+            _ => None
+        };
+
+        if let Some(res) = res_selected {
+            if ui
+                .button(RichText::new(format!("Make lig from {}", res.res_type)).color(COLOR_HIGHLIGHT))
+                .clicked()
+            {
+                let mol_fm_res = Molecule::from_res(res, &mol.atoms, false);
+                let mut lig = Ligand::new(mol_fm_res);
+
+                let docking_center = move_lig_to_res(&mut lig, mol, res);
+                state.update_docking_site(docking_center);
+
+                state.update_save_prefs();
+                set_docking_light(scene, Some(&lig.docking_site));
+                engine_updates.lighting = true;
+                *redraw_lig = true;
+
+                state.ligand = Some(lig);
+
+
+                // Make it clear that we've added the ligand by showing it, and hiding hetero.
+                state.ui.visibility.hide_ligand = false;
+                state.ui.visibility.hide_hetero = true;
+            }
         }
-        _ => (),
     }
 
-    ui.add_space(COL_SPACING);
+ui.add_space(COL_SPACING);
 
     dynamics_player(state, scene, engine_updates, ui);
 }

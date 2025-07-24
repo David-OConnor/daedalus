@@ -779,6 +779,7 @@ fn docking(
     if let Some(posit) = docking_posit_update {
         state.update_docking_site(posit);
         state.update_save_prefs();
+
     }
 
     ui.horizontal(|ui| {
@@ -1570,8 +1571,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
             if let Some(lig) = &state.ligand {
                 if ui.button("Save lig").clicked() {
-                    // todo: Allow saving as SDF, PDBQT, or mol2 here
-                    let extension = "sdf";
+                    let extension = "mol2"; // The default; more robust than SDF.
 
                     let filename = {
                         let name = if lig.molecule.ident.is_empty() {

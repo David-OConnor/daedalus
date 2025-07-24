@@ -157,17 +157,17 @@ impl Default for FileDialogs {
             .add_file_filter_extensions(
                 "All",
                 vec![
-                    "pdb", "cif", "sdf", "mol2", "pdbqt", "map", "mtz", "frcmod", "dat",
+                    "cif", "mol2", "sdf", "pdbqt", "map", "mtz", "frcmod", "dat",
                 ],
             )
-            .add_file_filter_extensions("Molecule", vec!["pdb", "cif", "sdf", "mol2", "pdbqt"])
-            .add_file_filter_extensions("Protein", vec!["pdb", "cif"])
-            .add_file_filter_extensions("Small mol", vec!["sdf", "mol2", "pdbqt"])
+            .add_file_filter_extensions("Molecule", vec!["cif", "mol2", "sdf", "pdbqt"])
+            .add_file_filter_extensions("Protein", vec!["cif"])
+            .add_file_filter_extensions("Small mol", vec!["mol2", "sdf", "pdbqt"])
             .add_file_filter_extensions("Density", vec!["map", "mtz", "cif"])
             .add_file_filter_extensions("Mol dynamics", vec!["frcmod", "dat"])
             .add_save_extension("CIF", "cif")
-            .add_save_extension("SDF", "sdf")
             .add_save_extension("Mol2", "mol2")
+            .add_save_extension("SDF", "sdf")
             .add_save_extension("Pdbqt", "pdbqt")
             .add_save_extension("Map", "map");
 
@@ -176,67 +176,9 @@ impl Default for FileDialogs {
         }
         .add_file_filter_extensions("Executables", vec!["", "exe"]);
 
-        //
-        // let cfg_protein = FileDialogConfig {
-        //     ..Default::default()
-        // }
-        // .add_file_filter_extensions("PDB/CIF", vec!["pdb", "cif"]);
-        //
-        // let cfg_small_mol = FileDialogConfig {
-        //     ..Default::default()
-        // }
-        // .add_file_filter_extensions("SDF/MOL2/PDBQT", vec!["sdf", "mol2", "pdbqt"]);
-        //
-        // let cfg_save_small_mol = FileDialogConfig {
-        //     ..Default::default()
-        // }
-        // .add_save_extension("SDF", "sdf")
-        // .add_save_extension("Mol2", "mol2");
-        //
-        // let cfg_crystallography = FileDialogConfig {
-        //     ..Default::default()
-        // }
-        // .add_file_filter_extensions("Map/MTZ", vec!["map", "mtz"]);
-        //
-        // let cfg_save_crystallography = FileDialogConfig {
-        //     ..Default::default()
-        // }
-        // .add_save_extension("Map", "map")
-        // .add_save_extension("MTZ", "mtz");
-
-        //
-        // let cfg_save_pdbqt = FileDialogConfig {
-        //     ..Default::default()
-        // }
-        // .add_save_extension("PDBQT", "pdbqt");
-        //
-        // let cfg_load_mdx = FileDialogConfig {
-        //     ..Default::default()
-        // }
-        // .add_file_filter_extensions("MDX", vec!["mdx"]);
-        //
-        // let load = FileDialog::with_config(cfg_protein.clone()).default_file_filter("PDB/CIF");
-        //
-        // let load_ligand =
-        //     FileDialog::with_config(cfg_small_mol.clone()).default_file_filter("SDF/MOL2/PDBQT");
-        //
-        // let load_crystallography =
-        //     FileDialog::with_config(cfg_crystallography).default_file_filter("Map/MTZ");
-        //
-        // let save = FileDialog::with_config(cfg_protein)
-        //     .add_save_extension("CIF", "cif")
-        //     .default_save_extension("CIF");
-        //
-        // let save_ligand = FileDialog::with_config(cfg_save_small_mol).default_save_extension("SDF");
-        // let save_pdbqt = FileDialog::with_config(cfg_save_pdbqt).default_save_extension("PDBQT");
-        //
-        // // todo: What is this?
-        // let load_mdx = FileDialog::with_config(cfg_load_mdx).default_file_filter("MDX");
-
         let autodock_path = FileDialog::with_config(cfg_vina).default_file_filter("Executables");
 
         let load = FileDialog::with_config(cfg_all.clone()).default_file_filter("All");
-
         let save = FileDialog::with_config(cfg_all).default_save_extension("Protein");
 
         Self {

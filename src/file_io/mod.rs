@@ -23,7 +23,7 @@ pub mod pdbqt;
 
 use bio_files::{
     Mol2,
-    amber_params::{ChargeParams, ForceFieldParams, ForceFieldParamsKeyed, parse_amino_charges},
+    amber_params::{ForceFieldParams, ForceFieldParamsKeyed, parse_amino_charges},
     sdf::Sdf,
 };
 

@@ -826,13 +826,7 @@ fn res_sns_to_indices(sn_tgt: u32, res_set: &[Residue]) -> Option<usize> {
 
 impl fmt::Display for Residue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let name = match &self.res_type {
-            ResidueType::AminoAcid(aa) => aa.to_string(),
-            ResidueType::Water => "Water".to_owned(),
-            ResidueType::Other(name) => name.clone(),
-        };
-
-        write!(f, "#{}: {}", self.serial_number, name)?;
+        write!(f, "#{}: {}", self.serial_number, self.res_type)?;
 
         if let Some(dihedral) = &self.dihedral {
             write!(f, "   {}", dihedral)?;
@@ -983,9 +977,6 @@ pub const fn aa_color(aa: AminoAcid) -> (f32, f32, f32) {
 }
 
 impl Molecule {
-    // impl TryFrom<MmCif> for Molecule {
-    //     type Error = io::Error;
-
     pub fn from_mmcif(m: MmCif, ff_map: &ProtFfMap) -> Result<Self, io::Error> {
         // fn try_from(m: MmCif) -> Result<Self, Self::Error> {
         let mut atoms: Vec<_> = m.atoms.iter().map(|a| a.into()).collect();
@@ -1196,12 +1187,29 @@ impl Molecule {
     /// `use_sns` = false is faster.
     ///
     /// We assume the residue is already populate with hydrogens.
+    /// todo: How do we get partial charge and ff type? We normally *get* those from Amber-provided
+    /// todo Mol2 files.
     pub fn from_res(res: &Residue, atoms: &[Atom], use_sns: bool) -> Self {
-        let atoms_this = if use_sns {
+        let atoms_this: Vec<_> = if use_sns {
             unimplemented!()
         } else {
-            res.atoms.iter().map(|i| atoms[*i].clone()).collect()
+            res.atoms.iter().enumerate().map(|(i, atom_i)| Atom {
+                serial_number: i as u32 + 1,
+                // residue: Some(0), // The one and only residue: The one we create this from.
+                residue: None,
+                chain:  None,
+                ..atoms[*atom_i].clone()
+            }).collect()
         };
+
+        // This allows saving as Mol2, for example, with residue types, without breaking
+        // bindings
+        let res_new = Residue {
+            atoms: Vec::new(),
+            atom_sns: atoms_this.iter().map(|a| a.serial_number).collect(),
+            ..res.clone()
+        };
+
 
         Self::new(
             res.res_type.to_string(),
@@ -1209,6 +1217,7 @@ impl Molecule {
             // No chains, residues, or pubchem/drugbank identifiers.
             Vec::new(),
             Vec::new(),
+            // vec![res_new],
             None,
             None,
             None,
