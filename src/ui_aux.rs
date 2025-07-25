@@ -18,12 +18,13 @@ use crate::{
         draw_ligand, draw_molecule,
     },
     molecule::{Atom, Ligand, Molecule, PeptideAtomPosits, Residue, aa_color},
-    ui::{COL_SPACING, COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_INACTIVE, ROW_SPACING, int_field},
-    util::{handle_err, make_egui_color},
+    render::set_docking_light,
+    ui::{
+        COL_SPACING, COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_HIGHLIGHT, COLOR_INACTIVE,
+        ROW_SPACING, int_field,
+    },
+    util::{handle_err, make_egui_color, move_lig_to_res},
 };
-use crate::render::set_docking_light;
-use crate::ui::COLOR_HIGHLIGHT;
-use crate::util::move_lig_to_res;
 
 fn disp_atom_data(atom: &Atom, residues: &[Residue], ui: &mut Ui) {
     let role = match atom.role {
@@ -267,12 +268,14 @@ pub fn md_setup(
                 }
             }
             Selection::Residue(sel_i) => Some(&mol.residues[sel_i]),
-            _ => None
+            _ => None,
         };
 
         if let Some(res) = res_selected {
             if ui
-                .button(RichText::new(format!("Make lig from {}", res.res_type)).color(COLOR_HIGHLIGHT))
+                .button(
+                    RichText::new(format!("Make lig from {}", res.res_type)).color(COLOR_HIGHLIGHT),
+                )
                 .clicked()
             {
                 let mol_fm_res = Molecule::from_res(res, &mol.atoms, false);
@@ -288,7 +291,6 @@ pub fn md_setup(
 
                 state.ligand = Some(lig);
 
-
                 // Make it clear that we've added the ligand by showing it, and hiding hetero.
                 state.ui.visibility.hide_ligand = false;
                 state.ui.visibility.hide_hetero = true;
@@ -296,7 +298,7 @@ pub fn md_setup(
         }
     }
 
-ui.add_space(COL_SPACING);
+    ui.add_space(COL_SPACING);
 
     dynamics_player(state, scene, engine_updates, ui);
 }

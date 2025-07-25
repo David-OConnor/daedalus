@@ -481,30 +481,7 @@ impl MdState {
                     continue;
                 }
 
-                let dist = r_sq.sqrt();
-                let dir = diff / dist;
-
-                // Note: Amber params are loaded using R_min instead of σ, but we address
-                // this when parsing them.
-                let σ = 0.5 * (self.atoms[i].lj_sigma + self.atoms[j].lj_sigma);
-                let ε = (self.atoms[i].lj_eps * self.atoms[j].lj_eps).sqrt();
-
-                let mut f_lj = force_lj(dir, dist, σ, ε);
-
-                let mut f_coulomb = force_coulomb(
-                    dir,
-                    dist,
-                    self.atoms[i].partial_charge,
-                    self.atoms[j].partial_charge,
-                    SOFTENING_FACTOR_SQ,
-                );
-
-                if scale14 {
-                    f_lj *= SCALE_LJ_14;
-                    f_coulomb *= SCALE_COUL_14;
-                }
-
-                let f = f_lj + f_coulomb;
+                let f = f_nonbonded(&self.atoms[i], &self.atoms[j], r_sq, diff, scale14);
 
                 let accel_0 = f / self.atoms[i].mass;
                 let accel_1 = f / self.atoms[j].mass;
@@ -701,4 +678,39 @@ pub fn f_angle_bending(
     let f_1 = -(f_0 + f_2);
 
     (f_0, f_1, f_2)
+}
+
+/// Used by water and non-water. Vdw and Coulomb forces.
+/// We split out `r_sq` and `diff` for use while integrating a unit cell, if applicable.
+pub fn f_nonbonded(
+    tgt: &AtomDynamics,
+    src: &AtomDynamics,
+    r_sq: f64,
+    diff: Vec3,
+    scale14: bool,
+) -> Vec3 {
+    let dist = r_sq.sqrt();
+    let dir = diff / dist;
+
+    // Note: Amber params are loaded using R_min instead of σ, but we address
+    // this when parsing them.
+    let σ = 0.5 * (tgt.lj_sigma + src.lj_sigma);
+    let ε = (tgt.lj_eps * src.lj_eps).sqrt();
+
+    let mut f_lj = force_lj(dir, dist, σ, ε);
+
+    let mut f_coulomb = force_coulomb(
+        dir,
+        dist,
+        tgt.partial_charge,
+        src.partial_charge,
+        SOFTENING_FACTOR_SQ,
+    );
+
+    if scale14 {
+        f_lj *= SCALE_LJ_14;
+        f_coulomb *= SCALE_COUL_14;
+    }
+
+    f_lj + f_coulomb
 }

@@ -29,8 +29,7 @@ use std::{
 use bio_files::{
     ResidueType,
     amber_params::{
-        AngleBendingParams, BondStretchingParams, ForceFieldParamsKeyed, MassParams,
-        VdwParams,
+        AngleBendingParams, BondStretchingParams, ForceFieldParamsKeyed, MassParams, VdwParams,
     },
 };
 use cudarc::driver::HostSlice;
@@ -131,15 +130,42 @@ impl ForceFieldParamsIndexed {
                 result.mass.insert(i, mass.clone());
             } else {
                 if ff_type.starts_with("C") {
-                    result.mass.insert(i, params.mass.get("C").unwrap().clone());
-                    println!("Using C fallback mass for {ff_type}");
+                    match params.mass.get("C") {
+                        Some(m) => {
+                            result.mass.insert(i, m.clone());
+                            println!("Using C fallback mass for {ff_type}");
+                        }
+                        None => {
+                            return Err(ParamError::new(&format!(
+                                "Missing mass params for {ff_type}"
+                            )));
+                        }
+                    }
                 } else if ff_type.starts_with("N") {
                     println!("TS. {atom}");
-                    result.mass.insert(i, params.mass.get("N").unwrap().clone());
-                    println!("Using N fallback mass for {ff_type}");
+                    match params.mass.get("N") {
+                        Some(m) => {
+                            result.mass.insert(i, m.clone());
+                            println!("Using N fallback mass for {ff_type}");
+                        }
+                        None => {
+                            return Err(ParamError::new(&format!(
+                                "Missing mass params for {ff_type}"
+                            )));
+                        }
+                    }
                 } else if ff_type.starts_with("O") {
-                    result.mass.insert(i, params.mass.get("O").unwrap().clone());
-                    println!("Using O fallback mass for {ff_type}");
+                    match params.mass.get("O") {
+                        Some(m) => {
+                            result.mass.insert(i, m.clone());
+                            println!("Using O fallback mass for {ff_type}");
+                        }
+                        None => {
+                            return Err(ParamError::new(&format!(
+                                "Missing mass params for {ff_type}"
+                            )));
+                        }
+                    }
                 } else {
                     result.mass.insert(
                         i,

@@ -5,7 +5,6 @@
 
 #![allow(clippy::too_many_arguments)]
 #![allow(clippy::needless_range_loop)]
-
 // Note: To test if it compiles on ARM:
 // `rustup target add aarch64-pc-windows-msvc`
 // `cargo check --target aarch64-pc-windows-msvc`
@@ -17,6 +16,9 @@
 // - CLI interface or scripting, like PyMol
 // - mol2 support
 // - Better color scheme for residues?
+
+//! [S3 Gemmi link](https://daedalus-mols.s3.us-east-1.amazonaws.com/gemmi.exe)
+//! [S3 Geostd link](https://daedalus-mols.s3.us-east-1.amazonaws.com/amber_geostd)
 
 mod aa_coords;
 mod add_hydrogens;
@@ -156,9 +158,7 @@ impl Default for FileDialogs {
         let cfg_all = FileDialogConfig::default()
             .add_file_filter_extensions(
                 "All",
-                vec![
-                    "cif", "mol2", "sdf", "pdbqt", "map", "mtz", "frcmod", "dat",
-                ],
+                vec!["cif", "mol2", "sdf", "pdbqt", "map", "mtz", "frcmod", "dat"],
             )
             .add_file_filter_extensions("Molecule", vec!["cif", "mol2", "sdf", "pdbqt"])
             .add_file_filter_extensions("Protein", vec!["cif"])

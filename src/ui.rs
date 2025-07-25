@@ -779,7 +779,6 @@ fn docking(
     if let Some(posit) = docking_posit_update {
         state.update_docking_site(posit);
         state.update_save_prefs();
-
     }
 
     ui.horizontal(|ui| {

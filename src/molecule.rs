@@ -1193,13 +1193,17 @@ impl Molecule {
         let atoms_this: Vec<_> = if use_sns {
             unimplemented!()
         } else {
-            res.atoms.iter().enumerate().map(|(i, atom_i)| Atom {
-                serial_number: i as u32 + 1,
-                // residue: Some(0), // The one and only residue: The one we create this from.
-                residue: None,
-                chain:  None,
-                ..atoms[*atom_i].clone()
-            }).collect()
+            res.atoms
+                .iter()
+                .enumerate()
+                .map(|(i, atom_i)| Atom {
+                    serial_number: i as u32 + 1,
+                    // residue: Some(0), // The one and only residue: The one we create this from.
+                    residue: None,
+                    chain: None,
+                    ..atoms[*atom_i].clone()
+                })
+                .collect()
         };
 
         // This allows saving as Mol2, for example, with residue types, without breaking
@@ -1209,7 +1213,6 @@ impl Molecule {
             atom_sns: atoms_this.iter().map(|a| a.serial_number).collect(),
             ..res.clone()
         };
-
 
         Self::new(
             res.res_type.to_string(),
