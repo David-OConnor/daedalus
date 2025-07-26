@@ -73,7 +73,7 @@ const SCALE_COUL_14: f64 = 1.0 / 1.2; // 0.833̅
 
 const SOFTENING_FACTOR_SQ: f64 = 1e-6;
 
-const SNAPSHOT_RATIO: usize = 10;
+const SNAPSHOT_RATIO: usize = 1;
 
 const EPS: f64 = 1.0e-8;
 
@@ -123,10 +123,11 @@ pub struct SnapshotDynamics {
     pub time: f64,
     pub atom_posits: Vec<Vec3>,
     pub atom_velocities: Vec<Vec3>,
-    // todo: Hmm
     pub water_o_posits: Vec<Vec3>,
     pub water_h0_posits: Vec<Vec3>,
     pub water_h1_posits: Vec<Vec3>,
+    // For now, I believe velocities are unused, but tracked here for non-water atoms.
+    // We can add water velocities if needed.
 }
 
 #[derive(Clone, Debug)]
@@ -311,7 +312,8 @@ impl MdState {
             &self.atoms_static[..],
             // todo: You must take each water atom into account.
             // &self.water[..],
-        ].concat();
+        ]
+        .concat();
 
         for water in &mut self.water {
             let sources = &sources;

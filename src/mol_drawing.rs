@@ -94,6 +94,7 @@ pub enum EntityType {
     SecondaryStructure = 4,
     SaSurface = 5,
     DockingSite = 6,
+    WaterModel = 7,
     Other = 10,
 }
 
@@ -557,8 +558,49 @@ fn bond_entities(
     }
 }
 
+pub fn draw_water(scene: &mut Scene, o_pos: &[Vec3F64], h0_pos: &[Vec3F64], h1_pos: &[Vec3F64]) {
+    scene
+        .entities
+        .retain(|ent| ent.class != EntityType::WaterModel as u32);
+
+    for i in 0..o_pos.len() {
+        let mut ent = Entity::new(
+            MESH_WATER_SPHERE,
+            o_pos[i].into(),
+            Quaternion::new_identity(),
+            BALL_RADIUS_WATER,
+            Element::Oxygen.color(),
+            ATOM_SHININESS,
+        );
+        ent.class = EntityType::WaterModel as u32;
+        scene.entities.push(ent);
+
+        let mut ent = Entity::new(
+            MESH_WATER_SPHERE,
+            h0_pos[i].into(),
+            Quaternion::new_identity(),
+            BALL_STICK_RADIUS_H,
+            Element::Hydrogen.color(),
+            ATOM_SHININESS,
+        );
+        ent.class = EntityType::WaterModel as u32;
+        scene.entities.push(ent);
+
+        let mut ent = Entity::new(
+            MESH_WATER_SPHERE,
+            h1_pos[i].into(),
+            Quaternion::new_identity(),
+            BALL_STICK_RADIUS_H,
+            Element::Hydrogen.color(),
+            ATOM_SHININESS,
+        );
+        ent.class = EntityType::WaterModel as u32;
+        scene.entities.push(ent);
+    }
+}
+
 // todo: DRY with/subset of draw_molecule?
-pub fn draw_ligand(state: &mut State, scene: &mut Scene) {
+pub fn draw_ligand(state: &State, scene: &mut Scene) {
     // Hard-coded for sticks for now.
 
     scene.entities.retain(|ent| {

@@ -3,19 +3,17 @@
 use bio_files::ResidueType;
 use egui::{Color32, ComboBox, RichText, Slider, Ui};
 use graphics::{EngineUpdates, Scene};
-use lin_alg::f64::Vec3;
-use na_seq::AaIdent;
 
+use crate::mol_drawing::draw_water;
 use crate::{
-    Selection, State, ViewSelLevel,
+    Selection, State,
     dynamics::{
         MdMode,
         prep::{build_dynamics_peptide, change_snapshot_docking, change_snapshot_peptide},
     },
     mol_drawing,
     mol_drawing::{
-        CHARGE_MAP_MAX, CHARGE_MAP_MIN, COLOR_AA_NON_RESIDUE, COLOR_AA_NON_RESIDUE_EGUI,
-        draw_ligand, draw_molecule,
+        CHARGE_MAP_MAX, CHARGE_MAP_MIN, COLOR_AA_NON_RESIDUE_EGUI, draw_ligand, draw_molecule,
     },
     molecule::{Atom, Ligand, Molecule, PeptideAtomPosits, Residue, aa_color},
     render::set_docking_light,
@@ -172,21 +170,25 @@ pub fn dynamics_player(
         engine_updates.entities = true;
     }
 
-    let Some(md) = &state.mol_dynamics else {
-        return;
-    };
+    let snapshot_prev = state.ui.current_snapshot;
 
-    if !md.snapshots.is_empty() {
-        ui.add_space(ROW_SPACING);
+    let mut changed = false;
 
-        let snapshot_prev = state.ui.current_snapshot;
-        ui.spacing_mut().slider_width = ui.available_width() - 100.;
-        ui.add(Slider::new(
-            &mut state.ui.current_snapshot,
-            0..=md.snapshots.len() - 1,
-        ));
+    if let Some(md) = &state.mol_dynamics {
+        if !md.snapshots.is_empty() {
+            ui.add_space(ROW_SPACING);
+
+            ui.spacing_mut().slider_width = ui.available_width() - 100.;
+            ui.add(Slider::new(
+                &mut state.ui.current_snapshot,
+                0..=md.snapshots.len() - 1,
+            ));
+        }
 
         if state.ui.current_snapshot != snapshot_prev {
+            changed = true;
+            let snap = &md.snapshots[state.ui.current_snapshot];
+
             match md.mode {
                 MdMode::Docking => {
                     let lig = state.ligand.as_mut().unwrap();
@@ -195,7 +197,7 @@ pub fn dynamics_player(
                         // &mut scene.entities,
                         lig,
                         // &Vec::new(),
-                        &md.snapshots[state.ui.current_snapshot],
+                        snap,
                         &mut state.ui.binding_energy_disp,
                     );
 
@@ -204,17 +206,27 @@ pub fn dynamics_player(
                 MdMode::Peptide => {
                     let mol = state.molecule.as_mut().unwrap();
 
-                    change_snapshot_peptide(
-                        mol,
-                        &md.atoms,
-                        &md.snapshots[state.ui.current_snapshot],
-                    );
+                    change_snapshot_peptide(mol, &md.atoms, snap);
 
                     draw_molecule(state, scene);
                 }
             }
 
             engine_updates.entities = true;
+        }
+    };
+
+    // This approach avoids a double-borrow.
+    if changed {
+        if let Some(md) = &state.mol_dynamics {
+            let snap = &md.snapshots[state.ui.current_snapshot];
+
+            draw_water(
+                scene,
+                &snap.water_o_posits,
+                &snap.water_h0_posits,
+                &snap.water_h1_posits,
+            );
         }
     }
 

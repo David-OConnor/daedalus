@@ -981,7 +981,7 @@ pub fn build_dynamics_docking(
         &setup.rec_atoms_near_site,
         ff_params,
         100,
-        1., // todo
+        1e-15, // todo
     )?;
 
     for _ in 0..n_steps {
@@ -1010,7 +1010,9 @@ pub fn build_dynamics_peptide(
 
     let posits: Vec<_> = mol.atoms.iter().map(|a| a.posit).collect();
 
-    let mut md_state = MdState::new_peptide(&mol.atoms, &posits, &mol.bonds, ff_params, 100, 1.)?;
+    let mut md_state = MdState::new_peptide(
+        &mol.atoms, &posits, &mol.bonds, ff_params, 100, 1e-10, // todo
+    )?;
 
     for _ in 0..n_steps {
         md_state.step(dt)
