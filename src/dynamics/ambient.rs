@@ -8,14 +8,14 @@ use crate::dynamics::{AtomDynamics, MdState};
 /// Simulation cell (orthorhombic for now)
 #[derive(Clone, Copy, Default)]
 pub struct SimBox {
-    pub lo: Vec3,
-    pub hi: Vec3,
+    pub bounds_low: Vec3,
+    pub bounds_high: Vec3,
 }
 
 impl SimBox {
     #[inline]
     pub fn extent(&self) -> Vec3 {
-        self.hi - self.lo
+        self.bounds_high - self.bounds_low
     }
 
     /// wrap an absolute coordinate back into the box (orthorhombic)
@@ -26,15 +26,15 @@ impl SimBox {
         assert!(
             ext.x > 0.0 && ext.y > 0.0 && ext.z > 0.0,
             "SimBox edges must be > 0 (lo={:?}, hi={:?})",
-            self.lo,
-            self.hi
+            self.bounds_low,
+            self.bounds_high
         );
 
         // rem_euclid keeps the value in [0, ext)
         let wrapped = Vec3::new(
-            (p.x - self.lo.x).rem_euclid(ext.x) + self.lo.x,
-            (p.y - self.lo.y).rem_euclid(ext.y) + self.lo.y,
-            (p.z - self.lo.z).rem_euclid(ext.z) + self.lo.z,
+            (p.x - self.bounds_low.x).rem_euclid(ext.x) + self.bounds_low.x,
+            (p.y - self.bounds_low.y).rem_euclid(ext.y) + self.bounds_low.y,
+            (p.z - self.bounds_low.z).rem_euclid(ext.z) + self.bounds_low.z,
         );
 
         wrapped

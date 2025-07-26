@@ -48,6 +48,7 @@ use na_seq::Element;
 use rand_distr::Distribution;
 
 use crate::{
+    dynamics::water_opc::WaterMol,
     forces::{force_coulomb, force_lj},
     molecule::{Atom, Bond},
 };
@@ -122,6 +123,10 @@ pub struct SnapshotDynamics {
     pub time: f64,
     pub atom_posits: Vec<Vec3>,
     pub atom_velocities: Vec<Vec3>,
+    // todo: Hmm
+    pub water_o_posits: Vec<Vec3>,
+    pub water_h0_posits: Vec<Vec3>,
+    pub water_h1_posits: Vec<Vec3>,
 }
 
 #[derive(Clone, Debug)]
@@ -265,6 +270,7 @@ pub struct MdState {
     excluded_pairs: HashSet<(usize, usize)>, // 1-2 and 1-3
     /// See Amber RM, sectcion 15, "1-4 Non-Bonded Interaction Scaling"
     scaled14_pairs: HashSet<(usize, usize)>, // 1-4
+    water: Vec<WaterMol>,
 }
 
 impl MdState {
@@ -298,6 +304,18 @@ impl MdState {
         // Second half-kick using new accelerations
         for a in &mut self.atoms {
             a.vel += a.accel * dt_half;
+        }
+
+        let sources: Vec<AtomDynamics> = [
+            &self.atoms[..],
+            &self.atoms_static[..],
+            // todo: You must take each water atom into account.
+            // &self.water[..],
+        ].concat();
+
+        for water in &mut self.water {
+            let sources = &sources;
+            water.step(dt, &sources);
         }
 
         // Berendsen thermostat (T coupling to target every step)
@@ -549,10 +567,23 @@ impl MdState {
     }
 
     pub fn take_snapshot(&mut self) {
+        let mut water_o_posits = Vec::with_capacity(self.water.len());
+        let mut water_h0_posits = Vec::with_capacity(self.water.len());
+        let mut water_h1_posits = Vec::with_capacity(self.water.len());
+
+        for water in &self.water {
+            water_o_posits.push(water.o.posit);
+            water_h0_posits.push(water.h0.posit);
+            water_h1_posits.push(water.h1.posit);
+        }
+
         self.snapshots.push(SnapshotDynamics {
             time: self.time,
             atom_posits: self.atoms.iter().map(|a| a.posit).collect(),
             atom_velocities: self.atoms.iter().map(|a| a.vel).collect(),
+            water_o_posits,
+            water_h0_posits,
+            water_h1_posits,
         })
     }
 }

@@ -14,10 +14,13 @@
 //! todo: Look into "SHAKE/RATTLE/SETTLE". I believe OPC is still rigid, and should
 //! todo use this instead of your normal flexible MD setup?
 
-use lin_alg::f64::Vec3;
-use na_seq::Element;
+use std::f64::consts::TAU;
 
-use crate::dynamics::{AtomDynamics, f_nonbonded};
+use lin_alg::f64::{Quaternion, Vec3};
+use na_seq::Element;
+use rand::{Rng, distr::Uniform};
+
+use crate::dynamics::{AtomDynamics, ambient::SimBox, f_nonbonded};
 
 // Parameters for OPC water (JPCL, 2014, 5 (21), pp 3863-3871)
 // (Amber 2025, frcmod.opc) EPC is presumably the massless, 4th charge.
@@ -71,99 +74,6 @@ const Q_EP: f64 = -2. * Q_H;
 const SHAKE_TOL2: f64 = 1e-10; // (Å²) |Δr²| convergence
 const SHAKE_MAX_ITERS: usize = 20;
 
-//
-// /// Uses Amber naming conventions.
-// pub fn make_opc_params() -> ForceFieldParamsKeyed {
-//     let mass = vec![
-//
-//     ];
-//     // todo: Mass may not be required here if you're loading it direclty.
-//
-//     let bond = vec![
-//         BondStretchingParams {
-//             // todo: I think this should be rigid, and not a bond param.
-//             atom_types: ("OW".to_owned(), "EP".to_owned()),
-//             k_b: K_B as f32,
-//             r_0: O_EP_R_0 as f32,
-//             comment: None,
-//         },
-//         BondStretchingParams {
-//             atom_types: ("OW".to_owned(), "HW".to_owned()),
-//             k_b: K_B as f32,
-//             r_0: O_H_THETA_R_0 as f32,
-//             comment: None,
-//         },
-//         // BondStretchingParams {
-//         //     atom_types: ("O".to_owned(), "H1".to_owned()),
-//         //     k_b: K_B as f32,
-//         //     r_0: O_H_THETA_R_0 as f32,
-//         //     comment: None,
-//         // },
-//         // todo: Hmm. This is a bit out of place, as there isn't a covalent bond here.
-//         BondStretchingParams {
-//             atom_types: ("HW".to_owned(), "HW".to_owned()),
-//             k_b: K_B as f32,
-//             r_0: H_H_THETA_R_0 as f32,
-//             comment: None,
-//         },
-//     ];
-//
-//     let angle = vec![
-//         AngleBendingParams {
-//             atom_types: (String::from("HW"), String::from("OW"), String::from("EP")),
-//             k: H_O_EP_K as f32,
-//             theta_0: H_O_EP_θ0 as f32,
-//             comment: None,
-//         },
-//         AngleBendingParams {
-//             atom_types: (String::from("HW"), String::from("OW"), String::from("HW")),
-//             k: H_O_H_K as f32,
-//             theta_0: H_O_H_θ0 as f32,
-//             comment: None,
-//         },
-//         AngleBendingParams {
-//             atom_types: (String::from("HW"), String::from("HW"), String::from("OW")),
-//             k: H_H_O_K as f32,
-//             theta_0: H_H_O_θ0 as f32,
-//             comment: None,
-//         },
-//     ];
-//
-//     let van_der_waals = vec![
-//         VdwParams {
-//             atom_type: String::from("OW"),
-//             sigma: (2.0 * O_RSTAR / SIGMA_FACTOR) as f32,
-//             eps: O_EPS as f32,
-//         },
-//         VdwParams {
-//             atom_type: String::from("HW"),
-//             sigma: (2.0 * H_RSTAR / SIGMA_FACTOR) as f32,
-//             eps: H_EPS as f32,
-//         },
-//         VdwParams {
-//             atom_type: String::from("EP"),
-//             sigma: (2.0 * EP_RSTAR / SIGMA_FACTOR) as f32,
-//             eps: H_EPS as f32,
-//         }
-//     ];
-//
-//     // As elsewhere, we associate charge with the atoms themselves; this isn't part of our param
-//     // structs.
-//
-//     let params = ForceFieldParams {
-//         mass,
-//         bond,
-//         angle,
-//         // No 4-atom chains in these; therefor no dihedrals.
-//         dihedral: Vec::new(),
-//         improper: Vec::new(),
-//         van_der_waals,
-//         remarks: Vec::new(),
-//     };
-//
-//     ForceFieldParamsKeyed::new(&params)
-// }
-
 /// Contains absolute positions of each atom for a single molecule, at a given time step.
 /// todo: Should we store as O position, and orientation quaternion instead?
 /// todo: Should we just use `atom_dynamics` instead?
@@ -178,13 +88,15 @@ pub struct WaterMol {
 }
 
 impl WaterMol {
-    pub fn new() -> Self {
+    pub fn new(posit: Vec3, vel: Vec3, orientation: Quaternion) -> Self {
+        // todo: Take orientation into account
+
         let base = AtomDynamics {
             serial_number: 0,
             force_field_type: String::new(),
             element: Element::Hydrogen,
-            posit: Vec3::new_zero(),
-            vel: Vec3::new_zero(),
+            posit,
+            vel,
             accel: Vec3::new_zero(),
             mass: H_MASS,
             partial_charge: Q_H,
@@ -224,6 +136,8 @@ impl WaterMol {
     /// Update dynamics based on own velocity, internal "forces" (?), and external coulomb (i.e.
     /// partial charge), and Van der Waals (LJ) forces from other molecules.
     /// One Velocity‑Verlet step with SHAKE/RATTLE constraints.
+    ///
+    /// `sources` includes both other water molecules, and non-waters.
     pub fn step(&mut self, dt: f64, sources: &[AtomDynamics]) {
         // External non‑bonded forces. Note that we don't track force
         // on M, as it has no mass.
@@ -297,23 +211,58 @@ impl WaterMol {
         let bis = (self.h0.posit - self.o.posit) + (self.h1.posit - self.o.posit);
         self.m.posit = self.o.posit + bis.to_normalized() * O_EP_R_0;
     }
-
-    // /// Calculate the force from Coulomb and Van der Waals (Lennard Jones) forces on an
-    // /// atom. ("Non-bonded")
-    // pub fn force_on(tgt: &AtomDynamics) -> Vec3 {
-    //     Vec3::new_zero()
-    // }
 }
 
-// pub fn make_water_mols(n_mols: usize, params: &ForceFieldParamsKeyed) -> Vec<WaterMol> {
-pub fn make_water_mols(n_mols: usize) -> Vec<WaterMol> {
+pub fn make_water_mols(n_mols: usize, cell: &SimBox, max_vel: f64) -> Vec<WaterMol> {
     let mut result = Vec::with_capacity(n_mols);
-    for _ in 0..n_mols {
-        result.push(WaterMol::new());
-    }
+    let mut rng = rand::rng();
 
-    // let params_indexed = ForceFieldParamsIndexed::new(params,
-    //                                                   atoms, bonds, adjacency_list);
+    let uni01 = Uniform::<f64>::new(0.0, 1.0).unwrap();
+    let uni11 = Uniform::<f64>::new(-1.0, 1.0).unwrap();
+
+    for _ in 0..n_mols {
+        /* ---------- position (axis‑aligned box) ---------- */
+        let posit = Vec3::new(
+            rng.sample(uni01) * (cell.bounds_high.x - cell.bounds_low.x) + cell.bounds_low.x,
+            rng.sample(uni01) * (cell.bounds_high.y - cell.bounds_low.y) + cell.bounds_low.y,
+            rng.sample(uni01) * (cell.bounds_high.z - cell.bounds_low.z) + cell.bounds_low.z,
+        );
+
+        /* ---------- velocity ---------- */
+        // Direction: Marsaglia (1972) — rejection‑free, truly uniform on S²
+        let (vx, vy, vz) = {
+            let (r1, r2): (f64, f64) = (rng.sample(uni11), rng.sample(uni11));
+            let s = r1 * r1 + r2 * r2;
+            // Guaranteed s ∈ [0,2], so no loop needed.
+            let factor = (1.0 - s / 2.0).sqrt();
+            (
+                2.0 * r1 * factor,
+                2.0 * r2 * factor,
+                1.0 - s, // z
+            )
+        };
+
+        let speed = rng.sample(uni01) * max_vel;
+        let vel = Vec3::new(vx, vy, vz) * speed;
+
+        /* ---------- orientation (uniform SO(3)) ---------- */
+        // Shoemake (1992)
+        let (u1, u2, u3) = (rng.sample(uni01), rng.sample(uni01), rng.sample(uni01));
+        let q = {
+            let sqrt1_minus_u1 = (1.0 - u1).sqrt();
+            let sqrt_u1 = u1.sqrt();
+            let (theta1, theta2) = (TAU * u2, TAU * u3);
+
+            Quaternion::new(
+                sqrt1_minus_u1 * theta1.sin(),
+                sqrt1_minus_u1 * theta1.cos(),
+                sqrt_u1 * theta2.sin(),
+                sqrt_u1 * theta2.cos(),
+            )
+        };
+
+        result.push(WaterMol::new(posit, vel, q));
+    }
 
     result
 }
