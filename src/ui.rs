@@ -44,6 +44,8 @@ use crate::{
         reset_camera, select_from_search,
     },
 };
+use crate::dynamics::prep::{change_snapshot_docking, change_snapshot_peptide};
+use crate::mol_drawing::draw_water;
 
 pub const ROW_SPACING: f32 = 10.;
 pub const COL_SPACING: f32 = 30.;
@@ -805,8 +807,19 @@ fn docking(
                 dt,
             ) {
                 Ok(md) => {
-                    state.mol_dynamics = Some(md);
+                    let snap = &md.snapshots[0];
+                    change_snapshot_docking(lig, snap, &mut None);
+
+                    draw_molecule(state, scene);
+                    draw_water(
+                        scene,
+                        &snap.water_o_posits,
+                        &snap.water_h0_posits,
+                        &snap.water_h1_posits,
+                    );
+
                     state.ui.current_snapshot = 0;
+                    state.mol_dynamics = Some(md);
                 }
                 Err(e) => handle_err(&mut state.ui, e.descrip),
             }

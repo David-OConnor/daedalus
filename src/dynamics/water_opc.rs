@@ -29,6 +29,10 @@ const O_MASS: f64 = 16.;
 const H_MASS: f64 = 1.008;
 const EP_MASS: f64 = 0.; // todo: Rem A/R.
 
+// todo: SHould you just add up the atom masses from Amber?
+const MASS_WATER: f64 = 18.015_28;
+const NA: f64 = 6.022_140_76e23; // todo: What is this? Used in density calc. mol⁻¹
+
 // Bond stretching; Same K_b for all three bonds.
 const K_B: f64 = 553.0; // kcal/mol/Å^2
 
@@ -73,6 +77,9 @@ const Q_EP: f64 = -2. * Q_H;
 
 const SHAKE_TOL2: f64 = 1e-10; // (Å²) |Δr²| convergence
 const SHAKE_MAX_ITERS: usize = 20;
+
+// 0.997 g cm⁻³ is a good default density.
+const WATER_DENSITY: f64 = 0.997;
 
 /// Contains absolute positions of each atom for a single molecule, at a given time step.
 /// todo: Should we store as O position, and orientation quaternion instead?
@@ -227,7 +234,14 @@ impl WaterMol {
     }
 }
 
-pub fn make_water_mols(n_mols: usize, cell: &SimBox, max_vel: f64) -> Vec<WaterMol> {
+// todo: Should we pass density, vice n_mols?
+pub fn make_water_mols(cell: &SimBox, max_vel: f64) -> Vec<WaterMol> {
+// pub fn make_water_mols(n_mols: usize, cell: &SimBox, max_vel: f64) -> Vec<WaterMol> {
+    let vol = cell.volume();
+
+    let n_float = WATER_DENSITY * vol* (NA / (MASS_WATER * 1.0e24));
+    let n_mols  = n_float.round() as usize;  // round to nearest integer
+
     let mut result = Vec::with_capacity(n_mols);
     let mut rng = rand::rng();
 

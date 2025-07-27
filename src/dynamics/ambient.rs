@@ -52,4 +52,9 @@ impl SimBox {
             dv.z - (dv.z / ext.z).round() * ext.z,
         )
     }
+
+    pub fn volume(&self) -> f64 {
+        (self.bounds_high.x - self.bounds_low.x).abs() *
+            (self.bounds_high.y - self.bounds_low.y).abs() * (self.bounds_high.z - self.bounds_low.z).abs()
+    }
 }

@@ -591,7 +591,7 @@ pub fn draw_water(scene: &mut Scene, o_pos: &[Vec3F64], h0_pos: &[Vec3F64], h1_p
             MESH_WATER_SPHERE,
             h1_pos[i].into(),
             Quaternion::new_identity(),
-            BALL_STICK_RADIUS_H,
+            BALL_RADIUS_WATER_H,
             Element::Hydrogen.color(),
             ATOM_SHININESS,
         );

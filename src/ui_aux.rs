@@ -208,7 +208,6 @@ pub fn dynamics_player(
                         let mol = state.molecule.as_mut().unwrap();
 
                         change_snapshot_peptide(mol, &md.atoms, snap);
-
                         draw_molecule(state, scene);
                     }
                 }
@@ -266,6 +265,17 @@ pub fn md_setup(
                 dt,
             ) {
                 Ok(md) => {
+                    let snap = &md.snapshots[0];
+                    change_snapshot_peptide(mol, &md.atoms, snap);
+                    draw_molecule(state, scene);
+
+                    draw_water(
+                        scene,
+                        &snap.water_o_posits,
+                        &snap.water_h0_posits,
+                        &snap.water_h1_posits,
+                    );
+
                     state.mol_dynamics = Some(md);
                     state.ui.current_snapshot = 0;
                 }

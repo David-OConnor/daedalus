@@ -564,7 +564,7 @@ impl MdState {
         bonds: &[Bond],
         atoms_static: &[Atom],
         ff_params: &FfParamSet,
-        num_water: usize,
+        // num_water: usize,
         max_water_speed: f64,
         // todo: Temperature/thermostat.
     ) -> Result<Self, ParamError> {
@@ -659,7 +659,7 @@ impl MdState {
             excluded_pairs: HashSet::new(),
             scaled14_pairs: HashSet::new(),
             force_field_params: ff_params_non_static,
-            water: make_water_mols(num_water, &cell, max_water_speed),
+            water: make_water_mols(&cell, max_water_speed),
             ..Default::default()
         };
 
@@ -676,7 +676,7 @@ impl MdState {
         atom_posits: &[Vec3],
         bonds: &[Bond],
         ff_params: &FfParamSet,
-        num_water: usize,
+        // num_water: usize,
         max_water_speed: f64,
         // todo: Thermostat.
     ) -> Result<Self, ParamError> {
@@ -765,7 +765,8 @@ impl MdState {
             excluded_pairs: HashSet::new(),
             scaled14_pairs: HashSet::new(),
             force_field_params: ff_params_non_static,
-            water: make_water_mols(num_water, &cell, max_water_speed),
+            // water: make_water_mols(num_water, &cell, max_water_speed),
+            water: make_water_mols(&cell, max_water_speed),
             ..Default::default()
         };
 
@@ -980,8 +981,7 @@ pub fn build_dynamics_docking(
         &lig.molecule.bonds,
         &setup.rec_atoms_near_site,
         ff_params,
-        100,
-        3., // todo
+        2., // todo
     )?;
 
     for _ in 0..n_steps {
@@ -1011,7 +1011,7 @@ pub fn build_dynamics_peptide(
     let posits: Vec<_> = mol.atoms.iter().map(|a| a.posit).collect();
 
     let mut md_state = MdState::new_peptide(
-        &mol.atoms, &posits, &mol.bonds, ff_params, 100, 1e-10, // todo
+        &mol.atoms, &posits, &mol.bonds, ff_params,  2.,
     )?;
 
     for _ in 0..n_steps {
