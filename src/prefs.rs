@@ -19,6 +19,9 @@ use crate::{
 
 pub const DEFAULT_PREFS_FILE: &str = "daedalus_prefs.dae";
 
+/// We maintain some of the state that is saved in the preferences file here, to keep
+/// the save/load state streamlined, instead of in an intermediate struct between main state, and
+/// saving/loading.
 #[derive(Debug, Encode, Decode)]
 pub struct ToSave {
     pub per_mol: HashMap<String, PerMolToSave>,
@@ -35,6 +38,7 @@ pub struct ToSave {
     /// Solvent-accessible surface (and dots) precion. Lower is higher precision. A value of 0.5 - 0.6
     /// is a good default. Too low will cause crashes and very poor performance. Higher is too coarse.
     pub sa_surface_precision: f32,
+    pub num_md_steps: u32,
 }
 
 impl Default for ToSave {
@@ -50,6 +54,7 @@ impl Default for ToSave {
             movement_speed: MOVEMENT_SENS as u8,
             rotation_sens: (ROTATE_SENS * 100.) as u8,
             sa_surface_precision: 0.55,
+            num_md_steps: 10_000,
         }
     }
 }

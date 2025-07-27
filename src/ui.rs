@@ -36,7 +36,7 @@ use crate::{
         set_static_light,
     },
     ui_aux,
-    ui_aux::{dynamics_player, md_setup},
+    ui_aux::md_setup,
     util,
     util::{
         cam_look_at, cam_look_at_outside, check_prefs_save, close_lig, close_mol, cycle_selected,
@@ -783,7 +783,9 @@ fn docking(
 
     ui.horizontal(|ui| {
         // Workaround for double-borrow.
-        let mut run_clicked = ui.button("Run MD docking").clicked();
+        let mut run_clicked = ui
+            .button(RichText::new("Run MD docking").color(Color32::GOLD))
+            .clicked();
         if run_clicked {
             // If not already loaded from static string to state, do so now.
             // We load on demand to save computation.
@@ -799,7 +801,7 @@ fn docking(
                 lig,
                 state.volatile.docking_setup.as_ref().unwrap(),
                 &state.ff_params,
-                state.ui.num_md_steps,
+                state.to_save.num_md_steps,
                 dt,
             ) {
                 Ok(md) => {
@@ -1775,8 +1777,9 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         ui.horizontal(|ui| {
             residue_search(state, scene, &mut redraw_mol, ui);
             ui.add_space(COL_SPACING);
-            md_setup(state, scene, &mut engine_updates, &mut redraw_lig, ui);
         });
+
+        md_setup(state, scene, &mut engine_updates, &mut redraw_lig, ui);
 
         if state.ui.show_docking_tools {
             ui.add_space(ROW_SPACING);

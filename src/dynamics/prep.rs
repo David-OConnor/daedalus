@@ -981,7 +981,7 @@ pub fn build_dynamics_docking(
         &setup.rec_atoms_near_site,
         ff_params,
         100,
-        1e-15, // todo
+        3., // todo
     )?;
 
     for _ in 0..n_steps {

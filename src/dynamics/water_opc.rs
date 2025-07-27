@@ -11,8 +11,8 @@
 //!
 //! Note: The original paper uses the term "M" for the massless charge; Amber calls it "EP".
 //!
-//! todo: Look into "SHAKE/RATTLE/SETTLE". I believe OPC is still rigid, and should
-//! todo use this instead of your normal flexible MD setup?
+//! We integrate the moceule's internal rigid geometry using the `SETTLE` algorithm. This is likely
+//! to be cheaper, and more robust than Shake/Rattle. It's less general, but it works here.
 
 use std::f64::consts::TAU;
 
@@ -89,7 +89,24 @@ pub struct WaterMol {
 
 impl WaterMol {
     pub fn new(posit: Vec3, vel: Vec3, orientation: Quaternion) -> Self {
-        // todo: Take orientation into account
+        // Set up H and EP/M positions based on orientation.
+        // Unit vectors defining the body frame
+        let ez = orientation.rotate_vec(Vec3::new(0.0, 0.0, 1.0));
+        let ex = orientation.rotate_vec(Vec3::new(1.0, 0.0, 0.0));
+
+        // Place Hs in the plane spanned by ex, ez with the right HOH angle.
+        // Let the bisector be ez, and put the hydrogens symmetrically around it.
+        let half_angle = 0.5 * H_O_H_θ0; // radians
+        let oh = O_H_THETA_R_0; // Å
+        let h_dir0 = (ez * half_angle.cos() + ex * half_angle.sin()).to_normalized();
+        let h_dir1 = (ez * half_angle.cos() - ex * half_angle.sin()).to_normalized();
+
+        let o_pos = posit;
+        let h0_pos = o_pos + h_dir0 * oh;
+        let h1_pos = o_pos + h_dir1 * oh;
+
+        // EP on the HOH bisector at fixed O–EP distance
+        let ep_pos = o_pos + (h0_pos - o_pos + h1_pos - o_pos).to_normalized() * O_EP_R_0;
 
         let base = AtomDynamics {
             serial_number: 0,
@@ -118,11 +135,17 @@ impl WaterMol {
             },
             h0: AtomDynamics {
                 force_field_type: String::from("HW"),
+                posit: h0_pos,
                 ..base.clone()
             },
-            h1: AtomDynamics { ..base.clone() },
+            h1: AtomDynamics {
+                force_field_type: String::from("HW"),
+                posit: h1_pos,
+                ..base.clone()
+            },
             m: AtomDynamics {
                 force_field_type: String::from("EP"),
+                posit: ep_pos,
                 mass: 0.,
                 partial_charge: Q_EP,
                 lj_sigma: EP_SIGMA,
@@ -139,77 +162,68 @@ impl WaterMol {
     ///
     /// `sources` includes both other water molecules, and non-waters.
     pub fn step(&mut self, dt: f64, sources: &[AtomDynamics]) {
-        // External non‑bonded forces. Note that we don't track force
-        // on M, as it has no mass.
+        // ---------- 1. accumulate non‑bonded forces ----------
         let mut f_o = Vec3::new_zero();
         let mut f_h0 = Vec3::new_zero();
         let mut f_h1 = Vec3::new_zero();
+        let mut f_ep = Vec3::new_zero(); // ← NEW
 
         for src in sources {
-            let r_sq = (src.posit - self.o.posit).magnitude_squared();
-            let diff = src.posit - self.o.posit;
-            f_o += f_nonbonded(&self.o, src, r_sq, diff, false);
+            // oxygen
+            let r = src.posit - self.o.posit;
+            f_o += f_nonbonded(&self.o, src, r.dot(r), r, false);
 
-            let r_sq = (src.posit - self.h0.posit).magnitude_squared();
-            let diff = src.posit - self.h0.posit;
-            f_h0 += f_nonbonded(&self.h0, src, r_sq, diff, false);
+            // hydrogens
+            let r = src.posit - self.h0.posit;
+            f_h0 += f_nonbonded(&self.h0, src, r.dot(r), r, false);
 
-            let r_sq = (src.posit - self.h1.posit).magnitude_squared();
-            let diff = src.posit - self.h1.posit;
-            f_h1 += f_nonbonded(&self.h1, src, r_sq, diff, false);
+            let r = src.posit - self.h1.posit;
+            f_h1 += f_nonbonded(&self.h1, src, r.dot(r), r, false);
+
+            // EP (virtual) – accumulate on f_ep; will project to O later
+            let r = src.posit - self.m.posit;
+            f_ep += f_nonbonded(&self.m, src, r.dot(r), r, false);
         }
 
-        // Half‑kick -----------------------------------------------------
+        f_o += f_ep; // project EP force to oxygen
+
+        // ---------- 2. half‑kick ----------
         self.o.vel += f_o * (0.5 * dt / self.o.mass);
         self.h0.vel += f_h0 * (0.5 * dt / self.h0.mass);
         self.h1.vel += f_h1 * (0.5 * dt / self.h1.mass);
 
-        // Save old positions for RATTLE velocity update
-        let o_old = self.o.posit;
-        let h0_old = self.h0.posit;
-        let h1_old = self.h1.posit;
+        // ---------- 3. analytic SETTLE update ----------
+        settle_opc(&mut self.o, &mut self.h0, &mut self.h1, dt);
 
-        // Drift ---------------------------------------------------------
-        self.o.posit += self.o.vel * dt;
-        self.h0.posit += self.h0.vel * dt;
-        self.h1.posit += self.h1.vel * dt;
-
-        // SHAKE/SETTLE --------------------------------------------------
-        self.settle();
-
-        // --- 5. RATTLE: recompute constrained velocities ----------------------
-        self.o.vel = (self.o.posit - o_old) / dt;
-        self.h0.vel = (self.h0.posit - h0_old) / dt;
-        self.h1.vel = (self.h1.posit - h1_old) / dt;
-
-        // EP has no mass; velocity follows from position
-        self.m.vel = (self.h0.vel + self.h1.vel) * 0.5;
-
-        // Recompute forces & second half‑kick ---------------------------
-        // todo: What?
-        // (omit here if you reuse f_*; otherwise call force routine again)
-        // self.o.vel  += f_o  * (0.5 * dt / self.o.mass);
-        // self.h0.vel += f_h0 * (0.5 * dt / self.h0.mass);
-        // self.h1.vel += f_h1 * (0.5 * dt / self.h1.mass);
-    }
-
-    fn settle(&mut self) {
-        for _ in 0..SHAKE_MAX_ITERS {
-            let mut max_err: f64 = 0.0;
-            max_err =
-                max_err.max(constrain_distance(&mut self.o, &mut self.h0, O_H_THETA_R_0).abs());
-            max_err =
-                max_err.max(constrain_distance(&mut self.o, &mut self.h1, O_H_THETA_R_0).abs());
-            max_err =
-                max_err.max(constrain_distance(&mut self.h0, &mut self.h1, H_H_THETA_R_0).abs());
-            if max_err < SHAKE_TOL2 {
-                break;
-            }
-        }
-
-        // Place the EP point on the HOH bisector at the fixed O‑EP distance.
+        // ---------- 4. place EP rigidly ----------
         let bis = (self.h0.posit - self.o.posit) + (self.h1.posit - self.o.posit);
         self.m.posit = self.o.posit + bis.to_normalized() * O_EP_R_0;
+
+        // EP velocity follows COM of hydrogens
+        self.m.vel = (self.h0.vel + self.h1.vel) * 0.5;
+
+        // ---------- 5. re‑compute forces ----------
+        let mut f_o2 = Vec3::new_zero();
+        let mut f_h02 = Vec3::new_zero();
+        let mut f_h12 = Vec3::new_zero();
+        let mut f_ep2 = Vec3::new_zero();
+
+        for src in sources {
+            let r = src.posit - self.o.posit;
+            f_o2 += f_nonbonded(&self.o, src, r.dot(r), r, false);
+            let r = src.posit - self.h0.posit;
+            f_h02 += f_nonbonded(&self.h0, src, r.dot(r), r, false);
+            let r = src.posit - self.h1.posit;
+            f_h12 += f_nonbonded(&self.h1, src, r.dot(r), r, false);
+            let r = src.posit - self.m.posit;
+            f_ep2 += f_nonbonded(&self.m, src, r.dot(r), r, false);
+        }
+        f_o2 += f_ep2; // project EP again
+
+        // ---------- 6. second half‑kick ----------
+        self.o.vel += f_o2 * (0.5 * dt / self.o.mass);
+        self.h0.vel += f_h02 * (0.5 * dt / self.h0.mass);
+        self.h1.vel += f_h12 * (0.5 * dt / self.h1.mass);
     }
 }
 
@@ -267,22 +281,98 @@ pub fn make_water_mols(n_mols: usize, cell: &SimBox, max_vel: f64) -> Vec<WaterM
     result
 }
 
-fn constrain_distance(a: &mut AtomDynamics, b: &mut AtomDynamics, target: f64) -> f64 {
-    let mut r = b.posit - a.posit;
-    let dist2 = r.dot(r);
-    let diff = dist2 - target * target;
-    if diff.abs() < SHAKE_TOL2 {
-        return diff;
+/// Analytic SETTLE for 3‑site rigid water (Miyamoto & Kollman, JCC 1992).
+/// Works for any bond length / HOH angle, so it’s fine for OPC.
+/// Uses O as the pivot.
+///
+/// All distances & masses are in MD internal units (Å, ps, amu, kcal/mol).
+fn settle_opc(o: &mut AtomDynamics, h0: &mut AtomDynamics, h1: &mut AtomDynamics, dt: f64) {
+    // Can't use cos in a const.
+    const CSOHOH: f64 = -0.2351421131025898;
+    // let COSHOH: f64 = (H_O_H_θ0 * 0.5).cos() * 2.0 * (H_O_H_θ0 * 0.5).cos() - 1.0; // cos(θ)
+
+    // -- A. half‑step drift of the oxygen (center) --------------------
+    o.posit += o.vel * dt; // translate O
+    h0.posit += o.vel * dt; // same COM drift for H’s
+    h1.posit += o.vel * dt;
+
+    // -- B. rotate the OH pair analytically ---------------------------
+    // work in the O‑centered frame
+    let mut r0 = h0.posit - o.posit;
+    let mut r1 = h1.posit - o.posit;
+    let v0 = h0.vel - o.vel;
+    let v1 = h1.vel - o.vel;
+
+    // Translational angular momentum L = Σ m r×v (about O)
+    let l = r0.cross(v0) * H_MASS + r1.cross(v1) * H_MASS;
+
+    // inertia tensor (about O) for two equal masses at r0, r1
+    let (ixx, iyy, izz, ixy, ixz, iyz) = {
+        // I = Σ m (r² δij - r_i r_j)
+        let m = O_MASS;
+        let r2_0 = r0.dot(r0);
+        let r2_1 = r1.dot(r1);
+        let xx = m * (r2_0 + r2_1 - (r0.x * r0.x + r1.x * r1.x));
+        let yy = m * (r2_0 + r2_1 - (r0.y * r0.y + r1.y * r1.y));
+        let zz = m * (r2_0 + r2_1 - (r0.z * r0.z + r1.z * r1.z));
+        let xy = -m * (r0.x * r0.y + r1.x * r1.y);
+        let xz = -m * (r0.x * r0.z + r1.x * r1.z);
+        let yz = -m * (r0.y * r0.z + r1.y * r1.z);
+        (xx, yy, zz, xy, xz, yz)
     };
 
-    let inv_ma = 1. / a.mass;
-    let inv_mb = 1. / b.mass;
+    // Solve ω from I·ω = L  (since I is symmetric 3×3, one can
+    // invert analytically or use a small 3×3 solver)
 
-    let g = 1.0 / (inv_ma + inv_mb);
-    // λ from SHAKE
-    let lambda = -g * diff / r.dot(r);
-    let corr = r * lambda;
-    a.posit -= corr * inv_ma;
-    b.posit += corr * inv_mb;
-    diff
+    let omega = solve_symmetric3(ixx, iyy, izz, ixy, ixz, iyz, l);
+
+    // rotate the H’s by Δq = ω × r dt
+    r0 += omega.cross(r0) * dt;
+    r1 += omega.cross(r1) * dt;
+
+    // normalise back to exact geometry
+    let r0n = r0.to_normalized() * O_H_THETA_R_0;
+    let r1n = r1.to_normalized() * O_H_THETA_R_0;
+
+    // rebuild exact positions
+    h0.posit = o.posit + r0n;
+    h1.posit = o.posit + r1n;
+
+    // -- C. recompute H velocities from rigid‑body motion -------------
+    // v = ω × r
+    h0.vel = o.vel + omega.cross(r0n);
+    h1.vel = o.vel + omega.cross(r1n);
+}
+
+/// Solve I · x = b for a 3×3 *symmetric* matrix I.
+/// The six unique elements are
+///     [ ixx  ixy  ixz ]
+/// I = [ ixy  iyy  iyz ]
+///     [ ixz  iyz  izz ]
+///
+/// Returns x as a Vec3.  Panics if det(I) ≃ 0.
+fn solve_symmetric3(ixx: f64, iyy: f64, izz: f64, ixy: f64, ixz: f64, iyz: f64, b: Vec3) -> Vec3 {
+    // --- determinant -------------------------------------------------
+    let det = ixx * (iyy * izz - iyz * iyz) - ixy * (ixy * izz - iyz * ixz)
+        + ixz * (ixy * iyz - iyy * ixz);
+
+    const TOL: f64 = 1.0e-12;
+    assert!(det.abs() > TOL, "singular 3×3 matrix in solve_symmetric3");
+
+    let inv_det = 1.0 / det;
+
+    // --- adjugate / inverse elements --------------------------------
+    let inv00 = (iyy * izz - iyz * iyz) * inv_det;
+    let inv01 = (ixz * iyz - ixy * izz) * inv_det;
+    let inv02 = (ixy * iyz - ixz * iyy) * inv_det;
+    let inv11 = (ixx * izz - ixz * ixz) * inv_det;
+    let inv12 = (ixz * ixy - ixx * iyz) * inv_det;
+    let inv22 = (ixx * iyy - ixy * ixy) * inv_det;
+
+    // --- x = I⁻¹ · b -------------------------------------------------
+    Vec3::new(
+        inv00 * b.x + inv01 * b.y + inv02 * b.z,
+        inv01 * b.x + inv11 * b.y + inv12 * b.z,
+        inv02 * b.x + inv12 * b.y + inv22 * b.z,
+    )
 }

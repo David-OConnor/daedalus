@@ -18,10 +18,10 @@ use crate::{
     molecule::{Atom, AtomRole, BondCount, BondType, Chain, PeptideAtomPosits, Residue, aa_color},
     reflection::ElectronDensity,
     render::{
-        ATOM_SHININESS, BACKGROUND_COLOR, BALL_RADIUS_WATER, BALL_STICK_RADIUS,
-        BALL_STICK_RADIUS_H, BODY_SHINYNESS, Color, MESH_BOND, MESH_CUBE, MESH_DENSITY_SURFACE,
-        MESH_DOCKING_BOX, MESH_SECONDARY_STRUCTURE, MESH_SOLVENT_SURFACE, MESH_SPHERE_HIGHRES,
-        MESH_SPHERE_LOWRES, MESH_SPHERE_MEDRES, set_docking_light,
+        ATOM_SHININESS, BACKGROUND_COLOR, BALL_RADIUS_WATER_H, BALL_RADIUS_WATER_O,
+        BALL_STICK_RADIUS, BALL_STICK_RADIUS_H, BODY_SHINYNESS, Color, MESH_BOND, MESH_CUBE,
+        MESH_DENSITY_SURFACE, MESH_DOCKING_BOX, MESH_SECONDARY_STRUCTURE, MESH_SOLVENT_SURFACE,
+        MESH_SPHERE_HIGHRES, MESH_SPHERE_LOWRES, MESH_SPHERE_MEDRES, set_docking_light,
     },
     util::orbit_center,
 };
@@ -558,6 +558,7 @@ fn bond_entities(
     }
 }
 
+/// Water from a MD sim; not from atoms in experimental data.
 pub fn draw_water(scene: &mut Scene, o_pos: &[Vec3F64], h0_pos: &[Vec3F64], h1_pos: &[Vec3F64]) {
     scene
         .entities
@@ -568,7 +569,7 @@ pub fn draw_water(scene: &mut Scene, o_pos: &[Vec3F64], h0_pos: &[Vec3F64], h1_p
             MESH_WATER_SPHERE,
             o_pos[i].into(),
             Quaternion::new_identity(),
-            BALL_RADIUS_WATER,
+            BALL_RADIUS_WATER_O,
             Element::Oxygen.color(),
             ATOM_SHININESS,
         );
@@ -579,7 +580,7 @@ pub fn draw_water(scene: &mut Scene, o_pos: &[Vec3F64], h0_pos: &[Vec3F64], h1_p
             MESH_WATER_SPHERE,
             h0_pos[i].into(),
             Quaternion::new_identity(),
-            BALL_STICK_RADIUS_H,
+            BALL_RADIUS_WATER_H,
             Element::Hydrogen.color(),
             ATOM_SHININESS,
         );
@@ -951,7 +952,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
                             MESH_WATER_SPHERE,
                             atom.posit.into(),
                             Quaternion::new_identity(),
-                            BALL_RADIUS_WATER,
+                            BALL_RADIUS_WATER_O,
                             color_atom,
                             ATOM_SHININESS,
                         );
@@ -1044,7 +1045,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
 
             if let Some(role) = atom.role {
                 if role == AtomRole::Water {
-                    radius = BALL_RADIUS_WATER
+                    radius = BALL_RADIUS_WATER_O
                 }
             }
 
