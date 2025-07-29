@@ -39,7 +39,7 @@ cudarc = { version = "0.16.6", features = ["cuda-12060"], optional=true }
 #], default-features = false, optional=true }
 
 rand = "0.9.1"
-rand_distr  = "0.5.1"  # todo: Used in ML. Eval!
+rand_distr  = "0.5.1"
 regex = "1.11.1"
 
 # nalgebra: For solving linear systems of equations when generating partial changes.
@@ -47,6 +47,10 @@ nalgebra = "0.33.2"
 
 itertools = "0.14.0" # For combinations when matching angles in MD.
 
+# We use this to get the erf error function for use in the Ewald approximation in MD
+# todo: Way to avoid this dep for something lighter?
+statrs = "0.18.0"
+rustfft = "6.4.0" # For Ewald long range
 
 # We use these when developing locally to reduce friction.
 [patch.crates-io]

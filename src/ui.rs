@@ -25,10 +25,14 @@ use crate::{
         find_sites::find_docking_sites,
     },
     download_mols::{load_sdf_drugbank, load_sdf_pubchem},
-    dynamics::prep::{build_dynamics_docking, build_dynamics_peptide},
+    dynamics::prep::{
+        build_dynamics_docking, build_dynamics_peptide, change_snapshot_docking,
+        change_snapshot_peptide,
+    },
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
     mol_drawing::{
         EntityType, MoleculeView, draw_density, draw_density_surface, draw_ligand, draw_molecule,
+        draw_water,
     },
     molecule::{Ligand, Molecule},
     render::{
@@ -44,8 +48,6 @@ use crate::{
         reset_camera, select_from_search,
     },
 };
-use crate::dynamics::prep::{change_snapshot_docking, change_snapshot_peptide};
-use crate::mol_drawing::draw_water;
 
 pub const ROW_SPACING: f32 = 10.;
 pub const COL_SPACING: f32 = 30.;

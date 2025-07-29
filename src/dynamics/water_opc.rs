@@ -19,8 +19,9 @@ use std::f64::consts::TAU;
 use lin_alg::f64::{Quaternion, Vec3};
 use na_seq::Element;
 use rand::{Rng, distr::Uniform};
+use rand_distr::{Distribution, StandardNormal};
 
-use crate::dynamics::{AtomDynamics, ambient::SimBox, f_nonbonded};
+use crate::dynamics::{AtomDynamics, LjTable, ambient::SimBox, non_bonded::f_nonbonded};
 
 // Parameters for OPC water (JPCL, 2014, 5 (21), pp 3863-3871)
 // (Amber 2025, frcmod.opc) EPC is presumably the massless, 4th charge.
@@ -28,6 +29,9 @@ use crate::dynamics::{AtomDynamics, ambient::SimBox, f_nonbonded};
 const O_MASS: f64 = 16.;
 const H_MASS: f64 = 1.008;
 const EP_MASS: f64 = 0.; // todo: Rem A/R.
+
+// For assigning velocities from temperature.
+const KB: f64 = 0.001_987_204_1; // kcal mol⁻¹ K⁻¹ (Amber-style units)
 
 // todo: SHould you just add up the atom masses from Amber?
 const MASS_WATER: f64 = 18.015_28;
@@ -168,41 +172,45 @@ impl WaterMol {
     /// One Velocity‑Verlet step with SHAKE/RATTLE constraints.
     ///
     /// `sources` includes both other water molecules, and non-waters.
-    pub fn step(&mut self, dt: f64, sources: &[AtomDynamics]) {
-        // ---------- 1. accumulate non‑bonded forces ----------
+    pub fn step(
+        &mut self,
+        dt: f64,
+        sources: &[AtomDynamics],
+        cell: &SimBox,
+        lj_table: &mut LjTable,
+    ) {
         let mut f_o = Vec3::new_zero();
         let mut f_h0 = Vec3::new_zero();
         let mut f_h1 = Vec3::new_zero();
         let mut f_ep = Vec3::new_zero(); // ← NEW
 
+        // Note: No LJ cacheing for water at this time
+        // todo: Figure out a way to cache the water-water LJ interactions at least.
         for src in sources {
-            // oxygen
-            let r = src.posit - self.o.posit;
-            f_o += f_nonbonded(&self.o, src, r.dot(r), r, false);
+            let r = cell.min_image(src.posit - self.o.posit);
+            f_o += f_nonbonded(&self.o, src, r.dot(r), r, false, None, lj_table);
 
-            // hydrogens
-            let r = src.posit - self.h0.posit;
-            f_h0 += f_nonbonded(&self.h0, src, r.dot(r), r, false);
+            let r = cell.min_image(src.posit - self.h0.posit);
+            f_h0 += f_nonbonded(&self.h0, src, r.dot(r), r, false, None, lj_table);
 
-            let r = src.posit - self.h1.posit;
-            f_h1 += f_nonbonded(&self.h1, src, r.dot(r), r, false);
+            let r = cell.min_image(src.posit - self.h1.posit);
+            f_h1 += f_nonbonded(&self.h1, src, r.dot(r), r, false, None, lj_table);
 
-            // EP (virtual) – accumulate on f_ep; will project to O later
-            let r = src.posit - self.m.posit;
-            f_ep += f_nonbonded(&self.m, src, r.dot(r), r, false);
+            let r = cell.min_image(src.posit - self.m.posit);
+            f_ep += f_nonbonded(&self.m, src, r.dot(r), r, false, None, lj_table);
         }
 
-        f_o += f_ep; // project EP force to oxygen
+        f_o += f_ep;
 
-        // ---------- 2. half‑kick ----------
+        // Half‑kick ----------
         self.o.vel += f_o * (0.5 * dt / self.o.mass);
         self.h0.vel += f_h0 * (0.5 * dt / self.h0.mass);
         self.h1.vel += f_h1 * (0.5 * dt / self.h1.mass);
 
-        // ---------- 3. analytic SETTLE update ----------
+        // Analytic SETTLE update ----------
         settle_opc(&mut self.o, &mut self.h0, &mut self.h1, dt);
 
-        // ---------- 4. place EP rigidly ----------
+        // Place EP rigidly ----------
         let bis = (self.h0.posit - self.o.posit) + (self.h1.posit - self.o.posit);
         self.m.posit = self.o.posit + bis.to_normalized() * O_EP_R_0;
 
@@ -217,30 +225,41 @@ impl WaterMol {
 
         for src in sources {
             let r = src.posit - self.o.posit;
-            f_o2 += f_nonbonded(&self.o, src, r.dot(r), r, false);
+            f_o2 += f_nonbonded(&self.o, src, r.dot(r), r, false, None, lj_table);
             let r = src.posit - self.h0.posit;
-            f_h02 += f_nonbonded(&self.h0, src, r.dot(r), r, false);
+            f_h02 += f_nonbonded(&self.h0, src, r.dot(r), r, false, None, lj_table);
             let r = src.posit - self.h1.posit;
-            f_h12 += f_nonbonded(&self.h1, src, r.dot(r), r, false);
+            f_h12 += f_nonbonded(&self.h1, src, r.dot(r), r, false, None, lj_table);
             let r = src.posit - self.m.posit;
-            f_ep2 += f_nonbonded(&self.m, src, r.dot(r), r, false);
+            f_ep2 += f_nonbonded(&self.m, src, r.dot(r), r, false, None, lj_table);
         }
         f_o2 += f_ep2; // project EP again
 
-        // ---------- 6. second half‑kick ----------
+        // Second half‑kick
         self.o.vel += f_o2 * (0.5 * dt / self.o.mass);
         self.h0.vel += f_h02 * (0.5 * dt / self.h0.mass);
         self.h1.vel += f_h12 * (0.5 * dt / self.h1.mass);
+
+        // Wrap positions that are outside the boudning box.
+        // todo: This might not work for molecules split across both sides? Maybe need to wrap the
+        // todo whole thing, onmly when all atoms are outside the box?
+        for pos in [
+            &mut self.o.posit,
+            &mut self.h0.posit,
+            &mut self.h1.posit,
+            &mut self.m.posit,
+        ] {
+            *pos = cell.wrap(*pos);
+        }
     }
 }
 
 // todo: Should we pass density, vice n_mols?
-pub fn make_water_mols(cell: &SimBox, max_vel: f64) -> Vec<WaterMol> {
-// pub fn make_water_mols(n_mols: usize, cell: &SimBox, max_vel: f64) -> Vec<WaterMol> {
+pub fn make_water_mols(cell: &SimBox, t_target: f64) -> Vec<WaterMol> {
     let vol = cell.volume();
 
-    let n_float = WATER_DENSITY * vol* (NA / (MASS_WATER * 1.0e24));
-    let n_mols  = n_float.round() as usize;  // round to nearest integer
+    let n_float = WATER_DENSITY * vol * (NA / (MASS_WATER * 1.0e24));
+    let n_mols = n_float.round() as usize; // round to nearest integer
 
     let mut result = Vec::with_capacity(n_mols);
     let mut rng = rand::rng();
@@ -249,31 +268,14 @@ pub fn make_water_mols(cell: &SimBox, max_vel: f64) -> Vec<WaterMol> {
     let uni11 = Uniform::<f64>::new(-1.0, 1.0).unwrap();
 
     for _ in 0..n_mols {
-        /* ---------- position (axis‑aligned box) ---------- */
+        // Position (axis‑aligned box)
         let posit = Vec3::new(
             rng.sample(uni01) * (cell.bounds_high.x - cell.bounds_low.x) + cell.bounds_low.x,
             rng.sample(uni01) * (cell.bounds_high.y - cell.bounds_low.y) + cell.bounds_low.y,
             rng.sample(uni01) * (cell.bounds_high.z - cell.bounds_low.z) + cell.bounds_low.z,
         );
 
-        /* ---------- velocity ---------- */
-        // Direction: Marsaglia (1972) — rejection‑free, truly uniform on S²
-        let (vx, vy, vz) = {
-            let (r1, r2): (f64, f64) = (rng.sample(uni11), rng.sample(uni11));
-            let s = r1 * r1 + r2 * r2;
-            // Guaranteed s ∈ [0,2], so no loop needed.
-            let factor = (1.0 - s / 2.0).sqrt();
-            (
-                2.0 * r1 * factor,
-                2.0 * r2 * factor,
-                1.0 - s, // z
-            )
-        };
-
-        let speed = rng.sample(uni01) * max_vel;
-        let vel = Vec3::new(vx, vy, vz) * speed;
-
-        /* ---------- orientation (uniform SO(3)) ---------- */
+        // Orientation (uniform SO(3))
         // Shoemake (1992)
         let (u1, u2, u3) = (rng.sample(uni01), rng.sample(uni01), rng.sample(uni01));
         let q = {
@@ -289,8 +291,11 @@ pub fn make_water_mols(cell: &SimBox, max_vel: f64) -> Vec<WaterMol> {
             )
         };
 
-        result.push(WaterMol::new(posit, vel, q));
+        result.push(WaterMol::new(posit, Vec3::new_zero(), q));
     }
+
+    // Assign velocities based on temperature.
+    init_velocities(&mut result, t_target);
 
     result
 }
@@ -366,7 +371,6 @@ fn settle_opc(o: &mut AtomDynamics, h0: &mut AtomDynamics, h1: &mut AtomDynamics
 ///
 /// Returns x as a Vec3.  Panics if det(I) ≃ 0.
 fn solve_symmetric3(ixx: f64, iyy: f64, izz: f64, ixy: f64, ixz: f64, iyz: f64, b: Vec3) -> Vec3 {
-    // --- determinant -------------------------------------------------
     let det = ixx * (iyy * izz - iyz * iyz) - ixy * (ixy * izz - iyz * ixz)
         + ixz * (ixy * iyz - iyy * ixz);
 
@@ -389,4 +393,69 @@ fn solve_symmetric3(ixx: f64, iyy: f64, izz: f64, ixy: f64, ixz: f64, iyz: f64, 
         inv01 * b.x + inv11 * b.y + inv12 * b.z,
         inv02 * b.x + inv12 * b.y + inv22 * b.z,
     )
+}
+
+pub fn init_velocities(mols: &mut [WaterMol], t_target: f64) {
+    let mut rng = rand::rng();
+
+    // 1) Gaussian draw
+    for a in atoms_mut(mols) {
+        if a.mass == 0.0 {
+            continue;
+        } // EP/virtual sites
+
+        let nx: f64 = StandardNormal.sample(&mut rng);
+        let ny: f64 = StandardNormal.sample(&mut rng);
+        let nz: f64 = StandardNormal.sample(&mut rng);
+
+        // arbitrary sigma=1 for now; we'll rescale below
+        a.vel = Vec3::new(nx, ny, nz);
+    }
+
+    // 2) remove centre-of-mass drift
+    remove_com_velocity(mols);
+
+    // 3) compute instantaneous T
+    let (ke, dof) = kinetic_energy_and_dof(mols);
+    let t_now = 2.0 * ke / (dof as f64 * KB);
+
+    // 4) rescale to T_target
+    let lambda = (t_target / t_now).sqrt();
+    for a in atoms_mut(mols) {
+        if a.mass == 0.0 {
+            continue;
+        }
+        a.vel *= lambda;
+    }
+}
+
+fn atoms_mut(mols: &mut [WaterMol]) -> impl Iterator<Item = &mut AtomDynamics> {
+    mols.iter_mut()
+        .flat_map(|m| [&mut m.o, &mut m.h0, &mut m.h1].into_iter())
+}
+
+fn remove_com_velocity(mols: &mut [WaterMol]) {
+    let mut p = Vec3::new_zero();
+    let mut m_tot = 0.0;
+    for a in atoms_mut(mols) {
+        p += a.vel * a.mass;
+        m_tot += a.mass;
+    }
+    let v_com = p / m_tot;
+    for a in atoms_mut(mols) {
+        a.vel -= v_com;
+    }
+}
+
+fn kinetic_energy_and_dof(mols: &[WaterMol]) -> (f64, usize) {
+    let mut ke = 0.0;
+    let mut dof = 0usize;
+    for m in mols {
+        for a in [&m.o, &m.h0, &m.h1] {
+            ke += 0.5 * a.mass * a.vel.dot(a.vel);
+            dof += 3;
+        }
+    }
+    // remove 3 for total COM; remove constraints if you track them
+    (ke, dof - 3 /* - n_constraints */)
 }

@@ -5,6 +5,7 @@
 //!
 //! [Amber Force Fields reference](https://ambermd.org/AmberModels.php)
 //! [Small molucules using GAFF2](https://ambermd.org/downloads/amber_geostd.tar.bz2)
+//! [Amber RM 2025](https://ambermd.org/doc12/Amber25.pdf)
 //!
 //! To download .dat files (GAFF2), download Amber source (Option 2) [here](https://ambermd.org/GetAmber.php#ambertools).
 //! Files are in dat -> leap -> parm
@@ -18,6 +19,15 @@
 //! Amber: ff19SB for proteins, gaff2 for ligands. (Based on recs from https://ambermd.org/AmberModels.php).
 //!
 //!
+//! A broad list of components of this simulation
+//! - Thermostat/barostat, with a way to specifify temp, pressure, water density
+//! - OPC water model
+//! - Cell wrapping
+//! - Verlet integration (Water and non-water?)
+//! - Amber parameters for mass, partial charge, VdW (via LJ), dihedral/improper, angle, bond len
+//! - Optimizations for Coulomb: Ewald/PME/SPME?
+//! - Optimizations for LJ: Dist cutoff for now.
+//! - Amber 1-2, 1-3 exclusions, and 1-4 scaling of covalently-bonded atoms.
 
 // todo: Integration: Consider Verlet or Langevin
 
@@ -29,29 +39,28 @@
 // Note on timescale: Generally femtosecond (-15)
 
 mod ambient;
+mod non_bonded;
 pub mod prep;
+mod spme;
 mod water_opc;
 
-use std::{
-    collections::{HashMap, HashSet},
-    f64::consts::TAU,
-};
+use std::collections::{HashMap, HashSet};
 
 use ambient::SimBox;
 use bio_files::amber_params::{
     AngleBendingParams, BondStretchingParams, DihedralParams, MassParams, VdwParams,
 };
-use lin_alg::f64::{Vec3, calc_dihedral_angle_v2};
+use lin_alg::f64::Vec3;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use lin_alg::f64::{Vec3x4, f64x4};
 use na_seq::Element;
 use rand_distr::Distribution;
 
 use crate::{
-    dynamics::water_opc::WaterMol,
-    forces::{force_coulomb, force_lj},
-    molecule::{Atom, Bond},
+    dynamics::{ambient::BerendsenBarostat, water_opc::WaterMol},
+    molecule::Atom,
 };
+pub type LjTable = HashMap<(usize, usize), (f64, f64)>;
 
 // vacuum permittivity constant   (k_e = 1/(4π ε0))
 // SI, matched with charge in e₀ & Å → kcal mol // todo: QC
@@ -60,16 +69,15 @@ const k_e: f32 = 332.0636; // kcal·Å /(mol·e²)
 // const ε_0: f64 = 1.;
 
 // Verlet list parameters
-const CUTOFF: f64 = 12.0; // Å
+
 const SKIN: f64 = 2.0; // Å – rebuild list if an atom moved >½·SKIN
+const SKIN_SQ: f64 = SKIN * SKIN;
+
+// Overrides for missing parameters.
 const M_O: f64 = 15.999; // Da
 const M_H: f64 = 1.008; // Da
 const R_OH: f64 = 0.9572; // Å
 const ANG_HOH: f64 = 104.52_f64.to_radians();
-
-// See Amber RM, sectcion 15, "1-4 Non-Bonded Interaction Scaling"
-const SCALE_LJ_14: f64 = 0.5; // AMBER default
-const SCALE_COUL_14: f64 = 1.0 / 1.2; // 0.833̅
 
 const SOFTENING_FACTOR_SQ: f64 = 1e-6;
 
@@ -263,331 +271,20 @@ pub struct MdState {
     pub step_count: usize, // increments.
     pub snapshots: Vec<SnapshotDynamics>,
     pub cell: SimBox,
-    neighbour: Vec<Vec<usize>>,    // Verlet list
-    max_disp_sq: f64,              // track atom displacements²
-    pub kb_berendsen: Option<f64>, // coupling constant (ps⁻¹) if you want a thermostat
-    pub target_temp: f64,
+    neighbour: Vec<Vec<usize>>, // Verlet list
+    max_disp_sq: f64,           // track atom displacements²
+    /// K
+    temp_target: f64,
+    barostat: BerendsenBarostat,
     /// Exclusions / masks optimization.
-    excluded_pairs: HashSet<(usize, usize)>, // 1-2 and 1-3
+    excluded_pairs: HashSet<(usize, usize)>, // 1-2 and 1-3 // todo: Look this up.
     /// See Amber RM, sectcion 15, "1-4 Non-Bonded Interaction Scaling"
-    scaled14_pairs: HashSet<(usize, usize)>, // 1-4
+    /// These are indices of atoms separated by three consecutive bonds
+    scaled14_pairs: HashSet<(usize, usize)>,
     water: Vec<WaterMol>,
-}
-
-impl MdState {
-    /// One **Velocity-Verlet** step (leap-frog style) of length `dt_fs` femtoseconds.
-    pub fn step(&mut self, dt: f64) {
-        // println!("STEP {}", self.step_count);
-        let dt_half = 0.5 * dt;
-
-        // 1) First half-kick (v += a dt/2) and drift (x += v dt)
-        // todo: Do we want traditional verlet instead?
-        for a in &mut self.atoms {
-            a.vel += a.accel * dt_half; // Half-kick
-            a.posit += a.vel * dt; // Drift
-            a.posit = self.cell.wrap(a.posit);
-
-            // track the largest squared displacement to know when to rebuild the list
-            self.max_disp_sq = self.max_disp_sq.max((a.vel * dt).magnitude_squared());
-        }
-
-        // Reset acceleration.
-        for a in &mut self.atoms {
-            a.accel = Vec3::new_zero();
-        }
-
-        self.apply_bond_stretching_forces();
-        self.apply_angle_bending_forces();
-        // todo: Dihedral not working. Skipping for now. Our measured and expected angles aren't lining up.
-        // self.apply_dihedral_forces();
-        self.apply_nonbonded_forces();
-
-        // Second half-kick using new accelerations
-        for a in &mut self.atoms {
-            a.vel += a.accel * dt_half;
-        }
-
-        let sources: Vec<AtomDynamics> = [
-            &self.atoms[..],
-            &self.atoms_static[..],
-            // todo: You must take each water atom into account.
-            // &self.water[..],
-        ]
-        .concat();
-
-        for water in &mut self.water {
-            let sources = &sources;
-            water.step(dt, &sources);
-        }
-
-        // Berendsen thermostat (T coupling to target every step)
-        if let Some(tau_ps) = self.kb_berendsen {
-            let tau = tau_ps * 1e-12;
-            let curr_ke = self.current_kinetic_energy();
-            let curr_t = 2.0 * curr_ke / (3.0 * self.atoms.len() as f64 * 0.0019872041); // k_B in kcal/mol
-            let λ = (1.0 + dt / tau * (self.target_temp - curr_t) / curr_t).sqrt();
-            for a in &mut self.atoms {
-                a.vel *= λ;
-            }
-        }
-
-        self.time += dt;
-        self.step_count += 1;
-
-        // Rebuild Verlet if needed
-        if self.max_disp_sq > 0.25 * SKIN * SKIN {
-            self.build_neighbours();
-        }
-
-        if self.step_count % SNAPSHOT_RATIO == 0 {
-            self.take_snapshot();
-        }
-    }
-
-    fn apply_bond_stretching_forces(&mut self) {
-        for (indices, params) in &self.force_field_params.bond_stretching {
-            let (a_0, a_1) = split2_mut(&mut self.atoms, indices.0, indices.1);
-
-            let f = f_bond_stretching(a_0.posit, a_1.posit, params);
-
-            const KCALMOL_A_TO_A_FS2_PER_AMU: f64 = 4.184e-4;
-            // todo: Multiply accels by this?? Or are our units self-consistent.
-
-            a_0.accel += f / a_0.mass;
-            a_1.accel -= f / a_1.mass;
-        }
-    }
-
-    /// This maintains bond angles between sets of three atoms as they should be from hybridization.
-    /// It reflects this hybridization, steric clashes, and partial double-bond character. This
-    /// identifies deviations from the ideal angle, calculates restoring torque, and applies forces
-    /// based on this to push the atoms back into their ideal positions in the molecule.
-    ///
-    /// Valence angles, which are the angle formed by two adjacent bonds ba et bc
-    /// in a same molecule; a valence angle tends to maintain constant the anglê
-    /// abc. A valence angle is thus concerned by the positions of three atoms.
-    fn apply_angle_bending_forces(&mut self) {
-        for (indices, params) in &self.force_field_params.angle {
-            let (a_0, a_1, a_2) = split3_mut(&mut self.atoms, indices.0, indices.1, indices.2);
-
-            let (f_0, f_1, f_2) = f_angle_bending(a_0.posit, a_1.posit, a_2.posit, params);
-
-            a_0.accel += f_0 / a_0.mass;
-            a_1.accel += f_1 / a_1.mass;
-            a_2.accel += f_2 / a_2.mass;
-        }
-    }
-
-    /// This maintains dihedral angles. (i.e. the angle between four atoms in a sequence). This models
-    /// effects such as σ-bond overlap (e.g. staggered conformations), π-conjugation, which locks certain
-    /// dihedrals near 0 or τ, and steric hindrance. (Bulky groups clashing).
-    fn apply_dihedral_forces(&mut self) {
-        for (indices, dihe) in &self.force_field_params.dihedral {
-            // let Some(dihe) = dihe_ else { continue };
-
-            if &dihe.atom_types.0 == "X" || &dihe.atom_types.3 == "X" {
-                continue; // todo temp, until we sum.
-            }
-
-            // Split the four atoms mutably without aliasing
-            let (a_0, a_1, a_2, a_3) =
-                split4_mut(&mut self.atoms, indices.0, indices.1, indices.2, indices.3);
-
-            // Convenience aliases for the positions
-            let r_0 = a_0.posit;
-            let r_1 = a_1.posit;
-            let r_2 = a_2.posit;
-            let r_3 = a_3.posit;
-
-            // Bond vectors (see Allen & Tildesley, chap. 4)
-            let b1 = r_1 - r_0; // r_ij
-            let b2 = r_2 - r_1; // r_kj
-            let b3 = r_3 - r_2; // r_lk
-
-            // Normal vectors to the two planes
-            let n1 = b1.cross(b2);
-            let n2 = b3.cross(b2);
-
-            let n1_sq = n1.magnitude_squared();
-            let n2_sq = n2.magnitude_squared();
-            let b2_len = b2.magnitude();
-
-            // Bail out if the four atoms are (nearly) colinear
-            if n1_sq < EPS || n2_sq < EPS || b2_len < EPS {
-                continue;
-            }
-
-            let dihe_measured = calc_dihedral_angle_v2(&(r_0, r_1, r_2, r_3));
-
-            // Note: We assume that vn has already been divided by the integer divisor.
-            // let dV_dφ = -0.5
-            // todo: Precompute this barrier height when loading to the indexed variant.
-            // todo: Do that once this all owrks.
-            // let dV_dφ =  -(dihe.barrier_height_vn as f64) / (dihe.integer_divisor as f64)
-
-            let k = -dihe.barrier_height as f64;
-            let per = dihe.periodicity as f64;
-            let arg = per * dihe_measured - dihe.phase as f64;
-
-            let dV_dφ = k * per * arg.sin();
-
-            if self.step_count == 0 {
-                println!(
-                    "{:?} - Ms: {:.2}, exp: {:.2}/{} dV_dφ: {:.2}",
-                    &dihe.atom_types,
-                    dihe_measured / TAU,
-                    dihe.phase / TAU as f32,
-                    dihe.periodicity,
-                    dV_dφ,
-                );
-            }
-
-            // ∂φ/∂r   (see e.g. DOI 10.1016/S0021-9991(97)00040-8)
-            let dφ_dr1 = -n1 * (b2_len / n1_sq);
-            let dφ_dr4 = n2 * (b2_len / n2_sq);
-
-            let dφ_dr2 =
-                -n1 * (b1.dot(b2) / (b2_len * n1_sq)) + n2 * (b3.dot(b2) / (b2_len * n2_sq));
-            let dφ_dr3 = -dφ_dr1 - dφ_dr2 - dφ_dr4; // Newton’s third law
-
-            // F_i = −dV/dφ · ∂φ/∂r_i
-            let f1 = -dφ_dr1 * dV_dφ;
-            let f2 = -dφ_dr2 * dV_dφ;
-            let f3 = -dφ_dr3 * dV_dφ;
-            let f4 = -dφ_dr4 * dV_dφ;
-
-            // Convert to accelerations
-            a_0.accel += f1 / a_0.mass;
-            a_1.accel += f2 / a_1.mass;
-            a_2.accel += f3 / a_2.mass;
-            a_3.accel += f4 / a_3.mass;
-        }
-    }
-
-    /// Coulomb and Van der Waals. (Lennard-Jones)
-    ///
-    /// todo: See Amber RM, 15.1: 1-4: Non-Bonded Interaction Scaling. This may be why
-    /// todo you're having trouble with LJ. Applies to Coulomb as well.
-    /// todo: Are these already applied in the params, or do you need to scale? Likely; see that RM section.
-    ///
-    /// todo: If required, build a neighbors list for interactions with external atoms.
-    fn apply_nonbonded_forces(&mut self) {
-        let cutoff_sq = CUTOFF * CUTOFF;
-
-        const EPS: f64 = 1e-6;
-
-        for i in 0..self.atoms.len() {
-            // todo: Can you unify this with your neighbor code used for bonds?
-            for &j in &self.neighbour[i] {
-                if j < i {
-                    // Prevents duplication of the pair in the other order.
-                    continue;
-                }
-
-                // Handle masks.
-                let key = if i < j { (i, j) } else { (j, i) };
-
-                if self.excluded_pairs.contains(&key) {
-                    continue;
-                }
-
-                let scale14 = self.scaled14_pairs.contains(&key);
-
-                let diff = self.atoms[j].posit - self.atoms[i].posit;
-
-                let dv = self.cell.min_image(diff);
-                let r_sq = dv.magnitude_squared();
-                if r_sq > cutoff_sq {
-                    continue;
-                }
-
-                let f = f_nonbonded(&self.atoms[i], &self.atoms[j], r_sq, diff, scale14);
-
-                let accel_0 = f / self.atoms[i].mass;
-                let accel_1 = f / self.atoms[j].mass;
-
-                self.atoms[i].accel += accel_0;
-                self.atoms[j].accel -= accel_1;
-            }
-        }
-
-        // Second pass: Static atoms.
-        for a_lig in &mut self.atoms {
-            for a_static in &self.atoms_static {
-                let dv = self.cell.min_image(a_static.posit - a_lig.posit);
-
-                // todo: This section DRY with non-external interactions.
-
-                let r_sq = dv.magnitude_squared();
-                if r_sq > cutoff_sq {
-                    continue;
-                }
-
-                // println!(
-                //     "Lig σ: {:.3} lig ε: {:.3} ext σ: {:.3} ext ε: {:.3} lig q: {:.3} ext q: {:.3}",
-                //     a_lig.lj_sigma,
-                //     a_lig.lj_eps,
-                //     a_static.lj_sigma,
-                //     a_static.lj_eps,
-                //     a_lig.partial_charge,
-                //     a_static.partial_charge,
-                // );
-
-                let σ = 0.5 * (a_lig.lj_sigma + a_static.lj_sigma);
-                let ε = (a_lig.lj_eps * a_static.lj_eps).sqrt();
-
-                let dist = r_sq.sqrt();
-                let dir = dv / dist;
-
-                let f_lj = force_lj(dir, dist, σ, ε);
-
-                let f_coulomb = force_coulomb(
-                    dir,
-                    dist,
-                    a_lig.partial_charge,
-                    a_static.partial_charge,
-                    SOFTENING_FACTOR_SQ,
-                );
-
-                let f = f_lj + f_coulomb;
-
-                // todo: Experimenting with a scaler for docking trial+error.
-                let scaler = 1.;
-
-                a_lig.accel += f / a_lig.mass * scaler;
-            }
-        }
-    }
-
-    /// A helper for the thermostat
-    #[inline]
-    fn current_kinetic_energy(&self) -> f64 {
-        self.atoms
-            .iter()
-            .map(|a| 0.5 * a.mass * a.vel.magnitude_squared())
-            .sum()
-    }
-
-    pub fn take_snapshot(&mut self) {
-        let mut water_o_posits = Vec::with_capacity(self.water.len());
-        let mut water_h0_posits = Vec::with_capacity(self.water.len());
-        let mut water_h1_posits = Vec::with_capacity(self.water.len());
-
-        for water in &self.water {
-            water_o_posits.push(water.o.posit);
-            water_h0_posits.push(water.h0.posit);
-            water_h1_posits.push(water.h1.posit);
-        }
-
-        self.snapshots.push(SnapshotDynamics {
-            time: self.time,
-            atom_posits: self.atoms.iter().map(|a| a.posit).collect(),
-            atom_velocities: self.atoms.iter().map(|a| a.vel).collect(),
-            water_o_posits,
-            water_h0_posits,
-            water_h1_posits,
-        })
-    }
+    /// We cache sigma and eps on the first step, then use it on the others. This increases
+    /// memory use, and reduces CPU use.
+    lj_table: LjTable,
 }
 
 #[inline]
@@ -711,39 +408,4 @@ pub fn f_angle_bending(
     let f_1 = -(f_0 + f_2);
 
     (f_0, f_1, f_2)
-}
-
-/// Used by water and non-water. Vdw and Coulomb forces.
-/// We split out `r_sq` and `diff` for use while integrating a unit cell, if applicable.
-pub fn f_nonbonded(
-    tgt: &AtomDynamics,
-    src: &AtomDynamics,
-    r_sq: f64,
-    diff: Vec3,
-    scale14: bool,
-) -> Vec3 {
-    let dist = r_sq.sqrt();
-    let dir = diff / dist;
-
-    // Note: Amber params are loaded using R_min instead of σ, but we address
-    // this when parsing them.
-    let σ = 0.5 * (tgt.lj_sigma + src.lj_sigma);
-    let ε = (tgt.lj_eps * src.lj_eps).sqrt();
-
-    let mut f_lj = force_lj(dir, dist, σ, ε);
-
-    let mut f_coulomb = force_coulomb(
-        dir,
-        dist,
-        tgt.partial_charge,
-        src.partial_charge,
-        SOFTENING_FACTOR_SQ,
-    );
-
-    if scale14 {
-        f_lj *= SCALE_LJ_14;
-        f_coulomb *= SCALE_COUL_14;
-    }
-
-    f_lj + f_coulomb
 }

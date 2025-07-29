@@ -21,10 +21,7 @@
 //
 // Best guess: Type 1 identifies labels within the residue only. Type 2 (AA) and Type 3 (small mol) are the FF types.
 
-use std::{
-    collections::{HashMap, HashSet},
-    time::Instant,
-};
+use std::{collections::HashSet, time::Instant};
 
 use bio_files::{
     ResidueType,
@@ -41,11 +38,14 @@ use crate::{
     ComputationDevice, FfParamSet, ProtFFTypeChargeMap,
     docking::{BindingEnergy, ConformationType, prep::DockingSetup},
     dynamics::{
-        AtomDynamics, CUTOFF, ForceFieldParamsIndexed, MdMode, MdState, ParamError, SKIN,
-        SnapshotDynamics, ambient::SimBox, water_opc::make_water_mols,
+        AtomDynamics, ForceFieldParamsIndexed, MdMode, MdState, ParamError, SKIN, SnapshotDynamics,
+        ambient::SimBox, non_bonded::CUTOFF_VDW, water_opc::make_water_mols,
     },
     molecule::{Atom, Bond, Ligand, Molecule, Residue, ResidueEnd, build_adjacency_list},
 };
+
+// Todo: QC this.
+const TEMP_TGT_DEFAULT: f64 = 310.; // Kelvin.
 
 /// Build a single lookup table in which ligand-specific parameters
 /// (when given) replace or add to the generic ones.
@@ -564,8 +564,7 @@ impl MdState {
         bonds: &[Bond],
         atoms_static: &[Atom],
         ff_params: &FfParamSet,
-        // num_water: usize,
-        max_water_speed: f64,
+        temp_target: f64,
         // todo: Temperature/thermostat.
     ) -> Result<Self, ParamError> {
         let Some(ff_params_lig_keyed) = &ff_params.lig_general else {
@@ -659,9 +658,11 @@ impl MdState {
             excluded_pairs: HashSet::new(),
             scaled14_pairs: HashSet::new(),
             force_field_params: ff_params_non_static,
-            water: make_water_mols(&cell, max_water_speed),
+            temp_target,
             ..Default::default()
         };
+
+        result.water = make_water_mols(&cell, result.temp_target);
 
         result.build_masks();
         result.build_neighbours();
@@ -676,8 +677,7 @@ impl MdState {
         atom_posits: &[Vec3],
         bonds: &[Bond],
         ff_params: &FfParamSet,
-        // num_water: usize,
-        max_water_speed: f64,
+        temp_target: f64,
         // todo: Thermostat.
     ) -> Result<Self, ParamError> {
         let Some(ff_params_prot_keyed) = &ff_params.prot_general else {
@@ -765,10 +765,11 @@ impl MdState {
             excluded_pairs: HashSet::new(),
             scaled14_pairs: HashSet::new(),
             force_field_params: ff_params_non_static,
-            // water: make_water_mols(num_water, &cell, max_water_speed),
-            water: make_water_mols(&cell, max_water_speed),
+            temp_target,
             ..Default::default()
         };
+
+        result.water = make_water_mols(&cell, result.temp_target);
 
         result.build_masks();
         result.build_neighbours();
@@ -776,7 +777,9 @@ impl MdState {
         Ok(result)
     }
 
-    // todo: Evaluate whtaq this does, and if you keep it, document.
+    /// We use this to set up optimizations defined in the Amber reference manual. `excluded` deals
+    /// with sections were we can skip interactions. (todo: Look this up) `scaled14` applies a force
+    /// scaler for LJ and Coulomb forced for atoms separated by 3 bonds.
     fn build_masks(&mut self) {
         // Helper to store pairs in canonical (low,high) order
         let push = |set: &mut HashSet<(usize, usize)>, i: usize, j: usize| {
@@ -810,14 +813,16 @@ impl MdState {
 
     /// Build / rebuild Verlet list
     pub fn build_neighbours(&mut self) {
-        let cutoff2 = (CUTOFF + SKIN).powi(2);
+        let cutoff_sq = (CUTOFF_VDW + SKIN).powi(2);
+
         self.neighbour = vec![Vec::new(); self.atoms.len()];
         for i in 0..self.atoms.len() - 1 {
             for j in i + 1..self.atoms.len() {
                 let dv = self
                     .cell
                     .min_image(self.atoms[j].posit - self.atoms[i].posit);
-                if dv.magnitude_squared() < cutoff2 {
+
+                if dv.magnitude_squared() < cutoff_sq {
                     self.neighbour[i].push(j);
                     self.neighbour[j].push(i);
                 }
@@ -825,7 +830,7 @@ impl MdState {
         }
         // reset displacement tracker
         for a in &mut self.atoms {
-            a.vel /* nothing */;
+            a.vel;
         }
         self.max_disp_sq = 0.0;
     }
@@ -981,7 +986,7 @@ pub fn build_dynamics_docking(
         &lig.molecule.bonds,
         &setup.rec_atoms_near_site,
         ff_params,
-        2., // todo
+        TEMP_TGT_DEFAULT,
     )?;
 
     for _ in 0..n_steps {
@@ -1010,9 +1015,8 @@ pub fn build_dynamics_peptide(
 
     let posits: Vec<_> = mol.atoms.iter().map(|a| a.posit).collect();
 
-    let mut md_state = MdState::new_peptide(
-        &mol.atoms, &posits, &mol.bonds, ff_params,  2.,
-    )?;
+    let mut md_state =
+        MdState::new_peptide(&mol.atoms, &posits, &mol.bonds, ff_params, TEMP_TGT_DEFAULT)?;
 
     for _ in 0..n_steps {
         md_state.step(dt)
