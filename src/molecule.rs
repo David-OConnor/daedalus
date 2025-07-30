@@ -20,6 +20,7 @@ use bio_files::{
     AtomGeneric, BackboneSS, BondGeneric, ChainGeneric, ChargeType, DensityMap, ExperimentalMethod,
     MmCif, Mol2, MolType, ResidueGeneric, ResidueType, Sdf,
 };
+use bio_files::amber_params::{ForceFieldParams, ForceFieldParamsKeyed};
 use lin_alg::{
     f32::Vec3 as Vec3F32,
     f64::{Quaternion, Vec3},
@@ -351,12 +352,36 @@ pub struct Ligand {
     pub pose: Pose,
     pub docking_site: DockingSite,
     pub unit_cell_dims: UnitCellDims, // todo: Unused
+    /// FF type and partial charge on all atoms.
+    pub ff_params_loaded: bool,
+    /// E.g. overrides for dihedral angles for this specific ligand, as provided by Amber.
+    pub frcmod_loaded: bool,
 }
 
 impl Ligand {
-    pub fn new(molecule: Molecule) -> Self {
+    pub fn new(molecule: Molecule, ff_params: &HashMap<String, ForceFieldParamsKeyed>) -> Self {
+        let mut ff_params_loaded = true;
+        for atom in &molecule.atoms {
+            if atom.force_field_type.is_none() || atom.partial_charge.is_none() {
+                ff_params_loaded = false;
+                break;
+            }
+        }
+
+        let mut frcmod_loaded = false;
+        // If we've already loaded FRCMOD data for this ligand, update the status. Alternatively,
+        // this will be updated when we load the FRCMOD file after.
+        if ff_params
+            .keys()
+            .any(|k| k.eq_ignore_ascii_case(&molecule.ident))
+        {
+            frcmod_loaded = true;
+        }
+
         let mut result = Self {
             molecule,
+            ff_params_loaded,
+            frcmod_loaded,
             ..Default::default()
         };
 

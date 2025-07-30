@@ -7,7 +7,7 @@ use std::{
     time::Instant,
 };
 
-use bio_apis::{drugbank, pubchem, rcsb};
+use bio_apis::{amber_geostd, drugbank, pubchem, rcsb};
 use egui::{Color32, ComboBox, Context, Key, RichText, Slider, TextEdit, TopBottomPanel, Ui};
 use graphics::{ControlScheme, EngineUpdates, RIGHT_VEC, Scene, UP_VEC};
 use lin_alg::f32::{Quaternion, Vec3};
@@ -15,8 +15,8 @@ use na_seq::AaIdent;
 
 static INIT_COMPLETE: AtomicBool = AtomicBool::new(false);
 
-use bio_files::{DensityMap, ResidueType, density_from_2fo_fc_rcsb_gemmi};
-
+use bio_files::{DensityMap, ResidueType, density_from_2fo_fc_rcsb_gemmi, Mol2};
+use bio_files::amber_params::{ForceFieldParams, ForceFieldParamsKeyed};
 use crate::{
     CamSnapshot, MsaaSetting, Selection, State, ViewSelLevel, cli,
     cli::autocomplete_cli,
@@ -1642,6 +1642,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 // if response.lost_focus() && (button_clicked || enter_pressed)
                 if (button_clicked || enter_pressed) && state.ui.db_input.trim().len() == 4 {
                     let ident = state.ui.db_input.clone().trim().to_owned();
+
                     load_atom_coords_rcsb(
                         &ident,
                         state,
@@ -1651,15 +1652,55 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                         &mut reset_cam,
                     );
                 }
+            }
+            if state.ui.db_input.len() == 3 {
+                let enter_pressed =
+                    edit_resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
+                let button_clicked = ui.button("Download Amber Geostd").clicked();
 
+                if button_clicked || enter_pressed {
+                    let ident = state.ui.db_input.clone().trim().to_owned();
+
+                    match amber_geostd::load_mol_files(&state.ui.db_input) {
+                        Ok(data) => {
+                            // Load FRCmod first, then the Ligand constructor will populate that it loaded.
+                            if let Some(frcmod) = data.frcmod {
+                                state.ff_params.lig_specific.insert(
+                                    ident,
+                                    // todo: Don't unwrap.
+                                    ForceFieldParamsKeyed::new(&ForceFieldParams::from_frcmod(&frcmod).unwrap()),
+                                );
+                            }
+                            if let Some(lib) = data.lib {
+                                eprintln!("todo: Lib data available from geostd; download");
+                            }
+                            match Mol2::new(&data.mol2) {
+                                Ok(mol2) => {
+                                    let mol: Molecule = mol2.try_into().unwrap();
+                                    state.ligand = Some(Ligand::new(mol, &state.ff_params.lig_specific));
+
+                                    state.update_from_prefs();
+
+                                    redraw_mol = true;
+                                    reset_cam = true;
+                                }
+                                Err(e) => handle_err(&mut state.ui, format!("Unable to make a Mol2 from Geostd data: {:?}", e))
+                            }
+                        },
+                        Err(e) => {
+                            handle_err(&mut state.ui, format!("Unable to load Amber Geostd data: {:?}", e))
+                        }
+                    }
+                }
+            }
+
+            if state.ui.db_input.len() >= 4 {
                 if state.ui.db_input.to_uppercase().starts_with("DB") {
                     if ui.button("Download from DrugBank").clicked() {
                         match load_sdf_drugbank(&state.ui.db_input) {
                             // todo: Load as ligand for now.
                             Ok(mol) => {
-                                // state.pdb = None;
-
-                                state.ligand = Some(Ligand::new(mol));
+                                state.ligand = Some(Ligand::new(mol, &state.ff_params.lig_specific));
 
                                 state.update_from_prefs();
 
@@ -1678,9 +1719,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     match load_sdf_pubchem(&state.ui.db_input) {
                         // todo: Load as ligand for now.
                         Ok(mol) => {
-                            // state.pdb = None;
-
-                            state.ligand = Some(Ligand::new(mol));
+                            state.ligand = Some(Ligand::new(mol, &state.ff_params.lig_specific));
 
                             state.update_from_prefs();
 
@@ -1717,9 +1756,9 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         ui.add_space(ROW_SPACING);
         let mut close_ligand = false; // to avoid borrow error.
-        if let Some(ligand) = &mut state.ligand {
+        if let Some(lig) = &mut state.ligand {
             ui.horizontal(|ui| {
-                mol_descrip(&ligand.molecule, ui);
+                mol_descrip(&lig.molecule, ui);
 
                 if ui.button("Close lig").clicked() {
                     close_ligand = true;
@@ -1727,21 +1766,39 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
                 ui.add_space(COL_SPACING);
 
-                ui.label("Rotate bonds:");
-                for i in 0..ligand.flexible_bonds.len() {
-                    if let ConformationType::Flexible { torsions } =
-                        &mut ligand.pose.conformation_type
-                    {
-                        if ui.button(format!("{i}")).clicked() {
-                            torsions[i].dihedral_angle =
-                                (torsions[i].dihedral_angle + TAU / 64.) % TAU;
+                // todo status color helper?
+                ui.label("Loaded:");
+                let color = if lig.ff_params_loaded {
+                    Color32::LIGHT_GREEN
+                } else {
+                    Color32::LIGHT_RED
+                };
+                ui.label(RichText::new("FF/q").color(color));
 
-                            ligand.position_atoms(None);
+                ui.add_space(COL_SPACING / 4.);
 
-                            redraw_mol = true;
-                        }
-                    }
-                }
+                let color = if lig.frcmod_loaded {
+                    Color32::LIGHT_GREEN
+                } else {
+                    Color32::LIGHT_RED
+                };
+                ui.label(RichText::new("Frcmod").color(color));
+
+                // ui.label("Rotate bonds:");
+                // for i in 0..ligand.flexible_bonds.len() {
+                //     if let ConformationType::Flexible { torsions } =
+                //         &mut ligand.pose.conformation_type
+                //     {
+                //         if ui.button(format!("{i}")).clicked() {
+                //             torsions[i].dihedral_angle =
+                //                 (torsions[i].dihedral_angle + TAU / 64.) % TAU;
+                //
+                //             ligand.position_atoms(None);
+                //
+                //             redraw_mol = true;
+                //         }
+                //     }
+                // }
 
                 ui.add_space(COL_SPACING);
 
@@ -1750,9 +1807,9 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 }
 
                 // todo: temp, or at least temp here
-                ui.label(format!("Lig pos: {}", ligand.pose.anchor_posit));
-                ui.label(format!("Lig or: {}", ligand.pose.orientation));
-                if let ConformationType::Flexible { torsions } = &ligand.pose.conformation_type {
+                ui.label(format!("Lig pos: {}", lig.pose.anchor_posit));
+                ui.label(format!("Lig or: {}", lig.pose.orientation));
+                if let ConformationType::Flexible { torsions } = &lig.pose.conformation_type {
                     for torsion in torsions {
                         ui.label(format!("T: {:.3}", torsion.dihedral_angle));
                     }

@@ -299,7 +299,6 @@ impl MdState {
         all_atoms.extend(self.atoms.iter().cloned());
         all_atoms.extend(self.atoms_static.iter().cloned());
 
-        // `pme_long_range_forces` returns Vec<Vec3> (force, not accel)
         let rec_forces =
             pme_long_range_forces(&all_atoms, &self.cell, EWALD_ALPHA, PME_MESH_SPACING);
 

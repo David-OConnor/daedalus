@@ -148,7 +148,7 @@ impl State {
 
                     let mut init_posit = Vec3::new_zero();
 
-                    let lig = Ligand::new(mol);
+                    let lig = Ligand::new(mol, &self.ff_params.lig_specific);
 
                     // Align to a hetero residue in the open molecule, if there is a match.
                     // todo: Keep this in sync with the UI button-based code; this will have updated.
@@ -301,12 +301,33 @@ impl State {
                 println!("Loaded general Ligand force fields.");
             }
             "frcmod" => {
-                let mol_name = "CPB".to_owned(); // todo temp.
+                // Good enough for now; works for amber params.
+                // todo: Not general though. Could alternatively assume whatever you load is
+                // todo for the current molecule.
+                // Filename without path or extension.
+                let mol_name = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .ok_or_else(|| {
+                        io::Error::new(
+                            ErrorKind::InvalidInput,
+                            format!("Invalid frcmod filename: {:?}", path),
+                        )
+                    })?
+                    .to_string();
 
                 self.ff_params.lig_specific.insert(
-                    mol_name,
+                    mol_name.clone(),
                     ForceFieldParamsKeyed::new(&ForceFieldParams::load_frcmod(path)?),
                 );
+
+                // Update the lig's FRCMOD status A/R, if the ligand is opened already.
+                if let Some(lig) = &mut self.ligand {
+                    if &lig.molecule.ident.to_uppercase() == &mol_name.to_uppercase() {
+                        lig.frcmod_loaded = true;
+                    }
+                }
+
                 println!("Loaded molecule-specific force fields.");
             }
             _ => {

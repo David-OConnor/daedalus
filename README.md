@@ -33,8 +33,8 @@ in the project directory.
 
 - View the 3D structure of proteins and small molecules
 - Visualize ligand docking
-- Molecular dynamics, using Amber force fields.
-- WIP: This software is a platform for molecular docking, and ab-initio simulations.
+- Molecular dynamics, using Amber force fields, and an OPC water model
+- WIP: This software is a platform for ab-initio simulations of electron density.
 
 ![Protein B](screenshots/protein_b.png)
 
@@ -86,6 +86,10 @@ We load partial charges for ligands from *mol2*, *PDBQT* etc files. Protein dyna
 using parameters built-in to the program (The Amber one above). Simulating ligands requires the loaded
 file (e.g. *mol2*) include partial charges. we recommend including ligand-specific override
 files as well, e.g. to load dihedral angles from *.frcmod* that aren't present in *Gaff2*.
+
+This program can automatically load ligands with Amber parameters, for the set called
+*Amber Geostd*. This includes many common small organic molecules with force field parameters,
+and partial charges included. It can infer these from the protein loaded, or be queried by identifier.
 
 
 ## The camera

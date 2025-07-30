@@ -311,7 +311,7 @@ pub fn md_setup(
                     .clicked()
                 {
                     let mol_fm_res = Molecule::from_res(res, &mol.atoms, false);
-                    let mut lig = Ligand::new(mol_fm_res);
+                    let mut lig = Ligand::new(mol_fm_res, &state.ff_params.lig_specific);
 
                     let docking_center = move_lig_to_res(&mut lig, mol, res);
                     state.update_docking_site(docking_center);

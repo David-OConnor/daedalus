@@ -328,7 +328,8 @@ fn settle_opc(o: &mut AtomDynamics, h0: &mut AtomDynamics, h1: &mut AtomDynamics
     // inertia tensor (about O) for two equal masses at r0, r1
     let (ixx, iyy, izz, ixy, ixz, iyz) = {
         // I = Σ m (r² δij - r_i r_j)
-        let m = O_MASS;
+        let m = H_MASS;
+
         let r2_0 = r0.dot(r0);
         let r2_1 = r1.dot(r1);
         let xx = m * (r2_0 + r2_1 - (r0.x * r0.x + r1.x * r1.x));
@@ -375,7 +376,10 @@ fn solve_symmetric3(ixx: f64, iyy: f64, izz: f64, ixy: f64, ixz: f64, iyz: f64, 
         + ixz * (ixy * iyz - iyy * ixz);
 
     const TOL: f64 = 1.0e-12;
-    assert!(det.abs() > TOL, "singular 3×3 matrix in solve_symmetric3");
+    if det.abs() < TOL {
+        // Practically no rotation this step; keep ω = 0
+        return Vec3::new_zero();
+    }
 
     let inv_det = 1.0 / det;
 
