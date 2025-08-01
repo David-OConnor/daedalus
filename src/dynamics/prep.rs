@@ -72,9 +72,24 @@ pub fn merge_params(
     merged
 }
 
+/// Helper that reduces repetition. Used for populating all bonded parameters by index.
+fn ff_type_from_idx<'a>(atoms: &'a [Atom], idx: usize, descriptor: &str) -> Result<&'a String, ParamError> {
+    let atom = &atoms[idx];
+
+    atom.force_field_type
+        .as_ref()
+        .ok_or_else(|| {
+            ParamError::new(&format!("Atom missing FF type on {descriptor}: {atom}"))
+        })
+}
+
+
 /// Associate loaded Force field data (e.g. from Amber) into the atom indices used in a specific
 /// dynamics sim. This handles combining general and molecule-specific parameter sets, and converting
 /// between atom name, and the specific indices of the atoms we're using.
+///
+/// This code is straightforward if params are available; much of the logic here is related to handling
+/// missing parameters.
 impl ForceFieldParamsIndexed {
     pub fn new(
         params_general: &ForceFieldParamsKeyed,
@@ -90,7 +105,6 @@ impl ForceFieldParamsIndexed {
         let params = merge_params(params_general, params_specific);
 
         for (i, atom) in atoms.iter().enumerate() {
-            let err = || ParamError::new(&format!("Error: Atom missing FF type: {atom}"));
             let ff_type = match &atom.force_field_type {
                 Some(ff_t) => ff_t,
                 None => {
@@ -120,7 +134,7 @@ impl ForceFieldParamsIndexed {
                             );
                             "H"
                         }
-                        _ => return Err(err()),
+                        _ => return Err(ParamError::new(&format!("Error: Atom missing FF type: {atom}"))),
                     }
                 }
             };
@@ -191,7 +205,7 @@ impl ForceFieldParamsIndexed {
                 // special cases.
             } else {
                 // ChatGpt seems to think this is the move. I only asked it about "2C", and it inferred
-                // I should also map 3C and C8 to this so, good sign. Note that the mass values
+                // I should also map 3C and C8 to this, which is a good sign. Note that the mass values
                 // for all 4 of these are present in frcmod.ff19sb.
                 if ff_type == "2C" || ff_type == "3C" || ff_type == "C8" {
                     result
@@ -235,38 +249,23 @@ impl ForceFieldParamsIndexed {
             }
         }
 
-        // Bonds
+        // Bond lengths.
         for bond in bonds {
-            if bond.atom_0 > 2328 || bond.atom_1 > 2328 {
-                println!(
-                    "UHOH exeeded len. Atom len: {}, b0: {} b1: {}",
-                    atoms.len(),
-                    bond.atom_0,
-                    bond.atom_1
-                ); // todo temp
-            }
-
             let (i0, i1) = (bond.atom_0, bond.atom_1);
-            let (type_i, type_j) = (
-                atoms[i0].force_field_type.as_ref().ok_or_else(|| {
-                    ParamError::new(&format!("Atom missing FF type on bond: {}", atoms[i0]))
-                })?,
-                atoms[i1].force_field_type.as_ref().ok_or_else(|| {
-                    ParamError::new(&format!("Atom missing FF type on bond: {}", atoms[i1]))
-                })?,
-            );
+            let type_0 = ff_type_from_idx(atoms, i0, "Bond")?;
+            let type_1 = ff_type_from_idx(atoms, i1, "Bond")?;
 
             let data = params
                 .bond
-                .get(&(type_i.clone(), type_j.clone()))
-                .or_else(|| params.bond.get(&(type_j.clone(), type_i.clone())))
+                .get(&(type_0.clone(), type_1.clone()))
+                .or_else(|| params.bond.get(&(type_1.clone(), type_0.clone())))
                 .cloned();
 
             let Some(data) = data else {
                 // todo: We get this sometimes with glitched mmCIF files that have duplicate atoms
                 // todo in slightly different positions.
                 eprintln!(
-                    "Missing bond parameters for {type_i}-{type_j} on {} - {}. Using a safe default.",
+                    "Missing bond parameters for {type_0}-{type_1} on {} - {}. Using a safe default.",
                     atoms[i0], atoms[i1]
                 );
                 result.bond_stretching.insert(
@@ -279,11 +278,6 @@ impl ForceFieldParamsIndexed {
                     },
                 );
                 continue;
-
-                // return Err(ParamError::new(&format!(
-                //     "Missing bond parameters for {type_i}-{type_j} on {} - {}",
-                //     atoms[i0], atoms[i1]
-                // )));
             };
 
             result
@@ -291,37 +285,28 @@ impl ForceFieldParamsIndexed {
                 .insert((i0.min(i1), i0.max(i1)), data);
         }
 
-        // Angles. (Between 3 atoms)
-        for (center, neigh) in adjacency_list.iter().enumerate() {
-            if neigh.len() < 2 {
+        // Valence angles: Every connection between 3 atoms bonded linearly.
+        for (ctr, neighbors) in adjacency_list.iter().enumerate() {
+            if neighbors.len() < 2 {
                 continue;
             }
-            for (&i, &k) in neigh.iter().tuple_combinations() {
-                let (type_0, type_1, type_2) = (
-                    atoms[i].force_field_type.as_ref().ok_or_else(|| {
-                        ParamError::new(&format!("Atom missing FF type on angle: {}", atoms[i]))
-                    })?,
-                    atoms[center].force_field_type.as_ref().ok_or_else(|| {
-                        ParamError::new(&format!(
-                            "Atom missing FF type on angle: {}",
-                            atoms[center]
-                        ))
-                    })?,
-                    atoms[k].force_field_type.as_ref().ok_or_else(|| {
-                        ParamError::new(&format!("Atom missing FF type on angle: {}", atoms[k]))
-                    })?,
-                );
+            for (&n0, &n1) in neighbors.iter().tuple_combinations() {
+                let type_n0 = ff_type_from_idx(atoms, n0, "Angle")?;
+                let type_ctr = ff_type_from_idx(atoms, ctr, "Angle")?;
+                let type_n1 = ff_type_from_idx(atoms, n1, "Angle")?;
 
                 let data = match params
                     .angle
-                    .get(&(type_0.clone(), type_1.clone(), type_2.clone()))
+                    .get(&(type_n0.clone(), type_ctr.clone(), type_n1.clone()))
                 {
                     Some(param) => param.clone(),
                     // Try the other atom order.
                     None => {
+                        // todo: If you see this, remove the print. If not, remove this reversed branch.
+                        println!("Other Valence order");
                         match params
                             .angle
-                            .get(&(type_2.clone(), type_1.clone(), type_0.clone()))
+                            .get(&(type_n1.clone(), type_ctr.clone(), type_n0.clone()))
                         {
                             Some(param) => param.clone(),
                             None => {
@@ -329,8 +314,8 @@ impl ForceFieldParamsIndexed {
                                 // todo: In at least some cases, it's caused by duplicate atoms in the MMCIf file. Consider
                                 // todo: sanitizing it on load.
                                 println!(
-                                    "Missing valence angle params {type_0}-{type_1}-{type_2} on {} - {} - {}. Using a safe default.",
-                                    atoms[i], atoms[center], atoms[k]
+                                    "Missing valence angle params {type_n0}-{type_ctr}-{type_n1} on {} - {} - {}. Using a safe default.",
+                                    atoms[n0], atoms[ctr], atoms[n1]
                                 );
                                 // parm19.dat, HC-CT-HC
                                 AngleBendingParams {
@@ -344,201 +329,84 @@ impl ForceFieldParamsIndexed {
                     }
                 };
 
-                result.angle.insert((i, center, k), data);
+                result.angle.insert((n0, ctr, n1), data);
             }
         }
 
         // Proper and improper dihedral angles.
         let mut seen = HashSet::<(usize, usize, usize, usize)>::new();
 
-        // for (j, nbr_j) in adjacency_list.iter().enumerate() {
-        //     for &k in nbr_j {
-        //         if j >= k {
-        //             continue; // treat each central bond j-k once
-        //         }
-        //         for &i in &adjacency_list[j] {
-        //             if i == k {
-        //                 continue;
-        //             }
-        //             for &l in &adjacency_list[k] {
-        //                 if l == j {
-        //                     continue;
-        //                 }
-        //
-        //                 // let idx_key = (i, j, k, l);
-        //                 let idx_key = if i < l { (i, j, k, l) } else { (l, k, j, i) };
-        //
-        //                 if !seen.insert(idx_key) {
-        //                     continue; // already handled through another path
-        //                 }
-        //
-        //                 let (type_0, type_1, type_2, type_3) = (
-        //                     atoms[i].force_field_type.as_ref().ok_or_else(|| err())?,
-        //                     atoms[j].force_field_type.as_ref().ok_or_else(|| err())?,
-        //                     atoms[k].force_field_type.as_ref().ok_or_else(|| err())?,
-        //                     atoms[l].force_field_type.as_ref().ok_or_else(|| err())?,
-        //                 );
-        //
-        //                 let types = (
-        //                     type_0.clone(),
-        //                     type_1.clone(),
-        //                     type_2.clone(),
-        //                     type_3.clone(),
-        //                 );
-        //
-        //                 let data = params.get_dihedral(&types);
-        //
-        //                 match data {
-        //                     Some(d) => {
-        //                         let mut dihe = d.clone();
-        //                         // Cache the divided barrier height.
-        //                         // Pre-divide, to reduce computations later.
-        //                         dihe.barrier_height_vn /= dihe.integer_divisor as f32;
-        //                         dihe.integer_divisor = 1;
-        //
-        //                         result.dihedral.insert(idx_key, dihe);
-        //                         // result.dihedral.insert(idx_key, Some(dihe));
-        //                     }
-        //                     None => {
-        //
-        //                         return Err(ParamError::new(&format!(
-        //                             "Missing dihedral parameters for {type_0}-{type_1}-{type_2}-{type_3}"
-        //                         )))
-        //
-        //                         // return Err(ParamError::new(&format!(
-        //                         //     "No dihedral parameters for \
-        //                         //      {type_i}-{type_j}-{type_k}-{type_l}"
-        //                         // )));
-        //                     }
-        //                 }
-        //             }
-        //         }
-        //     }
-        // }
-
-        // todo: Skip het here.
-
-        // ---------------------------
-        // 1. Proper dihedrals i-j-k-l
-        // ---------------------------
-        for (j, nbr_j) in adjacency_list.iter().enumerate() {
-            for &k in nbr_j {
-                if j >= k {
+        // Proper dihedrals: Atoms 1-2-3-4 bonded linearly.
+        // todo: QC this logic.
+        for (i1, nbr_j) in adjacency_list.iter().enumerate() {
+            for &i2 in nbr_j {
+                if i1 >= i2 {
                     continue;
                 } // handle each j-k bond once
 
-                // fan out the two outer atoms
-                for &i in adjacency_list[j].iter().filter(|&&x| x != k) {
-                    for &l in adjacency_list[k].iter().filter(|&&x| x != j) {
-                        if i == l {
+                for &i0 in adjacency_list[i1].iter().filter(|&&x| x != i2) {
+                    for &i3 in adjacency_list[i2].iter().filter(|&&x| x != i1) {
+                        if i0 == i3 {
                             continue;
-                        } // skip self-torsions
+                        }
 
-                        // canonicalise so (i,l) is always (min,max)
-                        let idx_key = if i < l { (i, j, k, l) } else { (l, k, j, i) };
+                        // Canonicalise so (i1, i2) is always (min, max)
+                        let idx_key = if i1 < i2 { (i0, i1, i2, i3) } else { (i3, i2, i1, i0) };
                         if !seen.insert(idx_key) {
                             continue;
                         }
 
-                        // look up FF types
-                        let (ti, tj, tk, tl) = (
-                            atoms[i].force_field_type.as_ref().ok_or_else(|| {
-                                ParamError::new(&format!(
-                                    "Atom missing FF type on dihedral: {}",
-                                    atoms[i]
-                                ))
-                            })?,
-                            atoms[j].force_field_type.as_ref().ok_or_else(|| {
-                                ParamError::new(&format!(
-                                    "Atom missing FF type on dihedral: {}",
-                                    atoms[j]
-                                ))
-                            })?,
-                            atoms[k].force_field_type.as_ref().ok_or_else(|| {
-                                ParamError::new(&format!(
-                                    "Atom missing FF type on dihedral: {}",
-                                    atoms[k]
-                                ))
-                            })?,
-                            atoms[l].force_field_type.as_ref().ok_or_else(|| {
-                                ParamError::new(&format!(
-                                    "Atom missing FF type on dihderal: {}",
-                                    atoms[l]
-                                ))
-                            })?,
-                        );
+                        let type_0 = ff_type_from_idx(atoms, i0, "Dihedral")?;
+                        let type_1 = ff_type_from_idx(atoms, i1, "Dihedral")?;
+                        let type_2 = ff_type_from_idx(atoms, i2, "Dihedral")?;
+                        let type_3 = ff_type_from_idx(atoms, i3, "Dihedral")?;
 
                         if let Some(dihe) = params
-                            .get_dihedral(&(ti.clone(), tj.clone(), tk.clone(), tl.clone()), true)
+                            .get_dihedral(&(type_0.clone(), type_1.clone(), type_2.clone(), type_3.clone()), true)
                         {
                             let mut dihe = dihe.clone();
-                            // I believe this may be pri-divided.
-                            // dihe.barrier_height /= dihe.divider as f32; // pre-divide
+                            // The value we have loaded from Amber params is already divided,
+                            // do don't divide further.
                             dihe.divider = 1;
                             result.dihedral.insert(idx_key, dihe);
                         } else {
-                            // return Err(ParamError::new(&format!(
-                            //     "Missing dihedral parameters for {ti}-{tj}-{tk}-{tl}"
-                            // )));
+                            return Err(ParamError::new(&format!(
+                                "Missing dihedral parameters for {type_0}-{type_1}-{type_2}-{type_3}"
+                            )));
                         }
                     }
                 }
             }
         }
 
-        // ---------------------------
-        // 2. Improper dihedrals 2-1-3-4
-        // ---------------------------
-        for (c, satellites) in adjacency_list.iter().enumerate() {
+        // Improper dihedrals 2-1-3-4. Atom 3 is the hub, with the other 3 atoms bonded to it.
+        // The order of the others in the angle calculation affects the sign of the result.
+        for (ctr, satellites) in adjacency_list.iter().enumerate() {
             if satellites.len() < 3 {
                 continue;
             }
 
-            // unique unordered triples of neighbours
+            // Unique unordered triples of neighbours
             for a in 0..satellites.len() - 2 {
                 for b in a + 1..satellites.len() - 1 {
                     for d in b + 1..satellites.len() {
-                        let (i, k, l) = (satellites[a], satellites[b], satellites[d]);
-                        let idx_key = (i, c, k, l); // order is fixed → no swap
+                        let (sat0, sat1, sat2) = (satellites[a], satellites[b], satellites[d]);
+                        let idx_key = (sat0, sat1, ctr, sat2); // order is fixed → no swap
                         if !seen.insert(idx_key) {
                             continue;
                         }
 
-                        let (ti, tc, tk, tl) = (
-                            atoms[i].force_field_type.as_ref().ok_or_else(|| {
-                                ParamError::new(&format!(
-                                    "Atom missing FF type on improper: {}",
-                                    atoms[i]
-                                ))
-                            })?,
-                            atoms[c].force_field_type.as_ref().ok_or_else(|| {
-                                ParamError::new(&format!(
-                                    "Atom missing FF type on improper: {}",
-                                    atoms[c]
-                                ))
-                            })?,
-                            atoms[k].force_field_type.as_ref().ok_or_else(|| {
-                                ParamError::new(&format!(
-                                    "Atom missing FF type on improper: {}",
-                                    atoms[k]
-                                ))
-                            })?,
-                            atoms[l].force_field_type.as_ref().ok_or_else(|| {
-                                ParamError::new(&format!(
-                                    "Atom missing FF type on improper: {}",
-                                    atoms[l]
-                                ))
-                            })?,
-                        );
+                        // todo this! I believe Amber assumes the third one is the center, and you have it as the second ?!
+                        let t0 = ff_type_from_idx(atoms, sat0, "Improper dihedral")?;
+                        let t1 = ff_type_from_idx(atoms, sat1, "Improper dihedral")?;
+                        let t_ctr = ff_type_from_idx(atoms, ctr, "Improper dihedral")?;
+                        let t2 = ff_type_from_idx(atoms, sat2, "Improper dihedral")?;
 
-                        // fetch parameters (improper torsion)
                         if let Some(dihe) = params
-                            .get_dihedral(&(ti.clone(), tc.clone(), tk.clone(), tl.clone()), false)
+                            .get_dihedral(&(t0.clone(), t1.clone(), t_ctr.clone(), t2.clone()), false)
                         {
                             let mut dihe = dihe.clone();
-
-                            // todo: I believe it's already divided ?
-                            // dihe.barrier_height /= dihe.divider as f32;
+                            // See note in the Dihedral section about this already being divided.
                             dihe.divider = 1;
                             result.improper.insert(idx_key, dihe);
                         } else {
@@ -588,7 +456,6 @@ impl MdState {
             atoms,
             bonds,
             adjacency_list,
-            // false,
         )?;
 
         // This assumes nonbonded interactions only with external atoms; this is fine for
@@ -603,7 +470,6 @@ impl MdState {
             atoms_static,
             &bonds_static,
             &adj_list_static,
-            // true,
         )?;
 
         // We are using this approach instead of `.into`, so we can use the atom_posits from

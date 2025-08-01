@@ -1944,14 +1944,17 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                                 }
                                 ui.add_space(COL_SPACING);
 
-                                load_atom_coords_rcsb(
-                                    &s.pdb_id,
-                                    state,
-                                    scene,
-                                    &mut engine_updates,
-                                    &mut redraw_mol,
-                                    &mut reset_cam,
-                                );
+                                if ui.button(RichText::new(format!("Open this protein")).color(COLOR_HIGHLIGHT)).clicked() {
+                                    load_atom_coords_rcsb(
+                                        &s.pdb_id,
+                                        state,
+                                        scene,
+                                        &mut engine_updates,
+                                        &mut redraw_mol,
+                                        &mut reset_cam,
+                                    );
+                                }
+
                             });
 
                             ui.label(RichText::new(format!("{}", s.description)));

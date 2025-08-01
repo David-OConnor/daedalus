@@ -47,10 +47,11 @@ impl MdState {
             a.accel = Vec3::new_zero();
         }
 
+        // Bonded forces
         self.apply_bond_stretching_forces();
         self.apply_angle_bending_forces();
         // todo: Dihedral not working. Skipping for now. Our measured and expected angles aren't lining up.
-        // self.apply_dihedral_forces();
+        self.apply_dihedral_forces();
 
         self.apply_nonbonded_forces();
 
@@ -137,10 +138,11 @@ impl MdState {
     /// This maintains dihedral angles. (i.e. the angle between four atoms in a sequence). This models
     /// effects such as σ-bond overlap (e.g. staggered conformations), π-conjugation, which locks certain
     /// dihedrals near 0 or τ, and steric hindrance. (Bulky groups clashing).
+    ///
+    /// This applies both "proper" linear dihedral angles, and "improper", hub-and-spoke dihedrals. These
+    /// two angles are calculated in the same way, but the covalent-bond arrangement of the 4 atoms differs.
     fn apply_dihedral_forces(&mut self) {
         for (indices, dihe) in &self.force_field_params.dihedral {
-            // let Some(dihe) = dihe_ else { continue };
-
             if &dihe.atom_types.0 == "X" || &dihe.atom_types.3 == "X" {
                 continue; // todo temp, until we sum.
             }

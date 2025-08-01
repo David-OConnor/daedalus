@@ -143,7 +143,6 @@ impl Molecule {
         result.bonds = bonds;
 
         result.bonds_hydrogen = create_hydrogen_bonds(&result.atoms, &result.bonds);
-
         result.adjacency_list = build_adjacency_list(&result.bonds, result.atoms.len());
 
         for res in &result.residues {
@@ -1178,6 +1177,8 @@ impl Molecule {
 /// Build a list of, for each atom, all atoms bonded to it.
 /// We use this as part of our flexible-bond conformation algorithm, and in setting up
 /// angles and dihedrals for molecular docking.
+///
+/// Run this after populate hydrogens.
 pub fn build_adjacency_list(bonds: &[Bond], atoms_len: usize) -> Vec<Vec<usize>> {
     let mut result = vec![Vec::new(); atoms_len];
 
