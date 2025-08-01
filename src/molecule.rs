@@ -13,14 +13,16 @@ use std::{
 };
 
 use bio_apis::{
-    ReqError, rcsb,
+    ReqError,
+    pubchem::ProteinStructure,
+    rcsb,
     rcsb::{FilesAvailable, PdbDataResults, PdbMetaData},
 };
 use bio_files::{
     AtomGeneric, BackboneSS, BondGeneric, ChainGeneric, ChargeType, DensityMap, ExperimentalMethod,
     MmCif, Mol2, MolType, ResidueGeneric, ResidueType, Sdf,
+    amber_params::{ForceFieldParams, ForceFieldParamsKeyed},
 };
-use bio_files::amber_params::{ForceFieldParams, ForceFieldParamsKeyed};
 use lin_alg::{
     f32::Vec3 as Vec3F32,
     f64::{Quaternion, Vec3},
@@ -356,6 +358,8 @@ pub struct Ligand {
     pub ff_params_loaded: bool,
     /// E.g. overrides for dihedral angles for this specific ligand, as provided by Amber.
     pub frcmod_loaded: bool,
+    /// E.g. loaded proteins from Pubchem.
+    pub associated_structures: Vec<ProteinStructure>,
 }
 
 impl Ligand {
@@ -1107,7 +1111,6 @@ impl TryFrom<Sdf> for Molecule {
     type Error = io::Error;
     fn try_from(m: Sdf) -> Result<Self, Self::Error> {
         let atoms: Vec<_> = m.atoms.iter().map(|a| a.into()).collect();
-
         let mut residues = Vec::with_capacity(m.residues.len());
         for res in &m.residues {
             residues.push(Residue::from_generic(res, &atoms, ResidueEnd::Hetero)?);
@@ -1130,6 +1133,8 @@ impl TryFrom<Sdf> for Molecule {
         result.bonds = bonds;
         result.bonds_hydrogen = Vec::new();
         result.adjacency_list = build_adjacency_list(&result.bonds, result.atoms.len());
+        result.pubchem_cid = m.pubchem_cid;
+        result.drugbank_id = m.drugbank_id;
 
         Ok(result)
     }

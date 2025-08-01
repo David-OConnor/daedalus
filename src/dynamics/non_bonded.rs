@@ -220,24 +220,27 @@ impl MdState {
         }
     }
 
-    /// Coulomb and Van der Waals. (Lennard-Jones)
+    /// Coulomb and Van der Waals. (Lennard-Jones). We use the MD-standard [S]PME approach
+    /// to handle approximated Coulomb forces.
     ///
-    /// todo: See Amber RM, 15.1: 1-4: Non-Bonded Interaction Scaling. This may be why
-    /// todo you're having trouble with LJ. Applies to Coulomb as well.
-    /// todo: Are these already applied in the params, or do you need to scale? Likely; see that RM section.
+    /// We use a hard distance cutoff for Vdw, due to its  ^-7 falloff.
+    ///todo: The PME reciprical case still contains 1-4 coulomb; fix A/R, and QC
+    /// todo teh SPME's interaction with exclusions adn 1-4 scaling in general.
     ///
-    /// todo: If required, build a neighbors list for interactions with external atoms.
-    /// todo: And/or apply Barnes Hut, or a distance cutoff.
-    /// todo: Or Particle‑Mesh‑Ewald (PME/SPME) or (less often) the Fast‑Multipole‑Method (FMM).
-    /// I believe PME is generally used in practice.
+    /// todo: ChatGPT's take:
+    /// "
+    ///     1-2 / 1-3: fine—the real-space part is zero; the reciprocal part still adds a tiny force, but Amber accepts that because those atoms are seldom >½ box apart. If you want bit-exact Amber, subtract the same pair from rec_forces.
     ///
-    /// We use a hard distance cutoff for Vdw, due to its  ^-7 falloff..
+    ///     1-4: you do scale the real-space part, but the reciprocal part is still full strength, so the net Coulomb-14 ends up too large by 1 – 1/SCEE (≈ 17 % with the default 1.2).
+    ///     Fix: after building nonbonded_scaled, loop over it again and apply a corrective force/energy equal to (1 – 1/SCEE) * q_i q_j f(r) (or simply compute a second short-range pass with that factor and subtract it).
+    ///
+    /// If you prefer to avoid the extra pass, an alternative is to put the charges of a 1-4 pair into different mesh charge groups and annul their contribution in reciprocal space, but that is more intrusive.
+    /// "
     pub fn apply_nonbonded_forces(&mut self) {
         const EPS: f64 = 1e-6;
 
         // Apply the short range terms: LJ, and Ewald-screened Coulomb.
         for i in 0..self.atoms.len() {
-            // todo: Can you unify this with your neighbor code used for bonds?
             for &j in &self.neighbour[i] {
                 if j < i {
                     // Prevents duplication of the pair in the other order.
@@ -247,11 +250,11 @@ impl MdState {
                 let scale14 = {
                     let key = if i < j { (i, j) } else { (j, i) };
 
-                    if self.excluded_pairs.contains(&key) {
+                    if self.nonbonded_exclusions.contains(&key) {
                         continue;
                     }
 
-                    self.scaled14_pairs.contains(&key)
+                    self.nonbonded_scaled.contains(&key)
                 };
 
                 let diff = self.atoms[j].posit - self.atoms[i].posit;

@@ -367,6 +367,9 @@ struct StateUi {
     density_iso_level: f32,
     /// E.g. set to original for from the mmCIF file, or Dynamics to view it after MD.
     peptide_atom_posits: PeptideAtomPosits,
+    // todo: A/R, add a substruct for popup state.
+    show_get_geostd_popup: bool,
+    show_associated_structures_popup: bool,
 }
 
 #[derive(Clone, PartialEq, Debug, Default, Encode, Decode)]

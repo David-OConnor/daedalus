@@ -9,7 +9,8 @@ Conceptually similar to [PyMol](https://www.pymol.org/), [Chimera](https://www.c
 [Coot](https://www2.mrc-lmb.cam.ac.uk/personal/pemsley/coot/)
 and [VMD](https://www.ks.uiuc.edu/Research/vmd/) as well.
 
-Designed to be as easy to use, and fast as possible.
+Designed to be as easy to use, and fast as possible. Has tight integration with RSCB, Pubchem, drugbank,
+and Amber.
 
 
 ## Installation
@@ -69,11 +70,20 @@ Integrates the following [Amber parameters](https://ambermd.org/AmberModels.php)
 - Protein/AA: [FF19SB](https://pubs.acs.org/doi/10.1021/acs.jctc.9b00591)
 - Water: [OPC](https://arxiv.org/abs/1408.1679)
 
+Currently, MD only supports polypeptides and small organic molecules. We plan to support carbohydrates, DNA, RNA,
+and lipids later. If you're interested in these, please add a Github Issue.
+
 These general parameters do not need to be loaded externally; they provide the information needed to perform
 MD with any amino acid sequence, and provide a baseline for dynamics of small organic molecules. You may wish to load
 frcmod data over these that have overrides for specific small molecules.
 
-(todo: info on loading mol-specific frcmod data automatically)
+This program can automatically load ligands with Amber parameters, for the
+*Amber Geostd* set. This includes many common small organic molecules with force field parameters,
+and partial charges included. It can infer these from the protein loaded, or be queried by identifier.
+
+You can load these molecules with parameters directly from the GUI by typing the identifier. 
+If you load an SDF molecule, the program may be able to automatically update it using Amber parameters and
+partial charges.
 
 For details on how dynamics using this parameterized approach works, see the 
 [Amber Reference Manual](https://ambermd.org/doc12/Amber25.pdf). Section 3 and 15 are of particular
@@ -87,9 +97,6 @@ using parameters built-in to the program (The Amber one above). Simulating ligan
 file (e.g. *mol2*) include partial charges. we recommend including ligand-specific override
 files as well, e.g. to load dihedral angles from *.frcmod* that aren't present in *Gaff2*.
 
-This program can automatically load ligands with Amber parameters, for the set called
-*Amber Geostd*. This includes many common small organic molecules with force field parameters,
-and partial charges included. It can infer these from the protein loaded, or be queried by identifier.
 
 
 ## The camera

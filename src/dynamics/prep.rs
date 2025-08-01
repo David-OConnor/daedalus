@@ -540,7 +540,7 @@ impl ForceFieldParamsIndexed {
                             // todo: I believe it's already divided ?
                             // dihe.barrier_height /= dihe.divider as f32;
                             dihe.divider = 1;
-                            result.dihedral.insert(idx_key, dihe);
+                            result.improper.insert(idx_key, dihe);
                         } else {
                             // return Err(ParamError::new(&format!(
                             //     "Missing improper parameters for {ti}-{tc}-{tk}-{tl}"
@@ -655,8 +655,8 @@ impl MdState {
             adjacency_list: adjacency_list.to_vec(),
             atoms_static: atoms_dy_static,
             cell,
-            excluded_pairs: HashSet::new(),
-            scaled14_pairs: HashSet::new(),
+            nonbonded_exclusions: HashSet::new(),
+            nonbonded_scaled: HashSet::new(),
             force_field_params: ff_params_non_static,
             temp_target,
             ..Default::default()
@@ -664,7 +664,7 @@ impl MdState {
 
         result.water = make_water_mols(&cell, result.temp_target);
 
-        result.build_masks();
+        result.setup_nonbonded_exclusion_scale_flags();
         result.build_neighbours();
 
         Ok(result)
@@ -762,8 +762,8 @@ impl MdState {
             adjacency_list: adjacency_list.to_vec(),
             atoms_static: Vec::new(),
             cell,
-            excluded_pairs: HashSet::new(),
-            scaled14_pairs: HashSet::new(),
+            nonbonded_exclusions: HashSet::new(),
+            nonbonded_scaled: HashSet::new(),
             force_field_params: ff_params_non_static,
             temp_target,
             ..Default::default()
@@ -771,16 +771,16 @@ impl MdState {
 
         result.water = make_water_mols(&cell, result.temp_target);
 
-        result.build_masks();
+        result.setup_nonbonded_exclusion_scale_flags();
         result.build_neighbours();
 
         Ok(result)
     }
 
     /// We use this to set up optimizations defined in the Amber reference manual. `excluded` deals
-    /// with sections were we can skip interactions. (todo: Look this up) `scaled14` applies a force
-    /// scaler for LJ and Coulomb forced for atoms separated by 3 bonds.
-    fn build_masks(&mut self) {
+    /// with sections were we skip coulomb and Vdw interactions for atoms separated by 1 or 2 bonds. `scaled14` applies a force
+    /// scaler for these interactions, when separated by 3 bonds.
+    fn setup_nonbonded_exclusion_scale_flags(&mut self) {
         // Helper to store pairs in canonical (low,high) order
         let push = |set: &mut HashSet<(usize, usize)>, i: usize, j: usize| {
             if i < j {
@@ -792,22 +792,22 @@ impl MdState {
 
         // 1-2
         for (indices, _) in &self.force_field_params.bond_stretching {
-            push(&mut self.excluded_pairs, indices.0, indices.1);
+            push(&mut self.nonbonded_exclusions, indices.0, indices.1);
         }
 
         // 1-3
         for (indices, _) in &self.force_field_params.angle {
-            push(&mut self.excluded_pairs, indices.0, indices.2);
+            push(&mut self.nonbonded_exclusions, indices.0, indices.2);
         }
 
-        // 1-4
+        // 1-4. We do not count improper dihedrals here.
         for (indices, _) in &self.force_field_params.dihedral {
-            push(&mut self.scaled14_pairs, indices.0, indices.3);
+            push(&mut self.nonbonded_scaled, indices.0, indices.3);
         }
 
         // Make sure no 1-4 pair is also in the excluded set
-        for p in &self.scaled14_pairs {
-            self.excluded_pairs.remove(p);
+        for p in &self.nonbonded_scaled {
+            self.nonbonded_exclusions.remove(p);
         }
     }
 

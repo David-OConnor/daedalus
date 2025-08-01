@@ -110,18 +110,14 @@ pub struct ForceFieldParamsIndexed {
     pub mass: HashMap<usize, MassParams>,
     pub bond_stretching: HashMap<(usize, usize), BondStretchingParams>,
     pub angle: HashMap<(usize, usize, usize), AngleBendingParams>,
-    /// This includes both normal, and improper dihedrals.
     pub dihedral: HashMap<(usize, usize, usize, usize), DihedralParams>,
-    // pub dihedral: HashMap<(usize, usize, usize, usize), Option<DihedralData>>,
+    pub improper: HashMap<(usize, usize, usize, usize), DihedralParams>,
 
     // Dihedrals are represented in Amber params as a fourier series; this Vec indlues all matches.
     // e.g. X-ca-ca-X may be present multiple times in gaff2.dat. (Although seems to be uncommon)
     //
     // X -nh-sx-X    4    3.000         0.000          -2.000
     // X -nh-sx-X    4    0.400       180.000           3.000
-
-    // pub dihedral: HashMap<(usize, usize, usize, usize), Vec<DihedralData>>,
-    // pub improper: HashMap<(usize, usize, usize, usize), DihedralData>,
     pub van_der_waals: HashMap<usize, VdwParams>,
     // pub partial_charge: HashMap<usize, f32>, // todo: A/r
 }
@@ -276,11 +272,13 @@ pub struct MdState {
     /// K
     temp_target: f64,
     barostat: BerendsenBarostat,
-    /// Exclusions / masks optimization.
-    excluded_pairs: HashSet<(usize, usize)>, // 1-2 and 1-3 // todo: Look this up.
+    /// Exclusions of non-bonded forces for atoms connected by 1, or 2 covalent bonds.
+    /// I can't find this in the RM, but ChatGPT is confident of it, and references an Amber file
+    /// called 'prmtop', which I can't find. Fishy, but we're going with it.
+    nonbonded_exclusions: HashSet<(usize, usize)>,
     /// See Amber RM, sectcion 15, "1-4 Non-Bonded Interaction Scaling"
     /// These are indices of atoms separated by three consecutive bonds
-    scaled14_pairs: HashSet<(usize, usize)>,
+    nonbonded_scaled: HashSet<(usize, usize)>,
     water: Vec<WaterMol>,
     /// We cache sigma and eps on the first step, then use it on the others. This increases
     /// memory use, and reduces CPU use.

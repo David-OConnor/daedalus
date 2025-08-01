@@ -58,7 +58,7 @@ rustfft = "6.4.0" # For Ewald long range
 #lin_alg = { path = "../../lin_alg" }
 #barnes_hut = { path = "../../barnes_hut" }
 na_seq = { path = "../na_seq" }
-#bio_apis = { path = "../bio_apis" }
+bio_apis = { path = "../bio_apis" }
 #mcubes = { path = "../mcubes" }
 bio_files = { path = "../bio_files" }
 

@@ -7,6 +7,7 @@ use std::{
     time::Instant,
 };
 
+use bio_apis::amber_geostd;
 use bio_files::{DensityMap, MmCif, gemmi_cif_to_map};
 use lin_alg::f64::Vec3;
 use na_seq::{AaIdent, Element};
@@ -504,5 +505,46 @@ impl State {
 
         let elapsed = start.elapsed().as_millis();
         println!("Loaded static FF data in {elapsed}ms");
+    }
+
+    /// Load Mol2 and FRCMOD data from our Amber GEostd database.
+    pub fn load_geostd_mol_data(&mut self, ident: &str, redraw_lig: &mut bool) {
+        let ident = ident.trim().to_owned();
+
+        match amber_geostd::load_mol_files(&ident) {
+            Ok(data) => {
+                // Load FRCmod first, then the Ligand constructor will populate that it loaded.
+                if let Some(frcmod) = data.frcmod {
+                    self.ff_params.lig_specific.insert(
+                        ident,
+                        // todo: Don't unwrap.
+                        ForceFieldParamsKeyed::new(
+                            &ForceFieldParams::from_frcmod(&frcmod).unwrap(),
+                        ),
+                    );
+                }
+                if let Some(lib) = data.lib {
+                    println!("todo: Lib data available from geostd; download?");
+                }
+                match Mol2::new(&data.mol2) {
+                    Ok(mol2) => {
+                        let mol: Molecule = mol2.try_into().unwrap();
+                        self.ligand = Some(Ligand::new(mol, &self.ff_params.lig_specific));
+
+                        self.update_from_prefs();
+
+                        *redraw_lig = true;
+                    }
+                    Err(e) => handle_err(
+                        &mut self.ui,
+                        format!("Unable to make a Mol2 from Geostd data: {:?}", e),
+                    ),
+                }
+            }
+            Err(e) => handle_err(
+                &mut self.ui,
+                format!("Unable to load Amber Geostd data: {:?}", e),
+            ),
+        }
     }
 }
