@@ -121,6 +121,8 @@ pub struct ForceFieldParamsIndexed {
     pub bond_stretching: HashMap<(usize, usize), BondStretchingParams>,
     pub angle: HashMap<(usize, usize, usize), AngleBendingParams>,
     pub dihedral: HashMap<(usize, usize, usize, usize), DihedralParams>,
+    /// Generally only for planar hub and spoke arrangements, and always hold a planar dihedral shape.
+    /// (e.g. τ/2 with symmetry 2)
     pub improper: HashMap<(usize, usize, usize, usize), DihedralParams>,
 
     // Dihedrals are represented in Amber params as a fourier series; this Vec indlues all matches.
@@ -319,7 +321,6 @@ impl MdState {
         // Bonded forces
         self.apply_bond_stretching_forces();
         self.apply_angle_bending_forces();
-        // todo: Dihedral not working. Skipping for now. Our measured and expected angles aren't lining up.
         self.apply_dihedral_forces(false);
         self.apply_dihedral_forces(true);
 
@@ -474,40 +475,47 @@ impl MdState {
                 -k * per * arg.sin()
             };
 
-            if (a_0.force_field_type == "c6"
-                && a_1.force_field_type == "ca"
-                && a_2.force_field_type == "ca"
-                && a_3.force_field_type == "os")
-                || (a_0.force_field_type == "os"
-                    && a_1.force_field_type == "ca"
-                    && a_2.force_field_type == "ca"
-                    && a_3.force_field_type == "c6")
-            {
-                if self.step_count == 0 {
-                    println!(
-                        "\nPosits: {} {:.3}, {} {:.3}, {} {:.3}, {} {:.3}",
-                        a_0.force_field_type,
-                        r_0,
-                        a_1.force_field_type,
-                        r_1,
-                        a_2.force_field_type,
-                        r_2,
-                        a_3.force_field_type,
-                        r_3
-                    );
-
-                    // println!("Test CA dihe: {test_di1:.3} ctrl: {test_di_ctrl:.3}");
-                    println!(
-                        // "{:?} - Ms raw: {dihe_measured_2:2} Ms: {:.2} exp: {:.2}/{} dV_dφ: {:.2}",
-                        "{:?} -  Ms: {:.2} exp: {:.2}/{} dV_dφ: {:.2}",
-                        &dihe.atom_types,
-                        dihe_measured / TAU,
-                        dihe.phase / TAU as f32,
-                        dihe.periodicity,
-                        dV_dφ,
-                    );
-                }
-            }
+            // if improper && a_2.force_field_type == "cc" && self.step_count < 3000 && self.step_count % 100 == 0 {
+            //     let mut sats = [
+            //         a_0.force_field_type.as_str(),
+            //         a_1.force_field_type.as_str(),
+            //         a_3.force_field_type.as_str(),    // NB: skip the hub (a_2)
+            //     ];
+            //     sats.sort_unstable();
+            //     if sats == ["ca", "cd", "os"] {
+            //     // if (a_0.force_field_type == "ca"
+            //     //     && a_1.force_field_type == "cd"
+            //     //     && a_2.force_field_type == "cc"
+            //     //     && a_3.force_field_type == "os")
+            //     //     || (a_0.force_field_type == "os"
+            //     //     && a_1.force_field_type == "ca"
+            //     //     && a_2.force_field_type == "cd"
+            //     //     && a_3.force_field_type == "cc")
+            //     // {
+            //         println!(
+            //             "\nPosits: {} {:.3}, {} {:.3}, {} {:.3}, {} {:.3}",
+            //             a_0.force_field_type,
+            //             r_0,
+            //             a_1.force_field_type,
+            //             r_1,
+            //             a_2.force_field_type,
+            //             r_2,
+            //             a_3.force_field_type,
+            //             r_3
+            //         );
+            //
+            //         // println!("Test CA dihe: {test_di1:.3} ctrl: {test_di_ctrl:.3}");
+            //         println!(
+            //             // "{:?} - Ms raw: {dihe_measured_2:2} Ms: {:.2} exp: {:.2}/{} dV_dφ: {:.2}",
+            //             "{:?} -  Ms: {:.2} exp: {:.2}/{} dV_dφ: {:.2} . Improper: {improper}",
+            //             &dihe.atom_types,
+            //             dihe_measured / TAU,
+            //             dihe.phase / TAU as f32,
+            //             dihe.periodicity,
+            //             dV_dφ,
+            //         );
+            //     }
+            // }
 
             // ∂φ/∂r   (see e.g. DOI 10.1016/S0021-9991(97)00040-8)
             let dφ_dr1 = -n1 * (b2_len / n1_sq);

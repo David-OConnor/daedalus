@@ -397,6 +397,11 @@ impl ForceFieldParamsIndexed {
 
         // Improper dihedrals 2-1-3-4. Atom 3 is the hub, with the other 3 atoms bonded to it.
         // The order of the others in the angle calculation affects the sign of the result.
+        // Generally only for planar configs.
+        //
+        // Note: The sattelites are expected to be in alphabetical order, re their FF types.
+        // So, for the hub of "ca" with sattelites of "ca", "ca", and "os", the correct combination
+        // to look for in the params is "ca-ca-ca-os"
         for (ctr, satellites) in adjacency_list.iter().enumerate() {
             if satellites.len() < 3 {
                 continue;
@@ -407,31 +412,45 @@ impl ForceFieldParamsIndexed {
                 for b in a + 1..satellites.len() - 1 {
                     for d in b + 1..satellites.len() {
                         let (sat0, sat1, sat2) = (satellites[a], satellites[b], satellites[d]);
+
                         let idx_key = (sat0, sat1, ctr, sat2); // order is fixed → no swap
                         if !seen.insert(idx_key) {
                             continue;
                         }
 
-                        // todo this! I believe Amber assumes the third one is the center, and you have it as the second ?!
                         let t0 = ff_type_from_idx(atoms, sat0, "Improper dihedral")?;
                         let t1 = ff_type_from_idx(atoms, sat1, "Improper dihedral")?;
                         let t_ctr = ff_type_from_idx(atoms, ctr, "Improper dihedral")?;
                         let t2 = ff_type_from_idx(atoms, sat2, "Improper dihedral")?;
 
+                        // Sort satellites alphabetically; required to ensure we don't miss combinations.
+                        let mut sat_types = [t0.clone(), t1.clone(), t2.clone()];
+                        sat_types.sort();
+
+                        let key = (
+                            sat_types[0].clone(),
+                            sat_types[1].clone(),
+                            t_ctr.clone(),
+                            sat_types[2].clone(),
+                        );
+
+                        // In the case of improper, unlike all other param types, we are allowed to
+                        // have missing values. Impropers areonly, by Amber convention, for planar
+                        // hub and spoke setups, so non-planar ones will be omitted. These may occur,
+                        // for example, at ring intersections.
                         if let Some(dihe) = params.get_dihedral(
-                            &(t0.clone(), t1.clone(), t_ctr.clone(), t2.clone()),
-                            false,
+                            // &(t0.clone(), t1.clone(), t_ctr.clone(), t2.clone()),
+                            &key, false,
                         ) {
                             let mut dihe = dihe.clone();
                             // Generally, there is no divisor for impropers, but set it up here
                             // to be more general.
                             dihe.barrier_height /= dihe.divider as f32;
                             dihe.divider = 1;
+
+                            // println!("\nAdding improper: {:?}", dihe);
+
                             result.improper.insert(idx_key, dihe);
-                        } else {
-                            return Err(ParamError::new(&format!(
-                                "MD failure: Missing improper parameters for {t0}-{t1}-{t_ctr}-{t2}"
-                            )));
                         }
                     }
                 }
@@ -470,7 +489,7 @@ impl MdState {
         let ff_params_keyed_lig_specific = ff_params.lig_specific.get("CPB");
 
         // Convert FF params from keyed to index-based.
-        println!("Building FF params indexed ligand for docking...");
+        println!("\nBuilding FF params indexed ligand for docking...");
         let ff_params_non_static = ForceFieldParamsIndexed::new(
             ff_params_lig_keyed,
             ff_params_keyed_lig_specific,
@@ -484,7 +503,7 @@ impl MdState {
         let bonds_static = Vec::new();
         let adj_list_static = Vec::new();
 
-        println!("Building FF params indexed static for docking...");
+        println!("\nBuilding FF params indexed static for docking...");
         let ff_params_static = ForceFieldParamsIndexed::new(
             ff_params_prot_keyed,
             None,
@@ -612,7 +631,7 @@ impl MdState {
         let adjacency_list = build_adjacency_list(&bonds_filtered, atoms.len());
 
         // Convert FF params from keyed to index-based.
-        println!("Building FF params indexed for peptide...");
+        println!("\nBuilding FF params indexed for peptide...");
         let ff_params_non_static = ForceFieldParamsIndexed::new(
             ff_params_prot_keyed,
             None,
