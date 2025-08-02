@@ -471,6 +471,7 @@ impl MdState {
         atoms_static: &[Atom],
         ff_params: &FfParamSet,
         temp_target: f64,
+        lig_ident: &str,
         // todo: Temperature/thermostat.
     ) -> Result<Self, ParamError> {
         let Some(ff_params_lig_keyed) = &ff_params.lig_general else {
@@ -485,14 +486,16 @@ impl MdState {
         // Assign FF type and charge to protein atoms; FF type must be assigned prior to initializing `ForceFieldParamsIndexed`.
         // (Ligand atoms will already have FF type assigned).
 
-        // todo temp!
-        let ff_params_keyed_lig_specific = ff_params.lig_specific.get("CPB");
+        let ff_params_keyed_lig_specific = match ff_params.lig_specific.get(lig_ident) {
+            Some(l) => l,
+            None => return Err(ParamError::new("Missing lig-specific (FRCMOD) parameters")),
+        };
 
         // Convert FF params from keyed to index-based.
         println!("\nBuilding FF params indexed ligand for docking...");
         let ff_params_non_static = ForceFieldParamsIndexed::new(
             ff_params_lig_keyed,
-            ff_params_keyed_lig_specific,
+            Some(ff_params_keyed_lig_specific),
             atoms,
             bonds,
             adjacency_list,
@@ -571,8 +574,7 @@ impl MdState {
             ..Default::default()
         };
 
-        // todo temp rm
-        // result.water = make_water_mols(&cell, result.temp_target);
+        result.water = make_water_mols(&cell, result.temp_target);
 
         result.setup_nonbonded_exclusion_scale_flags();
         result.build_neighbours();
@@ -899,6 +901,7 @@ pub fn build_dynamics_docking(
         &setup.rec_atoms_near_site,
         ff_params,
         TEMP_TGT_DEFAULT,
+        &lig.molecule.ident,
     )?;
 
     for _ in 0..n_steps {

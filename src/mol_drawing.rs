@@ -21,7 +21,8 @@ use crate::{
         ATOM_SHININESS, BACKGROUND_COLOR, BALL_RADIUS_WATER_H, BALL_RADIUS_WATER_O,
         BALL_STICK_RADIUS, BALL_STICK_RADIUS_H, BODY_SHINYNESS, Color, MESH_BOND, MESH_CUBE,
         MESH_DENSITY_SURFACE, MESH_DOCKING_BOX, MESH_SECONDARY_STRUCTURE, MESH_SOLVENT_SURFACE,
-        MESH_SPHERE_HIGHRES, MESH_SPHERE_LOWRES, MESH_SPHERE_MEDRES, set_docking_light,
+        MESH_SPHERE_HIGHRES, MESH_SPHERE_LOWRES, MESH_SPHERE_MEDRES, WATER_BOND_THICKNESS,
+        WATER_OPACITY, set_docking_light,
     },
     util::orbit_center,
 };
@@ -37,6 +38,8 @@ pub const COLOR_AA_NON_RESIDUE_EGUI: Color32 = Color32::from_rgb(0, 204, 255);
 const COLOR_SELECTED: Color = (1., 0., 0.);
 const COLOR_H_BOND: Color = (1., 0.5, 0.1);
 const RADIUS_H_BOND: f32 = 0.2; // A scaler relative to covalent sticks.
+
+const COLOR_WATER_BOND: Color = (0.5, 0.5, 0.8);
 
 const COLOR_SFC_DOT: Color = (0.7, 0.7, 0.7);
 const COLOR_DOCKING_BOX: Color = (0.3, 0.3, 0.9);
@@ -573,30 +576,54 @@ pub fn draw_water(scene: &mut Scene, o_pos: &[Vec3F64], h0_pos: &[Vec3F64], h1_p
             Element::Oxygen.color(),
             ATOM_SHININESS,
         );
+
+        ent.opacity = WATER_OPACITY;
         ent.class = EntityType::WaterModel as u32;
         scene.entities.push(ent);
 
-        let mut ent = Entity::new(
-            MESH_WATER_SPHERE,
-            h0_pos[i].into(),
-            Quaternion::new_identity(),
-            BALL_RADIUS_WATER_H,
-            Element::Hydrogen.color(),
-            ATOM_SHININESS,
-        );
-        ent.class = EntityType::WaterModel as u32;
-        scene.entities.push(ent);
+        for pos in [h0_pos[i], h1_pos[i]].iter() {
+            let mut ent = Entity::new(
+                MESH_WATER_SPHERE,
+                (*pos).into(),
+                Quaternion::new_identity(),
+                BALL_RADIUS_WATER_H,
+                Element::Hydrogen.color(),
+                ATOM_SHININESS,
+            );
 
-        let mut ent = Entity::new(
-            MESH_WATER_SPHERE,
-            h1_pos[i].into(),
-            Quaternion::new_identity(),
-            BALL_RADIUS_WATER_H,
-            Element::Hydrogen.color(),
-            ATOM_SHININESS,
-        );
-        ent.class = EntityType::WaterModel as u32;
-        scene.entities.push(ent);
+            ent.opacity = WATER_OPACITY;
+            ent.class = EntityType::WaterModel as u32;
+            scene.entities.push(ent);
+        }
+
+        // Bonds
+        for pair in [(o_pos[i], h0_pos[i]), (o_pos[i], h1_pos[i])] {
+            let center: Vec3 = ((pair.0 + pair.1) / 2.).into();
+            let diff: Vec3 = (pair.0 - pair.1).into();
+            let dist = diff.magnitude();
+
+            // This handles the case of atoms in the water molecule split across the periodic boundary
+            // condition; don't draw the bond.
+            if dist > 5. {
+                continue;
+            }
+
+            let orientation = Quaternion::from_unit_vecs(UP_VEC, diff.to_normalized());
+            let mut ent_bond = Entity::new(
+                MESH_BOND,
+                center,
+                orientation,
+                1.,
+                COLOR_WATER_BOND,
+                BODY_SHINYNESS,
+            );
+            let scale = Some(Vec3::new(WATER_BOND_THICKNESS, dist, WATER_BOND_THICKNESS));
+
+            ent_bond.opacity = WATER_OPACITY;
+            ent_bond.scale_partial = scale;
+            ent_bond.class = EntityType::WaterModel as u32;
+            scene.entities.push(ent_bond);
+        }
     }
 }
 

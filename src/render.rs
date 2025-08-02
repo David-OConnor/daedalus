@@ -47,8 +47,10 @@ pub const MESH_SECONDARY_STRUCTURE: usize = 9;
 pub const BALL_STICK_RADIUS: f32 = 0.3;
 pub const BALL_STICK_RADIUS_H: f32 = 0.2;
 
-pub const BALL_RADIUS_WATER_O: f32 = 0.12;
+pub const BALL_RADIUS_WATER_O: f32 = 0.09;
 pub const BALL_RADIUS_WATER_H: f32 = 0.06;
+pub const WATER_BOND_THICKNESS: f32 = 0.1;
+pub const WATER_OPACITY: f32 = 1.;
 
 pub const SHELL_OPACITY: f32 = 0.01;
 
