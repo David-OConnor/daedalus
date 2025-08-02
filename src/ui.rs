@@ -8,7 +8,10 @@ use std::{
 };
 
 use bio_apis::{amber_geostd, drugbank, pubchem, rcsb};
-use egui::{Color32, ComboBox, Context, Key, Popup, PopupAnchor, Pos2, RectAlign, RichText, Slider, TextEdit, TopBottomPanel, Ui};
+use egui::{
+    Color32, ComboBox, Context, Key, Popup, PopupAnchor, Pos2, RectAlign, RichText, Slider,
+    TextEdit, TopBottomPanel, Ui,
+};
 use graphics::{ControlScheme, EngineUpdates, RIGHT_VEC, Scene, UP_VEC};
 use lin_alg::f32::{Quaternion, Vec3};
 use na_seq::AaIdent;
@@ -16,6 +19,7 @@ use na_seq::AaIdent;
 static INIT_COMPLETE: AtomicBool = AtomicBool::new(false);
 
 use bio_files::{DensityMap, ResidueType, density_from_2fo_fc_rcsb_gemmi};
+
 use crate::{
     CamSnapshot, MsaaSetting, Selection, State, ViewSelLevel, cli,
     cli::autocomplete_cli,
@@ -24,10 +28,7 @@ use crate::{
         find_sites::find_docking_sites,
     },
     download_mols::{load_sdf_drugbank, load_sdf_pubchem},
-    dynamics::prep::{
-        build_dynamics_docking, change_snapshot_docking,
-
-    },
+    dynamics::prep::{build_dynamics_docking, change_snapshot_docking},
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
     mol_drawing::{
         EntityType, MoleculeView, draw_density, draw_density_surface, draw_ligand, draw_molecule,
@@ -108,7 +109,7 @@ pub fn int_field(val: &mut u32, label: &str, redraw: &mut bool, ui: &mut Ui) {
 
     if ui
         .add_sized(
-            [60., Ui::available_height(ui)],
+            [70., Ui::available_height(ui)],
             TextEdit::singleline(&mut val_str),
         )
         .changed()
@@ -783,60 +784,6 @@ fn docking(
         state.update_docking_site(posit);
         state.update_save_prefs();
     }
-
-    ui.horizontal(|ui| {
-        let mut run_clicked = ui
-            .button(RichText::new("Run MD docking").color(Color32::GOLD))
-            .clicked();
-
-
-        let mut ready_to_run = true;
-
-        if run_clicked {
-            let Some(lig) = state.ligand.as_mut() else {
-                return;
-            };
-
-            if !lig.ff_params_loaded {
-                state.ui.show_get_geostd_popup = true;
-                ready_to_run = false;
-            }
-
-            if !lig.frcmod_loaded {
-                // todo: Show popup?
-            }
-
-            let dt = 0.001; // todo not here.
-
-            if ready_to_run {
-                match build_dynamics_docking(
-                    &state.dev,
-                    lig,
-                    state.volatile.docking_setup.as_ref().unwrap(),
-                    &state.ff_params,
-                    state.to_save.num_md_steps,
-                    dt,
-                ) {
-                    Ok(md) => {
-                        let snap = &md.snapshots[0];
-                        change_snapshot_docking(lig, snap, &mut None);
-
-                        draw_molecule(state, scene);
-                        draw_water(
-                            scene,
-                            &snap.water_o_posits,
-                            &snap.water_h0_posits,
-                            &snap.water_h1_posits,
-                        );
-
-                        state.ui.current_snapshot = 0;
-                        state.mol_dynamics = Some(md);
-                    }
-                    Err(e) => handle_err(&mut state.ui, e.descrip),
-                }
-            }
-        }
-    });
 }
 
 fn residue_search(state: &mut State, scene: &mut Scene, redraw: &mut bool, ui: &mut Ui) {
@@ -1680,7 +1627,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                         match load_sdf_drugbank(&state.ui.db_input) {
                             // todo: Load as ligand for now.
                             Ok(mol) => {
-                                state.ligand = Some(Ligand::new(mol, &state.ff_params.lig_specific));
+                                state.ligand =
+                                    Some(Ligand::new(mol, &state.ff_params.lig_specific));
 
                                 state.update_from_prefs();
 
@@ -1773,7 +1721,10 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                                     lig.associated_structures = data;
                                     state.ui.show_associated_structures_popup = true;
                                 }
-                                Err(_) => handle_err(&mut state.ui, "Unable to find structures for this ligand".to_owned()),
+                                Err(_) => handle_err(
+                                    &mut state.ui,
+                                    "Unable to find structures for this ligand".to_owned(),
+                                ),
                             }
                         } else {
                             state.ui.show_associated_structures_popup = true;
@@ -1884,38 +1835,55 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 // PopupAnchor::PointerFixed,
                 // PopupAnchor::ParentRect(),
                 PopupAnchor::Position(Pos2::new(60., 60.)),
-                ui.layer_id(),                  // draw on top of the current layer
+                ui.layer_id(), // draw on top of the current layer
             )
-                .align(RectAlign::TOP)
-                // .align(RectAlign::BOTTOM_START)
-                .open(true)
-                .gap(4.0)
-                .show(|ui| {
-                    ui.label(RichText::new("No FF params or partial charges are present on this ligand molecule").color(Color32::LIGHT_RED));
+            .align(RectAlign::TOP)
+            // .align(RectAlign::BOTTOM_START)
+            .open(true)
+            .gap(4.0)
+            .show(|ui| {
+                let Some(lig) = state.ligand.as_mut() else {
+                    return;
+                };
+                let mut msg = String::from("Not ready for dynamics: ");
 
-                    // todo: What about cases where a SDF from pubchem or drugbank doesn't include teh name used by Amber?
-                    if ui.button("Check online").clicked() {
-                        let Some(lig) = state.ligand.as_mut() else {
-                            return;
-                        };
+                if !lig.ff_params_loaded {
+                    msg += "No FF params or partial charges are present on this ligand."
+                }
+                if !lig.frcmod_loaded {
+                    msg += "No FRCMOD parameters loaded for this ligand."
+                }
 
-                        if let Ok(data) = amber_geostd::find_mols(&lig.molecule.ident) {
-                            for mol_data in data {
-                                if ui.button(format!("Load params for {}", mol_data.mol2)).clicked() {
-                                    // todo: Allow replacing only the missing components, e.g. only ff params,
-                                    // todo or only frcmod?
-                                    state.load_geostd_mol_data(&mol_data.mol2, &mut redraw_lig);
-                                }
+                ui.label(RichText::new(msg).color(Color32::LIGHT_RED));
+
+                // todo: What about cases where a SDF from pubchem or drugbank doesn't include teh name used by Amber?
+                if ui.button("Check online").clicked() {
+                    // let Some(lig) = state.ligand.as_mut() else {
+                    //     return;
+                    // };
+
+                    if let Ok(data) = amber_geostd::find_mols(&lig.molecule.ident) {
+                        for mol_data in data {
+                            if ui
+                                .button(format!("Load params for {}", mol_data.mol2))
+                                .clicked()
+                            {
+                                // todo: Allow replacing only the missing components, e.g. only ff params,
+                                // todo or only frcmod?
+                                state.load_geostd_mol_data(&mol_data.mol2, &mut redraw_lig);
                             }
                         }
                     }
+                }
 
-                    if ui.button(RichText::new("Close").color(Color32::LIGHT_RED)).clicked() {
-                        state.ui.show_get_geostd_popup = false;
-                    }
-                });
+                if ui
+                    .button(RichText::new("Close").color(Color32::LIGHT_RED))
+                    .clicked()
+                {
+                    state.ui.show_get_geostd_popup = false;
+                }
+            });
         }
-
 
         if state.ui.show_associated_structures_popup {
             let mut associated_structs = Vec::new();
@@ -1931,42 +1899,55 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     popup_id,
                     ui.ctx().clone(),
                     PopupAnchor::Position(Pos2::new(300., 60.)),
-                    ui.layer_id(),                  // draw on top of the current layer
+                    ui.layer_id(), // draw on top of the current layer
                 )
-                    .align(RectAlign::TOP)
-                    .open(true)
-                    .gap(4.0)
-                    .show(|ui| {
-                        for s in &associated_structs {
-                            ui.horizontal(|ui| {
-                                if ui.button(RichText::new(format!("{}", s.pdb_id)).color(COLOR_HIGHLIGHT)).clicked() {
-                                    rcsb::open_overview(&s.pdb_id);
-                                }
-                                ui.add_space(COL_SPACING);
+                .align(RectAlign::TOP)
+                .open(true)
+                .gap(4.0)
+                .show(|ui| {
+                    for s in &associated_structs {
+                        ui.horizontal(|ui| {
+                            if ui
+                                .button(
+                                    RichText::new(format!("{}", s.pdb_id)).color(COLOR_HIGHLIGHT),
+                                )
+                                .clicked()
+                            {
+                                rcsb::open_overview(&s.pdb_id);
+                            }
+                            ui.add_space(COL_SPACING);
 
-                                if ui.button(RichText::new(format!("Open this protein")).color(COLOR_HIGHLIGHT)).clicked() {
-                                    load_atom_coords_rcsb(
-                                        &s.pdb_id,
-                                        state,
-                                        scene,
-                                        &mut engine_updates,
-                                        &mut redraw_mol,
-                                        &mut reset_cam,
-                                    );
-                                }
+                            if ui
+                                .button(
+                                    RichText::new(format!("Open this protein"))
+                                        .color(COLOR_HIGHLIGHT),
+                                )
+                                .clicked()
+                            {
+                                load_atom_coords_rcsb(
+                                    &s.pdb_id,
+                                    state,
+                                    scene,
+                                    &mut engine_updates,
+                                    &mut redraw_mol,
+                                    &mut reset_cam,
+                                );
+                            }
+                        });
 
-                            });
-
-                            ui.label(RichText::new(format!("{}", s.description)));
-
-                            ui.add_space(ROW_SPACING);
-                        }
+                        ui.label(RichText::new(format!("{}", s.description)));
 
                         ui.add_space(ROW_SPACING);
-                        if ui.button(RichText::new("Close").color(Color32::LIGHT_RED)).clicked() {
-                            state.ui.show_associated_structures_popup = false;
-                        }
-                    });
+                    }
+
+                    ui.add_space(ROW_SPACING);
+                    if ui
+                        .button(RichText::new("Close").color(Color32::LIGHT_RED))
+                        .clicked()
+                    {
+                        state.ui.show_associated_structures_popup = false;
+                    }
+                });
             }
         }
 
@@ -1995,13 +1976,13 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             state.save(path).ok();
         }
 
-        if let Some(path) = &state.volatile.dialogs.autodock_path.take_picked() {
-            state.ui.autodock_path_valid = check_adv_avail(path);
-            if state.ui.autodock_path_valid {
-                state.to_save.autodock_vina_path = Some(path.to_owned());
-                state.update_save_prefs();
-            }
-        }
+        // if let Some(path) = &state.volatile.dialogs.autodock_path.take_picked() {
+        //     state.ui.autodock_path_valid = check_adv_avail(path);
+        //     if state.ui.autodock_path_valid {
+        //         state.to_save.autodock_vina_path = Some(path.to_owned());
+        //         state.update_save_prefs();
+        //     }
+        // }
 
         // if let Some(path_dir) = &state.volatile.dialogs.save_pdbqt.take_picked() {
         //     if let Some(mol) = &mut state.molecule {
@@ -2075,7 +2056,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         engine_updates.lighting = true;
     }
 
-    state.ui.dt = start.elapsed().as_secs_f32();
+    state.ui.dt_render = start.elapsed().as_secs_f32();
 
     if !INIT_COMPLETE.swap(true, Ordering::AcqRel) {
         if state.volatile.ui_height < f32::EPSILON {

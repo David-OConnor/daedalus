@@ -28,7 +28,8 @@ pub struct ToSave {
     pub last_opened: Option<PathBuf>,
     pub last_ligand_opened: Option<PathBuf>,
     pub last_map_opened: Option<PathBuf>,
-    pub autodock_vina_path: Option<PathBuf>,
+    pub last_frcmod_opened: Option<PathBuf>,
+    // pub autodock_vina_path: Option<PathBuf>,
     pub control_scheme: ControlScheme,
     pub msaa: MsaaSetting,
     /// Direct conversion from engine standard
@@ -39,6 +40,7 @@ pub struct ToSave {
     /// is a good default. Too low will cause crashes and very poor performance. Higher is too coarse.
     pub sa_surface_precision: f32,
     pub num_md_steps: u32,
+    pub md_dt: f64, // todo: Unit
 }
 
 impl Default for ToSave {
@@ -46,15 +48,17 @@ impl Default for ToSave {
         Self {
             per_mol: Default::default(),
             last_opened: Default::default(),
-            last_map_opened: Default::default(),
             last_ligand_opened: Default::default(),
-            autodock_vina_path: Default::default(),
+            last_frcmod_opened: Default::default(),
+            last_map_opened: Default::default(),
+            // autodock_vina_path: Default::default(),
             control_scheme: Default::default(),
             msaa: Default::default(),
             movement_speed: MOVEMENT_SENS as u8,
             rotation_sens: (ROTATE_SENS * 100.) as u8,
             sa_surface_precision: 0.55,
             num_md_steps: 10_000,
+            md_dt: 0.001,
         }
     }
 }

@@ -44,22 +44,32 @@ pub mod prep;
 mod spme;
 mod water_opc;
 
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    f64::consts::TAU,
+};
 
 use ambient::SimBox;
 use bio_files::amber_params::{
     AngleBendingParams, BondStretchingParams, DihedralParams, MassParams, VdwParams,
 };
-use lin_alg::f64::Vec3;
+use lin_alg::f64::{Vec3, calc_dihedral_angle, calc_dihedral_angle_v2};
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use lin_alg::f64::{Vec3x4, f64x4};
 use na_seq::Element;
 use rand_distr::Distribution;
 
 use crate::{
-    dynamics::{ambient::BerendsenBarostat, water_opc::WaterMol},
+    dynamics,
+    dynamics::{
+        ambient::BerendsenBarostat,
+        non_bonded::f_nonbonded,
+        spme::{EWALD_ALPHA, PME_MESH_SPACING, pme_long_range_forces},
+        water_opc::WaterMol,
+    },
     molecule::Atom,
 };
+
 pub type LjTable = HashMap<(usize, usize), (f64, f64)>;
 
 // vacuum permittivity constant   (k_e = 1/(4π ε0))
@@ -283,6 +293,273 @@ pub struct MdState {
     /// We cache sigma and eps on the first step, then use it on the others. This increases
     /// memory use, and reduces CPU use.
     lj_table: LjTable,
+}
+
+impl MdState {
+    /// One **Velocity-Verlet** step (leap-frog style) of length `dt_fs` femtoseconds.
+    pub fn step(&mut self, dt: f64) {
+        let dt_half = 0.5 * dt;
+
+        // First half-kick (v += a dt/2) and drift (x += v dt)
+        // todo: Do we want traditional verlet instead?
+        for a in &mut self.atoms {
+            a.vel += a.accel * dt_half; // Half-kick
+            a.posit += a.vel * dt; // Drift
+            a.posit = self.cell.wrap(a.posit);
+
+            // track the largest squared displacement to know when to rebuild the list
+            self.max_disp_sq = self.max_disp_sq.max((a.vel * dt).magnitude_squared());
+        }
+
+        // Reset acceleration.
+        for a in &mut self.atoms {
+            a.accel = Vec3::new_zero();
+        }
+
+        // Bonded forces
+        self.apply_bond_stretching_forces();
+        self.apply_angle_bending_forces();
+        // todo: Dihedral not working. Skipping for now. Our measured and expected angles aren't lining up.
+        self.apply_dihedral_forces(false);
+        self.apply_dihedral_forces(true);
+
+        self.apply_nonbonded_forces();
+
+        // Second half-kick using new accelerations
+        for a in &mut self.atoms {
+            a.vel += a.accel * dt_half;
+        }
+
+        let sources: Vec<AtomDynamics> = [
+            &self.atoms[..],
+            &self.atoms_static[..],
+            // todo: You must take each water atom into account.
+            // &self.water[..],
+        ]
+        .concat();
+
+        for water in &mut self.water {
+            let sources = &sources;
+            water.step(dt, &sources, &self.cell, &mut self.lj_table);
+        }
+
+        // todo: Apply the thermostat.
+
+        // Berendsen thermostat (T coupling to target every step)
+        // if let Some(tau_ps) = self.kb_berendsen {
+        //     let tau = tau_ps * 1e-12;
+        //     let curr_ke = self.current_kinetic_energy();
+        //     let curr_t = 2.0 * curr_ke / (3.0 * self.atoms.len() as f64 * 0.0019872041); // k_B in kcal/mol
+        //     let λ = (1.0 + dt / tau * (self.temp_target - curr_t) / curr_t).sqrt();
+        //     for a in &mut self.atoms {
+        //         a.vel *= λ;
+        //     }
+        // }
+
+        self.time += dt;
+        self.step_count += 1;
+
+        // Rebuild Verlet if needed
+        if self.max_disp_sq > 0.25 * SKIN_SQ {
+            self.build_neighbours();
+        }
+
+        if self.step_count % SNAPSHOT_RATIO == 0 {
+            self.take_snapshot();
+        }
+    }
+
+    fn apply_bond_stretching_forces(&mut self) {
+        for (indices, params) in &self.force_field_params.bond_stretching {
+            let (a_0, a_1) = dynamics::split2_mut(&mut self.atoms, indices.0, indices.1);
+
+            let f = dynamics::f_bond_stretching(a_0.posit, a_1.posit, params);
+
+            const KCALMOL_A_TO_A_FS2_PER_AMU: f64 = 4.184e-4;
+            // todo: Multiply accels by this?? Or are our units self-consistent.
+
+            a_0.accel += f / a_0.mass;
+            a_1.accel -= f / a_1.mass;
+        }
+    }
+
+    /// This maintains bond angles between sets of three atoms as they should be from hybridization.
+    /// It reflects this hybridization, steric clashes, and partial double-bond character. This
+    /// identifies deviations from the ideal angle, calculates restoring torque, and applies forces
+    /// based on this to push the atoms back into their ideal positions in the molecule.
+    ///
+    /// Valence angles, which are the angle formed by two adjacent bonds ba et bc
+    /// in a same molecule; a valence angle tends to maintain constant the anglê
+    /// abc. A valence angle is thus concerned by the positions of three atoms.
+    fn apply_angle_bending_forces(&mut self) {
+        for (indices, params) in &self.force_field_params.angle {
+            let (a_0, a_1, a_2) =
+                dynamics::split3_mut(&mut self.atoms, indices.0, indices.1, indices.2);
+
+            let (f_0, f_1, f_2) =
+                dynamics::f_angle_bending(a_0.posit, a_1.posit, a_2.posit, params);
+
+            a_0.accel += f_0 / a_0.mass;
+            a_1.accel += f_1 / a_1.mass;
+            a_2.accel += f_2 / a_2.mass;
+        }
+    }
+
+    /// This maintains dihedral angles. (i.e. the angle between four atoms in a sequence). This models
+    /// effects such as σ-bond overlap (e.g. staggered conformations), π-conjugation, which locks certain
+    /// dihedrals near 0 or τ, and steric hindrance. (Bulky groups clashing).
+    ///
+    /// This applies both "proper" linear dihedral angles, and "improper", hub-and-spoke dihedrals. These
+    /// two angles are calculated in the same way, but the covalent-bond arrangement of the 4 atoms differs.
+    fn apply_dihedral_forces(&mut self, improper: bool) {
+        let dihedrals = if improper {
+            &self.force_field_params.improper
+        } else {
+            &self.force_field_params.dihedral
+        };
+
+        for (indices, dihe) in dihedrals {
+            // Split the four atoms mutably without aliasing
+            let (a_0, a_1, a_2, a_3) =
+                split4_mut(&mut self.atoms, indices.0, indices.1, indices.2, indices.3);
+
+            // Convenience aliases for the positions
+            let r_0 = a_0.posit;
+            let r_1 = a_1.posit;
+            let r_2 = a_2.posit;
+            let r_3 = a_3.posit;
+
+            // Bond vectors (see Allen & Tildesley, chap. 4)
+            let b1 = r_1 - r_0; // r_ij
+            let b2 = r_2 - r_1; // r_kj
+            let b3 = r_3 - r_2; // r_lk
+
+            // Normal vectors to the two planes
+            let n1 = b1.cross(b2);
+            let n2 = b3.cross(b2);
+
+            let n1_sq = n1.magnitude_squared();
+            let n2_sq = n2.magnitude_squared();
+            let b2_len = b2.magnitude();
+
+            // Bail out if the four atoms are (nearly) colinear
+            if n1_sq < EPS || n2_sq < EPS || b2_len < EPS {
+                continue;
+            }
+
+            let dihe_measured = calc_dihedral_angle_v2(&(r_0, r_1, r_2, r_3));
+            //
+            // let t0_ctrl = Vec3::new(0., 0., 0.);
+            // let t1_ctrl = Vec3::new(0., 1., 0.);
+            // let t2_ctrl = Vec3::new(0., 1., 1.);
+            // let t3_ctrl = Vec3::new(0., 0., 1.);
+            //
+            // let t0 = Vec3::new(43.0860, 40.1400, 24.3300);
+            // let t1 = Vec3::new(43.7610, 40.2040, 25.5530);
+            // let t2 = Vec3::new(42.9660, 40.0070, 26.6810);
+            // let t3 = Vec3::new(41.5800, 39.7650, 26.6550);
+            //
+            // let test_di1 = calc_dihedral_angle_v2(&(t0, t1, t2, t3));
+            // let test_di_ctrl = calc_dihedral_angle_v2(&(t0_ctrl, t1_ctrl, t2_ctrl, t3_ctrl));
+
+            // Note: We have already divided barrier height by the integer divisor when setting up
+            // the Indexed params.
+            let k = dihe.barrier_height as f64;
+            let per = dihe.periodicity as f64;
+
+            let dV_dφ = if improper {
+                2.0 * k * (dihe_measured - dihe.phase as f64)
+            } else {
+                let arg = per * dihe_measured - dihe.phase as f64;
+                -k * per * arg.sin()
+            };
+
+            if (a_0.force_field_type == "c6"
+                && a_1.force_field_type == "ca"
+                && a_2.force_field_type == "ca"
+                && a_3.force_field_type == "os")
+                || (a_0.force_field_type == "os"
+                    && a_1.force_field_type == "ca"
+                    && a_2.force_field_type == "ca"
+                    && a_3.force_field_type == "c6")
+            {
+                if self.step_count == 0 {
+                    println!(
+                        "\nPosits: {} {:.3}, {} {:.3}, {} {:.3}, {} {:.3}",
+                        a_0.force_field_type,
+                        r_0,
+                        a_1.force_field_type,
+                        r_1,
+                        a_2.force_field_type,
+                        r_2,
+                        a_3.force_field_type,
+                        r_3
+                    );
+
+                    // println!("Test CA dihe: {test_di1:.3} ctrl: {test_di_ctrl:.3}");
+                    println!(
+                        // "{:?} - Ms raw: {dihe_measured_2:2} Ms: {:.2} exp: {:.2}/{} dV_dφ: {:.2}",
+                        "{:?} -  Ms: {:.2} exp: {:.2}/{} dV_dφ: {:.2}",
+                        &dihe.atom_types,
+                        dihe_measured / TAU,
+                        dihe.phase / TAU as f32,
+                        dihe.periodicity,
+                        dV_dφ,
+                    );
+                }
+            }
+
+            // ∂φ/∂r   (see e.g. DOI 10.1016/S0021-9991(97)00040-8)
+            let dφ_dr1 = -n1 * (b2_len / n1_sq);
+            let dφ_dr4 = n2 * (b2_len / n2_sq);
+
+            let dφ_dr2 =
+                -n1 * (b1.dot(b2) / (b2_len * n1_sq)) + n2 * (b3.dot(b2) / (b2_len * n2_sq));
+
+            let dφ_dr3 = -dφ_dr1 - dφ_dr2 - dφ_dr4; // Newton’s third law
+
+            // F_i = −dV/dφ · ∂φ/∂r_i
+            let f1 = -dφ_dr1 * dV_dφ;
+            let f2 = -dφ_dr2 * dV_dφ;
+            let f3 = -dφ_dr3 * dV_dφ;
+            let f4 = -dφ_dr4 * dV_dφ;
+
+            // Convert to accelerations
+            a_0.accel += f1 / a_0.mass;
+            a_1.accel += f2 / a_1.mass;
+            a_2.accel += f3 / a_2.mass;
+            a_3.accel += f4 / a_3.mass;
+        }
+    }
+
+    /// A helper for the thermostat
+    fn current_kinetic_energy(&self) -> f64 {
+        self.atoms
+            .iter()
+            .map(|a| 0.5 * a.mass * a.vel.magnitude_squared())
+            .sum()
+    }
+
+    pub fn take_snapshot(&mut self) {
+        let mut water_o_posits = Vec::with_capacity(self.water.len());
+        let mut water_h0_posits = Vec::with_capacity(self.water.len());
+        let mut water_h1_posits = Vec::with_capacity(self.water.len());
+
+        for water in &self.water {
+            water_o_posits.push(water.o.posit);
+            water_h0_posits.push(water.h0.posit);
+            water_h1_posits.push(water.h1.posit);
+        }
+
+        self.snapshots.push(SnapshotDynamics {
+            time: self.time,
+            atom_posits: self.atoms.iter().map(|a| a.posit).collect(),
+            atom_velocities: self.atoms.iter().map(|a| a.vel).collect(),
+            water_o_posits,
+            water_h0_posits,
+            water_h1_posits,
+        })
+    }
 }
 
 #[inline]

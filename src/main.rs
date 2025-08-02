@@ -329,7 +329,7 @@ struct StateUi {
     nearby_dist_thresh: u16,
     view_depth: (u16, u16), // angstrom. min, max.
     cam_snapshot: Option<usize>,
-    dt: f32, // seconds.
+    dt_render: f32, // Seconds
     // For selecting residues from the GUI.
     chain_to_pick_res: Option<usize>,
     /// Workaround for a bug or limitation in EGUI's `is_pointer_button_down_on`.
@@ -370,6 +370,8 @@ struct StateUi {
     // todo: A/R, add a substruct for popup state.
     show_get_geostd_popup: bool,
     show_associated_structures_popup: bool,
+    /// The state we store for this is a float, so we need to store state text too.
+    md_dt_input: String,
 }
 
 #[derive(Clone, PartialEq, Debug, Default, Encode, Decode)]
@@ -566,32 +568,14 @@ fn main() {
         ..Default::default()
     };
 
+    state.ui.md_dt_input = state.to_save.md_dt.to_string();
+
     // todo: Consider if you want this here. Currently required when adding H to a molecule.
     // In release mode, takes 20ms on a fast CPU. (todo: Test on a slow CPU.)
     state.load_ffs_general();
     state.load_prefs();
 
-    let last_opened = state.to_save.last_opened.clone();
-    if let Some(path) = &last_opened {
-        if let Err(e) = state.open_molecule(path) {
-            handle_err(&mut state.ui, e.to_string());
-        }
-    }
-
-    // Load map after molecule, so it knows the coordinates.
-    let last_map_opened = state.to_save.last_map_opened.clone();
-    if let Some(path) = &last_map_opened {
-        if let Err(e) = state.open(path) {
-            handle_err(&mut state.ui, e.to_string());
-        }
-    }
-
-    let last_ligand_opened = state.to_save.last_ligand_opened.clone();
-    if let Some(path) = &last_ligand_opened {
-        if let Err(e) = state.open_molecule(path) {
-            handle_err(&mut state.ui, e.to_string());
-        }
-    }
+    state.load_last_opened();
 
     // Update ligand positions, e.g. from the docking position site center loaded from prefs.
     if let Some(lig) = &mut state.ligand {

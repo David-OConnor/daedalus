@@ -73,16 +73,19 @@ pub fn merge_params(
 }
 
 /// Helper that reduces repetition. Used for populating all bonded parameters by index.
-fn ff_type_from_idx<'a>(atoms: &'a [Atom], idx: usize, descriptor: &str) -> Result<&'a String, ParamError> {
+fn ff_type_from_idx<'a>(
+    atoms: &'a [Atom],
+    idx: usize,
+    descriptor: &str,
+) -> Result<&'a String, ParamError> {
     let atom = &atoms[idx];
 
-    atom.force_field_type
-        .as_ref()
-        .ok_or_else(|| {
-            ParamError::new(&format!("Atom missing FF type on {descriptor}: {atom}"))
-        })
+    atom.force_field_type.as_ref().ok_or_else(|| {
+        ParamError::new(&format!(
+            "MD failure: Atom missing FF type on {descriptor}: {atom}"
+        ))
+    })
 }
-
 
 /// Associate loaded Force field data (e.g. from Amber) into the atom indices used in a specific
 /// dynamics sim. This handles combining general and molecule-specific parameter sets, and converting
@@ -134,7 +137,11 @@ impl ForceFieldParamsIndexed {
                             );
                             "H"
                         }
-                        _ => return Err(ParamError::new(&format!("Error: Atom missing FF type: {atom}"))),
+                        _ => {
+                            return Err(ParamError::new(&format!(
+                                "MD failure: Atom missing FF type: {atom}"
+                            )));
+                        }
                     }
                 }
             };
@@ -151,7 +158,7 @@ impl ForceFieldParamsIndexed {
                         }
                         None => {
                             return Err(ParamError::new(&format!(
-                                "Missing mass params for {ff_type}"
+                                "MD failure: Missing mass params for {ff_type}"
                             )));
                         }
                     }
@@ -164,7 +171,7 @@ impl ForceFieldParamsIndexed {
                         }
                         None => {
                             return Err(ParamError::new(&format!(
-                                "Missing mass params for {ff_type}"
+                                "MD failure: Missing mass params for {ff_type}"
                             )));
                         }
                     }
@@ -176,7 +183,7 @@ impl ForceFieldParamsIndexed {
                         }
                         None => {
                             return Err(ParamError::new(&format!(
-                                "Missing mass params for {ff_type}"
+                                "MD failure: Missing mass params for {ff_type}"
                             )));
                         }
                     }
@@ -193,7 +200,7 @@ impl ForceFieldParamsIndexed {
                     println!("Missing mass params on {atom}; using element default.");
 
                     // return Err(ParamError::new(&format!(
-                    //     "Missing mass params for {ff_type}"
+                    //     "MD failure: Missing mass params for {ff_type}"
                     // )));
                 }
             }
@@ -244,7 +251,7 @@ impl ForceFieldParamsIndexed {
                 }
 
                 // return Err(ParamError::new(&format!(
-                //     "Missing Van der Waals params for {ff_type}"
+                //     "MD failure: Missing Van der Waals params for {ff_type}"
                 // )));
             }
         }
@@ -295,19 +302,19 @@ impl ForceFieldParamsIndexed {
                 let type_ctr = ff_type_from_idx(atoms, ctr, "Angle")?;
                 let type_n1 = ff_type_from_idx(atoms, n1, "Angle")?;
 
-                let data = match params
-                    .angle
-                    .get(&(type_n0.clone(), type_ctr.clone(), type_n1.clone()))
-                {
+                let data = match params.angle.get(&(
+                    type_n0.clone(),
+                    type_ctr.clone(),
+                    type_n1.clone(),
+                )) {
                     Some(param) => param.clone(),
                     // Try the other atom order.
                     None => {
-                        // todo: If you see this, remove the print. If not, remove this reversed branch.
-                        println!("Other Valence order");
-                        match params
-                            .angle
-                            .get(&(type_n1.clone(), type_ctr.clone(), type_n0.clone()))
-                        {
+                        match params.angle.get(&(
+                            type_n1.clone(),
+                            type_ctr.clone(),
+                            type_n0.clone(),
+                        )) {
                             Some(param) => param.clone(),
                             None => {
                                 // todo: Get to the bottom of this.
@@ -336,8 +343,7 @@ impl ForceFieldParamsIndexed {
         // Proper and improper dihedral angles.
         let mut seen = HashSet::<(usize, usize, usize, usize)>::new();
 
-        // Proper dihedrals: Atoms 1-2-3-4 bonded linearly.
-        // todo: QC this logic.
+        // Proper dihedrals: Atoms 1-2-3-4 bonded linearly
         for (i1, nbr_j) in adjacency_list.iter().enumerate() {
             for &i2 in nbr_j {
                 if i1 >= i2 {
@@ -351,7 +357,11 @@ impl ForceFieldParamsIndexed {
                         }
 
                         // Canonicalise so (i1, i2) is always (min, max)
-                        let idx_key = if i1 < i2 { (i0, i1, i2, i3) } else { (i3, i2, i1, i0) };
+                        let idx_key = if i1 < i2 {
+                            (i0, i1, i2, i3)
+                        } else {
+                            (i3, i2, i1, i0)
+                        };
                         if !seen.insert(idx_key) {
                             continue;
                         }
@@ -361,17 +371,23 @@ impl ForceFieldParamsIndexed {
                         let type_2 = ff_type_from_idx(atoms, i2, "Dihedral")?;
                         let type_3 = ff_type_from_idx(atoms, i3, "Dihedral")?;
 
-                        if let Some(dihe) = params
-                            .get_dihedral(&(type_0.clone(), type_1.clone(), type_2.clone(), type_3.clone()), true)
-                        {
+                        if let Some(dihe) = params.get_dihedral(
+                            &(
+                                type_0.clone(),
+                                type_1.clone(),
+                                type_2.clone(),
+                                type_3.clone(),
+                            ),
+                            true,
+                        ) {
                             let mut dihe = dihe.clone();
-                            // The value we have loaded from Amber params is already divided,
-                            // do don't divide further.
+                            // Divide here; then don't do it during the dyamics run.
+                            dihe.barrier_height /= dihe.divider as f32;
                             dihe.divider = 1;
                             result.dihedral.insert(idx_key, dihe);
                         } else {
                             return Err(ParamError::new(&format!(
-                                "Missing dihedral parameters for {type_0}-{type_1}-{type_2}-{type_3}"
+                                "MD failure: Missing dihedral params for {type_0}-{type_1}-{type_2}-{type_3}"
                             )));
                         }
                     }
@@ -402,17 +418,20 @@ impl ForceFieldParamsIndexed {
                         let t_ctr = ff_type_from_idx(atoms, ctr, "Improper dihedral")?;
                         let t2 = ff_type_from_idx(atoms, sat2, "Improper dihedral")?;
 
-                        if let Some(dihe) = params
-                            .get_dihedral(&(t0.clone(), t1.clone(), t_ctr.clone(), t2.clone()), false)
-                        {
+                        if let Some(dihe) = params.get_dihedral(
+                            &(t0.clone(), t1.clone(), t_ctr.clone(), t2.clone()),
+                            false,
+                        ) {
                             let mut dihe = dihe.clone();
-                            // See note in the Dihedral section about this already being divided.
+                            // Generally, there is no divisor for impropers, but set it up here
+                            // to be more general.
+                            dihe.barrier_height /= dihe.divider as f32;
                             dihe.divider = 1;
                             result.improper.insert(idx_key, dihe);
                         } else {
-                            // return Err(ParamError::new(&format!(
-                            //     "Missing improper parameters for {ti}-{tc}-{tk}-{tl}"
-                            // )));
+                            return Err(ParamError::new(&format!(
+                                "MD failure: Missing improper parameters for {t0}-{t1}-{t_ctr}-{t2}"
+                            )));
                         }
                     }
                 }
@@ -436,10 +455,12 @@ impl MdState {
         // todo: Temperature/thermostat.
     ) -> Result<Self, ParamError> {
         let Some(ff_params_lig_keyed) = &ff_params.lig_general else {
-            return Err(ParamError::new("Missing lig general params"));
+            return Err(ParamError::new("MD failure: Missing lig general params"));
         };
         let Some(ff_params_prot_keyed) = &ff_params.prot_general else {
-            return Err(ParamError::new("Missing prot params general params"));
+            return Err(ParamError::new(
+                "MD failure: Missing prot params general params",
+            ));
         };
 
         // Assign FF type and charge to protein atoms; FF type must be assigned prior to initializing `ForceFieldParamsIndexed`.
@@ -515,6 +536,9 @@ impl MdState {
             }
         };
 
+        // todo temp!
+        let atoms_dy_static: Vec<AtomDynamics> = Vec::new();
+
         let mut result = Self {
             mode: MdMode::Docking,
             atoms: atoms_dy,
@@ -528,7 +552,8 @@ impl MdState {
             ..Default::default()
         };
 
-        result.water = make_water_mols(&cell, result.temp_target);
+        // todo temp rm
+        // result.water = make_water_mols(&cell, result.temp_target);
 
         result.setup_nonbonded_exclusion_scale_flags();
         result.build_neighbours();
@@ -547,7 +572,9 @@ impl MdState {
         // todo: Thermostat.
     ) -> Result<Self, ParamError> {
         let Some(ff_params_prot_keyed) = &ff_params.prot_general else {
-            return Err(ParamError::new("Missing prot params general params"));
+            return Err(ParamError::new(
+                "MD failure: Missing prot params general params",
+            ));
         };
 
         // Assign FF type and charge to protein atoms; FF type must be assigned prior to initializing `ForceFieldParamsIndexed`.
@@ -716,13 +743,13 @@ pub fn populate_ff_and_q(
 
         let Some(res_i) = atom.residue else {
             return Err(ParamError::new(&format!(
-                "Missing residue when populating ff name and q: {atom}"
+                "MD failure: Missing residue when populating ff name and q: {atom}"
             )));
         };
 
         let Some(type_in_res) = &atom.type_in_res else {
             return Err(ParamError::new(&format!(
-                "Missing type in residue for atom: {atom}"
+                "MD failure: Missing type in residue for atom: {atom}"
             )));
         };
 

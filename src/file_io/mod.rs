@@ -329,6 +329,9 @@ impl State {
                     }
                 }
 
+                self.to_save.last_frcmod_opened = Some(path.to_owned());
+                self.update_save_prefs();
+
                 println!("Loaded molecule-specific force fields.");
             }
             _ => {
@@ -545,6 +548,38 @@ impl State {
                 &mut self.ui,
                 format!("Unable to load Amber Geostd data: {:?}", e),
             ),
+        }
+    }
+
+    /// We run this at init. Loads all relevant files marked as "last opened".
+    pub fn load_last_opened(&mut self) {
+        let last_opened = self.to_save.last_opened.clone();
+        if let Some(path) = &last_opened {
+            if let Err(e) = self.open_molecule(path) {
+                handle_err(&mut self.ui, e.to_string());
+            }
+        }
+
+        // Load map after molecule, so it knows the coordinates.
+        let last_map_opened = self.to_save.last_map_opened.clone();
+        if let Some(path) = &last_map_opened {
+            if let Err(e) = self.open(path) {
+                handle_err(&mut self.ui, e.to_string());
+            }
+        }
+
+        let last_ligand_opened = self.to_save.last_ligand_opened.clone();
+        if let Some(path) = &last_ligand_opened {
+            if let Err(e) = self.open_molecule(path) {
+                handle_err(&mut self.ui, e.to_string());
+            }
+        }
+
+        let last_frcmod_opened = self.to_save.last_frcmod_opened.clone();
+        if let Some(path) = &last_frcmod_opened {
+            if let Err(e) = self.open_force_field(path) {
+                handle_err(&mut self.ui, e.to_string());
+            }
         }
     }
 }

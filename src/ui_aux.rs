@@ -1,14 +1,17 @@
 //! Misc utility-related UI functionality.
 
 use bio_files::ResidueType;
-use egui::{Color32, ComboBox, RichText, Slider, Ui};
+use egui::{Color32, ComboBox, RichText, Slider, TextEdit, Ui};
 use graphics::{EngineUpdates, Scene};
 
 use crate::{
     Selection, State,
     dynamics::{
         MdMode,
-        prep::{build_dynamics_peptide, change_snapshot_docking, change_snapshot_peptide},
+        prep::{
+            build_dynamics_docking, build_dynamics_peptide, change_snapshot_docking,
+            change_snapshot_peptide,
+        },
     },
     mol_drawing,
     mol_drawing::{
@@ -255,14 +258,12 @@ pub fn md_setup(
         if run_clicked {
             let mol = state.molecule.as_mut().unwrap();
 
-            let dt = 0.00001;
-
             match build_dynamics_peptide(
                 &state.dev,
                 mol,
                 &state.ff_params,
                 state.to_save.num_md_steps,
-                dt,
+                state.to_save.md_dt,
             ) {
                 Ok(md) => {
                     let snap = &md.snapshots[0];
@@ -283,8 +284,68 @@ pub fn md_setup(
             }
         }
 
+        ui.add_space(COL_SPACING / 2.);
+
+        let mut run_clicked = ui
+            .button(RichText::new("Run MD docking").color(Color32::GOLD))
+            .clicked();
+
+        let mut ready_to_run = true;
+
+        if run_clicked {
+            let Some(lig) = state.ligand.as_mut() else {
+                return;
+            };
+
+            if !lig.ff_params_loaded || !lig.frcmod_loaded {
+                state.ui.show_get_geostd_popup = true;
+                ready_to_run = false;
+            }
+
+            if ready_to_run {
+                match build_dynamics_docking(
+                    &state.dev,
+                    lig,
+                    state.volatile.docking_setup.as_ref().unwrap(),
+                    &state.ff_params,
+                    state.to_save.num_md_steps,
+                    state.to_save.md_dt,
+                ) {
+                    Ok(md) => {
+                        let snap = &md.snapshots[0];
+                        change_snapshot_docking(lig, snap, &mut None);
+
+                        draw_molecule(state, scene);
+                        draw_water(
+                            scene,
+                            &snap.water_o_posits,
+                            &snap.water_h0_posits,
+                            &snap.water_h1_posits,
+                        );
+
+                        state.ui.current_snapshot = 0;
+                        state.mol_dynamics = Some(md);
+                    }
+                    Err(e) => handle_err(&mut state.ui, e.descrip),
+                }
+            }
+        }
+
         ui.add_space(COL_SPACING);
         int_field(&mut state.to_save.num_md_steps, "Steps:", &mut false, ui);
+
+        ui.label("dt:");
+        if ui
+            .add_sized(
+                [60., Ui::available_height(ui)],
+                TextEdit::singleline(&mut state.ui.md_dt_input),
+            )
+            .changed()
+        {
+            if let Ok(v) = state.ui.md_dt_input.parse::<f64>() {
+                state.to_save.md_dt = v;
+            }
+        }
 
         ui.add_space(COL_SPACING);
 
