@@ -197,13 +197,7 @@ pub fn dynamics_player(
                     MdMode::Docking => {
                         let lig = state.ligand.as_mut().unwrap();
 
-                        change_snapshot_docking(
-                            // &mut scene.entities,
-                            lig,
-                            // &Vec::new(),
-                            snap,
-                            &mut state.ui.binding_energy_disp,
-                        );
+                        change_snapshot_docking(lig, snap, &mut state.ui.binding_energy_disp);
 
                         draw_ligand(state, scene);
                     }
@@ -324,6 +318,7 @@ pub fn md_setup(
                         );
 
                         state.ui.current_snapshot = 0;
+                        engine_updates.entities = true;
                         state.mol_dynamics = Some(md);
                     }
                     Err(e) => handle_err(&mut state.ui, e.descrip),

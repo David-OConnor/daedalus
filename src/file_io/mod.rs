@@ -511,37 +511,53 @@ impl State {
     }
 
     /// Load Mol2 and FRCMOD data from our Amber GEostd database.
-    pub fn load_geostd_mol_data(&mut self, ident: &str, redraw_lig: &mut bool) {
+    pub fn load_geostd_mol_data(
+        &mut self,
+        ident: &str,
+        load_mol2: bool,
+        load_frcmod: bool,
+        redraw_lig: &mut bool,
+    ) {
         let ident = ident.trim().to_owned();
 
         match amber_geostd::load_mol_files(&ident) {
             Ok(data) => {
                 // Load FRCmod first, then the Ligand constructor will populate that it loaded.
-                if let Some(frcmod) = data.frcmod {
-                    self.ff_params.lig_specific.insert(
-                        ident,
-                        // todo: Don't unwrap.
-                        ForceFieldParamsKeyed::new(
-                            &ForceFieldParams::from_frcmod(&frcmod).unwrap(),
-                        ),
-                    );
+                if load_frcmod {
+                    if let Some(frcmod) = data.frcmod {
+                        self.ff_params.lig_specific.insert(
+                            ident,
+                            // todo: Don't unwrap.
+                            ForceFieldParamsKeyed::new(
+                                &ForceFieldParams::from_frcmod(&frcmod).unwrap(),
+                            ),
+                        );
+
+                        if let Some(lig) = &mut self.ligand {
+                            lig.frcmod_loaded = true;
+                        }
+                    }
                 }
+
                 if let Some(lib) = data.lib {
                     println!("todo: Lib data available from geostd; download?");
                 }
-                match Mol2::new(&data.mol2) {
-                    Ok(mol2) => {
-                        let mol: Molecule = mol2.try_into().unwrap();
-                        self.ligand = Some(Ligand::new(mol, &self.ff_params.lig_specific));
 
-                        self.update_from_prefs();
+                if load_mol2 {
+                    match Mol2::new(&data.mol2) {
+                        Ok(mol2) => {
+                            let mol: Molecule = mol2.try_into().unwrap();
+                            self.ligand = Some(Ligand::new(mol, &self.ff_params.lig_specific));
 
-                        *redraw_lig = true;
+                            self.update_from_prefs();
+
+                            *redraw_lig = true;
+                        }
+                        Err(e) => handle_err(
+                            &mut self.ui,
+                            format!("Unable to make a Mol2 from Geostd data: {:?}", e),
+                        ),
                     }
-                    Err(e) => handle_err(
-                        &mut self.ui,
-                        format!("Unable to make a Mol2 from Geostd data: {:?}", e),
-                    ),
                 }
             }
             Err(e) => handle_err(
@@ -575,11 +591,11 @@ impl State {
             }
         }
 
-        let last_frcmod_opened = self.to_save.last_frcmod_opened.clone();
-        if let Some(path) = &last_frcmod_opened {
-            if let Err(e) = self.open_force_field(path) {
-                handle_err(&mut self.ui, e.to_string());
-            }
-        }
+        // let last_frcmod_opened = self.to_save.last_frcmod_opened.clone();
+        // if let Some(path) = &last_frcmod_opened {
+        //     if let Err(e) = self.open_force_field(path) {
+        //         handle_err(&mut self.ui, e.to_string());
+        //     }
+        // }
     }
 }

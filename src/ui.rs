@@ -1617,7 +1617,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
                 if button_clicked || enter_pressed {
                     let db_input = &state.ui.db_input.clone(); // Avoids a double borrow.
-                    state.load_geostd_mol_data(&db_input, &mut redraw_lig);
+                    state.load_geostd_mol_data(&db_input, true, true, &mut redraw_lig);
                 }
             }
 
@@ -1842,6 +1842,10 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             .open(true)
             .gap(4.0)
             .show(|ui| {
+                // These vars avoid dbl borrow.
+                let load_ff = !state.ligand.as_ref().unwrap().ff_params_loaded;
+                let load_frcmod = !state.ligand.as_ref().unwrap().frcmod_loaded;
+
                 let Some(lig) = state.ligand.as_mut() else {
                     return;
                 };
@@ -1856,23 +1860,41 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
                 ui.label(RichText::new(msg).color(Color32::LIGHT_RED));
 
+                ui.add_space(ROW_SPACING);
+
                 // todo: What about cases where a SDF from pubchem or drugbank doesn't include teh name used by Amber?
                 if ui.button("Check online").clicked() {
                     // let Some(lig) = state.ligand.as_mut() else {
                     //     return;
                     // };
 
-                    if let Ok(data) = amber_geostd::find_mols(&lig.molecule.ident) {
-                        for mol_data in data {
-                            if ui
-                                .button(format!("Load params for {}", mol_data.mol2))
-                                .clicked()
-                            {
-                                // todo: Allow replacing only the missing components, e.g. only ff params,
-                                // todo or only frcmod?
-                                state.load_geostd_mol_data(&mol_data.mol2, &mut redraw_lig);
-                            }
+                    match amber_geostd::find_mols(&lig.molecule.ident) {
+                        Ok(data) => {
+                            state.ui.get_std_popup_items = data;
                         }
+                        Err(e) => handle_err(
+                            &mut state.ui,
+                            format!("Problem loading mol data online: {e:?}"),
+                        ),
+                    }
+                }
+
+                // This clone is annoying; db borrow.
+                let items = state.ui.get_std_popup_items.clone();
+                for mol_data in items {
+                    if ui
+                        .button(
+                            RichText::new(format!("Load params for {}", mol_data.ident))
+                                .color(COLOR_HIGHLIGHT),
+                        )
+                        .clicked()
+                    {
+                        state.load_geostd_mol_data(
+                            &mol_data.ident,
+                            load_ff,
+                            load_frcmod,
+                            &mut redraw_lig,
+                        );
                     }
                 }
 

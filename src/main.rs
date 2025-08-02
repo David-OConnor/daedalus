@@ -62,7 +62,9 @@ use std::{
 use barnes_hut::BhConfig;
 use bincode::{Decode, Encode};
 use bio_apis::{
-    ReqError, rcsb,
+    ReqError,
+    amber_geostd::GeostdItem,
+    rcsb,
     rcsb::{FilesAvailable, PdbDataResults},
 };
 use bio_files::amber_params::{ChargeParams, ForceFieldParams, ForceFieldParamsKeyed};
@@ -369,6 +371,7 @@ struct StateUi {
     peptide_atom_posits: PeptideAtomPosits,
     // todo: A/R, add a substruct for popup state.
     show_get_geostd_popup: bool,
+    get_std_popup_items: Vec<GeostdItem>,
     show_associated_structures_popup: bool,
     /// The state we store for this is a float, so we need to store state text too.
     md_dt_input: String,
