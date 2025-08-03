@@ -314,6 +314,14 @@ impl MsaaSetting {
     }
 }
 
+#[derive(Default)]
+struct PopupState {
+    show_get_geostd: bool,
+    show_associated_structures: bool,
+    show_settings: bool,
+    get_geostd_items: Vec<GeostdItem>,
+}
+
 /// Ui text fields and similar.
 #[derive(Default)]
 struct StateUi {
@@ -353,7 +361,6 @@ struct StateUi {
     /// A flag so we know to update the flashlight upon loading a new model; this should be done within
     /// a callback.
     show_docking_tools: bool,
-    show_settings: bool,
     movement_speed_input: String,
     rotation_sens_input: String,
     cmd_line_input: String,
@@ -369,10 +376,7 @@ struct StateUi {
     density_iso_level: f32,
     /// E.g. set to original for from the mmCIF file, or Dynamics to view it after MD.
     peptide_atom_posits: PeptideAtomPosits,
-    // todo: A/R, add a substruct for popup state.
-    show_get_geostd_popup: bool,
-    get_std_popup_items: Vec<GeostdItem>,
-    show_associated_structures_popup: bool,
+    popup: PopupState,
     /// The state we store for this is a float, so we need to store state text too.
     md_dt_input: String,
 }

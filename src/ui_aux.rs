@@ -3,6 +3,7 @@
 use bio_files::ResidueType;
 use egui::{Color32, ComboBox, RichText, Slider, TextEdit, Ui};
 use graphics::{EngineUpdates, Scene};
+use lin_alg::f64::Vec3;
 
 use crate::{
     Selection, State,
@@ -27,17 +28,20 @@ use crate::{
     util::{handle_err, make_egui_color, move_lig_to_res},
 };
 
-fn disp_atom_data(atom: &Atom, residues: &[Residue], ui: &mut Ui) {
+/// `posit_override` is for example, relative atom positions, such as a positioned ligand.
+fn disp_atom_data(atom: &Atom, residues: &[Residue], posit_override: Option<Vec3>, ui: &mut Ui) {
     let role = match atom.role {
         Some(r) => format!("Role: {r}"),
         None => String::new(),
     };
 
     // Similar to `Vec3`'s format impl, but with fewer digits.
-    let posit_txt = format!(
-        "|{:.3}, {:.3}, {:.3}|",
-        atom.posit.x, atom.posit.y, atom.posit.z
-    );
+    let posit = match posit_override {
+        Some(p) => &p,
+        None => &atom.posit,
+    };
+
+    let posit_txt = format!("|{:.3}, {:.3}, {:.3}|", posit.x, posit.y, posit.z);
 
     let text_0 = format!("#{}", atom.serial_number);
     let text_b = atom.element.to_letter();
@@ -93,7 +97,7 @@ pub fn selected_data(mol: &Molecule, ligand: &Option<Ligand>, selection: &Select
             }
 
             let atom = &mol.atoms[*sel_i];
-            disp_atom_data(atom, &mol.residues, ui);
+            disp_atom_data(atom, &mol.residues, None, ui);
         }
         Selection::AtomLigand(sel_i) => {
             let Some(lig) = ligand else {
@@ -104,7 +108,8 @@ pub fn selected_data(mol: &Molecule, ligand: &Option<Ligand>, selection: &Select
             }
 
             let atom = &lig.molecule.atoms[*sel_i];
-            disp_atom_data(atom, &[], ui);
+            let posit = lig.atom_posits[*sel_i];
+            disp_atom_data(atom, &[], Some(posit), ui);
         }
         Selection::Residue(sel_i) => {
             if *sel_i >= mol.residues.len() {
@@ -282,6 +287,9 @@ pub fn md_setup(
 
         let mut run_clicked = ui
             .button(RichText::new("Run MD docking").color(Color32::GOLD))
+            .help_text("Run a molecular dynamics simulation on the ligand. The peptide atoms apply\
+            Coulomb and Van der Waals forces, but do not move themselves. This is intended to be run\
+            with the ligand positioned near a receptor site.")
             .clicked();
 
         let mut ready_to_run = true;
@@ -292,7 +300,7 @@ pub fn md_setup(
             };
 
             if !lig.ff_params_loaded || !lig.frcmod_loaded {
-                state.ui.show_get_geostd_popup = true;
+                state.ui.popup.show_get_geostd = true;
                 ready_to_run = false;
             }
 
@@ -363,6 +371,10 @@ pub fn md_setup(
                     .button(
                         RichText::new(format!("Make lig from {}", res.res_type))
                             .color(COLOR_HIGHLIGHT),
+                    )
+                    .on_hover_text(
+                        "Create a ligand from this residue on the peptide. This can be \
+                    saved to a Mol2 or SDF file, and used as a ligand.",
                     )
                     .clicked()
                 {

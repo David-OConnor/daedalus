@@ -130,6 +130,33 @@ pub enum MoleculeView {
     Dots,
 }
 
+impl MoleculeView {
+    pub fn next(self) -> Self {
+        match self {
+            Self::Sticks => Self::Backbone,
+            Self::Backbone => Self::BallAndStick,
+            Self::BallAndStick => Self::SpaceFill,
+            Self::SpaceFill => Self::Surface, // skip ribbon for now
+            Self::Ribbon => Self::Surface,
+            Self::Surface => Self::Dots,
+            Self::Dots => Self::Backbone,
+        }
+    }
+
+    // todo: repetitive
+    pub fn prev(self) -> Self {
+        match self {
+            Self::Sticks => Self::Dots,
+            Self::Backbone => Self::Sticks,
+            Self::BallAndStick => Self::Backbone,
+            Self::SpaceFill => Self::BallAndStick,
+            Self::Ribbon => Self::SpaceFill,
+            Self::Surface => Self::SpaceFill,
+            Self::Dots => Self::Surface,
+        }
+    }
+}
+
 impl FromStr for MoleculeView {
     type Err = io::Error;
 

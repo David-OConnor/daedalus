@@ -23,11 +23,12 @@ Notes:
 - On Linux distros that use Gnome (e.g. Ubuntu), run `setup_linux_desktop.sh`, included in the zip, to create a Desktop GUI entry.
 - On Windows, the first time you run the program, you may get the message *"Microsoft Defender prevented an unrecognized app from starting"*. To bypass this, click *More info*, then *Run Anyway*.
 
-### Mac
+### Mac, and linux distros we don't provide a binary for
 
 [//]: # (Compile from source by [downloading and installing Rust]&#40;https://www.rust-lang.org/tools/install&#41;, then running `cargo install daedalus` from a CLI.)
 Compile from source by [downloading and installing Rust](https://www.rust-lang.org/tools/install), then running `cargo build --release` from a CLI
-in the project directory.
+in the project directory. See notes in the *compiling* section below about setting up Amber parameter files,
+and disabling CUDA.
 
 
 ## Functionality
@@ -44,6 +45,8 @@ in the project directory.
 Launch the program. Either open a molecule using the "Open" or "Open Lig" buttons, drag the file into the program window,
 enter a protein identifier in the *Query databases* field, or click *I'm feeling lucky*, to load a recently-uploaded protein
 from the [RCSB PDB](https://www.rcsb.org/).
+
+Many UI items provide tooltip descriptions, when you hover the mouse.
 
 
 ## Goals
@@ -120,7 +123,7 @@ in 6 degrees of freedom, allowing you to easily view the molecule from any persp
 - **Right click** to select the atom or residue under the cursor.
 
 
-#### Camera Hotkeys (Also available as GUI buttons)
+#### Camera and other Hotkeys
 - **W**: Move forward
 - **A**: Move right
 - **A**: Move left
@@ -135,6 +138,9 @@ in 6 degrees of freedom, allowing you to easily view the molecule from any persp
 
 - **Left arrow**: Select previous residue
 - **Right arrow**: Select next residue
+
+- **Left backet**: Previous view mode (sticks, surface mesh etc)
+- **Right bracket**: Next view mode
 
 
 ### Arc camera
@@ -197,9 +203,16 @@ Daedalus supports a very limited subset of PyMol's CLI interface. Supported comm
 ![Protein A](screenshots/protein_a.png)
 
 
+### The preferences file
+You may notice that this program places a *daedalus_prefs.dae* file in the same folder as the executable. This
+is a small binary file containing application state. It's what lets it remember the last file opened, current
+view settings etc. It will grow with the number of molecules you've opened, as it stores per-molecule
+settings. Deleting it is harmless, other than resetting these conveniences.
+
+
 ### Compiling
-This application is pure rust, so compiles normally using `cargo build`, which produces a standalone executable.
-It requires these 5 Amber parameter files to be present under the project's `resources` folder at compile time.
+This application is pure rust, so compiles normally using `cargo build --release`, which produces a standalone executable.
+It requires these 6 Amber parameter files to be present under the project's `resources` folder at compile time.
 These are available in [Amber tools](https://ambermd.org/GetAmber.php). Download, unpack, then copy these files from
 `dat/leap/parm` and `dat/leap/lib`:
 
@@ -210,10 +223,15 @@ These are available in [Amber tools](https://ambermd.org/GetAmber.php). Download
 - `frcmod.ff19SB`
 - `gaff2.dat`
 
+We provide a [copy of these files](https://github.com/David-OConnor/daedalus/releases/download/0.1.3/amber_params_august_2025.zip)
+for convenience; this is a much smaller download than the entire Amber package, and prevents needing to locate the specific files.
+Unpack, and place these under `resources`.
+
+If you're not running on a machine with an nvidia GPU, append the `--no-default-features` to the build command.
+
 
 ### Erratta
-- Molecular dynamics dihedral-angle parameters are temporarily disabled.
-- Ribbon view is currently unavailable.
+- Ribbon (cartoon) view is currently unavailable.
 - Opening a molecule by drag + drop may not work until minimizing/unminimizing the program
 - Loading map files that are very large (e.g. high detail, especially Map files directly available
 on RCSB, vice created from 2fo-fc) may crash the program.
