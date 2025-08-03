@@ -130,6 +130,33 @@ pub enum MoleculeView {
     Dots,
 }
 
+impl MoleculeView {
+    pub fn next(self) -> Self {
+        match self {
+            Self::Backbone => Self::Sticks,
+            Self::Sticks => Self::BallAndStick,
+            Self::BallAndStick => Self::SpaceFill,
+            Self::SpaceFill => Self::Surface, // skip ribbon for now
+            Self::Ribbon => Self::Surface,
+            Self::Surface => Self::Dots,
+            Self::Dots => Self::Backbone,
+        }
+    }
+
+    // todo: repetitive
+    pub fn prev(self) -> Self {
+        match self {
+            Self::Backbone => Self::Dots,
+            Self::Sticks => Self::Backbone,
+            Self::BallAndStick => Self::Sticks,
+            Self::SpaceFill => Self::BallAndStick,
+            Self::Ribbon => Self::SpaceFill,
+            Self::Surface => Self::SpaceFill,
+            Self::Dots => Self::Surface,
+        }
+    }
+}
+
 impl FromStr for MoleculeView {
     type Err = io::Error;
 
@@ -562,7 +589,13 @@ fn bond_entities(
 }
 
 /// Water from a MD sim; not from atoms in experimental data.
-pub fn draw_water(scene: &mut Scene, o_pos: &[Vec3F64], h0_pos: &[Vec3F64], h1_pos: &[Vec3F64], hide_water: bool) {
+pub fn draw_water(
+    scene: &mut Scene,
+    o_pos: &[Vec3F64],
+    h0_pos: &[Vec3F64],
+    h1_pos: &[Vec3F64],
+    hide_water: bool,
+) {
     scene
         .entities
         .retain(|ent| ent.class != EntityType::WaterModel as u32);

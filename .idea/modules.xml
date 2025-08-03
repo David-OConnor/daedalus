@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/mol_dock.iml" filepath="$PROJECT_DIR$/.idea/mol_dock.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/daedalus.iml" filepath="$PROJECT_DIR$/.idea/daedalus.iml" />
     </modules>
   </component>
 </project>

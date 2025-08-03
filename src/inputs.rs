@@ -196,19 +196,23 @@ pub fn event_dev_handler(
                         lig_rot_dir = Some(-FWD_VEC);
                     }
                     Code(KeyCode::BracketLeft) => {
-                        lig_rot_dir = Some(-RIGHT_VEC);
+                        state_.ui.mol_view = state_.ui.mol_view.prev();
+                        redraw_protein = true;
+                        // lig_rot_dir = Some(-RIGHT_VEC);
                     }
                     Code(KeyCode::BracketRight) => {
-                        lig_rot_dir = Some(RIGHT_VEC);
+                        state_.ui.mol_view = state_.ui.mol_view.next();
+                        redraw_protein = true;
+                        // lig_rot_dir = Some(RIGHT_VEC);
                     }
                     Code(KeyCode::Semicolon) => {
-                        lig_rot_dir = Some(UP_VEC);
+                        // lig_rot_dir = Some(UP_VEC);
                     }
                     Code(KeyCode::Quote) => {
-                        lig_rot_dir = Some(-UP_VEC);
+                        // lig_rot_dir = Some(-UP_VEC);
                     }
                     Code(KeyCode::KeyI) => {
-                        lig_move_dir = Some(FWD_VEC);
+                        // lig_move_dir = Some(FWD_VEC);
                     }
                     // Ad-hoc ligand movement. For now, moves in discrete chunks, i.e. doens't respect key
                     // holding directly. Moves releative to the camera.
