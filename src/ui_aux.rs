@@ -198,6 +198,8 @@ pub fn dynamics_player(
                 changed = true;
                 let snap = &md.snapshots[state.ui.current_snapshot];
 
+                println!("SNAP ATOMS: {}", snap.atom_posits[0]);
+
                 match md.mode {
                     MdMode::Docking => {
                         let lig = state.ligand.as_mut().unwrap();

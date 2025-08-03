@@ -8,10 +8,7 @@ use std::{
 };
 
 use bio_apis::{amber_geostd, drugbank, pubchem, rcsb};
-use egui::{
-    Color32, ComboBox, Context, Key, Popup, PopupAnchor, Pos2, RectAlign, RichText, Slider,
-    TextEdit, TopBottomPanel, Ui,
-};
+use egui::{Color32, ComboBox, Context, Frame, Key, Popup, PopupAnchor, Pos2, RectAlign, RichText, Slider, TextEdit, TopBottomPanel, Ui};
 use graphics::{ControlScheme, EngineUpdates, RIGHT_VEC, Scene, UP_VEC};
 use lin_alg::f32::{Quaternion, Vec3};
 use na_seq::AaIdent;
@@ -70,6 +67,8 @@ pub const COLOR_ACTIVE_RADIO: Color32 = Color32::LIGHT_BLUE;
 const COLOR_OUT_ERROR: Color32 = Color32::LIGHT_RED;
 const COLOR_OUT_NORMAL: Color32 = Color32::WHITE;
 const COLOR_OUT_SUCCESS: Color32 = Color32::LIGHT_GREEN; // Unused for now
+
+pub const COLOR_POPUP: Color32 = Color32::from_rgb(20, 20, 30);
 
 // Number of characters to display. E.g. the molecular description. Often long.
 const MAX_TITLE_LEN: usize = 80;
@@ -1369,7 +1368,12 @@ fn settings(state: &mut State, scene: &mut Scene, ui: &mut Ui) {
 pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> EngineUpdates {
     let mut engine_updates = EngineUpdates::default();
 
+    // Checks each frame; takes action based on time since last save.
     check_prefs_save(state);
+
+    let mut style = (*ctx.style()).clone();
+    style.visuals.widgets.noninteractive.bg_fill = COLOR_POPUP;
+    ctx.set_style(style);
 
     // return  engine_updates;
     let mut redraw_mol = false;
