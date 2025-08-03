@@ -562,10 +562,14 @@ fn bond_entities(
 }
 
 /// Water from a MD sim; not from atoms in experimental data.
-pub fn draw_water(scene: &mut Scene, o_pos: &[Vec3F64], h0_pos: &[Vec3F64], h1_pos: &[Vec3F64]) {
+pub fn draw_water(scene: &mut Scene, o_pos: &[Vec3F64], h0_pos: &[Vec3F64], h1_pos: &[Vec3F64], hide_water: bool) {
     scene
         .entities
         .retain(|ent| ent.class != EntityType::WaterModel as u32);
+
+    if hide_water {
+        return;
+    }
 
     for i in 0..o_pos.len() {
         let mut ent = Entity::new(

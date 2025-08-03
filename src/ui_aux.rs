@@ -223,6 +223,7 @@ pub fn dynamics_player(
                     &snap.water_o_posits,
                     &snap.water_h0_posits,
                     &snap.water_h1_posits,
+                    state.ui.visibility.hide_water
                 );
             }
         }
@@ -269,6 +270,7 @@ pub fn md_setup(
                         &snap.water_o_posits,
                         &snap.water_h0_posits,
                         &snap.water_h1_posits,
+                        state.ui.visibility.hide_water
                     );
 
                     state.mol_dynamics = Some(md);
@@ -315,6 +317,7 @@ pub fn md_setup(
                             &snap.water_o_posits,
                             &snap.water_h0_posits,
                             &snap.water_h1_posits,
+                            state.ui.visibility.hide_water
                         );
 
                         state.ui.current_snapshot = 0;

@@ -75,14 +75,14 @@ impl MdState {
                     &mut self.lj_table,
                 );
 
-                println!(
-                    "Posit 0: {}, Posit 1: {}, {f}, q0: {:.2}, q1: {:.2} dist: {:.2}",
-                    self.atoms[i].posit,
-                    self.atoms[j].posit,
-                    self.atoms[i].partial_charge,
-                    self.atoms[j].partial_charge,
-                    diff.magnitude()
-                );
+                // println!(
+                //     "Posit 0: {}, Posit 1: {}, {f}, q0: {:.2}, q1: {:.2} dist: {:.2}",
+                //     self.atoms[i].posit,
+                //     self.atoms[j].posit,
+                //     self.atoms[i].partial_charge,
+                //     self.atoms[j].partial_charge,
+                //     diff.magnitude()
+                // );
 
                 let accel_0 = f / self.atoms[i].mass;
                 let accel_1 = f / self.atoms[j].mass;

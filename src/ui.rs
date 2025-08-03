@@ -24,15 +24,13 @@ use crate::{
     CamSnapshot, MsaaSetting, Selection, State, ViewSelLevel, cli,
     cli::autocomplete_cli,
     docking::{
-        ConformationType, calc_binding_energy, external::check_adv_avail, find_optimal_pose,
+        ConformationType, calc_binding_energy, find_optimal_pose,
         find_sites::find_docking_sites,
     },
     download_mols::{load_sdf_drugbank, load_sdf_pubchem},
-    dynamics::prep::{build_dynamics_docking, change_snapshot_docking},
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
     mol_drawing::{
         EntityType, MoleculeView, draw_density, draw_density_surface, draw_ligand, draw_molecule,
-        draw_water,
     },
     molecule::{Ligand, Molecule},
     render::{
@@ -48,6 +46,7 @@ use crate::{
         reset_camera, select_from_search,
     },
 };
+use crate::mol_drawing::draw_water;
 
 pub const ROW_SPACING: f32 = 10.;
 pub const COL_SPACING: f32 = 30.;
@@ -1140,9 +1139,25 @@ fn view_settings(
 
         ui_aux::vis_check(&mut state.ui.visibility.hide_hydrogen, "H", ui, redraw);
 
-        if !state.ui.visibility.hide_hetero {
-            // Subset of hetero.
-            ui_aux::vis_check(&mut state.ui.visibility.hide_water, "Water", ui, redraw);
+        // We allow toggling water now regardless of hide hetero, as it's part of our MD sim.
+        // if !state.ui.visibility.hide_hetero {
+        // Subset of hetero.
+        let water_prev = state.ui.visibility.hide_water;
+        ui_aux::vis_check(&mut state.ui.visibility.hide_water, "Water", ui, redraw);
+        // }
+
+        if let Some(md) = &state.mol_dynamics {
+            if state.ui.visibility.hide_water != water_prev {
+                let snap = &md.snapshots[0];
+
+                draw_water(
+                    scene,
+                    &snap.water_o_posits,
+                    &snap.water_h0_posits,
+                    &snap.water_h1_posits,
+                    state.ui.visibility.hide_water
+                );
+            }
         }
 
         if state.ligand.is_some() {
@@ -1845,74 +1860,74 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 PopupAnchor::Position(Pos2::new(60., 60.)),
                 ui.layer_id(), // draw on top of the current layer
             )
-            .align(RectAlign::TOP)
-            // .align(RectAlign::BOTTOM_START)
-            .open(true)
-            .gap(4.0)
-            .show(|ui| {
-                // These vars avoid dbl borrow.
-                let load_ff = !state.ligand.as_ref().unwrap().ff_params_loaded;
-                let load_frcmod = !state.ligand.as_ref().unwrap().frcmod_loaded;
+                .align(RectAlign::TOP)
+                // .align(RectAlign::BOTTOM_START)
+                .open(true)
+                .gap(4.0)
+                .show(|ui| {
+                    // These vars avoid dbl borrow.
+                    let load_ff = !state.ligand.as_ref().unwrap().ff_params_loaded;
+                    let load_frcmod = !state.ligand.as_ref().unwrap().frcmod_loaded;
 
-                let Some(lig) = state.ligand.as_mut() else {
-                    return;
-                };
-                let mut msg = String::from("Not ready for dynamics: ");
+                    let Some(lig) = state.ligand.as_mut() else {
+                        return;
+                    };
+                    let mut msg = String::from("Not ready for dynamics: ");
 
-                if !lig.ff_params_loaded {
-                    msg += "No FF params or partial charges are present on this ligand."
-                }
-                if !lig.frcmod_loaded {
-                    msg += "No FRCMOD parameters loaded for this ligand."
-                }
-
-                ui.label(RichText::new(msg).color(Color32::LIGHT_RED));
-
-                ui.add_space(ROW_SPACING);
-
-                // todo: What about cases where a SDF from pubchem or drugbank doesn't include teh name used by Amber?
-                if ui.button("Check online").clicked() {
-                    // let Some(lig) = state.ligand.as_mut() else {
-                    //     return;
-                    // };
-
-                    match amber_geostd::find_mols(&lig.molecule.ident) {
-                        Ok(data) => {
-                            state.ui.get_std_popup_items = data;
-                        }
-                        Err(e) => handle_err(
-                            &mut state.ui,
-                            format!("Problem loading mol data online: {e:?}"),
-                        ),
+                    if !lig.ff_params_loaded {
+                        msg += "No FF params or partial charges are present on this ligand."
                     }
-                }
+                    if !lig.frcmod_loaded {
+                        msg += "No FRCMOD parameters loaded for this ligand."
+                    }
 
-                // This clone is annoying; db borrow.
-                let items = state.ui.get_std_popup_items.clone();
-                for mol_data in items {
+                    ui.label(RichText::new(msg).color(Color32::LIGHT_RED));
+
+                    ui.add_space(ROW_SPACING);
+
+                    // todo: What about cases where a SDF from pubchem or drugbank doesn't include teh name used by Amber?
+                    if ui.button("Check online").clicked() {
+                        // let Some(lig) = state.ligand.as_mut() else {
+                        //     return;
+                        // };
+
+                        match amber_geostd::find_mols(&lig.molecule.ident) {
+                            Ok(data) => {
+                                state.ui.get_std_popup_items = data;
+                            }
+                            Err(e) => handle_err(
+                                &mut state.ui,
+                                format!("Problem loading mol data online: {e:?}"),
+                            ),
+                        }
+                    }
+
+                    // This clone is annoying; db borrow.
+                    let items = state.ui.get_std_popup_items.clone();
+                    for mol_data in items {
+                        if ui
+                            .button(
+                                RichText::new(format!("Load params for {}", mol_data.ident))
+                                    .color(COLOR_HIGHLIGHT),
+                            )
+                            .clicked()
+                        {
+                            state.load_geostd_mol_data(
+                                &mol_data.ident,
+                                load_ff,
+                                load_frcmod,
+                                &mut redraw_lig,
+                            );
+                        }
+                    }
+
                     if ui
-                        .button(
-                            RichText::new(format!("Load params for {}", mol_data.ident))
-                                .color(COLOR_HIGHLIGHT),
-                        )
+                        .button(RichText::new("Close").color(Color32::LIGHT_RED))
                         .clicked()
                     {
-                        state.load_geostd_mol_data(
-                            &mol_data.ident,
-                            load_ff,
-                            load_frcmod,
-                            &mut redraw_lig,
-                        );
+                        state.ui.show_get_geostd_popup = false;
                     }
-                }
-
-                if ui
-                    .button(RichText::new("Close").color(Color32::LIGHT_RED))
-                    .clicked()
-                {
-                    state.ui.show_get_geostd_popup = false;
-                }
-            });
+                });
         }
 
         if state.ui.show_associated_structures_popup {
@@ -1931,53 +1946,53 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     PopupAnchor::Position(Pos2::new(300., 60.)),
                     ui.layer_id(), // draw on top of the current layer
                 )
-                .align(RectAlign::TOP)
-                .open(true)
-                .gap(4.0)
-                .show(|ui| {
-                    for s in &associated_structs {
-                        ui.horizontal(|ui| {
-                            if ui
-                                .button(
-                                    RichText::new(format!("{}", s.pdb_id)).color(COLOR_HIGHLIGHT),
-                                )
-                                .clicked()
-                            {
-                                rcsb::open_overview(&s.pdb_id);
-                            }
-                            ui.add_space(COL_SPACING);
+                    .align(RectAlign::TOP)
+                    .open(true)
+                    .gap(4.0)
+                    .show(|ui| {
+                        for s in &associated_structs {
+                            ui.horizontal(|ui| {
+                                if ui
+                                    .button(
+                                        RichText::new(format!("{}", s.pdb_id)).color(COLOR_HIGHLIGHT),
+                                    )
+                                    .clicked()
+                                {
+                                    rcsb::open_overview(&s.pdb_id);
+                                }
+                                ui.add_space(COL_SPACING);
 
-                            if ui
-                                .button(
-                                    RichText::new(format!("Open this protein"))
-                                        .color(COLOR_HIGHLIGHT),
-                                )
-                                .clicked()
-                            {
-                                load_atom_coords_rcsb(
-                                    &s.pdb_id,
-                                    state,
-                                    scene,
-                                    &mut engine_updates,
-                                    &mut redraw_mol,
-                                    &mut reset_cam,
-                                );
-                            }
-                        });
+                                if ui
+                                    .button(
+                                        RichText::new(format!("Open this protein"))
+                                            .color(COLOR_HIGHLIGHT),
+                                    )
+                                    .clicked()
+                                {
+                                    load_atom_coords_rcsb(
+                                        &s.pdb_id,
+                                        state,
+                                        scene,
+                                        &mut engine_updates,
+                                        &mut redraw_mol,
+                                        &mut reset_cam,
+                                    );
+                                }
+                            });
 
-                        ui.label(RichText::new(format!("{}", s.description)));
+                            ui.label(RichText::new(format!("{}", s.description)));
+
+                            ui.add_space(ROW_SPACING);
+                        }
 
                         ui.add_space(ROW_SPACING);
-                    }
-
-                    ui.add_space(ROW_SPACING);
-                    if ui
-                        .button(RichText::new("Close").color(Color32::LIGHT_RED))
-                        .clicked()
-                    {
-                        state.ui.show_associated_structures_popup = false;
-                    }
-                });
+                        if ui
+                            .button(RichText::new("Close").color(Color32::LIGHT_RED))
+                            .clicked()
+                        {
+                            state.ui.show_associated_structures_popup = false;
+                        }
+                    });
             }
         }
 
