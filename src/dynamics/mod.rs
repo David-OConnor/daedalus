@@ -70,6 +70,7 @@ use crate::{
     molecule::Atom,
 };
 
+// (indices), (sigma, eps)
 pub type LjTable = HashMap<(usize, usize), (f64, f64)>;
 
 // vacuum permittivity constant   (k_e = 1/(4π ε0))
@@ -295,6 +296,8 @@ pub struct MdState {
     /// We cache sigma and eps on the first step, then use it on the others. This increases
     /// memory use, and reduces CPU use.
     lj_table: LjTable,
+    ///. E.g. between (dynamic atom, static receptor).
+    lj_table_static: LjTable,
 }
 
 impl MdState {
@@ -341,7 +344,13 @@ impl MdState {
 
         for water in &mut self.water {
             let sources = &sources;
-            water.step(dt, &sources, &self.cell, &mut self.lj_table);
+            water.step(
+                dt,
+                &sources,
+                &self.cell,
+                &mut self.lj_table,
+                &mut self.lj_table_static,
+            );
         }
 
         // todo: Apply the thermostat.

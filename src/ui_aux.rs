@@ -198,6 +198,7 @@ pub fn dynamics_player(
                 changed = true;
                 let snap = &md.snapshots[state.ui.current_snapshot];
 
+                // todo: A temp NAN check.
                 println!("SNAP ATOMS: {}", snap.atom_posits[0]);
 
                 match md.mode {

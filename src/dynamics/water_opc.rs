@@ -178,6 +178,7 @@ impl WaterMol {
         sources: &[AtomDynamics],
         cell: &SimBox,
         lj_table: &mut LjTable,
+        lj_table_static: &mut LjTable,
     ) {
         let mut f_o = Vec3::new_zero();
         let mut f_h0 = Vec3::new_zero();
@@ -188,16 +189,56 @@ impl WaterMol {
         // todo: Figure out a way to cache the water-water LJ interactions at least.
         for src in sources {
             let r = cell.min_image(src.posit - self.o.posit);
-            f_o += f_nonbonded(&self.o, src, r.dot(r), r, false, None, lj_table);
+            f_o += f_nonbonded(
+                &self.o,
+                src,
+                r.dot(r),
+                r,
+                false,
+                None,
+                None,
+                lj_table,
+                lj_table_static,
+            );
 
             let r = cell.min_image(src.posit - self.h0.posit);
-            f_h0 += f_nonbonded(&self.h0, src, r.dot(r), r, false, None, lj_table);
+            f_h0 += f_nonbonded(
+                &self.h0,
+                src,
+                r.dot(r),
+                r,
+                false,
+                None,
+                None,
+                lj_table,
+                lj_table_static,
+            );
 
             let r = cell.min_image(src.posit - self.h1.posit);
-            f_h1 += f_nonbonded(&self.h1, src, r.dot(r), r, false, None, lj_table);
+            f_h1 += f_nonbonded(
+                &self.h1,
+                src,
+                r.dot(r),
+                r,
+                false,
+                None,
+                None,
+                lj_table,
+                lj_table_static,
+            );
 
             let r = cell.min_image(src.posit - self.m.posit);
-            f_ep += f_nonbonded(&self.m, src, r.dot(r), r, false, None, lj_table);
+            f_ep += f_nonbonded(
+                &self.m,
+                src,
+                r.dot(r),
+                r,
+                false,
+                None,
+                None,
+                lj_table,
+                lj_table_static,
+            );
         }
 
         f_o += f_ep;
@@ -225,13 +266,53 @@ impl WaterMol {
 
         for src in sources {
             let r = src.posit - self.o.posit;
-            f_o2 += f_nonbonded(&self.o, src, r.dot(r), r, false, None, lj_table);
+            f_o2 += f_nonbonded(
+                &self.o,
+                src,
+                r.dot(r),
+                r,
+                false,
+                None,
+                None,
+                lj_table,
+                lj_table_static,
+            );
             let r = src.posit - self.h0.posit;
-            f_h02 += f_nonbonded(&self.h0, src, r.dot(r), r, false, None, lj_table);
+            f_h02 += f_nonbonded(
+                &self.h0,
+                src,
+                r.dot(r),
+                r,
+                false,
+                None,
+                None,
+                lj_table,
+                lj_table_static,
+            );
             let r = src.posit - self.h1.posit;
-            f_h12 += f_nonbonded(&self.h1, src, r.dot(r), r, false, None, lj_table);
+            f_h12 += f_nonbonded(
+                &self.h1,
+                src,
+                r.dot(r),
+                r,
+                false,
+                None,
+                None,
+                lj_table,
+                lj_table_static,
+            );
             let r = src.posit - self.m.posit;
-            f_ep2 += f_nonbonded(&self.m, src, r.dot(r), r, false, None, lj_table);
+            f_ep2 += f_nonbonded(
+                &self.m,
+                src,
+                r.dot(r),
+                r,
+                false,
+                None,
+                None,
+                lj_table,
+                lj_table_static,
+            );
         }
         f_o2 += f_ep2; // project EP again
 

@@ -72,7 +72,9 @@ impl MdState {
                     diff,
                     scale14,
                     Some((i, j)),
+                    None,
                     &mut self.lj_table,
+                    &mut self.lj_table_static,
                 );
 
                 // println!(
@@ -87,27 +89,43 @@ impl MdState {
                 let accel_0 = f / self.atoms[i].mass;
                 let accel_1 = f / self.atoms[j].mass;
 
+                if f.x.is_nan() {
+                    println!("NaN nonbonded, non-static");
+                }
+
                 self.atoms[i].accel += accel_0;
                 self.atoms[j].accel -= accel_1;
             }
         }
 
         // Second pass: Static atoms. (Short-range)
-        for a_lig in &mut self.atoms {
-            for a_static in &self.atoms_static {
+        for (i_lig, a_lig) in self.atoms.iter_mut().enumerate() {
+            for (i_static, a_static) in self.atoms_static.iter().enumerate() {
                 let diff = a_lig.posit - a_static.posit;
                 let dv = self.cell.min_image(diff);
 
                 let r_sq = dv.magnitude_squared();
 
-                // No LJ cacheing here for now.
-                // todo: cacheing?
-                let f = f_nonbonded(a_lig, a_static, r_sq, diff, false, None, &mut self.lj_table);
+                let f = f_nonbonded(
+                    a_lig,
+                    a_static,
+                    r_sq,
+                    diff,
+                    false,
+                    None,
+                    Some((i_lig, i_static)),
+                    &mut self.lj_table,
+                    &mut self.lj_table_static,
+                );
 
                 println!(
                     "Posit 0: {}, Posit 1: {}, {f}, q0: {:.2}, q1: {:.2}",
                     a_lig.posit, a_static.posit, a_lig.partial_charge, a_static.partial_charge
                 );
+
+                if f.x.is_nan() {
+                    println!("NaN nonbonded, static");
+                }
 
                 a_lig.accel += f / a_lig.mass;
             }
@@ -140,10 +158,14 @@ pub fn f_nonbonded(
     r_sq: f64,
     diff: Vec3,
     scale14: bool, // See notes earlier in this module.
-    // For now, this caching optimization only applies to non-static, non-water interactions.
+    // For now, this caching optimization only to non-water interactions.
     // If it doesn't apply, this field is None.
     atom_indices: Option<(usize, usize)>,
+    // (dynamic i, static i)
+    atom_indices_static: Option<(usize, usize)>,
     lj_table: &mut LjTable,
+    // (dynamic i, static i)
+    lj_table_static: &mut LjTable,
 ) -> Vec3 {
     let dist = r_sq.sqrt();
     let dir = diff / dist;
@@ -153,6 +175,8 @@ pub fn f_nonbonded(
         Vec3::new_zero()
     } else {
         let (σ, ε) = match atom_indices {
+            // todo: Try either order? If not, we sill need two passes here, and will have twice the entries;
+            // todo: One for each order.
             Some(indices) => match lj_table.get(&indices) {
                 Some(params) => *params,
                 None => {
@@ -162,7 +186,25 @@ pub fn f_nonbonded(
                 }
             },
             // i.e. water or static.
-            None => combine_lj_params(tgt, src),
+            None => {
+                // This nest is a bit messy
+                match atom_indices_static {
+                    // Note: Index order matters here, and the caveat for dynamic-dynamic interactions
+                    // doesn't.
+                    Some(indices) => match lj_table_static.get(&indices) {
+                        Some(params) => *params,
+                        None => {
+                            let (σ, ε) = combine_lj_params(tgt, src);
+                            lj_table_static.insert(indices, (σ, ε));
+                            (σ, ε)
+                        }
+                    },
+                    // i.e. water or static.
+                    None => combine_lj_params(tgt, src),
+                };
+                // Neither LUT table.
+                combine_lj_params(tgt, src)
+            }
         };
 
         // Negative due to our mix of conventions; keep it consistent with coulomb, and net correct.
@@ -200,7 +242,7 @@ pub fn f_nonbonded(
     // f_lj
 }
 
-/// Helper. Returns σ, ε between an atom pair.
+/// Helper. Returns σ, ε between an atom pair. Atom order passed as params doesn't matter.
 fn combine_lj_params(atom_0: &AtomDynamics, atom_1: &AtomDynamics) -> (f64, f64) {
     let σ = 0.5 * (atom_0.lj_sigma + atom_1.lj_sigma);
     let ε = (atom_0.lj_eps * atom_1.lj_eps).sqrt();

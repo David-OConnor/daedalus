@@ -8,7 +8,10 @@ use std::{
 };
 
 use bio_apis::{amber_geostd, drugbank, pubchem, rcsb};
-use egui::{Color32, ComboBox, Context, Frame, Key, Popup, PopupAnchor, Pos2, RectAlign, RichText, Slider, TextEdit, TopBottomPanel, Ui};
+use egui::{
+    Color32, ComboBox, Context, Frame, Key, Popup, PopupAnchor, Pos2, RectAlign, RichText, Slider,
+    TextEdit, TopBottomPanel, Ui,
+};
 use graphics::{ControlScheme, EngineUpdates, RIGHT_VEC, Scene, UP_VEC};
 use lin_alg::f32::{Quaternion, Vec3};
 use na_seq::AaIdent;
@@ -1371,9 +1374,10 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
     // Checks each frame; takes action based on time since last save.
     check_prefs_save(state);
 
-    let mut style = (*ctx.style()).clone();
-    style.visuals.widgets.noninteractive.bg_fill = COLOR_POPUP;
-    ctx.set_style(style);
+    // todo: Trying to set popup color; Not working
+    // let mut style = (*ctx.style()).clone();
+    // style.visuals.widgets.noninteractive.bg_fill = COLOR_POPUP;
+    // ctx.set_style(style);
 
     // return  engine_updates;
     let mut redraw_mol = false;
