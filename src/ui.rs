@@ -1048,15 +1048,19 @@ fn mol_descrip(mol: &Molecule, ui: &mut Ui) {
 
     if let Some(metadata) = &mol.metadata {
         // Limit size to prevent UI problems.
-        let mut title: String = metadata
+        let mut title_abbrev: String = metadata
             .prim_cit_title
             .chars()
             .take(MAX_TITLE_LEN)
             .collect();
-        if title.len() != metadata.prim_cit_title.len() {
-            title += "...";
+
+        if title_abbrev.len() != metadata.prim_cit_title.len() {
+            title_abbrev += "...";
+
+            // Allow hovering to see the full title.
+            ui.label(RichText::new(title_abbrev).color(Color32::WHITE).size(12.))
+                .on_hover_text(&metadata.prim_cit_title);
         }
-        ui.label(RichText::new(title).color(Color32::WHITE).size(12.));
     }
 
     if mol.ident.len() <= 5 {
@@ -1587,9 +1591,13 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
             ui.add_space(COL_SPACING);
 
-            ui.add_space(COL_SPACING);
-            ui.label(RichText::new("Query databases (ident):").color(color_open_tools));
-            let edit_resp = ui.add(TextEdit::singleline(&mut state.ui.db_input).desired_width(40.));
+            let query_help = "From RCSB PDB, PubChem, DrugBank, or Amber Geostd";
+            ui.label(RichText::new("Query databases (ident):").color(color_open_tools))
+                .on_hover_text(query_help);
+
+            let edit_resp = ui
+                .add(TextEdit::singleline(&mut state.ui.db_input).desired_width(40.))
+                .on_hover_text(query_help);
 
             if state.ui.db_input.len() >= 4 {
                 let enter_pressed =

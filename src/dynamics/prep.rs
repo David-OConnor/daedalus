@@ -29,6 +29,7 @@ use bio_files::{
         AngleBendingParams, BondStretchingParams, ForceFieldParamsKeyed, MassParams, VdwParams,
     },
 };
+#[cfg(features = "cuda")]
 use cudarc::driver::HostSlice;
 use itertools::Itertools;
 use lin_alg::f64::Vec3;

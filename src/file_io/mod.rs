@@ -591,11 +591,11 @@ impl State {
             }
         }
 
-        // let last_frcmod_opened = self.to_save.last_frcmod_opened.clone();
-        // if let Some(path) = &last_frcmod_opened {
-        //     if let Err(e) = self.open_force_field(path) {
-        //         handle_err(&mut self.ui, e.to_string());
-        //     }
-        // }
+        let last_frcmod_opened = self.to_save.last_frcmod_opened.clone();
+        if let Some(path) = &last_frcmod_opened {
+            if let Err(e) = self.open_force_field(path) {
+                handle_err(&mut self.ui, e.to_string());
+            }
+        }
     }
 }

@@ -61,7 +61,7 @@ impl MdState {
                     self.nonbonded_scaled.contains(&key)
                 };
 
-                let diff = self.atoms[j].posit - self.atoms[i].posit;
+                let diff = self.atoms[i].posit - self.atoms[j].posit;
                 let dv = self.cell.min_image(diff);
                 let r_sq = dv.magnitude_squared();
 
@@ -75,6 +75,15 @@ impl MdState {
                     &mut self.lj_table,
                 );
 
+                println!(
+                    "Posit 0: {}, Posit 1: {}, {f}, q0: {:.2}, q1: {:.2} dist: {:.2}",
+                    self.atoms[i].posit,
+                    self.atoms[j].posit,
+                    self.atoms[i].partial_charge,
+                    self.atoms[j].partial_charge,
+                    diff.magnitude()
+                );
+
                 let accel_0 = f / self.atoms[i].mass;
                 let accel_1 = f / self.atoms[j].mass;
 
@@ -86,7 +95,7 @@ impl MdState {
         // Second pass: Static atoms. (Short-range)
         for a_lig in &mut self.atoms {
             for a_static in &self.atoms_static {
-                let diff = a_static.posit - a_lig.posit;
+                let diff = a_lig.posit - a_static.posit;
                 let dv = self.cell.min_image(diff);
 
                 let r_sq = dv.magnitude_squared();
@@ -94,6 +103,12 @@ impl MdState {
                 // No LJ cacheing here for now.
                 // todo: cacheing?
                 let f = f_nonbonded(a_lig, a_static, r_sq, diff, false, None, &mut self.lj_table);
+
+                println!(
+                    "Posit 0: {}, Posit 1: {}, {f}, q0: {:.2}, q1: {:.2}",
+                    a_lig.posit, a_static.posit, a_lig.partial_charge, a_static.partial_charge
+                );
+
                 a_lig.accel += f / a_lig.mass;
             }
         }
@@ -133,7 +148,7 @@ pub fn f_nonbonded(
     let dist = r_sq.sqrt();
     let dir = diff / dist;
 
-    // todo: This check helps, but ideally we skip the distance computation too in these cases.
+    // todo: This distance cutoff helps, but ideally we skip the distance computation too in these cases.
     let mut f_lj = if r_sq > CUTOFF_VDW_SQ {
         Vec3::new_zero()
     } else {
@@ -150,7 +165,8 @@ pub fn f_nonbonded(
             None => combine_lj_params(tgt, src),
         };
 
-        let mut f = force_lj(dir, dist, σ, ε);
+        // Negative due to our mix of conventions; keep it consistent with coulomb, and net correct.
+        let mut f = -force_lj(dir, dist, σ, ε);
         if scale14 {
             f *= SCALE_LJ_14;
         }
@@ -179,6 +195,9 @@ pub fn f_nonbonded(
     }
 
     f_lj + f_coulomb
+    // todo temp to test
+    // f_coulomb
+    // f_lj
 }
 
 /// Helper. Returns σ, ε between an atom pair.
