@@ -38,7 +38,7 @@ and disabling CUDA.
 - Molecular dynamics, using Amber force fields, and an OPC water model
 - WIP: This software is a platform for ab-initio simulations of electron density.
 
-![Protein B](screenshots/protein_b.png)
+![Ligand dynamics](screenshots/daedalus_md_2025-08-03.png)
 
 
 ## Getting started
@@ -153,6 +153,9 @@ If *orbit sel* is set in the GUI, the orbit center will be the selected atom or 
 - **Esc**: Clear selection
 - **Left arrow**: select previous residue
 - **Right arrow**: select next residue
+
+
+![Protein B](screenshots/protein_b.png)
 
 
 ## Reflections and electron density
