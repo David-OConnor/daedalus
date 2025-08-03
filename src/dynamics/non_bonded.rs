@@ -1,5 +1,7 @@
 //! For VDW and Coulomb forces
 
+use std::collections::HashMap;
+
 use lin_alg::f64::Vec3;
 
 use crate::{
@@ -25,7 +27,8 @@ const SCALE_COUL_14: f64 = 1.0 / 1.2;
 
 impl MdState {
     /// Coulomb and Van der Waals. (Lennard-Jones). We use the MD-standard [S]PME approach
-    /// to handle approximated Coulomb forces.
+    /// to handle approximated Coulomb forces. This function applies forces from dynamic, static,
+    /// and water sources.
     ///
     /// We use a hard distance cutoff for Vdw, due to its  ^-7 falloff.
     ///todo: The PME reciprical case still contains 1-4 coulomb; fix A/R, and QC
@@ -43,7 +46,7 @@ impl MdState {
     pub fn apply_nonbonded_forces(&mut self) {
         const EPS: f64 = 1e-6;
 
-        // Apply the short range terms: LJ, and Ewald-screened Coulomb.
+        // Force from dynamic atoms (on the target dynamic atoms): LJ, and Ewald-screened Coulomb.
         for i in 0..self.atoms.len() {
             for &j in &self.neighbour[i] {
                 if j < i {
@@ -73,8 +76,10 @@ impl MdState {
                     scale14,
                     Some((i, j)),
                     None,
+                    None,
                     &mut self.lj_table,
                     &mut self.lj_table_static,
+                    &mut self.lj_table_water,
                 );
 
                 // println!(
@@ -86,20 +91,16 @@ impl MdState {
                 //     diff.magnitude()
                 // );
 
-                let accel_0 = f / self.atoms[i].mass;
-                let accel_1 = f / self.atoms[j].mass;
-
-                if f.x.is_nan() {
-                    println!("NaN nonbonded, non-static");
-                }
-
-                self.atoms[i].accel += accel_0;
-                self.atoms[j].accel -= accel_1;
+                // We divide by mass in `step`.
+                self.atoms[i].accel += f;
+                self.atoms[j].accel -= f;
             }
         }
 
-        // Second pass: Static atoms. (Short-range)
+        // Force from static atoms and water. (Short-range). We currently don't use the neighbors approach here, although
+        // it is likely useful, as when docking, there will be many static atoms IVO the dynamic ones.
         for (i_lig, a_lig) in self.atoms.iter_mut().enumerate() {
+            // Force from static atoms.
             for (i_static, a_static) in self.atoms_static.iter().enumerate() {
                 let diff = a_lig.posit - a_static.posit;
                 let dv = self.cell.min_image(diff);
@@ -114,28 +115,56 @@ impl MdState {
                     false,
                     None,
                     Some((i_lig, i_static)),
+                    None,
                     &mut self.lj_table,
                     &mut self.lj_table_static,
+                    &mut self.lj_table_water,
                 );
 
-                println!(
-                    "Posit 0: {}, Posit 1: {}, {f}, q0: {:.2}, q1: {:.2}",
-                    a_lig.posit, a_static.posit, a_lig.partial_charge, a_static.partial_charge
-                );
+                // println!(
+                //     "Posit 0: {}, Posit 1: {}, {f}, q0: {:.2}, q1: {:.2}",
+                //     a_lig.posit, a_static.posit, a_lig.partial_charge, a_static.partial_charge
+                // );
 
-                if f.x.is_nan() {
-                    println!("NaN nonbonded, static");
+                // We divide by mass in `step`.
+                a_lig.accel += f;
+            }
+
+            // Force from water
+            // todo: Consider an LJ table here too. Note that this is simple: It's one
+            // per target atom, as the only LJ source for water is the (uniform) O.
+            for (i_water, mol_water) in self.water.iter().enumerate() {
+                for a_water_src in [&mol_water.o, &mol_water.m, &mol_water.h0, &mol_water.h1] {
+                    let diff = a_lig.posit - a_water_src.posit;
+                    let dv = self.cell.min_image(diff);
+
+                    let r_sq = dv.magnitude_squared();
+
+                    let f = f_nonbonded(
+                        a_lig,
+                        a_water_src,
+                        r_sq,
+                        diff,
+                        false,
+                        None,
+                        None,
+                        Some(i_lig),
+                        &mut self.lj_table,
+                        &mut self.lj_table_static,
+                        &mut self.lj_table_water,
+                    );
+                    // We divide by mass in `step`.
+                    a_lig.accel += f;
                 }
-
-                a_lig.accel += f / a_lig.mass;
             }
         }
 
-        // Long‑range reciprocal‑space term (PME / SPME)
+        // Long‑range reciprocal‑space term (PME / SPME), both static and dynamic.
         // Build a temporary Vec with *all* charges so the mesh sees both
         // movable and rigid atoms.  We only add forces back to movable atoms.
-        let n_movable = self.atoms.len();
-        let mut all_atoms = Vec::with_capacity(n_movable + self.atoms_static.len());
+        let n_dynamic = self.atoms.len();
+        let mut all_atoms = Vec::with_capacity(n_dynamic + self.atoms_static.len());
+
         all_atoms.extend(self.atoms.iter().cloned());
         all_atoms.extend(self.atoms_static.iter().cloned());
 
@@ -143,8 +172,9 @@ impl MdState {
             pme_long_range_forces(&all_atoms, &self.cell, EWALD_ALPHA, PME_MESH_SPACING);
 
         // add reciprocal forces to *movable* atoms only
-        for (atom, f_rec) in self.atoms.iter_mut().zip(rec_forces.iter().take(n_movable)) {
-            atom.accel += *f_rec / atom.mass; // convert to acceleration
+        for (atom, f_rec) in self.atoms.iter_mut().zip(rec_forces.iter().take(n_dynamic)) {
+            // We divide by mass in `step`.
+            atom.accel += *f_rec;
         }
     }
 }
@@ -163,12 +193,16 @@ pub fn f_nonbonded(
     atom_indices: Option<(usize, usize)>,
     // (dynamic i, static i)
     atom_indices_static: Option<(usize, usize)>,
+    atom_indices_water: Option<usize>,
     lj_table: &mut LjTable,
     // (dynamic i, static i)
     lj_table_static: &mut LjTable,
+    lj_table_water: &mut HashMap<usize, (f64, f64)>,
 ) -> Vec3 {
     let dist = r_sq.sqrt();
     let dir = diff / dist;
+
+    // todo: This trip match is heinous; flatten it.
 
     // todo: This distance cutoff helps, but ideally we skip the distance computation too in these cases.
     let mut f_lj = if r_sq > CUTOFF_VDW_SQ {
@@ -185,7 +219,7 @@ pub fn f_nonbonded(
                     (σ, ε)
                 }
             },
-            // i.e. water or static.
+            // i.e. water or static, or step 0.
             None => {
                 // This nest is a bit messy
                 match atom_indices_static {
@@ -199,8 +233,25 @@ pub fn f_nonbonded(
                             (σ, ε)
                         }
                     },
-                    // i.e. water or static.
-                    None => combine_lj_params(tgt, src),
+                    // i.e. water
+                    None => {
+                        match atom_indices_water {
+                            //Single index of the lig; the only water mol is the uniform O.
+                            Some(i) => match lj_table_water.get(&i) {
+                                Some(params) => *params,
+                                None => {
+                                    let (σ, ε) = combine_lj_params(tgt, src);
+                                    lj_table_water.insert(i, (σ, ε));
+                                    (σ, ε)
+                                }
+                            },
+                            None => {
+                                unreachable!(
+                                    "Must pass one of dynamic, static, or water index set."
+                                );
+                            }
+                        }
+                    }
                 };
                 // Neither LUT table.
                 combine_lj_params(tgt, src)

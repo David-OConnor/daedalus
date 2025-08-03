@@ -14,7 +14,7 @@
 //! We integrate the moceule's internal rigid geometry using the `SETTLE` algorithm. This is likely
 //! to be cheaper, and more robust than Shake/Rattle. It's less general, but it works here.
 
-use std::f64::consts::TAU;
+use std::{collections::HashMap, f64::consts::TAU};
 
 use lin_alg::f64::{Quaternion, Vec3};
 use na_seq::Element;
@@ -61,21 +61,12 @@ const H_RSTAR: f64 = 0.;
 const EP_RSTAR: f64 = 1.; // todo: Why is this 1 in the param file?
 
 const O_SIGMA: f64 = 2.0 * O_RSTAR / SIGMA_FACTOR;
-const H_SIGMA: f64 = 0.;
-// Note: EP_RSTAR is 1. in the Amber param file, but I don't think this matters if ε is 0.
-const EP_SIGMA: f64 = 0.;
-// const H_SIGMA: f64 = 2.0 * H_RSTAR / SIGMA_FACTOR;
-// const EP_SIGMA: f64 = 2.0 * EP_RSTAR / SIGMA_FACTOR;
-
 const O_EPS: f64 = 0.2128008130;
-const H_EPS: f64 = 0.;
-const EP_EPS: f64 = 0.;
 
 // For converting from R_star to eps.
 const SIGMA_FACTOR: f64 = 1.122_462_048_309_373; // 2^(1/6)
 
-// Partial charges. See the OPC paper, Table 2.
-const Q_O: f64 = 0.;
+// Partial charges. See the OPC paper, Table 2. None on O.
 const Q_H: f64 = 0.6791;
 const Q_EP: f64 = -2. * Q_H;
 
@@ -90,7 +81,9 @@ const WATER_DENSITY: f64 = 0.997;
 /// todo: Should we just use `atom_dynamics` instead?
 pub struct WaterMol {
     /// Chargeless; its charge is represented at the offset "M" or "EP".
+    /// The only Lennard Jones/Vdw source. Has mass.
     pub o: AtomDynamics,
+    /// Hydrogens: carries charge; has mass.
     pub h0: AtomDynamics,
     pub h1: AtomDynamics,
     // todo: is this called "M", or "EP"? Have seen both.
@@ -119,6 +112,7 @@ impl WaterMol {
         // EP on the HOH bisector at fixed O–EP distance
         let ep_pos = o_pos + (h0_pos - o_pos + h1_pos - o_pos).to_normalized() * O_EP_R_0;
 
+        // This base has H and charge, and no LJ terms.
         let base = AtomDynamics {
             serial_number: 0,
             force_field_type: String::new(),
@@ -128,18 +122,17 @@ impl WaterMol {
             accel: Vec3::new_zero(),
             mass: H_MASS,
             partial_charge: Q_H,
-            lj_sigma: H_SIGMA,
-            lj_eps: H_EPS,
+            lj_sigma: 0.,
+            lj_eps: 0.,
         };
-
-        // todo: Make sure you're populating LJ sigma and eps.
 
         Self {
             o: AtomDynamics {
+                // Override LJ params, charge, and mass.
                 force_field_type: String::from("OW"),
                 element: Element::Oxygen,
                 mass: O_MASS,
-                partial_charge: Q_O, // 0
+                partial_charge: 0.,
                 lj_sigma: O_SIGMA,
                 lj_eps: O_EPS,
                 ..base.clone()
@@ -154,13 +147,12 @@ impl WaterMol {
                 posit: h1_pos,
                 ..base.clone()
             },
+            // Override charge and mass.
             m: AtomDynamics {
                 force_field_type: String::from("EP"),
                 posit: ep_pos,
                 mass: 0.,
                 partial_charge: Q_EP,
-                lj_sigma: EP_SIGMA,
-                lj_eps: EP_EPS,
                 ..base.clone()
             },
         }
@@ -179,6 +171,7 @@ impl WaterMol {
         cell: &SimBox,
         lj_table: &mut LjTable,
         lj_table_static: &mut LjTable,
+        lj_table_water: &mut HashMap<usize, (f64, f64)>,
     ) {
         let mut f_o = Vec3::new_zero();
         let mut f_h0 = Vec3::new_zero();
@@ -197,8 +190,10 @@ impl WaterMol {
                 false,
                 None,
                 None,
+                None,
                 lj_table,
                 lj_table_static,
+                lj_table_water,
             );
 
             let r = cell.min_image(src.posit - self.h0.posit);
@@ -210,8 +205,10 @@ impl WaterMol {
                 false,
                 None,
                 None,
+                None,
                 lj_table,
                 lj_table_static,
+                lj_table_water,
             );
 
             let r = cell.min_image(src.posit - self.h1.posit);
@@ -223,8 +220,10 @@ impl WaterMol {
                 false,
                 None,
                 None,
+                None,
                 lj_table,
                 lj_table_static,
+                lj_table_water,
             );
 
             let r = cell.min_image(src.posit - self.m.posit);
@@ -236,8 +235,10 @@ impl WaterMol {
                 false,
                 None,
                 None,
+                None,
                 lj_table,
                 lj_table_static,
+                lj_table_water,
             );
         }
 
@@ -274,8 +275,10 @@ impl WaterMol {
                 false,
                 None,
                 None,
+                None,
                 lj_table,
                 lj_table_static,
+                lj_table_water,
             );
             let r = src.posit - self.h0.posit;
             f_h02 += f_nonbonded(
@@ -286,8 +289,10 @@ impl WaterMol {
                 false,
                 None,
                 None,
+                None,
                 lj_table,
                 lj_table_static,
+                lj_table_water,
             );
             let r = src.posit - self.h1.posit;
             f_h12 += f_nonbonded(
@@ -298,8 +303,10 @@ impl WaterMol {
                 false,
                 None,
                 None,
+                None,
                 lj_table,
                 lj_table_static,
+                lj_table_water,
             );
             let r = src.posit - self.m.posit;
             f_ep2 += f_nonbonded(
@@ -310,8 +317,10 @@ impl WaterMol {
                 false,
                 None,
                 None,
+                None,
                 lj_table,
                 lj_table_static,
+                lj_table_water,
             );
         }
         f_o2 += f_ep2; // project EP again

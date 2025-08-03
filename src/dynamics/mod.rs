@@ -298,6 +298,10 @@ pub struct MdState {
     lj_table: LjTable,
     ///. E.g. between (dynamic atom, static receptor).
     lj_table_static: LjTable,
+    /// Simpler than the other LJ table: no combinations needed, as the source is a single
+    /// atom type: Water's O.
+    /// todo: You could even use indices.
+    lj_table_water: HashMap<usize, (f64, f64)>,
 }
 
 impl MdState {
@@ -322,35 +326,51 @@ impl MdState {
         }
 
         // Bonded forces
-        self.apply_bond_stretching_forces();
-        self.apply_angle_bending_forces();
-        self.apply_dihedral_forces(false);
+        // self.apply_bond_stretching_forces();
+        // self.apply_angle_bending_forces();
+        // self.apply_dihedral_forces(false);
+
+        // todo: Improper dihedrals are triggering NaNs when the ligand is moved into
+        // todo a pocket. Find out why.
         self.apply_dihedral_forces(true);
 
-        self.apply_nonbonded_forces();
+        // self.apply_nonbonded_forces();
 
-        // Second half-kick using new accelerations
+        // Second half-kick using new accelerations, and update accelerations using the atom's mass;
+        // up to this point, the accelerations have been missing that step; this is an optimization to
+        // do it once at the end.
         for a in &mut self.atoms {
+            a.accel /= a.mass;
             a.vel += a.accel * dt_half;
         }
 
-        let sources: Vec<AtomDynamics> = [
-            &self.atoms[..],
-            &self.atoms_static[..],
-            // todo: You must take each water atom into account.
-            // &self.water[..],
-        ]
-        .concat();
+        {
+            // We must include both the charge center M/EP, and the Vdw center O as a source.
+            // We include the Hs as charge centers.
+            let mut water_dyn = Vec::with_capacity(self.water.len() * 4);
+            for water in &self.water {
+                // todo: Evaluate if there's a way that avoids cloning.  Probably fine as it
+                // todo doesn't scale as O^2. (Clones each water atom once per step)
 
-        for water in &mut self.water {
-            let sources = &sources;
-            water.step(
-                dt,
-                &sources,
-                &self.cell,
-                &mut self.lj_table,
-                &mut self.lj_table_static,
-            );
+                water_dyn.push(water.o.clone());
+                water_dyn.push(water.m.clone());
+                water_dyn.push(water.h0.clone());
+                water_dyn.push(water.h1.clone());
+            }
+
+            let sources_on_water: Vec<AtomDynamics> =
+                [&self.atoms[..], &self.atoms_static[..], &water_dyn[..]].concat();
+
+            for water in &mut self.water {
+                water.step(
+                    dt,
+                    &sources_on_water,
+                    &self.cell,
+                    &mut self.lj_table,
+                    &mut self.lj_table_static,
+                    &mut self.lj_table_water,
+                );
+            }
         }
 
         // todo: Apply the thermostat.
@@ -388,8 +408,9 @@ impl MdState {
             const KCALMOL_A_TO_A_FS2_PER_AMU: f64 = 4.184e-4;
             // todo: Multiply accels by this?? Or are our units self-consistent.
 
-            a_0.accel += f / a_0.mass;
-            a_1.accel -= f / a_1.mass;
+            // We divide by mass in `step`.
+            a_0.accel += f;
+            a_1.accel -= f;
         }
     }
 
@@ -406,12 +427,12 @@ impl MdState {
             let (a_0, a_1, a_2) =
                 dynamics::split3_mut(&mut self.atoms, indices.0, indices.1, indices.2);
 
-            let (f_0, f_1, f_2) =
-                dynamics::f_angle_bending(a_0.posit, a_1.posit, a_2.posit, params);
+            let (f_0, f_1, f_2) = f_angle_bending(a_0.posit, a_1.posit, a_2.posit, params);
 
-            a_0.accel += f_0 / a_0.mass;
-            a_1.accel += f_1 / a_1.mass;
-            a_2.accel += f_2 / a_2.mass;
+            // We divide by mass in `step`.
+            a_0.accel += f_0;
+            a_1.accel += f_1;
+            a_2.accel += f_2;
         }
     }
 
@@ -458,6 +479,7 @@ impl MdState {
             }
 
             let dihe_measured = calc_dihedral_angle_v2(&(r_0, r_1, r_2, r_3));
+
             //
             // let t0_ctrl = Vec3::new(0., 0., 0.);
             // let t1_ctrl = Vec3::new(0., 1., 0.);
@@ -541,11 +563,51 @@ impl MdState {
             let f3 = -dφ_dr3 * dV_dφ;
             let f4 = -dφ_dr4 * dV_dφ;
 
-            // Convert to accelerations
-            a_0.accel += f1 / a_0.mass;
-            a_1.accel += f2 / a_1.mass;
-            a_2.accel += f3 / a_2.mass;
-            a_3.accel += f4 / a_3.mass;
+            // if a_0.mass < 0.5 || a_1.mass < 0.5 || a_2.mass < 0.5 || a_3.mass < 0.5 {
+            //     panic!("0 mass found!");
+            // }
+
+            // todo from diagnostic: Can't find it in improper, although there's where the error is showing.
+            if improper {
+                println!(
+                    "\nr0: {r_0} r1: {r_1} r2: {r_2} r3: {r_3} N1: {n1} N2: {n2} n1sq: {n1_sq} n2sq: {n2_sq} b2_len: {b2_len}"
+                );
+                println!(
+                    "DIHE: {:?}, dV_dφ: {}, k: {k}, phase: {}",
+                    dihe_measured, dV_dφ, dihe.phase as f64
+                );
+                println!(
+                    "B3dotB2: {:.3}, b1db2: {:.3}. 1: {}, 2: {}, 3: {}, 4: {}",
+                    b3.dot(b2),
+                    b1.dot(b2),
+                    dφ_dr1,
+                    dφ_dr2,
+                    dφ_dr3,
+                    dφ_dr4
+                );
+
+                if r_0.x.is_nan() || r_1.x.is_nan() || r_2.x.is_nan() || r_3.x.is_nan() {
+                    panic!(
+                        "NaN. Step: {}, \n\n a0: {a_0:?},\n\n a1: {a_1:?},\n\n a2: {a_2:?}, \n\na3: {a_3:?}",
+                        self.step_count
+                    );
+                }
+            } else {
+                // println!("\nNOT Improper");
+                // println!("r0: {r_0} r1: {r_1} r2: {r_2} r3: {r_3} N1: {n1} N2: {n2} n1sq: {n1_sq} n2sq: {n2_sq} b2_len: {b2_len}");
+                // println!("DIHE: {:?}, dV_dφ: {}, k: {k}, phase: {}", dihe_measured, dV_dφ, dihe.phase as f64);
+                // println!("B3dotB2: {:.3}, b1db2: {:.3}. 1: {}, 2: {}, 3: {}, 4: {}", b3.dot(b2), b1.dot(b2), dφ_dr1, dφ_dr2, dφ_dr3, dφ_dr4);
+                //
+                // if r_0.x.is_nan() ||  r_1.x.is_nan() ||  r_2.x.is_nan() ||  r_3.x.is_nan() {
+                //     panic!("NaN. a0: {a_0:?}, a1: {a_1:?}, a2: {a_2:?}, a3: {a_3:?}");
+                // }
+            }
+
+            // We divide by mass in `step`.
+            a_0.accel += f1;
+            a_1.accel += f2;
+            a_2.accel += f3;
+            a_3.accel += f4;
         }
     }
 
