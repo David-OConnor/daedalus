@@ -16,7 +16,7 @@ lin_alg = { version = "1.2.5", features = ["encode"] }
 barnes_hut = { version = "1.0.8"}  # enc temp rem
 na_seq = "0.3.1"
 bio_apis = {  version = "0.1.6", features = ["encode"] }
-bio_files = "0.2.3"
+bio_files = "0.2.4"
 mcubes = "0.1.4"
 
 # For loading and saving config

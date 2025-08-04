@@ -30,11 +30,16 @@
 //! - Optimizations for Coulomb: Ewald/PME/SPME?
 //! - Optimizations for LJ: Dist cutoff for now.
 //! - Amber 1-2, 1-3 exclusions, and 1-4 scaling of covalently-bonded atoms.
+//!
+//! --------
+//! A timing test, using bond-stretching forces between two atoms only. Measure the period
+//! of oscillation for these atom combinations, e.g. using custom Mol2 files.
+//! c6-c6: 35fs (correct).   os-os: 47fs        nc-nc: 34fs        hw-hw: 9fs
+//! Our measurements, 2025-08-04
+//! c6-c6: 35fs    os-os: 31fs        nc-nc: 34fs (Correct)       hw-hw: 6fs
 
 // todo: Long-term, you will need to figure out what to run as f32 vice f64, especially
 // todo for being able to run on GPU.
-
-// todo: Do I need to multiply the force by 418.4 to convert kcal mol⁻¹ Å⁻¹ → amu Å ps⁻²?
 
 mod ambient;
 mod non_bonded;
@@ -79,6 +84,10 @@ const SOFTENING_FACTOR_SQ: f64 = 1e-6;
 const SNAPSHOT_RATIO: usize = 1;
 
 const EPS: f64 = 1.0e-8;
+/// Convert convert kcal mol⁻¹ Å⁻¹ (Values in the Amber parameter files) to amu Å ps⁻². Multiply all bonded
+/// accelerations by this.
+/// todo: Or is it 4.184e-4;?
+const ACCEL_CONVERSION: f64 = 418.4;
 
 #[derive(Debug)]
 pub struct ParamError {
@@ -314,14 +323,11 @@ impl MdState {
 
         // Bonded forces
         self.apply_bond_stretching_forces();
-        self.apply_angle_bending_forces();
-        self.apply_dihedral_forces(false);
+        // self.apply_angle_bending_forces();
+        // self.apply_dihedral_forces(false);
+        // self.apply_dihedral_forces(true);
 
-        // todo: Improper dihedrals are triggering NaNs when the ligand is moved into
-        // todo a pocket. Find out why.
-        self.apply_dihedral_forces(true);
-
-        self.apply_nonbonded_forces();
+        // self.apply_nonbonded_forces();
 
         // Second half-kick using new accelerations, and update accelerations using the atom's mass;
         // up to this point, the accelerations have been missing that step; this is an optimization to
@@ -329,7 +335,7 @@ impl MdState {
         for a in &mut self.atoms {
             // We divide by mass here, once accelerations have been computed in parts above; this
             // is an optimization, to prevent dividing each accel component by it.
-            a.accel /= a.mass;
+            a.accel = a.accel * ACCEL_CONVERSION / a.mass;
             a.vel += a.accel * dt_half;
         }
 
@@ -396,9 +402,6 @@ impl MdState {
             let (a_0, a_1) = split2_mut(&mut self.atoms, indices.0, indices.1);
 
             let f = f_bond_stretching(a_0.posit, a_1.posit, params);
-
-            const KCALMOL_A_TO_A_FS2_PER_AMU: f64 = 4.184e-4;
-            // todo: Multiply accels by this?? Or are our units self-consistent.
 
             // We divide by mass in `step`.
             a_0.accel += f;
@@ -554,10 +557,6 @@ impl MdState {
             let f2 = -dφ_dr3 * dV_dφ;
             let f3 = -dφ_dr4 * dV_dφ;
 
-            // if a_0.mass < 0.5 || a_1.mass < 0.5 || a_2.mass < 0.5 || a_3.mass < 0.5 {
-            //     panic!("0 mass found!");
-            // }
-
             // todo from diagnostic: Can't find it in improper, although there's where the error is showing.
             if improper {
                 // println!(
@@ -683,13 +682,13 @@ pub fn split4_mut<T>(
 /// Returns the force on the atom at position 0. Negate this for the force on posit 1.
 pub fn f_bond_stretching(posit_0: Vec3, posit_1: Vec3, params: &BondStretchingParams) -> Vec3 {
     let diff = posit_1 - posit_0;
-    let dist_measured = diff.magnitude();
+    let r_meas = diff.magnitude();
 
-    let r_delta = dist_measured - params.r_0 as f64;
+    let r_delta = r_meas - params.r_0 as f64;
 
-    // todo: Do I need to multiply by 2?
+    // Note: We include the factor of 2x k_b when setting up indexed parameters.
     // Unit check: kcal/mol/Å² * Å² = kcal/mol. (Energy).
-    let f_mag = params.k_b as f64 * r_delta / dist_measured.max(1e-12);
+    let f_mag = params.k_b as f64 * r_delta / r_meas.max(EPS);
     diff * f_mag
 }
 
@@ -728,7 +727,8 @@ pub fn f_angle_bending(
     // Measured angle, and its deviation from the parameter angle.
     let θ = cos_θ.acos();
     let Δθ = params.theta_0 as f64 - θ;
-    let dV_dθ = 2.0 * params.k as f64 * Δθ; // dV/dθ
+    // Note: We include the factor of 2x k when setting up indexed parameters.
+    let dV_dθ = params.k as f64 * Δθ; // dV/dθ
 
     let c = bond_vec_01.cross(bond_vec_21); // n  ∝  r_ij × r_kj
     let c_len2 = c.magnitude_squared(); // |n|^2

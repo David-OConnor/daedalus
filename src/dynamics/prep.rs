@@ -269,7 +269,7 @@ impl ForceFieldParamsIndexed {
                 .or_else(|| params.bond.get(&(type_1.clone(), type_0.clone())))
                 .cloned();
 
-            let Some(data) = data else {
+            let Some(mut data) = data else {
                 // todo: We get this sometimes with glitched mmCIF files that have duplicate atoms
                 // todo in slightly different positions.
                 eprintln!(
@@ -288,6 +288,9 @@ impl ForceFieldParamsIndexed {
                 continue;
             };
 
+            // This prevents multiplying by 2 each computation at runtime.
+            data.k_b *= 2.0;
+
             result
                 .bond_stretching
                 .insert((i0.min(i1), i0.max(i1)), data);
@@ -303,7 +306,7 @@ impl ForceFieldParamsIndexed {
                 let type_ctr = ff_type_from_idx(atoms, ctr, "Angle")?;
                 let type_n1 = ff_type_from_idx(atoms, n1, "Angle")?;
 
-                let data = match params.angle.get(&(
+                let mut data = match params.angle.get(&(
                     type_n0.clone(),
                     type_ctr.clone(),
                     type_n1.clone(),
@@ -336,6 +339,9 @@ impl ForceFieldParamsIndexed {
                         }
                     }
                 };
+
+                // This prevents multiplying by 2 each computation at runtime.
+                data.k *= 2.0;
 
                 result.angle.insert((n0, ctr, n1), data);
             }

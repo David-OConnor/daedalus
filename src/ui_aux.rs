@@ -383,6 +383,7 @@ pub fn md_setup(
                 {
                     let mol_fm_res = Molecule::from_res(res, &mol.atoms, false);
                     let mut lig = Ligand::new(mol_fm_res, &state.ff_params.lig_specific);
+                    state.mol_dynamics = None;
 
                     let docking_center = move_lig_to_res(&mut lig, mol, res);
                     state.update_docking_site(docking_center);

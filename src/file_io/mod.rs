@@ -150,6 +150,7 @@ impl State {
                     let mut init_posit = Vec3::new_zero();
 
                     let lig = Ligand::new(mol, &self.ff_params.lig_specific);
+                    self.mol_dynamics = None;
 
                     // Align to a hetero residue in the open molecule, if there is a match.
                     // todo: Keep this in sync with the UI button-based code; this will have updated.
@@ -548,6 +549,7 @@ impl State {
                         Ok(mol2) => {
                             let mol: Molecule = mol2.try_into().unwrap();
                             self.ligand = Some(Ligand::new(mol, &self.ff_params.lig_specific));
+                            self.mol_dynamics = None;
 
                             self.update_from_prefs();
 

@@ -1699,7 +1699,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                             Ok(mol) => {
                                 state.ligand =
                                     Some(Ligand::new(mol, &state.ff_params.lig_specific));
-
+                                state.mol_dynamics = None;
                                 state.update_from_prefs();
 
                                 redraw_mol = true;
@@ -1718,7 +1718,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                         // todo: Load as ligand for now.
                         Ok(mol) => {
                             state.ligand = Some(Ligand::new(mol, &state.ff_params.lig_specific));
-
+                            state.mol_dynamics = None;
                             state.update_from_prefs();
 
                             redraw_mol = true;
