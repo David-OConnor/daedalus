@@ -40,7 +40,8 @@ pub struct ToSave {
     /// is a good default. Too low will cause crashes and very poor performance. Higher is too coarse.
     pub sa_surface_precision: f32,
     pub num_md_steps: u32,
-    pub md_dt: f64, // todo: Unit
+    /// ps (10^-12). Typical values are 0.001 or 0.002.
+    pub md_dt: f64,
 }
 
 impl Default for ToSave {

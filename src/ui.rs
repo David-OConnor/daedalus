@@ -38,7 +38,7 @@ use crate::{
         set_static_light,
     },
     ui_aux,
-    ui_aux::md_setup,
+    ui_aux::{md_setup, move_cam_to_lig},
     util,
     util::{
         cam_look_at, cam_look_at_outside, check_prefs_save, close_lig, close_mol, cycle_selected,
@@ -744,6 +744,14 @@ fn docking(
 
                         docking_posit_update = Some(docking_center);
                         docking_init_changed = true;
+
+                        move_cam_to_lig(
+                            &mut state.ui,
+                            scene,
+                            lig,
+                            mol.center,
+                            engine_updates,
+                        )
                     }
                 }
             }
@@ -769,6 +777,14 @@ fn docking(
 
                     docking_posit_update = Some(atom.posit);
                     docking_init_changed = true;
+
+                    move_cam_to_lig(
+                        &mut state.ui,
+                        scene,
+                        lig,
+                        mol.center,
+                        engine_updates,
+                    )
                 }
             }
         }
@@ -1025,22 +1041,13 @@ fn selection_section(
                     .button(RichText::new("Cam to lig").color(COLOR_HIGHLIGHT))
                     .clicked()
                 {
-                    if lig.anchor_atom >= lig.molecule.atoms.len() {
-                        handle_err(
-                            &mut state.ui,
-                            "Problem positioning ligand atoms. Len shorter than anchor.".to_owned(),
-                        );
-                    } else {
-                        lig.position_atoms(None);
-
-                        let lig_pos: Vec3 = lig.atom_posits[lig.anchor_atom].into();
-                        let ctr: Vec3 = mol.center.into();
-
-                        cam_look_at_outside(&mut scene.camera, lig_pos, ctr);
-
-                        engine_updates.camera = true;
-                        state.ui.cam_snapshot = None;
-                    }
+                    move_cam_to_lig(
+                        &mut state.ui,
+                        scene,
+                        lig,
+                        mol.center,
+                        engine_updates,
+                    )
                 }
             }
 

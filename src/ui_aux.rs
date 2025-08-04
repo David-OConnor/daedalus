@@ -6,7 +6,7 @@ use graphics::{EngineUpdates, Scene};
 use lin_alg::f64::Vec3;
 
 use crate::{
-    Selection, State,
+    Selection, State, StateUi,
     dynamics::{
         MdMode,
         prep::{
@@ -25,7 +25,7 @@ use crate::{
         COL_SPACING, COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_HIGHLIGHT, COLOR_INACTIVE,
         ROW_SPACING, int_field,
     },
-    util::{handle_err, make_egui_color, move_lig_to_res},
+    util::{cam_look_at_outside, handle_err, make_egui_color, move_lig_to_res},
 };
 
 /// `posit_override` is for example, relative atom positions, such as a positioned ligand.
@@ -198,9 +198,6 @@ pub fn dynamics_player(
                 changed = true;
                 let snap = &md.snapshots[state.ui.current_snapshot];
 
-                // todo: A temp NAN check.
-                println!("SNAP ATOMS: {}", snap.atom_posits[0]);
-
                 match md.mode {
                     MdMode::Docking => {
                         let lig = state.ligand.as_mut().unwrap();
@@ -343,7 +340,7 @@ pub fn md_setup(
         ui.add_space(COL_SPACING);
         int_field(&mut state.to_save.num_md_steps, "Steps:", &mut false, ui);
 
-        ui.label("dt:");
+        ui.label("dt (ps):");
         if ui
             .add_sized(
                 [60., Ui::available_height(ui)],
@@ -408,4 +405,29 @@ pub fn md_setup(
     });
 
     dynamics_player(state, scene, engine_updates, ui);
+}
+
+pub fn move_cam_to_lig(
+    state_ui: &mut StateUi,
+    scene: &mut Scene,
+    lig: &mut Ligand,
+    mol_center: Vec3,
+    engine_updates: &mut EngineUpdates,
+) {
+    if lig.anchor_atom >= lig.molecule.atoms.len() {
+        handle_err(
+            state_ui,
+            "Problem positioning ligand atoms. Len shorter than anchor.".to_owned(),
+        );
+    } else {
+        lig.position_atoms(None);
+
+        let lig_pos: lin_alg::f32::Vec3 = lig.atom_posits[lig.anchor_atom].into();
+        let ctr: lin_alg::f32::Vec3 = mol_center.into();
+
+        cam_look_at_outside(&mut scene.camera, lig_pos, ctr);
+
+        engine_updates.camera = true;
+        state_ui.cam_snapshot = None;
+    }
 }

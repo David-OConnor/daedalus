@@ -57,11 +57,8 @@ const H_H_O_θ0: f64 = 2.2294835864975564;
 
 // Van der Waals / JL params. Note that only O carries a VdW force.
 const O_RSTAR: f64 = 1.777167268;
-const H_RSTAR: f64 = 0.;
-const EP_RSTAR: f64 = 1.; // todo: Why is this 1 in the param file?
-
-const O_SIGMA: f64 = 2.0 * O_RSTAR / SIGMA_FACTOR;
-const O_EPS: f64 = 0.2128008130;
+pub const O_SIGMA: f64 = 2.0 * O_RSTAR / SIGMA_FACTOR;
+pub const O_EPS: f64 = 0.2128008130;
 
 // For converting from R_star to eps.
 const SIGMA_FACTOR: f64 = 1.122_462_048_309_373; // 2^(1/6)

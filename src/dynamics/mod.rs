@@ -9,7 +9,9 @@
 //!
 //! To download .dat files (GAFF2), download Amber source (Option 2) [here](https://ambermd.org/GetAmber.php#ambertools).
 //! Files are in dat -> leap -> parm
-
+//!
+//! Base units: Å, ps (10^-12),
+//!
 //! We are using f64, and CPU-only for now, unless we confirm f32 will work.
 //! Maybe a mixed approach: Coordinates, velocities, and forces in 32-bit; sensitive global
 //! reductions (energy, virial, integration) in 64-bit.
@@ -18,7 +20,7 @@
 //!
 //! Amber: ff19SB for proteins, gaff2 for ligands. (Based on recs from https://ambermd.org/AmberModels.php).
 //!
-//!
+//
 //! A broad list of components of this simulation
 //! - Thermostat/barostat, with a way to specifify temp, pressure, water density
 //! - OPC water model
@@ -29,14 +31,10 @@
 //! - Optimizations for LJ: Dist cutoff for now.
 //! - Amber 1-2, 1-3 exclusions, and 1-4 scaling of covalently-bonded atoms.
 
-// todo: Integration: Consider Verlet or Langevin
-
-//  todo: Pressure and temp variables required. Perhaps related to ICs of water?
-
 // todo: Long-term, you will need to figure out what to run as f32 vice f64, especially
 // todo for being able to run on GPU.
 
-// Note on timescale: Generally femtosecond (-15)
+// todo: Do I need to multiply the force by 418.4 to convert kcal mol⁻¹ Å⁻¹ → amu Å ps⁻²?
 
 mod ambient;
 mod non_bonded;
@@ -44,40 +42,26 @@ pub mod prep;
 mod spme;
 mod water_opc;
 
-use std::{
-    collections::{HashMap, HashSet},
-    f64::consts::TAU,
-};
+use std::collections::{HashMap, HashSet};
 
 use ambient::SimBox;
 use bio_files::amber_params::{
     AngleBendingParams, BondStretchingParams, DihedralParams, MassParams, VdwParams,
 };
-use lin_alg::f64::{Vec3, calc_dihedral_angle, calc_dihedral_angle_v2};
+use lin_alg::f64::{Vec3, calc_dihedral_angle_v2};
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use lin_alg::f64::{Vec3x4, f64x4};
 use na_seq::Element;
 use rand_distr::Distribution;
+use rustfft::num_complex::ComplexFloat;
 
 use crate::{
-    dynamics,
-    dynamics::{
-        ambient::BerendsenBarostat,
-        non_bonded::f_nonbonded,
-        spme::{EWALD_ALPHA, PME_MESH_SPACING, pme_long_range_forces},
-        water_opc::WaterMol,
-    },
+    dynamics::{ambient::BerendsenBarostat, water_opc::WaterMol},
     molecule::Atom,
 };
 
 // (indices), (sigma, eps)
 pub type LjTable = HashMap<(usize, usize), (f64, f64)>;
-
-// vacuum permittivity constant   (k_e = 1/(4π ε0))
-// SI, matched with charge in e₀ & Å → kcal mol // todo: QC
-const ε_0: f64 = 8.8541878128e-1;
-const k_e: f32 = 332.0636; // kcal·Å /(mol·e²)
-// const ε_0: f64 = 1.;
 
 // Verlet list parameters
 
@@ -156,7 +140,9 @@ pub struct AtomDynamics {
     pub element: Element,
     // pub name: String,
     pub posit: Vec3,
+    /// Å / ps
     pub vel: Vec3,
+    /// Å / ps²
     pub accel: Vec3,
     /// Daltons
     /// todo: Move these 4 out of this to save memory; use from the params struct directly.
@@ -275,7 +261,7 @@ pub struct MdState {
     // pub lj_sigma_x8: Vec<f64x4>,
     // #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     // pub lj_eps_x8: Vec<f64x4>,
-    /// In femtoseconds,
+    /// In picoseconds.
     pub time: f64,
     pub step_count: usize, // increments.
     pub snapshots: Vec<SnapshotDynamics>,
@@ -305,7 +291,8 @@ pub struct MdState {
 }
 
 impl MdState {
-    /// One **Velocity-Verlet** step (leap-frog style) of length `dt_fs` femtoseconds.
+    /// One **Velocity-Verlet** step (leap-frog style) of length `dt` is in picoseconds (10^-12),
+    /// with typical values of 0.001, or 0.002ps (1 or 2fs)
     pub fn step(&mut self, dt: f64) {
         let dt_half = 0.5 * dt;
 
@@ -326,20 +313,22 @@ impl MdState {
         }
 
         // Bonded forces
-        // self.apply_bond_stretching_forces();
-        // self.apply_angle_bending_forces();
-        // self.apply_dihedral_forces(false);
+        self.apply_bond_stretching_forces();
+        self.apply_angle_bending_forces();
+        self.apply_dihedral_forces(false);
 
         // todo: Improper dihedrals are triggering NaNs when the ligand is moved into
         // todo a pocket. Find out why.
         self.apply_dihedral_forces(true);
 
-        // self.apply_nonbonded_forces();
+        self.apply_nonbonded_forces();
 
         // Second half-kick using new accelerations, and update accelerations using the atom's mass;
         // up to this point, the accelerations have been missing that step; this is an optimization to
         // do it once at the end.
         for a in &mut self.atoms {
+            // We divide by mass here, once accelerations have been computed in parts above; this
+            // is an optimization, to prevent dividing each accel component by it.
             a.accel /= a.mass;
             a.vel += a.accel * dt_half;
         }
@@ -358,8 +347,11 @@ impl MdState {
                 water_dyn.push(water.h1.clone());
             }
 
+            // todo: Temporarily removed water-water interactions; getting a very slow simulation,
+            // todo, and NaN propogation. Troubleshoot this later.
             let sources_on_water: Vec<AtomDynamics> =
-                [&self.atoms[..], &self.atoms_static[..], &water_dyn[..]].concat();
+                // [&self.atoms[..], &self.atoms_static[..], &water_dyn[..]].concat();
+                [&self.atoms[..], &self.atoms_static[..]].concat();
 
             for water in &mut self.water {
                 water.step(
@@ -401,9 +393,9 @@ impl MdState {
 
     fn apply_bond_stretching_forces(&mut self) {
         for (indices, params) in &self.force_field_params.bond_stretching {
-            let (a_0, a_1) = dynamics::split2_mut(&mut self.atoms, indices.0, indices.1);
+            let (a_0, a_1) = split2_mut(&mut self.atoms, indices.0, indices.1);
 
-            let f = dynamics::f_bond_stretching(a_0.posit, a_1.posit, params);
+            let f = f_bond_stretching(a_0.posit, a_1.posit, params);
 
             const KCALMOL_A_TO_A_FS2_PER_AMU: f64 = 4.184e-4;
             // todo: Multiply accels by this?? Or are our units self-consistent.
@@ -424,8 +416,7 @@ impl MdState {
     /// abc. A valence angle is thus concerned by the positions of three atoms.
     fn apply_angle_bending_forces(&mut self) {
         for (indices, params) in &self.force_field_params.angle {
-            let (a_0, a_1, a_2) =
-                dynamics::split3_mut(&mut self.atoms, indices.0, indices.1, indices.2);
+            let (a_0, a_1, a_2) = split3_mut(&mut self.atoms, indices.0, indices.1, indices.2);
 
             let (f_0, f_1, f_2) = f_angle_bending(a_0.posit, a_1.posit, a_2.posit, params);
 
@@ -558,10 +549,10 @@ impl MdState {
             let dφ_dr3 = -dφ_dr1 - dφ_dr2 - dφ_dr4; // Newton’s third law
 
             // F_i = −dV/dφ · ∂φ/∂r_i
-            let f1 = -dφ_dr1 * dV_dφ;
-            let f2 = -dφ_dr2 * dV_dφ;
-            let f3 = -dφ_dr3 * dV_dφ;
-            let f4 = -dφ_dr4 * dV_dφ;
+            let f0 = -dφ_dr1 * dV_dφ;
+            let f1 = -dφ_dr2 * dV_dφ;
+            let f2 = -dφ_dr3 * dV_dφ;
+            let f3 = -dφ_dr4 * dV_dφ;
 
             // if a_0.mass < 0.5 || a_1.mass < 0.5 || a_2.mass < 0.5 || a_3.mass < 0.5 {
             //     panic!("0 mass found!");
@@ -569,29 +560,22 @@ impl MdState {
 
             // todo from diagnostic: Can't find it in improper, although there's where the error is showing.
             if improper {
-                println!(
-                    "\nr0: {r_0} r1: {r_1} r2: {r_2} r3: {r_3} N1: {n1} N2: {n2} n1sq: {n1_sq} n2sq: {n2_sq} b2_len: {b2_len}"
-                );
-                println!(
-                    "DIHE: {:?}, dV_dφ: {}, k: {k}, phase: {}",
-                    dihe_measured, dV_dφ, dihe.phase as f64
-                );
-                println!(
-                    "B3dotB2: {:.3}, b1db2: {:.3}. 1: {}, 2: {}, 3: {}, 4: {}",
-                    b3.dot(b2),
-                    b1.dot(b2),
-                    dφ_dr1,
-                    dφ_dr2,
-                    dφ_dr3,
-                    dφ_dr4
-                );
-
-                if r_0.x.is_nan() || r_1.x.is_nan() || r_2.x.is_nan() || r_3.x.is_nan() {
-                    panic!(
-                        "NaN. Step: {}, \n\n a0: {a_0:?},\n\n a1: {a_1:?},\n\n a2: {a_2:?}, \n\na3: {a_3:?}",
-                        self.step_count
-                    );
-                }
+                // println!(
+                //     "\nr0: {r_0} r1: {r_1} r2: {r_2} r3: {r_3} N1: {n1} N2: {n2} n1sq: {n1_sq} n2sq: {n2_sq} b2_len: {b2_len}"
+                // );
+                // println!(
+                //     "DIHE: {:?}, dV_dφ: {}, k: {k}, phase: {}",
+                //     dihe_measured, dV_dφ, dihe.phase as f64
+                // );
+                // println!(
+                //     "B3dotB2: {:.3}, b1db2: {:.3}. 1: {}, 2: {}, 3: {}, 4: {}",
+                //     b3.dot(b2),
+                //     b1.dot(b2),
+                //     dφ_dr1,
+                //     dφ_dr2,
+                //     dφ_dr3,
+                //     dφ_dr4
+                // );
             } else {
                 // println!("\nNOT Improper");
                 // println!("r0: {r_0} r1: {r_1} r2: {r_2} r3: {r_3} N1: {n1} N2: {n2} n1sq: {n1_sq} n2sq: {n2_sq} b2_len: {b2_len}");
@@ -604,10 +588,10 @@ impl MdState {
             }
 
             // We divide by mass in `step`.
-            a_0.accel += f1;
-            a_1.accel += f2;
-            a_2.accel += f3;
-            a_3.accel += f4;
+            a_0.accel += f0;
+            a_1.accel += f1;
+            a_2.accel += f2;
+            a_3.accel += f3;
         }
     }
 
@@ -674,7 +658,7 @@ pub fn split4_mut<T>(
     i2: usize,
     i3: usize,
 ) -> (&mut T, &mut T, &mut T, &mut T) {
-    // ---------- safety gates ------------------------------------------------
+    // Safety gates
     let len = slice.len();
     assert!(
         i0 < len && i1 < len && i2 < len && i3 < len,
@@ -684,12 +668,7 @@ pub fn split4_mut<T>(
         i0 != i1 && i0 != i2 && i0 != i3 && i1 != i2 && i1 != i3 && i2 != i3,
         "indices must be pair-wise distinct"
     );
-    // ------------------------------------------------------------------------
 
-    // SAFETY:
-    //  * The bounds checks above guarantee each offset is within the slice.
-    //  * The pair-wise distinct check guarantees no two &mut point to
-    //    the same element, so we uphold Rust’s aliasing rules.
     unsafe {
         let base = slice.as_mut_ptr();
         (
@@ -714,7 +693,7 @@ pub fn f_bond_stretching(posit_0: Vec3, posit_1: Vec3, params: &BondStretchingPa
     diff * f_mag
 }
 
-/// Returns the forces.
+/// Valence angle; angle between 3 atoms.
 pub fn f_angle_bending(
     posit_0: Vec3,
     posit_1: Vec3,

@@ -8,6 +8,7 @@ use crate::{
     dynamics::{
         AtomDynamics, LjTable, MdState,
         spme::{EWALD_ALPHA, PME_MESH_SPACING, force_coulomb_ewald_real, pme_long_range_forces},
+        water_opc,
     },
     forces::force_lj,
 };
@@ -246,9 +247,8 @@ pub fn f_nonbonded(
                                 }
                             },
                             None => {
-                                unreachable!(
-                                    "Must pass one of dynamic, static, or water index set."
-                                );
+                                // Water-water
+                                (water_opc::O_SIGMA, water_opc::O_EPS)
                             }
                         }
                     }

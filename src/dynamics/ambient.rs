@@ -62,9 +62,12 @@ impl SimBox {
 /// Isotropic Berendsen barostat (τ=relaxation time, κT=isothermal compressibility)
 #[derive(Clone, Copy)]
 pub struct BerendsenBarostat {
-    pub p_target: f64, // bar
-    pub tau_p: f64,    // ps
-    pub kappa_t: f64,  // bar‑1   (≈4.5×10⁻⁵ for water at 300K, 1bar)
+    /// bar
+    pub p_target: f64,
+    /// picoseconds
+    pub tau_p: f64,
+    /// bar‑1   (≈4.5×10⁻⁵ for water at 300K, 1bar)
+    pub kappa_t: f64,
 }
 
 impl Default for BerendsenBarostat {
