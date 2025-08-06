@@ -31,7 +31,6 @@ mod forces;
 mod inputs;
 mod mol_drawing;
 mod molecule;
-mod navigation;
 mod prefs;
 mod render;
 mod ribbon_mesh;
@@ -98,7 +97,6 @@ use crate::{
     dynamics::MdState,
     file_io::{mtz::load_mtz, pdbqt::load_pdbqt},
     molecule::{Ligand, PeptideAtomPosits},
-    navigation::Tab,
     prefs::ToSave,
     render::render,
     ui::{COL_SPACING, VIEW_DEPTH_FAR_MAX, VIEW_DEPTH_NEAR_MIN},
@@ -210,7 +208,7 @@ struct SceneFlags {
     pub new_density_loaded: bool,
     pub new_mol_loaded: bool,
 }
-/// Temprary, and generated state.
+/// Temporary, and generated state.
 struct StateVolatile {
     dialogs: FileDialogs,
     /// We use this for offsetting our cursor selection.
@@ -240,6 +238,8 @@ struct StateVolatile {
     /// Pre-computed from the molecule
     aa_seq_text: String,
     flags: SceneFlags,
+    /// Cached so we don't compute each UI paint. Picoseconds.
+    md_runtime: f64,
 }
 
 impl Default for StateVolatile {
@@ -257,6 +257,7 @@ impl Default for StateVolatile {
             cli_input_selected: Default::default(),
             aa_seq_text: Default::default(),
             flags: Default::default(),
+            md_runtime: Default::default(),
         }
     }
 }
@@ -449,7 +450,6 @@ struct State {
     pub cam_snapshots: Vec<CamSnapshot>,
     /// This allows us to keep in-memory data for other molecules.
     pub to_save: ToSave,
-    pub tabs_open: Vec<Tab>,
     pub babel_avail: bool,
     pub docking_ready: bool,
     pub bh_config: BhConfig,
@@ -575,14 +575,24 @@ fn main() {
         ..Default::default()
     };
 
-    state.ui.md_dt_input = state.to_save.md_dt.to_string();
-
     // todo: Consider if you want this here. Currently required when adding H to a molecule.
     // In release mode, takes 20ms on a fast CPU. (todo: Test on a slow CPU.)
     state.load_ffs_general();
     state.load_prefs();
 
+    // Set these up after loading prefs
+    state.ui.md_dt_input = state.to_save.md_dt.to_string();
+    state.volatile.md_runtime = state.to_save.num_md_steps as f64 * state.to_save.md_dt;
+
+    // We must have loaded prefs prior to this, so we know which file to open.
     state.load_last_opened();
+
+    // todo trouble: It's somewhere around here, saving the inited-from-load atom posits, overwriting
+    // todo the previously-saved ones.
+
+    // todo: Workaround to allow us to apply params to the ligand once it's loaded. Unfortunate we have
+    // todo to double-load prefs.
+    state.load_prefs();
 
     // Update ligand positions, e.g. from the docking position site center loaded from prefs.
     if let Some(lig) = &mut state.ligand {

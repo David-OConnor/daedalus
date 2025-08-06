@@ -771,7 +771,7 @@ fn docking(
                 let atom_sel = mol.get_sel_atom(&state.ui.selection);
 
                 if let Some(atom) = atom_sel {
-                    lig.pose.conformation_type = ConformationType::Flexible {
+                    lig.pose.conformation_type = ConformationType::AssignedTorsions {
                         torsions: Vec::new(),
                     }; // todo: Risky to init to new?
 
@@ -1835,7 +1835,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 // todo: temp, or at least temp here
                 ui.label(format!("Lig pos: {}", lig.pose.anchor_posit));
                 ui.label(format!("Lig or: {}", lig.pose.orientation));
-                if let ConformationType::Flexible { torsions } = &lig.pose.conformation_type {
+                if let ConformationType::AssignedTorsions { torsions } = &lig.pose.conformation_type
+                {
                     for torsion in torsions {
                         ui.label(format!("T: {:.3}", torsion.dihedral_angle));
                     }

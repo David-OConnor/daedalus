@@ -12,7 +12,6 @@ use crate::dynamics::{AtomDynamics, ambient::SimBox};
 
 // Ewald SPME approximation for Coulomb force
 pub const EWALD_ALPHA: f64 = 0.257_f64; // 1/Å – good default for ~10 Å cutoff
-const COULOMB_CONST: f64 = 332.06371_f64; // 4πϵ0 factor in kcal b· Å / (mol · e²)
 const SQRT_PI: f64 = 1.7724538509055159;
 pub const PME_MESH_SPACING: f64 = 1.0;
 // SPME order‑4 B‑spline interpolation
@@ -20,7 +19,7 @@ const SPLINE_ORDER: usize = 4;
 
 pub fn force_coulomb_ewald_real(dir: Vec3, r: f64, qi: f64, qj: f64, alpha: f64) -> Vec3 {
     // F = q_i q_j [ erfc(αr)/r² + 2α/√π · e^(−α²r²)/r ]  · 4πϵ0⁻¹  · r̂
-    let qfac = COULOMB_CONST * qi * qj;
+    let qfac = qi * qj;
     let inv_r = 1.0 / r;
     let inv_r2 = inv_r * inv_r;
 
@@ -193,7 +192,7 @@ pub fn pme_long_range_forces(
             }
         }
 
-        forces[a_idx] = e * (atom.partial_charge * COULOMB_CONST); // F = qE
+        forces[a_idx] = e * atom.partial_charge; // F = qE
     }
 
     forces

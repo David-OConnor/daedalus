@@ -20,8 +20,7 @@ use bio_apis::{
 };
 use bio_files::{
     AtomGeneric, BackboneSS, BondGeneric, ChainGeneric, ChargeType, DensityMap, ExperimentalMethod,
-    MmCif, Mol2, MolType, ResidueGeneric, ResidueType, Sdf,
-    amber_params::{ForceFieldParams, ForceFieldParamsKeyed},
+    MmCif, Mol2, MolType, ResidueGeneric, ResidueType, Sdf, amber_params::ForceFieldParamsKeyed,
 };
 use lin_alg::{
     f32::Vec3 as Vec3F32,
@@ -65,7 +64,7 @@ pub struct Molecule {
     pub sa_surface_pts: Option<Vec<Vec<Vec3F32>>>,
     /// Stored in scene meshes; this variable keeps track if that's populated.
     pub mesh_created: bool,
-    pub eem_charges_assigned: bool,
+    // pub eem_charges_assigned: bool,
     pub secondary_structure: Vec<BackboneSS>,
     /// Center and size are used for lighting, and for rotating ligands.
     pub center: Vec3,
@@ -344,18 +343,21 @@ impl Display for AtomRole {
 pub struct Ligand {
     /// Molecule atom positions remain relative.
     pub molecule: Molecule,
-    /// These positions are derivative of the pose, in conjunction with the molecule atoms' [relative]
-    /// positions.
+    /// Absolute atom positions. For absolute conformation type[s], these positions are set adn accessed directly, e.g. by MD
+    /// simulations. We leave the molecule atom positions as ingested directly from data files. (e.g. relative positions).
+    /// For rigid and semi-rigid conformations, these are derivative of the pose, in conjunction with
+    /// the molecule atoms' (relative) positions.
     pub atom_posits: Vec<Vec3>,
-    // pub offset: Vec3,
-    pub anchor_atom: usize,         // Index.
+    pub anchor_atom: usize, // Index.
+    /// Note: We may deprecate this in favor of our Amber MD-based approach to flexibility.
     pub flexible_bonds: Vec<usize>, // Index
     pub pose: Pose,
     pub docking_site: DockingSite,
     pub unit_cell_dims: UnitCellDims, // todo: Unused
-    /// FF type and partial charge on all atoms.
+    /// FF type and partial charge on all atoms. Quick lookup flag.
     pub ff_params_loaded: bool,
     /// E.g. overrides for dihedral angles for this specific ligand, as provided by Amber.
+    /// Quick loopup flag.
     pub frcmod_loaded: bool,
     /// E.g. loaded proteins from Pubchem.
     pub associated_structures: Vec<ProteinStructure>,
@@ -391,7 +393,7 @@ impl Ligand {
         result.set_anchor();
         result.flexible_bonds = setup_flexibility(&result.molecule);
 
-        result.pose.conformation_type = ConformationType::Flexible {
+        result.pose.conformation_type = ConformationType::AssignedTorsions {
             torsions: result
                 .flexible_bonds
                 .iter()
@@ -458,7 +460,10 @@ impl Ligand {
         };
 
         match &pose_.conformation_type {
-            ConformationType::Flexible { torsions } => {
+            ConformationType::AbsolutePosits => {
+                // take no action; we are assigning and accessing the `atom_posits` field directly.
+            }
+            ConformationType::AssignedTorsions { torsions } => {
                 if self.anchor_atom >= self.molecule.atoms.len() {
                     eprintln!(
                         "Error positioning ligand atoms: Anchor outside atom count. Atom cound: {:?}",
@@ -517,9 +522,6 @@ impl Ligand {
                     }
                 }
                 self.atom_posits = result;
-            }
-            ConformationType::AbsolutePosits => {
-                // take no action; we are using atom_posits.
             }
         }
     }
@@ -893,6 +895,7 @@ pub struct Atom {
     pub hetero: bool,
     /// For docking.
     pub occupancy: Option<f32>,
+    /// Elementary charge. (Charge of a proton)
     pub partial_charge: Option<f32>,
     pub temperature_factor: Option<f32>,
 }
@@ -970,7 +973,7 @@ impl Display for Atom {
         )?;
 
         if self.hetero {
-            write!(f, ", Het");
+            write!(f, ", Het")?;
         }
 
         Ok(())

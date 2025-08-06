@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 //! This module contains a traditional molecular dynamics approach
 //!
 //! [Good article](https://www.owlposting.com/p/a-primer-on-molecular-dynamics)
@@ -61,7 +63,7 @@ use rand_distr::Distribution;
 use rustfft::num_complex::ComplexFloat;
 
 use crate::{
-    dynamics::{ambient::BerendsenBarostat, water_opc::WaterMol},
+    dynamics::{ambient::BerendsenBarostat, non_bonded::CHARGE_UNIT_SCALER, water_opc::WaterMol},
     molecule::Atom,
 };
 
@@ -156,6 +158,8 @@ pub struct AtomDynamics {
     /// Daltons
     /// todo: Move these 4 out of this to save memory; use from the params struct directly.
     pub mass: f64,
+    /// Amber charge units. This is not the elementary charge units found in amino19.lib and gaff2.dat;
+    /// it's scaled by a constant.
     pub partial_charge: f64,
     /// Å
     pub lj_sigma: f64,
@@ -190,7 +194,7 @@ impl AtomDynamics {
             mass: ff_params.mass.get(&i).unwrap().mass as f64,
             // We get partial charge for ligands from (e.g. Amber-provided) Mol files, so we load it from the atom, vice
             // the loaded FF params. They are not in the dat or frcmod files that angle, bond-length etc params are from.
-            partial_charge: atom.partial_charge.unwrap_or_default() as f64,
+            partial_charge: CHARGE_UNIT_SCALER * atom.partial_charge.unwrap_or_default() as f64,
             lj_sigma: ff_params.van_der_waals.get(&i).unwrap().sigma as f64,
             lj_eps: ff_params.van_der_waals.get(&i).unwrap().eps as f64,
             force_field_type: ff_type,
@@ -323,18 +327,18 @@ impl MdState {
 
         // Bonded forces
         self.apply_bond_stretching_forces();
-        // self.apply_angle_bending_forces();
-        // self.apply_dihedral_forces(false);
-        // self.apply_dihedral_forces(true);
+        self.apply_angle_bending_forces();
+        self.apply_dihedral_forces(false);
+        self.apply_dihedral_forces(true);
 
-        // self.apply_nonbonded_forces();
+        self.apply_nonbonded_forces();
 
         // Second half-kick using new accelerations, and update accelerations using the atom's mass;
         // up to this point, the accelerations have been missing that step; this is an optimization to
         // do it once at the end.
         for a in &mut self.atoms {
             // We divide by mass here, once accelerations have been computed in parts above; this
-            // is an optimization, to prevent dividing each accel component by it.
+            // is an optimization to prevent dividing each accel component by it.
             a.accel = a.accel * ACCEL_CONVERSION / a.mass;
             a.vel += a.accel * dt_half;
         }
@@ -354,7 +358,8 @@ impl MdState {
             }
 
             // todo: Temporarily removed water-water interactions; getting a very slow simulation,
-            // todo, and NaN propogation. Troubleshoot this later.
+            // todo, and NaN propogation. Troubleshoot this later. Skipping this may be OK, compared
+            // todo to not using water.
             let sources_on_water: Vec<AtomDynamics> =
                 // [&self.atoms[..], &self.atoms_static[..], &water_dyn[..]].concat();
                 [&self.atoms[..], &self.atoms_static[..]].concat();

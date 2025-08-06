@@ -23,8 +23,7 @@
 
 use std::collections::HashMap;
 
-use bio_files::ResidueType;
-use na_seq::{AminoAcid, AminoAcidGeneral, AminoAcidProtenationVariant, AtomTypeInRes, Element::*};
+use na_seq::{AminoAcid, AminoAcidGeneral, AminoAcidProtenationVariant, AtomTypeInRes};
 
 use crate::{
     ProtFfMap,

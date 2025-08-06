@@ -12,7 +12,7 @@ use lin_alg::f64::Vec3;
 
 use crate::{
     CamSnapshot, MsaaSetting, Selection, State, ViewSelLevel, Visibility,
-    docking::DockingSite,
+    docking::{ConformationType, DockingSite},
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
     mol_drawing::MoleculeView,
 };
@@ -90,6 +90,8 @@ pub struct PerMolToSave {
     rcsb_data: Option<PdbDataResults>,
     rcsb_files_avail: Option<FilesAvailable>,
     docking_site_posit: Vec3,
+    /// This is useful in the case of absolute positions. Ideally, this is per-ligand.
+    lig_atom_positions: Vec<Vec3>,
 }
 
 impl PerMolToSave {
@@ -115,9 +117,13 @@ impl PerMolToSave {
         let mut docking_site = Default::default();
 
         let mut lig_posit = Vec3::new_zero();
+        let mut lig_atom_positions = Vec::new();
+
         if let Some(lig) = &state.ligand {
             docking_site = lig.docking_site.clone();
             lig_posit = lig.pose.anchor_posit;
+            lig_atom_positions = lig.atom_posits.clone();
+            println!("\nSaving atom posits: {:?}", lig.atom_posits[0]); // todo temp
         }
 
         Self {
@@ -140,6 +146,7 @@ impl PerMolToSave {
             rcsb_data,
             rcsb_files_avail,
             docking_site_posit: lig_posit,
+            lig_atom_positions,
         }
     }
 }
@@ -157,6 +164,7 @@ impl State {
 
     /// Update when prefs change, periodically etc.
     pub fn update_save_prefs(&mut self) {
+        println!("Saving state to prefs file.");
         if let Some(mol) = &self.molecule {
             let data = PerMolToSave::from_state(self);
 
@@ -173,9 +181,10 @@ impl State {
 
     /// Run this when prefs, or a new molecule are loaded.
     pub fn update_from_prefs(&mut self) {
+        println!("Updating state from prefs data.");
         self.reset_selections();
 
-        let mut center = lin_alg::f64::Vec3::new_zero();
+        let mut center = Vec3::new_zero();
 
         if let Some(mol) = &mut self.molecule {
             if self.to_save.per_mol.contains_key(&mol.ident) {
@@ -197,6 +206,12 @@ impl State {
 
                 if let Some(lig) = &mut self.ligand {
                     lig.docking_site.site_center = data.docking_site_posit; // todo: Or docking site?
+                    lig.atom_posits = data.lig_atom_positions.clone();
+
+                    // todo temp. Should save conf type too.
+                    lig.pose.conformation_type = ConformationType::AbsolutePosits;
+
+                    println!("Loading lig atom posits: {:?}", lig.atom_posits);
                 }
 
                 if let Some(md) = &data.metadata {

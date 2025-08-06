@@ -18,6 +18,11 @@ use crate::{
 pub const CUTOFF_VDW: f64 = 12.0;
 const CUTOFF_VDW_SQ: f64 = CUTOFF_VDW * CUTOFF_VDW;
 
+// This is relatively large, as it accomodates water that might be near ligand atoms
+// other than the sample one.
+// todo: Adjust this A/R.
+const CUTOFF_WATER_FROM_LIGAND: f64 = 14.0;
+
 // See Amber RM, section 15, "1-4 Non-Bonded Interaction Scaling"
 // "Non-bonded interactions between atoms separated by three consecutive bonds... require a special
 // treatment in Amber force fields."
@@ -25,6 +30,10 @@ const CUTOFF_VDW_SQ: f64 = CUTOFF_VDW * CUTOFF_VDW;
 // of 1.2."
 const SCALE_LJ_14: f64 = 0.5;
 const SCALE_COUL_14: f64 = 1.0 / 1.2;
+
+// Multiply by this to convert partial charges from elementary charge (What we store in Atoms loaded from mol2
+// files and amino19.lib.) to the self-consistent amber units required to calculate Coulomb force.
+pub const CHARGE_UNIT_SCALER: f64 = 18.2223;
 
 impl MdState {
     /// Coulomb and Van der Waals. (Lennard-Jones). We use the MD-standard [S]PME approach
@@ -46,6 +55,22 @@ impl MdState {
     /// "
     pub fn apply_nonbonded_forces(&mut self) {
         const EPS: f64 = 1e-6;
+
+        // An approximation to simplify which water molecules are close enough to interact
+        // with the ligand: Each X steps, we measure the distance between each molecule,
+        // and an arbitrary ligand atom; this takes advanate of the ligand being small.
+        // todo: Store in state and implement the every X steps; for now, we check each step.
+
+        // todo: Use a neighbors list periodically rebuilt; much faster.
+        let mut waters_near_ligand = Vec::new();
+        for (i, water) in self.water.iter().enumerate() {
+            // Ideally we choose a center atom, but atoms[x] is good enough.
+            let diff = water.o.posit - self.atoms[0].posit;
+            let dist = diff.magnitude();
+            if dist < CUTOFF_WATER_FROM_LIGAND {
+                waters_near_ligand.push(i);
+            }
+        }
 
         // Force from dynamic atoms (on the target dynamic atoms): LJ, and Ewald-screened Coulomb.
         for i in 0..self.atoms.len() {
@@ -103,6 +128,7 @@ impl MdState {
         for (i_lig, a_lig) in self.atoms.iter_mut().enumerate() {
             // Force from static atoms.
             for (i_static, a_static) in self.atoms_static.iter().enumerate() {
+                continue; // todo temp
                 let diff = a_lig.posit - a_static.posit;
                 let dv = self.cell.min_image(diff);
 
@@ -132,14 +158,21 @@ impl MdState {
             }
 
             // Force from water
-            // todo: Consider an LJ table here too. Note that this is simple: It's one
-            // per target atom, as the only LJ source for water is the (uniform) O.
-            for (i_water, mol_water) in self.water.iter().enumerate() {
+            for i_water in &waters_near_ligand {
+                let mol_water = &self.water[*i_water];
+
                 for a_water_src in [&mol_water.o, &mol_water.m, &mol_water.h0, &mol_water.h1] {
                     let diff = a_lig.posit - a_water_src.posit;
                     let dv = self.cell.min_image(diff);
 
                     let r_sq = dv.magnitude_squared();
+
+                    // We may be getting this from starting waters? Causes the system to blow up.
+                    // this may also be due to us not bouncing the water properly off the ligand??
+                    if r_sq < 3. {
+                        eprintln!("Aborting water-on-liand force due to too-small LJ.");
+                        continue;
+                    }
 
                     let f = f_nonbonded(
                         a_lig,
@@ -203,59 +236,39 @@ pub fn f_nonbonded(
     let dist = r_sq.sqrt();
     let dir = diff / dist;
 
-    // todo: This trip match is heinous; flatten it.
-
     // todo: This distance cutoff helps, but ideally we skip the distance computation too in these cases.
     let mut f_lj = if r_sq > CUTOFF_VDW_SQ {
         Vec3::new_zero()
     } else {
-        let (σ, ε) = match atom_indices {
-            // todo: Try either order? If not, we sill need two passes here, and will have twice the entries;
-            // todo: One for each order.
-            Some(indices) => match lj_table.get(&indices) {
+        let mut get_or_insert = |table: &mut HashMap<_, _>, key| match table.get(&key) {
+            Some(params) => *params,
+            None => {
+                let (σ, ε) = combine_lj_params(tgt, src);
+                table.insert(key, (σ, ε));
+                (σ, ε)
+            }
+        };
+
+        let (σ, ε) = if let Some(indices) = atom_indices {
+            // Dynamic-dynamic
+            get_or_insert(lj_table, indices)
+        } else if let Some(indices) = atom_indices_static {
+            // Note: Index order matters here, and the caveat for dynamic-dynamic interactions
+            // doesn't.
+            get_or_insert(lj_table_static, indices)
+        } else if let Some(i) = atom_indices_water {
+            // Single index of the lig; the only water mol is the uniform O.
+            match lj_table_water.get(&i) {
                 Some(params) => *params,
                 None => {
                     let (σ, ε) = combine_lj_params(tgt, src);
-                    lj_table.insert(indices, (σ, ε));
+                    lj_table_water.insert(i, (σ, ε));
                     (σ, ε)
                 }
-            },
-            // i.e. water or static, or step 0.
-            None => {
-                // This nest is a bit messy
-                match atom_indices_static {
-                    // Note: Index order matters here, and the caveat for dynamic-dynamic interactions
-                    // doesn't.
-                    Some(indices) => match lj_table_static.get(&indices) {
-                        Some(params) => *params,
-                        None => {
-                            let (σ, ε) = combine_lj_params(tgt, src);
-                            lj_table_static.insert(indices, (σ, ε));
-                            (σ, ε)
-                        }
-                    },
-                    // i.e. water
-                    None => {
-                        match atom_indices_water {
-                            //Single index of the lig; the only water mol is the uniform O.
-                            Some(i) => match lj_table_water.get(&i) {
-                                Some(params) => *params,
-                                None => {
-                                    let (σ, ε) = combine_lj_params(tgt, src);
-                                    lj_table_water.insert(i, (σ, ε));
-                                    (σ, ε)
-                                }
-                            },
-                            None => {
-                                // Water-water
-                                (water_opc::O_SIGMA, water_opc::O_EPS)
-                            }
-                        }
-                    }
-                };
-                // Neither LUT table.
-                combine_lj_params(tgt, src)
             }
+        } else {
+            // Water-water
+            (water_opc::O_SIGMA, water_opc::O_EPS)
         };
 
         // Negative due to our mix of conventions; keep it consistent with coulomb, and net correct.
@@ -268,12 +281,14 @@ pub fn f_nonbonded(
 
     // let mut f_coulomb = force_coulomb(
     //     dir,
-    //     dist,
+    //     dist,1
     //     tgt.partial_charge,
     //     src.partial_charge,
     //     SOFTENING_FACTOR_SQ,
     // );
 
+    // We assume that in the AtomDynamics structs, charges are already scaled to Amber units.
+    // (No longer in elementary charge)
     let mut f_coulomb = force_coulomb_ewald_real(
         dir,
         dist,
@@ -282,15 +297,15 @@ pub fn f_nonbonded(
         EWALD_ALPHA,
     );
 
-    // See Amber RM, sectcion 15, "1-4 Non-Bonded Interaction Scaling"
+    // See Amber RM, section 15, "1-4 Non-Bonded Interaction Scaling"
     if scale14 {
         f_coulomb *= SCALE_COUL_14;
     }
 
-    f_lj + f_coulomb
-    // todo temp to test
+    // f_lj + f_coulomb
+    // todo temp to test one or the other
     // f_coulomb
-    // f_lj
+    f_lj
 }
 
 /// Helper. Returns σ, ε between an atom pair. Atom order passed as params doesn't matter.

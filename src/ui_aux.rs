@@ -192,6 +192,10 @@ pub fn dynamics_player(
                     &mut state.ui.current_snapshot,
                     0..=md.snapshots.len() - 1,
                 ));
+                ui.label(format!(
+                    "{:.2} ps",
+                    state.ui.current_snapshot as f64 * state.to_save.md_dt
+                ));
             }
 
             if state.ui.current_snapshot != snapshot_prev {
@@ -287,7 +291,7 @@ pub fn md_setup(
 
         ui.add_space(COL_SPACING / 2.);
 
-        let mut run_clicked = ui
+        let run_clicked = ui
             .button(RichText::new("Run MD docking").color(Color32::GOLD))
             .on_hover_text("Run a molecular dynamics simulation on the ligand. The peptide atoms apply\
             Coulomb and Van der Waals forces, but do not move themselves. This is intended to be run\
@@ -338,7 +342,11 @@ pub fn md_setup(
         }
 
         ui.add_space(COL_SPACING);
+        let num_steps_prev = state.to_save.num_md_steps;
         int_field(&mut state.to_save.num_md_steps, "Steps:", &mut false, ui);
+        if state.to_save.num_md_steps != num_steps_prev {
+            state.volatile.md_runtime = state.to_save.num_md_steps as f64 * state.to_save.md_dt;
+        }
 
         ui.label("dt (ps):");
         if ui
@@ -350,8 +358,11 @@ pub fn md_setup(
         {
             if let Ok(v) = state.ui.md_dt_input.parse::<f64>() {
                 state.to_save.md_dt = v;
+                state.volatile.md_runtime = state.to_save.num_md_steps as f64 * v;
             }
         }
+
+        ui.label(format!("Runtime: {:.1} ps", state.volatile.md_runtime));
 
         ui.add_space(COL_SPACING);
 

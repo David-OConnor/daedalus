@@ -2,9 +2,9 @@
 //! For example, we may call some of these from the GUI, but they won't have any EGUI-specific
 //! logic in them.
 
-use std::{collections::HashMap, io::Cursor, time::Instant};
+use std::{collections::HashMap, time::Instant};
 
-use bio_files::{MmCif, ResidueType};
+use bio_files::ResidueType;
 use egui::Color32;
 use graphics::{Camera, ControlScheme, EngineUpdates, FWD_VEC, Mesh, Scene, Vertex};
 use itertools::Itertools;
@@ -16,8 +16,7 @@ use mcubes::{MarchingCubes, MeshSide};
 use na_seq::{AaIdent, Element};
 
 use crate::{
-    CamSnapshot, PREFS_SAVE_INTERVAL, ProtFFTypeChargeMap, ProtFfMap, Selection, State, StateUi,
-    ViewSelLevel,
+    CamSnapshot, PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel,
     docking::ConformationType,
     download_mols::load_cif_rcsb,
     mol_drawing::{EntityType, MoleculeView, draw_density, draw_density_surface, draw_molecule},

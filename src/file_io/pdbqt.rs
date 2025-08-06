@@ -10,13 +10,12 @@ use std::{
     str::FromStr,
 };
 
-use bio_files::{ChainGeneric, ResidueType};
+use bio_files::ResidueType;
 use lin_alg::f64::Vec3;
 use na_seq::{AaIdent, AtomTypeInRes, Element};
 use regex::Regex;
 
 use crate::{
-    ProtFfMap,
     docking::{
         ConformationType,
         prep::{DockType, UnitCellDims},
@@ -229,7 +228,7 @@ impl Molecule {
         }
 
         if let Some(lig) = ligand {
-            if let ConformationType::Flexible { torsions } = &lig.pose.conformation_type {
+            if let ConformationType::AssignedTorsions { torsions } = &lig.pose.conformation_type {
                 let tor_len = torsions.len();
                 if tor_len > 0 {
                     writeln!(file, "REMARK  {tor_len} active torsions:")?;

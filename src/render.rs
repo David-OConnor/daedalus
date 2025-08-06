@@ -12,7 +12,7 @@ use crate::{
     State,
     docking::DockingSite,
     inputs,
-    inputs::{MOVEMENT_SENS, RUN_FACTOR, SCROLL_MOVE_AMT, SCROLL_ROTATE_AMT},
+    inputs::{RUN_FACTOR, SCROLL_MOVE_AMT, SCROLL_ROTATE_AMT},
     mol_drawing,
     mol_drawing::BOND_RADIUS,
     ui::ui_handler,

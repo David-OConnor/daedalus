@@ -230,7 +230,10 @@ We provide a [copy of these files](https://github.com/David-OConnor/daedalus/rel
 for convenience; this is a much smaller download than the entire Amber package, and prevents needing to locate the specific files.
 Unpack, and place these under `resources`.
 
-If you're not running on a machine with an nvidia GPU, append the `--no-default-features` to the build command.
+If you're not running on a machine with an nvidia GPU or without CUDA installed, append the `--no-default-features` to the build command.
+
+Note: If using CUDA, you must set the environment var `LD_LIBARARY_PATH` to your CUDA bin directory,
+e.g. `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0\bin`
 
 
 ### Erratta

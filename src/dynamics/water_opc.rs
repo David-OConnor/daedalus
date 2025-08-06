@@ -1,3 +1,5 @@
+#![allow(non_upper_case_globals)]
+
 //! We use the [OPC model](https://pubs.acs.org/doi/10.1021/jz501780a) for water.
 //! See also, the Amber Rerference Manual. (todo: Specific ref)
 //!
@@ -28,7 +30,7 @@ use crate::dynamics::{AtomDynamics, LjTable, ambient::SimBox, non_bonded::f_nonb
 // These values are taken directly from `frcmod.opc`, in the Amber package.
 const O_MASS: f64 = 16.;
 const H_MASS: f64 = 1.008;
-const EP_MASS: f64 = 0.; // todo: Rem A/R.
+// const EP_MASS: f64 = 0.;
 
 // For assigning velocities from temperature.
 const KB: f64 = 0.001_987_204_1; // kcal mol⁻¹ K⁻¹ (Amber-style units)
@@ -37,23 +39,26 @@ const KB: f64 = 0.001_987_204_1; // kcal mol⁻¹ K⁻¹ (Amber-style units)
 const MASS_WATER: f64 = 18.015_28;
 const NA: f64 = 6.022_140_76e23; // todo: What is this? Used in density calc. mol⁻¹
 
+// We have commented out flexible-bond parameters that are provided by Amber, but not
+// used in this rigid model.
+
 // Bond stretching; Same K_b for all three bonds.
-const K_B: f64 = 553.0; // kcal/mol/Å^2
+// const K_B: f64 = 553.0; // kcal/mol/Å^2
 
 // Å; bond distance. (frcmod.opc, or Table 2.)
 const O_EP_R_0: f64 = 0.15939833;
 const O_H_THETA_R_0: f64 = 0.87243313;
-const H_H_THETA_R_0: f64 = 1.37120510;
+// const H_H_THETA_R_0: f64 = 1.37120510;
 
 // Angle Bending constant, kcal/mol/rad^2
-const H_O_EP_K: f64 = 0.;
-const H_O_H_K: f64 = 100.;
-const H_H_O_K: f64 = 0.;
+// const H_O_EP_K: f64 = 0.;
+// const H_O_H_K: f64 = 100.;
+// const H_H_O_K: f64 = 0.;
 
 // Angle bending angle, radians.
-const H_O_EP_θ0: f64 = 2.0943951023931953;
+// const H_O_EP_θ0: f64 = 2.0943951023931953;
 const H_O_H_θ0: f64 = 1.8081611050661253;
-const H_H_O_θ0: f64 = 2.2294835864975564;
+// const H_H_O_θ0: f64 = 2.2294835864975564;
 
 // Van der Waals / JL params. Note that only O carries a VdW force.
 const O_RSTAR: f64 = 1.777167268;
@@ -66,9 +71,6 @@ const SIGMA_FACTOR: f64 = 1.122_462_048_309_373; // 2^(1/6)
 // Partial charges. See the OPC paper, Table 2. None on O.
 const Q_H: f64 = 0.6791;
 const Q_EP: f64 = -2. * Q_H;
-
-const SHAKE_TOL2: f64 = 1e-10; // (Å²) |Δr²| convergence
-const SHAKE_MAX_ITERS: usize = 20;
 
 // 0.997 g cm⁻³ is a good default density.
 const WATER_DENSITY: f64 = 0.997;
@@ -241,22 +243,22 @@ impl WaterMol {
 
         f_o += f_ep;
 
-        // Half‑kick ----------
+        // Half‑kick
         self.o.vel += f_o * (0.5 * dt / self.o.mass);
         self.h0.vel += f_h0 * (0.5 * dt / self.h0.mass);
         self.h1.vel += f_h1 * (0.5 * dt / self.h1.mass);
 
-        // Analytic SETTLE update ----------
+        // Analytic SETTLE update
         settle_opc(&mut self.o, &mut self.h0, &mut self.h1, dt);
 
-        // Place EP rigidly ----------
+        // Place EP rigidly
         let bis = (self.h0.posit - self.o.posit) + (self.h1.posit - self.o.posit);
         self.m.posit = self.o.posit + bis.to_normalized() * O_EP_R_0;
 
         // EP velocity follows COM of hydrogens
         self.m.vel = (self.h0.vel + self.h1.vel) * 0.5;
 
-        // ---------- 5. re‑compute forces ----------
+        // Re‑compute forces
         let mut f_o2 = Vec3::new_zero();
         let mut f_h02 = Vec3::new_zero();
         let mut f_h12 = Vec3::new_zero();
@@ -277,6 +279,7 @@ impl WaterMol {
                 lj_table_static,
                 lj_table_water,
             );
+
             let r = src.posit - self.h0.posit;
             f_h02 += f_nonbonded(
                 &self.h0,
@@ -291,6 +294,7 @@ impl WaterMol {
                 lj_table_static,
                 lj_table_water,
             );
+
             let r = src.posit - self.h1.posit;
             f_h12 += f_nonbonded(
                 &self.h1,
@@ -305,6 +309,7 @@ impl WaterMol {
                 lj_table_static,
                 lj_table_water,
             );
+
             let r = src.posit - self.m.posit;
             f_ep2 += f_nonbonded(
                 &self.m,
@@ -327,7 +332,7 @@ impl WaterMol {
         self.h0.vel += f_h02 * (0.5 * dt / self.h0.mass);
         self.h1.vel += f_h12 * (0.5 * dt / self.h1.mass);
 
-        // Wrap positions that are outside the boudning box.
+        // Wrap positions that are outside the bounding box.
         // todo: This might not work for molecules split across both sides? Maybe need to wrap the
         // todo whole thing, onmly when all atoms are outside the box?
         for pos in [
@@ -352,7 +357,7 @@ pub fn make_water_mols(cell: &SimBox, t_target: f64) -> Vec<WaterMol> {
     let mut rng = rand::rng();
 
     let uni01 = Uniform::<f64>::new(0.0, 1.0).unwrap();
-    let uni11 = Uniform::<f64>::new(-1.0, 1.0).unwrap();
+    // let uni11 = Uniform::<f64>::new(-1.0, 1.0).unwrap();
 
     for _ in 0..n_mols {
         // Position (axis‑aligned box)

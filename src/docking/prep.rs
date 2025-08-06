@@ -2,7 +2,7 @@
 //! between ligand orientations. These are performed once per receptor, ligand, and docking site
 //! configuration.
 
-use std::{collections::HashMap, fmt::Display};
+use std::fmt::Display;
 
 use barnes_hut::{BhConfig, Cube, Tree};
 use lin_alg::f32::Vec3;
@@ -12,10 +12,7 @@ use na_seq::{Element, element::LjTable};
 
 use crate::{
     docking::{
-        ATOM_NEAR_SITE_DIST_THRESH, DockingSite, is_hydrophobic,
-        partial_charge::{
-            EemParams, EemSet, PartialCharge, assign_eem_charges, create_partial_charges,
-        },
+        ATOM_NEAR_SITE_DIST_THRESH, DockingSite, is_hydrophobic, partial_charge::PartialCharge,
     },
     forces::setup_sigma_eps_x8,
     molecule::{Atom, Bond, BondCount, BondType, Ligand, Molecule},
@@ -24,61 +21,6 @@ use crate::{
 // Increase this to take fewer receptor atoms when sampling for some cheap computatoins.
 const REC_SAMPLE_RATIO: usize = 6;
 pub const LIGAND_SAMPLE_RATIO: usize = 4;
-
-/// Prerequisite calculations for docking and binding energy calculations. This includes finding receptor
-/// atoms near the site, and applying EEM charges to them and the ligand.
-fn setup_eem_charges(
-    receptor: &Molecule,
-    ligand: &mut Ligand,
-    rec_atoms_near_site: &mut [Atom],
-    rec_atom_indices: &[usize], // Indices of the whole molecule. Used for matching with bonds.
-) -> Vec<PartialCharge> {
-    println!("Starting EEM charge setup...");
-
-    let eem_params = EemParams::new(EemSet::AimB3); // todo: WHich set?
-
-    // todo: This is problematic given the flexible bonds. Too expensive to do each conformation though.
-    // todo: Let it ride for now?
-    if !ligand.molecule.eem_charges_assigned {
-        println!("Assigning EEM charges for the Ligand......");
-        let indices: Vec<usize> = (0..ligand.molecule.atoms.len()).collect();
-        assign_eem_charges(
-            &mut ligand.molecule.atoms,
-            &indices,
-            &ligand.molecule.bonds,
-            &ligand.molecule.adjacency_list,
-            &eem_params,
-            0., // todo!
-        );
-        println!("Complete.");
-        ligand.molecule.eem_charges_assigned = true;
-    }
-
-    println!("Assigning EEM charges to receptor atoms...");
-    assign_eem_charges(
-        rec_atoms_near_site,
-        rec_atom_indices,
-        &receptor.bonds,
-        &receptor.adjacency_list,
-        &eem_params,
-        0., // todo!
-    ); // todo: QC what the last param should be.
-
-    // Update the parent molecule atoms as well, for other uses, since we're not updating it directly here.
-    // todo: Come back to this A/R
-    // for (near_i, global_i) in rec_atom_indices.iter().enumerate() {
-    //     receptor.atoms[*global_i].partial_charge = rec_atoms_near_site[near_i].partial_charge;
-    // }
-
-    // Note: Splitting the partial charges between target and ligand (As opposed to analyzing every pair
-    // combination) may give us more useful data, and is likely much more efficient, if one side has substantially
-    // fewer charges than the other.
-    let partial_charges_rec = create_partial_charges(rec_atoms_near_site, None);
-
-    println!("EEM setup complete.");
-
-    partial_charges_rec
-}
 
 /// Data to prepare prior to beginning docking. This can be used across all ligand poses, but is
 /// specific to a receptor, ligand, and docking site.
@@ -458,9 +400,8 @@ pub struct UnitCellDims {
 }
 
 #[derive(Clone, Debug)]
-/// Bonds that are marked as flexible.
+/// Bonds that are marked as flexible, using a semi-rigid conformation.
 pub struct Torsion {
-    // pub status: TorsionStatus,
     pub bond: usize, // Index.
     pub dihedral_angle: f32,
 }

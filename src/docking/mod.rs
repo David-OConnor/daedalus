@@ -50,7 +50,6 @@ use lin_alg::{
     linspace,
 };
 use na_seq::Element;
-use partial_charge::create_partial_charges;
 use rand::Rng;
 use rayon::prelude::*;
 
@@ -151,22 +150,23 @@ impl Default for DockingSite {
 #[derive(Clone, Debug, Default)]
 pub enum ConformationType {
     #[default]
-    /// Don't resposition atoms based on the pose. Useful for molecular dynamics.
+    /// Don't reposition atoms based on the pose. This is what we use when assigning each atom
+    /// a position using molecular dynamics.
     AbsolutePosits,
     // Rigid,
-    Flexible {
-        torsions: Vec<Torsion>,
-    },
+    /// Certain bonds are marked as flexible, with rotation allowed around them.
+    AssignedTorsions { torsions: Vec<Torsion> },
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct Pose {
-    // pub anchor_atom: usize, // Index.
+    pub conformation_type: ConformationType,
     /// The offset of the ligand's anchor atom from the docking center.
+    /// Only for rigid and torsion-set-based conformations.
     /// todo: Consider normalizing positions to be around the origin, for numerical precision issues.
     pub anchor_posit: Vec3,
+    /// Only for rigid and torsion-set-based conformations.
     pub orientation: Quaternion,
-    pub conformation_type: ConformationType,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -343,44 +343,26 @@ pub fn calc_binding_energy(
     // todo: Sort out f32 vs f64 for this.
     let electrostatic = {
         let mut force = Vec3F32::new_zero();
-        let partial_charges_lig = create_partial_charges(&ligand.molecule.atoms, Some(lig_posits));
 
         // In the barnes_hut etc nomenclature, we are iterating over *target* bodies. (Not associated
         // with target=protein=receptor; actually, the opposite!)
 
         // Note: Ligand positions are already positioned for the pose, by the time they enter this function.
-        for q_lig in partial_charges_lig {
-            // todo: Experimenting with non-BH to troubleshoot. BH is currently reporting 0 force.
-            // todo: Maybe BH isn't suitable here due to local charges summing to 0 ?
-            // for q_rec in partial_charges_rec {
-            //     let diff: Vec3F32 = (q_rec.posit - q_lig.posit).into();
-            //     let dist = distances[i_rec][i_lig];
-            //     force += force_elec(
-            //         (diff / dist).into(),
-            //         q_rec.charge as f64,
-            //         q_lig.charge as f64,
-            //         dist as f64,
-            //         SOFTENING_FACTOR_SQ_ELECTROSTATIC,
-            //     )
-            //     .into();
-            // }
-            //
-            // continue;
-
+        for (i, lig_atom) in ligand.molecule.atoms.iter().enumerate() {
             // Our bh algorithm is currently hard-coded to f64.
             let force_fn = |dir: Vec3, q_src: f64, dist: f64| {
                 forces::force_coulomb_f32(
                     dir.into(),
                     dist as f32,
                     q_src as f32,
-                    q_lig.charge,
+                    lig_atom.partial_charge.unwrap_or_default(),
                     SOFTENING_FACTOR_SQ_ELECTROSTATIC,
                 )
                 .into()
             };
 
             let f: Vec3F32 = barnes_hut::run_bh(
-                q_lig.posit.into(),
+                ligand.atom_posits[i],
                 999_999, // N/A, since we're comparing separate sets.
                 &setup.charge_tree,
                 &setup.bh_config,
@@ -518,9 +500,9 @@ pub(crate) fn init_poses(
             // Produce a Pose for each full combination of angles
             for torsions in all_combos {
                 result.push(Pose {
+                    conformation_type: ConformationType::AssignedTorsions { torsions },
                     anchor_posit,
                     orientation,
-                    conformation_type: ConformationType::Flexible { torsions },
                 });
             }
         }
@@ -676,7 +658,7 @@ fn vary_pose(pose: &Pose) -> Vec<Pose> {
     let mut result = Vec::new();
 
     for i in -30..30 {
-        if let ConformationType::Flexible { torsions } = &pose.conformation_type {
+        if let ConformationType::AssignedTorsions { torsions } = &pose.conformation_type {
             let rot_amt = TAU as f64 / 200. * i as f64;
 
             let rotator_up = Quaternion::from_axis_angle(UP, rot_amt);
@@ -689,11 +671,11 @@ fn vary_pose(pose: &Pose) -> Vec<Pose> {
                 for rot_b in &[rotator_up, rotator_right, rotator_fwd] {
                     for rot_c in &[rotator_up, rotator_right, rotator_fwd] {
                         result.push(Pose {
-                            anchor_posit: pose.anchor_posit,
-                            orientation: *rot_a * *rot_b * *rot_c * pose.orientation,
-                            conformation_type: ConformationType::Flexible {
+                            conformation_type: ConformationType::AssignedTorsions {
                                 torsions: torsions.clone(),
                             },
+                            anchor_posit: pose.anchor_posit,
+                            orientation: *rot_a * *rot_b * *rot_c * pose.orientation,
                         });
                     }
                 }
