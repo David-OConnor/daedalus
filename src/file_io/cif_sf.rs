@@ -1,3 +1,5 @@
+#![allow(confusable_idents)]
+
 //! For reflections data from CIF dialects: SF, map 2fo_fc and map fo_fc.
 
 // todo: Move this to bio_files, once you sort out how to interpor with Reflrection structs.

@@ -1,6 +1,6 @@
 use std::{fs::File, path::PathBuf, str::FromStr, time::Instant};
 
-use lin_alg::f32::{Vec3 as Vec3F32, pack_float, unpack_slice};
+use lin_alg::f32::{Vec3 as Vec3F32, pack_x8, unpack_slice};
 use rayon::{iter::IntoParallelRefIterator, prelude::*};
 
 use super::*;
@@ -60,7 +60,7 @@ fn test_docking_setup() {
         }
     }
 
-    let (distances_x8, valid_lanes_last_dist) = pack_float(&distances);
+    let (distances_x8, valid_lanes_last_dist) = pack_x8(&distances);
 
     let vdw_start = Instant::now();
     // todo: Use a neighbor grid or similar? Set it up so there are two separate sides?

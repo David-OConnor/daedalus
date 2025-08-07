@@ -43,7 +43,7 @@ use std::{f32::consts::TAU, time::Instant};
 
 use bincode::{Decode, Encode};
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-use lin_alg::f32::{f32x8, pack_float, pack_vec3};
+use lin_alg::f32::{f32x8, pack_x8, pack_vec3x8};
 use lin_alg::{
     f32::Vec3 as Vec3F32,
     f64::{FORWARD, Quaternion, RIGHT, UP, Vec3},
@@ -241,7 +241,7 @@ pub fn calc_binding_energy(
     }
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    let (distances_x8, valid_lanes_last_dist) = pack_float(&distances);
+    let (distances_x8, valid_lanes_last_dist) = pack_x8(&distances);
 
     // Prevents duplicates between compile-time, and runtime SIMD missing code.
     fn scalar_vdw(distances: &[f32], sigma: &[f32], eps: &[f32]) -> f32 {

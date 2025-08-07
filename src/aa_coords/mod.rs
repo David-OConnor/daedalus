@@ -1,6 +1,6 @@
 //! Adapted from `peptide`. Operations related to the geometry of atomic coordinates.
 
-use std::{f64::consts::TAU, fmt, fmt::Formatter, str::FromStr};
+use std::{f64::consts::TAU, fmt, fmt::Formatter};
 
 use bio_files::ResidueType;
 use lin_alg::f64::{Quaternion, Vec3, calc_dihedral_angle, calc_dihedral_angle_v2};

@@ -166,13 +166,6 @@ impl MdState {
 
                     let r_sq = dv.magnitude_squared();
 
-                    // We may be getting this from starting waters? Causes the system to blow up.
-                    // this may also be due to us not bouncing the water properly off the ligand??
-                    if r_sq < 3. {
-                        eprintln!("Aborting water-on-liand force due to too-small LJ.");
-                        continue;
-                    }
-
                     let f = f_nonbonded(
                         a_lig,
                         a_water_src,

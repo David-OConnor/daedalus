@@ -7,7 +7,7 @@ use std::fmt::Display;
 use barnes_hut::{BhConfig, Cube, Tree};
 use lin_alg::f32::Vec3;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-use lin_alg::f32::{Vec3x8, f32x8, pack_float};
+use lin_alg::f32::{Vec3x8, f32x8, pack_x8};
 use na_seq::{Element, element::LjTable};
 
 use crate::{
@@ -97,9 +97,9 @@ impl DockingSetup {
 
         // todo: Handle remainder? seems not req
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        let (lj_sigma_x8, _) = pack_float(&sigmas);
+        let (lj_sigma_x8, _) = pack_x8(&sigmas);
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        let (lj_eps_x8, _) = pack_float(&epss);
+        let (lj_eps_x8, _) = pack_x8(&epss);
 
         // let (rec_atoms_near_site_x8, lanes_rec) = pack_slice_noncopy(&rec_atoms_near_site);
 

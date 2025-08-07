@@ -12,7 +12,8 @@
 //! To download .dat files (GAFF2), download Amber source (Option 2) [here](https://ambermd.org/GetAmber.php#ambertools).
 //! Files are in dat -> leap -> parm
 //!
-//! Base units: Å, ps (10^-12),
+//! Base units: Å, ps (10^-12), Dalton (AMU), native charge units (derive from other base units;
+//! not a traditional named unit).
 //!
 //! We are using f64, and CPU-only for now, unless we confirm f32 will work.
 //! Maybe a mixed approach: Coordinates, velocities, and forces in 32-bit; sensitive global
@@ -21,10 +22,9 @@
 //! We use Verlet integration. todo: Velocity verlet? Other techniques that improve and build upon it?
 //!
 //! Amber: ff19SB for proteins, gaff2 for ligands. (Based on recs from https://ambermd.org/AmberModels.php).
-//!
 //
 //! A broad list of components of this simulation
-//! - Thermostat/barostat, with a way to specifify temp, pressure, water density
+//! - Thermostat/barostat, with a way to specify temp, pressure, water density
 //! - OPC water model
 //! - Cell wrapping
 //! - Verlet integration (Water and non-water?)
@@ -39,6 +39,19 @@
 //! c6-c6: 35fs (correct).   os-os: 47fs        nc-nc: 34fs        hw-hw: 9fs
 //! Our measurements, 2025-08-04
 //! c6-c6: 35fs    os-os: 31fs        nc-nc: 34fs (Correct)       hw-hw: 6fs
+//!
+//! --------
+//!
+//! We use traditional MD non-bonded terms to maintain geometry: Bond length, valence angle between
+//! 3 bonded atoms, dihedral angle between 4 bonded atoms (linear), and improper dihedral angle between
+//! each hub and 3 spokes. (E.g. at ring intersections). We also apply Coulomb force between atom-centered
+//! partial charges, and Lennard Jones potentials to simulate Van der Waals forces. These use spring-like
+//! forces to retain most geometry, while allowing for flexibility.
+//!
+//! We use the OPC water model. (See `water_opc.rs`). For both maintaining the geometry of each water
+//! molecule, and for maintaining Hydrogen atom positions, we do not apply typical non-bonded interactions:
+//! we use (Shake/rattle/settle?) for these. In the case of water, it's required for OPC compliance.
+//! For H, it allows us to maintain integrator stability with a greater timestep, e.g. 2fs instead of 1fs.
 
 // todo: Long-term, you will need to figure out what to run as f32 vice f64, especially
 // todo for being able to run on GPU.
