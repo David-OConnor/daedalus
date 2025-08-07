@@ -75,6 +75,10 @@ const Q_EP: f64 = -2. * Q_H;
 // 0.997 g cm⁻³ is a good default density.
 const WATER_DENSITY: f64 = 0.997;
 
+// Don't generate water molecules that are too close to other molecules.
+// Vdw contact distance between water molecules and organic molecules is roughly 3.5 Angstroms.
+const GENERATION_MIN_DIST: f64 = 4.;
+
 /// Contains absolute positions of each atom for a single molecule, at a given time step.
 /// todo: Should we store as O position, and orientation quaternion instead?
 /// todo: Should we just use `atom_dynamics` instead?
@@ -347,7 +351,13 @@ impl WaterMol {
 }
 
 // todo: Should we pass density, vice n_mols?
-pub fn make_water_mols(cell: &SimBox, t_target: f64) -> Vec<WaterMol> {
+/// We pass atoms in so this doesn't generate water molecules that overlap with them.
+pub fn make_water_mols(
+    cell: &SimBox,
+    t_target: f64,
+    atoms_dy: &[AtomDynamics],
+    atoms_static: &[AtomDynamics],
+) -> Vec<WaterMol> {
     let vol = cell.volume();
 
     let n_float = WATER_DENSITY * vol * (NA / (MASS_WATER * 1.0e24));
@@ -382,6 +392,25 @@ pub fn make_water_mols(cell: &SimBox, t_target: f64) -> Vec<WaterMol> {
                 sqrt_u1 * theta2.cos(),
             )
         };
+
+        // todo: Min dist between water mols?
+        let mut skip = false;
+        for atom_set in [atoms_dy, atoms_static] {
+            for atom_non_water in atom_set {
+                let dist = (atom_non_water.posit - posit).magnitude();
+                if dist < GENERATION_MIN_DIST {
+                    skip = true;
+                    break;
+                }
+                if skip {
+                    break;
+                }
+            }
+        }
+
+        if skip {
+            continue;
+        }
 
         result.push(WaterMol::new(posit, Vec3::new_zero(), q));
     }

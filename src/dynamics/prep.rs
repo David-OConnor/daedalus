@@ -581,7 +581,12 @@ impl MdState {
             ..Default::default()
         };
 
-        result.water = make_water_mols(&cell, result.temp_target);
+        result.water = make_water_mols(
+            &cell,
+            result.temp_target,
+            &result.atoms,
+            &result.atoms_static,
+        );
 
         result.setup_nonbonded_exclusion_scale_flags();
         result.build_neighbours();
@@ -690,7 +695,12 @@ impl MdState {
             ..Default::default()
         };
 
-        result.water = make_water_mols(&cell, result.temp_target);
+        result.water = make_water_mols(
+            &cell,
+            result.temp_target,
+            &result.atoms,
+            &result.atoms_static,
+        );
 
         result.setup_nonbonded_exclusion_scale_flags();
         result.build_neighbours();

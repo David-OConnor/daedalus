@@ -128,7 +128,6 @@ impl MdState {
         for (i_lig, a_lig) in self.atoms.iter_mut().enumerate() {
             // Force from static atoms.
             for (i_static, a_static) in self.atoms_static.iter().enumerate() {
-                continue; // todo temp
                 let diff = a_lig.posit - a_static.posit;
                 let dv = self.cell.min_image(diff);
 
