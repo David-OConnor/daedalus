@@ -734,7 +734,7 @@ fn docking(
 
                     if ui
                         .button(RichText::new(format!("Move lig to {name}")).color(COLOR_HIGHLIGHT))
-                        .on_hover_text("Move the ligand to be colated with this residue. this is intended to \
+                        .on_hover_text("Move the ligand to be colocated with this residue. this is intended to \
                         be used to synchronize the ligand with a pre-positioned hetero residue in the protein file, e.g. \
                         prior to docking. In addition to moving \
                         its center, this attempts to align each atom with its equivalent on the residue.")
@@ -761,8 +761,6 @@ fn docking(
             state.ui.selection,
             Selection::None | Selection::AtomLigand(_)
         ) {
-            ui.add_space(COL_SPACING / 2.);
-
             if ui
                 .button(RichText::new("Move lig to sel").color(COLOR_HIGHLIGHT))
                 .on_hover_text("Re-position the ligand to be colacated with the selected atom or residue.")
@@ -773,7 +771,7 @@ fn docking(
                 if let Some(atom) = atom_sel {
                     lig.pose.conformation_type = ConformationType::AssignedTorsions {
                         torsions: Vec::new(),
-                    }; // todo: Risky to init to new?
+                    };
 
                     docking_posit_update = Some(atom.posit);
                     docking_init_changed = true;
@@ -788,6 +786,29 @@ fn docking(
                 }
             }
         }
+
+        if ui
+            .button(RichText::new("Reset lig posit").color(COLOR_HIGHLIGHT))
+            .on_hover_text("Move the ligand to its absolute coordinates, e.g. as defined in \
+                    its source Mol2 or SDF file.")
+            .clicked()
+        {
+            lig.reset_posits();
+
+            if !lig.atom_posits.is_empty() {
+                docking_posit_update = Some(lig.atom_posits[0].into());
+                docking_init_changed = true;
+            }
+
+            move_cam_to_lig(
+                &mut state.ui,
+                scene,
+                lig,
+                mol.center,
+                engine_updates,
+            )
+        }
+
         if docking_init_changed {
             *redraw_lig = true;
             set_docking_light(scene, Some(&lig.docking_site));
@@ -883,8 +904,11 @@ fn selection_section(
 ) {
     // todo: DRY with view.
     ui.horizontal_wrapped(|ui| {
-        ui.label("View/Select:");
+        let help_text = "Hotkeys: square brackets [ ] to cycle";
+        ui.label("View/Select:").on_hover_text(help_text);
         let prev_view = state.ui.view_sel_level;
+
+        // Ideally hover text here too, but I'm not sure how.
         ComboBox::from_id_salt(1)
             .width(80.)
             .selected_text(state.ui.view_sel_level.to_string())

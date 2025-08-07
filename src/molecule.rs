@@ -393,36 +393,28 @@ impl Ligand {
         result.set_anchor();
         result.flexible_bonds = setup_flexibility(&result.molecule);
 
-        result.pose.conformation_type = ConformationType::AssignedTorsions {
-            torsions: result
-                .flexible_bonds
-                .iter()
-                .map(|b| Torsion {
-                    bond: *b,
-                    dihedral_angle: 0.,
-                })
-                .collect(),
-        };
+        // result.pose.conformation_type = ConformationType::AssignedTorsions {
+        //     torsions: result
+        //         .flexible_bonds
+        //         .iter()
+        //         .map(|b| Torsion {
+        //             bond: *b,
+        //             dihedral_angle: 0.,
+        //         })
+        //         .collect(),
+        // };
 
-        // todo: Temp for testing.
-        // {
-        //     result.docking_site = DockingSite {
-        //         site_center: Vec3::new(40.6807, 36.2017, 28.5526),
-        //         site_radius: 10.,
-        //     };
-        //     result.pose.anchor_posit = result.docking_site.site_center;
-        //     result.pose.orientation = Quaternion::new(0.1156, -0.7155, 0.4165, 0.5488);
-        //
-        //     if let ConformationType::Flexible { torsions } = &mut result.pose.conformation_type {
-        //         // torsions[1].dihedral_angle = 0.884;
-        //         // torsions[0].dihedral_angle = 2.553;
-        //         torsions[0].dihedral_angle = 0.884;
-        //         torsions[1].dihedral_angle = 2.553;
-        //     }
-        // }
+        // result.position_atoms(None);
 
-        result.position_atoms(None);
+        result.reset_posits();
+
         result
+    }
+
+    /// Reset atom positions to be at their internal values, e.g. as present in the Mol2 or SDF files.
+    pub fn reset_posits(&mut self) {
+        self.pose.conformation_type = ConformationType::AbsolutePosits;
+        self.atom_posits = self.molecule.atoms.iter().map(|a| a.posit).collect();
     }
 
     /// Separate from constructor; run when the pose changes, for now.

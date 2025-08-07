@@ -428,15 +428,15 @@ pub fn make_water_mols(
 /// All distances & masses are in MD internal units (Å, ps, amu, kcal/mol).
 fn settle_opc(o: &mut AtomDynamics, h0: &mut AtomDynamics, h1: &mut AtomDynamics, dt: f64) {
     // Can't use cos in a const.
-    const CSOHOH: f64 = -0.2351421131025898;
+    // const CSOHOH: f64 = -0.2351421131025898;
     // let COSHOH: f64 = (H_O_H_θ0 * 0.5).cos() * 2.0 * (H_O_H_θ0 * 0.5).cos() - 1.0; // cos(θ)
 
-    // -- A. half‑step drift of the oxygen (center) --------------------
+    // Half‑step drift of the oxygen
     o.posit += o.vel * dt; // translate O
     h0.posit += o.vel * dt; // same COM drift for H’s
     h1.posit += o.vel * dt;
 
-    // -- B. rotate the OH pair analytically ---------------------------
+    // Rotate the OH pair analytically
     // work in the O‑centered frame
     let mut r0 = h0.posit - o.posit;
     let mut r1 = h1.posit - o.posit;

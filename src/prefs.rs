@@ -123,7 +123,9 @@ impl PerMolToSave {
             docking_site = lig.docking_site.clone();
             lig_posit = lig.pose.anchor_posit;
             lig_atom_positions = lig.atom_posits.clone();
-            println!("\nSaving atom posits: {:?}", lig.atom_posits[0]); // todo temp
+            if !lig.atom_posits.is_empty() {
+                println!("\nSaving atom posits: {:?}", lig.atom_posits[0]); // todo temp
+            }
         }
 
         Self {

@@ -12,11 +12,11 @@ egui-file-dialog = "0.11.0" #  For file dialogs.
 
 cfg-if = "1.0.1"
 
-lin_alg = { version = "1.2.6", features = ["encode"] }
+lin_alg = { version = "1.3.0", features = ["encode"] }
 barnes_hut = { version = "1.0.8"}  # enc temp rem
 na_seq = "0.3.1"
 bio_apis = {  version = "0.1.6", features = ["encode"] }
-bio_files = "0.2.4"
+bio_files = "0.2.5"
 mcubes = "0.1.4"
 
 # For loading and saving config
@@ -54,13 +54,13 @@ rustfft = "6.4.0" # For Ewald long range
 
 # We use these when developing locally to reduce friction.
 [patch.crates-io]
-# graphics = { path = "../../graphics" }
-lin_alg = { path = "../../lin_alg" }
+#graphics = { path = "../../graphics" }
+#lin_alg = { path = "../../lin_alg" }
 #barnes_hut = { path = "../../barnes_hut" }
 #na_seq = { path = "../na_seq" }
 #bio_apis = { path = "../bio_apis" }
 #mcubes = { path = "../mcubes" }
-bio_files = { path = "../bio_files" }
+#bio_files = { path = "../bio_files" }
 
 
 

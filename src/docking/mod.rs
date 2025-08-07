@@ -43,7 +43,7 @@ use std::{f32::consts::TAU, time::Instant};
 
 use bincode::{Decode, Encode};
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-use lin_alg::f32::{f32x8, pack_x8, pack_vec3x8};
+use lin_alg::f32::{f32x8, pack_vec3x8, pack_x8};
 use lin_alg::{
     f32::Vec3 as Vec3F32,
     f64::{FORWARD, Quaternion, RIGHT, UP, Vec3},
