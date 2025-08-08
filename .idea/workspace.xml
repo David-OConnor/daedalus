@@ -14,16 +14,7 @@
     <list default="true" id="8192144c-b316-4f41-946f-69ac57e30673" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/dynamics/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dynamics/mod.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/dynamics/prep.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dynamics/prep.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/dynamics/water_opc.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dynamics/water_opc.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/file_io/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/file_io/mod.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/file_io/pdbqt.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/file_io/pdbqt.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/main.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/molecule.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/molecule.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/prefs.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/prefs.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/ui.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/ui.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/ui_aux.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/ui_aux.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/util.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/util.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -57,30 +48,30 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "Cargo.Fmt.executor": "Run",
-    "Cargo.Run daedalus.executor": "Run",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "RunOnceActivity.rust.reset.selective.auto.import": "true",
-    "git-widget-placeholder": "main",
-    "ignore.virus.scanning.warn.message": "true",
-    "junie.onboarding.icon.badge.shown": "true",
-    "last_opened_file_path": "C:/Users/the_a/code/Bio/daedalus",
-    "node.js.detected.package.eslint": "true",
-    "node.js.detected.package.tslint": "true",
-    "node.js.selected.package.eslint": "(autodetect)",
-    "node.js.selected.package.tslint": "(autodetect)",
-    "nodejs_package_manager_path": "npm",
-    "org.rust.cargo.project.model.PROJECT_DISCOVERY": "true",
-    "org.rust.cargo.project.model.impl.CargoExternalSystemProjectAware.subscribe.first.balloon": "",
-    "org.rust.first.attach.projects": "true",
-    "to.speed.mode.migration.done": "true",
-    "vue.rearranger.settings.migration": "true"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;Cargo.Fmt.executor&quot;: &quot;Run&quot;,
+    &quot;Cargo.Run daedalus.executor&quot;: &quot;Run&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.rust.reset.selective.auto.import&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;ignore.virus.scanning.warn.message&quot;: &quot;true&quot;,
+    &quot;junie.onboarding.icon.badge.shown&quot;: &quot;true&quot;,
+    &quot;last_opened_file_path&quot;: &quot;C:/Users/the_a/code/Bio/daedalus&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;org.rust.cargo.project.model.PROJECT_DISCOVERY&quot;: &quot;true&quot;,
+    &quot;org.rust.cargo.project.model.impl.CargoExternalSystemProjectAware.subscribe.first.balloon&quot;: &quot;&quot;,
+    &quot;org.rust.first.attach.projects&quot;: &quot;true&quot;,
+    &quot;to.speed.mode.migration.done&quot;: &quot;true&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
-}]]></component>
+}</component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
       <recent name="C:\Users\the_a\code\Bio\daedalus\screenshots" />
@@ -162,6 +153,7 @@
       <workItem from="1754433138444" duration="128000" />
       <workItem from="1754433287753" duration="194000" />
       <workItem from="1754433527506" duration="35577000" />
+      <workItem from="1754620659543" duration="848000" />
     </task>
     <servers />
   </component>

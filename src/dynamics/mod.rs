@@ -50,7 +50,7 @@
 //!
 //! We use the OPC water model. (See `water_opc.rs`). For both maintaining the geometry of each water
 //! molecule, and for maintaining Hydrogen atom positions, we do not apply typical non-bonded interactions:
-//! We use Shake + Rattle algorithms for these. In the case of water, it's required for OPC compliance.
+//! We use SHAKE + RATTLE algorithms for these. In the case of water, it's required for OPC compliance.
 //! For H, it allows us to maintain integrator stability with a greater timestep, e.g. 2fs instead of 1fs.
 
 // todo: Long-term, you will need to figure out what to run as f32 vice f64, especially
@@ -91,23 +91,16 @@ pub type LjTable = HashMap<(usize, usize), (f64, f64)>;
 const SKIN: f64 = 2.0; // Å – rebuild list if an atom moved >½·SKIN
 const SKIN_SQ: f64 = SKIN * SKIN;
 
-// Overrides for missing parameters.
-const M_O: f64 = 15.999; // Da
-const M_H: f64 = 1.008; // Da
-const R_OH: f64 = 0.9572; // Å
-const ANG_HOH: f64 = 104.52_f64.to_radians();
-
-const SOFTENING_FACTOR_SQ: f64 = 1e-6;
-
 const SNAPSHOT_RATIO: usize = 1;
 
 const EPS: f64 = 1.0e-8;
 /// Convert convert kcal mol⁻¹ Å⁻¹ (Values in the Amber parameter files) to amu Å ps⁻². Multiply all bonded
 /// accelerations by this.
-/// todo: Or is it 4.184e-4;?
 const ACCEL_CONVERSION: f64 = 418.4;
 
-// These Shake constraints are for fixed hydrogens.
+// These SHAKE constraints are for fixed hydrogens. The tolerance controls how close we get
+// to the target value; lower values are more precise, but require more iterations. `SHAKE_MAX_ITER`
+// constrains the number of iterations.
 const SHAKE_TOL: f64 = 1.0e-4; // Å
 const SHAKE_MAX_IT: usize = 100;
 
@@ -341,6 +334,11 @@ impl MdState {
             self.max_disp_sq = self.max_disp_sq.max((a.vel * dt).magnitude_squared());
         }
 
+        // The order we perform these steps is important.
+        if let HydrogenMdType::Fixed(_) = &self.hydrogen_md_type {
+            self.shake_hydrogens();
+        }
+
         // Reset acceleration.
         for a in &mut self.atoms {
             a.accel = Vec3::new_zero();
@@ -354,10 +352,6 @@ impl MdState {
 
         self.apply_nonbonded_forces();
 
-        if let HydrogenMdType::Fixed(_) = &self.hydrogen_md_type {
-            self.constrain_hydrogens();
-        }
-
         // Second half-kick using new accelerations, and update accelerations using the atom's mass;
         // up to this point, the accelerations have been missing that step; this is an optimization to
         // do it once at the end.
@@ -368,38 +362,11 @@ impl MdState {
             a.vel += a.accel * dt_half;
         }
 
-        {
-            // We must include both the charge center M/EP, and the Vdw center O as a source.
-            // We include the Hs as charge centers.
-            let mut water_dyn = Vec::with_capacity(self.water.len() * 4);
-            for water in &self.water {
-                // todo: Evaluate if there's a way that avoids cloning.  Probably fine as it
-                // todo doesn't scale as O^2. (Clones each water atom once per step)
-
-                water_dyn.push(water.o.clone());
-                water_dyn.push(water.m.clone());
-                water_dyn.push(water.h0.clone());
-                water_dyn.push(water.h1.clone());
-            }
-
-            // todo: Temporarily removed water-water interactions; getting a very slow simulation,
-            // todo, and NaN propogation. Troubleshoot this later. Skipping this may be OK, compared
-            // todo to not using water.
-            let sources_on_water: Vec<AtomDynamics> =
-                // [&self.atoms[..], &self.atoms_static[..], &water_dyn[..]].concat();
-                [&self.atoms[..], &self.atoms_static[..]].concat();
-
-            for water in &mut self.water {
-                water.step(
-                    dt,
-                    &sources_on_water,
-                    &self.cell,
-                    &mut self.lj_table,
-                    &mut self.lj_table_static,
-                    &mut self.lj_table_water,
-                );
-            }
+        if let HydrogenMdType::Fixed(_) = &self.hydrogen_md_type {
+            self.rattle_hydrogens();
         }
+
+        self.water_step(dt);
 
         // todo: Apply the thermostat.
 
@@ -624,36 +591,46 @@ impl MdState {
         }
     }
 
-    /// Apply our rigid Shake + Rattle constraints on hydrogens.
-    fn constrain_hydrogens(&mut self) {
+    /// Part of our SHAKE + RATTLE algorithms for fixed hydrogens.
+    fn shake_hydrogens(&mut self) {
         let HydrogenMdType::Fixed(constraints) = &self.hydrogen_md_type else {
             unreachable!();
         };
 
-        // SHAKE on positions
         for _ in 0..SHAKE_MAX_IT {
             let mut max_corr: f64 = 0.0;
 
             for &(i, j, r0) in constraints {
                 let (ai, aj) = split2_mut(&mut self.atoms, i, j);
 
-                let rij = aj.posit - ai.posit;
-                let r2 = rij.magnitude_squared();
+                let diff = aj.posit - ai.posit;
+                let dist_sq = diff.magnitude_squared();
+
+                // todo: Cache?
                 let inv_m = 1.0 / ai.mass + 1.0 / aj.mass;
 
                 // λ = (r² − r₀²) / (2·inv_m · r_ij·r_ij)
-                let lambda = (r2 - r0 * r0) / (2.0 * inv_m * r2.max(EPS));
-                let corr = rij * lambda; // vector correction
+                let lambda = (dist_sq - r0 * r0) / (2.0 * inv_m * dist_sq.max(EPS));
+                let corr = diff * lambda; // vector correction
 
                 ai.posit += corr / ai.mass;
                 aj.posit -= corr / aj.mass;
 
                 max_corr = max_corr.max(corr.magnitude());
             }
+
+            // Converged
             if max_corr < SHAKE_TOL {
                 break;
-            } // converged
+            }
         }
+    }
+
+    /// Part of our SHAKE + RATTLE algorithms for fixed hydrogens.
+    fn rattle_hydrogens(&mut self) {
+        let HydrogenMdType::Fixed(constraints) = &self.hydrogen_md_type else {
+            unreachable!();
+        };
 
         // RATTLE on velocities so that d/dt(|r|²)=0  ⇒  v_ij · r_ij = 0
         for &(i, j, _r0) in constraints {
@@ -670,6 +647,39 @@ impl MdState {
 
             ai.vel += corr_v / ai.mass;
             aj.vel -= corr_v / aj.mass;
+        }
+    }
+
+    fn water_step(&mut self, dt: f64) {
+        // We must include both the charge center M/EP, and the Vdw center O as a source.
+        // We include the Hs as charge centers.
+        let mut water_dyn = Vec::with_capacity(self.water.len() * 4);
+        for water in &self.water {
+            // todo: Evaluate if there's a way that avoids cloning.  Probably fine as it
+            // todo doesn't scale as O^2. (Clones each water atom once per step)
+
+            water_dyn.push(water.o.clone());
+            water_dyn.push(water.m.clone());
+            water_dyn.push(water.h0.clone());
+            water_dyn.push(water.h1.clone());
+        }
+
+        // todo: Temporarily removed water-water interactions; getting a very slow simulation,
+        // todo, and NaN propogation. Troubleshoot this later. Skipping this may be OK, compared
+        // todo to not using water.
+        let sources_on_water: Vec<AtomDynamics> =
+            // [&self.atoms[..], &self.atoms_static[..], &water_dyn[..]].concat();
+            [&self.atoms[..], &self.atoms_static[..]].concat();
+
+        for water in &mut self.water {
+            water.step(
+                dt,
+                &sources_on_water,
+                &self.cell,
+                &mut self.lj_table,
+                &mut self.lj_table_static,
+                &mut self.lj_table_water,
+            );
         }
     }
 

@@ -15,7 +15,7 @@
 //!
 //! We integrate the moceule's internal rigid geometry using the `SETTLE` algorithm. This is likely
 //! to be cheaper, and more robust than Shake/Rattle. It's less general, but it works here.
-//! Settle is specifically tailored for three-atom rigid bodies..
+//! Settle is specifically tailored for three-atom rigid bodies.
 
 use std::{collections::HashMap, f64::consts::TAU};
 
@@ -472,7 +472,7 @@ fn settle_opc(o: &mut AtomDynamics, h0: &mut AtomDynamics, h1: &mut AtomDynamics
     r0 += omega.cross(r0) * dt;
     r1 += omega.cross(r1) * dt;
 
-    // normalise back to exact geometry
+    // Normalize back to exact geometry
     let r0n = r0.to_normalized() * O_H_THETA_R_0;
     let r1n = r1.to_normalized() * O_H_THETA_R_0;
 
@@ -480,7 +480,7 @@ fn settle_opc(o: &mut AtomDynamics, h0: &mut AtomDynamics, h1: &mut AtomDynamics
     h0.posit = o.posit + r0n;
     h1.posit = o.posit + r1n;
 
-    // -- C. recompute H velocities from rigid‑body motion -------------
+    // Recompute H velocities from rigid‑body motion
     // v = ω × r
     h0.vel = o.vel + omega.cross(r0n);
     h1.vel = o.vel + omega.cross(r1n);
