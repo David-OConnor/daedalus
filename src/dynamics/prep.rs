@@ -316,6 +316,9 @@ impl ForceFieldParamsIndexed {
                 continue;
             };
 
+            let atom_0 = i0.min(i1);
+            let atom_1 = i0.max(i1);
+
             // If using fixed hydrogens, don't add these to our bond stretching params;
             // add to a separate hydrogen rigid param variable.
             if let HydrogenMdType::Fixed(constraints) = hydrogen_md_type {
@@ -323,11 +326,16 @@ impl ForceFieldParamsIndexed {
                     || atoms[bond.atom_1].element == Element::Hydrogen
                 {
                     constraints.push(HydrogenRigidConstraint {
-                        atom_0: i0.min(i1),
-                        atom_1: i0.max(i1),
+                        atom_0,
+                        atom_1,
                         r0_sq: (data.r_0 as f64).powi(2),
                         inv_mass: None, // Populated on the first step; we don't have mass yet.
                     });
+
+                    // `bonds_topology` exists separately from `bond_params` specifically so we can
+                    // account for bonds to H in exclusions.
+                    result.bonds_topology.insert((atom_0, atom_1));
+
                     continue;
                 }
             }
@@ -335,9 +343,9 @@ impl ForceFieldParamsIndexed {
             // This prevents multiplying by 2 each computation at runtime.
             data.k_b *= 2.0;
 
-            result
-                .bond_stretching
-                .insert((i0.min(i1), i0.max(i1)), data);
+            result.bond_stretching.insert((atom_0, atom_1), data);
+
+            result.bonds_topology.insert((atom_0, atom_1));
         }
 
         // Valence angles: Every connection between 3 atoms bonded linearly.
@@ -775,7 +783,7 @@ impl MdState {
         };
 
         // 1-2
-        for (indices, _) in &self.force_field_params.bond_stretching {
+        for indices in &self.force_field_params.bonds_topology {
             push(&mut self.nonbonded_exclusions, indices.0, indices.1);
         }
 
@@ -959,7 +967,6 @@ pub fn build_dynamics_docking(
     dt: f64,
 ) -> Result<MdState, ParamError> {
     println!("Building docking dyanmics...");
-    let start = Instant::now();
 
     lig.pose.conformation_type = ConformationType::AbsolutePosits;
 
@@ -974,9 +981,14 @@ pub fn build_dynamics_docking(
         &lig.molecule.ident,
     )?;
 
+    let start = Instant::now();
+
     for _ in 0..n_steps {
         md_state.step(dt)
     }
+
+    let elapsed = start.elapsed();
+    println!("MD complete in {:.2} s", elapsed.as_secs());
 
     for (i, atom) in md_state.atoms.iter().enumerate() {
         lig.atom_posits[i] = atom.posit;
@@ -996,16 +1008,20 @@ pub fn build_dynamics_peptide(
     dt: f64,
 ) -> Result<MdState, ParamError> {
     println!("Building peptide dynamics...");
-    let start = Instant::now();
 
     let posits: Vec<_> = mol.atoms.iter().map(|a| a.posit).collect();
 
     let mut md_state =
         MdState::new_peptide(&mol.atoms, &posits, &mol.bonds, ff_params, TEMP_TGT_DEFAULT)?;
 
+    let start = Instant::now();
+
     for _ in 0..n_steps {
         md_state.step(dt)
     }
+
+    let elapsed = start.elapsed();
+    println!("MD complete in {:.2} s", elapsed.as_secs());
 
     change_snapshot_peptide(mol, &md_state.atoms, &md_state.snapshots[0]);
 

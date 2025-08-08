@@ -81,10 +81,12 @@ impl MdState {
                 let scale14 = {
                     let key = if i < j { (i, j) } else { (j, i) };
 
+                    // Exclusions: covalent bonds 1-2 and 1-3
                     if self.nonbonded_exclusions.contains(&key) {
                         continue;
                     }
 
+                    // Scaled: covalent bonds 1-4
                     self.nonbonded_scaled.contains(&key)
                 };
 

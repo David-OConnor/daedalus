@@ -138,6 +138,10 @@ pub struct ForceFieldParamsIndexed {
     /// Generally only for planar hub and spoke arrangements, and always hold a planar dihedral shape.
     /// (e.g. τ/2 with symmetry 2)
     pub improper: HashMap<(usize, usize, usize, usize), DihedralParams>,
+    /// We use this to determine which 1-2 exclusions to apply for non-bonded forces. We use this
+    /// instead of `bond_stretching`, because `bond_stretching` omits bonds to Hydrogen, which we need
+    /// to account when applying excusions.
+    pub bonds_topology: HashSet<(usize, usize)>,
 
     // Dihedrals are represented in Amber params as a fourier series; this Vec indlues all matches.
     // e.g. X-ca-ca-X may be present multiple times in gaff2.dat. (Although seems to be uncommon)
