@@ -512,7 +512,7 @@ impl State {
         println!("Loaded static FF data in {elapsed}ms");
     }
 
-    /// Load Mol2 and FRCMOD data from our Amber GEostd database.
+    /// Load Mol2 and optionally, FRCMOD data from our Amber Geostd database into state.
     pub fn load_geostd_mol_data(
         &mut self,
         ident: &str,
@@ -552,7 +552,9 @@ impl State {
                             self.ligand = Some(Ligand::new(mol, &self.ff_params.lig_specific));
                             self.mol_dynamics = None;
 
-                            self.update_from_prefs();
+                            println!("TEST: {:?}", self.ligand.as_ref().unwrap().atom_posits);
+
+                            // self.update_from_prefs();
 
                             *redraw_lig = true;
                         }

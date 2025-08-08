@@ -42,8 +42,8 @@ use crate::{
     util,
     util::{
         cam_look_at, cam_look_at_outside, check_prefs_save, close_lig, close_mol, cycle_selected,
-        handle_err, handle_scene_flags, load_atom_coords_rcsb, move_lig_to_res, orbit_center,
-        reset_camera, select_from_search,
+        handle_err, handle_scene_flags, handle_success, load_atom_coords_rcsb, move_lig_to_res,
+        orbit_center, reset_camera, select_from_search,
     },
 };
 
@@ -67,6 +67,8 @@ pub const COLOR_INACTIVE: Color32 = Color32::GRAY;
 pub const COLOR_ACTIVE: Color32 = Color32::LIGHT_GREEN;
 pub const COLOR_HIGHLIGHT: Color32 = Color32::LIGHT_BLUE;
 pub const COLOR_ACTIVE_RADIO: Color32 = Color32::LIGHT_BLUE;
+pub const COLOR_ATTENTION: Color32 = Color32::ORANGE;
+
 const COLOR_OUT_ERROR: Color32 = Color32::LIGHT_RED;
 const COLOR_OUT_NORMAL: Color32 = Color32::WHITE;
 const COLOR_OUT_SUCCESS: Color32 = Color32::LIGHT_GREEN; // Unused for now
@@ -721,10 +723,7 @@ fn docking(
         if let Some(mol) = &state.molecule {
             for res in &mol.het_residues {
                 // Note: This is crude.
-                // todo: You have this very wide thresh because you are missing H on hetero; add those!
-                // todo: Match the orientation.
-                // if (res.atoms.len() - lig.molecule.atoms.len()) < 5 {
-                if (res.atoms.len() as i16 - lig.molecule.atoms.len() as i16).abs() < 22 {
+                if (res.atoms.len() - lig.molecule.atoms.len()) < 5 {
                     // todo: Don't list multiple; pick teh closest, at least in len.
                     let name = match &res.res_type {
                         ResidueType::Other(name) => name,
@@ -1470,7 +1469,13 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
             let mut dm_loaded = None; // avoids a double-borrow error.
             if let Some(mol) = &mut state.molecule {
-                if ui.button("Save").clicked() {
+                let color = if state.to_save.last_opened.is_none() {
+                    COLOR_ATTENTION
+                } else {
+                    Color32::GRAY
+                };
+
+                if ui.button(RichText::new("Save").color(color)).clicked() {
                     let extension = "cif";
 
                     let filename = {
@@ -1633,7 +1638,13 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             }
 
             if let Some(lig) = &state.ligand {
-                if ui.button("Save lig").clicked() {
+                // Highlight the button if we haven't saved this to file, e.g. if opened from online.
+                let color = if state.to_save.last_ligand_opened.is_none() {
+                    COLOR_ATTENTION
+                } else {
+                    Color32::GRAY
+                };
+                if ui.button(RichText::new("Save lig").color(color)).clicked() {
                     let extension = "mol2"; // The default; more robust than SDF.
 
                     let filename = {
@@ -1645,31 +1656,12 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                         format!("{name}.{extension}")
                     };
 
-                    // state
-                    //     .volatile
-                    //     .dialogs
-                    //     .save_ligand
-                    //     .config_mut()
-                    //     .default_file_name = filename.to_string();
-                    // state.volatile.dialogs.save_ligand.save_file();
-
                     state.volatile.dialogs.save.config_mut().default_file_name =
                         filename.to_string();
 
                     state.volatile.dialogs.save.save_file();
                 }
             }
-
-            // if ui.button("Get RCSB").clicked() {
-            //     match load_pdb_metadata(&mol.ident) {
-            //         Ok(d) => {
-            //             println!("Metadata loaded: {d:?}");
-            //             mol.metadata = Some(d);
-            //             metadata_loaded = true;
-            //         },
-            //         Err(_) => eprintln!("Error getting PDB metadata"),
-            //     }
-            // }
 
             if metadata_loaded {
                 state.update_save_prefs(false);
@@ -1779,6 +1771,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         ui.add_space(ROW_SPACING);
         let mut close_ligand = false; // to avoid borrow error.
+
         if let Some(lig) = &mut state.ligand {
             ui.horizontal(|ui| {
                 mol_descrip(&lig.molecule, ui);
@@ -1866,6 +1859,64 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     }
                 }
             });
+        }
+
+        // If no ligand, provide convenience functionality for loading one based on hetero residues
+        // in the protein.
+        if state.ligand.is_none() {
+            let mut load_data = None; // Avoids dbl-borrow.
+
+            if let Some(mol) = &mut state.molecule {
+                if !mol.het_residues.is_empty() {
+                    ui.horizontal(|ui| {
+                        ui.label("Load Amber Geostd lig from: ").on_hover_text(
+                            "Attempt to load a ligand molecule and force field \
+                            params from a hetero residue included in the protein file.",
+                        );
+
+                        for res in &mol.het_residues {
+                            let name = match &res.res_type {
+                                ResidueType::Other(name) => name,
+                                _ => "hetero residue",
+                            };
+                            if ui
+                                .button(RichText::new(name).color(Color32::GOLD))
+                                .clicked()
+                            {
+                                match amber_geostd::find_mols(&name) {
+                                    Ok(data) => match data.len() {
+                                        0 => handle_err(
+                                            &mut state.ui,
+                                            "Unable to find an Amber molecule for this residue"
+                                                .to_string(),
+                                        ),
+                                        1 => {
+                                            load_data = Some(data[0].clone());
+                                        }
+                                        _ => {
+                                            load_data = Some(data[0].clone());
+                                            eprintln!("More than 1 geostd items available");
+                                        }
+                                    },
+                                    Err(e) => handle_err(
+                                        &mut state.ui,
+                                        format!("Problem loading mol data online: {e:?}"),
+                                    ),
+                                }
+                            }
+                        }
+                    });
+                }
+            }
+
+            // Avoids dbl-borrow
+            if let Some(data) = load_data {
+                handle_success(
+                    &mut state.ui,
+                    format!("Loaded {} from Amber Geostd", data.ident),
+                );
+                state.load_geostd_mol_data(&data.ident, true, data.frcmod_avail, &mut redraw_lig);
+            }
         }
 
         ui.add_space(ROW_SPACING);

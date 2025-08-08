@@ -691,6 +691,13 @@ pub fn handle_err(ui: &mut StateUi, msg: String) {
     ui.cmd_line_out_is_err = true;
 }
 
+/// Utility function that prints to stdout, and the CLI output. Sets the out flag.
+pub fn handle_success(ui: &mut StateUi, msg: String) {
+    println!("{msg}");
+    ui.cmd_line_output = msg;
+    ui.cmd_line_out_is_err = false;
+}
+
 pub fn close_mol(state: &mut State, scene: &mut Scene, engine_updates: &mut EngineUpdates) {
     state.molecule = None;
     state.mol_dynamics = None;

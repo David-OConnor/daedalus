@@ -182,7 +182,7 @@ impl WaterMol {
         let mut f_h1 = Vec3::new_zero();
         let mut f_ep = Vec3::new_zero(); // ← NEW
 
-        // Note: No LJ cacheing for water at this time
+        // Note: No LJ caching for water at this time
         // todo: Figure out a way to cache the water-water LJ interactions at least.
         for src in sources {
             let r = cell.min_image(src.posit - self.o.posit);

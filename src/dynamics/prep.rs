@@ -88,13 +88,24 @@ fn ff_type_from_idx<'a>(
     })
 }
 
-#[derive(PartialEq, Default)]
+#[derive(Default)]
+pub struct HydrogenRigidConstraint {
+    /// Atom indices, of the dynamic set.
+    pub atom_0: usize,
+    pub atom_1: usize,
+    /// A cache vs storing r_0. This is the target distance to maintain.
+    pub r0_sq: f64,
+    /// 1.0 / ai.mass + 1.0 / aj.mass; a cache. Set on the first step.
+    pub inv_mass: Option<f64>,
+}
+
+#[derive(Default)]
 pub enum HydrogenMdType {
     /// Uses Shake and Rattle to fix the hydrogen positions. This allows for a larger timestep,
     /// e.g. 2fs instead of 1fs.
     /// The constraints here are atom indices of each bond to H, and r_0 as defined in the Amber
-    /// param data. (We don't need k_b, as the bond is fixed len).
-    Fixed(Vec<(usize, usize, f64)>),
+    /// param data. (We don't need k_b, as the bond is fixed len). The final value is a cached r_0^2
+    Fixed(Vec<HydrogenRigidConstraint>),
     /// Uses the same bonded parameters as elsewhere: A spring model
     // We ideally would have `Fixed` as the default, but " the `#[default]` attribute may
     // only be used on unit enum variants"
@@ -311,7 +322,12 @@ impl ForceFieldParamsIndexed {
                 if atoms[bond.atom_0].element == Element::Hydrogen
                     || atoms[bond.atom_1].element == Element::Hydrogen
                 {
-                    constraints.push((i0.min(i1), i0.max(i1), data.r_0 as f64));
+                    constraints.push(HydrogenRigidConstraint {
+                        atom_0: i0.min(i1),
+                        atom_1: i0.max(i1),
+                        r0_sq: (data.r_0 as f64).powi(2),
+                        inv_mass: None, // Populated on the first step; we don't have mass yet.
+                    });
                     continue;
                 }
             }

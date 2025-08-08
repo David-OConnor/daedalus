@@ -52,11 +52,16 @@
 //! molecule, and for maintaining Hydrogen atom positions, we do not apply typical non-bonded interactions:
 //! We use SHAKE + RATTLE algorithms for these. In the case of water, it's required for OPC compliance.
 //! For H, it allows us to maintain integrator stability with a greater timestep, e.g. 2fs instead of 1fs.
+//!
+//! On f32 vs f64 floating point precision: f32 may be good enough fo rmost things, and typical MD packages
+//! use mixed precision. Long-range electrostatics are a good candidate for using f64. Or, very long
+//! runs.
 
 // todo: Long-term, you will need to figure out what to run as f32 vice f64, especially
 // todo for being able to run on GPU.
 
 mod ambient;
+mod bonded_forces;
 mod non_bonded;
 pub mod prep;
 mod spme;
@@ -71,7 +76,7 @@ use bio_files::amber_params::{
 use lin_alg::f64::{Vec3, calc_dihedral_angle_v2};
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use lin_alg::f64::{Vec3x4, f64x4};
-use na_seq::Element;
+use na_seq::{Element, Element::Hydrogen};
 use rand_distr::Distribution;
 use rustfft::num_complex::ComplexFloat;
 
@@ -398,7 +403,12 @@ impl MdState {
         for (indices, params) in &self.force_field_params.bond_stretching {
             let (a_0, a_1) = split2_mut(&mut self.atoms, indices.0, indices.1);
 
-            let f = f_bond_stretching(a_0.posit, a_1.posit, params);
+            // todo temp
+            if a_0.element == Hydrogen || a_1.element == Hydrogen {
+                eprintln!("Error: Hydrogen in bond stretching ");
+            }
+
+            let f = bonded_forces::f_bond_stretching(a_0.posit, a_1.posit, params);
 
             // We divide by mass in `step`.
             a_0.accel += f;
@@ -418,7 +428,8 @@ impl MdState {
         for (indices, params) in &self.force_field_params.angle {
             let (a_0, a_1, a_2) = split3_mut(&mut self.atoms, indices.0, indices.1, indices.2);
 
-            let (f_0, f_1, f_2) = f_angle_bending(a_0.posit, a_1.posit, a_2.posit, params);
+            let (f_0, f_1, f_2) =
+                bonded_forces::f_angle_bending(a_0.posit, a_1.posit, a_2.posit, params);
 
             // We divide by mass in `step`.
             a_0.accel += f_0;
@@ -440,177 +451,52 @@ impl MdState {
             &self.force_field_params.dihedral
         };
 
-        for (indices, dihe) in dihedrals {
+        for (indices, params) in dihedrals {
             // Split the four atoms mutably without aliasing
             let (a_0, a_1, a_2, a_3) =
                 split4_mut(&mut self.atoms, indices.0, indices.1, indices.2, indices.3);
 
-            // Convenience aliases for the positions
-            let r_0 = a_0.posit;
-            let r_1 = a_1.posit;
-            let r_2 = a_2.posit;
-            let r_3 = a_3.posit;
-
-            // Bond vectors (see Allen & Tildesley, chap. 4)
-            let b1 = r_1 - r_0; // r_ij
-            let b2 = r_2 - r_1; // r_kj
-            let b3 = r_3 - r_2; // r_lk
-
-            // Normal vectors to the two planes
-            let n1 = b1.cross(b2);
-            let n2 = b3.cross(b2);
-
-            let n1_sq = n1.magnitude_squared();
-            let n2_sq = n2.magnitude_squared();
-            let b2_len = b2.magnitude();
-
-            // Bail out if the four atoms are (nearly) colinear
-            if n1_sq < EPS || n2_sq < EPS || b2_len < EPS {
-                continue;
-            }
-
-            let dihe_measured = calc_dihedral_angle_v2(&(r_0, r_1, r_2, r_3));
-
-            //
-            // let t0_ctrl = Vec3::new(0., 0., 0.);
-            // let t1_ctrl = Vec3::new(0., 1., 0.);
-            // let t2_ctrl = Vec3::new(0., 1., 1.);
-            // let t3_ctrl = Vec3::new(0., 0., 1.);
-            //
-            // let t0 = Vec3::new(43.0860, 40.1400, 24.3300);
-            // let t1 = Vec3::new(43.7610, 40.2040, 25.5530);
-            // let t2 = Vec3::new(42.9660, 40.0070, 26.6810);
-            // let t3 = Vec3::new(41.5800, 39.7650, 26.6550);
-            //
-            // let test_di1 = calc_dihedral_angle_v2(&(t0, t1, t2, t3));
-            // let test_di_ctrl = calc_dihedral_angle_v2(&(t0_ctrl, t1_ctrl, t2_ctrl, t3_ctrl));
-
-            // Note: We have already divided barrier height by the integer divisor when setting up
-            // the Indexed params.
-            let k = dihe.barrier_height as f64;
-            let per = dihe.periodicity as f64;
-
-            let dV_dφ = if improper {
-                2.0 * k * (dihe_measured - dihe.phase as f64)
-            } else {
-                let arg = per * dihe_measured - dihe.phase as f64;
-                -k * per * arg.sin()
-            };
-
-            // if improper && a_2.force_field_type == "cc" && self.step_count < 3000 && self.step_count % 100 == 0 {
-            //     let mut sats = [
-            //         a_0.force_field_type.as_str(),
-            //         a_1.force_field_type.as_str(),
-            //         a_3.force_field_type.as_str(),    // NB: skip the hub (a_2)
-            //     ];
-            //     sats.sort_unstable();
-            //     if sats == ["ca", "cd", "os"] {
-            //     // if (a_0.force_field_type == "ca"
-            //     //     && a_1.force_field_type == "cd"
-            //     //     && a_2.force_field_type == "cc"
-            //     //     && a_3.force_field_type == "os")
-            //     //     || (a_0.force_field_type == "os"
-            //     //     && a_1.force_field_type == "ca"
-            //     //     && a_2.force_field_type == "cd"
-            //     //     && a_3.force_field_type == "cc")
-            //     // {
-            //         println!(
-            //             "\nPosits: {} {:.3}, {} {:.3}, {} {:.3}, {} {:.3}",
-            //             a_0.force_field_type,
-            //             r_0,
-            //             a_1.force_field_type,
-            //             r_1,
-            //             a_2.force_field_type,
-            //             r_2,
-            //             a_3.force_field_type,
-            //             r_3
-            //         );
-            //
-            //         // println!("Test CA dihe: {test_di1:.3} ctrl: {test_di_ctrl:.3}");
-            //         println!(
-            //             // "{:?} - Ms raw: {dihe_measured_2:2} Ms: {:.2} exp: {:.2}/{} dV_dφ: {:.2}",
-            //             "{:?} -  Ms: {:.2} exp: {:.2}/{} dV_dφ: {:.2} . Improper: {improper}",
-            //             &dihe.atom_types,
-            //             dihe_measured / TAU,
-            //             dihe.phase / TAU as f32,
-            //             dihe.periodicity,
-            //             dV_dφ,
-            //         );
-            //     }
-            // }
-
-            // ∂φ/∂r   (see e.g. DOI 10.1016/S0021-9991(97)00040-8)
-            let dφ_dr1 = -n1 * (b2_len / n1_sq);
-            let dφ_dr4 = n2 * (b2_len / n2_sq);
-
-            let dφ_dr2 =
-                -n1 * (b1.dot(b2) / (b2_len * n1_sq)) + n2 * (b3.dot(b2) / (b2_len * n2_sq));
-
-            let dφ_dr3 = -dφ_dr1 - dφ_dr2 - dφ_dr4; // Newton’s third law
-
-            // F_i = −dV/dφ · ∂φ/∂r_i
-            let f0 = -dφ_dr1 * dV_dφ;
-            let f1 = -dφ_dr2 * dV_dφ;
-            let f2 = -dφ_dr3 * dV_dφ;
-            let f3 = -dφ_dr4 * dV_dφ;
-
-            // todo from diagnostic: Can't find it in improper, although there's where the error is showing.
-            if improper {
-                // println!(
-                //     "\nr0: {r_0} r1: {r_1} r2: {r_2} r3: {r_3} N1: {n1} N2: {n2} n1sq: {n1_sq} n2sq: {n2_sq} b2_len: {b2_len}"
-                // );
-                // println!(
-                //     "DIHE: {:?}, dV_dφ: {}, k: {k}, phase: {}",
-                //     dihe_measured, dV_dφ, dihe.phase as f64
-                // );
-                // println!(
-                //     "B3dotB2: {:.3}, b1db2: {:.3}. 1: {}, 2: {}, 3: {}, 4: {}",
-                //     b3.dot(b2),
-                //     b1.dot(b2),
-                //     dφ_dr1,
-                //     dφ_dr2,
-                //     dφ_dr3,
-                //     dφ_dr4
-                // );
-            } else {
-                // println!("\nNOT Improper");
-                // println!("r0: {r_0} r1: {r_1} r2: {r_2} r3: {r_3} N1: {n1} N2: {n2} n1sq: {n1_sq} n2sq: {n2_sq} b2_len: {b2_len}");
-                // println!("DIHE: {:?}, dV_dφ: {}, k: {k}, phase: {}", dihe_measured, dV_dφ, dihe.phase as f64);
-                // println!("B3dotB2: {:.3}, b1db2: {:.3}. 1: {}, 2: {}, 3: {}, 4: {}", b3.dot(b2), b1.dot(b2), dφ_dr1, dφ_dr2, dφ_dr3, dφ_dr4);
-                //
-                // if r_0.x.is_nan() ||  r_1.x.is_nan() ||  r_2.x.is_nan() ||  r_3.x.is_nan() {
-                //     panic!("NaN. a0: {a_0:?}, a1: {a_1:?}, a2: {a_2:?}, a3: {a_3:?}");
-                // }
-            }
+            let (f_0, f_1, f_2, f3) = bonded_forces::f_dihedral(
+                a_0.posit, a_1.posit, a_2.posit, a_3.posit, params, improper,
+            );
 
             // We divide by mass in `step`.
-            a_0.accel += f0;
-            a_1.accel += f1;
-            a_2.accel += f2;
+            a_0.accel += f_0;
+            a_1.accel += f_1;
+            a_2.accel += f_2;
             a_3.accel += f3;
         }
     }
 
     /// Part of our SHAKE + RATTLE algorithms for fixed hydrogens.
     fn shake_hydrogens(&mut self) {
-        let HydrogenMdType::Fixed(constraints) = &self.hydrogen_md_type else {
+        let HydrogenMdType::Fixed(constraints) = &mut self.hydrogen_md_type else {
             unreachable!();
         };
 
         for _ in 0..SHAKE_MAX_IT {
             let mut max_corr: f64 = 0.0;
 
-            for &(i, j, r0) in constraints {
-                let (ai, aj) = split2_mut(&mut self.atoms, i, j);
+            for data in &mut *constraints {
+                let (ai, aj) = split2_mut(&mut self.atoms, data.atom_0, data.atom_1);
 
                 let diff = aj.posit - ai.posit;
                 let dist_sq = diff.magnitude_squared();
 
-                // todo: Cache?
-                let inv_m = 1.0 / ai.mass + 1.0 / aj.mass;
+                // println!("Diff: {:.3}", dist_sq);
+
+                // On step 0, cache.
+                let inv_m = match data.inv_mass {
+                    Some(inv_m) => inv_m,
+                    None => {
+                        let m = 1. / ai.mass + 1. / aj.mass;
+                        data.inv_mass = Some(m);
+                        m
+                    }
+                };
 
                 // λ = (r² − r₀²) / (2·inv_m · r_ij·r_ij)
-                let lambda = (dist_sq - r0 * r0) / (2.0 * inv_m * dist_sq.max(EPS));
+                let lambda = (dist_sq - data.r0_sq) / (2.0 * inv_m * dist_sq.max(EPS));
                 let corr = diff * lambda; // vector correction
 
                 ai.posit += corr / ai.mass;
@@ -633,17 +519,20 @@ impl MdState {
         };
 
         // RATTLE on velocities so that d/dt(|r|²)=0  ⇒  v_ij · r_ij = 0
-        for &(i, j, _r0) in constraints {
-            let (ai, aj) = split2_mut(&mut self.atoms, i, j);
+        for data in constraints {
+            // println!("RATTLE: {:?}", (i, j, _r0));
+            let (ai, aj) = split2_mut(&mut self.atoms, data.atom_0, data.atom_1);
 
-            let rij = aj.posit - ai.posit;
-            let vij = aj.vel - ai.vel;
-            let r2 = rij.magnitude_squared();
-            let inv_m = 1.0 / ai.mass + 1.0 / aj.mass;
+            let r_meas = aj.posit - ai.posit;
+            let v_meas = aj.vel - ai.vel;
+            let r_sq = r_meas.magnitude_squared();
+
+            // This will have already been set in the step 0 SHAKE step.
+            let inv_mass = data.inv_mass.unwrap();
 
             // λ' = (v_ij·r_ij) / (inv_m · r_ij·r_ij)
-            let lambda_p = vij.dot(rij) / (inv_m * r2.max(EPS));
-            let corr_v = rij * lambda_p;
+            let lambda_p = v_meas.dot(r_meas) / (inv_mass * r_sq.max(EPS));
+            let corr_v = r_meas * lambda_p;
 
             ai.vel += corr_v / ai.mass;
             aj.vel -= corr_v / aj.mass;
@@ -766,68 +655,4 @@ pub fn split4_mut<T>(
             &mut *base.add(i3),
         )
     }
-}
-
-/// Returns the force on the atom at position 0. Negate this for the force on posit 1.
-pub fn f_bond_stretching(posit_0: Vec3, posit_1: Vec3, params: &BondStretchingParams) -> Vec3 {
-    let diff = posit_1 - posit_0;
-    let r_meas = diff.magnitude();
-
-    let r_delta = r_meas - params.r_0 as f64;
-
-    // Note: We include the factor of 2x k_b when setting up indexed parameters.
-    // Unit check: kcal/mol/Å² * Å² = kcal/mol. (Energy).
-    let f_mag = params.k_b as f64 * r_delta / r_meas.max(EPS);
-    diff * f_mag
-}
-
-/// Valence angle; angle between 3 atoms.
-pub fn f_angle_bending(
-    posit_0: Vec3,
-    posit_1: Vec3,
-    posit_2: Vec3,
-    params: &AngleBendingParams,
-) -> (Vec3, Vec3, Vec3) {
-    // Bond vectors with atom 1 at the vertex.
-    let bond_vec_01 = posit_0 - posit_1;
-    let bond_vec_21 = posit_2 - posit_1;
-
-    let b_vec_01_sq = bond_vec_01.magnitude_squared();
-    let b_vec_21_sq = bond_vec_21.magnitude_squared();
-
-    // Quit early if atoms are on top of each other
-    if b_vec_01_sq < EPS || b_vec_21_sq < EPS {
-        return (Vec3::new_zero(), Vec3::new_zero(), Vec3::new_zero());
-    }
-
-    let b_vec_01_len = b_vec_01_sq.sqrt();
-    let b_vec_21_len = b_vec_21_sq.sqrt();
-
-    let inv_ab = 1.0 / (b_vec_01_len * b_vec_21_len);
-
-    let cos_θ = (bond_vec_01.dot(bond_vec_21) * inv_ab).clamp(-1.0, 1.0);
-    let sin_θ_sq = 1.0 - cos_θ * cos_θ;
-
-    if sin_θ_sq < EPS {
-        // θ = 0 or τ; gradient ill-defined
-        return (Vec3::new_zero(), Vec3::new_zero(), Vec3::new_zero());
-    }
-
-    // Measured angle, and its deviation from the parameter angle.
-    let θ = cos_θ.acos();
-    let Δθ = params.theta_0 as f64 - θ;
-    // Note: We include the factor of 2x k when setting up indexed parameters.
-    let dV_dθ = params.k as f64 * Δθ; // dV/dθ
-
-    let c = bond_vec_01.cross(bond_vec_21); // n  ∝  r_ij × r_kj
-    let c_len2 = c.magnitude_squared(); // |n|^2
-
-    let geom_i = (c.cross(bond_vec_01) * b_vec_21_len) / c_len2;
-    let geom_k = (bond_vec_21.cross(c) * b_vec_01_len) / c_len2;
-
-    let f_0 = -geom_i * dV_dθ;
-    let f_2 = -geom_k * dV_dθ;
-    let f_1 = -(f_0 + f_2);
-
-    (f_0, f_1, f_2)
 }

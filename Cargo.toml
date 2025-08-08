@@ -12,7 +12,7 @@ egui-file-dialog = "0.11.0" #  For file dialogs.
 
 cfg-if = "1.0.1"
 
-lin_alg = { version = "1.3.0", features = ["encode"] }
+lin_alg = { version = "1.3.1", features = ["encode"] }
 barnes_hut = { version = "1.0.8"}  # enc temp rem
 na_seq = "0.3.1"
 bio_apis = {  version = "0.1.6", features = ["encode"] }
@@ -31,7 +31,8 @@ rayon = "1.10.0"  # Parallel execution on CPU using thread pools.
 # on dynamic linking vs loading, and CUDA version. CUDA versions higher than the specified version
 # will work, so set a reasonably low version.
 # Note: Dynamic linking not working.
-cudarc = { version = "0.17.1", features = ["cuda-12060"], optional=true }
+#cudarc = { version = "0.17.2", features = ["cuda-12060"], optional=true }
+cudarc = { version = "0.17.2", features = ["cuda-13000"], optional=true }
 
 # These are the default features, with dynamic-loading replaced by dynamic-linking.
 #cudarc = { version = "0.16.4", features = [

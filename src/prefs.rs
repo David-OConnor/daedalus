@@ -219,8 +219,6 @@ impl State {
                     lig.atom_posits = data.lig_atom_positions.clone();
 
                     lig.pose.conformation_type = ConformationType::AbsolutePosits;
-
-                    println!("Loading lig atom posits: {:?}", lig.atom_posits);
                 }
 
                 if let Some(md) = &data.metadata {

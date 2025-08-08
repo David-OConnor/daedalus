@@ -41,7 +41,6 @@ mod util;
 
 mod cli;
 mod dynamics;
-mod integrate;
 mod reflection;
 
 mod ui_aux;

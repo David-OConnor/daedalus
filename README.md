@@ -232,11 +232,14 @@ Unpack, and place these under `resources`.
 
 If you're not running on a machine with an nvidia GPU or without CUDA installed, append the `--no-default-features` to the build command.
 
-Note: If using CUDA, you must set the environment var `LD_LIBARARY_PATH` to your CUDA bin directory,
-e.g. `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0\bin`
+Note: If using CUDA, you must set the environment var `LD_LIBARARY_PATH` (Linux) or `PATH` (Windows) to your CUDA bin
+directory, e.g. `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0\bin`.
+
+CUDA v13.0 or higher must be installed on the machine that compiles if compiling with CUDA. TBD on if you need a CUDA
+toolkit installed on the machine running it.
 
 
-### Erratta
+### Errata
 - Ribbon (cartoon) view is currently unavailable.
 - Opening a molecule by drag + drop may not work until minimizing/unminimizing the program
 - Loading map files that are very large (e.g. high detail, especially Map files directly available

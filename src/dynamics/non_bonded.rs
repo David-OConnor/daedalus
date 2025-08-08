@@ -54,8 +54,6 @@ impl MdState {
     /// If you prefer to avoid the extra pass, an alternative is to put the charges of a 1-4 pair into different mesh charge groups and annul their contribution in reciprocal space, but that is more intrusive.
     /// "
     pub fn apply_nonbonded_forces(&mut self) {
-        const EPS: f64 = 1e-6;
-
         // An approximation to simplify which water molecules are close enough to interact
         // with the ligand: Each X steps, we measure the distance between each molecule,
         // and an arbitrary ligand atom; this takes advanate of the ligand being small.

@@ -1212,11 +1212,14 @@ impl Molecule {
     /// `atoms` here should be the full set, as indexed by `res`, unless `use_sns` is true.
     /// `use_sns` = false is faster.
     ///
-    /// We assume the residue is already populate with hydrogens.
+    /// We assume the residue is already populated with hydrogens.
+    ///
+    /// We reposition its atoms to be around the origin.
     /// todo: How do we get partial charge and ff type? We normally *get* those from Amber-provided
-    /// todo Mol2 files.
+    /// todo Mol2 files. If we do this from an AA, it works, but it doesn't from hereo residues.
+    ///
     pub fn from_res(res: &Residue, atoms: &[Atom], use_sns: bool) -> Self {
-        let atoms_this: Vec<_> = if use_sns {
+        let mut atoms_this: Vec<_> = if use_sns {
             unimplemented!()
         } else {
             res.atoms
@@ -1231,6 +1234,14 @@ impl Molecule {
                 })
                 .collect()
         };
+
+        // Reposition atoms so they're near the origin.
+        if !atoms_this.is_empty() {
+            let move_vec = atoms_this[0].posit;
+            for atom in &mut atoms_this {
+                atom.posit -= move_vec;
+            }
+        }
 
         // This allows saving as Mol2, for example, with residue types, without breaking
         // bindings

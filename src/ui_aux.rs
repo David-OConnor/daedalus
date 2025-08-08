@@ -384,7 +384,7 @@ pub fn md_setup(
                 if ui
                     .button(
                         RichText::new(format!("Make lig from {}", res.res_type))
-                            .color(COLOR_HIGHLIGHT),
+                            .color(Color32::GOLD),
                     )
                     .on_hover_text(
                         "Create a ligand from this residue on the peptide. This can be \
@@ -392,6 +392,8 @@ pub fn md_setup(
                     )
                     .clicked()
                 {
+                    let res_type = res.res_type.clone(); // Avoids dbl-borrow.
+
                     let mol_fm_res = Molecule::from_res(res, &mol.atoms, false);
                     let mut lig = Ligand::new(mol_fm_res, &state.ff_params.lig_specific);
                     state.mol_dynamics = None;
@@ -401,14 +403,25 @@ pub fn md_setup(
 
                     state.update_save_prefs(false);
                     set_docking_light(scene, Some(&lig.docking_site));
+
                     engine_updates.lighting = true;
                     *redraw_lig = true;
 
+                    // If creating from an AA, move to the origin (Where we assigned its atom positions).
+                    // If from a hetero atom, leave it in place.
+                    match &res_type {
+                        ResidueType::AminoAcid(_) => {
+                            lig.reset_posits();
+                        }
+                        _ => {
+                            state.ui.visibility.hide_hetero = true;
+                        }
+                    }
                     state.ligand = Some(lig);
 
-                    // Make it clear that we've added the ligand by showing it, and hiding hetero.
+                    // Make it clear that we've added the ligand by showing it, and hiding hetero (if creating from Hetero)
                     state.ui.visibility.hide_ligand = false;
-                    state.ui.visibility.hide_hetero = true;
+
                 }
             }
         }
