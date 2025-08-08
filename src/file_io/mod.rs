@@ -61,6 +61,7 @@ impl State {
         Ok(())
     }
 
+    // todo: See notes eleswhere on `on_init`.
     pub fn open_molecule(&mut self, path: &Path) -> io::Result<()> {
         let binding = path.extension().unwrap_or_default().to_ascii_lowercase();
         let extension = binding;
@@ -250,7 +251,7 @@ impl State {
         self.load_density(dm);
 
         self.to_save.last_map_opened = Some(path.to_owned());
-        self.update_save_prefs();
+        self.update_save_prefs(false);
 
         Ok(())
     }
@@ -331,7 +332,7 @@ impl State {
                 }
 
                 self.to_save.last_frcmod_opened = Some(path.to_owned());
-                self.update_save_prefs();
+                self.update_save_prefs(false);
 
                 println!("Loaded molecule-specific force fields.");
             }
@@ -362,7 +363,7 @@ impl State {
                 if let Some(data) = &mut self.cif_pdb_raw {
                     fs::write(path, data)?;
                     self.to_save.last_opened = Some(path.to_owned());
-                    self.update_save_prefs()
+                    self.update_save_prefs(false)
                 }
             }
             "sdf" => match &self.ligand {
@@ -370,7 +371,7 @@ impl State {
                     lig.molecule.to_sdf().save(path)?;
 
                     self.to_save.last_ligand_opened = Some(path.to_owned());
-                    self.update_save_prefs()
+                    self.update_save_prefs(false)
                 }
                 None => return Err(io::Error::new(ErrorKind::InvalidData, "No ligand to save")),
             },
@@ -379,7 +380,7 @@ impl State {
                     lig.molecule.to_mol2().save(path)?;
 
                     self.to_save.last_ligand_opened = Some(path.to_owned());
-                    self.update_save_prefs()
+                    self.update_save_prefs(false)
                 }
                 None => return Err(io::Error::new(ErrorKind::InvalidData, "No ligand to save")),
             },
@@ -387,7 +388,7 @@ impl State {
                 Some(lig) => {
                     lig.molecule.save_pdbqt(path, None)?;
                     self.to_save.last_ligand_opened = Some(path.to_owned());
-                    self.update_save_prefs()
+                    self.update_save_prefs(false)
                 }
                 None => return Err(io::Error::new(ErrorKind::InvalidData, "No ligand to save")),
             },
@@ -540,7 +541,7 @@ impl State {
                     }
                 }
 
-                if let Some(lib) = data.lib {
+                if let Some(_lib) = data.lib {
                     println!("todo: Lib data available from geostd; download?");
                 }
 

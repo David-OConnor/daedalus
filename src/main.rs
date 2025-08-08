@@ -612,14 +612,5 @@ fn main() {
         );
     }
 
-    // todo temp
-    // state
-    //     .open(&PathBuf::from_str("molecules/CPB.frcmod").unwrap())
-    //     .unwrap();
-
-    // todo temp
-    // let mtz = load_mtz(&PathBuf::from_str("../../../Desktop/1fat_2fo.mtz").unwrap());
-    // println!("MTZ: {:?}", mtz);
-
     render(state);
 }

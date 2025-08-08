@@ -29,7 +29,7 @@ use bio_files::{
         AngleBendingParams, BondStretchingParams, ForceFieldParamsKeyed, MassParams, VdwParams,
     },
 };
-#[cfg(features = "cuda")]
+#[cfg(feature = "cuda")]
 use cudarc::driver::HostSlice;
 use itertools::Itertools;
 use lin_alg::f64::Vec3;
@@ -88,6 +88,20 @@ fn ff_type_from_idx<'a>(
     })
 }
 
+#[derive(PartialEq, Default)]
+pub enum HydrogenMdType {
+    /// Uses Shake and Rattle to fix the hydrogen positions. This allows for a larger timestep,
+    /// e.g. 2fs instead of 1fs.
+    /// The constraints here are atom indices of each bond to H, and r_0 as defined in the Amber
+    /// param data. (We don't need k_b, as the bond is fixed len).
+    Fixed(Vec<(usize, usize, f64)>),
+    /// Uses the same bonded parameters as elsewhere: A spring model
+    // We ideally would have `Fixed` as the default, but " the `#[default]` attribute may
+    // only be used on unit enum variants"
+    #[default]
+    Flexible,
+}
+
 /// Associate loaded Force field data (e.g. from Amber) into the atom indices used in a specific
 /// dynamics sim. This handles combining general and molecule-specific parameter sets, and converting
 /// between atom name, and the specific indices of the atoms we're using.
@@ -101,6 +115,9 @@ impl ForceFieldParamsIndexed {
         atoms: &[Atom],
         bonds: &[Bond],
         adjacency_list: &[Vec<usize>],
+        // Mutable, since we load the hydrogen r0s into it, instead of adding bond stretching params
+        // in case of fixed hydrogen.
+        hydrogen_md_type: &mut HydrogenMdType,
     ) -> Result<Self, ParamError> {
         let mut result = Self::default();
 
@@ -164,7 +181,6 @@ impl ForceFieldParamsIndexed {
                         }
                     }
                 } else if ff_type.starts_with("N") {
-                    println!("TS. {atom}");
                     match params.mass.get("N") {
                         Some(m) => {
                             result.mass.insert(i, m.clone());
@@ -260,6 +276,7 @@ impl ForceFieldParamsIndexed {
         // Bond lengths.
         for bond in bonds {
             let (i0, i1) = (bond.atom_0, bond.atom_1);
+
             let type_0 = ff_type_from_idx(atoms, i0, "Bond")?;
             let type_1 = ff_type_from_idx(atoms, i1, "Bond")?;
 
@@ -287,6 +304,17 @@ impl ForceFieldParamsIndexed {
                 );
                 continue;
             };
+
+            // If using fixed hydrogens, don't add these to our bond stretching params;
+            // add to a separate hydrogen rigid param variable.
+            if let HydrogenMdType::Fixed(constraints) = hydrogen_md_type {
+                if atoms[bond.atom_0].element == Element::Hydrogen
+                    || atoms[bond.atom_1].element == Element::Hydrogen
+                {
+                    constraints.push((i0.min(i1), i0.max(i1), data.r_0 as f64));
+                    continue;
+                }
+            }
 
             // This prevents multiplying by 2 each computation at runtime.
             data.k_b *= 2.0;
@@ -481,6 +509,8 @@ impl MdState {
         lig_ident: &str,
         // todo: Temperature/thermostat.
     ) -> Result<Self, ParamError> {
+        let mut hydrogen_md_type = HydrogenMdType::Fixed(Vec::new());
+
         let Some(ff_params_lig_keyed) = &ff_params.lig_general else {
             return Err(ParamError::new("MD failure: Missing lig general params"));
         };
@@ -506,6 +536,7 @@ impl MdState {
             atoms,
             bonds,
             adjacency_list,
+            &mut hydrogen_md_type,
         )?;
 
         // This assumes nonbonded interactions only with external atoms; this is fine for
@@ -520,6 +551,7 @@ impl MdState {
             atoms_static,
             &bonds_static,
             &adj_list_static,
+            &mut hydrogen_md_type,
         )?;
 
         // We are using this approach instead of `.into`, so we can use the atom_posits from
@@ -578,6 +610,7 @@ impl MdState {
             nonbonded_scaled: HashSet::new(),
             force_field_params: ff_params_non_static,
             temp_target,
+            hydrogen_md_type,
             ..Default::default()
         };
 
@@ -604,6 +637,8 @@ impl MdState {
         temp_target: f64,
         // todo: Thermostat.
     ) -> Result<Self, ParamError> {
+        let mut hydrogen_md_type = HydrogenMdType::Fixed(Vec::new());
+
         let Some(ff_params_prot_keyed) = &ff_params.prot_general else {
             return Err(ParamError::new(
                 "MD failure: Missing prot params general params",
@@ -652,6 +687,7 @@ impl MdState {
             &atoms,
             &bonds_filtered,
             &adjacency_list,
+            &mut hydrogen_md_type,
         )?;
 
         let mut atoms_dy = Vec::with_capacity(atoms.len());
@@ -692,6 +728,7 @@ impl MdState {
             nonbonded_scaled: HashSet::new(),
             force_field_params: ff_params_non_static,
             temp_target,
+            hydrogen_md_type,
             ..Default::default()
         };
 

@@ -392,7 +392,7 @@ pub fn check_prefs_save(state: &mut State) {
         if let Some(last_save) = LAST_PREF_SAVE {
             if (now - last_save).as_secs() > PREFS_SAVE_INTERVAL {
                 LAST_PREF_SAVE = Some(now);
-                state.update_save_prefs()
+                state.update_save_prefs(false)
             }
         } else {
             // Initialize LAST_PREF_SAVE the first time it's accessed
@@ -634,7 +634,7 @@ pub fn save_snap(state: &mut State, cam: &Camera, name: &str) {
 
     state.ui.cam_snapshot = Some(state.cam_snapshots.len() - 1);
 
-    state.update_save_prefs();
+    state.update_save_prefs(false);
 }
 
 // The snap must be set in state.ui.cam_snapshot ahead of calling this.
@@ -707,7 +707,7 @@ pub fn close_mol(state: &mut State, scene: &mut Scene, engine_updates: &mut Engi
     state.to_save.last_map_opened = None;
     state.volatile.aa_seq_text = String::new();
 
-    state.update_save_prefs();
+    state.update_save_prefs(false);
 
     engine_updates.entities = true;
 }
@@ -721,7 +721,7 @@ pub fn close_lig(state: &mut State, scene: &mut Scene, engine_updates: &mut Engi
     engine_updates.entities = true;
 
     state.to_save.last_ligand_opened = None;
-    state.update_save_prefs();
+    state.update_save_prefs(false);
 }
 
 /// Populdate the electron-density mesh (isosurface). This assumes the density_rect is already set up.
@@ -866,7 +866,7 @@ pub fn handle_scene_flags(
     if state.volatile.mol_pending_data_avail.is_some() {
         if let Some(mol) = &mut state.molecule {
             if mol.poll_data_avail(&mut state.volatile.mol_pending_data_avail) {
-                state.update_save_prefs();
+                state.update_save_prefs(false);
             }
         }
     }

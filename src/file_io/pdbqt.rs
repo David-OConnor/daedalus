@@ -192,21 +192,9 @@ impl Molecule {
                     dock_type,
                 });
             } else if record_type == "CRYST1" {
-                let unit_cell_dims = UnitCellDims {
-                    a: parse_f32(line[6..15].trim()).unwrap_or_default(),
-                    b: parse_f32(line[15..24].trim()).unwrap_or_default(),
-                    c: parse_f32(line[24..33].trim()).unwrap_or_default(),
-                    alpha: parse_f32(line[33..40].trim()).unwrap_or_default(),
-                    beta: parse_f32(line[40..47].trim()).unwrap_or_default(),
-                    gamma: parse_f32(line[47..54].trim()).unwrap_or_default(),
-                };
-
                 if ligand.is_none() {
                     ligand = Some(Default::default());
                 }
-
-                ligand.as_mut().unwrap().unit_cell_dims = unit_cell_dims;
-
                 // todo: What to do with this?
             } else {
                 // handle other records if you like, e.g. REMARK, BRANCH, etc.

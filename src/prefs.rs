@@ -95,7 +95,7 @@ pub struct PerMolToSave {
 }
 
 impl PerMolToSave {
-    pub fn from_state(state: &State) -> Self {
+    pub fn from_state(state: &State, on_init: bool) -> Self {
         let mut chain_vis = Vec::new();
         let mut metadata = None;
         let mut rcsb_data = None;
@@ -122,9 +122,16 @@ impl PerMolToSave {
         if let Some(lig) = &state.ligand {
             docking_site = lig.docking_site.clone();
             lig_posit = lig.pose.anchor_posit;
-            lig_atom_positions = lig.atom_posits.clone();
-            if !lig.atom_posits.is_empty() {
-                println!("\nSaving atom posits: {:?}", lig.atom_posits[0]); // todo temp
+
+            // Don't save this if on init; the data in lig is the default,
+            // and we haven't loaded the posits to it yet.
+            // todo: If you find a more robust way to handle saving order-dependent data,
+            // todo: remove this.
+            if !on_init {
+                lig_atom_positions = lig.atom_posits.clone();
+                if !lig.atom_posits.is_empty() {
+                    println!("\nSaving atom posits: {:?}", lig.atom_posits[0]); // todo temp
+                }
             }
         }
 
@@ -165,10 +172,11 @@ impl State {
     }
 
     /// Update when prefs change, periodically etc.
-    pub fn update_save_prefs(&mut self) {
+    /// todo: See the note in PerMolsave::from_state. Workaround for order-related bugs.
+    pub fn update_save_prefs(&mut self, on_init: bool) {
         println!("Saving state to prefs file.");
         if let Some(mol) = &self.molecule {
-            let data = PerMolToSave::from_state(self);
+            let data = PerMolToSave::from_state(self, on_init);
 
             self.to_save.per_mol.insert(mol.ident.clone(), data);
         }
@@ -183,7 +191,7 @@ impl State {
 
     /// Run this when prefs, or a new molecule are loaded.
     pub fn update_from_prefs(&mut self) {
-        println!("Updating state from prefs data.");
+        println!("Updating state from prefs data");
         self.reset_selections();
 
         let mut center = Vec3::new_zero();
@@ -210,7 +218,6 @@ impl State {
                     lig.docking_site.site_center = data.docking_site_posit; // todo: Or docking site?
                     lig.atom_posits = data.lig_atom_positions.clone();
 
-                    // todo temp. Should save conf type too.
                     lig.pose.conformation_type = ConformationType::AbsolutePosits;
 
                     println!("Loading lig atom posits: {:?}", lig.atom_posits);

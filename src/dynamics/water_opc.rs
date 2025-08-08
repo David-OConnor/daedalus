@@ -15,6 +15,7 @@
 //!
 //! We integrate the moceule's internal rigid geometry using the `SETTLE` algorithm. This is likely
 //! to be cheaper, and more robust than Shake/Rattle. It's less general, but it works here.
+//! Settle is specifically tailored for three-atom rigid bodies..
 
 use std::{collections::HashMap, f64::consts::TAU};
 
@@ -425,7 +426,7 @@ pub fn make_water_mols(
 /// Works for any bond length / HOH angle, so it’s fine for OPC.
 /// Uses O as the pivot.
 ///
-/// All distances & masses are in MD internal units (Å, ps, amu, kcal/mol).
+/// All distances & masses are in MD internal units (Å, ps, amu, kcal/mol).
 fn settle_opc(o: &mut AtomDynamics, h0: &mut AtomDynamics, h1: &mut AtomDynamics, dt: f64) {
     // Can't use cos in a const.
     // const CSOHOH: f64 = -0.2351421131025898;

@@ -50,7 +50,7 @@
 //!
 //! We use the OPC water model. (See `water_opc.rs`). For both maintaining the geometry of each water
 //! molecule, and for maintaining Hydrogen atom positions, we do not apply typical non-bonded interactions:
-//! we use (Shake/rattle/settle?) for these. In the case of water, it's required for OPC compliance.
+//! We use Shake + Rattle algorithms for these. In the case of water, it's required for OPC compliance.
 //! For H, it allows us to maintain integrator stability with a greater timestep, e.g. 2fs instead of 1fs.
 
 // todo: Long-term, you will need to figure out what to run as f32 vice f64, especially
@@ -76,7 +76,10 @@ use rand_distr::Distribution;
 use rustfft::num_complex::ComplexFloat;
 
 use crate::{
-    dynamics::{ambient::BerendsenBarostat, non_bonded::CHARGE_UNIT_SCALER, water_opc::WaterMol},
+    dynamics::{
+        ambient::BerendsenBarostat, non_bonded::CHARGE_UNIT_SCALER, prep::HydrogenMdType,
+        water_opc::WaterMol,
+    },
     molecule::Atom,
 };
 
@@ -103,6 +106,10 @@ const EPS: f64 = 1.0e-8;
 /// accelerations by this.
 /// todo: Or is it 4.184e-4;?
 const ACCEL_CONVERSION: f64 = 418.4;
+
+// These Shake constraints are for fixed hydrogens.
+const SHAKE_TOL: f64 = 1.0e-4; // Å
+const SHAKE_MAX_IT: usize = 100;
 
 #[derive(Debug)]
 pub struct ParamError {
@@ -314,6 +321,7 @@ pub struct MdState {
     /// atom type: Water's O.
     /// todo: You could even use indices.
     lj_table_water: HashMap<usize, (f64, f64)>,
+    hydrogen_md_type: HydrogenMdType,
 }
 
 impl MdState {
@@ -345,6 +353,10 @@ impl MdState {
         self.apply_dihedral_forces(true);
 
         self.apply_nonbonded_forces();
+
+        if let HydrogenMdType::Fixed(_) = &self.hydrogen_md_type {
+            self.constrain_hydrogens();
+        }
 
         // Second half-kick using new accelerations, and update accelerations using the atom's mass;
         // up to this point, the accelerations have been missing that step; this is an optimization to
@@ -609,6 +621,55 @@ impl MdState {
             a_1.accel += f1;
             a_2.accel += f2;
             a_3.accel += f3;
+        }
+    }
+
+    /// Apply our rigid Shake + Rattle constraints on hydrogens.
+    fn constrain_hydrogens(&mut self) {
+        let HydrogenMdType::Fixed(constraints) = &self.hydrogen_md_type else {
+            unreachable!();
+        };
+
+        // SHAKE on positions
+        for _ in 0..SHAKE_MAX_IT {
+            let mut max_corr: f64 = 0.0;
+
+            for &(i, j, r0) in constraints {
+                let (ai, aj) = split2_mut(&mut self.atoms, i, j);
+
+                let rij = aj.posit - ai.posit;
+                let r2 = rij.magnitude_squared();
+                let inv_m = 1.0 / ai.mass + 1.0 / aj.mass;
+
+                // λ = (r² − r₀²) / (2·inv_m · r_ij·r_ij)
+                let lambda = (r2 - r0 * r0) / (2.0 * inv_m * r2.max(EPS));
+                let corr = rij * lambda; // vector correction
+
+                ai.posit += corr / ai.mass;
+                aj.posit -= corr / aj.mass;
+
+                max_corr = max_corr.max(corr.magnitude());
+            }
+            if max_corr < SHAKE_TOL {
+                break;
+            } // converged
+        }
+
+        // RATTLE on velocities so that d/dt(|r|²)=0  ⇒  v_ij · r_ij = 0
+        for &(i, j, _r0) in constraints {
+            let (ai, aj) = split2_mut(&mut self.atoms, i, j);
+
+            let rij = aj.posit - ai.posit;
+            let vij = aj.vel - ai.vel;
+            let r2 = rij.magnitude_squared();
+            let inv_m = 1.0 / ai.mass + 1.0 / aj.mass;
+
+            // λ' = (v_ij·r_ij) / (inv_m · r_ij·r_ij)
+            let lambda_p = vij.dot(rij) / (inv_m * r2.max(EPS));
+            let corr_v = rij * lambda_p;
+
+            ai.vel += corr_v / ai.mass;
+            aj.vel -= corr_v / aj.mass;
         }
     }
 

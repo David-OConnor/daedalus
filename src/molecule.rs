@@ -343,21 +343,21 @@ impl Display for AtomRole {
 pub struct Ligand {
     /// Molecule atom positions remain relative.
     pub molecule: Molecule,
-    /// Absolute atom positions. For absolute conformation type[s], these positions are set adn accessed directly, e.g. by MD
-    /// simulations. We leave the molecule atom positions as ingested directly from data files. (e.g. relative positions).
+    /// Absolute atom positions. For absolute conformation type[s], these positions are set and accessed directly, e.g., by MD
+    /// simulations. We leave the molecule atom positions as ingested directly from data files. (e.g., relative positions).
     /// For rigid and semi-rigid conformations, these are derivative of the pose, in conjunction with
     /// the molecule atoms' (relative) positions.
+    /// Note: Alternatively, we could make this an option, and use the atom.posit fields directly if None.
     pub atom_posits: Vec<Vec3>,
     pub anchor_atom: usize, // Index.
     /// Note: We may deprecate this in favor of our Amber MD-based approach to flexibility.
     pub flexible_bonds: Vec<usize>, // Index
     pub pose: Pose,
     pub docking_site: DockingSite,
-    pub unit_cell_dims: UnitCellDims, // todo: Unused
     /// FF type and partial charge on all atoms. Quick lookup flag.
     pub ff_params_loaded: bool,
-    /// E.g. overrides for dihedral angles for this specific ligand, as provided by Amber.
-    /// Quick loopup flag.
+    /// E.g., overrides for dihedral angles for this specific ligand, as provided by Amber.
+    /// Quick lookup flag.
     pub frcmod_loaded: bool,
     /// E.g. loaded proteins from Pubchem.
     pub associated_structures: Vec<ProteinStructure>,

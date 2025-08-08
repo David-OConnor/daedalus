@@ -399,7 +399,7 @@ pub fn md_setup(
                     let docking_center = move_lig_to_res(&mut lig, mol, res);
                     state.update_docking_site(docking_center);
 
-                    state.update_save_prefs();
+                    state.update_save_prefs(false);
                     set_docking_light(scene, Some(&lig.docking_site));
                     engine_updates.lighting = true;
                     *redraw_lig = true;

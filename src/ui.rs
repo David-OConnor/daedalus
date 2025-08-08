@@ -191,7 +191,7 @@ fn cam_snapshots(
                 state.cam_snapshots.remove(i);
             }
             state.ui.cam_snapshot = None;
-            state.update_save_prefs();
+            state.update_save_prefs(false);
         }
     }
 
@@ -824,7 +824,7 @@ fn docking(
 
     if let Some(posit) = docking_posit_update {
         state.update_docking_site(posit);
-        state.update_save_prefs();
+        state.update_save_prefs(false);
     }
 }
 
@@ -1335,7 +1335,7 @@ fn settings(state: &mut State, scene: &mut Scene, ui: &mut Ui) {
                 });
 
             if state.to_save.msaa != msaa_prev {
-                state.update_save_prefs();
+                state.update_save_prefs(false);
             }
 
             ui.add_space(COL_SPACING);
@@ -1348,7 +1348,7 @@ fn settings(state: &mut State, scene: &mut Scene, ui: &mut Ui) {
                     state.to_save.movement_speed = *v;
                     scene.input_settings.move_sens = *v as f32;
 
-                    state.update_save_prefs();
+                    state.update_save_prefs(false);
                 } else {
                     // reset
                     state.ui.movement_speed_input = state.to_save.movement_speed.to_string();
@@ -1365,7 +1365,7 @@ fn settings(state: &mut State, scene: &mut Scene, ui: &mut Ui) {
                     state.to_save.rotation_sens = *v;
                     scene.input_settings.rotate_sens = *v as f32 / 100.;
 
-                    state.update_save_prefs();
+                    state.update_save_prefs(false);
                 } else {
                     // reset
                     state.ui.rotation_sens_input = state.to_save.rotation_sens.to_string();
@@ -1382,7 +1382,7 @@ fn settings(state: &mut State, scene: &mut Scene, ui: &mut Ui) {
                 state.ui.rotation_sens_input = state.to_save.rotation_sens.to_string();
                 scene.input_settings.rotate_sens = ROTATE_SENS;
 
-                state.update_save_prefs();
+                state.update_save_prefs(false);
             }
         });
 
@@ -1672,7 +1672,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             // }
 
             if metadata_loaded {
-                state.update_save_prefs();
+                state.update_save_prefs(false);
             }
 
             ui.add_space(COL_SPACING);
