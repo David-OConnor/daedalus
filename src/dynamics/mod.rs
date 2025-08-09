@@ -626,18 +626,22 @@ impl MdState {
         // todo: Temporarily removed water-water interactions; getting a very slow simulation,
         // todo, and NaN propogation. Troubleshoot this later. Skipping this may be OK, compared
         // todo to not using water.
-        let sources_on_water: Vec<AtomDynamics> =
-            // [&self.atoms[..], &self.atoms_static[..], &water_dyn[..]].concat();
-            [&self.atoms[..], &self.atoms_static[..]].concat();
+        // let sources_on_water: Vec<AtomDynamics> =
+        //     // [&self.atoms[..], &self.atoms_static[..], &water_dyn[..]].concat();
+        //     [&self.atoms[..], &self.atoms_static[..]].concat();
 
-        for water in &mut self.water {
+        for (i_tgt, water) in self.water.iter_mut().enumerate() {
             water.step(
                 dt,
-                &sources_on_water,
+                &self.atoms,
+                &self.atoms_static,
+                &self.water,
+                &self.neighbors_nb,
                 &self.cell,
                 &mut self.lj_table,
                 &mut self.lj_table_static,
                 &mut self.lj_table_water,
+                i_tgt
             );
         }
     }

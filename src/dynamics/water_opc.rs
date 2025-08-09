@@ -24,7 +24,8 @@ use na_seq::Element;
 use rand::{Rng, distr::Uniform};
 use rand_distr::{Distribution, StandardNormal};
 
-use crate::dynamics::{AtomDynamics, LjTable, ambient::SimBox, non_bonded::f_nonbonded};
+use crate::dynamics::{AtomDynamics, LjTable, ambient::SimBox, non_bonded::f_nonbonded, MdState};
+use crate::dynamics::neighbors::NeighborsNb;
 
 // Parameters for OPC water (JPCL, 2014, 5 (21), pp 3863-3871)
 // (Amber 2025, frcmod.opc) EPC is presumably the massless, 4th charge.
@@ -159,194 +160,6 @@ impl WaterMol {
                 partial_charge: Q_EP,
                 ..base.clone()
             },
-        }
-    }
-
-    /// todo: Shake/rattle technique to update?
-    /// Update dynamics based on own velocity, internal "forces" (?), and external coulomb (i.e.
-    /// partial charge), and Van der Waals (LJ) forces from other molecules.
-    /// One Velocity‑Verlet step with SHAKE/RATTLE constraints.
-    ///
-    /// `sources` includes both other water molecules, and non-waters.
-    pub fn step(
-        &mut self,
-        dt: f64,
-        sources: &[AtomDynamics],
-        cell: &SimBox,
-        lj_table: &mut LjTable,
-        lj_table_static: &mut LjTable,
-        lj_table_water: &mut HashMap<usize, (f64, f64)>,
-    ) {
-        let mut f_o = Vec3::new_zero();
-        let mut f_h0 = Vec3::new_zero();
-        let mut f_h1 = Vec3::new_zero();
-        let mut f_ep = Vec3::new_zero(); // ← NEW
-
-        // Note: No LJ caching for water at this time
-        // todo: Figure out a way to cache the water-water LJ interactions at least.
-        for src in sources {
-            let r = cell.min_image(src.posit - self.o.posit);
-            f_o += f_nonbonded(
-                &self.o,
-                src,
-                r.dot(r),
-                r,
-                false,
-                None,
-                None,
-                None,
-                lj_table,
-                lj_table_static,
-                lj_table_water,
-            );
-
-            let r = cell.min_image(src.posit - self.h0.posit);
-            f_h0 += f_nonbonded(
-                &self.h0,
-                src,
-                r.dot(r),
-                r,
-                false,
-                None,
-                None,
-                None,
-                lj_table,
-                lj_table_static,
-                lj_table_water,
-            );
-
-            let r = cell.min_image(src.posit - self.h1.posit);
-            f_h1 += f_nonbonded(
-                &self.h1,
-                src,
-                r.dot(r),
-                r,
-                false,
-                None,
-                None,
-                None,
-                lj_table,
-                lj_table_static,
-                lj_table_water,
-            );
-
-            let r = cell.min_image(src.posit - self.m.posit);
-            f_ep += f_nonbonded(
-                &self.m,
-                src,
-                r.dot(r),
-                r,
-                false,
-                None,
-                None,
-                None,
-                lj_table,
-                lj_table_static,
-                lj_table_water,
-            );
-        }
-
-        f_o += f_ep;
-
-        // Half‑kick
-        self.o.vel += f_o * (0.5 * dt / self.o.mass);
-        self.h0.vel += f_h0 * (0.5 * dt / self.h0.mass);
-        self.h1.vel += f_h1 * (0.5 * dt / self.h1.mass);
-
-        // Analytic SETTLE update
-        settle_opc(&mut self.o, &mut self.h0, &mut self.h1, dt);
-
-        // Place EP rigidly
-        let bis = (self.h0.posit - self.o.posit) + (self.h1.posit - self.o.posit);
-        self.m.posit = self.o.posit + bis.to_normalized() * O_EP_R_0;
-
-        // EP velocity follows COM of hydrogens
-        self.m.vel = (self.h0.vel + self.h1.vel) * 0.5;
-
-        // Re‑compute forces
-        let mut f_o2 = Vec3::new_zero();
-        let mut f_h02 = Vec3::new_zero();
-        let mut f_h12 = Vec3::new_zero();
-        let mut f_ep2 = Vec3::new_zero();
-
-        for src in sources {
-            let r = src.posit - self.o.posit;
-            f_o2 += f_nonbonded(
-                &self.o,
-                src,
-                r.dot(r),
-                r,
-                false,
-                None,
-                None,
-                None,
-                lj_table,
-                lj_table_static,
-                lj_table_water,
-            );
-
-            let r = src.posit - self.h0.posit;
-            f_h02 += f_nonbonded(
-                &self.h0,
-                src,
-                r.dot(r),
-                r,
-                false,
-                None,
-                None,
-                None,
-                lj_table,
-                lj_table_static,
-                lj_table_water,
-            );
-
-            let r = src.posit - self.h1.posit;
-            f_h12 += f_nonbonded(
-                &self.h1,
-                src,
-                r.dot(r),
-                r,
-                false,
-                None,
-                None,
-                None,
-                lj_table,
-                lj_table_static,
-                lj_table_water,
-            );
-
-            let r = src.posit - self.m.posit;
-            f_ep2 += f_nonbonded(
-                &self.m,
-                src,
-                r.dot(r),
-                r,
-                false,
-                None,
-                None,
-                None,
-                lj_table,
-                lj_table_static,
-                lj_table_water,
-            );
-        }
-        f_o2 += f_ep2; // project EP again
-
-        // Second half‑kick
-        self.o.vel += f_o2 * (0.5 * dt / self.o.mass);
-        self.h0.vel += f_h02 * (0.5 * dt / self.h0.mass);
-        self.h1.vel += f_h12 * (0.5 * dt / self.h1.mass);
-
-        // Wrap positions that are outside the bounding box.
-        // todo: This might not work for molecules split across both sides? Maybe need to wrap the
-        // todo whole thing, onmly when all atoms are outside the box?
-        for pos in [
-            &mut self.o.posit,
-            &mut self.h0.posit,
-            &mut self.h1.posit,
-            &mut self.m.posit,
-        ] {
-            *pos = cell.wrap(*pos);
         }
     }
 }
@@ -552,6 +365,263 @@ pub fn init_velocities(mols: &mut [WaterMol], t_target: f64) {
             continue;
         }
         a.vel *= lambda;
+    }
+}
+
+impl MdState {
+    /// todo: Shake/rattle technique to update?
+    /// Update dynamics based on own velocity, internal "forces" (?), and external coulomb (i.e.
+    /// partial charge), and Van der Waals (LJ) forces from other molecules.
+    /// One Velocity‑Verlet step with SHAKE/RATTLE constraints.
+    ///
+    /// `sources` includes both other water molecules, and non-waters.
+    pub fn step_water(
+        &mut self,
+        dt: f64,
+    ) {
+        let mut f_o = Vec3::new_zero();
+        let mut f_h0 = Vec3::new_zero();
+        let mut f_h1 = Vec3::new_zero();
+        let mut f_ep = Vec3::new_zero();
+
+        // todo: Use rayon here too; copy (or better, abstract over) your non_bonded code.
+
+        // Note: No LJ caching for water at this time
+        // todo: Figure out a way to cache the water-water LJ interactions at least.
+        // for src in sources {
+        let apply = |tgt: &WaterMol, src: &AtomDynamics,| {
+            let r = self.cell.min_image(src.posit - tgt.o.posit);
+            f_o += f_nonbonded(
+                &tgt.o,
+                src,
+                r.dot(r),
+                r,
+                false,
+                None,
+                None,
+                None, // todo??
+                &self.lj_table,
+                &self.lj_table_static,
+                &self.lj_table_water,
+            );
+
+            let r = self.cell.min_image(src.posit - tgt.h0.posit);
+            f_h0 += f_nonbonded(
+                &tgt.h0,
+                src,
+                r.dot(r),
+                r,
+                false,
+                None,
+                None,
+                None, // todo??
+                &self.lj_table,
+                &self.lj_table_static,
+                &self.lj_table_water,
+            );
+
+            let r = self.cell.min_image(src.posit - tgt.h1.posit);
+            f_h1 += f_nonbonded(
+                &tgt.h1,
+                src,
+                r.dot(r),
+                r,
+                false,
+                None,
+                None,
+                None, // todo??
+                &self.lj_table,
+                &self.lj_table_static,
+                &self.lj_table_water,
+            );
+
+            let r = self.cell.min_image(src.posit - tgt.m.posit);
+            f_ep += f_nonbonded(
+                &tgt.m,
+                src,
+                r.dot(r),
+                r,
+                false,
+                None,
+                None,
+                None, // todo??
+                &self.lj_table,
+                &self.lj_table_static,
+                &self.lj_table_water,
+            );
+        };
+
+        // todo: This is DRY with NB forces on dynamic atoms.
+        let n_water = self.water.len();
+
+        // todo: Qc all of this.
+        // ------ Forces from dynamic atoms on water ------
+        {
+            // Note: Reversed index order of dy/water compared to others.
+            let pairs: Vec<(usize, usize)> = (0..n_water)
+                .flat_map(|i_dyn| {
+                    self.neighbors_nb.dy_water[i_dyn]
+                        .iter()
+                        .copied()
+                        .map(move |j_st| (i_dyn, j_st))
+                })
+                .collect();
+
+            for (i_src, i_tgt) in pairs {
+                apply(&self.water[i_tgt], &self.atoms[i_src]);
+            }
+            f_o += f_ep; // todo: QC this.
+
+            // Half‑kick
+            self.o.vel += f_o * (0.5 * dt / self.o.mass);
+            self.h0.vel += f_h0 * (0.5 * dt / self.h0.mass);
+            self.h1.vel += f_h1 * (0.5 * dt / self.h1.mass);
+
+            // Analytic SETTLE update
+            settle_opc(&mut self.o, &mut self.h0, &mut self.h1, dt);
+
+            // Place EP rigidly
+            let bis = (self.h0.posit - self.o.posit) + (self.h1.posit - self.o.posit);
+            self.m.posit = self.o.posit + bis.to_normalized() * O_EP_R_0;
+
+            // EP velocity follows COM of hydrogens
+            self.m.vel = (self.h0.vel + self.h1.vel) * 0.5;
+
+            // Re‑compute forces
+            let mut f_o2 = Vec3::new_zero();
+            let mut f_h02 = Vec3::new_zero();
+            let mut f_h12 = Vec3::new_zero();
+            let mut f_ep2 = Vec3::new_zero();
+
+
+
+        }
+
+        // ------ Forces from static atoms on water ------
+        {
+            // Note: Reversed index order of dy/water compared to others.
+            let pairs: Vec<(usize, usize)> = (0..n_water)
+                .flat_map(|i_water| {
+                    self.neighbors_nb.water_static[i_water]
+                        .iter()
+                        .copied()
+                        .map(move |j_st| (j_st, i_water))
+                })
+                .collect();
+
+            for (i_src, i_tgt) in pairs {
+                apply(&self.water[i_tgt], &self.atoms_static[i_src]);
+            }
+            f_o += f_ep; // todo: QC this.
+        }
+
+        // ------ Forces from other water atoms on water ------
+        {
+            // Note: Reversed index order of dy/water compared to others.
+            // todo: QC.
+            let pairs: Vec<(usize, usize)> = (0..n_water)
+                .flat_map(|i_water| {
+                    self.neighbors_nb.water_water[i_water]
+                        .iter()
+                        .copied()
+                        .map(move |j_st| (j_st, i_water))
+                })
+                .collect();
+
+            for (i_src, i_tgt) in pairs {
+                apply(&self.water[i_tgt], &self.atoms_static[i_src]);
+            }
+            f_o += f_ep; // todo: QC this.
+
+
+
+
+        }
+
+
+
+
+
+
+        for src in sources {
+            let r = src.posit - self.o.posit;
+            f_o2 += f_nonbonded(
+                &self.o,
+                src,
+                r.dot(r),
+                r,
+                false,
+                None,
+                None,
+                None, // todo??
+                lj_table,
+                lj_table_static,
+                lj_table_water,
+            );
+
+            let r = src.posit - self.h0.posit;
+            f_h02 += f_nonbonded(
+                &self.h0,
+                src,
+                r.dot(r),
+                r,
+                false,
+                None,
+                None,
+                None, // todo??
+                lj_table,
+                lj_table_static,
+                lj_table_water,
+            );
+
+            let r = src.posit - self.h1.posit;
+            f_h12 += f_nonbonded(
+                &self.h1,
+                src,
+                r.dot(r),
+                r,
+                false,
+                None,
+                None,
+                None, // todo??
+                lj_table,
+                lj_table_static,
+                lj_table_water,
+            );
+
+            let r = src.posit - self.m.posit;
+            f_ep2 += f_nonbonded(
+                &self.m,
+                src,
+                r.dot(r),
+                r,
+                false,
+                None,
+                None,
+                None, // todo??
+                lj_table,
+                lj_table_static,
+                lj_table_water,
+            );
+        }
+        f_o2 += f_ep2; // project EP again
+
+        // Second half‑kick
+        self.o.vel += f_o2 * (0.5 * dt / self.o.mass);
+        self.h0.vel += f_h02 * (0.5 * dt / self.h0.mass);
+        self.h1.vel += f_h12 * (0.5 * dt / self.h1.mass);
+
+        // Wrap positions that are outside the bounding box.
+        // todo: This might not work for molecules split across both sides? Maybe need to wrap the
+        // todo whole thing, onmly when all atoms are outside the box?
+        for pos in [
+            &mut self.o.posit,
+            &mut self.h0.posit,
+            &mut self.h1.posit,
+            &mut self.m.posit,
+        ] {
+            *pos = cell.wrap(*pos);
+        }
     }
 }
 

@@ -773,9 +773,6 @@ impl MdState {
             )?);
         }
 
-        // todo temp!
-        let atoms_dy_static: Vec<AtomDynamics> = Vec::new();
-
         let result = Self::new(
             MdMode::Docking,
             atoms_dy,

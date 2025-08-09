@@ -62,7 +62,8 @@ impl MdState {
             &self.cell,
         );
 
-        let mut rebuild_ran = false;
+        let mut rebuilt_dyn = false;
+        let mut rebuilt_wat = false;
 
         if dyn_disp_sq > SKIN_SQ_DIV_4 {
             let mut water_atoms = Vec::with_capacity(self.water.len());
@@ -95,7 +96,7 @@ impl MdState {
                 false,
             );
 
-            rebuild_ran = true;
+            rebuilt_dyn = true;
         }
 
         if wat_disp_sq > SKIN_SQ_DIV_4 {
@@ -121,7 +122,7 @@ impl MdState {
                 true,
             );
 
-            if !rebuild_ran {
+            if !rebuilt_dyn {
                 // Don't double-run this, but it's required for both paths.
                 build_neighbors(
                     &mut self.neighbors_nb.dy_water,
@@ -132,20 +133,27 @@ impl MdState {
                 );
             }
 
-            rebuild_ran = true;
+            rebuilt_wat = true;
         }
 
         // Rebuild reference position lists for next use, for use with determining when to rebuild the neighbor list.
-        for (i, a) in self.atoms.iter().enumerate() {
-            self.neighbors_nb.ref_pos_dyn[i] = a.posit;
-        }
-        for (i, m) in self.water.iter().enumerate() {
-            self.neighbors_nb.ref_pos_water_o[i] = m.o.posit;
+        if rebuilt_dyn {
+            for (i, a) in self.atoms.iter().enumerate() {
+                self.neighbors_nb.ref_pos_dyn[i] = a.posit;
+            }
         }
 
-        if rebuild_ran {
+        if rebuilt_wat {
+            for (i, m) in self.water.iter().enumerate() {
+                self.neighbors_nb.ref_pos_water_o[i] = m.o.posit;
+            }
+        }
+
+        if rebuilt_dyn || rebuilt_wat {
             let elapsed = start.elapsed();
             println!("Neighbor build time: {:?} μs", elapsed.as_micros());
+        } else {
+            println!("No rebuild needed.");
         }
     }
 }
@@ -200,13 +208,13 @@ pub fn max_displacement_sq_since_build(
     neighbor_ref_posits: &[Vec3],
     cell: &SimBox,
 ) -> f64 {
-    let mut max_sq: f64 = 0.0;
+    let mut result: f64 = 0.0;
 
     for (i, posit) in targets.iter().enumerate() {
         let d = cell.min_image(*posit - neighbor_ref_posits[i]);
-        max_sq = max_sq.max(d.magnitude_squared());
+        result = result.max(d.magnitude_squared());
     }
-    max_sq
+    result
 }
 
 /// Helper
