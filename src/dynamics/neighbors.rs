@@ -30,11 +30,13 @@ pub struct NeighborsNb {
     pub dy_static: Vec<Vec<usize>>,
     /// Outer: Dynamic. Inner: water. Each is a source and target.
     pub dy_water: Vec<Vec<usize>>,
-    // Neighbors acting on water: (Dynamic acting on water is handled with `dy_water` above.
     /// Symmetric water-water indices. Dynamic source and target.
     pub water_water: Vec<Vec<usize>>,
     /// Outer: Water. Inner: static. Water target, static source.
     pub water_static: Vec<Vec<usize>>,
+    /// Outer: Water. Inner: dynamic. Water target, dynamic source.
+    /// todo: This is a direct reverse of dy_water, but may be worth keeping in for indexing order.
+    pub water_dy: Vec<Vec<usize>>,
     //
     // Reference positions used when rebuilding. Only for movable atoms.
     pub ref_pos_dyn: Vec<Vec3>,
@@ -95,6 +97,16 @@ impl MdState {
                 &self.cell,
                 false,
             );
+            // todo: Helper; DRY between this and init.
+            // Now invert dy_water -> water_dy
+            let n_water = water_atoms.len();
+            self.neighbors_nb.water_dy = vec![Vec::new(); n_water];
+
+            for (dyn_idx, waters) in self.neighbors_nb.dy_water.iter().enumerate() {
+                for &water_idx in waters {
+                    self.neighbors_nb.water_dy[water_idx].push(dyn_idx);
+                }
+            }
 
             rebuilt_dyn = true;
         }

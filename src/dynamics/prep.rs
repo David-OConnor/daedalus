@@ -1034,6 +1034,17 @@ impl MdState {
             true,
         );
 
+        // todo: Helper; DRY between this and during steps
+        // Now invert dy_water -> water_dy
+        let n_water = water_atoms.len();
+        result.neighbors_nb.water_dy = vec![Vec::new(); n_water];
+
+        for (dyn_idx, waters) in result.neighbors_nb.dy_water.iter().enumerate() {
+            for &water_idx in waters {
+                result.neighbors_nb.water_dy[water_idx].push(dyn_idx);
+            }
+        }
+
         // Sets up initial values, and does the only pushes; we set by index after.
         for a in &result.atoms {
             result.neighbors_nb.ref_pos_dyn.push(a.posit);

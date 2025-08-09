@@ -440,7 +440,8 @@ impl MdState {
         if self.step_count == 0 {
             start = Instant::now();
         }
-        self.water_step(dt);
+        self.step_water(dt);
+
         if self.step_count == 0 {
             let elapsed = start.elapsed();
             println!("Water time: {:?} μs", elapsed.as_micros());
@@ -609,42 +610,42 @@ impl MdState {
         }
     }
 
-    fn water_step(&mut self, dt: f64) {
-        // We must include both the charge center M/EP, and the Vdw center O as a source.
-        // We include the Hs as charge centers.
-        let mut water_dyn = Vec::with_capacity(self.water.len() * 4);
-        for water in &self.water {
-            // todo: Evaluate if there's a way that avoids cloning.  Probably fine as it
-            // todo doesn't scale as O^2. (Clones each water atom once per step)
-
-            water_dyn.push(water.o.clone());
-            water_dyn.push(water.m.clone());
-            water_dyn.push(water.h0.clone());
-            water_dyn.push(water.h1.clone());
-        }
-
-        // todo: Temporarily removed water-water interactions; getting a very slow simulation,
-        // todo, and NaN propogation. Troubleshoot this later. Skipping this may be OK, compared
-        // todo to not using water.
-        // let sources_on_water: Vec<AtomDynamics> =
-        //     // [&self.atoms[..], &self.atoms_static[..], &water_dyn[..]].concat();
-        //     [&self.atoms[..], &self.atoms_static[..]].concat();
-
-        for (i_tgt, water) in self.water.iter_mut().enumerate() {
-            water.step(
-                dt,
-                &self.atoms,
-                &self.atoms_static,
-                &self.water,
-                &self.neighbors_nb,
-                &self.cell,
-                &mut self.lj_table,
-                &mut self.lj_table_static,
-                &mut self.lj_table_water,
-                i_tgt
-            );
-        }
-    }
+    // fn water_step(&mut self, dt: f64) {
+    //     // We must include both the charge center M/EP, and the Vdw center O as a source.
+    //     // We include the Hs as charge centers.
+    //     let mut water_dyn = Vec::with_capacity(self.water.len() * 4);
+    //     for water in &self.water {
+    //         // todo: Evaluate if there's a way that avoids cloning.  Probably fine as it
+    //         // todo doesn't scale as O^2. (Clones each water atom once per step)
+    //
+    //         water_dyn.push(water.o.clone());
+    //         water_dyn.push(water.m.clone());
+    //         water_dyn.push(water.h0.clone());
+    //         water_dyn.push(water.h1.clone());
+    //     }
+    //
+    //     // todo: Temporarily removed water-water interactions; getting a very slow simulation,
+    //     // todo, and NaN propogation. Troubleshoot this later. Skipping this may be OK, compared
+    //     // todo to not using water.
+    //     // let sources_on_water: Vec<AtomDynamics> =
+    //     //     // [&self.atoms[..], &self.atoms_static[..], &water_dyn[..]].concat();
+    //     //     [&self.atoms[..], &self.atoms_static[..]].concat();
+    //
+    //     for (i_tgt, water) in self.water.iter_mut().enumerate() {
+    //         water.step(
+    //             dt,
+    //             &self.atoms,
+    //             &self.atoms_static,
+    //             &self.water,
+    //             &self.neighbors_nb,
+    //             &self.cell,
+    //             &mut self.lj_table,
+    //             &mut self.lj_table_static,
+    //             &mut self.lj_table_water,
+    //             i_tgt
+    //         );
+    //     }
+    // }
 
     /// A helper for the thermostat
     fn current_kinetic_energy(&self) -> f64 {
@@ -678,7 +679,7 @@ impl MdState {
 
 #[inline]
 /// Mutable aliasing helpers.
-fn split2_mut<T>(v: &mut [T], i: usize, j: usize) -> (&mut T, &mut T) {
+pub fn split2_mut<T>(v: &mut [T], i: usize, j: usize) -> (&mut T, &mut T) {
     assert!(i != j);
     let (low, high) = if i < j { (i, j) } else { (j, i) };
     let (left, right) = v.split_at_mut(high);
