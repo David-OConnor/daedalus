@@ -22,12 +22,20 @@
 //! We use Verlet integration. todo: Velocity verlet? Other techniques that improve and build upon it?
 //!
 //! Amber: ff19SB for proteins, gaff2 for ligands. (Based on recs from https://ambermd.org/AmberModels.php).
-//
-//! A broad list of components of this simulation
+//!
+//! We use the term "Non-bonded" interactions to refer to Coulomb, and Lennard Interactions, the latter
+//! of which is an approximation for Van der Waals force.
+//!
+//! A broad list of components of this simulation:
+//! - Atoms are divided into three categories:
+//! -- Dynamic: Atoms that move
+//! -- Static: Atoms that don't move, but have mutual non-bonded interactions with dynamic atoms and water
+//! -- Water: Rigid OPC water molecules that have mutual non-bonded interactions with dynamic atoms and water
+//!
 //! - Thermostat/barostat, with a way to specify temp, pressure, water density
 //! - OPC water model
 //! - Cell wrapping
-//! - Verlet integration (Water and non-water?)
+//! - Verlet integration (Water and non-water)
 //! - Amber parameters for mass, partial charge, VdW (via LJ), dihedral/improper, angle, bond len
 //! - Optimizations for Coulomb: Ewald/PME/SPME?
 //! - Optimizations for LJ: Dist cutoff for now.
@@ -81,10 +89,11 @@ use ambient::SimBox;
 use bio_files::amber_params::{
     AngleBendingParams, BondStretchingParams, DihedralParams, MassParams, VdwParams,
 };
-use lin_alg::f64::{Vec3, calc_dihedral_angle_v2};
+use lin_alg::f64::Vec3;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use lin_alg::f64::{Vec3x4, f64x4};
 use na_seq::{Element, Element::Hydrogen};
+use non_bonded::NeighborsNb;
 use rand_distr::Distribution;
 use rustfft::num_complex::ComplexFloat;
 
@@ -95,13 +104,14 @@ use crate::{
     },
     molecule::Atom,
 };
-
 // (indices), (sigma, eps)
 pub type LjTable = HashMap<(usize, usize), (f64, f64)>;
 
 // Verlet list parameters
 
-const SKIN: f64 = 2.0; // Å – rebuild list if an atom moved >½·SKIN
+// These are for non-bonded neighbor list construction.
+const CUTOFF_NEIGHBORS: f64 = 10.0; // 9-10 Å
+const SKIN: f64 = 2.0; // Å – rebuild list if an atom moved >½·SKIN. ~2Å.
 const SKIN_SQ: f64 = SKIN * SKIN;
 
 const SNAPSHOT_RATIO: usize = 1;
@@ -111,7 +121,8 @@ const EPS: f64 = 1.0e-8;
 /// accelerations by this.
 const ACCEL_CONVERSION: f64 = 418.4;
 
-// These SHAKE constraints are for fixed hydrogens. The tolerance controls how close we get
+// SHAKE tolerances for fixed hydrogens. These SHAKE constraints are for fixed hydrogens.
+// The tolerance controls how close we get
 // to the target value; lower values are more precise, but require more iterations. `SHAKE_MAX_ITER`
 // constrains the number of iterations.
 const SHAKE_TOL: f64 = 1.0e-4; // Å
@@ -309,8 +320,8 @@ pub struct MdState {
     pub step_count: usize, // increments.
     pub snapshots: Vec<SnapshotDynamics>,
     pub cell: SimBox,
-    neighbour: Vec<Vec<usize>>, // Verlet list
-    max_disp_sq: f64,           // track atom displacements²
+    pub neighbors_nb: NeighborsNb,
+    // max_disp_sq: f64,           // track atom displacements²
     /// K
     temp_target: f64,
     barostat: BerendsenBarostat,
@@ -348,7 +359,7 @@ impl MdState {
             a.posit = self.cell.wrap(a.posit);
 
             // track the largest squared displacement to know when to rebuild the list
-            self.max_disp_sq = self.max_disp_sq.max((a.vel * dt).magnitude_squared());
+            // self.max_disp_sq = self.max_disp_sq.max((a.vel * dt).magnitude_squared());
         }
 
         // The order we perform these steps is important.
@@ -450,9 +461,15 @@ impl MdState {
         self.time += dt;
         self.step_count += 1;
 
-        // Rebuild Verlet if needed
-        if self.max_disp_sq > 0.25 * SKIN_SQ {
-            self.build_neighbours();
+        // Rebuild the neighbors list, which we use for non-bonded interactions.
+        let max_disp_sq = self.max_displacement_sq_since_build();
+
+        if max_disp_sq > 0.25 * SKIN_SQ {
+            start = Instant::now();
+            self.build_neighbors();
+
+            let elapsed = start.elapsed();
+            println!("Neighbor build time: {:?} μs", elapsed.as_micros());
         }
 
         if self.step_count % SNAPSHOT_RATIO == 0 {

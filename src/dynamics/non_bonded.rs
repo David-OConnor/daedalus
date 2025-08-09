@@ -1,15 +1,18 @@
 //! For VDW and Coulomb forces
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use lin_alg::f64::Vec3;
 use rayon::prelude::*;
 
 use crate::{
     dynamics::{
-        AtomDynamics, LjTable, MdState,
+        AtomDynamics, CUTOFF_NEIGHBORS, ForceFieldParamsIndexed, LjTable, MdMode, MdState, SKIN,
+        ambient::SimBox,
+        prep::HydrogenMdType,
         spme::{EWALD_ALPHA, PME_MESH_SPACING, force_coulomb_ewald_real, pme_long_range_forces},
         water_opc,
+        water_opc::make_water_mols,
     },
     forces::force_lj,
 };
@@ -35,6 +38,38 @@ const SCALE_COUL_14: f64 = 1.0 / 1.2;
 // Multiply by this to convert partial charges from elementary charge (What we store in Atoms loaded from mol2
 // files and amino19.lib.) to the self-consistent amber units required to calculate Coulomb force.
 pub const CHARGE_UNIT_SCALER: f64 = 18.2223;
+
+#[derive(Default)]
+/// Non-bonded neighbors; an important optimization for Van der Waals and Coulomb interactions.
+/// By index for fast lookups; separate fields, as these indices have different meanings for dynamic atoms,
+/// static atoms, and water.
+///
+/// To understand how we've set up the fields, each of the three types of atoms interactions with the others,
+/// but note that static atoms are sources only; they are not acted on.
+///
+/// Note: These historically called "Verlet lists", but we're not using that term, as we use "Verlet" to refer
+/// to the integrator, which this has nothing to do with. They do have to do with their applicability to
+/// non-bonded interactions, so we call them "Non-bonded neighbors".
+pub struct NeighborsNb {
+    // Neighbors acting on dynamic atoms:
+    /// Symmetric dynamic-dynamic indices. Dynamic source and target.
+    pub dy_dy: Vec<Vec<usize>>,
+    /// Outer: Dynamic. Inner: static. Dynamic target, static source.
+    pub dy_static: Vec<Vec<usize>>,
+    /// Outer: Dynamic. Inner: water. Each is a source and target.
+    pub dy_water: Vec<Vec<usize>>,
+    // Neighbors acting on water: (Dynamic acting on water is handled with `dy_water` above.
+    /// Symmetric water-water indices. Dynamic source and target.
+    pub water_water: Vec<Vec<usize>>,
+    /// Outer: Water. Inner: static. Water target, static source.
+    pub water_static: Vec<Vec<usize>>,
+    //
+    //
+    // todo: Experimenting. See if you want/need these below:
+    pub ref_pos_dyn: Vec<Vec3>,
+    pub ref_pos_static: Vec<Vec3>,
+    pub ref_pos_water_o: Vec<Vec3>, // use O as proxy for the rigid water
+}
 
 /// Run this once per MD run. Sets up LJ caches for each pair of atoms.
 /// Mirrors the force fn's params.
@@ -86,209 +121,199 @@ impl MdState {
         // An approximation to simplify which water molecules are close enough to interact
         // with the ligand: Each X steps, we measure the distance between each molecule,
         // and an arbitrary ligand atom; this takes advantage of the ligand being small.
-        // todo: Store in state and implement the every X steps; for now, we check each step.
 
-        // todo: Use a neighbors list periodically rebuilt; much faster.
-        let mut waters_near_ligand = Vec::new();
-        for (i, water) in self.water.iter().enumerate() {
-            // Ideally we choose a center atom, but atoms[x] is good enough.
-            let diff = water.o.posit - self.atoms[0].posit;
-            let dist = diff.magnitude();
-            if dist < CUTOFF_WATER_FROM_LIGAND {
-                waters_near_ligand.push(i);
-            }
-        }
+        // todo: Organize this function better between the 3 variants, if possible.
 
-        let n = self.atoms.len();
+        let n_dyn = self.atoms.len();
 
-        let neighbour = &self.neighbour;
+        // ------ Forces from other dynamic atoms on dynamic ones ------
+
+        // Exclusions and scaling apply to dynamic-dynamic interactions only.
         let exclusions = &self.nonbonded_exclusions;
         let scaled_set = &self.nonbonded_scaled;
 
-        // Set up pairs ahead of time; conducive to parallel iteration.
-        let pairs: Vec<(usize, usize, bool)> = (0..n)
-            .flat_map(|i| {
-                neighbour[i]
-                    .iter()
-                    .copied()
-                    .filter(move |&j| j > i) // Ensure stable order
-                    .filter_map(move |j| {
-                        let key = (i, j);
-                        if exclusions.contains(&key) {
-                            return None;
+        {
+            // Set up pairs ahead of time; conducive to parallel iteration.
+            let pairs_dy_dy: Vec<(usize, usize, bool)> = (0..n_dyn)
+                .flat_map(|i| {
+                    self.neighbors_nb.dy_dy[i]
+                        .iter()
+                        .copied()
+                        .filter(move |&j| j > i) // Ensure stable order
+                        .filter_map(move |j| {
+                            let key = (i, j);
+                            if exclusions.contains(&key) {
+                                return None;
+                            }
+                            let scale14 = scaled_set.contains(&key);
+                            Some((i, j, scale14))
+                        })
+                })
+                .collect();
+
+            let per_atom_accum: Vec<Vec3> = pairs_dy_dy
+                .par_iter()
+                .fold(
+                    || vec![Vec3::new_zero(); n_dyn],
+                    |mut acc, &(i, j, scale14)| {
+                        let diff = self.atoms[i].posit - self.atoms[j].posit;
+                        let dv = self.cell.min_image(diff);
+                        let r_sq = dv.magnitude_squared();
+
+                        let f = f_nonbonded(
+                            &self.atoms[i],
+                            &self.atoms[j],
+                            r_sq,
+                            diff,
+                            scale14,
+                            Some((i, j)),
+                            None,
+                            None,
+                            &self.lj_table,
+                            &self.lj_table_static,
+                            &self.lj_table_water,
+                        );
+
+                        acc[i] += f;
+                        acc[j] -= f;
+                        acc
+                    },
+                )
+                .reduce(
+                    || vec![Vec3::new_zero(); n_dyn],
+                    |mut a, b| {
+                        // elementwise add
+                        for k in 0..n_dyn {
+                            a[k] += b[k];
                         }
-                        let scale14 = scaled_set.contains(&key);
-                        Some((i, j, scale14))
-                    })
-            })
-            .collect();
-
-        let per_atom_accum: Vec<Vec3> = pairs
-            .par_iter()
-            .fold(
-                || vec![Vec3::new_zero(); n],
-                |mut acc, &(i, j, scale14)| {
-                    let diff = self.atoms[i].posit - self.atoms[j].posit;
-                    let dv = self.cell.min_image(diff);
-                    let r_sq = dv.magnitude_squared();
-
-                    let f = f_nonbonded(
-                        &self.atoms[i],
-                        &self.atoms[j],
-                        r_sq,
-                        diff,
-                        scale14,
-                        Some((i, j)),
-                        None,
-                        None,
-                        &self.lj_table,
-                        &self.lj_table_static,
-                        &self.lj_table_water,
-                    );
-
-                    acc[i] += f;
-                    acc[j] -= f;
-                    acc
-                },
-            )
-            .reduce(
-                || vec![Vec3::new_zero(); n],
-                |mut a, b| {
-                    // elementwise add
-                    for k in 0..n {
-                        a[k] += b[k];
-                    }
-                    a
-                },
-            );
-
-        // Apply accumulated forces
-        for i in 0..n {
-            self.atoms[i].accel += per_atom_accum[i];
-        }
-
-        // ----
-
-        //
-        //
-        // // Force from dynamic atoms (on the target dynamic atoms): LJ, and Ewald-screened Coulomb.
-        // for i in 0..self.atoms.len() {
-        //     for &j in &self.neighbour[i] {
-        //         if j < i {
-        //             // Prevents duplication of the pair in the other order.
-        //             continue;
-        //         }
-        //
-        //         let scale14 = {
-        //             let key = if i < j { (i, j) } else { (j, i) };
-        //
-        //             // Exclusions: covalent bonds 1-2 and 1-3
-        //             if self.nonbonded_exclusions.contains(&key) {
-        //                 continue;
-        //             }
-        //
-        //             // Scaled: covalent bonds 1-4
-        //             self.nonbonded_scaled.contains(&key)
-        //         };
-        //
-        //         let diff = self.atoms[i].posit - self.atoms[j].posit;
-        //         let dv = self.cell.min_image(diff);
-        //         let r_sq = dv.magnitude_squared();
-        //
-        //         let f = f_nonbonded(
-        //             &self.atoms[i],
-        //             &self.atoms[j],
-        //             r_sq,
-        //             diff,
-        //             scale14,
-        //             Some((i, j)),
-        //             None,
-        //             None,
-        //             &self.lj_table,
-        //             &self.lj_table_static,
-        //             &self.lj_table_water,
-        //         );
-        //
-        //         // println!(
-        //         //     "Posit 0: {}, Posit 1: {}, {f}, q0: {:.2}, q1: {:.2} dist: {:.2}",
-        //         //     self.atoms[i].posit,
-        //         //     self.atoms[j].posit,
-        //         //     self.atoms[i].partial_charge,
-        //         //     self.atoms[j].partial_charge,
-        //         //     diff.magnitude()
-        //         // );
-        //
-        //         // We divide by mass in `step`.
-        //         self.atoms[i].accel += f;
-        //         self.atoms[j].accel -= f;
-        //     }
-        // }
-
-        // Force from static atoms and water. (Short-range). We currently don't use the neighbors approach here, although
-        // it is likely useful, as when docking, there will be many static atoms IVO the dynamic ones.
-        for (i_lig, a_lig) in self.atoms.iter_mut().enumerate() {
-            // Force from static atoms.
-            for (i_static, a_static) in self.atoms_static.iter().enumerate() {
-                let diff = a_lig.posit - a_static.posit;
-                let dv = self.cell.min_image(diff);
-
-                let r_sq = dv.magnitude_squared();
-
-                let f = f_nonbonded(
-                    a_lig,
-                    a_static,
-                    r_sq,
-                    diff,
-                    false,
-                    None,
-                    Some((i_lig, i_static)),
-                    None,
-                    &mut self.lj_table,
-                    &mut self.lj_table_static,
-                    &mut self.lj_table_water,
+                        a
+                    },
                 );
 
-                // println!(
-                //     "Posit 0: {}, Posit 1: {}, {f}, q0: {:.2}, q1: {:.2}",
-                //     a_lig.posit, a_static.posit, a_lig.partial_charge, a_static.partial_charge
-                // );
-
-                // We divide by mass in `step`.
-                a_lig.accel += f;
+            // Apply accumulated forces
+            for i in 0..n_dyn {
+                self.atoms[i].accel += per_atom_accum[i];
             }
+        }
 
-            // Force from water
-            for i_water in &waters_near_ligand {
-                let mol_water = &self.water[*i_water];
+        // ------ Forces from static atoms on dynamic ones ------
+        {
+            let n_static = self.atoms_static.len();
+            let pairs_dy_static: Vec<(usize, usize)> = (0..n_dyn)
+                .flat_map(|i_lig| (0..n_static).map(move |j_st| (i_lig, j_st)))
+                .collect();
 
-                for a_water_src in [&mol_water.o, &mol_water.m, &mol_water.h0, &mol_water.h1] {
-                    let diff = a_lig.posit - a_water_src.posit;
-                    let dv = self.cell.min_image(diff);
+            // todo: QC n_static vs n_dyn h ere.
+            let per_atom_accum: Vec<Vec3> = pairs_dy_static
+                .par_iter()
+                .fold(
+                    || vec![Vec3::new_zero(); n_dyn],
+                    |mut acc, &(i_dyn, j_st)| {
+                        let a_lig = &self.atoms[i_dyn];
+                        let a_static = &self.atoms_static[j_st];
 
-                    let r_sq = dv.magnitude_squared();
+                        let diff = a_lig.posit - a_static.posit;
+                        let dv = self.cell.min_image(diff);
+                        let r_sq = dv.magnitude_squared();
 
-                    let f = f_nonbonded(
-                        a_lig,
-                        a_water_src,
-                        r_sq,
-                        diff,
-                        false,
-                        None,
-                        None,
-                        Some(i_lig),
-                        &mut self.lj_table,
-                        &mut self.lj_table_static,
-                        &mut self.lj_table_water,
-                    );
-                    // We divide by mass in `step`.
-                    a_lig.accel += f;
-                }
+                        let f = f_nonbonded(
+                            a_lig,
+                            a_static,
+                            r_sq,
+                            diff,
+                            false,               // no 1-4 scaling with static
+                            None,                // dy-dy key
+                            Some((i_dyn, j_st)), // dy-static key
+                            None,                // dy-water key
+                            &self.lj_table,
+                            &self.lj_table_static,
+                            &self.lj_table_water,
+                        );
+
+                        acc[i_dyn] += f; // static atoms don't move
+                        acc
+                    },
+                )
+                .reduce(
+                    || vec![Vec3::new_zero(); n_dyn],
+                    |mut a, b| {
+                        for k in 0..n_dyn {
+                            a[k] += b[k];
+                        }
+                        a
+                    },
+                );
+
+            // Apply accumulated forces
+            for i in 0..n_dyn {
+                self.atoms[i].accel += per_atom_accum[i];
+            }
+        }
+
+        // ------ Forces from water molecules on dynamic atoms ------
+
+        {
+            let n_water = self.water.len() * 4;
+            let pairs_dy_water: Vec<(usize, usize)> = (0..n_dyn)
+                .flat_map(|i_lig| (0..n_static).map(move |j_st| (i_lig, j_st)))
+                .collect();
+
+            let per_atom_accum: Vec<Vec3> = pairs_dy_water
+                .par_iter()
+                .fold(
+                    || vec![Vec3::new_zero(); n_dyn],
+                    |mut acc, &(i_lig, iw, which)| {
+                        let a_lig = &self.atoms[i_lig];
+                        let w = &self.water[iw];
+                        let a_water_src = match which {
+                            0 => &w.o,
+                            1 => &w.m,
+                            2 => &w.h0,
+                            _ => &w.h1,
+                        };
+
+                        let diff = a_lig.posit - a_water_src.posit;
+                        let dv = self.cell.min_image(diff);
+                        let r_sq = dv.magnitude_squared();
+
+                        let f = f_nonbonded(
+                            a_lig,
+                            a_water_src,
+                            r_sq,
+                            diff,
+                            false,       // no 1-4 scaling with water
+                            None,        // dy-dy key
+                            None,        // dy-static key
+                            Some(i_lig), // dy-water key (matches your original call)
+                            &self.lj_table,
+                            &self.lj_table_static,
+                            &self.lj_table_water,
+                        );
+
+                        acc[i_lig] += f; // water is rigid/fixed here
+                        acc
+                    },
+                )
+                .reduce(
+                    || vec![Vec3::new_zero(); n_dyn],
+                    |mut a, b| {
+                        for k in 0..n_dyn {
+                            a[k] += b[k];
+                        }
+                        a
+                    },
+                );
+
+            // Apply accumulated forces
+            for i in 0..n_dyn {
+                self.atoms[i].accel += per_atom_accum[i];
             }
         }
 
         // Long‑range reciprocal‑space term (PME / SPME), both static and dynamic.
         // Build a temporary Vec with *all* charges so the mesh sees both
-        // movable and rigid atoms.  We only add forces back to movable atoms.
+        // movable and rigid atoms.  We only add forces back to dynamic atoms. This section
+        // does not use neighbor lists.
         let n_dynamic = self.atoms.len();
         let mut all_atoms = Vec::with_capacity(n_dynamic + self.atoms_static.len());
 
@@ -356,14 +381,6 @@ pub fn f_nonbonded(
         f
     };
 
-    // let mut f_coulomb = force_coulomb(
-    //     dir,
-    //     dist,1
-    //     tgt.partial_charge,
-    //     src.partial_charge,
-    //     SOFTENING_FACTOR_SQ,
-    // );
-
     // We assume that in the AtomDynamics structs, charges are already scaled to Amber units.
     // (No longer in elementary charge)
     let mut f_coulomb = force_coulomb_ewald_real(
@@ -379,10 +396,10 @@ pub fn f_nonbonded(
         f_coulomb *= SCALE_COUL_14;
     }
 
-    // f_lj + f_coulomb
+    f_lj + f_coulomb
     // todo temp to test one or the other
     // f_coulomb
-    f_lj
+    // f_lj
 }
 
 /// Helper. Returns σ, ε between an atom pair. Atom order passed as params doesn't matter.
@@ -391,4 +408,205 @@ fn combine_lj_params(atom_0: &AtomDynamics, atom_1: &AtomDynamics) -> (f64, f64)
     let ε = (atom_0.lj_eps * atom_1.lj_eps).sqrt();
 
     (σ, ε)
+}
+
+impl MdState {
+    pub fn new(
+        mode: MdMode,
+        atoms_dy: Vec<AtomDynamics>,
+        atoms_static: Vec<AtomDynamics>,
+        ff_params_non_static: ForceFieldParamsIndexed,
+        temp_target: f64,
+        hydrogen_md_type: HydrogenMdType,
+        adjacency_list: Vec<Vec<usize>>,
+    ) -> Self {
+        let cell = {
+            let (mut min, mut max) = (Vec3::splat(f64::INFINITY), Vec3::splat(f64::NEG_INFINITY));
+            for a in &atoms_dy {
+                min = min.min(a.posit);
+                max = max.max(a.posit);
+            }
+            let pad = 15.0; // Å
+            let lo = min - Vec3::splat(pad);
+            let hi = max + Vec3::splat(pad);
+
+            println!("Initizing sim box. L: {lo} H: {hi}");
+
+            SimBox {
+                bounds_low: lo,
+                bounds_high: hi,
+            }
+        };
+
+        let mut result = Self {
+            mode,
+            atoms: atoms_dy,
+            adjacency_list: adjacency_list.to_vec(),
+            atoms_static,
+            cell,
+            nonbonded_exclusions: HashSet::new(),
+            nonbonded_scaled: HashSet::new(),
+            force_field_params: ff_params_non_static,
+            temp_target,
+            hydrogen_md_type,
+            ..Default::default()
+        };
+
+        result.water = make_water_mols(
+            &cell,
+            result.temp_target,
+            &result.atoms,
+            &result.atoms_static,
+        );
+
+        result.setup_nonbonded_exclusion_scale_flags();
+        result.build_neighbors();
+
+        // Set up our LJ cache.
+        if result.step_count == 0 {
+            for i in 0..result.atoms.len() {
+                for &j in &result.neighbors_nb.dy_dy[i] {
+                    if j < i {
+                        // Prevents duplication of the pair in the other order.
+                        continue;
+                    }
+
+                    setup_lj_cache(
+                        &result.atoms[i],
+                        &result.atoms[j],
+                        Some((i, j)),
+                        None,
+                        None,
+                        &mut result.lj_table,
+                        &mut result.lj_table_static,
+                        &mut result.lj_table_water,
+                    );
+                }
+            }
+
+            for (i_lig, a_lig) in result.atoms.iter_mut().enumerate() {
+                // Force from static atoms.
+                for (i_static, a_static) in result.atoms_static.iter().enumerate() {
+                    setup_lj_cache(
+                        a_lig,
+                        a_static,
+                        None,
+                        Some((i_lig, i_static)),
+                        None,
+                        &mut result.lj_table,
+                        &mut result.lj_table_static,
+                        &mut result.lj_table_water,
+                    );
+                }
+
+                // Force from water
+                if !result.water.is_empty() {
+                    // Each water is identical, so we only need to do this once.
+                    for a_water_src in [
+                        &result.water[0].o,
+                        &result.water[0].m,
+                        &result.water[0].h0,
+                        &result.water[0].h1,
+                    ] {
+                        setup_lj_cache(
+                            a_lig,
+                            a_water_src,
+                            None,
+                            None,
+                            Some(i_lig),
+                            &mut result.lj_table,
+                            &mut result.lj_table_static,
+                            &mut result.lj_table_water,
+                        );
+                    }
+                }
+            }
+        }
+
+        result
+    }
+
+    /// We use this to set up optimizations defined in the Amber reference manual. `excluded` deals
+    /// with sections were we skip coulomb and Vdw interactions for atoms separated by 1 or 2 bonds. `scaled14` applies a force
+    /// scaler for these interactions, when separated by 3 bonds.
+    fn setup_nonbonded_exclusion_scale_flags(&mut self) {
+        // Helper to store pairs in canonical (low,high) order
+        let push = |set: &mut HashSet<(usize, usize)>, i: usize, j: usize| {
+            if i < j {
+                set.insert((i, j));
+            } else {
+                set.insert((j, i));
+            }
+        };
+
+        // 1-2
+        for indices in &self.force_field_params.bonds_topology {
+            push(&mut self.nonbonded_exclusions, indices.0, indices.1);
+        }
+
+        // 1-3
+        for (indices, _) in &self.force_field_params.angle {
+            push(&mut self.nonbonded_exclusions, indices.0, indices.2);
+        }
+
+        // 1-4. We do not count improper dihedrals here.
+        for (indices, _) in &self.force_field_params.dihedral {
+            push(&mut self.nonbonded_scaled, indices.0, indices.3);
+        }
+
+        // Make sure no 1-4 pair is also in the excluded set
+        for p in &self.nonbonded_scaled {
+            self.nonbonded_exclusions.remove(p);
+        }
+    }
+
+    /// [Re]build the neighbour list, used for non-bonded interactions. Run this periodically.
+    /// todo: Is this for verlet integration, or non-bonded interactions?
+    pub fn build_neighbors(&mut self) {
+        const CUTOFF_SKIN_SQ: f64 = (CUTOFF_NEIGHBORS + SKIN) * (CUTOFF_NEIGHBORS + SKIN);
+
+        self.neighbors_nb.dy_dy.clear();
+        self.neighbors_nb.dy_water.clear();
+
+        self.neighbors_nb.dy_dy = vec![Vec::new(); self.atoms.len()];
+        for i in 0..self.atoms.len() - 1 {
+            for j in i + 1..self.atoms.len() {
+                let dv = self
+                    .cell
+                    .min_image(self.atoms[j].posit - self.atoms[i].posit);
+
+                if dv.magnitude_squared() < CUTOFF_SKIN_SQ {
+                    self.neighbors_nb.dy_dy[i].push(j);
+                    self.neighbors_nb.dy_dy[j].push(i);
+                }
+            }
+        }
+    }
+
+    /// For use with our non-bonded neighbors construction.
+    pub fn max_displacement_sq_since_build(&self) -> f64 {
+        let mut max_sq: f64 = 0.0;
+
+        for (i, a) in self.atoms.iter().enumerate() {
+            let d = self
+                .cell
+                .min_image(a.posit - self.neighbors_nb.ref_pos_dyn[i]);
+            max_sq = max_sq.max(d.magnitude_squared());
+        }
+
+        for (i, a) in self.atoms_static.iter().enumerate() {
+            let d = self
+                .cell
+                .min_image(a.posit - self.neighbors_nb.ref_pos_static[i]);
+            max_sq = max_sq.max(d.magnitude_squared());
+        }
+
+        for (k, w) in self.water.iter().enumerate() {
+            let d = self
+                .cell
+                .min_image(w.o.posit - self.neighbors_nb.ref_pos_water_o[k]);
+            max_sq = max_sq.max(d.magnitude_squared());
+        }
+        max_sq
+    }
 }
