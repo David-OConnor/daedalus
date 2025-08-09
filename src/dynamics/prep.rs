@@ -40,6 +40,7 @@ use crate::{
     docking::{BindingEnergy, ConformationType, prep::DockingSetup},
     dynamics::{
         AtomDynamics, ForceFieldParamsIndexed, MdMode, MdState, ParamError, SnapshotDynamics,
+        ambient::SimBox, non_bonded, non_bonded::build_neighbors, water_opc::make_water_mols,
     },
     molecule::{Atom, Bond, Ligand, Molecule, Residue, ResidueEnd, build_adjacency_list},
 };
@@ -941,4 +942,200 @@ pub fn change_snapshot_peptide(
     }
 
     mol.atom_posits = Some(posits);
+}
+
+impl MdState {
+    pub fn new(
+        mode: MdMode,
+        atoms_dy: Vec<AtomDynamics>,
+        atoms_static: Vec<AtomDynamics>,
+        ff_params_non_static: ForceFieldParamsIndexed,
+        temp_target: f64,
+        hydrogen_md_type: HydrogenMdType,
+        adjacency_list: Vec<Vec<usize>>,
+    ) -> Self {
+        let cell = {
+            let (mut min, mut max) = (Vec3::splat(f64::INFINITY), Vec3::splat(f64::NEG_INFINITY));
+            for a in &atoms_dy {
+                min = min.min(a.posit);
+                max = max.max(a.posit);
+            }
+            let pad = 15.0; // Å
+            let lo = min - Vec3::splat(pad);
+            let hi = max + Vec3::splat(pad);
+
+            println!("Initizing sim box. L: {lo} H: {hi}");
+
+            SimBox {
+                bounds_low: lo,
+                bounds_high: hi,
+            }
+        };
+
+        let mut result = Self {
+            mode,
+            atoms: atoms_dy,
+            adjacency_list: adjacency_list.to_vec(),
+            atoms_static,
+            cell,
+            nonbonded_exclusions: HashSet::new(),
+            nonbonded_scaled: HashSet::new(),
+            force_field_params: ff_params_non_static,
+            temp_target,
+            hydrogen_md_type,
+            ..Default::default()
+        };
+
+        result.water = make_water_mols(
+            &cell,
+            result.temp_target,
+            &result.atoms,
+            &result.atoms_static,
+        );
+
+        result.setup_nonbonded_exclusion_scale_flags();
+
+        // todo: Combine the different water atoms from each mol, e.g. for water in result.water: water.o, water.h1, water.h2, water.ep
+        let mut water_atoms = Vec::with_capacity(result.water.len() * 4);
+        // todo: Fix these clones.
+        for mol in &result.water {
+            water_atoms.push(mol.o.clone());
+            water_atoms.push(mol.h0.clone());
+            water_atoms.push(mol.h1.clone());
+            water_atoms.push(mol.m.clone());
+        }
+
+        build_neighbors(
+            &mut result.neighbors_nb.dy_dy,
+            &result.atoms,
+            &result.atoms,
+            &result.cell,
+            true,
+        );
+        build_neighbors(
+            &mut result.neighbors_nb.dy_static,
+            &result.atoms,
+            &result.atoms_static,
+            &result.cell,
+            false,
+        );
+        build_neighbors(
+            &mut result.neighbors_nb.dy_water,
+            &result.atoms,
+            &water_atoms,
+            &result.cell,
+            false,
+        );
+        build_neighbors(
+            &mut result.neighbors_nb.water_static,
+            &water_atoms,
+            &water_atoms,
+            &result.cell,
+            false,
+        );
+        build_neighbors(
+            &mut result.neighbors_nb.water_water,
+            &water_atoms,
+            &result.atoms_static,
+            &result.cell,
+            true,
+        );
+
+        // Set up our LJ cache.
+        if result.step_count == 0 {
+            for i in 0..result.atoms.len() {
+                for &j in &result.neighbors_nb.dy_dy[i] {
+                    if j < i {
+                        // Prevents duplication of the pair in the other order.
+                        continue;
+                    }
+
+                    non_bonded::setup_lj_cache(
+                        &result.atoms[i],
+                        &result.atoms[j],
+                        Some((i, j)),
+                        None,
+                        None,
+                        &mut result.lj_table,
+                        &mut result.lj_table_static,
+                        &mut result.lj_table_water,
+                    );
+                }
+            }
+
+            for (i_lig, a_lig) in result.atoms.iter_mut().enumerate() {
+                // Force from static atoms.
+                for (i_static, a_static) in result.atoms_static.iter().enumerate() {
+                    non_bonded::setup_lj_cache(
+                        a_lig,
+                        a_static,
+                        None,
+                        Some((i_lig, i_static)),
+                        None,
+                        &mut result.lj_table,
+                        &mut result.lj_table_static,
+                        &mut result.lj_table_water,
+                    );
+                }
+
+                // Force from water
+                if !result.water.is_empty() {
+                    // Each water is identical, so we only need to do this once.
+                    for a_water_src in [
+                        &result.water[0].o,
+                        &result.water[0].m,
+                        &result.water[0].h0,
+                        &result.water[0].h1,
+                    ] {
+                        non_bonded::setup_lj_cache(
+                            a_lig,
+                            a_water_src,
+                            None,
+                            None,
+                            Some(i_lig),
+                            &mut result.lj_table,
+                            &mut result.lj_table_static,
+                            &mut result.lj_table_water,
+                        );
+                    }
+                }
+            }
+        }
+
+        result
+    }
+
+    /// We use this to set up optimizations defined in the Amber reference manual. `excluded` deals
+    /// with sections were we skip coulomb and Vdw interactions for atoms separated by 1 or 2 bonds. `scaled14` applies a force
+    /// scaler for these interactions, when separated by 3 bonds.
+    fn setup_nonbonded_exclusion_scale_flags(&mut self) {
+        // Helper to store pairs in canonical (low,high) order
+        let push = |set: &mut HashSet<(usize, usize)>, i: usize, j: usize| {
+            if i < j {
+                set.insert((i, j));
+            } else {
+                set.insert((j, i));
+            }
+        };
+
+        // 1-2
+        for indices in &self.force_field_params.bonds_topology {
+            push(&mut self.nonbonded_exclusions, indices.0, indices.1);
+        }
+
+        // 1-3
+        for (indices, _) in &self.force_field_params.angle {
+            push(&mut self.nonbonded_exclusions, indices.0, indices.2);
+        }
+
+        // 1-4. We do not count improper dihedrals here.
+        for (indices, _) in &self.force_field_params.dihedral {
+            push(&mut self.nonbonded_scaled, indices.0, indices.3);
+        }
+
+        // Make sure no 1-4 pair is also in the excluded set
+        for p in &self.nonbonded_scaled {
+            self.nonbonded_exclusions.remove(p);
+        }
+    }
 }

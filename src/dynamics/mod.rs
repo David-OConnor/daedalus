@@ -94,16 +94,17 @@ use lin_alg::f64::Vec3;
 use lin_alg::f64::{Vec3x4, f64x4};
 use na_seq::{Element, Element::Hydrogen};
 use non_bonded::NeighborsNb;
-use rand_distr::Distribution;
-use rustfft::num_complex::ComplexFloat;
 
 use crate::{
     dynamics::{
-        ambient::BerendsenBarostat, non_bonded::CHARGE_UNIT_SCALER, prep::HydrogenMdType,
+        ambient::BerendsenBarostat,
+        non_bonded::{CHARGE_UNIT_SCALER, build_neighbors, max_displacement_sq_since_build},
+        prep::HydrogenMdType,
         water_opc::WaterMol,
     },
     molecule::Atom,
 };
+
 // (indices), (sigma, eps)
 pub type LjTable = HashMap<(usize, usize), (f64, f64)>;
 
@@ -113,6 +114,7 @@ pub type LjTable = HashMap<(usize, usize), (f64, f64)>;
 const CUTOFF_NEIGHBORS: f64 = 10.0; // 9-10 Å
 const SKIN: f64 = 2.0; // Å – rebuild list if an atom moved >½·SKIN. ~2Å.
 const SKIN_SQ: f64 = SKIN * SKIN;
+const SKIN_SQ_DIV_4: f64 = SKIN_SQ / 4.;
 
 const SNAPSHOT_RATIO: usize = 1;
 
@@ -461,20 +463,112 @@ impl MdState {
         self.time += dt;
         self.step_count += 1;
 
-        // Rebuild the neighbors list, which we use for non-bonded interactions.
-        let max_disp_sq = self.max_displacement_sq_since_build();
+        self.build_neighbors_if_needed();
 
-        if max_disp_sq > 0.25 * SKIN_SQ {
-            start = Instant::now();
-            self.build_neighbors();
-
-            let elapsed = start.elapsed();
-            println!("Neighbor build time: {:?} μs", elapsed.as_micros());
+        // Rebuild reference position lists, for use with determining when to rebuild the neighbor list.
+        for (i, a) in self.atoms.iter_mut().enumerate() {
+            self.neighbors_nb.ref_pos_dyn[i] = a.posit;
+        }
+        for (i, m) in self.water.iter_mut().enumerate() {
+            self.neighbors_nb.ref_pos_water_o[i] = m.o.posit;
         }
 
         if self.step_count % SNAPSHOT_RATIO == 0 {
             self.take_snapshot();
         }
+    }
+
+    /// Call during each step.
+    fn build_neighbors_if_needed(&mut self) {
+        let start = Instant::now();
+
+        // Rebuild the neighbors lists, which we use for non-bonded interactions.
+        let max_disp_sq_dyn = max_displacement_sq_since_build(
+            &self.atoms,
+            &self.neighbors_nb.ref_pos_dyn,
+            &self.cell,
+        );
+        if max_disp_sq_dyn > SKIN_SQ_DIV_4 {
+            build_neighbors(
+                &mut self.neighbors_nb.dy_dy,
+                &self.atoms,
+                &self.atoms,
+                &self.cell,
+                true,
+            );
+        }
+
+        let max_disp_sq_static = max_displacement_sq_since_build(
+            &self.atoms,
+            &self.neighbors_nb.ref_pos_static,
+            &self.cell,
+        );
+        if max_disp_sq_static > SKIN_SQ_DIV_4 {
+            build_neighbors(
+                &mut self.neighbors_nb.dy_static,
+                &self.atoms,
+                &self.atoms_static,
+                &self.cell,
+                false,
+            );
+        }
+
+        let mut water_atoms = Vec::with_capacity(self.water.len() * 4);
+        // todo: Fix these clones.
+        for mol in &self.water {
+            water_atoms.push(mol.o.clone());
+            water_atoms.push(mol.h0.clone());
+            water_atoms.push(mol.h1.clone());
+            water_atoms.push(mol.m.clone());
+        }
+
+        let max_disp_sq_water = max_displacement_sq_since_build(
+            &water_atoms,
+            &self.neighbors_nb.ref_pos_water_o,
+            &self.cell,
+        );
+        if max_disp_sq_water > SKIN_SQ_DIV_4 {
+            build_neighbors(
+                &mut self.neighbors_nb.dy_water,
+                &self.atoms,
+                &water_atoms,
+                &self.cell,
+                false,
+            );
+        }
+
+        let max_disp_sq_water = max_displacement_sq_since_build(
+            &water_atoms,
+            &self.neighbors_nb.ref_pos_static,
+            &self.cell,
+        );
+        if max_disp_sq_water > SKIN_SQ_DIV_4 {
+            build_neighbors(
+                &mut self.neighbors_nb.water_static,
+                &water_atoms,
+                &self.atoms_static,
+                &self.cell,
+                false,
+            );
+        }
+
+        let max_disp_sq_water = max_displacement_sq_since_build(
+            &water_atoms,
+            &self.neighbors_nb.ref_pos_water_o,
+            &self.cell,
+        );
+        if max_disp_sq_water > SKIN_SQ_DIV_4 {
+            build_neighbors(
+                &mut self.neighbors_nb.water_water,
+                &water_atoms,
+                &water_atoms,
+                &self.cell,
+                true,
+            );
+        }
+
+        let elapsed = start.elapsed();
+        println!("Neighbor build time: {:?} μs", elapsed.as_micros());
     }
 
     fn apply_bond_stretching_forces(&mut self) {
