@@ -26,7 +26,8 @@ use std::{collections::HashSet, time::Instant};
 use bio_files::{
     ResidueType,
     amber_params::{
-        AngleBendingParams, BondStretchingParams, ForceFieldParamsKeyed, MassParams, VdwParams,
+        AngleBendingParams, BondStretchingParams, ForceFieldParams, ForceFieldParamsKeyed,
+        MassParams, VdwParams,
     },
 };
 #[cfg(feature = "cuda")]
@@ -40,7 +41,9 @@ use crate::{
     docking::{BindingEnergy, ConformationType, prep::DockingSetup},
     dynamics::{
         AtomDynamics, ForceFieldParamsIndexed, MdMode, MdState, ParamError, SKIN, SnapshotDynamics,
-        ambient::SimBox, non_bonded::CUTOFF_VDW, water_opc::make_water_mols,
+        ambient::SimBox,
+        non_bonded::{CUTOFF_VDW, f_nonbonded, setup_lj_cache},
+        water_opc::make_water_mols,
     },
     molecule::{Atom, Bond, Ligand, Molecule, Residue, ResidueEnd, build_adjacency_list},
 };
@@ -521,6 +524,121 @@ impl ForceFieldParamsIndexed {
 }
 
 impl MdState {
+    pub fn new(
+        mode: MdMode,
+        atoms_dy: Vec<AtomDynamics>,
+        atoms_static: Vec<AtomDynamics>,
+        ff_params_non_static: ForceFieldParamsIndexed,
+        temp_target: f64,
+        hydrogen_md_type: HydrogenMdType,
+        adjacency_list: Vec<Vec<usize>>,
+    ) -> Self {
+        let cell = {
+            let (mut min, mut max) = (Vec3::splat(f64::INFINITY), Vec3::splat(f64::NEG_INFINITY));
+            for a in &atoms_dy {
+                min = min.min(a.posit);
+                max = max.max(a.posit);
+            }
+            let pad = 15.0; // Å
+            let lo = min - Vec3::splat(pad);
+            let hi = max + Vec3::splat(pad);
+
+            println!("Initizing sim box. L: {lo} H: {hi}");
+
+            SimBox {
+                bounds_low: lo,
+                bounds_high: hi,
+            }
+        };
+
+        let mut result = Self {
+            mode,
+            atoms: atoms_dy,
+            adjacency_list: adjacency_list.to_vec(),
+            atoms_static,
+            cell,
+            nonbonded_exclusions: HashSet::new(),
+            nonbonded_scaled: HashSet::new(),
+            force_field_params: ff_params_non_static,
+            temp_target,
+            hydrogen_md_type,
+            ..Default::default()
+        };
+
+        result.water = make_water_mols(
+            &cell,
+            result.temp_target,
+            &result.atoms,
+            &result.atoms_static,
+        );
+
+        result.setup_nonbonded_exclusion_scale_flags();
+        result.build_neighbours();
+
+        // Set up our LJ cache.
+        if result.step_count == 0 {
+            for i in 0..result.atoms.len() {
+                for &j in &result.neighbour[i] {
+                    if j < i {
+                        // Prevents duplication of the pair in the other order.
+                        continue;
+                    }
+
+                    setup_lj_cache(
+                        &result.atoms[i],
+                        &result.atoms[j],
+                        Some((i, j)),
+                        None,
+                        None,
+                        &mut result.lj_table,
+                        &mut result.lj_table_static,
+                        &mut result.lj_table_water,
+                    );
+                }
+            }
+
+            for (i_lig, a_lig) in result.atoms.iter_mut().enumerate() {
+                // Force from static atoms.
+                for (i_static, a_static) in result.atoms_static.iter().enumerate() {
+                    setup_lj_cache(
+                        a_lig,
+                        a_static,
+                        None,
+                        Some((i_lig, i_static)),
+                        None,
+                        &mut result.lj_table,
+                        &mut result.lj_table_static,
+                        &mut result.lj_table_water,
+                    );
+                }
+
+                // Force from water
+                if !result.water.is_empty() {
+                    // Each water is identical, so we only need to do this once.
+                    for a_water_src in [
+                        &result.water[0].o,
+                        &result.water[0].m,
+                        &result.water[0].h0,
+                        &result.water[0].h1,
+                    ] {
+                        setup_lj_cache(
+                            a_lig,
+                            a_water_src,
+                            None,
+                            None,
+                            Some(i_lig),
+                            &mut result.lj_table,
+                            &mut result.lj_table_static,
+                            &mut result.lj_table_water,
+                        );
+                    }
+                }
+            }
+        }
+
+        result
+    }
+
     /// For a dynamic ligand, and static (set of a) peptide.
     pub fn new_docking(
         atoms: &[Atom],
@@ -603,50 +721,18 @@ impl MdState {
             )?);
         }
 
-        let cell = {
-            let (mut min, mut max) = (Vec3::splat(f64::INFINITY), Vec3::splat(f64::NEG_INFINITY));
-            for a in &atoms_dy {
-                min = min.min(a.posit);
-                max = max.max(a.posit);
-            }
-            let pad = 15.0; // Å
-            let lo = min - Vec3::splat(pad);
-            let hi = max + Vec3::splat(pad);
-
-            println!("Initizing sim box. L: {lo} H: {hi}");
-
-            SimBox {
-                bounds_low: lo,
-                bounds_high: hi,
-            }
-        };
-
         // todo temp!
         let atoms_dy_static: Vec<AtomDynamics> = Vec::new();
 
-        let mut result = Self {
-            mode: MdMode::Docking,
-            atoms: atoms_dy,
-            adjacency_list: adjacency_list.to_vec(),
-            atoms_static: atoms_dy_static,
-            cell,
-            nonbonded_exclusions: HashSet::new(),
-            nonbonded_scaled: HashSet::new(),
-            force_field_params: ff_params_non_static,
+        let result = Self::new(
+            MdMode::Docking,
+            atoms_dy,
+            atoms_dy_static,
+            ff_params_non_static,
             temp_target,
             hydrogen_md_type,
-            ..Default::default()
-        };
-
-        result.water = make_water_mols(
-            &cell,
-            result.temp_target,
-            &result.atoms,
-            &result.atoms_static,
+            adjacency_list.to_vec(),
         );
-
-        result.setup_nonbonded_exclusion_scale_flags();
-        result.build_neighbours();
 
         Ok(result)
     }
@@ -724,47 +810,15 @@ impl MdState {
             )?);
         }
 
-        let cell = {
-            let (mut min, mut max) = (Vec3::splat(f64::INFINITY), Vec3::splat(f64::NEG_INFINITY));
-            for a in &atoms_dy {
-                min = min.min(a.posit);
-                max = max.max(a.posit);
-            }
-            let pad = 15.0; // Å
-            let lo = min - Vec3::splat(pad);
-            let hi = max + Vec3::splat(pad);
-
-            println!("Initizing sim box. L: {lo} H: {hi}");
-
-            SimBox {
-                bounds_low: lo,
-                bounds_high: hi,
-            }
-        };
-
-        let mut result = Self {
-            mode: MdMode::Peptide,
-            atoms: atoms_dy,
-            adjacency_list: adjacency_list.to_vec(),
-            atoms_static: Vec::new(),
-            cell,
-            nonbonded_exclusions: HashSet::new(),
-            nonbonded_scaled: HashSet::new(),
-            force_field_params: ff_params_non_static,
+        let result = Self::new(
+            MdMode::Peptide,
+            atoms_dy,
+            Vec::new(),
+            ff_params_non_static,
             temp_target,
             hydrogen_md_type,
-            ..Default::default()
-        };
-
-        result.water = make_water_mols(
-            &cell,
-            result.temp_target,
-            &result.atoms,
-            &result.atoms_static,
+            adjacency_list.to_vec(),
         );
-
-        result.setup_nonbonded_exclusion_scale_flags();
-        result.build_neighbours();
 
         Ok(result)
     }

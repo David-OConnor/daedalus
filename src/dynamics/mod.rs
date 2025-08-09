@@ -56,6 +56,11 @@
 //! On f32 vs f64 floating point precision: f32 may be good enough fo rmost things, and typical MD packages
 //! use mixed precision. Long-range electrostatics are a good candidate for using f64. Or, very long
 //! runs.
+//!
+//! Note on performance: It appears that non-bonded forces dominate computation time. This is my observation,
+//! and it's confirmed by an LLM. Both LJ and Coulomb take up most of the time; bonded forces
+//! are comparatively insignificant. Building neighbor lists are also significant. These are the areas
+//! we focus on for parallel computation (Thread pools, SIMD, CUDA)
 
 // todo: Long-term, you will need to figure out what to run as f32 vice f64, especially
 // todo for being able to run on GPU.
@@ -67,7 +72,10 @@ pub mod prep;
 mod spme;
 mod water_opc;
 
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    time::Instant,
+};
 
 use ambient::SimBox;
 use bio_files::amber_params::{
@@ -354,12 +362,54 @@ impl MdState {
         }
 
         // Bonded forces
+        let mut start = Instant::now();
         self.apply_bond_stretching_forces();
-        self.apply_angle_bending_forces();
-        self.apply_dihedral_forces(false);
-        self.apply_dihedral_forces(true);
 
+        if self.step_count == 0 {
+            let elapsed = start.elapsed();
+            println!("Bond stretching time: {:?} μs", elapsed.as_micros());
+        }
+
+        if self.step_count == 0 {
+            start = Instant::now();
+        }
+        self.apply_angle_bending_forces();
+
+        if self.step_count == 0 {
+            let elapsed = start.elapsed();
+            println!("Angle bending time: {:?} μs", elapsed.as_micros());
+        }
+
+        if self.step_count == 0 {
+            start = Instant::now();
+        }
+
+        if self.step_count == 0 {
+            self.apply_dihedral_forces(false);
+            let elapsed = start.elapsed();
+            println!("Dihedral: {:?} μs", elapsed.as_micros());
+        }
+
+        if self.step_count == 0 {
+            start = Instant::now();
+        }
+
+        self.apply_dihedral_forces(true);
+        if self.step_count == 0 {
+            let elapsed = start.elapsed();
+            println!("Improper time: {:?} μs", elapsed.as_micros());
+        }
+
+        if self.step_count == 0 {
+            start = Instant::now();
+        }
+
+        // Note: Non-bonded takes the vast majority of time.
         self.apply_nonbonded_forces();
+        if self.step_count == 0 {
+            let elapsed = start.elapsed();
+            println!("Non-bonded time: {:?} μs", elapsed.as_micros());
+        }
 
         // Second half-kick using new accelerations, and update accelerations using the atom's mass;
         // up to this point, the accelerations have been missing that step; this is an optimization to
@@ -375,7 +425,14 @@ impl MdState {
             self.rattle_hydrogens();
         }
 
+        if self.step_count == 0 {
+            start = Instant::now();
+        }
         self.water_step(dt);
+        if self.step_count == 0 {
+            let elapsed = start.elapsed();
+            println!("Water time: {:?} μs", elapsed.as_micros());
+        }
 
         // todo: Apply the thermostat.
 

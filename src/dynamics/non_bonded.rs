@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 
 use lin_alg::f64::Vec3;
+use rayon::prelude::*;
 
 use crate::{
     dynamics::{
@@ -35,6 +36,34 @@ const SCALE_COUL_14: f64 = 1.0 / 1.2;
 // files and amino19.lib.) to the self-consistent amber units required to calculate Coulomb force.
 pub const CHARGE_UNIT_SCALER: f64 = 18.2223;
 
+/// Run this once per MD run. Sets up LJ caches for each pair of atoms.
+/// Mirrors the force fn's params.
+pub fn setup_lj_cache(
+    tgt: &AtomDynamics,
+    src: &AtomDynamics,
+    atom_indices: Option<(usize, usize)>,
+    // (dynamic i, static i)
+    atom_indices_static: Option<(usize, usize)>,
+    atom_indices_water: Option<usize>,
+    lj_table: &mut LjTable,
+    // (dynamic i, static i)
+    lj_table_static: &mut LjTable,
+    lj_table_water: &mut HashMap<usize, (f64, f64)>,
+) {
+    let (σ, ε) = combine_lj_params(tgt, src);
+
+    if let Some(indices) = atom_indices {
+        // Dynamic-dynamic
+        lj_table.insert(indices, (σ, ε));
+    } else if let Some(indices) = atom_indices_static {
+        // Note: Index order matters here, and the caveat for dynamic-dynamic interactions
+        // doesn't.
+        lj_table_static.insert(indices, (σ, ε));
+    } else if let Some(i) = atom_indices_water {
+        lj_table_water.insert(i, (σ, ε));
+    }
+}
+
 impl MdState {
     /// Coulomb and Van der Waals. (Lennard-Jones). We use the MD-standard [S]PME approach
     /// to handle approximated Coulomb forces. This function applies forces from dynamic, static,
@@ -56,7 +85,7 @@ impl MdState {
     pub fn apply_nonbonded_forces(&mut self) {
         // An approximation to simplify which water molecules are close enough to interact
         // with the ligand: Each X steps, we measure the distance between each molecule,
-        // and an arbitrary ligand atom; this takes advanate of the ligand being small.
+        // and an arbitrary ligand atom; this takes advantage of the ligand being small.
         // todo: Store in state and implement the every X steps; for now, we check each step.
 
         // todo: Use a neighbors list periodically rebuilt; much faster.
@@ -70,58 +99,130 @@ impl MdState {
             }
         }
 
-        // Force from dynamic atoms (on the target dynamic atoms): LJ, and Ewald-screened Coulomb.
-        for i in 0..self.atoms.len() {
-            for &j in &self.neighbour[i] {
-                if j < i {
-                    // Prevents duplication of the pair in the other order.
-                    continue;
-                }
+        let n = self.atoms.len();
 
-                let scale14 = {
-                    let key = if i < j { (i, j) } else { (j, i) };
+        let neighbour = &self.neighbour;
+        let exclusions = &self.nonbonded_exclusions;
+        let scaled_set = &self.nonbonded_scaled;
 
-                    // Exclusions: covalent bonds 1-2 and 1-3
-                    if self.nonbonded_exclusions.contains(&key) {
-                        continue;
+        // Set up pairs ahead of time; conducive to parallel iteration.
+        let pairs: Vec<(usize, usize, bool)> = (0..n)
+            .flat_map(|i| {
+                neighbour[i]
+                    .iter()
+                    .copied()
+                    .filter(move |&j| j > i) // Ensure stable order
+                    .filter_map(move |j| {
+                        let key = (i, j);
+                        if exclusions.contains(&key) {
+                            return None;
+                        }
+                        let scale14 = scaled_set.contains(&key);
+                        Some((i, j, scale14))
+                    })
+            })
+            .collect();
+
+        let per_atom_accum: Vec<Vec3> = pairs
+            .par_iter()
+            .fold(
+                || vec![Vec3::new_zero(); n],
+                |mut acc, &(i, j, scale14)| {
+                    let diff = self.atoms[i].posit - self.atoms[j].posit;
+                    let dv = self.cell.min_image(diff);
+                    let r_sq = dv.magnitude_squared();
+
+                    let f = f_nonbonded(
+                        &self.atoms[i],
+                        &self.atoms[j],
+                        r_sq,
+                        diff,
+                        scale14,
+                        Some((i, j)),
+                        None,
+                        None,
+                        &self.lj_table,
+                        &self.lj_table_static,
+                        &self.lj_table_water,
+                    );
+
+                    acc[i] += f;
+                    acc[j] -= f;
+                    acc
+                },
+            )
+            .reduce(
+                || vec![Vec3::new_zero(); n],
+                |mut a, b| {
+                    // elementwise add
+                    for k in 0..n {
+                        a[k] += b[k];
                     }
+                    a
+                },
+            );
 
-                    // Scaled: covalent bonds 1-4
-                    self.nonbonded_scaled.contains(&key)
-                };
-
-                let diff = self.atoms[i].posit - self.atoms[j].posit;
-                let dv = self.cell.min_image(diff);
-                let r_sq = dv.magnitude_squared();
-
-                let f = f_nonbonded(
-                    &self.atoms[i],
-                    &self.atoms[j],
-                    r_sq,
-                    diff,
-                    scale14,
-                    Some((i, j)),
-                    None,
-                    None,
-                    &mut self.lj_table,
-                    &mut self.lj_table_static,
-                    &mut self.lj_table_water,
-                );
-
-                // println!(
-                //     "Posit 0: {}, Posit 1: {}, {f}, q0: {:.2}, q1: {:.2} dist: {:.2}",
-                //     self.atoms[i].posit,
-                //     self.atoms[j].posit,
-                //     self.atoms[i].partial_charge,
-                //     self.atoms[j].partial_charge,
-                //     diff.magnitude()
-                // );
-
-                // We divide by mass in `step`.
-                self.atoms[i].accel += f;
-                self.atoms[j].accel -= f;
-            }
+        // Apply accumulated forces
+        for i in 0..n {
+            self.atoms[i].accel += per_atom_accum[i];
         }
+
+        // ----
+
+        //
+        //
+        // // Force from dynamic atoms (on the target dynamic atoms): LJ, and Ewald-screened Coulomb.
+        // for i in 0..self.atoms.len() {
+        //     for &j in &self.neighbour[i] {
+        //         if j < i {
+        //             // Prevents duplication of the pair in the other order.
+        //             continue;
+        //         }
+        //
+        //         let scale14 = {
+        //             let key = if i < j { (i, j) } else { (j, i) };
+        //
+        //             // Exclusions: covalent bonds 1-2 and 1-3
+        //             if self.nonbonded_exclusions.contains(&key) {
+        //                 continue;
+        //             }
+        //
+        //             // Scaled: covalent bonds 1-4
+        //             self.nonbonded_scaled.contains(&key)
+        //         };
+        //
+        //         let diff = self.atoms[i].posit - self.atoms[j].posit;
+        //         let dv = self.cell.min_image(diff);
+        //         let r_sq = dv.magnitude_squared();
+        //
+        //         let f = f_nonbonded(
+        //             &self.atoms[i],
+        //             &self.atoms[j],
+        //             r_sq,
+        //             diff,
+        //             scale14,
+        //             Some((i, j)),
+        //             None,
+        //             None,
+        //             &self.lj_table,
+        //             &self.lj_table_static,
+        //             &self.lj_table_water,
+        //         );
+        //
+        //         // println!(
+        //         //     "Posit 0: {}, Posit 1: {}, {f}, q0: {:.2}, q1: {:.2} dist: {:.2}",
+        //         //     self.atoms[i].posit,
+        //         //     self.atoms[j].posit,
+        //         //     self.atoms[i].partial_charge,
+        //         //     self.atoms[j].partial_charge,
+        //         //     diff.magnitude()
+        //         // );
+        //
+        //         // We divide by mass in `step`.
+        //         self.atoms[i].accel += f;
+        //         self.atoms[j].accel -= f;
+        //     }
+        // }
 
         // Force from static atoms and water. (Short-range). We currently don't use the neighbors approach here, although
         // it is likely useful, as when docking, there will be many static atoms IVO the dynamic ones.
@@ -220,51 +321,35 @@ pub fn f_nonbonded(
     // (dynamic i, static i)
     atom_indices_static: Option<(usize, usize)>,
     atom_indices_water: Option<usize>,
-    lj_table: &mut LjTable,
+    lj_table: &LjTable,
     // (dynamic i, static i)
-    lj_table_static: &mut LjTable,
-    lj_table_water: &mut HashMap<usize, (f64, f64)>,
+    lj_table_static: &LjTable,
+    lj_table_water: &HashMap<usize, (f64, f64)>,
 ) -> Vec3 {
     let dist = r_sq.sqrt();
     let dir = diff / dist;
 
     // todo: This distance cutoff helps, but ideally we skip the distance computation too in these cases.
-    let mut f_lj = if r_sq > CUTOFF_VDW_SQ {
+    let f_lj = if r_sq > CUTOFF_VDW_SQ {
         Vec3::new_zero()
     } else {
-        let mut get_or_insert = |table: &mut HashMap<_, _>, key| match table.get(&key) {
-            Some(params) => *params,
-            None => {
-                let (σ, ε) = combine_lj_params(tgt, src);
-                table.insert(key, (σ, ε));
-                (σ, ε)
-            }
-        };
-
         let (σ, ε) = if let Some(indices) = atom_indices {
             // Dynamic-dynamic
-            get_or_insert(lj_table, indices)
+            lj_table.get(&indices).unwrap()
         } else if let Some(indices) = atom_indices_static {
             // Note: Index order matters here, and the caveat for dynamic-dynamic interactions
             // doesn't.
-            get_or_insert(lj_table_static, indices)
+            lj_table_static.get(&indices).unwrap()
         } else if let Some(i) = atom_indices_water {
             // Single index of the lig; the only water mol is the uniform O.
-            match lj_table_water.get(&i) {
-                Some(params) => *params,
-                None => {
-                    let (σ, ε) = combine_lj_params(tgt, src);
-                    lj_table_water.insert(i, (σ, ε));
-                    (σ, ε)
-                }
-            }
+            lj_table_water.get(&i).unwrap()
         } else {
             // Water-water
-            (water_opc::O_SIGMA, water_opc::O_EPS)
+            &(water_opc::O_SIGMA, water_opc::O_EPS)
         };
 
         // Negative due to our mix of conventions; keep it consistent with coulomb, and net correct.
-        let mut f = -force_lj(dir, dist, σ, ε);
+        let mut f = -force_lj(dir, dist, *σ, *ε);
         if scale14 {
             f *= SCALE_LJ_14;
         }
