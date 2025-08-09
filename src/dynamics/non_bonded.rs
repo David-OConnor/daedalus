@@ -7,8 +7,7 @@ use rayon::prelude::*;
 
 use crate::{
     dynamics::{
-        AtomDynamics, CUTOFF_NEIGHBORS, LjTable, MdState, SKIN,
-        ambient::SimBox,
+        AtomDynamics, LjTable, MdState,
         spme::{EWALD_ALPHA, PME_MESH_SPACING, force_coulomb_ewald_real, pme_long_range_forces},
         water_opc,
     },
@@ -36,36 +35,6 @@ const SCALE_COUL_14: f64 = 1.0 / 1.2;
 // Multiply by this to convert partial charges from elementary charge (What we store in Atoms loaded from mol2
 // files and amino19.lib.) to the self-consistent amber units required to calculate Coulomb force.
 pub const CHARGE_UNIT_SCALER: f64 = 18.2223;
-
-#[derive(Default)]
-/// Non-bonded neighbors; an important optimization for Van der Waals and Coulomb interactions.
-/// By index for fast lookups; separate fields, as these indices have different meanings for dynamic atoms,
-/// static atoms, and water.
-///
-/// To understand how we've set up the fields, each of the three types of atoms interactions with the others,
-/// but note that static atoms are sources only; they are not acted on.
-///
-/// Note: These historically called "Verlet lists", but we're not using that term, as we use "Verlet" to refer
-/// to the integrator, which this has nothing to do with. They do have to do with their applicability to
-/// non-bonded interactions, so we call them "Non-bonded neighbors".
-pub struct NeighborsNb {
-    // Neighbors acting on dynamic atoms:
-    /// Symmetric dynamic-dynamic indices. Dynamic source and target.
-    pub dy_dy: Vec<Vec<usize>>,
-    /// Outer: Dynamic. Inner: static. Dynamic target, static source.
-    pub dy_static: Vec<Vec<usize>>,
-    /// Outer: Dynamic. Inner: water. Each is a source and target.
-    pub dy_water: Vec<Vec<usize>>,
-    // Neighbors acting on water: (Dynamic acting on water is handled with `dy_water` above.
-    /// Symmetric water-water indices. Dynamic source and target.
-    pub water_water: Vec<Vec<usize>>,
-    /// Outer: Water. Inner: static. Water target, static source.
-    pub water_static: Vec<Vec<usize>>,
-    //
-    // Reference positions used when rebuilding. Only for movable atoms.
-    pub ref_pos_dyn: Vec<Vec3>,
-    pub ref_pos_water_o: Vec<Vec3>, // use O as proxy for the rigid water
-}
 
 /// Run this once per MD run. Sets up LJ caches for each pair of atoms.
 /// Mirrors the force fn's params.
@@ -339,7 +308,6 @@ impl MdState {
 
 /// Vdw and Coulomb forces. Used by water and non-water.
 /// We split out `r_sq` and `diff` for use while integrating a unit cell, if applicable.
-/// todo: Optimize using neighbors, and/or PME/SPME.
 pub fn f_nonbonded(
     tgt: &AtomDynamics,
     src: &AtomDynamics,
@@ -414,63 +382,4 @@ fn combine_lj_params(atom_0: &AtomDynamics, atom_1: &AtomDynamics) -> (f64, f64)
     let ε = (atom_0.lj_eps * atom_1.lj_eps).sqrt();
 
     (σ, ε)
-}
-
-/// [Re]build a neighbor list, used for non-bonded interactions. Run this periodically.
-pub fn build_neighbors(
-    neighbors: &mut Vec<Vec<usize>>,
-    targets: &[AtomDynamics],
-    sources: &[AtomDynamics],
-    cell: &SimBox,
-    symmetric: bool,
-) {
-    const CUTOFF_SKIN_SQ: f64 = (CUTOFF_NEIGHBORS + SKIN) * (CUTOFF_NEIGHBORS + SKIN);
-
-    neighbors.clear();
-
-    let src_len = sources.len();
-    let tgt_len = targets.len();
-
-    // todo: Qc all this, re sources and targets etc.
-    *neighbors = vec![Vec::new(); targets.len()];
-
-    let inner = |i_src: usize, i_tgt: usize| {
-        let dv = cell.min_image(targets[i_tgt].posit - sources[i_src].posit);
-
-        // todo: Wrong?
-        if dv.magnitude_squared() < CUTOFF_SKIN_SQ {
-            neighbors[i_tgt].push(i_src);
-            neighbors[i_src].push(i_tgt);
-        }
-    };
-
-    if symmetric {
-        // todo: QC this!
-        for i_tgt in 0..tgt_len - 1 {
-            for i_src in i_tgt + 1..src_len {
-                inner(i_src, i_tgt);
-            }
-        }
-    } else {
-        for i_tgt in 0..tgt_len {
-            for i_src in 0..src_len {
-                inner(i_src, i_tgt);
-            }
-        }
-    }
-}
-
-/// For use with our non-bonded neighbors construction.
-pub fn max_displacement_sq_since_build(
-    targets: &[AtomDynamics],
-    neighbor_ref_posits: &[Vec3],
-    cell: &SimBox,
-) -> f64 {
-    let mut max_sq: f64 = 0.0;
-
-    for (i, a) in targets.iter().enumerate() {
-        let d = cell.min_image(a.posit - neighbor_ref_posits[i]);
-        max_sq = max_sq.max(d.magnitude_squared());
-    }
-    max_sq
 }

@@ -40,7 +40,7 @@ use crate::{
     docking::{BindingEnergy, ConformationType, prep::DockingSetup},
     dynamics::{
         AtomDynamics, ForceFieldParamsIndexed, MdMode, MdState, ParamError, SnapshotDynamics,
-        ambient::SimBox, non_bonded, non_bonded::build_neighbors, water_opc::make_water_mols,
+        ambient::SimBox, neighbors::build_neighbors, non_bonded, water_opc::make_water_mols,
     },
     molecule::{Atom, Bond, Ligand, Molecule, Residue, ResidueEnd, build_adjacency_list},
 };
@@ -995,14 +995,10 @@ impl MdState {
 
         result.setup_nonbonded_exclusion_scale_flags();
 
-        // todo: Combine the different water atoms from each mol, e.g. for water in result.water: water.o, water.h1, water.h2, water.ep
-        let mut water_atoms = Vec::with_capacity(result.water.len() * 4);
-        // todo: Fix these clones.
+        let mut water_atoms = Vec::with_capacity(result.water.len());
+        // todo: Fix this clone.
         for mol in &result.water {
             water_atoms.push(mol.o.clone());
-            water_atoms.push(mol.h0.clone());
-            water_atoms.push(mol.h1.clone());
-            water_atoms.push(mol.m.clone());
         }
 
         build_neighbors(
@@ -1029,17 +1025,25 @@ impl MdState {
         build_neighbors(
             &mut result.neighbors_nb.water_static,
             &water_atoms,
-            &water_atoms,
+            &result.atoms_static,
             &result.cell,
             false,
         );
         build_neighbors(
             &mut result.neighbors_nb.water_water,
             &water_atoms,
-            &result.atoms_static,
+            &water_atoms,
             &result.cell,
             true,
         );
+
+        // Sets up initial values, and does the only pushes; we set by index after.
+        for a in &result.atoms {
+            result.neighbors_nb.ref_pos_dyn.push(a.posit);
+        }
+        for m in &result.water {
+            result.neighbors_nb.ref_pos_water_o.push(m.o.posit);
+        }
 
         // Set up our LJ cache.
         if result.step_count == 0 {
