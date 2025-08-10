@@ -17,19 +17,16 @@
 //! to be cheaper, and more robust than Shake/Rattle. It's less general, but it works here.
 //! Settle is specifically tailored for three-atom rigid bodies.
 
-use std::{collections::HashMap, f64::consts::TAU, mem};
+use std::f64::consts::TAU;
 
 use lin_alg::f64::{Quaternion, Vec3};
 use na_seq::Element;
 use rand::{Rng, distr::Uniform};
 use rand_distr::{Distribution, StandardNormal};
 
-use crate::{
-    dynamics::{
-        AtomDynamics, LjTable, MdState, ambient::SimBox, neighbors::NeighborsNb,
-        non_bonded::f_nonbonded, split2_mut,
-    },
-    forces::force_coulomb,
+use crate::dynamics::{
+    ACCEL_CONVERSION_INV, AtomDynamics, MdState, ambient::SimBox, non_bonded::f_nonbonded,
+    split2_mut,
 };
 
 // Parameters for OPC water (JPCL, 2014, 5 (21), pp 3863-3871)
@@ -342,11 +339,11 @@ fn solve_symmetric3(ixx: f64, iyy: f64, izz: f64, ixy: f64, ixz: f64, iyz: f64, 
 pub fn init_velocities(mols: &mut [WaterMol], t_target: f64) {
     let mut rng = rand::rng();
 
-    // 1) Gaussian draw
+    // Gaussian draw
     for a in atoms_mut(mols) {
-        if a.mass == 0.0 {
+        if a.mass.abs() < 1.0e-12 {
             continue;
-        } // EP/virtual sites
+        } // EP/M
 
         let nx: f64 = StandardNormal.sample(&mut rng);
         let ny: f64 = StandardNormal.sample(&mut rng);
@@ -356,14 +353,15 @@ pub fn init_velocities(mols: &mut [WaterMol], t_target: f64) {
         a.vel = Vec3::new(nx, ny, nz);
     }
 
-    // 2) remove centre-of-mass drift
+    // Remove centre-of-mass drift
     remove_com_velocity(mols);
 
-    // 3) compute instantaneous T
-    let (ke, dof) = kinetic_energy_and_dof(mols);
-    let t_now = 2.0 * ke / (dof as f64 * KB);
+    // Compute instantaneous T
+    let (ke_raw, dof) = kinetic_energy_and_dof(mols);
+    let ke_kcal = ke_raw * ACCEL_CONVERSION_INV;
+    let t_now = 2.0 * ke_kcal / (dof as f64 * KB);
 
-    // 4) rescale to T_target
+    // Rescale to T_target
     let lambda = (t_target / t_now).sqrt();
     for a in atoms_mut(mols) {
         if a.mass == 0.0 {
@@ -374,6 +372,7 @@ pub fn init_velocities(mols: &mut [WaterMol], t_target: f64) {
 }
 
 /// Per-water, per-site force accumulator. Used transiently in `step_water`.
+/// This is the force *on* each atom in the molecule.
 #[derive(Clone, Copy, Default)]
 struct WaterForces {
     f_o: Vec3,
@@ -383,20 +382,11 @@ struct WaterForces {
 }
 
 impl MdState {
-    /// todo: Shake/rattle technique to update?
-    /// Update dynamics based on own velocity, internal "forces" (?), and external coulomb (i.e.
-    /// partial charge), and Van der Waals (LJ) forces from other molecules.
-    /// One Velocity‑Verlet step with SHAKE/RATTLE constraints.
-    ///
-    /// `sources` includes both other water molecules, and non-waters.
-    pub fn step_water(&mut self, dt: f64) {
+    /// Split from `step_water` since we call it twice. Handles force from dynamic, static, and other water.
+    fn calc_water_forces(&self) -> Vec<WaterForces> {
         let n_w = self.water.len();
-        if n_w == 0 {
-            return;
-        }
-
-        // Forces at current positions ----------
-        let mut fw = vec![WaterForces::default(); n_w];
+        // Forces at current positions
+        let mut result = vec![WaterForces::default(); n_w];
 
         // (a) dynamic → water
         // We only add forces to WATER here; the dynamic atoms already got their
@@ -406,81 +396,80 @@ impl MdState {
                 let w = &self.water[iw];
                 let a = &self.atoms[i_dyn];
 
-                // O (LJ + Coulomb if O is charged in your model; in OPC O is neutral → LJ only)
+                // Applicable to all calls to f_nonbonded: See the note below on why we must explicitly
+                // set calc_coulomb or calc_lj to false.
+
+                // O
                 {
-                    let dv = self.cell.min_image(a.posit - w.o.posit);
-                    let r2 = dv.magnitude_squared();
                     let f = f_nonbonded(
                         &w.o,
                         a,
-                        r2,
-                        dv,
+                        &self.cell,
                         false,
                         None,
                         None,
-                        Some(i_dyn), // scaling keys as in your API; none for dy-dy here
+                        None,
                         &self.lj_table,
                         &self.lj_table_static,
                         &self.lj_table_water,
+                        true,
+                        false,
                     );
-                    fw[iw].f_o += f;
+                    result[iw].f_o += f;
                 }
                 // H0
                 {
-                    let dv = self.cell.min_image(a.posit - w.h0.posit);
-                    let r2 = dv.magnitude_squared();
                     let f = f_nonbonded(
                         &w.h0,
                         a,
-                        r2,
-                        dv,
+                        &self.cell,
                         false,
                         None,
                         None,
-                        Some(i_dyn),
+                        None,
                         &self.lj_table,
                         &self.lj_table_static,
                         &self.lj_table_water,
+                        false,
+                        true,
                     );
-                    fw[iw].f_h0 += f;
+                    result[iw].f_h0 += f;
                 }
                 // H1
                 {
-                    let dv = self.cell.min_image(a.posit - w.h1.posit);
-                    let r2 = dv.magnitude_squared();
                     let f = f_nonbonded(
                         &w.h1,
                         a,
-                        r2,
-                        dv,
+                        &self.cell,
                         false,
                         None,
                         None,
-                        Some(i_dyn),
+                        None,
                         &self.lj_table,
                         &self.lj_table_static,
                         &self.lj_table_water,
+                        false,
+                        true,
                     );
-                    fw[iw].f_h1 += f;
+                    result[iw].f_h1 += f;
                 }
                 // M/EP (Coulomb only)
                 {
-                    let dv = self.cell.min_image(a.posit - w.m.posit);
-                    let r2 = dv.magnitude_squared();
                     let f = f_nonbonded(
                         &w.m,
                         a,
-                        r2,
-                        dv,
+                        &self.cell,
                         false,
                         None,
                         None,
-                        Some(i_dyn),
+                        None,
                         &self.lj_table,
                         &self.lj_table_static,
                         &self.lj_table_water,
+                        false,
+                        true,
                     );
-                    fw[iw].f_m += f;
+                    result[iw].f_m += f;
                 }
             }
         }
@@ -493,205 +482,190 @@ impl MdState {
 
                 // O
                 {
-                    let dv = self.cell.min_image(a.posit - w.o.posit);
-                    let r2 = dv.magnitude_squared();
                     let f = f_nonbonded(
                         &w.o,
                         a,
-                        r2,
-                        dv,
+                        &self.cell,
                         false,
                         None,
-                        Some((usize::MAX, i_st)),
+                        None,
                         None,
                         &self.lj_table,
                         &self.lj_table_static,
                         &self.lj_table_water,
+                        true,
+                        false,
                     );
-                    fw[iw].f_o += f;
+                    result[iw].f_o += f;
                 }
                 // H0
                 {
-                    let dv = self.cell.min_image(a.posit - w.h0.posit);
-                    let r2 = dv.magnitude_squared();
                     let f = f_nonbonded(
                         &w.h0,
                         a,
-                        r2,
-                        dv,
+                        &self.cell,
                         false,
                         None,
-                        Some((usize::MAX, i_st)),
+                        None,
                         None,
                         &self.lj_table,
                         &self.lj_table_static,
                         &self.lj_table_water,
+                        false,
+                        true,
                     );
-                    fw[iw].f_h0 += f;
+                    result[iw].f_h0 += f;
                 }
                 // H1
                 {
-                    let dv = self.cell.min_image(a.posit - w.h1.posit);
-                    let r2 = dv.magnitude_squared();
                     let f = f_nonbonded(
                         &w.h1,
                         a,
-                        r2,
-                        dv,
+                        &self.cell,
                         false,
                         None,
-                        Some((usize::MAX, i_st)),
+                        None,
                         None,
                         &self.lj_table,
                         &self.lj_table_static,
                         &self.lj_table_water,
+                        false,
+                        true,
                     );
-                    fw[iw].f_h1 += f;
+                    result[iw].f_h1 += f;
                 }
                 // M
                 {
-                    let dv = self.cell.min_image(a.posit - w.m.posit);
-                    let r2 = dv.magnitude_squared();
                     let f = f_nonbonded(
                         &w.m,
                         a,
-                        r2,
-                        dv,
+                        &self.cell,
                         false,
                         None,
-                        Some((usize::MAX, i_st)),
+                        None,
                         None,
                         &self.lj_table,
                         &self.lj_table_static,
                         &self.lj_table_water,
+                        false,
+                        true,
                     );
-                    fw[iw].f_m += f;
+                    result[iw].f_m += f;
                 }
             }
         }
 
-        // (c) water ↔ water (use i<j; apply Newton’s 3rd law between molecules)
-        for iw in 0..n_w {
-            for &jw in &self.neighbors_nb.water_water[iw] {
-                if jw <= iw {
+        // Water ↔ water (use i<j; apply Newton’s 3rd law between molecules)
+        for iw_tgt in 0..n_w {
+            for &iw_src in &self.neighbors_nb.water_water[iw_tgt] {
+                if iw_src <= iw_tgt {
                     continue;
                 }
 
-                let (fwi, fwj) = split2_mut(&mut fw, iw, jw); // disjoint &mut WaterForces
+                let (fwi, fwj) = split2_mut(&mut result, iw_tgt, iw_src);
+                let wi = &self.water[iw_tgt];
+                let wj = &self.water[iw_src];
 
-                let wi = &self.water[iw];
-                let wj = &self.water[jw];
-
-                // LJ: O–O only
-                {
-                    let dv = self.cell.min_image(wj.o.posit - wi.o.posit);
-                    let r2 = dv.magnitude_squared();
-                    let f = f_nonbonded(
-                        &wi.o,
-                        &wj.o,
-                        r2,
-                        dv,
-                        false,
-                        None,
-                        None,
-                        None,
-                        &self.lj_table,
-                        &self.lj_table_static,
-                        &self.lj_table_water,
-                    );
-                    fwi.f_o += f;
-                    fwj.f_o -= f;
+                // enumerate sites as (&AtomDynamics, enum tag)
+                #[derive(Copy, Clone)]
+                enum S {
+                    O,
+                    H0,
+                    H1,
+                    M,
                 }
+                let tgt_sites = [
+                    (&wi.o, S::O),
+                    (&wi.h0, S::H0),
+                    (&wi.h1, S::H1),
+                    (&wi.m, S::M),
+                ];
+                let src_sites = [
+                    (&wj.o, S::O),
+                    (&wj.h0, S::H0),
+                    (&wj.h1, S::H1),
+                    (&wj.m, S::M),
+                ];
 
-                // Coulomb among charged sites: H/H, H/M, M/M (O is neutral in OPC)
-                // Helper: accumulate pair(i_site, j_site, &mut fw[i], &mut fw[j])
-                let mut add_pair =
-                    |ri: Vec3, qi: f64, rj: Vec3, qj: f64, fi: &mut Vec3, fj: &mut Vec3| {
-                        // todo: QC this. Do you really need to bring in a dedicated coulomb function? What about the
-                        // todo short-dist vs long dist ewald you use in f_nonbonded?
-                        let diff = rj - ri;
-                        let dir = diff.to_normalized();
+                for (tgt, ttag) in tgt_sites {
+                    for (src, stag) in src_sites {
+                        // We must explicitly pass these values as false to `f_nonbonded`, or not
+                        // run it when applicable: If we don't, in the case of Coulomb, it will conduct
+                        // an unnecessary computation that will result in the [correct] 0 Vector. In the
+                        // case of LJ, it will produce incorrect results, as it relies on cached
+                        // water-water LJ values, overriding the 0 values in the actual atoms.
+                        let calc_lj =
+                            tgt.element == Element::Oxygen && src.element == Element::Oxygen;
+                        let calc_coulomb =
+                            tgt.element != Element::Oxygen && src.element != Element::Oxygen;
 
-                        let dv = self.cell.min_image(diff);
-                        // let r2 = dv.magnitude_squared();
-                        // Use your Coulomb path in f_nonbonded or a fast inline Coulomb here:
-                        let f = force_coulomb(dir, dv.magnitude(), qi, qj, 1e-6); // todo...
+                        if !calc_lj && !calc_coulomb {
+                            continue;
+                        }
 
-                        *fi += f;
-                        *fj -= f;
-                    };
+                        let f = f_nonbonded(
+                            tgt,
+                            src,
+                            &self.cell,
+                            false,
+                            None,
+                            None,
+                            None,
+                            &self.lj_table,
+                            &self.lj_table_static,
+                            &self.lj_table_water,
+                            calc_lj,
+                            calc_coulomb,
+                        );
 
-                // H0/H0, H0/H1, H1/H1
-                add_pair(
-                    wi.h0.posit,
-                    wi.h0.partial_charge,
-                    wj.h0.posit,
-                    wj.h0.partial_charge,
-                    &mut fwi.f_h0,
-                    &mut fwj.f_h0,
-                );
-                add_pair(
-                    wi.h0.posit,
-                    wi.h0.partial_charge,
-                    wj.h1.posit,
-                    wj.h1.partial_charge,
-                    &mut fwi.f_h0,
-                    &mut fwj.f_h1,
-                );
-                add_pair(
-                    wi.h1.posit,
-                    wi.h1.partial_charge,
-                    wj.h1.posit,
-                    wj.h1.partial_charge,
-                    &mut fwi.f_h1,
-                    &mut fwj.f_h1,
-                );
-
-                // H/M cross
-                add_pair(
-                    wi.h0.posit,
-                    wi.h0.partial_charge,
-                    wj.m.posit,
-                    wj.m.partial_charge,
-                    &mut fwi.f_h0,
-                    &mut fwj.f_m,
-                );
-                add_pair(
-                    wi.h1.posit,
-                    wi.h1.partial_charge,
-                    wj.m.posit,
-                    wj.m.partial_charge,
-                    &mut fwi.f_h1,
-                    &mut fwj.f_m,
-                );
-                add_pair(
-                    wi.m.posit,
-                    wi.m.partial_charge,
-                    wj.h0.posit,
-                    wj.h0.partial_charge,
-                    &mut fwi.f_m,
-                    &mut fwj.f_h0,
-                );
-                add_pair(
-                    wi.m.posit,
-                    wi.m.partial_charge,
-                    wj.h1.posit,
-                    wj.h1.partial_charge,
-                    &mut fwi.f_m,
-                    &mut fwj.f_h1,
-                );
-
-                // M/M
-                add_pair(
-                    wi.m.posit,
-                    wi.m.partial_charge,
-                    wj.m.posit,
-                    wj.m.partial_charge,
-                    &mut fwi.f_m,
-                    &mut fwj.f_m,
-                );
+                        // add to the right components (Newton’s 3rd law)
+                        match ttag {
+                            S::O => {
+                                fwi.f_o += f;
+                            }
+                            S::H0 => {
+                                fwi.f_h0 += f;
+                            }
+                            S::H1 => {
+                                fwi.f_h1 += f;
+                            }
+                            S::M => {
+                                fwi.f_m += f;
+                            }
+                        }
+                        match stag {
+                            S::O => {
+                                fwj.f_o -= f;
+                            }
+                            S::H0 => {
+                                fwj.f_h0 -= f;
+                            }
+                            S::H1 => {
+                                fwj.f_h1 -= f;
+                            }
+                            S::M => {
+                                fwj.f_m -= f;
+                            }
+                        }
+                    }
+                }
             }
         }
+
+        result
+    }
+
+    /// Update each water molecule with LJ and Coulomb forces from dynamic atoms, static ones,
+    /// and other water molecules. We apply the same force computations as on dynamic atoms, but
+    /// use a rigid OPC model, and integrate using the SETTLE technique. (Optimized technique for
+    /// 3-atom rigid molecules).
+    pub fn step_water(&mut self, dt: f64) {
+        let n_w = self.water.len();
+        if n_w == 0 {
+            return;
+        }
+
+        let mut fw = self.calc_water_forces();
 
         // --- Project EP/M force to O, half-kick, SETTLE, place EP, wrap molecule ---
         let half = 0.5 * dt;
@@ -706,11 +680,15 @@ impl MdState {
 
             let w = &mut self.water[iw];
 
-            // Project EP to O WITHOUT aliasing borrows
+            // Project EP to O
             {
                 let wi = &mut fw[iw];
-                let m_impulse = mem::take(&mut wi.f_m); // or: mem::replace(&mut wi.f_m, Vec3::new_zero())
-                wi.f_o += m_impulse;
+                let (dFo, dFh0, dFh1) =
+                    project_ep_force_to_real_sites(w.o.posit, w.h0.posit, w.h1.posit, wi.f_m);
+                wi.f_m = Vec3::new_zero();
+                wi.f_o += dFo;
+                wi.f_h0 += dFh0;
+                wi.f_h1 += dFh1;
             }
 
             // Half-kick
@@ -734,29 +712,29 @@ impl MdState {
             w.m.posit += shift;
         }
 
-        // ---------- Recompute forces (fw2), project EP, second half-kick ----------
-        let mut fw2 = vec![WaterForces::default(); n_w];
-        // ... fill fw2 ...
+        // Recompute forces (fw2), project EP, second half-kick ----------
+        let mut fw2 = self.calc_water_forces();
 
         for iw in 0..n_w {
             let (mo, mh0, mh1) = {
                 let w = &self.water[iw];
                 (w.o.mass, w.h0.mass, w.h1.mass)
             };
-
             let w = &mut self.water[iw];
+            let wi2 = &mut fw2[iw];
 
-            // Project EP again (same anti-aliasing trick)
-            {
-                let wi2 = &mut fw2[iw];
-                let m2 = mem::take(&mut wi2.f_m); // or replace(...)
-                wi2.f_o += m2;
-            }
+            // EP back-projection on fw2 (note: use w & wi2)
+            let (dFo, dFh0, dFh1) =
+                project_ep_force_to_real_sites(w.o.posit, w.h0.posit, w.h1.posit, wi2.f_m);
+            wi2.f_m = Vec3::new_zero();
+            wi2.f_o += dFo;
+            wi2.f_h0 += dFh0;
+            wi2.f_h1 += dFh1;
 
-            // Second half-kick
-            w.o.vel += fw2[iw].f_o * (half / mo);
-            w.h0.vel += fw2[iw].f_h0 * (half / mh0);
-            w.h1.vel += fw2[iw].f_h1 * (half / mh1);
+            // second half-kick
+            w.o.vel += wi2.f_o * (half / mo);
+            w.h0.vel += wi2.f_h0 * (half / mh0);
+            w.h1.vel += wi2.f_h1 * (half / mh1);
         }
     }
 }
@@ -790,4 +768,32 @@ fn kinetic_energy_and_dof(mols: &[WaterMol]) -> (f64, usize) {
     }
     // remove 3 for total COM; remove constraints if you track them
     (ke, dof - 3 /* - n_constraints */)
+}
+
+fn project_ep_force_to_real_sites(o: Vec3, h0: Vec3, h1: Vec3, f_m: Vec3) -> (Vec3, Vec3, Vec3) {
+    // Geometry in O-centered frame
+    let r_O_H0 = h0 - o;
+    let r_O_H1 = h1 - o;
+
+    let s = r_O_H0 + r_O_H1;
+    let s_norm = s.magnitude();
+
+    // Guard against degenerate geometry (shouldn't happen with SETTLE)
+    if s_norm < 1e-12 {
+        // Fallback: dump to O
+        return (f_m, Vec3::new_zero(), Vec3::new_zero());
+    }
+
+    // Unit bisector and projection operator P = (I - uu^T)/|s|
+    let u = s / s_norm;
+    let fm_parallel = u * f_m.dot(u);
+    let fm_perp = f_m - fm_parallel; // (I - uu^T) f_m
+    let scale = O_EP_R_0 / s_norm; // d / |s|
+
+    // Chain rule: ∂rM/∂rO = I - 2 d P ;  ∂rM/∂rHk = d P
+    // Because P is symmetric, (∂rM/∂ri)^T Fm == same expression with P acting on Fm.
+    let fh = fm_perp * scale; // contribution that goes to each H
+    let fo = f_m - fh * 2.0; // remaining force goes to O
+
+    (fo, fh, fh)
 }

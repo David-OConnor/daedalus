@@ -39,7 +39,7 @@ impl SimBox {
         wrapped
     }
 
-    /// minimum-image displacement vector (no √)
+    /// Minimum-image displacement vector (no √)
     #[inline]
     pub fn min_image(&self, dv: Vec3) -> Vec3 {
         let ext = self.extent();

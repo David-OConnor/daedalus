@@ -26,7 +26,7 @@
 //! We use the term "Non-bonded" interactions to refer to Coulomb, and Lennard Interactions, the latter
 //! of which is an approximation for Van der Waals force.
 //!
-//! A broad list of components of this simulation:
+//! ## A broad list of components of this simulation:
 //! - Atoms are divided into three categories:
 //! -- Dynamic: Atoms that move
 //! -- Static: Atoms that don't move, but have mutual non-bonded interactions with dynamic atoms and water
@@ -40,7 +40,8 @@
 //! - Optimizations for Coulomb: Ewald/PME/SPME?
 //! - Optimizations for LJ: Dist cutoff for now.
 //! - Amber 1-2, 1-3 exclusions, and 1-4 scaling of covalently-bonded atoms.
-//!
+//! - Rayon parallelization of non-bonded forces
+//! - WIP SIMD and CUDA parallelization of non-bonded forces, depending on hardware availability.
 //! --------
 //! A timing test, using bond-stretching forces between two atoms only. Measure the period
 //! of oscillation for these atom combinations, e.g. using custom Mol2 files.
@@ -121,6 +122,7 @@ const EPS: f64 = 1.0e-8;
 /// Convert convert kcal mol⁻¹ Å⁻¹ (Values in the Amber parameter files) to amu Å ps⁻². Multiply all bonded
 /// accelerations by this.
 const ACCEL_CONVERSION: f64 = 418.4;
+pub const ACCEL_CONVERSION_INV: f64 = 418.4;
 
 // SHAKE tolerances for fixed hydrogens. These SHAKE constraints are for fixed hydrogens.
 // The tolerance controls how close we get

@@ -8,6 +8,7 @@ use rayon::prelude::*;
 use crate::{
     dynamics::{
         AtomDynamics, LjTable, MdState,
+        ambient::SimBox,
         spme::{EWALD_ALPHA, PME_MESH_SPACING, force_coulomb_ewald_real, pme_long_range_forces},
         water_opc,
     },
@@ -121,15 +122,10 @@ impl MdState {
                 .fold(
                     || vec![Vec3::new_zero(); n_dyn],
                     |mut acc, &(i, j, scale14)| {
-                        let diff = self.atoms[i].posit - self.atoms[j].posit;
-                        let dv = self.cell.min_image(diff);
-                        let r_sq = dv.magnitude_squared();
-
                         let f = f_nonbonded(
                             &self.atoms[i],
                             &self.atoms[j],
-                            r_sq,
-                            dv,
+                            &self.cell,
                             scale14,
                             Some((i, j)),
                             None,
@@ -137,6 +133,8 @@ impl MdState {
                             &self.lj_table,
                             &self.lj_table_static,
                             &self.lj_table_water,
+                            true,
+                            true,
                         );
 
                         acc[i] += f;
@@ -179,15 +177,10 @@ impl MdState {
                         let a_dyn = &self.atoms[i_dyn];
                         let a_static = &self.atoms_static[j_st];
 
-                        let diff = a_dyn.posit - a_static.posit;
-                        let dv = self.cell.min_image(diff);
-                        let r_sq = dv.magnitude_squared();
-
                         let f = f_nonbonded(
                             a_dyn,
                             a_static,
-                            r_sq,
-                            dv,
+                            &self.cell,
                             false,               // no 1-4 scaling with static
                             None,                // dy-dy key
                             Some((i_dyn, j_st)), // dy-static key
@@ -195,6 +188,8 @@ impl MdState {
                             &self.lj_table,
                             &self.lj_table_static,
                             &self.lj_table_water,
+                            true,
+                            true,
                         );
 
                         acc[i_dyn] += f; // static atoms don't move
@@ -246,15 +241,10 @@ impl MdState {
                             _ => &w.h1,
                         };
 
-                        let diff = a_dyn.posit - a_water_src.posit;
-                        let dv = self.cell.min_image(diff);
-                        let r_sq = dv.magnitude_squared();
-
                         let f = f_nonbonded(
                             a_dyn,
                             a_water_src,
-                            r_sq,
-                            dv,
+                            &self.cell,
                             false,       // no 1-4 scaling with water
                             None,        // dy-dy key
                             None,        // dy-static key
@@ -262,6 +252,8 @@ impl MdState {
                             &self.lj_table,
                             &self.lj_table_static,
                             &self.lj_table_water,
+                            true,
+                            true,
                         );
 
                         acc[i_dyn] += f; // water is rigid/fixed here
@@ -311,8 +303,7 @@ impl MdState {
 pub fn f_nonbonded(
     tgt: &AtomDynamics,
     src: &AtomDynamics,
-    r_sq: f64,
-    diff: Vec3,
+    cell: &SimBox,
     scale14: bool, // See notes earlier in this module.
     // For now, this caching optimization only to non-water interactions.
     // If it doesn't apply, this field is None.
@@ -324,12 +315,19 @@ pub fn f_nonbonded(
     // (dynamic i, static i)
     lj_table_static: &LjTable,
     lj_table_water: &HashMap<usize, (f64, f64)>,
+    // These values are for use with water.
+    calc_lj: bool,
+    calc_coulomb: bool,
 ) -> Vec3 {
-    let dist = r_sq.sqrt();
-    let dir = diff / dist;
+    let diff = tgt.posit - src.posit;
+    let diff_wrapped = cell.min_image(diff);
+
+    let dir = diff.to_normalized();
+    let dist_sq = diff_wrapped.magnitude_squared();
+    let dist = dist_sq.sqrt();
 
     // todo: This distance cutoff helps, but ideally we skip the distance computation too in these cases.
-    let f_lj = if r_sq > CUTOFF_VDW_SQ {
+    let f_lj = if !calc_lj || dist_sq > CUTOFF_VDW_SQ {
         Vec3::new_zero()
     } else {
         let (σ, ε) = if let Some(indices) = atom_indices {
@@ -357,13 +355,17 @@ pub fn f_nonbonded(
 
     // We assume that in the AtomDynamics structs, charges are already scaled to Amber units.
     // (No longer in elementary charge)
-    let mut f_coulomb = force_coulomb_ewald_real(
-        dir,
-        dist,
-        tgt.partial_charge,
-        src.partial_charge,
-        EWALD_ALPHA,
-    );
+    let mut f_coulomb = if !calc_coulomb {
+        Vec3::new_zero()
+    } else {
+        force_coulomb_ewald_real(
+            dir,
+            dist,
+            tgt.partial_charge,
+            src.partial_charge,
+            EWALD_ALPHA,
+        )
+    };
 
     // See Amber RM, section 15, "1-4 Non-Bonded Interaction Scaling"
     if scale14 {
