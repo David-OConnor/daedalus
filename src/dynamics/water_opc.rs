@@ -25,8 +25,8 @@ use rand::{Rng, distr::Uniform};
 use rand_distr::{Distribution, StandardNormal};
 
 use crate::dynamics::{
-    ACCEL_CONVERSION_INV, AtomDynamics, MdState, ambient::SimBox, non_bonded::f_nonbonded,
-    split2_mut,
+    ACCEL_CONVERSION, ACCEL_CONVERSION_INV, AtomDynamics, MdState, ambient::SimBox,
+    non_bonded::f_nonbonded, split2_mut,
 };
 
 // Parameters for OPC water (JPCL, 2014, 5 (21), pp 3863-3871)
@@ -163,6 +163,13 @@ impl WaterMol {
                 ..base.clone()
             },
         }
+    }
+
+    /// Called twice each step, as part of the SETTLE algorithm.
+    fn settle_half_kick(&mut self, f_on_this: &WaterForces, dt_div_2: f64) {
+        self.o.vel += f_on_this.f_o * ACCEL_CONVERSION * dt_div_2 / self.o.mass;
+        self.h0.vel += f_on_this.f_h0 * ACCEL_CONVERSION * dt_div_2 / self.h0.mass;
+        self.h1.vel += f_on_this.f_h1 * ACCEL_CONVERSION * dt_div_2 / self.h1.mass;
     }
 }
 
@@ -388,7 +395,7 @@ impl MdState {
         // Forces at current positions
         let mut result = vec![WaterForces::default(); n_w];
 
-        // (a) dynamic → water
+        // Dynamic sources, water target
         // We only add forces to WATER here; the dynamic atoms already got their
         // counterpart in `apply_nonbonded_forces` to avoid double work.
         for iw in 0..n_w {
@@ -408,7 +415,7 @@ impl MdState {
                         false,
                         None,
                         None,
-                        None,
+                        Some(i_dyn), // LJ cache between dynamic and water.
                         &self.lj_table,
                         &self.lj_table_static,
                         &self.lj_table_water,
@@ -667,34 +674,38 @@ impl MdState {
 
         let mut fw = self.calc_water_forces();
 
-        // --- Project EP/M force to O, half-kick, SETTLE, place EP, wrap molecule ---
-        let half = 0.5 * dt;
+        // Project EP/M force to O, half-kick, SETTLE, place EP, wrap molecule ---
+        let dt_div_2 = 0.5 * dt;
         let cell = self.cell;
 
-        for iw in 0..n_w {
-            // masses before mutable borrow
-            let (mo, mh0, mh1) = {
-                let w = &self.water[iw];
-                (w.o.mass, w.h0.mass, w.h1.mass)
-            };
+        // todo: Placement?
+        for (iw, wi) in fw.iter_mut().enumerate() {
+            let [f_m, f_h0, f_h1] = self
+                .water_pme_sites_forces
+                .get(iw)
+                .copied()
+                .unwrap_or([Vec3::new_zero(); 3]);
 
+            wi.f_m += f_m;
+            wi.f_h0 += f_h0;
+            wi.f_h1 += f_h1;
+        }
+
+        for iw in 0..n_w {
             let w = &mut self.water[iw];
 
             // Project EP to O
-            {
-                let wi = &mut fw[iw];
-                let (dFo, dFh0, dFh1) =
-                    project_ep_force_to_real_sites(w.o.posit, w.h0.posit, w.h1.posit, wi.f_m);
-                wi.f_m = Vec3::new_zero();
-                wi.f_o += dFo;
-                wi.f_h0 += dFh0;
-                wi.f_h1 += dFh1;
-            }
+            let wi = &mut fw[iw];
+            let (dFo, dFh0, dFh1) =
+                project_ep_force_to_real_sites(w.o.posit, w.h0.posit, w.h1.posit, wi.f_m);
+
+            wi.f_m = Vec3::new_zero();
+            wi.f_o += dFo;
+            wi.f_h0 += dFh0;
+            wi.f_h1 += dFh1;
 
             // Half-kick
-            w.o.vel += fw[iw].f_o * (half / mo);
-            w.h0.vel += fw[iw].f_h0 * (half / mh0);
-            w.h1.vel += fw[iw].f_h1 * (half / mh1);
+            w.settle_half_kick(&wi, dt_div_2);
 
             // Rigid update
             settle_opc(&mut w.o, &mut w.h0, &mut w.h1, dt);
@@ -716,25 +727,23 @@ impl MdState {
         let mut fw2 = self.calc_water_forces();
 
         for iw in 0..n_w {
-            let (mo, mh0, mh1) = {
-                let w = &self.water[iw];
-                (w.o.mass, w.h0.mass, w.h1.mass)
-            };
             let w = &mut self.water[iw];
+
             let wi2 = &mut fw2[iw];
 
             // EP back-projection on fw2 (note: use w & wi2)
-            let (dFo, dFh0, dFh1) =
-                project_ep_force_to_real_sites(w.o.posit, w.h0.posit, w.h1.posit, wi2.f_m);
-            wi2.f_m = Vec3::new_zero();
-            wi2.f_o += dFo;
-            wi2.f_h0 += dFh0;
-            wi2.f_h1 += dFh1;
+            {
+                let (dFo, dFh0, dFh1) =
+                    project_ep_force_to_real_sites(w.o.posit, w.h0.posit, w.h1.posit, wi2.f_m);
 
-            // second half-kick
-            w.o.vel += wi2.f_o * (half / mo);
-            w.h0.vel += wi2.f_h0 * (half / mh0);
-            w.h1.vel += wi2.f_h1 * (half / mh1);
+                wi2.f_m = Vec3::new_zero();
+                wi2.f_o += dFo;
+                wi2.f_h0 += dFh0;
+                wi2.f_h1 += dFh1;
+
+                // Second half-kick
+                w.settle_half_kick(&wi2, dt_div_2);
+            }
         }
     }
 }
@@ -767,7 +776,8 @@ fn kinetic_energy_and_dof(mols: &[WaterMol]) -> (f64, usize) {
         }
     }
     // remove 3 for total COM; remove constraints if you track them
-    (ke, dof - 3 /* - n_constraints */)
+    let n_constraints = 3 * mols.len();
+    (ke, dof - 3 - n_constraints)
 }
 
 fn project_ep_force_to_real_sites(o: Vec3, h0: Vec3, h1: Vec3, f_m: Vec3) -> (Vec3, Vec3, Vec3) {

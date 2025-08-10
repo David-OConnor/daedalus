@@ -231,14 +231,15 @@ impl MdState {
                 .par_iter()
                 .fold(
                     || vec![Vec3::new_zero(); n_dyn],
-                    |mut acc, &(i_dyn, i_water, which)| {
+                    |mut acc, &(i_dyn, i_water, water_atom_i)| {
                         let a_dyn = &self.atoms[i_dyn];
                         let w = &self.water[i_water];
-                        let a_water_src = match which {
-                            0 => &w.o,
-                            1 => &w.m,
-                            2 => &w.h0,
-                            _ => &w.h1,
+
+                        let (a_water_src, calc_lj, calc_coulomb) = match water_atom_i {
+                            0 => (&w.o, true, false),
+                            1 => (&w.m, false, true),
+                            2 => (&w.h0, false, true),
+                            _ => (&w.h1, false, true),
                         };
 
                         let f = f_nonbonded(
@@ -252,8 +253,8 @@ impl MdState {
                             &self.lj_table,
                             &self.lj_table_static,
                             &self.lj_table_water,
-                            true,
-                            true,
+                            calc_lj,
+                            calc_coulomb,
                         );
 
                         acc[i_dyn] += f; // water is rigid/fixed here
@@ -286,13 +287,74 @@ impl MdState {
             all_atoms.extend(self.atoms.iter().cloned());
             all_atoms.extend(self.atoms_static.iter().cloned());
 
-            let rec_forces =
-                pme_long_range_forces(&all_atoms, &self.cell, EWALD_ALPHA, PME_MESH_SPACING);
+            // These are teh water atoms that have Coulomb force; not O.
+            // Separate from all_atoms because they make a [&AtomDynamics] instead of &[AtomDynamics].
+            let mut atoms_water = Vec::with_capacity(self.water.len() * 3);
+            for mol in &self.water {
+                atoms_water.extend([&mol.m, &mol.h0, &mol.h1]);
+            }
 
-            // add reciprocal forces to *movable* atoms only
-            for (atom, f_rec) in self.atoms.iter_mut().zip(rec_forces.iter().take(n_dynamic)) {
-                // We divide by mass in `step`.
-                atom.accel += *f_rec;
+            // n_dynamic is already defined
+            let rec_forces = pme_long_range_forces(
+                &all_atoms,   // dynamic+static as &[AtomDynamics]
+                &atoms_water, // [&AtomDynamics] for (M,H0,H1) per water
+                &self.cell,
+                EWALD_ALPHA,
+                PME_MESH_SPACING,
+            );
+
+            // (1) dynamic atoms
+            for (atom, f_rec) in self
+                .atoms
+                .iter_mut()
+                .zip(rec_forces.dyn_static.iter().take(n_dynamic))
+            {
+                atom.accel += *f_rec; // mass divide happens later in step()
+            }
+
+            // (2) waters → pack into per-water triples (M,H0,H1)
+            debug_assert_eq!(rec_forces.water.len(), self.water.len() * 3);
+
+            if self.water_pme_sites_forces.len() != self.water.len() {
+                self.water_pme_sites_forces
+                    .resize(self.water.len(), [Vec3::new_zero(); 3]);
+            }
+
+            for (iw, chunk) in rec_forces.water.chunks_exact(3).enumerate() {
+                // order must match how you built atoms_water: [M, H0, H1]
+                self.water_pme_sites_forces[iw] = [chunk[0], chunk[1], chunk[2]];
+            }
+        }
+
+        // --- 1-4 reciprocal-space correction: reduce net Coulomb-1,4 by (1 - 1/SCEE) ---
+        {
+            let corr = 1.0 - SCALE_COUL_14; // ≈ 0.166666...
+
+            for &(i, j) in &self.nonbonded_scaled {
+                // real-space Ewald kernel for the pair
+                let dr = self
+                    .cell
+                    .min_image(self.atoms[i].posit - self.atoms[j].posit);
+                let r2 = dr.magnitude_squared();
+                if r2 == 0.0 {
+                    continue;
+                }
+                let r = r2.sqrt();
+                let dir = dr / r;
+
+                let f_rs = force_coulomb_ewald_real(
+                    dir,
+                    r,
+                    self.atoms[i].partial_charge,
+                    self.atoms[j].partial_charge,
+                    EWALD_ALPHA,
+                );
+
+                // Subtract the extra fraction from the *total* (which currently has unscaled k-space)
+                let f_corr = f_rs * corr;
+
+                self.atoms[i].accel -= f_corr;
+                self.atoms[j].accel += f_corr;
             }
         }
     }
@@ -322,8 +384,13 @@ pub fn f_nonbonded(
     let diff = tgt.posit - src.posit;
     let diff_wrapped = cell.min_image(diff);
 
-    let dir = diff.to_normalized();
     let dist_sq = diff_wrapped.magnitude_squared();
+    let dir = diff_wrapped.to_normalized();
+
+    if dist_sq.abs() < 1e-12 {
+        return Vec3::new_zero();
+    }
+
     let dist = dist_sq.sqrt();
 
     // todo: This distance cutoff helps, but ideally we skip the distance computation too in these cases.

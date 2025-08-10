@@ -42,6 +42,7 @@
 //! - Amber 1-2, 1-3 exclusions, and 1-4 scaling of covalently-bonded atoms.
 //! - Rayon parallelization of non-bonded forces
 //! - WIP SIMD and CUDA parallelization of non-bonded forces, depending on hardware availability.
+//! - A thermostat+barostat for the whole system. (Is water and dyn separate here?)
 //! --------
 //! A timing test, using bond-stretching forces between two atoms only. Measure the period
 //! of oscillation for these atom combinations, e.g. using custom Mol2 files.
@@ -346,6 +347,7 @@ pub struct MdState {
     /// todo: You could even use indices.
     lj_table_water: HashMap<usize, (f64, f64)>,
     hydrogen_md_type: HydrogenMdType,
+    pub water_pme_sites_forces: Vec<[Vec3; 3]>,
 }
 
 impl MdState {

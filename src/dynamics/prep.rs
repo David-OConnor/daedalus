@@ -989,6 +989,7 @@ impl MdState {
             &result.atoms,
             &result.atoms_static,
         );
+        result.water_pme_sites_forces = vec![[Vec3::new_zero(); 3]; result.water.len()];
 
         result.setup_nonbonded_exclusion_scale_flags();
 

@@ -7,7 +7,7 @@ use itertools::iproduct;
 use lin_alg::f64::Vec3;
 #[cfg(target_arch = "x86_64")]
 use lin_alg::f64::{Vec3x4, Vec3x8, f64x8};
-use rustfft::{FftPlanner, num_complex::Complex};
+use rustfft::{FftDirection, FftPlanner, num_complex::Complex};
 use statrs::function::erf::erfc;
 
 use crate::dynamics::{AtomDynamics, ambient::SimBox};
@@ -64,14 +64,61 @@ fn idx(i: usize, j: usize, k: usize, ny: usize, nz: usize) -> usize {
     (i * ny + j) * nz + k
 }
 
+fn for_each_stencil<F: FnMut(usize, usize, usize, f64)>(
+    atom: &AtomDynamics,
+    cell: &SimBox,
+    ext: Vec3,
+    nx: usize,
+    ny: usize,
+    nz: usize,
+    mut f: F,
+) {
+    let diff = atom.posit - cell.bounds_low;
+    let frac = Vec3::new(diff.x / ext.x, diff.y / ext.y, diff.z / ext.z);
+
+    let fx = frac.x * nx as f64;
+    let fy = frac.y * ny as f64;
+    let fz = frac.z * nz as f64;
+
+    let ix0 = fx.floor() as isize;
+    let iy0 = fy.floor() as isize;
+    let iz0 = fz.floor() as isize;
+
+    let mut wx = [0.0; SPLINE_ORDER];
+    let mut wy = [0.0; SPLINE_ORDER];
+    let mut wz = [0.0; SPLINE_ORDER];
+    bspline4_weights(fx - ix0 as f64, &mut wx);
+    bspline4_weights(fy - iy0 as f64, &mut wy);
+    bspline4_weights(fz - iz0 as f64, &mut wz);
+
+    for (dx, &wxv) in wx.iter().enumerate() {
+        let ix = (ix0 + dx as isize).rem_euclid(nx as isize) as usize;
+        for (dy, &wyv) in wy.iter().enumerate() {
+            let iy = (iy0 + dy as isize).rem_euclid(ny as isize) as usize;
+            for (dz, &wzv) in wz.iter().enumerate() {
+                let iz = (iz0 + dz as isize).rem_euclid(nz as isize) as usize;
+                f(ix, iy, iz, wxv * wyv * wzv);
+            }
+        }
+    }
+}
+
+pub struct PmeLrForces {
+    pub dyn_static: Vec<Vec3>,
+    /// Packed in the same order as atoms_water input: M/EP, H0, H1 per water.
+    pub water: Vec<Vec3>,
+}
+
 /// Compute long‑range electrostatic forces by SPME.
 /// Returns a Vec<Vec3> in the same order as `atoms`.
 pub fn pme_long_range_forces(
-    atoms: &[AtomDynamics],
+    atoms_static_dy: &[AtomDynamics],
+    // Separate because of this type difference; &[T] vs &[&T].)
+    atoms_water: &[&AtomDynamics],
     cell: &SimBox,
     alpha: f64,
     mesh_spacing: f64, // ≈1 Å is fine
-) -> Vec<Vec3> {
+) -> PmeLrForces {
     // Build mesh dimensions (next power of two for FFT efficiency)
     let ext = cell.extent(); // Å
     let mx = (ext.x / mesh_spacing).ceil() as usize;
@@ -86,74 +133,83 @@ pub fn pme_long_range_forces(
 
     // Spread charges to mesh with 4‑th order B‑splines
     let mut rho = vec![0.0_f64; nx * ny * nz];
-    let order = SPLINE_ORDER as isize;
 
-    for atom in atoms {
-        // fractional coords in [0,1)
-        let diff = atom.posit - cell.bounds_low;
-        let frac = Vec3::new(diff.x / ext.x, diff.y / ext.y, diff.z / ext.z);
-
-        let fx = frac.x * nx as f64;
-        let fy = frac.y * ny as f64;
-        let fz = frac.z * nz as f64;
-        let ix0 = fx.floor() as isize;
-        let iy0 = fy.floor() as isize;
-        let iz0 = fz.floor() as isize;
-
-        // pre‑compute B‑spline weights for each dimension
-        let mut wx = [0.0; SPLINE_ORDER];
-        let mut wy = [0.0; SPLINE_ORDER];
-        let mut wz = [0.0; SPLINE_ORDER];
-
-        bspline4_weights(fx - ix0 as f64, &mut wx);
-        bspline4_weights(fy - iy0 as f64, &mut wy);
-        bspline4_weights(fz - iz0 as f64, &mut wz);
-
-        for (dx, &wxv) in wx.iter().enumerate() {
-            let ix = (ix0 + dx as isize).rem_euclid(nx as isize) as usize;
-            for (dy, &wyv) in wy.iter().enumerate() {
-                let iy = (iy0 + dy as isize).rem_euclid(ny as isize) as usize;
-                for (dz, &wzv) in wz.iter().enumerate() {
-                    let iz = (iz0 + dz as isize).rem_euclid(nz as isize) as usize;
-                    rho[idx(ix, iy, iz, ny, nz)] += atom.partial_charge * wxv * wyv * wzv;
-                }
-            }
-        }
+    for atom in atoms_static_dy {
+        for_each_stencil(atom, cell, ext, nx, ny, nz, |ix, iy, iz, w| {
+            rho[idx(ix, iy, iz, ny, nz)] += atom.partial_charge * w;
+        });
     }
 
+    for atom in atoms_water {
+        for_each_stencil(atom, cell, ext, nx, ny, nz, |ix, iy, iz, w| {
+            rho[idx(ix, iy, iz, ny, nz)] += atom.partial_charge * w;
+        });
+    }
+
+    // todo: QC this placement.
     // Forward FFT  ρ(k)
-    let mut planner = FftPlanner::new();
-    let fft = planner.plan_fft_forward(nx * ny * nz);
+    // build rho_c as Complex
     let mut rho_c: Vec<Complex<f64>> = rho
         .into_iter()
         .map(|r| Complex { re: r, im: 0.0 })
         .collect();
-    fft.process(&mut rho_c);
 
-    // Multiply by Green’s function  G(k) to obtain ϕ(k)
-    for (n, (kx, ky, kz)) in iproduct!(0..nx, 0..ny, 0..nz).enumerate() {
-        if kx == 0 && ky == 0 && kz == 0 {
-            // k = 0 → net‑charge term; skip (or handle separately)
-            rho_c[n] = Complex::ZERO;
-            continue;
+    // FORWARD 3D FFT
+    fft3_inplace(
+        &mut rho_c,
+        nx,
+        ny,
+        nz,
+        /*forward=*/ FftDirection::Forward,
+    );
+
+    // Multiply by influence function in k-space:
+    // ϕ(k) = ρ(k) * 4π/k² * exp(-k²/(4α²)) / (|Bx|² |By|² |Bz|²) * (1/Vol)
+    // (Tin-foil boundary; omit k=0)
+    let vol = ext.x * ext.y * ext.z;
+    for kx in 0..nx {
+        for ky in 0..ny {
+            for kz in 0..nz {
+                let n = idx(kx, ky, kz, ny, nz);
+
+                if kx == 0 && ky == 0 && kz == 0 {
+                    rho_c[n] = Complex::ZERO;
+                    continue;
+                }
+
+                // reciprocal vector (2π/L)·k
+                let kvec = Vec3::new(kx as f64 / ext.x, ky as f64 / ext.y, kz as f64 / ext.z) * TAU;
+                let k2 = kvec.dot(kvec);
+
+                // Gaussian Ewald filter
+                let gk = (-k2 / (4.0 * alpha * alpha)).exp();
+
+                // B-spline deconvolution (order 4)
+                let bx = bspline_modulus(SPLINE_ORDER, kx, nx);
+                let by = bspline_modulus(SPLINE_ORDER, ky, ny);
+                let bz = bspline_modulus(SPLINE_ORDER, kz, nz);
+                let b2 = (bx * bx) * (by * by) * (bz * bz);
+
+                // Influence function (tin-foil): 4π/k² * gk / b² / Vol
+                let inf = (4.0 * std::f64::consts::PI) * gk / (k2 * b2 * vol);
+
+                rho_c[n] *= inf;
+            }
         }
-
-        // reciprocal‑space vector (2π/L)·k
-        let kvec = Vec3::new(kx as f64 / ext.x, ky as f64 / ext.y, kz as f64 / ext.z) * TAU;
-
-        let k2 = kvec.dot(kvec);
-        let c = (-k2 / (4.0 * alpha * alpha)).exp() / k2; // Smooth term
-        let scale = 2. * TAU / vol;
-        rho_c[n] *= scale * c;
     }
 
-    // Inverse FFT ϕ(r)
-    let ifft = planner.plan_fft_inverse(nx * ny * nz);
-    ifft.process(&mut rho_c);
+    // INVERSE 3D FFT → ϕ(r)
+    fft3_inplace(
+        &mut rho_c,
+        nx,
+        ny,
+        nz,
+        /*forward=*/ FftDirection::Inverse,
+    );
 
-    // convert back to real grid, divide by total points (rustfft does not normalise)
-    let mut phi = vec![0.0_f64; nx * ny * nz];
+    // normalise (rustfft doesn't normalise)
     let norm = 1.0 / (nx * ny * nz) as f64;
+    let mut phi = vec![0.0_f64; nx * ny * nz];
     for (i, c) in rho_c.into_iter().enumerate() {
         phi[i] = c.re * norm;
     }
@@ -162,6 +218,7 @@ pub fn pme_long_range_forces(
     let mut ex = vec![0.0; nx * ny * nz];
     let mut ey = vec![0.0; nx * ny * nz];
     let mut ez = vec![0.0; nx * ny * nz];
+
     for (i, j, k) in iproduct!(0..nx, 0..ny, 0..nz) {
         let ip1 = (i + 1) % nx;
         let im1 = (i + nx - 1) % nx;
@@ -183,47 +240,34 @@ pub fn pme_long_range_forces(
     }
 
     // Gather forces back to atoms (same B‑spline weights)
-    let mut forces = vec![Vec3::new_zero(); atoms.len()];
-
-    for (a_idx, atom) in atoms.iter().enumerate() {
-        let diff = atom.posit - cell.bounds_low;
-        let frac = Vec3::new(diff.x / ext.x, diff.y / ext.y, diff.z / ext.z);
-
-        let fx = frac.x * nx as f64;
-        let fy = frac.y * ny as f64;
-        let fz = frac.z * nz as f64;
-        let ix0 = fx.floor() as isize;
-        let iy0 = fy.floor() as isize;
-        let iz0 = fz.floor() as isize;
-
-        let mut wx = [0.0; SPLINE_ORDER];
-        let mut wy = [0.0; SPLINE_ORDER];
-        let mut wz = [0.0; SPLINE_ORDER];
-        bspline4_weights(fx - ix0 as f64, &mut wx);
-        bspline4_weights(fy - iy0 as f64, &mut wy);
-        bspline4_weights(fz - iz0 as f64, &mut wz);
-
+    let mut forces_dyn_static = vec![Vec3::new_zero(); atoms_static_dy.len()];
+    for (i, atom) in atoms_static_dy.iter().enumerate() {
         let mut e = Vec3::new_zero();
-
-        for (dx, &wxv) in wx.iter().enumerate() {
-            let ix = (ix0 + dx as isize).rem_euclid(nx as isize) as usize;
-            for (dy, &wyv) in wy.iter().enumerate() {
-                let iy = (iy0 + dy as isize).rem_euclid(ny as isize) as usize;
-                for (dz, &wzv) in wz.iter().enumerate() {
-                    let iz = (iz0 + dz as isize).rem_euclid(nz as isize) as usize;
-                    let weight = wxv * wyv * wzv;
-                    let idx = idx(ix, iy, iz, ny, nz);
-                    e.x += weight * ex[idx];
-                    e.y += weight * ey[idx];
-                    e.z += weight * ez[idx];
-                }
-            }
-        }
-
-        forces[a_idx] = e * atom.partial_charge; // F = qE
+        for_each_stencil(atom, cell, ext, nx, ny, nz, |ix, iy, iz, w| {
+            let id = idx(ix, iy, iz, ny, nz);
+            e.x += w * ex[id];
+            e.y += w * ey[id];
+            e.z += w * ez[id];
+        });
+        forces_dyn_static[i] = e * atom.partial_charge;
     }
 
-    forces
+    let mut forces_water = vec![Vec3::new_zero(); atoms_water.len()];
+    for (i, atom) in atoms_water.iter().enumerate() {
+        let mut e = Vec3::new_zero();
+        for_each_stencil(atom, cell, ext, nx, ny, nz, |ix, iy, iz, w| {
+            let id = idx(ix, iy, iz, ny, nz);
+            e.x += w * ex[id];
+            e.y += w * ey[id];
+            e.z += w * ez[id];
+        });
+        forces_water[i] = e * atom.partial_charge;
+    }
+
+    PmeLrForces {
+        dyn_static: forces_dyn_static,
+        water: forces_water,
+    }
 }
 
 /// 4‑th order cardinal B‑spline weights and their cumulative sums.
@@ -235,4 +279,56 @@ fn bspline4_weights(x: f64, w: &mut [f64; SPLINE_ORDER]) {
     w[1] = (1.0 / 6.0) * (3.0 * x.powi(3) - 6.0 * x.powi(2) + 4.0);
     w[2] = (1.0 / 6.0) * (-3.0 * x.powi(3) + 3.0 * x.powi(2) + 3.0 * x + 1.0);
     w[3] = (1.0 / 6.0) * x.powi(3);
+}
+
+fn bspline_modulus(order: usize, k: usize, n: usize) -> f64 {
+    if k == 0 {
+        return 1.0;
+    }
+    let x = std::f64::consts::PI * (k as f64) / (n as f64);
+    let s = x.sin() / x; // sinc(πk/N)
+    s.powi(order as i32)
+}
+
+fn fft3_inplace(a: &mut [Complex<f64>], nx: usize, ny: usize, nz: usize, fft_dir: FftDirection) {
+    let mut planner = FftPlanner::new();
+    let fft_z = planner.plan_fft(nz, fft_dir);
+    let fft_y = planner.plan_fft(ny, fft_dir);
+    let fft_x = planner.plan_fft(nx, fft_dir);
+
+    // work buffers
+    let mut line: Vec<Complex<f64>>;
+
+    // Z-transform on each (x,y) line
+    for x in 0..nx {
+        for y in 0..ny {
+            line = (0..nz).map(|z| a[idx(x, y, z, ny, nz)]).collect();
+            fft_z.process(&mut line);
+            for (z, v) in line.into_iter().enumerate() {
+                a[idx(x, y, z, ny, nz)] = v;
+            }
+        }
+    }
+
+    // Y-transform on each (x,z) line
+    for x in 0..nx {
+        for z in 0..nz {
+            line = (0..ny).map(|y| a[idx(x, y, z, ny, nz)]).collect();
+            fft_y.process(&mut line);
+            for (y, v) in line.into_iter().enumerate() {
+                a[idx(x, y, z, ny, nz)] = v;
+            }
+        }
+    }
+
+    // X-transform on each (y,z) line
+    for y in 0..ny {
+        for z in 0..nz {
+            line = (0..nx).map(|x| a[idx(x, y, z, ny, nz)]).collect();
+            fft_x.process(&mut line);
+            for (x, v) in line.into_iter().enumerate() {
+                a[idx(x, y, z, ny, nz)] = v;
+            }
+        }
+    }
 }
