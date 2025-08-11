@@ -105,9 +105,8 @@ use crate::{
     },
     molecule::Atom,
 };
+use crate::dynamics::non_bonded::LjTables;
 
-// (indices), (sigma, eps)
-pub type LjTable = HashMap<(usize, usize), (f64, f64)>;
 
 // Verlet list parameters
 
@@ -123,7 +122,7 @@ const EPS: f64 = 1.0e-8;
 /// Convert convert kcal mol⁻¹ Å⁻¹ (Values in the Amber parameter files) to amu Å ps⁻². Multiply all bonded
 /// accelerations by this.
 const ACCEL_CONVERSION: f64 = 418.4;
-pub const ACCEL_CONVERSION_INV: f64 = 418.4;
+pub const ACCEL_CONVERSION_INV: f64 = 1. / ACCEL_CONVERSION;
 
 // SHAKE tolerances for fixed hydrogens. These SHAKE constraints are for fixed hydrogens.
 // The tolerance controls how close we get
@@ -337,15 +336,7 @@ pub struct MdState {
     /// These are indices of atoms separated by three consecutive bonds
     nonbonded_scaled: HashSet<(usize, usize)>,
     water: Vec<WaterMol>,
-    /// We cache sigma and eps on the first step, then use it on the others. This increases
-    /// memory use, and reduces CPU use.
-    lj_table: LjTable,
-    ///. E.g. between (dynamic atom, static receptor).
-    lj_table_static: LjTable,
-    /// Simpler than the other LJ table: no combinations needed, as the source is a single
-    /// atom type: Water's O.
-    /// todo: You could even use indices.
-    lj_table_water: HashMap<usize, (f64, f64)>,
+    lj_tables: LjTables,
     hydrogen_md_type: HydrogenMdType,
     pub water_pme_sites_forces: Vec<[Vec3; 3]>,
 }

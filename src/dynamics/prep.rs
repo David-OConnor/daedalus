@@ -44,6 +44,7 @@ use crate::{
     },
     molecule::{Atom, Bond, Ligand, Molecule, Residue, ResidueEnd, build_adjacency_list},
 };
+use crate::dynamics::non_bonded::LjTableIndices;
 
 // Todo: QC this.
 const TEMP_TGT_DEFAULT: f64 = 310.; // Kelvin.
@@ -1066,34 +1067,26 @@ impl MdState {
                     non_bonded::setup_lj_cache(
                         &result.atoms[i],
                         &result.atoms[j],
-                        Some((i, j)),
-                        None,
-                        None,
-                        &mut result.lj_table,
-                        &mut result.lj_table_static,
-                        &mut result.lj_table_water,
+                        LjTableIndices::DynDyn((i, j)),
+                        &mut result.lj_tables,
                     );
                 }
             }
 
             for (i_lig, a_lig) in result.atoms.iter_mut().enumerate() {
-                // Force from static atoms.
+                // Dynamic, static
                 for (i_static, a_static) in result.atoms_static.iter().enumerate() {
                     non_bonded::setup_lj_cache(
                         a_lig,
                         a_static,
-                        None,
-                        Some((i_lig, i_static)),
-                        None,
-                        &mut result.lj_table,
-                        &mut result.lj_table_static,
-                        &mut result.lj_table_water,
+                        LjTableIndices::DynStatic((i_lig, i_static)),
+                        &mut result.lj_tables,
                     );
                 }
 
-                // Force from water
+                // Dynamic, water
                 if !result.water.is_empty() {
-                    // Each water is identical, so we only need to do this once.
+                    // Each water is identical, so we only need to do this once per lig, and static atom.
                     for a_water_src in [
                         &result.water[0].o,
                         &result.water[0].m,
@@ -1103,14 +1096,27 @@ impl MdState {
                         non_bonded::setup_lj_cache(
                             a_lig,
                             a_water_src,
-                            None,
-                            None,
-                            Some(i_lig),
-                            &mut result.lj_table,
-                            &mut result.lj_table_static,
-                            &mut result.lj_table_water,
+                            LjTableIndices::DynOnWater(i_lig),
+                            &mut result.lj_tables,
                         );
                     }
+                }
+            }
+
+            // Static, water
+            for (i_static, a_static) in result.atoms_static.iter().enumerate() {
+                for a_water_src in [
+                    &result.water[0].o,
+                    &result.water[0].m,
+                    &result.water[0].h0,
+                    &result.water[0].h1,
+                ] {
+                    non_bonded::setup_lj_cache(
+                        a_static,
+                        a_water_src,
+                        LjTableIndices::StaticOnWater(i_static),
+                        &mut result.lj_tables,
+                        );
                 }
             }
         }

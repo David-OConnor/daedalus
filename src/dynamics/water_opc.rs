@@ -1,9 +1,9 @@
 #![allow(non_upper_case_globals)]
 
 //! We use the [OPC model](https://pubs.acs.org/doi/10.1021/jz501780a) for water.
-//! See also, the Amber Rerference Manual. (todo: Specific ref)
+//! See also, the Amber Reference Manual.
 //!
-//! This is a flexible-molecule model that includes a "EP" massless charge-only molecule,
+//! This is a rigid model that includes a "EP" massless charge-only molecule,
 //! and no charge on the Oxygen. We integrate it using standard Amber-style forces.
 //! Amber strongly recommends using this model when their  ff19SB foces for proteins.
 //!
@@ -13,7 +13,7 @@
 //!
 //! Note: The original paper uses the term "M" for the massless charge; Amber calls it "EP".
 //!
-//! We integrate the moceule's internal rigid geometry using the `SETTLE` algorithm. This is likely
+//! We integrate the molecule's internal rigid geometry using the `SETTLE` algorithm. This is likely
 //! to be cheaper, and more robust than Shake/Rattle. It's less general, but it works here.
 //! Settle is specifically tailored for three-atom rigid bodies.
 
@@ -28,6 +28,7 @@ use crate::dynamics::{
     ACCEL_CONVERSION, ACCEL_CONVERSION_INV, AtomDynamics, MdState, ambient::SimBox,
     non_bonded::f_nonbonded, split2_mut,
 };
+use crate::dynamics::non_bonded::{LjTableIndices, CHARGE_UNIT_SCALER};
 
 // Parameters for OPC water (JPCL, 2014, 5 (21), pp 3863-3871)
 // (Amber 2025, frcmod.opc) EPC is presumably the massless, 4th charge.
@@ -64,13 +65,15 @@ const O_H_THETA_R_0: f64 = 0.87243313;
 const H_O_H_θ0: f64 = 1.8081611050661253;
 // const H_H_O_θ0: f64 = 2.2294835864975564;
 
+// For converting from R_star to eps.
+const SIGMA_FACTOR: f64 = 1.122_462_048_309_373; // 2^(1/6)
+
 // Van der Waals / JL params. Note that only O carries a VdW force.
 const O_RSTAR: f64 = 1.777167268;
 pub const O_SIGMA: f64 = 2.0 * O_RSTAR / SIGMA_FACTOR;
 pub const O_EPS: f64 = 0.2128008130;
 
-// For converting from R_star to eps.
-const SIGMA_FACTOR: f64 = 1.122_462_048_309_373; // 2^(1/6)
+
 
 // Partial charges. See the OPC paper, Table 2. None on O.
 const Q_H: f64 = 0.6791;
@@ -128,7 +131,7 @@ impl WaterMol {
             vel,
             accel: Vec3::new_zero(),
             mass: H_MASS,
-            partial_charge: Q_H,
+            partial_charge: Q_H * CHARGE_UNIT_SCALER,
             lj_sigma: 0.,
             lj_eps: 0.,
         };
@@ -159,7 +162,7 @@ impl WaterMol {
                 force_field_type: String::from("EP"),
                 posit: ep_pos,
                 mass: 0.,
-                partial_charge: Q_EP,
+                partial_charge: Q_EP * CHARGE_UNIT_SCALER,
                 ..base.clone()
             },
         }
@@ -250,62 +253,44 @@ pub fn make_water_mols(
 ///
 /// All distances & masses are in MD internal units (Å, ps, amu, kcal/mol).
 fn settle_opc(o: &mut AtomDynamics, h0: &mut AtomDynamics, h1: &mut AtomDynamics, dt: f64) {
-    // Can't use cos in a const.
-    // const CSOHOH: f64 = -0.2351421131025898;
-    // let COSHOH: f64 = (H_O_H_θ0 * 0.5).cos() * 2.0 * (H_O_H_θ0 * 0.5).cos() - 1.0; // cos(θ)
+    // masses
+    let mO = O_MASS; let mH = H_MASS; let mT = mO + 2.0*mH;
 
-    // Half‑step drift of the oxygen
-    o.posit += o.vel * dt; // translate O
-    h0.posit += o.vel * dt; // same COM drift for H’s
-    h1.posit += o.vel * dt;
+    // COM position & velocity at start of the drift/rotation substep
+    let r_com = (o.posit*mO + h0.posit*mH + h1.posit*mH) / mT;
+    let v_com = (o.vel  *mO + h0.vel  *mH + h1.vel  *mH) / mT;
 
-    // Rotate the OH pair analytically
-    // work in the O‑centered frame
-    let mut r0 = h0.posit - o.posit;
-    let mut r1 = h1.posit - o.posit;
-    let v0 = h0.vel - o.vel;
-    let v1 = h1.vel - o.vel;
+    // shift to COM frame
+    let (rO, rH0, rH1) = (o.posit - r_com, h0.posit - r_com, h1.posit - r_com);
+    let (vO, vH0, vH1) = (o.vel   - v_com, h0.vel   - v_com, h1.vel   - v_com);
 
-    // Translational angular momentum L = Σ m r×v (about O)
-    let l = r0.cross(v0) * H_MASS + r1.cross(v1) * H_MASS;
+    // angular momentum about COM
+    let L = rO.cross(vO)*mO + rH0.cross(vH0)*mH + rH1.cross(vH1)*mH;
 
-    // inertia tensor (about O) for two equal masses at r0, r1
-    let (ixx, iyy, izz, ixy, ixz, iyz) = {
-        // I = Σ m (r² δij - r_i r_j)
-        let m = H_MASS;
-
-        let r2_0 = r0.dot(r0);
-        let r2_1 = r1.dot(r1);
-        let xx = m * (r2_0 + r2_1 - (r0.x * r0.x + r1.x * r1.x));
-        let yy = m * (r2_0 + r2_1 - (r0.y * r0.y + r1.y * r1.y));
-        let zz = m * (r2_0 + r2_1 - (r0.z * r0.z + r1.z * r1.z));
-        let xy = -m * (r0.x * r0.y + r1.x * r1.y);
-        let xz = -m * (r0.x * r0.z + r1.x * r1.z);
-        let yz = -m * (r0.y * r0.z + r1.y * r1.z);
-        (xx, yy, zz, xy, xz, yz)
+    // inertia tensor about COM (symmetric 3×3)
+    let accI = |r:Vec3, m:f64| {
+        let x=r.x; let y=r.y; let z=r.z; let r2=r.dot(r);
+        ( m*(r2 - x*x), m*(r2 - y*y), m*(r2 - z*z), -m*x*y, -m*x*z, -m*y*z )
     };
+    let (iOxx,iOyy,iOzz,iOxy,iOxz,iOyz) = accI(rO,mO);
+    let (iH0x,iH0y,iH0z,iH0xy,iH0xz,iH0yz) = accI(rH0,mH);
+    let (iH1x,iH1y,iH1z,iH1xy,iH1xz,iH1yz) = accI(rH1,mH);
+    let (ixx,iyy,izz, ixy,ixz,iyz) = (
+        iOxx+iH0x+iH1x, iOyy+iH0y+iH1y, iOzz+iH0z+iH1z,
+        iOxy+iH0xy+iH1xy, iOxz+iH0xz+iH1xz, iOyz+iH0yz+iH1yz
+    );
 
-    // Solve ω from I·ω = L  (since I is symmetric 3×3, one can
-    // invert analytically or use a small 3×3 solver)
+    // ω from I·ω = L
+    let ω = solve_symmetric3(ixx, iyy, izz, ixy, ixz, iyz, L);
 
-    let omega = solve_symmetric3(ixx, iyy, izz, ixy, ixz, iyz, l);
+    // pure translation of COM + rigid rotation about COM
+    let Δ = v_com * dt;
+    let rO2 = rodrigues_rotate(rO,  ω, dt);
+    let rH02= rodrigues_rotate(rH0, ω, dt);
+    let rH12= rodrigues_rotate(rH1, ω, dt);
 
-    // rotate the H’s by Δq = ω × r dt
-    r0 += omega.cross(r0) * dt;
-    r1 += omega.cross(r1) * dt;
-
-    // Normalize back to exact geometry
-    let r0n = r0.to_normalized() * O_H_THETA_R_0;
-    let r1n = r1.to_normalized() * O_H_THETA_R_0;
-
-    // rebuild exact positions
-    h0.posit = o.posit + r0n;
-    h1.posit = o.posit + r1n;
-
-    // Recompute H velocities from rigid‑body motion
-    // v = ω × r
-    h0.vel = o.vel + omega.cross(r0n);
-    h1.vel = o.vel + omega.cross(r1n);
+    o.posit  = r_com + Δ + rO2;   h0.posit = r_com + Δ + rH02;   h1.posit = r_com + Δ + rH12;
+    o.vel    = v_com + ω.cross(rO2); h0.vel = v_com + ω.cross(rH02); h1.vel = v_com + ω.cross(rH12);
 }
 
 /// Solve I · x = b for a 3×3 *symmetric* matrix I.
@@ -395,7 +380,8 @@ impl MdState {
         // Forces at current positions
         let mut result = vec![WaterForces::default(); n_w];
 
-        // Dynamic sources, water target
+        // ---- Dynamic sources, water target ----
+
         // We only add forces to WATER here; the dynamic atoms already got their
         // counterpart in `apply_nonbonded_forces` to avoid double work.
         for iw in 0..n_w {
@@ -413,12 +399,8 @@ impl MdState {
                         a,
                         &self.cell,
                         false,
-                        None,
-                        None,
-                        Some(i_dyn), // LJ cache between dynamic and water.
-                        &self.lj_table,
-                        &self.lj_table_static,
-                        &self.lj_table_water,
+                        LjTableIndices::DynOnWater(i_dyn),
+                        &self.lj_tables,
                         true,
                         false,
                     );
@@ -431,12 +413,8 @@ impl MdState {
                         a,
                         &self.cell,
                         false,
-                        None,
-                        None,
-                        None,
-                        &self.lj_table,
-                        &self.lj_table_static,
-                        &self.lj_table_water,
+                        LjTableIndices::DynOnWater(i_dyn), // N/A; no LJ force
+                        &self.lj_tables,
                         false,
                         true,
                     );
@@ -449,12 +427,8 @@ impl MdState {
                         a,
                         &self.cell,
                         false,
-                        None,
-                        None,
-                        None,
-                        &self.lj_table,
-                        &self.lj_table_static,
-                        &self.lj_table_water,
+                        LjTableIndices::DynOnWater(i_dyn), // N/A; no LJ force
+                        &self.lj_tables,
                         false,
                         true,
                     );
@@ -467,12 +441,8 @@ impl MdState {
                         a,
                         &self.cell,
                         false,
-                        None,
-                        None,
-                        None,
-                        &self.lj_table,
-                        &self.lj_table_static,
-                        &self.lj_table_water,
+                        LjTableIndices::DynOnWater(i_dyn), // N/A; no LJ force
+                        &self.lj_tables,
                         false,
                         true,
                     );
@@ -481,7 +451,7 @@ impl MdState {
             }
         }
 
-        // (b) static → water (static atoms don’t move; only accumulate on water)
+        // ---- Static sources, water target ----
         for iw in 0..n_w {
             for &i_st in &self.neighbors_nb.water_static[iw] {
                 let w = &self.water[iw];
@@ -494,12 +464,8 @@ impl MdState {
                         a,
                         &self.cell,
                         false,
-                        None,
-                        None,
-                        None,
-                        &self.lj_table,
-                        &self.lj_table_static,
-                        &self.lj_table_water,
+                        LjTableIndices::StaticOnWater(i_st),
+                        &self.lj_tables,
                         true,
                         false,
                     );
@@ -512,12 +478,8 @@ impl MdState {
                         a,
                         &self.cell,
                         false,
-                        None,
-                        None,
-                        None,
-                        &self.lj_table,
-                        &self.lj_table_static,
-                        &self.lj_table_water,
+                        LjTableIndices::StaticOnWater(i_st), // N/A; no LJ force
+                        &self.lj_tables,
                         false,
                         true,
                     );
@@ -530,12 +492,8 @@ impl MdState {
                         a,
                         &self.cell,
                         false,
-                        None,
-                        None,
-                        None,
-                        &self.lj_table,
-                        &self.lj_table_static,
-                        &self.lj_table_water,
+                        LjTableIndices::StaticOnWater(i_st), // N/A; no LJ force
+                        &self.lj_tables,
                         false,
                         true,
                     );
@@ -548,12 +506,8 @@ impl MdState {
                         a,
                         &self.cell,
                         false,
-                        None,
-                        None,
-                        None,
-                        &self.lj_table,
-                        &self.lj_table_static,
-                        &self.lj_table_water,
+                        LjTableIndices::StaticOnWater(i_st), // N/A; no LJ force
+                        &self.lj_tables,
                         false,
                         true,
                     );
@@ -562,7 +516,7 @@ impl MdState {
             }
         }
 
-        // Water ↔ water (use i<j; apply Newton’s 3rd law between molecules)
+        // ---- Water sources, water target ----
         for iw_tgt in 0..n_w {
             for &iw_src in &self.neighbors_nb.water_water[iw_tgt] {
                 if iw_src <= iw_tgt {
@@ -615,12 +569,8 @@ impl MdState {
                             src,
                             &self.cell,
                             false,
-                            None,
-                            None,
-                            None,
-                            &self.lj_table,
-                            &self.lj_table_static,
-                            &self.lj_table_water,
+                            LjTableIndices::WaterOnWater,
+                            &self.lj_tables,
                             calc_lj,
                             calc_coulomb,
                         );
@@ -806,4 +756,23 @@ fn project_ep_force_to_real_sites(o: Vec3, h0: Vec3, h1: Vec3, f_m: Vec3) -> (Ve
     let fo = f_m - fh * 2.0; // remaining force goes to O
 
     (fo, fh, fh)
+}
+
+fn rodrigues_rotate(r: Vec3, omega: Vec3, dt: f64) -> Vec3 {
+    // Rotate vector r by angle θ = |ω| dt about axis n = ω/|ω|
+    // Use series for tiny θ to avoid loss of precision.
+    let omega_dt = omega * dt;
+    let theta = omega_dt.magnitude();
+
+    if theta < 1e-12 {
+        // 2nd-order series: r' ≈ r + (ω×r) dt + 0.5 (ω×(ω×r)) dt^2
+        let wxr = omega_dt.cross(r);
+        return r + wxr + omega_dt.cross(wxr) * 0.5;
+    }
+
+    let n = omega_dt / theta; // unit axis
+    let c = theta.cos();
+    let s = theta.sin();
+    // r' = r c + (n×r) s + n (n·r) (1−c)
+    r * c + n.cross(r) * s + n * (n.dot(r)) * (1.0 - c)
 }

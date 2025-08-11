@@ -1,5 +1,6 @@
 //! For Smooth-Particle-Mesh_Ewald; a standard approximation for Coulomb forces in MD.
 
+use std::f64::consts::FRAC_2_SQRT_PI;
 use std::f64::consts::{E, TAU};
 
 // todo: This may be a good candidate for a standalone library.
@@ -8,7 +9,7 @@ use lin_alg::f64::Vec3;
 #[cfg(target_arch = "x86_64")]
 use lin_alg::f64::{Vec3x4, Vec3x8, f64x8};
 use rustfft::{FftDirection, FftPlanner, num_complex::Complex};
-use statrs::function::erf::erfc;
+use statrs::function::erf::{erf, erfc};
 
 use crate::dynamics::{AtomDynamics, ambient::SimBox};
 
@@ -177,8 +178,16 @@ pub fn pme_long_range_forces(
                     continue;
                 }
 
-                // reciprocal vector (2π/L)·k
-                let kvec = Vec3::new(kx as f64 / ext.x, ky as f64 / ext.y, kz as f64 / ext.z) * TAU;
+                let kx_s = if kx <= nx/2 { kx as isize } else { kx as isize - nx as isize };
+                let ky_s = if ky <= ny/2 { ky as isize } else { ky as isize - ny as isize };
+                let kz_s = if kz <= nz/2 { kz as isize } else { kz as isize - nz as isize };
+
+                let kvec = Vec3::new(
+                    (kx_s as f64) / ext.x,
+                    (ky_s as f64) / ext.y,
+                    (kz_s as f64) / ext.z
+                ) * TAU;
+
                 let k2 = kvec.dot(kvec);
 
                 // Gaussian Ewald filter
@@ -219,6 +228,10 @@ pub fn pme_long_range_forces(
     let mut ey = vec![0.0; nx * ny * nz];
     let mut ez = vec![0.0; nx * ny * nz];
 
+    let scale_x = (nx as f64) / ext.x;
+    let scale_y = (ny as f64) / ext.y;
+    let scale_z = (nz as f64) / ext.z;
+
     for (i, j, k) in iproduct!(0..nx, 0..ny, 0..nz) {
         let ip1 = (i + 1) % nx;
         let im1 = (i + nx - 1) % nx;
@@ -226,10 +239,6 @@ pub fn pme_long_range_forces(
         let jm1 = (j + ny - 1) % ny;
         let kp1 = (k + 1) % nz;
         let km1 = (k + nz - 1) % nz;
-
-        let scale_x = (nx as f64) / ext.x;
-        let scale_y = (ny as f64) / ext.y;
-        let scale_z = (nz as f64) / ext.z;
 
         ex[idx(i, j, k, ny, nz)] =
             -(phi[idx(ip1, j, k, ny, nz)] - phi[idx(im1, j, k, ny, nz)]) * 0.5 * scale_x;
@@ -331,4 +340,20 @@ fn fft3_inplace(a: &mut [Complex<f64>], nx: usize, ny: usize, nz: usize, fft_dir
             }
         }
     }
+}
+
+pub fn force_coulomb_ewald_complement(
+    dir: Vec3,     // r̂
+    r: f64,        // |r|
+    qi: f64, qj: f64,
+    alpha: f64,
+) -> Vec3 {
+    // F_comp = k * qi*qj * [ erf(αr)/r^2 - (2α/√π) e^{-(αr)^2}/r ] * r̂
+    // With your charge scaling, k = 1 in internal units (as in your real-space fn).
+    let ar = alpha * r;
+    // todo: Cache this.
+    let erfc_comp = FRAC_2_SQRT_PI * (-ar * ar).exp();
+
+    let term = erf(ar) / (r * r) - erfc_comp * alpha / r;
+    dir * (qi * qj * term)
 }

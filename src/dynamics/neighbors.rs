@@ -48,6 +48,9 @@ impl MdState {
     pub fn build_neighbors_if_needed(&mut self) {
         let start = Instant::now();
 
+        let n_dyn = self.atoms.len();
+        let n_w   = self.water.len();
+
         // Current positions
         let dyn_pos_now = positions_of(&self.atoms);
         let water_o_pos_now = positions_of_water_o(&self.water);
@@ -97,16 +100,7 @@ impl MdState {
                 &self.cell,
                 false,
             );
-            // todo: Helper; DRY between this and init.
-            // Now invert dy_water -> water_dy
-            let n_water = water_atoms.len();
-            self.neighbors_nb.water_dy = vec![Vec::new(); n_water];
-
-            for (dyn_idx, waters) in self.neighbors_nb.dy_water.iter().enumerate() {
-                for &water_idx in waters {
-                    self.neighbors_nb.water_dy[water_idx].push(dyn_idx);
-                }
-            }
+            self.rebuild_dy_water_inv();
 
             rebuilt_dyn = true;
         }
@@ -143,6 +137,7 @@ impl MdState {
                     &self.cell,
                     false,
                 );
+                self.rebuild_dy_water_inv();
             }
 
             rebuilt_wat = true;
@@ -166,6 +161,18 @@ impl MdState {
             println!("Neighbor build time: {:?} μs", elapsed.as_micros());
         } else {
             println!("No rebuild needed.");
+        }
+    }
+
+    pub fn rebuild_dy_water_inv(&mut self) {
+        for v in &mut self.neighbors_nb.water_dy {
+            v.clear();
+        }
+
+        for i_dyn in 0..self.atoms.len() {
+            for &iw in &self.neighbors_nb.dy_water[i_dyn] {
+                self.neighbors_nb.water_dy[iw].push(i_dyn);
+            }
         }
     }
 }
