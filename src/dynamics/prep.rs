@@ -40,14 +40,15 @@ use crate::{
     docking::{BindingEnergy, ConformationType, prep::DockingSetup},
     dynamics::{
         AtomDynamics, ForceFieldParamsIndexed, MdMode, MdState, ParamError, SnapshotDynamics,
-        ambient::SimBox, neighbors::build_neighbors, non_bonded, water_opc::make_water_mols,
+        ambient::SimBox, neighbors::build_neighbors, non_bonded, non_bonded::LjTableIndices,
     },
     molecule::{Atom, Bond, Ligand, Molecule, Residue, ResidueEnd, build_adjacency_list},
 };
-use crate::dynamics::non_bonded::LjTableIndices;
 
 // Todo: QC this.
 const TEMP_TGT_DEFAULT: f64 = 310.; // Kelvin.
+
+const SIMBOX_PAD: f64 = 10.0; // Å
 
 /// Build a single lookup table in which ligand-specific parameters
 /// (when given) replace or add to the generic ones.
@@ -764,7 +765,6 @@ impl MdState {
         let mut atoms_dy_static = Vec::with_capacity(atoms_static.len());
         let atom_posits_static: Vec<_> = atoms_static.iter().map(|a| a.posit).collect();
 
-        // for (i, atom) in atoms_external.iter().enumerate() {
         for (i, atom) in atoms_static.iter().enumerate() {
             atoms_dy_static.push(AtomDynamics::new(
                 atom,
@@ -958,9 +958,9 @@ impl MdState {
                 min = min.min(a.posit);
                 max = max.max(a.posit);
             }
-            let pad = 15.0; // Å
-            let lo = min - Vec3::splat(pad);
-            let hi = max + Vec3::splat(pad);
+
+            let lo = min - Vec3::splat(SIMBOX_PAD);
+            let hi = max + Vec3::splat(SIMBOX_PAD);
 
             println!("Initizing sim box. L: {lo} H: {hi}");
 
@@ -984,12 +984,13 @@ impl MdState {
             ..Default::default()
         };
 
-        result.water = make_water_mols(
-            &cell,
-            result.temp_target,
-            &result.atoms,
-            &result.atoms_static,
-        );
+        // todo: Put back when ready.
+        // result.water = make_water_mols(
+        //     &cell,
+        //     result.temp_target,
+        //     &result.atoms,
+        //     &result.atoms_static,
+        // );
         result.water_pme_sites_forces = vec![[Vec3::new_zero(); 3]; result.water.len()];
 
         result.setup_nonbonded_exclusion_scale_flags();
@@ -1087,36 +1088,24 @@ impl MdState {
                 // Dynamic, water
                 if !result.water.is_empty() {
                     // Each water is identical, so we only need to do this once per lig, and static atom.
-                    for a_water_src in [
+                    non_bonded::setup_lj_cache(
+                        a_lig,
                         &result.water[0].o,
-                        &result.water[0].m,
-                        &result.water[0].h0,
-                        &result.water[0].h1,
-                    ] {
-                        non_bonded::setup_lj_cache(
-                            a_lig,
-                            a_water_src,
-                            LjTableIndices::DynOnWater(i_lig),
-                            &mut result.lj_tables,
-                        );
-                    }
+                        LjTableIndices::DynOnWater(i_lig),
+                        &mut result.lj_tables,
+                    );
                 }
             }
 
             // Static, water
-            for (i_static, a_static) in result.atoms_static.iter().enumerate() {
-                for a_water_src in [
-                    &result.water[0].o,
-                    &result.water[0].m,
-                    &result.water[0].h0,
-                    &result.water[0].h1,
-                ] {
+            if !result.water.is_empty() {
+                for (i_static, a_static) in result.atoms_static.iter().enumerate() {
                     non_bonded::setup_lj_cache(
                         a_static,
-                        a_water_src,
+                        &result.water[0].o,
                         LjTableIndices::StaticOnWater(i_static),
                         &mut result.lj_tables,
-                        );
+                    );
                 }
             }
         }

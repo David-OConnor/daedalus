@@ -1,17 +1,15 @@
 //! For Smooth-Particle-Mesh_Ewald; a standard approximation for Coulomb forces in MD.
 
-use std::f64::consts::FRAC_2_SQRT_PI;
-use std::f64::consts::{E, TAU};
+use std::f64::consts::{FRAC_2_SQRT_PI, TAU};
 
 // todo: This may be a good candidate for a standalone library.
-use itertools::iproduct;
 use lin_alg::f64::Vec3;
 #[cfg(target_arch = "x86_64")]
-use lin_alg::f64::{Vec3x4, Vec3x8, f64x8};
+use lin_alg::f64::{Vec3x8, f64x8};
 use rustfft::{FftDirection, FftPlanner, num_complex::Complex};
 use statrs::function::erf::{erf, erfc};
 
-use crate::dynamics::{AtomDynamics, ambient::SimBox};
+use crate::dynamics::{AtomDynamics, MdState, ambient::SimBox};
 
 // Ewald SPME approximation for Coulomb force
 pub const EWALD_ALPHA: f64 = 0.257_f64; // 1/Å – good default for ~10 Å cutoff
@@ -92,12 +90,16 @@ fn for_each_stencil<F: FnMut(usize, usize, usize, f64)>(
     bspline4_weights(fy - iy0 as f64, &mut wy);
     bspline4_weights(fz - iz0 as f64, &mut wz);
 
+    let ix_base = ix0 - 1;
+    let iy_base = iy0 - 1;
+    let iz_base = iz0 - 1;
+
     for (dx, &wxv) in wx.iter().enumerate() {
-        let ix = (ix0 + dx as isize).rem_euclid(nx as isize) as usize;
+        let ix = (ix_base + dx as isize).rem_euclid(nx as isize) as usize;
         for (dy, &wyv) in wy.iter().enumerate() {
-            let iy = (iy0 + dy as isize).rem_euclid(ny as isize) as usize;
+            let iy = (iy_base + dy as isize).rem_euclid(ny as isize) as usize;
             for (dz, &wzv) in wz.iter().enumerate() {
-                let iz = (iz0 + dz as isize).rem_euclid(nz as isize) as usize;
+                let iz = (iz_base + dz as isize).rem_euclid(nz as isize) as usize;
                 f(ix, iy, iz, wxv * wyv * wzv);
             }
         }
@@ -130,7 +132,6 @@ pub fn pme_long_range_forces(
         my.next_power_of_two(),
         mz.next_power_of_two(),
     );
-    let vol = ext.x * ext.y * ext.z;
 
     // Spread charges to mesh with 4‑th order B‑splines
     let mut rho = vec![0.0_f64; nx * ny * nz];
@@ -166,87 +167,86 @@ pub fn pme_long_range_forces(
 
     // Multiply by influence function in k-space:
     // ϕ(k) = ρ(k) * 4π/k² * exp(-k²/(4α²)) / (|Bx|² |By|² |Bz|²) * (1/Vol)
-    // (Tin-foil boundary; omit k=0)
-    let vol = ext.x * ext.y * ext.z;
+
+    // --- Influence function & k-space gradient ---
+    let mut ex_k = vec![Complex { re: 0.0, im: 0.0 }; nx * ny * nz];
+    let mut ey_k = ex_k.clone();
+    let mut ez_k = ex_k.clone();
+
     for kx in 0..nx {
         for ky in 0..ny {
             for kz in 0..nz {
                 let n = idx(kx, ky, kz, ny, nz);
-
                 if kx == 0 && ky == 0 && kz == 0 {
-                    rho_c[n] = Complex::ZERO;
                     continue;
                 }
 
-                let kx_s = if kx <= nx/2 { kx as isize } else { kx as isize - nx as isize };
-                let ky_s = if ky <= ny/2 { ky as isize } else { ky as isize - ny as isize };
-                let kz_s = if kz <= nz/2 { kz as isize } else { kz as isize - nz as isize };
+                let kx_s = if kx <= nx / 2 {
+                    kx as isize
+                } else {
+                    kx as isize - nx as isize
+                };
+                let ky_s = if ky <= ny / 2 {
+                    ky as isize
+                } else {
+                    ky as isize - ny as isize
+                };
+                let kz_s = if kz <= nz / 2 {
+                    kz as isize
+                } else {
+                    kz as isize - nz as isize
+                };
 
-                let kvec = Vec3::new(
-                    (kx_s as f64) / ext.x,
-                    (ky_s as f64) / ext.y,
-                    (kz_s as f64) / ext.z
-                ) * TAU;
+                let k = Vec3::new(
+                    (kx_s as f64) * TAU / ext.x,
+                    (ky_s as f64) * TAU / ext.y,
+                    (kz_s as f64) * TAU / ext.z,
+                );
+                let k2 = k.dot(k);
 
-                let k2 = kvec.dot(kvec);
-
-                // Gaussian Ewald filter
+                // Gaussian Ewald factor
                 let gk = (-k2 / (4.0 * alpha * alpha)).exp();
 
-                // B-spline deconvolution (order 4)
+                // B-spline deconvolution (order=4)
                 let bx = bspline_modulus(SPLINE_ORDER, kx, nx);
                 let by = bspline_modulus(SPLINE_ORDER, ky, ny);
                 let bz = bspline_modulus(SPLINE_ORDER, kz, nz);
-                let b2 = (bx * bx) * (by * by) * (bz * bz);
+                let mut b2 = (bx * bx) * (by * by) * (bz * bz);
+                b2 = b2.max(1e-8); // simple stability clamp
 
-                // Influence function (tin-foil): 4π/k² * gk / b² / Vol
-                let inf = (4.0 * std::f64::consts::PI) * gk / (k2 * b2 * vol);
+                // Green’s function (no 1/Vol; we normalize after IFFT)
+                let vol = ext.x * ext.y * ext.z; // compute once above the loops
+                let green = (4.0 * std::f64::consts::PI) * gk / (k2 * b2 * vol);
 
-                rho_c[n] *= inf;
+                let phi_hat = rho_c[n] * green; // φ̂(k)
+
+                // Ê = -i k φ̂
+                ex_k[n] = Complex {
+                    re: k.x * phi_hat.im,
+                    im: -k.x * phi_hat.re,
+                };
+                ey_k[n] = Complex {
+                    re: k.y * phi_hat.im,
+                    im: -k.y * phi_hat.re,
+                };
+                ez_k[n] = Complex {
+                    re: k.z * phi_hat.im,
+                    im: -k.z * phi_hat.re,
+                };
             }
         }
     }
 
-    // INVERSE 3D FFT → ϕ(r)
-    fft3_inplace(
-        &mut rho_c,
-        nx,
-        ny,
-        nz,
-        /*forward=*/ FftDirection::Inverse,
-    );
+    // IFFT each component and normalize
+    fft3_inplace(&mut ex_k, nx, ny, nz, FftDirection::Inverse);
+    fft3_inplace(&mut ey_k, nx, ny, nz, FftDirection::Inverse);
+    fft3_inplace(&mut ez_k, nx, ny, nz, FftDirection::Inverse);
 
-    // normalise (rustfft doesn't normalise)
     let norm = 1.0 / (nx * ny * nz) as f64;
-    let mut phi = vec![0.0_f64; nx * ny * nz];
-    for (i, c) in rho_c.into_iter().enumerate() {
-        phi[i] = c.re * norm;
-    }
-
-    // Finite‑difference electric field  E = −∇ϕ  (central differences)
-    let mut ex = vec![0.0; nx * ny * nz];
-    let mut ey = vec![0.0; nx * ny * nz];
-    let mut ez = vec![0.0; nx * ny * nz];
-
-    let scale_x = (nx as f64) / ext.x;
-    let scale_y = (ny as f64) / ext.y;
-    let scale_z = (nz as f64) / ext.z;
-
-    for (i, j, k) in iproduct!(0..nx, 0..ny, 0..nz) {
-        let ip1 = (i + 1) % nx;
-        let im1 = (i + nx - 1) % nx;
-        let jp1 = (j + 1) % ny;
-        let jm1 = (j + ny - 1) % ny;
-        let kp1 = (k + 1) % nz;
-        let km1 = (k + nz - 1) % nz;
-
-        ex[idx(i, j, k, ny, nz)] =
-            -(phi[idx(ip1, j, k, ny, nz)] - phi[idx(im1, j, k, ny, nz)]) * 0.5 * scale_x;
-        ey[idx(i, j, k, ny, nz)] =
-            -(phi[idx(i, jp1, k, ny, nz)] - phi[idx(i, jm1, k, ny, nz)]) * 0.5 * scale_y;
-        ez[idx(i, j, k, ny, nz)] =
-            -(phi[idx(i, j, kp1, ny, nz)] - phi[idx(i, j, km1, ny, nz)]) * 0.5 * scale_z;
-    }
+    let ex: Vec<f64> = ex_k.into_iter().map(|c| c.re * norm).collect();
+    let ey: Vec<f64> = ey_k.into_iter().map(|c| c.re * norm).collect();
+    let ez: Vec<f64> = ez_k.into_iter().map(|c| c.re * norm).collect();
+    // --- end k-space path ---
 
     // Gather forces back to atoms (same B‑spline weights)
     let mut forces_dyn_static = vec![Vec3::new_zero(); atoms_static_dy.len()];
@@ -343,9 +343,10 @@ fn fft3_inplace(a: &mut [Complex<f64>], nx: usize, ny: usize, nz: usize, fft_dir
 }
 
 pub fn force_coulomb_ewald_complement(
-    dir: Vec3,     // r̂
-    r: f64,        // |r|
-    qi: f64, qj: f64,
+    dir: Vec3, // r̂
+    r: f64,    // |r|
+    qi: f64,
+    qj: f64,
     alpha: f64,
 ) -> Vec3 {
     // F_comp = k * qi*qj * [ erf(αr)/r^2 - (2α/√π) e^{-(αr)^2}/r ] * r̂
@@ -356,4 +357,84 @@ pub fn force_coulomb_ewald_complement(
 
     let term = erf(ar) / (r * r) - erfc_comp * alpha / r;
     dir * (qi * qj * term)
+}
+
+impl MdState {
+    pub fn apply_long_range_recip_forces(&mut self) {
+        // Long‑range reciprocal‑space term (PME / SPME), both static and dynamic.
+        // Build a temporary Vec with *all* charges so the mesh sees both
+        // movable and rigid atoms.  We only add forces back to dynamic atoms. This section
+        // does not use neighbor lists.
+        let n_dynamic = self.atoms.len();
+        let mut all_atoms = Vec::with_capacity(n_dynamic + self.atoms_static.len());
+
+        all_atoms.extend(self.atoms.iter().cloned());
+        all_atoms.extend(self.atoms_static.iter().cloned());
+
+        // These are the water atoms that have Coulomb force; not O.
+        // Separate from all_atoms because they make a [&AtomDynamics] instead of &[AtomDynamics].
+        let mut atoms_water = Vec::with_capacity(self.water.len() * 3);
+        for mol in &self.water {
+            atoms_water.extend([&mol.m, &mol.h0, &mol.h1]);
+        }
+
+        let rec_forces = pme_long_range_forces(
+            &all_atoms,   // dynamic+static as &[AtomDynamics]
+            &atoms_water, // [&AtomDynamics] for (M,H0,H1) per water
+            &self.cell,
+            EWALD_ALPHA,
+            PME_MESH_SPACING,
+        );
+
+        // (1) dynamic atoms
+        for (atom, f_rec) in self
+            .atoms
+            .iter_mut()
+            .zip(rec_forces.dyn_static.iter().take(n_dynamic))
+        {
+            atom.accel += *f_rec; // mass divide happens later in step()
+        }
+
+        if self.water_pme_sites_forces.len() != self.water.len() {
+            self.water_pme_sites_forces
+                .resize(self.water.len(), [Vec3::new_zero(); 3]);
+        }
+
+        for (iw, chunk) in rec_forces.water.chunks_exact(3).enumerate() {
+            // order must match how you built atoms_water: [M, H0, H1]
+            self.water_pme_sites_forces[iw] = [chunk[0], chunk[1], chunk[2]];
+        }
+
+        // === 1-4 reciprocal-space scaling via complement (pairwise) ==================
+        // Goal: net Coulomb(1-4) = SCALE_COUL_14 * (real + reciprocal).
+        // We already scaled the real-space piece pairwise. Here we add
+        // ΔF = (SCALE_COUL_14 - 1) * F_recip(pair), and F_recip(pair) = F_comp(pair).
+        let corr = crate::dynamics::non_bonded::SCALE_COUL_14 - 1.0; // e.g., 1/1.2 - 1 = -1/6
+
+        for &(i, j) in &self.nonbonded_scaled {
+            let rij = self
+                .cell
+                .min_image(self.atoms[i].posit - self.atoms[j].posit);
+
+            let r2 = rij.magnitude_squared();
+            if r2 < 1e-12 {
+                continue;
+            }
+            let r = r2.sqrt();
+            let dir = rij / r;
+
+            let qi = self.atoms[i].partial_charge;
+            let qj = self.atoms[j].partial_charge;
+
+            let f_comp = force_coulomb_ewald_complement(dir, r, qi, qj, EWALD_ALPHA);
+            let df = f_comp * corr;
+
+            // Newton's third law
+            self.atoms[i].accel += df;
+            self.atoms[j].accel -= df;
+
+            self.barostat.virial_pair_kcal += rij.dot(df);
+        }
+        // === end 1-4 PME correction ===================================================
+    }
 }

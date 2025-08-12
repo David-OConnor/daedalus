@@ -41,8 +41,10 @@
 //! - Optimizations for LJ: Dist cutoff for now.
 //! - Amber 1-2, 1-3 exclusions, and 1-4 scaling of covalently-bonded atoms.
 //! - Rayon parallelization of non-bonded forces
-//! - WIP SIMD and CUDA parallelization of non-bonded forces, depending on hardware availability.
-//! - A thermostat+barostat for the whole system. (Is water and dyn separate here?)
+//! - WIP SIMD and CUDA parallelization of non-bonded forces, depending on hardware availability. todo
+//! - A thermostat+barostat for the whole system. (Is water and dyn separate here?) todo
+//! - An energy-measuring system.
+//!
 //! --------
 //! A timing test, using bond-stretching forces between two atoms only. Measure the period
 //! of oscillation for these atom combinations, e.g. using custom Mol2 files.
@@ -97,16 +99,17 @@ use lin_alg::f64::Vec3;
 use lin_alg::f64::{Vec3x4, f64x4};
 use na_seq::{Element, Element::Hydrogen};
 use neighbors::NeighborsNb;
+use rand::rng;
 
 use crate::{
     dynamics::{
-        ambient::BerendsenBarostat, non_bonded::CHARGE_UNIT_SCALER, prep::HydrogenMdType,
+        ambient::BerendsenBarostat,
+        non_bonded::{CHARGE_UNIT_SCALER, LjTables},
+        prep::HydrogenMdType,
         water_opc::WaterMol,
     },
     molecule::Atom,
 };
-use crate::dynamics::non_bonded::LjTables;
-
 
 // Verlet list parameters
 
@@ -123,6 +126,9 @@ const EPS: f64 = 1.0e-8;
 /// accelerations by this.
 const ACCEL_CONVERSION: f64 = 418.4;
 pub const ACCEL_CONVERSION_INV: f64 = 1. / ACCEL_CONVERSION;
+
+// For assigning velocities from temperature, and other thermostat/barostat use.
+pub const KB: f64 = 0.001_987_204_1; // kcal mol⁻¹ K⁻¹ (Amber-style units)
 
 // SHAKE tolerances for fixed hydrogens. These SHAKE constraints are for fixed hydrogens.
 // The tolerance controls how close we get
@@ -363,10 +369,11 @@ impl MdState {
             self.shake_hydrogens();
         }
 
-        // Reset acceleration.
+        // Reset acceleration and virial pair.
         for a in &mut self.atoms {
             a.accel = Vec3::new_zero();
         }
+        self.barostat.virial_pair_kcal = 0.0;
 
         // Bonded forces
         let mut start = Instant::now();
@@ -442,18 +449,15 @@ impl MdState {
             println!("Water time: {:?} μs", elapsed.as_micros());
         }
 
-        // todo: Apply the thermostat.
+        // todo: Apply the thermostat/barostat
 
-        // Berendsen thermostat (T coupling to target every step)
-        // if let Some(tau_ps) = self.kb_berendsen {
-        //     let tau = tau_ps * 1e-12;
-        //     let curr_ke = self.current_kinetic_energy();
-        //     let curr_t = 2.0 * curr_ke / (3.0 * self.atoms.len() as f64 * 0.0019872041); // k_B in kcal/mol
-        //     let λ = (1.0 + dt / tau * (self.temp_target - curr_t) / curr_t).sqrt();
-        //     for a in &mut self.atoms {
-        //         a.vel *= λ;
-        //     }
-        // }
+        // todo: Is this right and at a good location?
+        let p_inst = self.instantaneous_pressure_bar();
+        self.barostat
+            .apply(&mut self.cell, &mut self.water, p_inst, dt);
+
+        self.apply_thermostat_csvr(dt, self.temp_target, self.barostat.tau_p);
+        self.apply_barostat_berendsen(dt);
 
         self.time += dt;
         self.step_count += 1;

@@ -49,7 +49,7 @@ impl MdState {
         let start = Instant::now();
 
         let n_dyn = self.atoms.len();
-        let n_w   = self.water.len();
+        let n_w = self.water.len();
 
         // Current positions
         let dyn_pos_now = positions_of(&self.atoms);

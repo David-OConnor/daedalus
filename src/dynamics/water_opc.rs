@@ -25,10 +25,11 @@ use rand::{Rng, distr::Uniform};
 use rand_distr::{Distribution, StandardNormal};
 
 use crate::dynamics::{
-    ACCEL_CONVERSION, ACCEL_CONVERSION_INV, AtomDynamics, MdState, ambient::SimBox,
-    non_bonded::f_nonbonded, split2_mut,
+    ACCEL_CONVERSION, ACCEL_CONVERSION_INV, AtomDynamics, KB, MdState,
+    ambient::SimBox,
+    non_bonded::{CHARGE_UNIT_SCALER, LjTableIndices, f_nonbonded},
+    split2_mut,
 };
-use crate::dynamics::non_bonded::{LjTableIndices, CHARGE_UNIT_SCALER};
 
 // Parameters for OPC water (JPCL, 2014, 5 (21), pp 3863-3871)
 // (Amber 2025, frcmod.opc) EPC is presumably the massless, 4th charge.
@@ -36,9 +37,6 @@ use crate::dynamics::non_bonded::{LjTableIndices, CHARGE_UNIT_SCALER};
 const O_MASS: f64 = 16.;
 const H_MASS: f64 = 1.008;
 // const EP_MASS: f64 = 0.;
-
-// For assigning velocities from temperature.
-const KB: f64 = 0.001_987_204_1; // kcal mol⁻¹ K⁻¹ (Amber-style units)
 
 // todo: SHould you just add up the atom masses from Amber?
 const MASS_WATER: f64 = 18.015_28;
@@ -72,8 +70,6 @@ const SIGMA_FACTOR: f64 = 1.122_462_048_309_373; // 2^(1/6)
 const O_RSTAR: f64 = 1.777167268;
 pub const O_SIGMA: f64 = 2.0 * O_RSTAR / SIGMA_FACTOR;
 pub const O_EPS: f64 = 0.2128008130;
-
-
 
 // Partial charges. See the OPC paper, Table 2. None on O.
 const Q_H: f64 = 0.6791;
@@ -254,30 +250,46 @@ pub fn make_water_mols(
 /// All distances & masses are in MD internal units (Å, ps, amu, kcal/mol).
 fn settle_opc(o: &mut AtomDynamics, h0: &mut AtomDynamics, h1: &mut AtomDynamics, dt: f64) {
     // masses
-    let mO = O_MASS; let mH = H_MASS; let mT = mO + 2.0*mH;
+    let mO = O_MASS;
+    let mH = H_MASS;
+    let mT = mO + 2.0 * mH;
 
     // COM position & velocity at start of the drift/rotation substep
-    let r_com = (o.posit*mO + h0.posit*mH + h1.posit*mH) / mT;
-    let v_com = (o.vel  *mO + h0.vel  *mH + h1.vel  *mH) / mT;
+    let r_com = (o.posit * mO + h0.posit * mH + h1.posit * mH) / mT;
+    let v_com = (o.vel * mO + h0.vel * mH + h1.vel * mH) / mT;
 
     // shift to COM frame
     let (rO, rH0, rH1) = (o.posit - r_com, h0.posit - r_com, h1.posit - r_com);
-    let (vO, vH0, vH1) = (o.vel   - v_com, h0.vel   - v_com, h1.vel   - v_com);
+    let (vO, vH0, vH1) = (o.vel - v_com, h0.vel - v_com, h1.vel - v_com);
 
     // angular momentum about COM
-    let L = rO.cross(vO)*mO + rH0.cross(vH0)*mH + rH1.cross(vH1)*mH;
+    let L = rO.cross(vO) * mO + rH0.cross(vH0) * mH + rH1.cross(vH1) * mH;
 
     // inertia tensor about COM (symmetric 3×3)
-    let accI = |r:Vec3, m:f64| {
-        let x=r.x; let y=r.y; let z=r.z; let r2=r.dot(r);
-        ( m*(r2 - x*x), m*(r2 - y*y), m*(r2 - z*z), -m*x*y, -m*x*z, -m*y*z )
+    let accI = |r: Vec3, m: f64| {
+        let x = r.x;
+        let y = r.y;
+        let z = r.z;
+        let r2 = r.dot(r);
+        (
+            m * (r2 - x * x),
+            m * (r2 - y * y),
+            m * (r2 - z * z),
+            -m * x * y,
+            -m * x * z,
+            -m * y * z,
+        )
     };
-    let (iOxx,iOyy,iOzz,iOxy,iOxz,iOyz) = accI(rO,mO);
-    let (iH0x,iH0y,iH0z,iH0xy,iH0xz,iH0yz) = accI(rH0,mH);
-    let (iH1x,iH1y,iH1z,iH1xy,iH1xz,iH1yz) = accI(rH1,mH);
-    let (ixx,iyy,izz, ixy,ixz,iyz) = (
-        iOxx+iH0x+iH1x, iOyy+iH0y+iH1y, iOzz+iH0z+iH1z,
-        iOxy+iH0xy+iH1xy, iOxz+iH0xz+iH1xz, iOyz+iH0yz+iH1yz
+    let (iOxx, iOyy, iOzz, iOxy, iOxz, iOyz) = accI(rO, mO);
+    let (iH0x, iH0y, iH0z, iH0xy, iH0xz, iH0yz) = accI(rH0, mH);
+    let (iH1x, iH1y, iH1z, iH1xy, iH1xz, iH1yz) = accI(rH1, mH);
+    let (ixx, iyy, izz, ixy, ixz, iyz) = (
+        iOxx + iH0x + iH1x,
+        iOyy + iH0y + iH1y,
+        iOzz + iH0z + iH1z,
+        iOxy + iH0xy + iH1xy,
+        iOxz + iH0xz + iH1xz,
+        iOyz + iH0yz + iH1yz,
     );
 
     // ω from I·ω = L
@@ -285,12 +297,16 @@ fn settle_opc(o: &mut AtomDynamics, h0: &mut AtomDynamics, h1: &mut AtomDynamics
 
     // pure translation of COM + rigid rotation about COM
     let Δ = v_com * dt;
-    let rO2 = rodrigues_rotate(rO,  ω, dt);
-    let rH02= rodrigues_rotate(rH0, ω, dt);
-    let rH12= rodrigues_rotate(rH1, ω, dt);
+    let rO2 = rodrigues_rotate(rO, ω, dt);
+    let rH02 = rodrigues_rotate(rH0, ω, dt);
+    let rH12 = rodrigues_rotate(rH1, ω, dt);
 
-    o.posit  = r_com + Δ + rO2;   h0.posit = r_com + Δ + rH02;   h1.posit = r_com + Δ + rH12;
-    o.vel    = v_com + ω.cross(rO2); h0.vel = v_com + ω.cross(rH02); h1.vel = v_com + ω.cross(rH12);
+    o.posit = r_com + Δ + rO2;
+    h0.posit = r_com + Δ + rH02;
+    h1.posit = r_com + Δ + rH12;
+    o.vel = v_com + ω.cross(rO2);
+    h0.vel = v_com + ω.cross(rH02);
+    h1.vel = v_com + ω.cross(rH12);
 }
 
 /// Solve I · x = b for a 3×3 *symmetric* matrix I.
@@ -665,9 +681,14 @@ impl MdState {
             w.m.posit = w.o.posit + bis.to_normalized() * O_EP_R_0;
             w.m.vel = (w.h0.vel + w.h1.vel) * 0.5;
 
-            let wrapped_o = cell.wrap(w.o.posit);
-            let shift = wrapped_o - w.o.posit;
-            w.o.posit = wrapped_o;
+            // Place EP, wrap molecule
+            let bis = (w.h0.posit - w.o.posit) + (w.h1.posit - w.o.posit);
+            w.m.posit = w.o.posit + bis.to_normalized() * O_EP_R_0;
+            w.m.vel = (w.h0.vel + w.h1.vel) * 0.5;
+
+            // If wrap() returns a shift/delta:
+            let shift = cell.wrap(w.o.posit);
+            w.o.posit += shift;
             w.h0.posit += shift;
             w.h1.posit += shift;
             w.m.posit += shift;
