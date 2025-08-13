@@ -83,8 +83,6 @@ impl MdState {
                 &mut self.neighbors_nb.dy_dy,
                 &self.neighbors_nb.ref_pos_dyn,
                 &self.neighbors_nb.ref_pos_dyn,
-                // &self.atoms,
-                // &self.atoms,
                 &self.cell,
                 true,
             );
@@ -93,8 +91,6 @@ impl MdState {
                 &mut self.neighbors_nb.dy_static,
                 &self.neighbors_nb.ref_pos_dyn,
                 &self.neighbors_nb.ref_pos_static,
-                // &self.atoms,
-                // &self.atoms_static,
                 &self.cell,
                 false,
             );
@@ -103,8 +99,6 @@ impl MdState {
                 &mut self.neighbors_nb.dy_water,
                 &self.neighbors_nb.ref_pos_dyn,
                 &self.neighbors_nb.ref_pos_water_o,
-                // &self.atoms,
-                // &water_atoms,
                 &self.cell,
                 false,
             );
@@ -114,18 +108,10 @@ impl MdState {
         }
 
         if wat_disp_sq > SKIN_SQ_DIV_4 {
-            let mut water_atoms = Vec::with_capacity(self.water.len());
-            // todo: Fix this clone.
-            for mol in &self.water {
-                water_atoms.push(mol.o.clone());
-            }
-
             build_neighbors(
                 &mut self.neighbors_nb.water_static,
-                &self.neighbors_nb.ref_pos_dyn,
+                &self.neighbors_nb.ref_pos_water_o,
                 &self.neighbors_nb.ref_pos_static,
-                // &water_atoms,
-                // &self.atoms_static,
                 &self.cell,
                 false,
             );
@@ -134,8 +120,6 @@ impl MdState {
                 &mut self.neighbors_nb.water_water,
                 &self.neighbors_nb.ref_pos_water_o,
                 &self.neighbors_nb.ref_pos_water_o,
-                // &water_atoms,
-                // &water_atoms,
                 &self.cell,
                 true,
             );
@@ -146,8 +130,6 @@ impl MdState {
                     &mut self.neighbors_nb.dy_water,
                     &self.neighbors_nb.ref_pos_dyn,
                     &self.neighbors_nb.ref_pos_water_o,
-                    // &self.atoms,
-                    // &water_atoms,
                     &self.cell,
                     false,
                 );
@@ -158,6 +140,7 @@ impl MdState {
         }
 
         // Rebuild reference position lists for next use, for use with determining when to rebuild the neighbor list.
+        // (Static refs doesn't get rebuilt after init)
         if rebuilt_dyn {
             for (i, a) in self.atoms.iter().enumerate() {
                 self.neighbors_nb.ref_pos_dyn[i] = a.posit;
@@ -195,8 +178,6 @@ impl MdState {
 pub fn build_neighbors(
     neighbors: &mut Vec<Vec<usize>>,
     // todo: Consider accepting target and source posits to avoid cloning water atoms.
-    // targets: &[AtomDynamics],
-    // sources: &[AtomDynamics],
     tgt_posits: &[Vec3],
     src_posits: &[Vec3],
     cell: &SimBox,

@@ -310,9 +310,12 @@ pub fn md_setup(
             }
 
             if ready_to_run {
+                let mol = state.molecule.as_mut().unwrap();
+
                 match build_dynamics_docking(
                     &state.dev,
                     lig,
+                    mol,
                     state.volatile.docking_setup.as_ref().unwrap(),
                     &state.ff_params,
                     state.to_save.num_md_steps,

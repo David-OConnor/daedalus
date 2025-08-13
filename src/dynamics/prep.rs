@@ -45,10 +45,13 @@ use crate::{
     molecule::{Atom, Bond, Ligand, Molecule, Residue, ResidueEnd, build_adjacency_list},
 };
 
-// Todo: QC this.
+// Todo: QC this. And/or make this a setting
 const TEMP_TGT_DEFAULT: f64 = 310.; // Kelvin.
 
 const SIMBOX_PAD: f64 = 10.0; // Å
+// Å. Static atoms must be at least this close to a dynamic atom at the start of MD to count.
+// Set this wide to take into account motion.
+const STATIC_ATOM_DIST_THRESH: f64 = 8.; // todo: Increase (?) A/R.
 
 /// Build a single lookup table in which ligand-specific parameters
 /// (when given) replace or add to the generic ones.
@@ -655,6 +658,7 @@ pub fn populate_ff_and_q(
 pub fn build_dynamics_docking(
     dev: &ComputationDevice,
     lig: &mut Ligand,
+    mol: &Molecule,
     setup: &DockingSetup,
     ff_params: &FfParamSet,
     n_steps: u32,
@@ -669,7 +673,7 @@ pub fn build_dynamics_docking(
         &lig.atom_posits,
         &lig.molecule.adjacency_list,
         &lig.molecule.bonds,
-        &setup.rec_atoms_near_site,
+        &mol.atoms,
         ff_params,
         TEMP_TGT_DEFAULT,
         &lig.molecule.ident,
@@ -699,7 +703,8 @@ impl MdState {
         atom_posits: &[Vec3],
         adjacency_list: &[Vec<usize>],
         bonds: &[Bond],
-        atoms_static: &[Atom],
+        // This is the whole set; not just nearby. E.g. all protein atoms.
+        atoms_static_all: &[Atom],
         ff_params: &FfParamSet,
         temp_target: f64,
         lig_ident: &str,
@@ -715,6 +720,21 @@ impl MdState {
                 "MD failure: Missing prot params general params",
             ));
         };
+
+        let mut atoms_static_near = Vec::new();
+        for atom_st in atoms_static_all {
+            let mut closest_dist = 99999.;
+            for (i, atom_dy) in atoms.iter().enumerate() {
+                let dist = (atom_posits[i] - atom_st.posit).magnitude();
+                if dist < closest_dist {
+                    closest_dist = dist;
+                }
+            }
+
+            if closest_dist < STATIC_ATOM_DIST_THRESH {
+                atoms_static_near.push(atom_st.clone());
+            }
+        }
 
         // Assign FF type and charge to protein atoms; FF type must be assigned prior to initializing `ForceFieldParamsIndexed`.
         // (Ligand atoms will already have FF type assigned).
@@ -744,7 +764,7 @@ impl MdState {
         let ff_params_static = ForceFieldParamsIndexed::new(
             ff_params_prot_keyed,
             None,
-            atoms_static,
+            &atoms_static_near,
             &bonds_static,
             &adj_list_static,
             &mut hydrogen_md_type,
@@ -762,10 +782,10 @@ impl MdState {
             )?);
         }
 
-        let mut atoms_dy_static = Vec::with_capacity(atoms_static.len());
-        let atom_posits_static: Vec<_> = atoms_static.iter().map(|a| a.posit).collect();
+        let mut atoms_dy_static = Vec::with_capacity(atoms_static_near.len());
+        let atom_posits_static: Vec<_> = atoms_static_near.iter().map(|a| a.posit).collect();
 
-        for (i, atom) in atoms_static.iter().enumerate() {
+        for (i, atom) in atoms_static_near.iter().enumerate() {
             atoms_dy_static.push(AtomDynamics::new(
                 atom,
                 &atom_posits_static,
@@ -995,70 +1015,7 @@ impl MdState {
 
         result.setup_nonbonded_exclusion_scale_flags();
 
-        build_neighbors(
-            &mut result.neighbors_nb.dy_dy,
-            &result.neighbors_nb.ref_pos_dyn,
-            &result.neighbors_nb.ref_pos_dyn,
-            // &result.atoms,
-            // &result.atoms,
-            &result.cell,
-            true,
-        );
-        build_neighbors(
-            &mut result.neighbors_nb.dy_static,
-            &result.neighbors_nb.ref_pos_dyn,
-            &result.neighbors_nb.ref_pos_static,
-            // &result.atoms,
-            // &result.atoms_static
-            &result.cell,
-            false,
-        );
-        build_neighbors(
-            &mut result.neighbors_nb.dy_water,
-            &result.neighbors_nb.ref_pos_dyn,
-            &result.neighbors_nb.ref_pos_water_o,
-            // &result.atoms,
-            // &water_atoms,
-            &result.cell,
-            false,
-        );
-        build_neighbors(
-            &mut result.neighbors_nb.water_static,
-            &result.neighbors_nb.ref_pos_water_o,
-            &result.neighbors_nb.ref_pos_static,
-            &result.cell,
-            false,
-        );
-        build_neighbors(
-            &mut result.neighbors_nb.water_water,
-            &result.neighbors_nb.ref_pos_water_o,
-            &result.neighbors_nb.ref_pos_water_o,
-            &result.cell,
-            true,
-        );
-
-        // todo: Helper; DRY between this and during steps
-        // Now invert dy_water -> water_dy
-        // O only again.
-        result.neighbors_nb.water_dy = vec![Vec::new(); result.water.len()];
-
-        for (dyn_idx, waters) in result.neighbors_nb.dy_water.iter().enumerate() {
-            for &water_idx in waters {
-                result.neighbors_nb.water_dy[water_idx].push(dyn_idx);
-            }
-        }
-
-        // Sets up initial values, and does the only pushes; we set by index after.
-        for a in &result.atoms {
-            result.neighbors_nb.ref_pos_dyn.push(a.posit);
-        }
-
-        result.neighbors_nb.ref_pos_dyn = result.atoms.iter().map(|a| a.posit).collect();
-
-        // Doesn't change. The other ref positions we update periodically.
-        result.neighbors_nb.ref_pos_static = result.atoms_static.iter().map(|a| a.posit).collect();
-
-        result.neighbors_nb.ref_pos_dyn = result.water.iter().map(|m| m.o.posit).collect();
+        result.init_neighbors();
 
         // Set up our LJ cache.
         if result.step_count == 0 {
@@ -1115,6 +1072,58 @@ impl MdState {
         }
 
         result
+    }
+
+    /// Note: We don't call this during runtime, as we don't rebuild static there,
+    /// and we don't necessarily rebuild water at the same time as dyn.
+    fn init_neighbors(&mut self) {
+        self.neighbors_nb.ref_pos_dyn = self.atoms.iter().map(|a| a.posit).collect();
+        // Static refs don't change. The dyn and water positions pdate periodically.
+        self.neighbors_nb.ref_pos_static = self.atoms_static.iter().map(|a| a.posit).collect();
+        self.neighbors_nb.ref_pos_water_o = self.water.iter().map(|m| m.o.posit).collect();
+
+
+
+        build_neighbors(
+            &mut self.neighbors_nb.dy_dy,
+            &self.neighbors_nb.ref_pos_dyn,
+            &self.neighbors_nb.ref_pos_dyn,
+            &self.cell,
+            true,
+        );
+
+        build_neighbors(
+            &mut self.neighbors_nb.dy_static,
+            &self.neighbors_nb.ref_pos_dyn,
+            &self.neighbors_nb.ref_pos_static,
+            &self.cell,
+            false,
+        );
+
+        build_neighbors(
+            &mut self.neighbors_nb.dy_water,
+            &self.neighbors_nb.ref_pos_dyn,
+            &self.neighbors_nb.ref_pos_water_o,
+            &self.cell,
+            false,
+        );
+        self.rebuild_dy_water_inv();
+
+        build_neighbors(
+            &mut self.neighbors_nb.water_static,
+            &self.neighbors_nb.ref_pos_water_o,
+            &self.neighbors_nb.ref_pos_static,
+            &self.cell,
+            false,
+        );
+
+        build_neighbors(
+            &mut self.neighbors_nb.water_water,
+            &self.neighbors_nb.ref_pos_water_o,
+            &self.neighbors_nb.ref_pos_water_o,
+            &self.cell,
+            true,
+        );
     }
 
     /// We use this to set up optimizations defined in the Amber reference manual. `excluded` deals

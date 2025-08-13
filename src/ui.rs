@@ -675,48 +675,50 @@ fn docking(
 
         ui.add_space(COL_SPACING);
 
-        ui.label("Docking site setup:");
-        ui.label("Center:");
-
+        // todo: Put back A/R
         let mut docking_init_changed = false;
+        if false {
+            ui.label("Docking site setup:");
+            ui.label("Center:");
 
-        if ui
-            .add(TextEdit::singleline(&mut state.ui.docking_site_x).desired_width(30.))
-            .changed()
-        {
-            if let Ok(v) = state.ui.docking_site_x.parse::<f64>() {
-                lig.docking_site.site_center.x = v;
-                docking_init_changed = true;
+            if ui
+                .add(TextEdit::singleline(&mut state.ui.docking_site_x).desired_width(30.))
+                .changed()
+            {
+                if let Ok(v) = state.ui.docking_site_x.parse::<f64>() {
+                    lig.docking_site.site_center.x = v;
+                    docking_init_changed = true;
+                }
             }
-        }
-        if ui
-            .add(TextEdit::singleline(&mut state.ui.docking_site_y).desired_width(30.))
-            .changed()
-        {
-            if let Ok(v) = state.ui.docking_site_y.parse::<f64>() {
-                lig.docking_site.site_center.y = v;
-                docking_init_changed = true;
+            if ui
+                .add(TextEdit::singleline(&mut state.ui.docking_site_y).desired_width(30.))
+                .changed()
+            {
+                if let Ok(v) = state.ui.docking_site_y.parse::<f64>() {
+                    lig.docking_site.site_center.y = v;
+                    docking_init_changed = true;
+                }
             }
-        }
-        if ui
-            .add(TextEdit::singleline(&mut state.ui.docking_site_z).desired_width(30.))
-            .changed()
-        {
-            if let Ok(v) = state.ui.docking_site_z.parse::<f64>() {
-                lig.docking_site.site_center.z = v;
-                docking_init_changed = true;
+            if ui
+                .add(TextEdit::singleline(&mut state.ui.docking_site_z).desired_width(30.))
+                .changed()
+            {
+                if let Ok(v) = state.ui.docking_site_z.parse::<f64>() {
+                    lig.docking_site.site_center.z = v;
+                    docking_init_changed = true;
+                }
             }
-        }
 
-        // todo: Consider a slider.
-        ui.label("Size:");
-        if ui
-            .add(TextEdit::singleline(&mut state.ui.docking_site_size).desired_width(30.))
-            .changed()
-        {
-            if let Ok(v) = state.ui.docking_site_size.parse::<f64>() {
-                lig.docking_site.site_radius = v;
-                docking_init_changed = true;
+            // todo: Consider a slider.
+            ui.label("Size:");
+            if ui
+                .add(TextEdit::singleline(&mut state.ui.docking_site_size).desired_width(30.))
+                .changed()
+            {
+                if let Ok(v) = state.ui.docking_site_size.parse::<f64>() {
+                    lig.docking_site.site_radius = v;
+                    docking_init_changed = true;
+                }
             }
         }
 
