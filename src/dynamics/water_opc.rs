@@ -682,16 +682,13 @@ impl MdState {
             w.m.vel = (w.h0.vel + w.h1.vel) * 0.5;
 
             // Place EP, wrap molecule
-            let bis = (w.h0.posit - w.o.posit) + (w.h1.posit - w.o.posit);
-            w.m.posit = w.o.posit + bis.to_normalized() * O_EP_R_0;
-            w.m.vel = (w.h0.vel + w.h1.vel) * 0.5;
+            let new_o = cell.wrap(w.o.posit);
+            let shift = new_o - w.o.posit;
 
-            // If wrap() returns a shift/delta:
-            let shift = cell.wrap(w.o.posit);
-            w.o.posit += shift;
+            w.o.posit  = new_o;
             w.h0.posit += shift;
             w.h1.posit += shift;
-            w.m.posit += shift;
+            w.m.posit  += shift;
         }
 
         // Recompute forces (fw2), project EP, second half-kick ----------

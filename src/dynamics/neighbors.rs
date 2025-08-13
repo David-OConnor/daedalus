@@ -40,6 +40,8 @@ pub struct NeighborsNb {
     //
     // Reference positions used when rebuilding. Only for movable atoms.
     pub ref_pos_dyn: Vec<Vec3>,
+    /// Doesn't change.
+    pub ref_pos_static: Vec<Vec3>,
     pub ref_pos_water_o: Vec<Vec3>, // use O as proxy for the rigid water
 }
 
@@ -79,24 +81,30 @@ impl MdState {
 
             build_neighbors(
                 &mut self.neighbors_nb.dy_dy,
-                &self.atoms,
-                &self.atoms,
+                &self.neighbors_nb.ref_pos_dyn,
+                &self.neighbors_nb.ref_pos_dyn,
+                // &self.atoms,
+                // &self.atoms,
                 &self.cell,
                 true,
             );
 
             build_neighbors(
                 &mut self.neighbors_nb.dy_static,
-                &self.atoms,
-                &self.atoms_static,
+                &self.neighbors_nb.ref_pos_dyn,
+                &self.neighbors_nb.ref_pos_static,
+                // &self.atoms,
+                // &self.atoms_static,
                 &self.cell,
                 false,
             );
 
             build_neighbors(
                 &mut self.neighbors_nb.dy_water,
-                &self.atoms,
-                &water_atoms,
+                &self.neighbors_nb.ref_pos_dyn,
+                &self.neighbors_nb.ref_pos_water_o,
+                // &self.atoms,
+                // &water_atoms,
                 &self.cell,
                 false,
             );
@@ -114,16 +122,20 @@ impl MdState {
 
             build_neighbors(
                 &mut self.neighbors_nb.water_static,
-                &water_atoms,
-                &self.atoms_static,
+                &self.neighbors_nb.ref_pos_dyn,
+                &self.neighbors_nb.ref_pos_static,
+                // &water_atoms,
+                // &self.atoms_static,
                 &self.cell,
                 false,
             );
 
             build_neighbors(
                 &mut self.neighbors_nb.water_water,
-                &water_atoms,
-                &water_atoms,
+                &self.neighbors_nb.ref_pos_water_o,
+                &self.neighbors_nb.ref_pos_water_o,
+                // &water_atoms,
+                // &water_atoms,
                 &self.cell,
                 true,
             );
@@ -132,8 +144,10 @@ impl MdState {
                 // Don't double-run this, but it's required for both paths.
                 build_neighbors(
                     &mut self.neighbors_nb.dy_water,
-                    &self.atoms,
-                    &water_atoms,
+                    &self.neighbors_nb.ref_pos_dyn,
+                    &self.neighbors_nb.ref_pos_water_o,
+                    // &self.atoms,
+                    // &water_atoms,
                     &self.cell,
                     false,
                 );
@@ -181,21 +195,23 @@ impl MdState {
 pub fn build_neighbors(
     neighbors: &mut Vec<Vec<usize>>,
     // todo: Consider accepting target and source posits to avoid cloning water atoms.
-    targets: &[AtomDynamics],
-    sources: &[AtomDynamics],
+    // targets: &[AtomDynamics],
+    // sources: &[AtomDynamics],
+    tgt_posits: &[Vec3],
+    src_posits: &[Vec3],
     cell: &SimBox,
     symmetric: bool,
 ) {
     const CUTOFF_SKIN_SQ: f64 = (CUTOFF_NEIGHBORS + SKIN) * (CUTOFF_NEIGHBORS + SKIN);
 
     neighbors.clear();
-    neighbors.resize(targets.len(), Vec::new());
+    neighbors.resize(tgt_posits.len(), Vec::new());
 
-    let src_len = sources.len();
-    let tgt_len = targets.len();
+    let tgt_len = tgt_posits.len();
+    let src_len = src_posits.len();
 
     let mut inner = |i_src: usize, i_tgt: usize| {
-        let diff_wrapped = cell.min_image(targets[i_tgt].posit - sources[i_src].posit);
+        let diff_wrapped = cell.min_image(tgt_posits[i_tgt]- src_posits[i_src]);
         if diff_wrapped.magnitude_squared() < CUTOFF_SKIN_SQ {
             neighbors[i_tgt].push(i_src);
 

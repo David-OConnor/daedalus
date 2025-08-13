@@ -740,6 +740,7 @@ fn docking(
                         .clicked()
                     {
                         let docking_center = move_lig_to_res(lig, mol, res);
+                        state.mol_dynamics = None;
 
                         docking_posit_update = Some(docking_center);
                         docking_init_changed = true;
@@ -766,6 +767,7 @@ fn docking(
                 .clicked()
             {
                 let atom_sel = mol.get_sel_atom(&state.ui.selection);
+                state.mol_dynamics = None;
 
                 if let Some(atom) = atom_sel {
                     lig.pose.conformation_type = ConformationType::AssignedTorsions {
@@ -793,6 +795,7 @@ fn docking(
             .clicked()
         {
             lig.reset_posits();
+            state.mol_dynamics = None;
 
             if !lig.atom_posits.is_empty() {
                 docking_posit_update = Some(lig.atom_posits[0].into());
@@ -811,18 +814,12 @@ fn docking(
         if docking_init_changed {
             *redraw_lig = true;
             set_docking_light(scene, Some(&lig.docking_site));
-            // todo: Hardcoded as some.
             engine_updates.lighting = true;
         }
-
-        // ui.add_space(COL_SPACING);
-
-        // ui.label(RichText::new("🔘AV").color(active_color(state.ui.autodock_path_valid)))
-        //     .on_hover_text("Autodock Vina available (Docking)");
     });
 
     if let Some(posit) = docking_posit_update {
-        state.update_docking_site(posit);
+        // state.update_docking_site(posit);
         state.update_save_prefs(false);
     }
 }

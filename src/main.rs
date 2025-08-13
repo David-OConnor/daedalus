@@ -482,22 +482,23 @@ impl State {
     pub fn update_docking_site(&mut self, posit: Vec3F64) {
         if let Some(lig) = &mut self.ligand {
             lig.docking_site.site_center = posit;
-            lig.pose.anchor_posit = lig.docking_site.site_center;
-            lig.position_atoms(None);
+
+            // lig.pose.anchor_posit = lig.docking_site.site_center;
+            // lig.position_atoms(None);
 
             self.ui.docking_site_x = posit.x.to_string();
             self.ui.docking_site_y = posit.y.to_string();
             self.ui.docking_site_z = posit.z.to_string();
 
-            // todo: Make sure this isn't too computationally intensive to put here.
-            if let Some(mol) = &self.molecule {
-                self.volatile.docking_setup = Some(DockingSetup::new(
-                    mol,
-                    lig,
-                    &self.volatile.lj_lookup_table,
-                    &self.bh_config,
-                ));
-            }
+            // // todo: Make sure this isn't too computationally intensive to put here.
+            // if let Some(mol) = &self.molecule {
+            //     self.volatile.docking_setup = Some(DockingSetup::new(
+            //         mol,
+            //         lig,
+            //         &self.volatile.lj_lookup_table,
+            //         &self.bh_config,
+            //     ));
+            // }
         }
     }
 }
@@ -601,7 +602,7 @@ fn main() {
 
     if let Some(mol) = &state.molecule {
         let posit = state.to_save.per_mol[&mol.ident].docking_site.site_center;
-        state.update_docking_site(posit);
+        // state.update_docking_site(posit);
     }
 
     if let Err(e) = state.load_aa_charges_ff() {

@@ -271,7 +271,6 @@ pub fn md_setup(
             ) {
                 Ok(md) => {
                     let snap = &md.snapshots[0];
-                    change_snapshot_peptide(mol, &md.atoms, snap);
                     draw_molecule(state, scene);
 
                     draw_water(
@@ -321,7 +320,6 @@ pub fn md_setup(
                 ) {
                     Ok(md) => {
                         let snap = &md.snapshots[0];
-                        change_snapshot_docking(lig, snap, &mut None);
 
                         draw_molecule(state, scene);
                         draw_water(
@@ -399,7 +397,7 @@ pub fn md_setup(
                     state.mol_dynamics = None;
 
                     let docking_center = move_lig_to_res(&mut lig, mol, res);
-                    state.update_docking_site(docking_center);
+                    // state.update_docking_site(docking_center);
 
                     state.update_save_prefs(false);
                     set_docking_light(scene, Some(&lig.docking_site));

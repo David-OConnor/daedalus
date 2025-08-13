@@ -2,7 +2,7 @@
 
 use lin_alg::f64::Vec3;
 use na_seq::Element;
-use rand::{Rng, prelude::ThreadRng};
+use rand::prelude::ThreadRng;
 
 use crate::dynamics::{
     ACCEL_CONVERSION_INV, KB, MdState, prep::HydrogenMdType, water_opc::WaterMol,
@@ -67,9 +67,21 @@ impl SimBox {
 
     // For use with the thermo/barostat.
     pub fn scale_isotropic(&mut self, lambda: f64) {
+        // Treat non-finite or tiny λ as "no-op"
+        let lam = if lambda.is_finite() && lambda.abs() > 1.0e-12 { lambda } else { 1.0 };
+
         let c = self.center();
-        self.bounds_low = c + (self.bounds_low - c) * lambda;
-        self.bounds_high = c + (self.bounds_high - c) * lambda;
+        let lo = c + (self.bounds_low  - c) * lam;
+        let hi = c + (self.bounds_high - c) * lam;
+
+        // Enforce low <= high per component
+        self.bounds_low = Vec3::new(lo.x.min(hi.x), lo.y.min(hi.y), lo.z.min(hi.z));
+        self.bounds_high = Vec3::new(lo.x.max(hi.x), lo.y.max(hi.y), lo.z.max(hi.z));
+
+        debug_assert!({
+            let ext = self.extent();
+            ext.x > 0.0 && ext.y > 0.0 && ext.z > 0.0
+        });
     }
 }
 
@@ -78,8 +90,9 @@ pub struct BerendsenBarostat {
     /// bar
     pub p_target: f64,
     /// picoseconds
-    pub tau_p: f64,
-    /// bar‑1   (≈4.5×10⁻⁵ for water at 300K, 1bar)
+    pub tau_pressure: f64,
+    pub tau_temp: f64,
+    /// bar‑1 (≈4.5×10⁻⁵ for water at 300K, 1bar)
     pub kappa_t: f64,
     pub virial_pair_kcal: f64,
     pub rng: ThreadRng,
@@ -91,7 +104,8 @@ impl Default for BerendsenBarostat {
             // Standard atmospheric pressure.
             p_target: 1.,
             // Relaxation time: 1 ps ⇒ gentle volume changes every few steps.
-            tau_p: 1.,
+            tau_pressure: 1.,
+            tau_temp: 1.,
             // Isothermal compressibility of water at 298 K.
             kappa_t: 4.5e-5,
             virial_pair_kcal: 0.0, // todo: What should this init to?
@@ -102,31 +116,15 @@ impl Default for BerendsenBarostat {
 
 impl BerendsenBarostat {
     pub fn scale_factor(&self, p_inst: f64, dt: f64) -> f64 {
-        // λ = [1 − dt/τ (P − P₀) κ_T]^{1/3}
-        let arg = 1.0 - (dt / self.tau_p) * (p_inst - self.p_target) * self.kappa_t;
-        arg.max(0.0).powf(1.0 / 3.0) // guard against negative round‑off
-    }
+        // Δln V = (κ_T/τ_p) (P - P0) dt
+        let mut dlnv = (self.kappa_t / self.tau_pressure) * (p_inst - self.p_target) * dt;
 
-    // todo: Apply beyond water.
-    /// Apply volume/coordinate rescaling
-    pub fn apply(&self, cell: &mut SimBox, mols: &mut [WaterMol], p_inst: f64, dt: f64) {
-        let λ = self.scale_factor(p_inst, dt);
+        // Cap per-step volume change (e.g., ≤10%)
+        const MAX_DLNV: f64 = 0.10;
+        dlnv = dlnv.clamp(-MAX_DLNV, MAX_DLNV);
 
-        // grow/shrink the box
-        let centre = (cell.bounds_low + cell.bounds_high) * 0.5;
-        cell.bounds_low = centre + (cell.bounds_low - centre) * λ;
-        cell.bounds_high = centre + (cell.bounds_high - centre) * λ;
-
-        // scale every atomic coordinate *about the same centre*
-        for m in mols.iter_mut() {
-            for a in [&mut m.o, &mut m.h0, &mut m.h1, &mut m.m] {
-                a.posit = centre + (a.posit - centre) * λ;
-                if a.mass.abs() > f64::EPSILON {
-                    // skip EP and virtual sites
-                    a.vel *= λ;
-                }
-            }
-        }
+        // λ = exp(ΔlnV/3) — strictly positive and well-behaved
+        (dlnv / 3.0).exp()
     }
 }
 
@@ -178,23 +176,6 @@ impl MdState {
         n.saturating_sub(3) // if you zero COM momentum
     }
 
-    // --- Berendsen thermostat (deterministic; use for quick equilibration) ---
-    pub fn apply_thermostat_berendsen(&mut self, dt_ps: f64, t_target_k: f64, tau_t_ps: f64) {
-        let ke = self.kinetic_energy_kcal();
-        let dof = self.dof_for_thermo().max(1) as f64;
-        let t_inst = 2.0 * ke / (dof * KB);
-        let lam = ((1.0 + (dt_ps / tau_t_ps) * ((t_target_k / t_inst) - 1.0)).max(0.0)).sqrt();
-
-        for a in &mut self.atoms {
-            a.vel *= lam;
-        }
-        for w in &mut self.water {
-            w.o.vel *= lam;
-            w.h0.vel *= lam;
-            w.h1.vel *= lam;
-        }
-        // EP/virtual sites have zero mass → leave them alone
-    }
 
     // --- CSVR (Bussi) thermostat: canonical velocity-rescale ---
     pub fn apply_thermostat_csvr(&mut self, dt: f64, t_target_k: f64, tau_t_ps: f64) {
@@ -245,11 +226,11 @@ impl MdState {
     // call each step (or every nstpcouple steps) after thermostat
     pub fn apply_barostat_berendsen(&mut self, dt: f64) {
         let p_inst_bar = self.instantaneous_pressure_bar();
-        let arg = 1.0
-            - (dt / self.barostat.tau_p)
-                * (p_inst_bar - self.barostat.p_target)
-                * self.barostat.kappa_t;
-        let lambda = arg.max(0.0).powf(1.0 / 3.0);
+        if !p_inst_bar.is_finite() {
+            return; // don't touch the box if pressure is bad
+        }
+
+        let lambda = self.barostat.scale_factor(p_inst_bar, dt);
 
         // 1) scale the cell
         let c = self.cell.center();
@@ -261,15 +242,15 @@ impl MdState {
             a.vel *= lambda;
         }
         for a in &mut self.atoms_static {
-            a.posit = c + (a.posit - c) * lambda; // keep frozen but move with box
+            a.posit = c + (a.posit - c) * lambda;
         }
 
         // 3) translate rigid waters by COM only; scale COM velocity
         for w in &mut self.water {
-            let m_tot = w.o.mass + w.h0.mass + w.h1.mass; // EP massless
-            let com =
-                (w.o.posit * w.o.mass + w.h0.posit * w.h0.mass + w.h1.posit * w.h1.mass) / m_tot;
-            let com_v = (w.o.vel * w.o.mass + w.h0.vel * w.h0.mass + w.h1.vel * w.h1.mass) / m_tot;
+            let m_tot = w.o.mass + w.h0.mass + w.h1.mass;
+            let com = (w.o.posit * w.o.mass + w.h0.posit * w.h0.mass + w.h1.posit * w.h1.mass) / m_tot;
+            let com_v =
+                (w.o.vel * w.o.mass + w.h0.vel * w.h0.mass + w.h1.vel * w.h1.mass) / m_tot;
 
             let com_new = c + (com - c) * lambda;
             let d = com_new - com;
@@ -278,12 +259,11 @@ impl MdState {
             w.h0.posit += d;
             w.h1.posit += d;
             w.m.posit += d;
-            let com_v_new = com_v * lambda;
-            let dv = com_v_new - com_v;
+
+            let dv = com_v * lambda - com_v;
             w.o.vel += dv;
             w.h0.vel += dv;
             w.h1.vel += dv;
-            // EP velocity unused
         }
     }
 }

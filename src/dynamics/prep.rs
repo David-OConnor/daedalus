@@ -995,52 +995,52 @@ impl MdState {
 
         result.setup_nonbonded_exclusion_scale_flags();
 
-        let mut water_atoms = Vec::with_capacity(result.water.len());
-        // todo: Fix this clone.
-        for mol in &result.water {
-            water_atoms.push(mol.o.clone());
-        }
-
         build_neighbors(
             &mut result.neighbors_nb.dy_dy,
-            &result.atoms,
-            &result.atoms,
+            &result.neighbors_nb.ref_pos_dyn,
+            &result.neighbors_nb.ref_pos_dyn,
+            // &result.atoms,
+            // &result.atoms,
             &result.cell,
             true,
         );
         build_neighbors(
             &mut result.neighbors_nb.dy_static,
-            &result.atoms,
-            &result.atoms_static,
+            &result.neighbors_nb.ref_pos_dyn,
+            &result.neighbors_nb.ref_pos_static,
+            // &result.atoms,
+            // &result.atoms_static
             &result.cell,
             false,
         );
         build_neighbors(
             &mut result.neighbors_nb.dy_water,
-            &result.atoms,
-            &water_atoms,
+            &result.neighbors_nb.ref_pos_dyn,
+            &result.neighbors_nb.ref_pos_water_o,
+            // &result.atoms,
+            // &water_atoms,
             &result.cell,
             false,
         );
         build_neighbors(
             &mut result.neighbors_nb.water_static,
-            &water_atoms,
-            &result.atoms_static,
+            &result.neighbors_nb.ref_pos_water_o,
+            &result.neighbors_nb.ref_pos_static,
             &result.cell,
             false,
         );
         build_neighbors(
             &mut result.neighbors_nb.water_water,
-            &water_atoms,
-            &water_atoms,
+            &result.neighbors_nb.ref_pos_water_o,
+            &result.neighbors_nb.ref_pos_water_o,
             &result.cell,
             true,
         );
 
         // todo: Helper; DRY between this and during steps
         // Now invert dy_water -> water_dy
-        let n_water = water_atoms.len();
-        result.neighbors_nb.water_dy = vec![Vec::new(); n_water];
+        // O only again.
+        result.neighbors_nb.water_dy = vec![Vec::new(); result.water.len()];
 
         for (dyn_idx, waters) in result.neighbors_nb.dy_water.iter().enumerate() {
             for &water_idx in waters {
@@ -1052,9 +1052,13 @@ impl MdState {
         for a in &result.atoms {
             result.neighbors_nb.ref_pos_dyn.push(a.posit);
         }
-        for m in &result.water {
-            result.neighbors_nb.ref_pos_water_o.push(m.o.posit);
-        }
+
+        result.neighbors_nb.ref_pos_dyn = result.atoms.iter().map(|a| a.posit).collect();
+
+        // Doesn't change. The other ref positions we update periodically.
+        result.neighbors_nb.ref_pos_static = result.atoms_static.iter().map(|a| a.posit).collect();
+
+        result.neighbors_nb.ref_pos_dyn = result.water.iter().map(|m| m.o.posit).collect();
 
         // Set up our LJ cache.
         if result.step_count == 0 {

@@ -105,6 +105,8 @@ enum LjIndexType {
 
 /// A helper. Applies non-bonded force in parallel over a set of atoms, with indices assigned
 /// upstream.
+///
+/// Return W, the virial pair we accumulate. For use with the temp/barostat. (kcal/mol)
 /// todo: Use CUDA and SIMD here.
 fn apply_force(
     pairs: &[(usize, usize, bool)],
@@ -115,7 +117,7 @@ fn apply_force(
     cell: &SimBox,
     lj_type: LjIndexType,
     lj_tables: &LjTables,
-) {
+) -> f64 {
     let indices = |i| match lj_type {
         LjIndexType::DynDyn => LjTableIndices::DynDyn(i),
         LjIndexType::DynStatic => LjTableIndices::DynStatic(i),
@@ -126,11 +128,11 @@ fn apply_force(
         None => atoms_tgt,
     };
 
-    let per_atom_accum: Vec<Vec3> = pairs
+    let (per_atom_accum, w_sum) = pairs
         .par_iter()
         .fold(
-            || vec![Vec3::new_zero(); n_dyn],
-            |mut acc, &(i_tgt, i_src, scale14)| {
+            || (vec![Vec3::new_zero(); n_dyn], 0.0_f64),
+            |(mut acc, mut w_local), &(i_tgt, i_src, scale14)| {
                 let f = f_nonbonded(
                     &atoms_tgt[i_tgt],
                     &src[i_src],
@@ -142,20 +144,22 @@ fn apply_force(
                     true,
                 );
 
+                // Virial: r_ij · F_ij (use minimum-image)
+                let rij = cell.min_image(atoms_tgt[i_tgt].posit - src[i_src].posit);
+                w_local += rij.dot(f);
+
                 acc[i_tgt] += f;
                 if matches!(lj_type, LjIndexType::DynDyn) {
                     acc[i_src] -= f;
                 }
-                acc
+                (acc, w_local)
             },
         )
         .reduce(
-            || vec![Vec3::new_zero(); n_dyn],
-            |mut a, b| {
-                for k in 0..n_dyn {
-                    a[k] += b[k];
-                }
-                a
+            || (vec![Vec3::new_zero(); n_dyn], 0.0_f64),
+            |(mut a, w_a), (b, w_b)| {
+                for k in 0..n_dyn { a[k] += b[k]; }
+                (a, w_a + w_b)
             },
         );
 
@@ -163,6 +167,8 @@ fn apply_force(
         // We divide by mass in `step`.
         atoms_tgt[i].accel += per_atom_accum[i];
     }
+
+    w_sum // kcal/mol
 }
 
 impl MdState {
