@@ -41,7 +41,7 @@ use crate::{
     dynamics::{
         AtomDynamics, ForceFieldParamsIndexed, MdMode, MdState, ParamError, SnapshotDynamics,
         ambient::SimBox, neighbors::build_neighbors, non_bonded, non_bonded::LjTableIndices,
-        water_opc::make_water_mols,
+        water_init::make_water_mols,
     },
     molecule::{Atom, Bond, Ligand, Molecule, Residue, ResidueEnd, build_adjacency_list},
 };

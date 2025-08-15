@@ -17,18 +17,14 @@
 //! to be cheaper, and more robust than Shake/Rattle. It's less general, but it works here.
 //! Settle is specifically tailored for three-atom rigid bodies.
 
-use std::f64::consts::TAU;
-
 use lin_alg::f64::{Quaternion, Vec3, X_VEC, Z_VEC};
 use na_seq::Element;
-use rand::{Rng, distr::Uniform};
-use rand_distr::{Distribution, StandardNormal};
 
 use crate::dynamics::{
-    ACCEL_CONVERSION, ACCEL_CONVERSION_INV, AtomDynamics, KB, MdState,
-    ambient::SimBox,
+    ACCEL_CONVERSION, AtomDynamics, MdState,
     non_bonded::{CHARGE_UNIT_SCALER, LjTableIndices, f_nonbonded},
     split2_mut,
+    water_settle::settle_opc,
 };
 
 // Constant parameters below are for the OPC water (JPCL, 2014, 5 (21), pp 3863-3871)
@@ -36,13 +32,8 @@ use crate::dynamics::{
 // These values are taken directly from `frcmod.opc`, in the Amber package. We have omitted
 // values that are 0., or otherwise not relevant in this model. (e.g. EP mass, O charge, bonded params
 // other than bond distances and the valence angle)
-const O_MASS: f64 = 16.;
-const H_MASS: f64 = 1.008;
-
-// Should you just add up the atom masses from Amber? This is close, and could be explained
-// by precision limits.
-const MASS_WATER: f64 = 18.015_28;
-const NA: f64 = 6.022_140_76e23; // todo: What is this? Used in density calc. mol⁻¹
+pub(crate) const O_MASS: f64 = 16.;
+pub(crate) const H_MASS: f64 = 1.008;
 
 // We have commented out flexible-bond parameters that are provided by Amber, but not
 // used in this rigid model.
@@ -66,14 +57,6 @@ pub const O_EPS: f64 = 0.212_800_813_0;
 // Partial charges. See the OPC paper, Table 2. None on O.
 const Q_H: f64 = 0.6791 * CHARGE_UNIT_SCALER;
 const Q_EP: f64 = -2. * Q_H;
-
-// 0.997 g cm⁻³ is a good default density. We use this for initializing and maintaining
-// the water density and molecule count.
-const WATER_DENSITY: f64 = 0.997;
-
-// Don't generate water molecules that are too close to other atoms.
-// Vdw contact distance between water molecules and organic molecules is roughly 3.5 Å.
-const GENERATION_MIN_DIST: f64 = 4.;
 
 /// Contains 4 atoms for each water molecules, at a given time step. Note that these
 /// are not independent, but are useful in our general MD APIs, for compatibility with
@@ -152,238 +135,117 @@ impl WaterMol {
     }
 
     /// Called twice each step, as part of the SETTLE algorithm.
-    fn settle_half_kick(&mut self, f_on_this: &WaterForces, dt_div_2: f64) {
-        self.o.vel += f_on_this.f_o * ACCEL_CONVERSION * dt_div_2 / self.o.mass;
-        self.h0.vel += f_on_this.f_h0 * ACCEL_CONVERSION * dt_div_2 / self.h0.mass;
-        self.h1.vel += f_on_this.f_h1 * ACCEL_CONVERSION * dt_div_2 / self.h1.mass;
-    }
-}
-
-/// We pass atoms in so this doesn't generate water molecules that overlap with them.
-pub fn make_water_mols(
-    cell: &SimBox,
-    t_target: f64,
-    atoms_dy: &[AtomDynamics],
-    atoms_static: &[AtomDynamics],
-) -> Vec<WaterMol> {
-    let vol = cell.volume();
-
-    let n_float = WATER_DENSITY * vol * (NA / (MASS_WATER * 1.0e24));
-    let n_mols = n_float.round() as usize;
-
-    let mut result = Vec::with_capacity(n_mols);
-    let mut rng = rand::rng();
-
-    let uni01 = Uniform::<f64>::new(0.0, 1.0).unwrap();
-
-    for _ in 0..n_mols {
-        // Position (axis‑aligned box)
-        let posit = Vec3::new(
-            rng.sample(uni01) * (cell.bounds_high.x - cell.bounds_low.x) + cell.bounds_low.x,
-            rng.sample(uni01) * (cell.bounds_high.y - cell.bounds_low.y) + cell.bounds_low.y,
-            rng.sample(uni01) * (cell.bounds_high.z - cell.bounds_low.z) + cell.bounds_low.z,
-        );
-
-        // Orientation (uniform SO(3))
-        // Shoemake (1992)
-        let (u1, u2, u3) = (rng.sample(uni01), rng.sample(uni01), rng.sample(uni01));
-        let q = {
-            let sqrt1_minus_u1 = (1.0 - u1).sqrt();
-            let sqrt_u1 = u1.sqrt();
-            let (theta1, theta2) = (TAU * u2, TAU * u3);
-
-            Quaternion::new(
-                sqrt1_minus_u1 * theta1.sin(),
-                sqrt1_minus_u1 * theta1.cos(),
-                sqrt_u1 * theta2.sin(),
-                sqrt_u1 * theta2.cos(),
-            )
-        };
-
-        // todo: Min dist between water mols?
-        // Don't place water molecules too close to other atoms.
-        let mut skip = false;
-        for atom_set in [atoms_dy, atoms_static] {
-            for atom_non_water in atom_set {
-                let dist = (atom_non_water.posit - posit).magnitude();
-                if dist < GENERATION_MIN_DIST {
-                    skip = true;
-                    break;
-                }
-                if skip {
-                    break;
-                }
-            }
-        }
-
-        if skip {
-            continue;
-        }
-
-        // We update velocities after
-        result.push(WaterMol::new(posit, Vec3::new_zero(), q));
-    }
-
-    // Assign velocities based on temperature.
-    init_velocities(&mut result, t_target);
-
-    result
-}
-
-/// Analytic SETTLE for 3‑site rigid water (Miyamoto & Kollman, JCC 1992).
-/// Works for any bond length / HOH angle, so it’s fine for OPC.
-/// Uses O as the pivot.
-///
-/// All distances & masses are in MD internal units (Å, ps, amu, kcal/mol).
-fn settle_opc(o: &mut AtomDynamics, h0: &mut AtomDynamics, h1: &mut AtomDynamics, dt: f64) {
-    // masses
-    let mO = O_MASS;
-    let mH = H_MASS;
-    let mT = mO + 2.0 * mH;
-
-    // COM position & velocity at start of the drift/rotation substep
-    let r_com = (o.posit * mO + h0.posit * mH + h1.posit * mH) / mT;
-    let v_com = (o.vel * mO + h0.vel * mH + h1.vel * mH) / mT;
-
-    // shift to COM frame
-    let (rO, rH0, rH1) = (o.posit - r_com, h0.posit - r_com, h1.posit - r_com);
-    let (vO, vH0, vH1) = (o.vel - v_com, h0.vel - v_com, h1.vel - v_com);
-
-    // angular momentum about COM
-    let L = rO.cross(vO) * mO + rH0.cross(vH0) * mH + rH1.cross(vH1) * mH;
-
-    // inertia tensor about COM (symmetric 3×3)
-    let accI = |r: Vec3, m: f64| {
-        let x = r.x;
-        let y = r.y;
-        let z = r.z;
-        let r2 = r.dot(r);
-        (
-            m * (r2 - x * x),
-            m * (r2 - y * y),
-            m * (r2 - z * z),
-            -m * x * y,
-            -m * x * z,
-            -m * y * z,
-        )
-    };
-    let (iOxx, iOyy, iOzz, iOxy, iOxz, iOyz) = accI(rO, mO);
-    let (iH0x, iH0y, iH0z, iH0xy, iH0xz, iH0yz) = accI(rH0, mH);
-    let (iH1x, iH1y, iH1z, iH1xy, iH1xz, iH1yz) = accI(rH1, mH);
-    let (ixx, iyy, izz, ixy, ixz, iyz) = (
-        iOxx + iH0x + iH1x,
-        iOyy + iH0y + iH1y,
-        iOzz + iH0z + iH1z,
-        iOxy + iH0xy + iH1xy,
-        iOxz + iH0xz + iH1xz,
-        iOyz + iH0yz + iH1yz,
-    );
-
-    // ω from I·ω = L
-    let ω = solve_symmetric3(ixx, iyy, izz, ixy, ixz, iyz, L);
-
-    // pure translation of COM + rigid rotation about COM
-    let Δ = v_com * dt;
-    let rO2 = rodrigues_rotate(rO, ω, dt);
-    let rH02 = rodrigues_rotate(rH0, ω, dt);
-    let rH12 = rodrigues_rotate(rH1, ω, dt);
-
-    o.posit = r_com + Δ + rO2;
-    h0.posit = r_com + Δ + rH02;
-    h1.posit = r_com + Δ + rH12;
-    o.vel = v_com + ω.cross(rO2);
-    h0.vel = v_com + ω.cross(rH02);
-    h1.vel = v_com + ω.cross(rH12);
-}
-
-/// Solve I · x = b for a 3×3 *symmetric* matrix I.
-/// The six unique elements are
-///     [ ixx  ixy  ixz ]
-/// I = [ ixy  iyy  iyz ]
-///     [ ixz  iyz  izz ]
-///
-/// Returns x as a Vec3.  Panics if det(I) ≃ 0.
-fn solve_symmetric3(ixx: f64, iyy: f64, izz: f64, ixy: f64, ixz: f64, iyz: f64, b: Vec3) -> Vec3 {
-    let det = ixx * (iyy * izz - iyz * iyz) - ixy * (ixy * izz - iyz * ixz)
-        + ixz * (ixy * iyz - iyy * ixz);
-
-    const TOL: f64 = 1.0e-12;
-    if det.abs() < TOL {
-        // Practically no rotation this step; keep ω = 0
-        return Vec3::new_zero();
-    }
-
-    let inv_det = 1.0 / det;
-
-    // --- adjugate / inverse elements --------------------------------
-    let inv00 = (iyy * izz - iyz * iyz) * inv_det;
-    let inv01 = (ixz * iyz - ixy * izz) * inv_det;
-    let inv02 = (ixy * iyz - ixz * iyy) * inv_det;
-    let inv11 = (ixx * izz - ixz * ixz) * inv_det;
-    let inv12 = (ixz * ixy - ixx * iyz) * inv_det;
-    let inv22 = (ixx * iyy - ixy * ixy) * inv_det;
-
-    // --- x = I⁻¹ · b -------------------------------------------------
-    Vec3::new(
-        inv00 * b.x + inv01 * b.y + inv02 * b.z,
-        inv01 * b.x + inv11 * b.y + inv12 * b.z,
-        inv02 * b.x + inv12 * b.y + inv22 * b.z,
-    )
-}
-
-pub fn init_velocities(mols: &mut [WaterMol], t_target: f64) {
-    let mut rng = rand::rng();
-
-    // Gaussian draw
-    for a in atoms_mut(mols) {
-        if a.element == Element::Potassium {
-            // M/EP
-            continue;
-        }
-
-        let nx: f64 = StandardNormal.sample(&mut rng);
-        let ny: f64 = StandardNormal.sample(&mut rng);
-        let nz: f64 = StandardNormal.sample(&mut rng);
-
-        // arbitrary sigma=1 for now; we'll rescale below
-        a.vel = Vec3::new(nx, ny, nz);
-    }
-
-    // Remove center-of-mass drift
-    remove_com_velocity(mols);
-
-    // Compute instantaneous T
-    let (ke_raw, dof) = kinetic_energy_and_dof(mols);
-    let ke_kcal = ke_raw * ACCEL_CONVERSION_INV;
-    let t_now = 2.0 * ke_kcal / (dof as f64 * KB);
-
-    // Rescale to T_target
-    let lambda = (t_target / t_now).sqrt();
-    for a in atoms_mut(mols) {
-        if a.mass == 0.0 {
-            continue;
-        }
-        a.vel *= lambda;
+    fn settle_half_kick(&mut self, f_on_this: &ForcesOnWaterMol, dt_half: f64) {
+        self.o.vel += f_on_this.f_o * ACCEL_CONVERSION * dt_half / self.o.mass;
+        self.h0.vel += f_on_this.f_h0 * ACCEL_CONVERSION * dt_half / self.h0.mass;
+        self.h1.vel += f_on_this.f_h1 * ACCEL_CONVERSION * dt_half / self.h1.mass;
     }
 }
 
 /// Per-water, per-site force accumulator. Used transiently in `step_water`.
 /// This is the force *on* each atom in the molecule.
 #[derive(Clone, Copy, Default)]
-struct WaterForces {
-    f_o: Vec3,
-    f_h0: Vec3,
-    f_h1: Vec3,
-    f_m: Vec3, // EP/M site
+pub struct ForcesOnWaterMol {
+    pub f_o: Vec3,
+    pub f_h0: Vec3,
+    pub f_h1: Vec3,
+    pub f_m: Vec3, // EP/M site
 }
 
 impl MdState {
-    /// Split from `step_water` since we call it twice. Handles force from dynamic, static, and other water.
-    /// returns virial pressure.
-    fn calc_water_forces(&self) -> (Vec<WaterForces>, f64) {
+    /// Add reciprocal (PME) water-site forces into a per-water force array.
+    /// Expects self.water_pme_sites_forces[iw] == [f_M, f_H0, f_H1] at current coords.
+    fn add_recip_to_water_forces(&self, fw: &mut [ForcesOnWaterMol]) {
+        // todo: QC that this is set up and working.
+        for (iw, wi) in fw.iter_mut().enumerate() {
+            let [f_m, f_h0, f_h1] = self
+                .water_pme_sites_forces
+                .get(iw)
+                .copied()
+                .unwrap_or([Vec3::new_zero(); 3]);
+
+            wi.f_m += f_m;
+            wi.f_h0 += f_h0;
+            wi.f_h1 += f_h1;
+        }
+    }
+
+    /// Verlet velocity integration for water, part 1. Forces for this step must
+    /// be pre-calculated. Accepts as mutable to allow projecting M/EP force onto the
+    /// other atoms.
+    ///
+    /// Project EP -> (O,H,H), do the **first half-kick**, then SETTLE + EP placement + wrap.
+    pub fn water_vv_first_half_and_drift(
+        &mut self,
+        f_on_water: &mut [ForcesOnWaterMol],
+        dt: f64,
+        dt_half: f64,
+    ) {
+        let cell = self.cell;
+
+        for iw in 0..self.water.len() {
+            let w = &mut self.water[iw];
+            let forces = &mut f_on_water[iw];
+
+            // EP → (O,H,H)
+            let (dFo, dFh0, dFh1) =
+                project_ep_force_to_real_sites(w.o.posit, w.h0.posit, w.h1.posit, forces.f_m);
+
+            forces.f_m = Vec3::new_zero();
+            forces.f_o += dFo;
+            forces.f_h0 += dFh0;
+            forces.f_h1 += dFh1;
+
+            // First half-kick (uses your existing conversion)
+            w.settle_half_kick(forces, dt_half);
+
+            // Drift rigid body with SETTLE
+            settle_opc(&mut w.o, &mut w.h0, &mut w.h1, dt, &self.cell);
+
+            // Place EP on the HOH bisector
+            let bis = (w.h0.posit - w.o.posit) + (w.h1.posit - w.o.posit);
+            w.m.posit = w.o.posit + bis.to_normalized() * O_EP_R_0;
+            w.m.vel = (w.h0.vel + w.h1.vel) * 0.5;
+
+            // Wrap molecule as a rigid unit (wrap O, translate H,H,EP)
+            let new_o = cell.wrap(w.o.posit);
+            let shift = new_o - w.o.posit;
+
+            w.o.posit = new_o;
+            w.h0.posit += shift;
+            w.h1.posit += shift;
+            w.m.posit += shift;
+        }
+    }
+
+    /// Verlet velocity integration for water, part 2.
+    /// Forces for this step must be pre-calculated. Accepts as mutable to allow projecting M/EP force onto the
+    /// other atoms.
+    /// Project EP → (O,H,H) at t+Δt, then do the **second half-kick**.
+    pub fn water_vv_second_half(&mut self, f_on_water: &mut [ForcesOnWaterMol], dt_half: f64) {
+        for iw in 0..self.water.len() {
+            let w = &mut self.water[iw];
+            let forces = &mut f_on_water[iw];
+
+            let (dFo, dFh0, dFh1) =
+                project_ep_force_to_real_sites(w.o.posit, w.h0.posit, w.h1.posit, forces.f_m);
+
+            forces.f_m = Vec3::new_zero();
+            forces.f_o += dFo;
+            forces.f_h0 += dFh0;
+            forces.f_h1 += dFh1;
+
+            // Second half-kick
+            w.settle_half_kick(forces, dt_half);
+        }
+    }
+
+    /// Compute LJ and Coulomb forces on water from dynamic, static, and other water atoms.
+    /// Returns forces, and virial pressure.
+    fn calc_f_on_water(&self) -> (Vec<ForcesOnWaterMol>, f64) {
         let n_w = self.water.len();
         // Forces at current positions
-        let mut result = vec![WaterForces::default(); n_w];
+        let mut result = vec![ForcesOnWaterMol::default(); n_w];
 
         let mut w_virial_local = 0.;
 
@@ -429,6 +291,7 @@ impl MdState {
                     );
                     result[iw].f_h0 += f;
                 }
+
                 // H1
                 {
                     let f = f_nonbonded(
@@ -627,131 +490,10 @@ impl MdState {
 
         (result, w_virial_local)
     }
-
-    /// Update each water molecule with LJ and Coulomb forces from dynamic atoms, static ones,
-    /// and other water molecules. We apply the same force computations as on dynamic atoms, but
-    /// use a rigid OPC model, and integrate using the SETTLE technique. (Optimized technique for
-    /// 3-atom rigid molecules).
-    pub fn step_water(&mut self, dt: f64) {
-        let n_w = self.water.len();
-        if n_w == 0 {
-            return;
-        }
-
-        let (mut fw, w_virial) = self.calc_water_forces();
-
-        self.barostat.virial_pair_kcal += w_virial;
-
-        // Project EP/M force to O, half-kick, SETTLE, place EP, wrap molecule ---
-        let dt_div_2 = 0.5 * dt;
-        let cell = self.cell;
-
-        // todo: Placement?
-        for (iw, wi) in fw.iter_mut().enumerate() {
-            let [f_m, f_h0, f_h1] = self
-                .water_pme_sites_forces
-                .get(iw)
-                .copied()
-                .unwrap_or([Vec3::new_zero(); 3]);
-
-            wi.f_m += f_m;
-            wi.f_h0 += f_h0;
-            wi.f_h1 += f_h1;
-        }
-
-        for iw in 0..n_w {
-            let w = &mut self.water[iw];
-
-            // Project EP to O
-            let wi = &mut fw[iw];
-            let (dFo, dFh0, dFh1) =
-                project_ep_force_to_real_sites(w.o.posit, w.h0.posit, w.h1.posit, wi.f_m);
-
-            wi.f_m = Vec3::new_zero();
-            wi.f_o += dFo;
-            wi.f_h0 += dFh0;
-            wi.f_h1 += dFh1;
-
-            // Half-kick
-            w.settle_half_kick(&wi, dt_div_2);
-
-            // Rigid update
-            settle_opc(&mut w.o, &mut w.h0, &mut w.h1, dt);
-
-            // Place EP, wrap molecule
-            let bis = (w.h0.posit - w.o.posit) + (w.h1.posit - w.o.posit);
-            w.m.posit = w.o.posit + bis.to_normalized() * O_EP_R_0;
-            w.m.vel = (w.h0.vel + w.h1.vel) * 0.5;
-
-            // Place EP, wrap molecule
-            let new_o = cell.wrap(w.o.posit);
-            let shift = new_o - w.o.posit;
-
-            w.o.posit = new_o;
-            w.h0.posit += shift;
-            w.h1.posit += shift;
-            w.m.posit += shift;
-        }
-
-        // Recompute forces (fw2), project EP, second half-kick ----------
-        let (mut fw2, w_virial2) = self.calc_water_forces();
-        self.barostat.virial_pair_kcal += w_virial2;
-
-        for iw in 0..n_w {
-            let w = &mut self.water[iw];
-
-            let wi2 = &mut fw2[iw];
-
-            // EP back-projection on fw2 (note: use w & wi2)
-            {
-                let (dFo, dFh0, dFh1) =
-                    project_ep_force_to_real_sites(w.o.posit, w.h0.posit, w.h1.posit, wi2.f_m);
-
-                wi2.f_m = Vec3::new_zero();
-                wi2.f_o += dFo;
-                wi2.f_h0 += dFh0;
-                wi2.f_h1 += dFh1;
-
-                // Second half-kick
-                w.settle_half_kick(&wi2, dt_div_2);
-            }
-        }
-    }
 }
 
-fn atoms_mut(mols: &mut [WaterMol]) -> impl Iterator<Item = &mut AtomDynamics> {
-    mols.iter_mut()
-        .flat_map(|m| [&mut m.o, &mut m.h0, &mut m.h1].into_iter())
-}
-
-/// Removes center-of-mass drift.
-fn remove_com_velocity(mols: &mut [WaterMol]) {
-    let mut p = Vec3::new_zero();
-    let mut m_tot = 0.0;
-    for a in atoms_mut(mols) {
-        p += a.vel * a.mass;
-        m_tot += a.mass;
-    }
-    let v_com = p / m_tot;
-    for a in atoms_mut(mols) {
-        a.vel -= v_com;
-    }
-}
-
-fn kinetic_energy_and_dof(mols: &[WaterMol]) -> (f64, usize) {
-    let mut ke = 0.0;
-    let mut dof = 0usize;
-    for m in mols {
-        for a in [&m.o, &m.h0, &m.h1] {
-            ke += 0.5 * a.mass * a.vel.dot(a.vel);
-            dof += 3;
-        }
-    }
-    // remove 3 for total COM; remove constraints if you track them
-    let n_constraints = 3 * mols.len();
-    (ke, dof - 3 - n_constraints)
-}
-
+/// Part of the OPC algorithm; EP/M doesn't move directly. We take into account
+/// the Coulomb force on it by applying to O and H atoms.
 fn project_ep_force_to_real_sites(o: Vec3, h0: Vec3, h1: Vec3, f_m: Vec3) -> (Vec3, Vec3, Vec3) {
     // Geometry in O-centered frame
     let r_O_H0 = h0 - o;
@@ -759,12 +501,6 @@ fn project_ep_force_to_real_sites(o: Vec3, h0: Vec3, h1: Vec3, f_m: Vec3) -> (Ve
 
     let s = r_O_H0 + r_O_H1;
     let s_norm = s.magnitude();
-
-    // Guard against degenerate geometry (shouldn't happen with SETTLE)
-    // if s_norm < 1e-12 {
-    //     // Fallback: dump to O
-    //     return (f_m, Vec3::new_zero(), Vec3::new_zero());
-    // }
 
     // Unit bisector and projection operator P = (I - uu^T)/|s|
     let u = s / s_norm;
@@ -778,23 +514,4 @@ fn project_ep_force_to_real_sites(o: Vec3, h0: Vec3, h1: Vec3, f_m: Vec3) -> (Ve
     let fo = f_m - fh * 2.0; // remaining force goes to O
 
     (fo, fh, fh)
-}
-
-fn rodrigues_rotate(r: Vec3, omega: Vec3, dt: f64) -> Vec3 {
-    // Rotate vector r by angle θ = |ω| dt about axis n = ω/|ω|
-    // Use series for tiny θ to avoid loss of precision.
-    let omega_dt = omega * dt;
-    let theta = omega_dt.magnitude();
-
-    if theta < 1e-12 {
-        // 2nd-order series: r' ≈ r + (ω×r) dt + 0.5 (ω×(ω×r)) dt^2
-        let wxr = omega_dt.cross(r);
-        return r + wxr + omega_dt.cross(wxr) * 0.5;
-    }
-
-    let n = omega_dt / theta; // unit axis
-    let c = theta.cos();
-    let s = theta.sin();
-    // r' = r c + (n×r) s + n (n·r) (1−c)
-    r * c + n.cross(r) * s + n * (n.dot(r)) * (1.0 - c)
 }

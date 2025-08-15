@@ -84,7 +84,9 @@ mod neighbors;
 mod non_bonded;
 pub mod prep;
 mod spme;
+mod water_init;
 mod water_opc;
+mod water_settle;
 
 use std::{
     collections::{HashMap, HashSet},
@@ -106,11 +108,10 @@ use crate::{
         ambient::BerendsenBarostat,
         non_bonded::{CHARGE_UNIT_SCALER, LjTables},
         prep::HydrogenMdType,
-        water_opc::WaterMol,
+        water_opc::{ForcesOnWaterMol, WaterMol},
     },
     molecule::Atom,
 };
-
 // Verlet list parameters
 
 // These are for non-bonded neighbor list construction.
@@ -354,15 +355,20 @@ impl MdState {
         let dt_half = 0.5 * dt;
 
         // First half-kick (v += a dt/2) and drift (x += v dt)
-        // todo: Do we want traditional verlet instead?
+        // todo: Do we want traditional verlet instead of velocity verlet (VV)?
         for a in &mut self.atoms {
             a.vel += a.accel * dt_half; // Half-kick
             a.posit += a.vel * dt; // Drift
             a.posit = self.cell.wrap(a.posit);
 
+            // todo: What is this? Implement it, or remove it?
             // track the largest squared displacement to know when to rebuild the list
             // self.max_disp_sq = self.max_disp_sq.max((a.vel * dt).magnitude_squared());
         }
+
+        // todo.
+        let mut f_on_water = vec![ForcesOnWaterMol::default(); self.water.len()];
+        self.water_vv_first_half_and_drift(&mut f_on_water, dt, dt_half);
 
         // The order we perform these steps is important.
         if let HydrogenMdType::Fixed(_) = &self.hydrogen_md_type {
@@ -375,6 +381,8 @@ impl MdState {
             a.accel = Vec3::new_zero();
         }
         self.barostat.virial_pair_kcal = 0.0;
+
+        // Apply all forces here --------
 
         // Bonded forces
         let mut start = Instant::now();
@@ -427,6 +435,9 @@ impl MdState {
             println!("Non-bonded time: {:?} μs", elapsed.as_micros());
         }
 
+        // Forces (bonded and nonbonded, to dynamic and water atoms) have been applied; perform other
+        // steps required for integration; second half-kick, RATTLE for hydrogens; SETTLE for water. -----
+
         // Second half-kick using new accelerations, and update accelerations using the atom's mass;
         // up to this point, the accelerations have been missing that step; this is an optimization to
         // do it once at the end.
@@ -437,6 +448,8 @@ impl MdState {
             a.vel += a.accel * dt_half;
         }
 
+        self.water_vv_second_half(&mut f_on_water, dt_half);
+
         if let HydrogenMdType::Fixed(_) = &self.hydrogen_md_type {
             self.rattle_hydrogens();
         }
@@ -444,15 +457,14 @@ impl MdState {
         if self.step_count == 0 {
             start = Instant::now();
         }
-        self.step_water(dt);
-
         if self.step_count == 0 {
             let elapsed = start.elapsed();
             println!("Water time: {:?} μs", elapsed.as_micros());
         }
 
-        self.apply_thermostat_csvr(dt, self.temp_target, self.barostat.tau_temp);
-        self.apply_barostat_berendsen(dt);
+        // todo: Temp rm. These are broken.
+        // self.apply_thermostat_csvr(dt, self.temp_target, self.barostat.tau_temp);
+        // self.apply_barostat_berendsen(dt);
 
         self.time += dt;
         self.step_count += 1;
