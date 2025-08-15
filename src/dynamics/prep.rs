@@ -41,6 +41,7 @@ use crate::{
     dynamics::{
         AtomDynamics, ForceFieldParamsIndexed, MdMode, MdState, ParamError, SnapshotDynamics,
         ambient::SimBox, neighbors::build_neighbors, non_bonded, non_bonded::LjTableIndices,
+        water_opc::make_water_mols,
     },
     molecule::{Atom, Bond, Ligand, Molecule, Residue, ResidueEnd, build_adjacency_list},
 };
@@ -723,6 +724,9 @@ impl MdState {
 
         let mut atoms_static_near = Vec::new();
         for atom_st in atoms_static_all {
+            if atom_st.hetero {
+                continue;
+            }
             let mut closest_dist = 99999.;
             for (i, atom_dy) in atoms.iter().enumerate() {
                 let dist = (atom_posits[i] - atom_st.posit).magnitude();
@@ -996,21 +1000,20 @@ impl MdState {
             adjacency_list: adjacency_list.to_vec(),
             atoms_static,
             cell,
-            nonbonded_exclusions: HashSet::new(),
-            nonbonded_scaled: HashSet::new(),
+            pairs_excluded_12_13: HashSet::new(),
+            pairs_14_scaled: HashSet::new(),
             force_field_params: ff_params_non_static,
             temp_target,
             hydrogen_md_type,
             ..Default::default()
         };
 
-        // todo: Put back when ready.
-        // result.water = make_water_mols(
-        //     &cell,
-        //     result.temp_target,
-        //     &result.atoms,
-        //     &result.atoms_static,
-        // );
+        result.water = make_water_mols(
+            &cell,
+            result.temp_target,
+            &result.atoms,
+            &result.atoms_static,
+        );
         result.water_pme_sites_forces = vec![[Vec3::new_zero(); 3]; result.water.len()];
 
         result.setup_nonbonded_exclusion_scale_flags();
@@ -1082,8 +1085,6 @@ impl MdState {
         self.neighbors_nb.ref_pos_static = self.atoms_static.iter().map(|a| a.posit).collect();
         self.neighbors_nb.ref_pos_water_o = self.water.iter().map(|m| m.o.posit).collect();
 
-
-
         build_neighbors(
             &mut self.neighbors_nb.dy_dy,
             &self.neighbors_nb.ref_pos_dyn,
@@ -1141,22 +1142,22 @@ impl MdState {
 
         // 1-2
         for indices in &self.force_field_params.bonds_topology {
-            push(&mut self.nonbonded_exclusions, indices.0, indices.1);
+            push(&mut self.pairs_excluded_12_13, indices.0, indices.1);
         }
 
         // 1-3
         for (indices, _) in &self.force_field_params.angle {
-            push(&mut self.nonbonded_exclusions, indices.0, indices.2);
+            push(&mut self.pairs_excluded_12_13, indices.0, indices.2);
         }
 
         // 1-4. We do not count improper dihedrals here.
         for (indices, _) in &self.force_field_params.dihedral {
-            push(&mut self.nonbonded_scaled, indices.0, indices.3);
+            push(&mut self.pairs_14_scaled, indices.0, indices.3);
         }
 
         // Make sure no 1-4 pair is also in the excluded set
-        for p in &self.nonbonded_scaled {
-            self.nonbonded_exclusions.remove(p);
+        for p in &self.pairs_14_scaled {
+            self.pairs_excluded_12_13.remove(p);
         }
     }
 }

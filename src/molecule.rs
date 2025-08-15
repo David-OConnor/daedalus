@@ -1049,6 +1049,12 @@ impl Molecule {
             for (i, res) in residues.iter().enumerate() {
                 if res.atom_sns.contains(&atom.serial_number) {
                     atom.residue = Some(i);
+
+                    // Update which atoms are waters.
+                    if residues[i].res_type == ResidueType::Water {
+                        atom.role = Some(AtomRole::Water);
+                    }
+
                     break;
                 }
             }

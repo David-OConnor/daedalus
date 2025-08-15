@@ -46,7 +46,7 @@ use bincode::{Decode, Encode};
 use lin_alg::f32::{f32x8, pack_vec3x8, pack_x8};
 use lin_alg::{
     f32::Vec3 as Vec3F32,
-    f64::{FORWARD, Quaternion, RIGHT, UP, Vec3},
+    f64::{Quaternion, Vec3, X_VEC, Y_VEC, Z_VEC},
     linspace,
 };
 use na_seq::Element;
@@ -661,9 +661,9 @@ fn vary_pose(pose: &Pose) -> Vec<Pose> {
         if let ConformationType::AssignedTorsions { torsions } = &pose.conformation_type {
             let rot_amt = TAU as f64 / 200. * i as f64;
 
-            let rotator_up = Quaternion::from_axis_angle(UP, rot_amt);
-            let rotator_right = Quaternion::from_axis_angle(RIGHT, rot_amt);
-            let rotator_fwd = Quaternion::from_axis_angle(FORWARD, rot_amt);
+            let rotator_up = Quaternion::from_axis_angle(Z_VEC, rot_amt);
+            let rotator_right = Quaternion::from_axis_angle(X_VEC, rot_amt);
+            let rotator_fwd = Quaternion::from_axis_angle(Y_VEC, rot_amt);
 
             // todo: Try combinations of the above.
 

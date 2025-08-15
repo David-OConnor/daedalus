@@ -992,7 +992,11 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
     let chains_invis: Vec<&Chain> = mol.chains.iter().filter(|c| !c.visible).collect();
 
     // If sticks view, draw water molecules as balls.
-    if ui.mol_view == MoleculeView::Sticks && !state.ui.visibility.hide_water {
+    if matches!(
+        ui.mol_view,
+        MoleculeView::Sticks | MoleculeView::BallAndStick
+    ) && !state.ui.visibility.hide_water
+    {
         for (i, atom) in mol.atoms.iter().enumerate() {
             if atom.hetero {
                 // todo: Excessive nesting.

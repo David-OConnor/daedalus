@@ -68,10 +68,14 @@ impl SimBox {
     // For use with the thermo/barostat.
     pub fn scale_isotropic(&mut self, lambda: f64) {
         // Treat non-finite or tiny λ as "no-op"
-        let lam = if lambda.is_finite() && lambda.abs() > 1.0e-12 { lambda } else { 1.0 };
+        let lam = if lambda.is_finite() && lambda.abs() > 1.0e-12 {
+            lambda
+        } else {
+            1.0
+        };
 
         let c = self.center();
-        let lo = c + (self.bounds_low  - c) * lam;
+        let lo = c + (self.bounds_low - c) * lam;
         let hi = c + (self.bounds_high - c) * lam;
 
         // Enforce low <= high per component
@@ -176,7 +180,6 @@ impl MdState {
         n.saturating_sub(3) // if you zero COM momentum
     }
 
-
     // --- CSVR (Bussi) thermostat: canonical velocity-rescale ---
     pub fn apply_thermostat_csvr(&mut self, dt: f64, t_target_k: f64, tau_t_ps: f64) {
         use rand_distr::{ChiSquared, Distribution, StandardNormal};
@@ -248,9 +251,9 @@ impl MdState {
         // 3) translate rigid waters by COM only; scale COM velocity
         for w in &mut self.water {
             let m_tot = w.o.mass + w.h0.mass + w.h1.mass;
-            let com = (w.o.posit * w.o.mass + w.h0.posit * w.h0.mass + w.h1.posit * w.h1.mass) / m_tot;
-            let com_v =
-                (w.o.vel * w.o.mass + w.h0.vel * w.h0.mass + w.h1.vel * w.h1.mass) / m_tot;
+            let com =
+                (w.o.posit * w.o.mass + w.h0.posit * w.h0.mass + w.h1.posit * w.h1.mass) / m_tot;
+            let com_v = (w.o.vel * w.o.mass + w.h0.vel * w.h0.mass + w.h1.vel * w.h1.mass) / m_tot;
 
             let com_new = c + (com - c) * lambda;
             let d = com_new - com;

@@ -161,13 +161,19 @@ impl MdState {
         }
     }
 
+    /// This inverts our neighbor set between water and dynamic atoms.
     pub fn rebuild_dy_water_inv(&mut self) {
-        for v in &mut self.neighbors_nb.water_dy {
-            v.clear();
-        }
+        let n_waters = self.neighbors_nb.ref_pos_water_o.len();
+        self.neighbors_nb.water_dy.clear();
+        self.neighbors_nb.water_dy.resize(n_waters, Vec::new());
 
-        for i_dyn in 0..self.atoms.len() {
-            for &iw in &self.neighbors_nb.dy_water[i_dyn] {
+        // Iterate over what we actually have, not over atoms.len()
+        for (i_dyn, ws) in self.neighbors_nb.dy_water.iter().enumerate() {
+            for &iw in ws {
+                debug_assert!(
+                    iw < n_waters,
+                    "water index out of range: {iw} >= {n_waters}"
+                );
                 self.neighbors_nb.water_dy[iw].push(i_dyn);
             }
         }
@@ -192,7 +198,7 @@ pub fn build_neighbors(
     let src_len = src_posits.len();
 
     let mut inner = |i_src: usize, i_tgt: usize| {
-        let diff_wrapped = cell.min_image(tgt_posits[i_tgt]- src_posits[i_src]);
+        let diff_wrapped = cell.min_image(tgt_posits[i_tgt] - src_posits[i_src]);
         if diff_wrapped.magnitude_squared() < CUTOFF_SKIN_SQ {
             neighbors[i_tgt].push(i_src);
 

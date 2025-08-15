@@ -98,9 +98,8 @@ use bio_files::amber_params::{
 use lin_alg::f64::Vec3;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use lin_alg::f64::{Vec3x4, f64x4};
-use na_seq::{Element, Element::Hydrogen};
+use na_seq::Element;
 use neighbors::NeighborsNb;
-use rand::rng;
 
 use crate::{
     dynamics::{
@@ -156,7 +155,7 @@ impl ParamError {
 /// based parameter structs, this is specific to the atom in our docking setup: The incdices are provincial
 /// to specific sets of atoms.
 ///
-/// Note: The single-atom fields of `mass` and `partial_charges` are ommitted: They're part of our
+/// Note: The single-atom fields of `mass` and `partial_charges` are omitted: They're part of our
 /// `AtomDynamics` struct.`
 #[derive(Clone, Debug, Default)]
 pub struct ForceFieldParamsIndexed {
@@ -178,7 +177,6 @@ pub struct ForceFieldParamsIndexed {
     // X -nh-sx-X    4    3.000         0.000          -2.000
     // X -nh-sx-X    4    0.400       180.000           3.000
     pub van_der_waals: HashMap<usize, VdwParams>,
-    // pub partial_charge: HashMap<usize, f32>, // todo: A/r
 }
 
 #[derive(Debug, Default)]
@@ -338,10 +336,10 @@ pub struct MdState {
     /// Exclusions of non-bonded forces for atoms connected by 1, or 2 covalent bonds.
     /// I can't find this in the RM, but ChatGPT is confident of it, and references an Amber file
     /// called 'prmtop', which I can't find. Fishy, but we're going with it.
-    nonbonded_exclusions: HashSet<(usize, usize)>,
+    pairs_excluded_12_13: HashSet<(usize, usize)>,
     /// See Amber RM, sectcion 15, "1-4 Non-Bonded Interaction Scaling"
     /// These are indices of atoms separated by three consecutive bonds
-    nonbonded_scaled: HashSet<(usize, usize)>,
+    pairs_14_scaled: HashSet<(usize, usize)>,
     water: Vec<WaterMol>,
     lj_tables: LjTables,
     hydrogen_md_type: HydrogenMdType,
@@ -371,7 +369,8 @@ impl MdState {
             self.shake_hydrogens();
         }
 
-        // Reset acceleration and virial pair.
+        // Reset acceleration and virial pair. We must reset the virial pair prior to accumulating
+        // it, which we do when calculating non-bonded forces.
         for a in &mut self.atoms {
             a.accel = Vec3::new_zero();
         }

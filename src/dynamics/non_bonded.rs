@@ -9,10 +9,7 @@ use crate::{
     dynamics::{
         AtomDynamics, MdState,
         ambient::SimBox,
-        spme::{
-            EWALD_ALPHA, PME_MESH_SPACING, force_coulomb_ewald_complement,
-            force_coulomb_ewald_real, pme_long_range_forces,
-        },
+        spme::{EWALD_ALPHA, PME_MESH_SPACING, force_coulomb_ewald_real},
         water_opc,
     },
     forces::force_lj,
@@ -132,8 +129,9 @@ fn apply_force(
         .par_iter()
         .fold(
             || (vec![Vec3::new_zero(); n_dyn], 0.0_f64),
-            |(mut acc, mut w_local), &(i_tgt, i_src, scale14)| {
+            |(mut acc, mut w_virial_local), &(i_tgt, i_src, scale14)| {
                 let f = f_nonbonded(
+                    Some(&mut w_virial_local),
                     &atoms_tgt[i_tgt],
                     &src[i_src],
                     cell,
@@ -144,21 +142,19 @@ fn apply_force(
                     true,
                 );
 
-                // Virial: r_ij · F_ij (use minimum-image)
-                let rij = cell.min_image(atoms_tgt[i_tgt].posit - src[i_src].posit);
-                w_local += rij.dot(f);
-
                 acc[i_tgt] += f;
                 if matches!(lj_type, LjIndexType::DynDyn) {
                     acc[i_src] -= f;
                 }
-                (acc, w_local)
+                (acc, w_virial_local)
             },
         )
         .reduce(
             || (vec![Vec3::new_zero(); n_dyn], 0.0_f64),
             |(mut a, w_a), (b, w_b)| {
-                for k in 0..n_dyn { a[k] += b[k]; }
+                for k in 0..n_dyn {
+                    a[k] += b[k];
+                }
                 (a, w_a + w_b)
             },
         );
@@ -182,8 +178,8 @@ impl MdState {
 
         {
             // Exclusions and scaling apply to dynamic-dynamic interactions only.
-            let exclusions = &self.nonbonded_exclusions;
-            let scaled_set = &self.nonbonded_scaled;
+            let exclusions = &self.pairs_excluded_12_13;
+            let scaled_set = &self.pairs_14_scaled;
 
             // Set up pairs ahead of time; conducive to parallel iteration. We skip excluded pairs,
             // and mark scaled ones.
@@ -204,7 +200,7 @@ impl MdState {
                 })
                 .collect();
 
-            apply_force(
+            self.barostat.virial_pair_kcal += apply_force(
                 &pairs,
                 &mut self.atoms,
                 None,
@@ -214,11 +210,6 @@ impl MdState {
                 &self.lj_tables,
             );
         }
-
-        // todo: Very confused on how/where this should go.
-        let rij = Vec3::new_zero();
-        let df = Vec3::new_zero(); // todo placehodler. What sould this be?
-        self.barostat.virial_pair_kcal += rij.dot(df); // <-- add this line
 
         // ------ Forces from static atoms on dynamic ones ------
         {
@@ -231,7 +222,7 @@ impl MdState {
                 })
                 .collect();
 
-            apply_force(
+            self.barostat.virial_pair_kcal += apply_force(
                 &pairs,
                 &mut self.atoms,
                 Some(&self.atoms_static),
@@ -257,11 +248,11 @@ impl MdState {
                 })
                 .collect();
 
-            let per_atom_accum: Vec<Vec3> = pairs
+            let (per_atom_accum, w_sum) = pairs
                 .par_iter()
                 .fold(
-                    || vec![Vec3::new_zero(); n_dyn],
-                    |mut acc, &(i_dyn, i_water, water_atom_i)| {
+                    || (vec![Vec3::new_zero(); n_dyn], 0.0_f64),
+                    |(mut acc, mut w_virial_local), &(i_dyn, i_water, water_atom_i)| {
                         let a_dyn = &self.atoms[i_dyn];
                         let w = &self.water[i_water];
 
@@ -273,6 +264,7 @@ impl MdState {
                         };
 
                         let f = f_nonbonded(
+                            Some(&mut w_virial_local),
                             a_dyn,
                             a_water_src,
                             &self.cell,
@@ -284,16 +276,16 @@ impl MdState {
                         );
 
                         acc[i_dyn] += f; // water is rigid/fixed here
-                        acc
+                        (acc, w_virial_local)
                     },
                 )
                 .reduce(
-                    || vec![Vec3::new_zero(); n_dyn],
-                    |mut a, b| {
+                    || (vec![Vec3::new_zero(); n_dyn], 0.0_f64),
+                    |(mut a, w_a), (b, w_b)| {
                         for k in 0..n_dyn {
                             a[k] += b[k];
                         }
-                        a
+                        (a, w_a + w_b)
                     },
                 );
 
@@ -302,16 +294,20 @@ impl MdState {
             }
         }
 
-        self.apply_long_range_recip_forces()
+        // todo:  You must add virial contribution from water molecules on other water molecules to the barostat.
+
+        // todo; Removed: Pausing on thsi; we need to get it workign or change
+        // todo from SPME, but it's a time sink, and not making any progress.
+        // self.apply_long_range_recip_forces()
     }
 }
 
-/// Vdw and Coulomb forces. Used by water and non-water. For Coulomb, this is the short-range version.
-/// We handle long-range SPME Coulomb force separately.
-/// We split out `r_sq` and `diff` for use while integrating a unit cell, if applicable.
+/// Vdw and (short-range) Coulomb forces. Used by water and non-water.
+/// We run long-range SPME Coulomb force separately.
 ///
-/// We use a hard distance cutoff for Vdw, due to its  ^-7 falloff.
+/// We use a hard distance cutoff for Vdw, enabled by its ^-7 falloff.
 pub fn f_nonbonded(
+    virial_w: Option<&mut f64>,
     tgt: &AtomDynamics,
     src: &AtomDynamics,
     cell: &SimBox,
@@ -371,7 +367,18 @@ pub fn f_nonbonded(
         f_coulomb *= SCALE_COUL_14;
     }
 
-    f_lj + f_coulomb
+    let result = f_lj + f_coulomb;
+
+    if let Some(w) = virial_w {
+        // Virial: r_ij · F_ij (use minimum-image)
+        *w += diff_wrapped.dot(result);
+    }
+
+    // f_lj
+    // f_coulomb
+    // Vec3::new_zero()
+
+    result
 }
 
 /// Helper. Returns σ, ε between an atom pair. Atom order passed as params doesn't matter.
