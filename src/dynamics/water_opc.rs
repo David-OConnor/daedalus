@@ -149,7 +149,8 @@ pub struct ForcesOnWaterMol {
     pub f_o: Vec3,
     pub f_h0: Vec3,
     pub f_h1: Vec3,
-    pub f_m: Vec3, // EP/M site
+    /// SETTLE/constraint will redistribute force on M/EP.
+    pub f_m: Vec3,
 }
 
 impl MdState {

@@ -49,7 +49,7 @@ use crate::{
 // Todo: QC this. And/or make this a setting
 const TEMP_TGT_DEFAULT: f64 = 310.; // Kelvin.
 
-const SIMBOX_PAD: f64 = 10.0; // Å
+const SIMBOX_PAD: f64 = 7.0; // Å
 // Å. Static atoms must be at least this close to a dynamic atom at the start of MD to count.
 // Set this wide to take into account motion.
 const STATIC_ATOM_DIST_THRESH: f64 = 8.; // todo: Increase (?) A/R.

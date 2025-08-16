@@ -168,8 +168,6 @@ fn apply_force(
         atoms_tgt[i].accel += per_atom_accum[i];
     }
 
-    // todo: Do we need to double this for the dynamic-dynamic case, because we apply the accel to each
-    // todo atom in the pair because they act on each on each other, or not?
     w_sum // kcal/mol
 }
 
@@ -180,6 +178,8 @@ impl MdState {
     pub fn apply_nonbonded_forces(&mut self) {
         let n_dyn = self.atoms.len();
         let n_water_mols = self.water.len();
+
+        // todo: Can you consolidate the water-mol interactions, like you do with the helper for static/dyn and dyn/dyn?
 
         // ------ Forces from other dynamic atoms on dynamic ones ------
 
@@ -240,7 +240,7 @@ impl MdState {
             );
         }
 
-        // ------ Forces from water molecules on dynamic atoms, and vice-versa ------
+        // ------ Forces from water on dynamic atoms, and vice-versa ------
         {
             // (i_dyn, i_water_mol, water atom index 0 - 3)
             let pairs: Vec<(usize, usize, u8)> = (0..n_dyn)
@@ -323,9 +323,185 @@ impl MdState {
             for i in 0..n_dyn {
                 self.atoms[i].accel += per_atom_dyn_accum[i];
             }
+
+            for i in 0..n_water_mols {
+                self.water[i].o.accel += per_mol_water_accum[i].f_o;
+                self.water[i].m.accel += per_mol_water_accum[i].f_m;
+                self.water[i].h0.accel += per_mol_water_accum[i].f_h0;
+                self.water[i].h1.accel += per_mol_water_accum[i].f_h1;
+            }
         }
 
-        // todo:  You must add virial contribution from water molecules on other water molecules to the barostat.
+        // ------ Forces from static atoms on water molecules ------
+        {
+            let pairs: Vec<(usize, usize, u8)> = (0..n_water_mols)
+                .flat_map(|i_water| {
+                    self.neighbors_nb.water_static[i_water]
+                        .iter()
+                        .copied()
+                        .flat_map(move |i_static| {
+                            [0_u8, 1, 2, 3]
+                                .into_iter()
+                                .map(move |site| (i_water, i_static, site))
+                        })
+                })
+                .collect();
+
+            let (per_mol_water_accum, w_sum) = pairs
+                .par_iter()
+                .fold(
+                    || (vec![ForcesOnWaterMol::default(); n_water_mols], 0.0_f64),
+                    |(mut f_on_water, mut w_virial_local), &(i_wat, i_st, site)| {
+                        let w = &self.water[i_wat];
+                        let st = &self.atoms_static[i_st];
+
+                        let (tgt, f_field, calc_lj, calc_coulomb) = match site {
+                            0 => (&w.o, &mut f_on_water[i_wat].f_o, true, false), // O: LJ only
+                            1 => (&w.m, &mut f_on_water[i_wat].f_m, false, true), // M: Coulomb only
+                            2 => (&w.h0, &mut f_on_water[i_wat].f_h0, false, true),
+                            _ => (&w.h1, &mut f_on_water[i_wat].f_h1, false, true),
+                        };
+
+                        let f = f_nonbonded(
+                            Some(&mut w_virial_local),
+                            tgt, // target (water site)
+                            st,  // source (static atom)
+                            &self.cell,
+                            false, // no 1-4 with water
+                            LjTableIndices::StaticOnWater(i_st),
+                            &self.lj_tables,
+                            calc_lj,
+                            calc_coulomb,
+                        );
+
+                        *f_field += f; // only water moves
+                        (f_on_water, w_virial_local)
+                    },
+                )
+                .reduce(
+                    || (vec![ForcesOnWaterMol::default(); n_water_mols], 0.0_f64),
+                    |(mut f, wa), (b, wb)| {
+                        for i in 0..n_water_mols {
+                            f[i].f_o += b[i].f_o;
+                            f[i].f_m += b[i].f_m;
+                            f[i].f_h0 += b[i].f_h0;
+                            f[i].f_h1 += b[i].f_h1;
+                        }
+                        (f, wa + wb)
+                    },
+                );
+
+            self.barostat.virial_pair_kcal += w_sum;
+
+            for i in 0..n_water_mols {
+                self.water[i].o.accel += per_mol_water_accum[i].f_o;
+                self.water[i].m.accel += per_mol_water_accum[i].f_m;
+                self.water[i].h0.accel += per_mol_water_accum[i].f_h0;
+                self.water[i].h1.accel += per_mol_water_accum[i].f_h1;
+            }
+        }
+
+        // ------ Water on water ------
+        {
+            // Build unique molecule pairs (use oxygen positions for the neighbor list)
+            let ww_pairs: Vec<(usize, usize)> = (0..n_water_mols)
+                .flat_map(|i| {
+                    self.neighbors_nb.water_water[i]
+                        .iter()
+                        .copied()
+                        .filter(move |&j| j > i)
+                        .map(move |j| (i, j))
+                })
+                .collect();
+
+            let (per_mol_water_accum, w_sum) = ww_pairs
+                .par_iter()
+                .fold(
+                    || (vec![ForcesOnWaterMol::default(); n_water_mols], 0.0_f64),
+                    |(mut f_on_w, mut w_local), &(ia, ib)| {
+                        let wa = &self.water[ia];
+                        let wb = &self.water[ib];
+
+                        // Helper: accumulate one site pair (force on 'a' from 'b')
+                        let mut acc_pair = |sa: u8, sb: u8, a: &AtomDynamics, b: &AtomDynamics| {
+                            let calc_lj = sa == 0 && sb == 0; // O–O only for LJ.
+                            let calc_coulomb = sa != 0 && sb != 0; // No coulomb if either is O.
+
+                            let f = f_nonbonded(
+                                Some(&mut w_local),
+                                a,
+                                b,
+                                &self.cell,
+                                false, // no 1-4 scaling with water
+                                LjTableIndices::WaterOnWater,
+                                &self.lj_tables,
+                                calc_lj, // calc_lj
+                                calc_coulomb,
+                            );
+
+                            // +F on molecule A site, -F on molecule B site
+                            match sa {
+                                0 => f_on_w[ia].f_o += f,
+                                1 => f_on_w[ia].f_m += f,
+                                2 => f_on_w[ia].f_h0 += f,
+                                _ => f_on_w[ia].f_h1 += f,
+                            }
+                            match sb {
+                                0 => f_on_w[ib].f_o -= f,
+                                1 => f_on_w[ib].f_m -= f,
+                                2 => f_on_w[ib].f_h0 -= f,
+                                _ => f_on_w[ib].f_h1 -= f,
+                            }
+                        };
+
+                        // 4×4 site pairs: O=0, M=1, H0=2, H1=3
+                        acc_pair(0, 0, &wa.o, &wb.o);
+                        acc_pair(0, 1, &wa.o, &wb.m);
+                        acc_pair(0, 2, &wa.o, &wb.h0);
+                        acc_pair(0, 3, &wa.o, &wb.h1);
+
+                        acc_pair(1, 0, &wa.m, &wb.o);
+                        acc_pair(1, 1, &wa.m, &wb.m);
+                        acc_pair(1, 2, &wa.m, &wb.h0);
+                        acc_pair(1, 3, &wa.m, &wb.h1);
+
+                        acc_pair(2, 0, &wa.h0, &wb.o);
+                        acc_pair(2, 1, &wa.h0, &wb.m);
+                        acc_pair(2, 2, &wa.h0, &wb.h0);
+                        acc_pair(2, 3, &wa.h0, &wb.h1);
+
+                        acc_pair(3, 0, &wa.h1, &wb.o);
+                        acc_pair(3, 1, &wa.h1, &wb.m);
+                        acc_pair(3, 2, &wa.h1, &wb.h0);
+                        acc_pair(3, 3, &wa.h1, &wb.h1);
+
+                        (f_on_w, w_local)
+                    },
+                )
+                .reduce(
+                    || (vec![ForcesOnWaterMol::default(); n_water_mols], 0.0_f64),
+                    |(mut a, wa), (b, wb)| {
+                        for i in 0..n_water_mols {
+                            a[i].f_o += b[i].f_o;
+                            a[i].f_m += b[i].f_m;
+                            a[i].f_h0 += b[i].f_h0;
+                            a[i].f_h1 += b[i].f_h1;
+                        }
+                        (a, wa + wb)
+                    },
+                );
+
+            // Virial counted once per unique pair
+            self.barostat.virial_pair_kcal += w_sum;
+
+            // Apply accumulated forces to water sites
+            for i in 0..n_water_mols {
+                self.water[i].o.accel += per_mol_water_accum[i].f_o;
+                self.water[i].m.accel += per_mol_water_accum[i].f_m; // massless: handled by constraints/SETTLE
+                self.water[i].h0.accel += per_mol_water_accum[i].f_h0;
+                self.water[i].h1.accel += per_mol_water_accum[i].f_h1;
+            }
+        }
 
         // todo; Removed: Pausing on thsi; we need to get it workign or change
         // todo from SPME, but it's a time sink, and not making any progress.
@@ -354,7 +530,7 @@ pub fn f_nonbonded(
 
     let dist = diff_wrapped.magnitude();
 
-    if dist.abs() < 1e-12 {
+    if dist < 1e-12 {
         return Vec3::new_zero();
     }
 
@@ -409,7 +585,7 @@ pub fn f_nonbonded(
     // f_coulomb
     // Vec3::new_zero()
 
-    return f_lj; // todo temp
+    // return f_lj; // todo temp
     // return f_coulomb;
 
     result

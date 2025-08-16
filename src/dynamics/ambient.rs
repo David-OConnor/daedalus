@@ -4,9 +4,7 @@ use lin_alg::f64::Vec3;
 use na_seq::Element;
 use rand::prelude::ThreadRng;
 
-use crate::dynamics::{
-    ACCEL_CONVERSION_INV, KB, MdState, prep::HydrogenMdType, water_opc::WaterMol,
-};
+use crate::dynamics::{ACCEL_CONVERSION_INV, KB, MdState, prep::HydrogenMdType};
 
 const BAR_PER_KCAL_MOL_PER_A3: f64 = 69476.95457055373;
 

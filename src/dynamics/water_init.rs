@@ -17,7 +17,7 @@ const WATER_DENSITY: f64 = 0.997;
 
 // Don't generate water molecules that are too close to other atoms.
 // Vdw contact distance between water molecules and organic molecules is roughly 3.5 Å.
-const GENERATION_MIN_DIST: f64 = 4.;
+const GENERATION_MIN_DIST: f64 = 3.75;
 
 // This is similar to the Amber H and O masses we used summed, and could be explained
 // by precision limits. We use it for generating atoms based on density.
