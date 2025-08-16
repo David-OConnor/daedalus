@@ -49,7 +49,6 @@ use crate::{
 // Todo: QC this. And/or make this a setting
 const TEMP_TGT_DEFAULT: f64 = 310.; // Kelvin.
 
-const SIMBOX_PAD: f64 = 7.0; // Å
 // Å. Static atoms must be at least this close to a dynamic atom at the start of MD to count.
 // Set this wide to take into account motion.
 const STATIC_ATOM_DIST_THRESH: f64 = 8.; // todo: Increase (?) A/R.
@@ -976,23 +975,8 @@ impl MdState {
         hydrogen_md_type: HydrogenMdType,
         adjacency_list: Vec<Vec<usize>>,
     ) -> Self {
-        let cell = {
-            let (mut min, mut max) = (Vec3::splat(f64::INFINITY), Vec3::splat(f64::NEG_INFINITY));
-            for a in &atoms_dy {
-                min = min.min(a.posit);
-                max = max.max(a.posit);
-            }
-
-            let lo = min - Vec3::splat(SIMBOX_PAD);
-            let hi = max + Vec3::splat(SIMBOX_PAD);
-
-            println!("Initizing sim box. L: {lo} H: {hi}");
-
-            SimBox {
-                bounds_low: lo,
-                bounds_high: hi,
-            }
-        };
+        // let cell = SimBox::new_padded(&atoms_dy);
+        let cell = SimBox::new_fixed_size(&atoms_dy);
 
         let mut result = Self {
             mode,
@@ -1009,7 +993,7 @@ impl MdState {
         };
 
         result.water = make_water_mols(
-            &cell,
+            &result.cell,
             result.temp_target,
             &result.atoms,
             &result.atoms_static,

@@ -138,6 +138,9 @@ pub const KB: f64 = 0.001_987_204_1; // kcal mol⁻¹ K⁻¹ (Amber-style units)
 const SHAKE_TOL: f64 = 1.0e-4; // Å
 const SHAKE_MAX_IT: usize = 100;
 
+// Every this many steps, re-
+const CENTER_SIMBOX_RATIO: usize = 20;
+
 #[derive(Debug)]
 pub struct ParamError {
     pub descrip: String,
@@ -470,6 +473,13 @@ impl MdState {
         self.step_count += 1;
 
         self.build_neighbors_if_needed();
+
+        // Experiment: Keeping the simbox centered on the dynamics atom.
+        // (We pick an arbitrary atom as the center)
+        if self.step_count % CENTER_SIMBOX_RATIO == 0 {
+            self.cell = SimBox::new_fixed_size(&self.atoms);
+        }
+
 
         if self.step_count % SNAPSHOT_RATIO == 0 {
             self.take_snapshot();

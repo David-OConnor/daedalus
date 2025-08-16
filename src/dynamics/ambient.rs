@@ -4,11 +4,20 @@ use lin_alg::f64::Vec3;
 use na_seq::Element;
 use rand::prelude::ThreadRng;
 
-use crate::dynamics::{ACCEL_CONVERSION_INV, KB, MdState, prep::HydrogenMdType};
+use crate::dynamics::{ACCEL_CONVERSION_INV, KB, MdState, prep::HydrogenMdType, AtomDynamics};
+
+// If we are setting up as a pad around all relevant atoms
+const SIMBOX_PAD: f64 = 7.0; // Å
+
+// If we are setting up as a fixed size.
+const SIMBOX_WIDTH: f64 = 20.; // Å
+const SIMBOX_WIDTH_DIV2: f64 = SIMBOX_WIDTH / 2.0;
 
 const BAR_PER_KCAL_MOL_PER_A3: f64 = 69476.95457055373;
 
-/// Simulation cell (orthorhombic for now)
+/// This bounds the area where atoms are wrapped. For now at least, it is only
+/// used for water atoms. Its size and position should be such as to keep the system
+/// solvated. We may move it around during the sim.
 #[derive(Clone, Copy, Default)]
 pub struct SimBox {
     pub bounds_low: Vec3,
@@ -16,6 +25,41 @@ pub struct SimBox {
 }
 
 impl SimBox {
+    /// Set up to surround all atoms, with a pad. `atoms` is whichever we use to center the bix.
+    pub fn new_padded(atoms: &[AtomDynamics]) -> Self {
+        let (mut min, mut max) = (Vec3::splat(f64::INFINITY), Vec3::splat(f64::NEG_INFINITY));
+        for a in atoms {
+            min = min.min(a.posit);
+            max = max.max(a.posit);
+        }
+
+        let bounds_low = min - Vec3::splat(SIMBOX_PAD);
+        let bounds_high = max + Vec3::splat(SIMBOX_PAD);
+
+        Self {
+            bounds_low,
+            bounds_high,
+        }
+    }
+
+    /// It may be worth this calculation determining the center, as we run it no more than once a step, and
+    /// doing so may allow a much bigger savings by reducing the simbox size required.
+    pub fn new_fixed_size(atoms: &[AtomDynamics]) -> Self {
+        let mut center = Vec3::new_zero();
+        for atom in atoms {
+            center += atom.posit;
+        }
+        center /= atoms.len() as f64;
+
+        let bounds_low = center - Vec3::splat(SIMBOX_WIDTH_DIV2);
+        let bounds_high = center + Vec3::splat(SIMBOX_WIDTH_DIV2);
+
+        Self {
+            bounds_low,
+            bounds_high,
+        }
+    }
+
     pub fn extent(&self) -> Vec3 {
         self.bounds_high - self.bounds_low
     }
