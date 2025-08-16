@@ -22,8 +22,7 @@ use na_seq::Element;
 
 use crate::dynamics::{
     ACCEL_CONVERSION, AtomDynamics, MdState,
-    non_bonded::{CHARGE_UNIT_SCALER, LjTableIndices, f_nonbonded},
-    split2_mut,
+    non_bonded::{CHARGE_UNIT_SCALER},
     water_settle::settle_opc,
 };
 
@@ -175,10 +174,11 @@ impl MdState {
     /// be pre-calculated. Accepts as mutable to allow projecting M/EP force onto the
     /// other atoms.
     ///
-    /// Project EP -> (O,H,H), do the **first half-kick**, then SETTLE + EP placement + wrap.
+    /// In addition to the VV half-kick and drift, it handles force projection from M/EP,
+    /// and applying SETTLE to main each molecul's rigid geometry.
     pub fn water_vv_first_half_and_drift(
         &mut self,
-        f_on_water: &mut [ForcesOnWaterMol],
+        // f_on_water: &mut [ForcesOnWaterMol],
         dt: f64,
         dt_half: f64,
     ) {
@@ -186,27 +186,24 @@ impl MdState {
 
         for iw in 0..self.water.len() {
             let w = &mut self.water[iw];
-            let forces = &mut f_on_water[iw];
+            // let mut forces = &mut f_on_water[iw];
+            let mut forces = &mut self.forces_on_water[iw];
 
-            // EP → (O,H,H)
-            let (dFo, dFh0, dFh1) =
-                project_ep_force_to_real_sites(w.o.posit, w.h0.posit, w.h1.posit, forces.f_m);
-
-            forces.f_m = Vec3::new_zero();
-            forces.f_o += dFo;
-            forces.f_h0 += dFh0;
-            forces.f_h1 += dFh1;
+            // Take the force on M/EP, and instead apply it to the other atoms. This leaves it at 0.
+            project_ep_force_to_real_sites(&mut forces, w.o.posit, w.h0.posit, w.h1.posit);
 
             // First half-kick (uses your existing conversion)
             w.settle_half_kick(forces, dt_half);
 
-            // Drift rigid body with SETTLE
+            // Drift the rigid molecule with SETTLE
             settle_opc(&mut w.o, &mut w.h0, &mut w.h1, dt, &self.cell);
 
             // Place EP on the HOH bisector
-            let bis = (w.h0.posit - w.o.posit) + (w.h1.posit - w.o.posit);
-            w.m.posit = w.o.posit + bis.to_normalized() * O_EP_R_0;
-            w.m.vel = (w.h0.vel + w.h1.vel) * 0.5;
+            {
+                let bisector = (w.h0.posit - w.o.posit) + (w.h1.posit - w.o.posit);
+                w.m.posit = w.o.posit + bisector.to_normalized() * O_EP_R_0;
+                w.m.vel = (w.h0.vel + w.h1.vel) * 0.5;
+            }
 
             // Wrap molecule as a rigid unit (wrap O, translate H,H,EP)
             let new_o = cell.wrap(w.o.posit);
@@ -223,279 +220,27 @@ impl MdState {
     /// Forces for this step must be pre-calculated. Accepts as mutable to allow projecting M/EP force onto the
     /// other atoms.
     /// Project EP → (O,H,H) at t+Δt, then do the **second half-kick**.
-    pub fn water_vv_second_half(&mut self, f_on_water: &mut [ForcesOnWaterMol], dt_half: f64) {
+    // pub fn water_vv_second_half(&mut self, f_on_water: &mut [ForcesOnWaterMol], dt_half: f64) {
+    pub fn water_vv_second_half(&mut self, dt_half: f64) {
         for iw in 0..self.water.len() {
             let w = &mut self.water[iw];
-            let forces = &mut f_on_water[iw];
+            // let forces = &mut f_on_water[iw];
+            let forces = &mut self.forces_on_water[iw];
 
-            let (dFo, dFh0, dFh1) =
-                project_ep_force_to_real_sites(w.o.posit, w.h0.posit, w.h1.posit, forces.f_m);
-
-            forces.f_m = Vec3::new_zero();
-            forces.f_o += dFo;
-            forces.f_h0 += dFh0;
-            forces.f_h1 += dFh1;
+            // Take the force on M/EP, and instead apply it to the other atoms. This leaves it at 0.
+            project_ep_force_to_real_sites(forces, w.o.posit, w.h0.posit, w.h1.posit);
 
             // Second half-kick
             w.settle_half_kick(forces, dt_half);
         }
     }
-
-    /// Compute LJ and Coulomb forces on water from dynamic, static, and other water atoms.
-    /// Returns forces, and virial pressure.
-    fn calc_f_on_water(&self) -> (Vec<ForcesOnWaterMol>, f64) {
-        let n_w = self.water.len();
-        // Forces at current positions
-        let mut result = vec![ForcesOnWaterMol::default(); n_w];
-
-        let mut w_virial_local = 0.;
-
-        // ---- Dynamic sources, water target ----
-
-        // We only add forces to WATER here; the dynamic atoms already got their
-        // counterpart in `apply_nonbonded_forces` to avoid double work.
-        for iw in 0..n_w {
-            for &i_dyn in &self.neighbors_nb.water_dy[iw] {
-                let w = &self.water[iw];
-                let a = &self.atoms[i_dyn];
-
-                // Applicable to all calls to f_nonbonded: See the note below on why we must explicitly
-                // set calc_coulomb or calc_lj to false.
-
-                // O
-                {
-                    let f = f_nonbonded(
-                        None, // We accumulate virial from dyn-water in f_nonbonded.
-                        &w.o,
-                        a,
-                        &self.cell,
-                        false,
-                        LjTableIndices::DynOnWater(i_dyn),
-                        &self.lj_tables,
-                        true,
-                        false,
-                    );
-                    result[iw].f_o += f;
-                }
-                // H0
-                {
-                    let f = f_nonbonded(
-                        None, // See note above.
-                        &w.h0,
-                        a,
-                        &self.cell,
-                        false,
-                        LjTableIndices::DynOnWater(i_dyn), // N/A; no LJ force
-                        &self.lj_tables,
-                        false,
-                        true,
-                    );
-                    result[iw].f_h0 += f;
-                }
-
-                // H1
-                {
-                    let f = f_nonbonded(
-                        None, // See note above.
-                        &w.h1,
-                        a,
-                        &self.cell,
-                        false,
-                        LjTableIndices::DynOnWater(i_dyn), // N/A; no LJ force
-                        &self.lj_tables,
-                        false,
-                        true,
-                    );
-                    result[iw].f_h1 += f;
-                }
-                // M/EP (Coulomb only)
-                {
-                    let f = f_nonbonded(
-                        None, // See note above.
-                        &w.m,
-                        a,
-                        &self.cell,
-                        false,
-                        LjTableIndices::DynOnWater(i_dyn), // N/A; no LJ force
-                        &self.lj_tables,
-                        false,
-                        true,
-                    );
-                    result[iw].f_m += f;
-                }
-            }
-        }
-
-        // ---- Static sources, water target ----
-        for iw in 0..n_w {
-            for &i_st in &self.neighbors_nb.water_static[iw] {
-                let w = &self.water[iw];
-                let a = &self.atoms_static[i_st];
-
-                // O
-                {
-                    let f = f_nonbonded(
-                        Some(&mut w_virial_local),
-                        &w.o,
-                        a,
-                        &self.cell,
-                        false,
-                        LjTableIndices::StaticOnWater(i_st),
-                        &self.lj_tables,
-                        true,
-                        false,
-                    );
-                    result[iw].f_o += f;
-                }
-                // H0
-                {
-                    let f = f_nonbonded(
-                        Some(&mut w_virial_local),
-                        &w.h0,
-                        a,
-                        &self.cell,
-                        false,
-                        LjTableIndices::StaticOnWater(i_st), // N/A; no LJ force
-                        &self.lj_tables,
-                        false,
-                        true,
-                    );
-                    result[iw].f_h0 += f;
-                }
-                // H1
-                {
-                    let f = f_nonbonded(
-                        Some(&mut w_virial_local),
-                        &w.h1,
-                        a,
-                        &self.cell,
-                        false,
-                        LjTableIndices::StaticOnWater(i_st), // N/A; no LJ force
-                        &self.lj_tables,
-                        false,
-                        true,
-                    );
-                    result[iw].f_h1 += f;
-                }
-                // M
-                {
-                    let f = f_nonbonded(
-                        Some(&mut w_virial_local),
-                        &w.m,
-                        a,
-                        &self.cell,
-                        false,
-                        LjTableIndices::StaticOnWater(i_st), // N/A; no LJ force
-                        &self.lj_tables,
-                        false,
-                        true,
-                    );
-                    result[iw].f_m += f;
-                }
-            }
-        }
-
-        // ---- Water sources, water target ----
-        for iw_tgt in 0..n_w {
-            for &iw_src in &self.neighbors_nb.water_water[iw_tgt] {
-                if iw_src <= iw_tgt {
-                    continue;
-                }
-
-                let (fwi, fwj) = split2_mut(&mut result, iw_tgt, iw_src);
-                let wi = &self.water[iw_tgt];
-                let wj = &self.water[iw_src];
-
-                // enumerate sites as (&AtomDynamics, enum tag)
-                #[derive(Copy, Clone)]
-                enum S {
-                    O,
-                    H0,
-                    H1,
-                    M,
-                }
-                let tgt_sites = [
-                    (&wi.o, S::O),
-                    (&wi.h0, S::H0),
-                    (&wi.h1, S::H1),
-                    (&wi.m, S::M),
-                ];
-                let src_sites = [
-                    (&wj.o, S::O),
-                    (&wj.h0, S::H0),
-                    (&wj.h1, S::H1),
-                    (&wj.m, S::M),
-                ];
-
-                for (tgt, ttag) in tgt_sites {
-                    for (src, stag) in src_sites {
-                        // We must explicitly pass these values as false to `f_nonbonded`, or not
-                        // run it when applicable: If we don't, in the case of Coulomb, it will conduct
-                        // an unnecessary computation that will result in the [correct] 0 Vector. In the
-                        // case of LJ, it will produce incorrect results, as it relies on cached
-                        // water-water LJ values, overriding the 0 values in the actual atoms.
-                        let calc_lj =
-                            tgt.element == Element::Oxygen && src.element == Element::Oxygen;
-                        let calc_coulomb =
-                            tgt.element != Element::Oxygen && src.element != Element::Oxygen;
-
-                        if !calc_lj && !calc_coulomb {
-                            continue;
-                        }
-
-                        let f = f_nonbonded(
-                            Some(&mut w_virial_local),
-                            tgt,
-                            src,
-                            &self.cell,
-                            false,
-                            LjTableIndices::WaterOnWater,
-                            &self.lj_tables,
-                            calc_lj,
-                            calc_coulomb,
-                        );
-
-                        // add to the right components (Newton’s 3rd law)
-                        match ttag {
-                            S::O => {
-                                fwi.f_o += f;
-                            }
-                            S::H0 => {
-                                fwi.f_h0 += f;
-                            }
-                            S::H1 => {
-                                fwi.f_h1 += f;
-                            }
-                            S::M => {
-                                fwi.f_m += f;
-                            }
-                        }
-                        match stag {
-                            S::O => {
-                                fwj.f_o -= f;
-                            }
-                            S::H0 => {
-                                fwj.f_h0 -= f;
-                            }
-                            S::H1 => {
-                                fwj.f_h1 -= f;
-                            }
-                            S::M => {
-                                fwj.f_m -= f;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        (result, w_virial_local)
-    }
 }
 
-/// Part of the OPC algorithm; EP/M doesn't move directly. We take into account
-/// the Coulomb force on it by applying to O and H atoms.
-fn project_ep_force_to_real_sites(o: Vec3, h0: Vec3, h1: Vec3, f_m: Vec3) -> (Vec3, Vec3, Vec3) {
+/// Part of the OPC algorithm; EP/M doesn't move directly, and is massless. We take into account
+/// the Coulomb force on it by applying it instead to O and H atoms.
+fn project_ep_force_to_real_sites(forces: &mut ForcesOnWaterMol, o: Vec3, h0: Vec3, h1: Vec3) {
+    let f_m = forces.f_m;
+
     // Geometry in O-centered frame
     let r_O_H0 = h0 - o;
     let r_O_H1 = h1 - o;
@@ -514,5 +259,9 @@ fn project_ep_force_to_real_sites(o: Vec3, h0: Vec3, h1: Vec3, f_m: Vec3) -> (Ve
     let fh = fm_perp * scale; // contribution that goes to each H
     let fo = f_m - fh * 2.0; // remaining force goes to O
 
-    (fo, fh, fh)
+    // Force on M/EP is now zero, and we've modified the forces on the other atoms from it.
+    forces.f_m = Vec3::new_zero();
+    forces.f_o += fo;
+    forces.f_h0 += fh;
+    forces.f_h1 += fh;
 }

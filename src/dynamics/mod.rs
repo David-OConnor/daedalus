@@ -139,7 +139,7 @@ const SHAKE_TOL: f64 = 1.0e-4; // Å
 const SHAKE_MAX_IT: usize = 100;
 
 // Every this many steps, re-
-const CENTER_SIMBOX_RATIO: usize = 20;
+const CENTER_SIMBOX_RATIO: usize = 30;
 
 #[derive(Debug)]
 pub struct ParamError {
@@ -347,7 +347,12 @@ pub struct MdState {
     water: Vec<WaterMol>,
     lj_tables: LjTables,
     hydrogen_md_type: HydrogenMdType,
+    // todo: Hmm... Is this DRY with forces_on_water? Investigate.
     pub water_pme_sites_forces: Vec<[Vec3; 3]>,
+    /// We use this for our water molecules, as part of velocity Verlet. We don't
+    /// need to store this state for non-water VV, because we only need the accelerations from those,
+    /// which are present in the atom state.
+    forces_on_water: Vec<ForcesOnWaterMol>, // indexed by water mol.
 }
 
 impl MdState {
@@ -369,9 +374,8 @@ impl MdState {
             // self.max_disp_sq = self.max_disp_sq.max((a.vel * dt).magnitude_squared());
         }
 
-        // todo.
-        let mut f_on_water = vec![ForcesOnWaterMol::default(); self.water.len()];
-        self.water_vv_first_half_and_drift(&mut f_on_water, dt, dt_half);
+        // self.water_vv_first_half_and_drift(dt, &mut forces_on_water, dt_half);
+        self.water_vv_first_half_and_drift(dt, dt_half);
 
         // The order we perform these steps is important.
         if let HydrogenMdType::Fixed(_) = &self.hydrogen_md_type {
@@ -379,10 +383,11 @@ impl MdState {
         }
 
         // Reset acceleration and virial pair. We must reset the virial pair prior to accumulating
-        // it, which we do when calculating non-bonded forces.
+        // it, which we do when calculating non-bonded forces. Also reset forces on water.
         for a in &mut self.atoms {
             a.accel = Vec3::new_zero();
         }
+        self.forces_on_water.fill(Default::default());
         self.barostat.virial_pair_kcal = 0.0;
 
         // Apply all forces here --------
@@ -410,7 +415,6 @@ impl MdState {
             start = Instant::now();
         }
 
-        // todo temp rm
         self.apply_dihedral_forces(false);
         if self.step_count == 0 {
             let elapsed = start.elapsed();
@@ -451,7 +455,8 @@ impl MdState {
             a.vel += a.accel * dt_half;
         }
 
-        self.water_vv_second_half(&mut f_on_water, dt_half);
+        // self.water_vv_second_half(&mut self.forces_on_water, dt_half);
+        self.water_vv_second_half(dt_half);
 
         if let HydrogenMdType::Fixed(_) = &self.hydrogen_md_type {
             self.rattle_hydrogens();

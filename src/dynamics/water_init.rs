@@ -1,4 +1,6 @@
-//! Code for initializing water molecules, including assigning initial positions and velocities.
+//! Code for initializing water molecules, including assigning quantity, initial positions, and
+//! velocities. Set up to meet density, pressure, and or temperature targets. Not specific to the
+//! water model used.
 
 use std::f64::consts::TAU;
 
