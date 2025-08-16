@@ -1,7 +1,7 @@
 use bio_files::amber_params::{AngleBendingParams, BondStretchingParams, DihedralParams};
 use lin_alg::f64::{Vec3, calc_dihedral_angle_v2};
 
-use crate::dynamics::EPS;
+const EPS: f64 = 1e-10;
 
 /// Returns the force on the atom at position 0. Negate this for the force on posit 1.
 pub fn f_bond_stretching(posit_0: Vec3, posit_1: Vec3, params: &BondStretchingParams) -> Vec3 {

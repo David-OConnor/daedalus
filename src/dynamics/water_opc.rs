@@ -17,12 +17,13 @@
 //! to be cheaper, and more robust than Shake/Rattle. It's less general, but it works here.
 //! Settle is specifically tailored for three-atom rigid bodies.
 
+use std::ops::AddAssign;
+
 use lin_alg::f64::{Quaternion, Vec3, X_VEC, Z_VEC};
 use na_seq::Element;
 
 use crate::dynamics::{
-    ACCEL_CONVERSION, AtomDynamics, MdState,
-    non_bonded::{CHARGE_UNIT_SCALER},
+    ACCEL_CONVERSION, AtomDynamics, MdState, non_bonded::CHARGE_UNIT_SCALER,
     water_settle::settle_opc,
 };
 
@@ -60,6 +61,12 @@ const Q_EP: f64 = -2. * Q_H;
 /// Contains 4 atoms for each water molecules, at a given time step. Note that these
 /// are not independent, but are useful in our general MD APIs, for compatibility with
 /// non-water atoms.
+///
+/// Note: We currently don't use accel value on each atom directly, but use a `ForcesOnAtoms` abstraction.
+///
+/// Important: We repurpose the `accel` field of `AtomDynamics` to store forces instead. These differ
+/// by a factor of mass.
+/// todo: We may or may not change this A/R.
 pub struct WaterMol {
     /// Chargeless; its charge is represented at the offset "M" or "EP".
     /// The only Lennard Jones/Vdw source. Has mass.
@@ -67,7 +74,6 @@ pub struct WaterMol {
     /// Hydrogens: carries charge, but no VdW force; have mass.
     pub h0: AtomDynamics,
     pub h1: AtomDynamics,
-    // todo: is this called "M", or "EP"? Have seen both.
     /// The massless, charged particle offset from O. Also known as EP.
     pub m: AtomDynamics,
 }
@@ -97,6 +103,7 @@ impl WaterMol {
             element: Element::Hydrogen,
             posit: h0_pos,
             vel,
+            // This is actually force for our purposes, in the context of water molecules.
             accel: Vec3::new_zero(),
             mass: H_MASS,
             partial_charge: Q_H,
@@ -134,39 +141,76 @@ impl WaterMol {
     }
 
     /// Called twice each step, as part of the SETTLE algorithm.
-    fn settle_half_kick(&mut self, f_on_this: &ForcesOnWaterMol, dt_half: f64) {
-        self.o.vel += f_on_this.f_o * ACCEL_CONVERSION * dt_half / self.o.mass;
-        self.h0.vel += f_on_this.f_h0 * ACCEL_CONVERSION * dt_half / self.h0.mass;
-        self.h1.vel += f_on_this.f_h1 * ACCEL_CONVERSION * dt_half / self.h1.mass;
+    // fn settle_half_kick(&mut self, f_on_this: &ForcesOnWaterMol, dt_half: f64) {
+    fn settle_half_kick(&mut self, dt_half: f64) {
+        self.o.vel += self.o.accel * ACCEL_CONVERSION * dt_half / self.o.mass;
+        self.h0.vel += self.h0.accel * ACCEL_CONVERSION * dt_half / self.h0.mass;
+        self.h1.vel += self.h1.accel * ACCEL_CONVERSION * dt_half / self.h1.mass;
     }
-}
 
-/// Per-water, per-site force accumulator. Used transiently in `step_water`.
-/// This is the force *on* each atom in the molecule.
-#[derive(Clone, Copy, Default)]
-pub struct ForcesOnWaterMol {
-    pub f_o: Vec3,
-    pub f_h0: Vec3,
-    pub f_h1: Vec3,
-    /// SETTLE/constraint will redistribute force on M/EP.
-    pub f_m: Vec3,
+    /// Part of the OPC algorithm; EP/M doesn't move directly, and is massless. We take into account
+    /// the Coulomb force on it by applying it instead to O and H atoms.
+    ///
+    /// We use the accel field as a stand-in for force.
+    fn project_ep_force_to_real_sites(&mut self) {
+        // Geometry in O-centered frame
+        let r_O_H0 = self.h0.posit - self.o.posit;
+        let r_O_H1 = self.h1.posit - self.o.posit;
+
+        let s = r_O_H0 + r_O_H1;
+        let s_norm = s.magnitude();
+
+        if s_norm < 1e-12 {
+            // Degenerate geometry: drop EP force this step
+            self.m.accel = Vec3::new_zero();
+            return;
+        }
+
+        // todo: If you use this approach, clarify what's force, and what's accel.
+
+        let f_m = self.m.accel;
+
+        // Unit bisector and projection operator P = (I - uu^T)/|s|
+        let u = s / s_norm;
+        let fm_parallel = u * f_m.dot(u);
+        let fm_perp = f_m - fm_parallel; // (I - uu^T) f_m
+        let scale = O_EP_R_0 / s_norm; // d / |s|
+
+        // Chain rule: ∂rM/∂rO = I - 2 d P ;  ∂rM/∂rHk = d P
+        // Because P is symmetric, (∂rM/∂ri)^T Fm == same expression with P acting on Fm.
+        let fh = fm_perp * scale; // contribution that goes to each H
+        let fo = f_m - fh * 2.0; // remaining force goes to O
+
+        // Force on M/EP is now zero, and we've modified the forces on the other atoms from it.
+        self.m.accel = Vec3::new_zero();
+        self.o.accel += fo;
+        self.h0.accel += fh;
+        self.h1.accel += fh;
+    }
 }
 
 impl MdState {
     /// Add reciprocal (PME) water-site forces into a per-water force array.
     /// Expects self.water_pme_sites_forces[iw] == [f_M, f_H0, f_H1] at current coords.
-    fn add_recip_to_water_forces(&self, fw: &mut [ForcesOnWaterMol]) {
+    ///
+    /// Note that because this is for recip only, we don't apply force to O, because it's
+    /// chargeless. (LJ only)
+    // fn add_recip_to_water_forces(&self, fw: &mut [ForcesOnWaterMol]) {
+    fn add_recip_to_water_forces(&mut self) {
         // todo: QC that this is set up and working.
-        for (iw, wi) in fw.iter_mut().enumerate() {
+        for (i, water_mol) in self.water.iter_mut().enumerate() {
             let [f_m, f_h0, f_h1] = self
+                // todo: Hmmmm... do we want this pme_sites_forces at all?
                 .water_pme_sites_forces
-                .get(iw)
+                .get(i)
                 .copied()
                 .unwrap_or([Vec3::new_zero(); 3]);
 
-            wi.f_m += f_m;
-            wi.f_h0 += f_h0;
-            wi.f_h1 += f_h1;
+            water_mol.m.accel += f_m;
+            water_mol.h0.accel += f_h0;
+            water_mol.h1.accel += f_h1;
+
+
         }
     }
 
@@ -187,13 +231,15 @@ impl MdState {
         for iw in 0..self.water.len() {
             let w = &mut self.water[iw];
             // let mut forces = &mut f_on_water[iw];
-            let mut forces = &mut self.forces_on_water[iw];
+            // let forces = &mut self.forces_on_water[iw];
 
             // Take the force on M/EP, and instead apply it to the other atoms. This leaves it at 0.
-            project_ep_force_to_real_sites(&mut forces, w.o.posit, w.h0.posit, w.h1.posit);
+            // project_ep_force_to_real_sites(forces, w.o.posit, w.h0.posit, w.h1.posit);
+            w.project_ep_force_to_real_sites();
 
             // First half-kick (uses your existing conversion)
-            w.settle_half_kick(forces, dt_half);
+            // w.settle_half_kick(forces, dt_half);
+            w.settle_half_kick(dt_half);
 
             // Drift the rigid molecule with SETTLE
             settle_opc(&mut w.o, &mut w.h0, &mut w.h1, dt, &self.cell);
@@ -225,43 +271,51 @@ impl MdState {
         for iw in 0..self.water.len() {
             let w = &mut self.water[iw];
             // let forces = &mut f_on_water[iw];
-            let forces = &mut self.forces_on_water[iw];
+            // let forces = &mut self.forces_on_water[iw];
 
             // Take the force on M/EP, and instead apply it to the other atoms. This leaves it at 0.
-            project_ep_force_to_real_sites(forces, w.o.posit, w.h0.posit, w.h1.posit);
+            // project_ep_force_to_real_sites(forces, w.o.posit, w.h0.posit, w.h1.posit);
+            w.project_ep_force_to_real_sites();
 
             // Second half-kick
-            w.settle_half_kick(forces, dt_half);
+            // w.settle_half_kick(forces, dt_half);
+            w.settle_half_kick(dt_half);
         }
     }
 }
 
-/// Part of the OPC algorithm; EP/M doesn't move directly, and is massless. We take into account
-/// the Coulomb force on it by applying it instead to O and H atoms.
-fn project_ep_force_to_real_sites(forces: &mut ForcesOnWaterMol, o: Vec3, h0: Vec3, h1: Vec3) {
-    let f_m = forces.f_m;
-
-    // Geometry in O-centered frame
-    let r_O_H0 = h0 - o;
-    let r_O_H1 = h1 - o;
-
-    let s = r_O_H0 + r_O_H1;
-    let s_norm = s.magnitude();
-
-    // Unit bisector and projection operator P = (I - uu^T)/|s|
-    let u = s / s_norm;
-    let fm_parallel = u * f_m.dot(u);
-    let fm_perp = f_m - fm_parallel; // (I - uu^T) f_m
-    let scale = O_EP_R_0 / s_norm; // d / |s|
-
-    // Chain rule: ∂rM/∂rO = I - 2 d P ;  ∂rM/∂rHk = d P
-    // Because P is symmetric, (∂rM/∂ri)^T Fm == same expression with P acting on Fm.
-    let fh = fm_perp * scale; // contribution that goes to each H
-    let fo = f_m - fh * 2.0; // remaining force goes to O
-
-    // Force on M/EP is now zero, and we've modified the forces on the other atoms from it.
-    forces.f_m = Vec3::new_zero();
-    forces.f_o += fo;
-    forces.f_h0 += fh;
-    forces.f_h1 += fh;
-}
+// /// Part of the OPC algorithm; EP/M doesn't move directly, and is massless. We take into account
+// /// the Coulomb force on it by applying it instead to O and H atoms.
+// fn project_ep_force_to_real_sites(forces: &mut ForcesOnWaterMol, o: Vec3, h0: Vec3, h1: Vec3) {
+//     let f_m = forces.f_m;
+//
+//     // Geometry in O-centered frame
+//     let r_O_H0 = h0 - o;
+//     let r_O_H1 = h1 - o;
+//
+//     let s = r_O_H0 + r_O_H1;
+//     let s_norm = s.magnitude();
+//
+//     if s_norm < 1e-12 {
+//         // Degenerate geometry: drop EP force this step
+//         forces.f_m = Vec3::new_zero();
+//         return;
+//     }
+//
+//     // Unit bisector and projection operator P = (I - uu^T)/|s|
+//     let u = s / s_norm;
+//     let fm_parallel = u * f_m.dot(u);
+//     let fm_perp = f_m - fm_parallel; // (I - uu^T) f_m
+//     let scale = O_EP_R_0 / s_norm; // d / |s|
+//
+//     // Chain rule: ∂rM/∂rO = I - 2 d P ;  ∂rM/∂rHk = d P
+//     // Because P is symmetric, (∂rM/∂ri)^T Fm == same expression with P acting on Fm.
+//     let fh = fm_perp * scale; // contribution that goes to each H
+//     let fo = f_m - fh * 2.0; // remaining force goes to O
+//
+//     // Force on M/EP is now zero, and we've modified the forces on the other atoms from it.
+//     forces.f_m = Vec3::new_zero();
+//     forces.f_o += fo;
+//     forces.f_h0 += fh;
+//     forces.f_h1 += fh;
+// }

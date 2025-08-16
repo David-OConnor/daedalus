@@ -7,9 +7,13 @@ use std::time::Instant;
 use lin_alg::f64::Vec3;
 
 use crate::dynamics::{
-    AtomDynamics, CUTOFF_NEIGHBORS, MdState, SKIN, SKIN_SQ_DIV_4, ambient::SimBox,
-    water_opc::WaterMol,
+    AtomDynamics, MdState, ambient::SimBox, spme::LONG_RANGE_CUTOFF, water_opc::WaterMol,
 };
+
+// These are for non-bonded neighbor list construction.
+const SKIN: f64 = 2.0; // Å – rebuild list if an atom moved >½·SKIN. ~2Å.
+const SKIN_SQ: f64 = SKIN * SKIN;
+const SKIN_SQ_DIV_4: f64 = SKIN_SQ / 4.;
 
 #[derive(Default)]
 /// Non-bonded neighbors; an important optimization for Van der Waals and Coulomb interactions.
@@ -189,7 +193,7 @@ pub fn build_neighbors(
     cell: &SimBox,
     symmetric: bool,
 ) {
-    const CUTOFF_SKIN_SQ: f64 = (CUTOFF_NEIGHBORS + SKIN) * (CUTOFF_NEIGHBORS + SKIN);
+    const CUTOFF_SKIN_SQ: f64 = (LONG_RANGE_CUTOFF + SKIN) * (LONG_RANGE_CUTOFF + SKIN);
 
     neighbors.clear();
     neighbors.resize(tgt_posits.len(), Vec::new());

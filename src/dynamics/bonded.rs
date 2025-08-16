@@ -6,9 +6,11 @@
 use na_seq::Element::Hydrogen;
 
 use crate::dynamics::{
-    EPS, MdState, SHAKE_MAX_IT, SHAKE_TOL, bonded_forces, prep::HydrogenMdType, split2_mut,
-    split3_mut, split4_mut,
+    MdState, SHAKE_MAX_IT, SHAKE_TOL, bonded_forces, prep::HydrogenMdType, split2_mut, split3_mut,
+    split4_mut,
 };
+
+const EPS_SHAKE_RATTLE: f64 = 1.0e-8;
 
 impl MdState {
     pub fn apply_bond_stretching_forces(&mut self) {
@@ -103,7 +105,7 @@ impl MdState {
                 };
 
                 // λ = (r² − r₀²) / (2·inv_m · r_ij·r_ij)
-                let lambda = (dist_sq - data.r0_sq) / (2.0 * inv_m * dist_sq.max(EPS));
+                let lambda = (dist_sq - data.r0_sq) / (2.0 * inv_m * dist_sq.max(EPS_SHAKE_RATTLE));
                 let corr = diff * lambda; // vector correction
 
                 ai.posit += corr / ai.mass;
@@ -138,7 +140,7 @@ impl MdState {
             let inv_mass = data.inv_mass.unwrap();
 
             // λ' = (v_ij·r_ij) / (inv_m · r_ij·r_ij)
-            let lambda_p = v_meas.dot(r_meas) / (inv_mass * r_sq.max(EPS));
+            let lambda_p = v_meas.dot(r_meas) / (inv_mass * r_sq.max(EPS_SHAKE_RATTLE));
             let corr_v = r_meas * lambda_p;
 
             ai.vel += corr_v / ai.mass;

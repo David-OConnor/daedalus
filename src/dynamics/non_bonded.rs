@@ -1,6 +1,9 @@
 //! For VDW and Coulomb forces
 
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    ops::AddAssign,
+};
 
 use lin_alg::f64::Vec3;
 use rayon::prelude::*;
@@ -9,11 +12,10 @@ use crate::{
     dynamics::{
         AtomDynamics, MdState,
         ambient::SimBox,
-        spme::{EWALD_ALPHA, PME_MESH_SPACING, force_coulomb_ewald_real},
+        spme::{PME_MESH_SPACING, force_coulomb_ewald_real},
         water_opc,
-        water_opc::ForcesOnWaterMol,
     },
-    forces::force_lj,
+    forces::{force_coulomb, force_lj},
     molecule::Atom,
 };
 
@@ -100,6 +102,26 @@ pub fn setup_lj_cache(
 enum LjIndexType {
     DynDyn,
     DynStatic,
+}
+
+/// Per-water, per-site force accumulator. Used transiently when applying nonbonded forces.
+/// This is the force *on* each atom in the molecule.
+#[derive(Clone, Copy, Default)]
+struct ForcesOnWaterMol {
+    pub f_o: Vec3,
+    pub f_h0: Vec3,
+    pub f_h1: Vec3,
+    /// SETTLE/constraint will redistribute force on M/EP.
+    pub f_m: Vec3,
+}
+
+impl AddAssign<Self> for ForcesOnWaterMol {
+    fn add_assign(&mut self, rhs: Self) {
+        self.f_o += rhs.f_o;
+        self.f_h0 += rhs.f_h0;
+        self.f_h1 += rhs.f_h1;
+        self.f_m += rhs.f_m;
+    }
 }
 
 /// A helper. Applies non-bonded force in parallel over a set of atoms, with indices assigned
@@ -329,6 +351,10 @@ impl MdState {
                 self.water[i].m.accel += per_mol_water_accum[i].f_m;
                 self.water[i].h0.accel += per_mol_water_accum[i].f_h0;
                 self.water[i].h1.accel += per_mol_water_accum[i].f_h1;
+
+                // todo: Which are we using: Accel, or forces_on_water? For now, update both.
+                // todo: This should be harmless, although perhaps confusing.
+                // self.forces_on_water[i] += per_mol_water_accum[i];
             }
         }
 
@@ -398,6 +424,10 @@ impl MdState {
                 self.water[i].m.accel += per_mol_water_accum[i].f_m;
                 self.water[i].h0.accel += per_mol_water_accum[i].f_h0;
                 self.water[i].h1.accel += per_mol_water_accum[i].f_h1;
+
+                // todo: Which are we using: Accel, or forces_on_water? For now, update both.
+                // todo: This should be harmless, although perhaps confusing.
+                // self.forces_on_water[i] += per_mol_water_accum[i];
             }
         }
 
@@ -500,6 +530,10 @@ impl MdState {
                 self.water[i].m.accel += per_mol_water_accum[i].f_m; // massless: handled by constraints/SETTLE
                 self.water[i].h0.accel += per_mol_water_accum[i].f_h0;
                 self.water[i].h1.accel += per_mol_water_accum[i].f_h1;
+
+                // todo: Which are we using: Accel, or forces_on_water? For now, update both.
+                // todo: This should be harmless, although perhaps confusing.
+                // self.forces_on_water[i] += per_mol_water_accum[i];
             }
         }
 
@@ -560,13 +594,17 @@ pub fn f_nonbonded(
     let mut f_coulomb = if !calc_coulomb {
         Vec3::new_zero()
     } else {
-        force_coulomb_ewald_real(
-            dir,
-            dist,
-            tgt.partial_charge,
-            src.partial_charge,
-            EWALD_ALPHA,
-        )
+        // todo temp removed; using the standard Coulomb force (No approximations/optimziations)
+        // todo for now while troubleshooting long-range portion of SPME/ewald.
+
+        // force_coulomb_ewald_real(
+        //     dir,
+        //     dist,
+        //     tgt.partial_charge,
+        //     src.partial_charge,
+        // )
+
+        force_coulomb(dir, dist, tgt.partial_charge, src.partial_charge, 1e-6)
     };
 
     // See Amber RM, section 15, "1-4 Non-Bonded Interaction Scaling"

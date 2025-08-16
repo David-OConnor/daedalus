@@ -1,16 +1,23 @@
-//! For water molecules, the sim box, thermostat etc.
+//! This module deals with the sim box, thermostat, and barostat.
+//!
+//! We set up Sim box, or cell, which is a rectangular prism (cube currently) which wraps at each face,
+//! indefinitely. Its purpose is to simulate an infinity of water molecules. This box covers the atoms of interest,
+//! but atoms in the neighboring (tiled) boxes influence the system as well. We use the concept of
+//! a "minimum image" to find the closest copy of an item to a given site, among all tiled boxes.
 
 use lin_alg::f64::Vec3;
 use na_seq::Element;
 use rand::prelude::ThreadRng;
 
-use crate::dynamics::{ACCEL_CONVERSION_INV, KB, MdState, prep::HydrogenMdType, AtomDynamics};
+use crate::dynamics::{ACCEL_CONVERSION_INV, AtomDynamics, KB, MdState, prep::HydrogenMdType};
 
 // If we are setting up as a pad around all relevant atoms
 const SIMBOX_PAD: f64 = 7.0; // Å
 
 // If we are setting up as a fixed size.
-const SIMBOX_WIDTH: f64 = 20.; // Å
+
+// "The ewald real-space cutoff (and neighbor-list radius) must be 1/2 of the smallest box edge length
+const SIMBOX_WIDTH: f64 = 24.; // Å
 const SIMBOX_WIDTH_DIV2: f64 = SIMBOX_WIDTH / 2.0;
 
 const BAR_PER_KCAL_MOL_PER_A3: f64 = 69476.95457055373;
@@ -22,6 +29,7 @@ const BAR_PER_KCAL_MOL_PER_A3: f64 = 69476.95457055373;
 pub struct SimBox {
     pub bounds_low: Vec3,
     pub bounds_high: Vec3,
+    extent: Vec3,
 }
 
 impl SimBox {
@@ -39,6 +47,7 @@ impl SimBox {
         Self {
             bounds_low,
             bounds_high,
+            extent: bounds_high - bounds_low,
         }
     }
 
@@ -57,16 +66,13 @@ impl SimBox {
         Self {
             bounds_low,
             bounds_high,
+            extent: bounds_high - bounds_low,
         }
-    }
-
-    pub fn extent(&self) -> Vec3 {
-        self.bounds_high - self.bounds_low
     }
 
     /// Wrap an absolute coordinate back into the box (orthorhombic)
     pub fn wrap(&self, p: Vec3) -> Vec3 {
-        let ext = self.extent();
+        let ext = &self.extent;
 
         assert!(
             ext.x > 0.0 && ext.y > 0.0 && ext.z > 0.0,
@@ -76,18 +82,17 @@ impl SimBox {
         );
 
         // rem_euclid keeps the value in [0, ext)
-        let wrapped = Vec3::new(
+        Vec3::new(
             (p.x - self.bounds_low.x).rem_euclid(ext.x) + self.bounds_low.x,
             (p.y - self.bounds_low.y).rem_euclid(ext.y) + self.bounds_low.y,
             (p.z - self.bounds_low.z).rem_euclid(ext.z) + self.bounds_low.z,
-        );
-
-        wrapped
+        )
     }
 
-    /// Minimum-image displacement vector (no √)
+    /// Minimum-image displacement vector. Find the closest copy
+    /// of an item to a given site, among all tiled boxes. (?)
     pub fn min_image(&self, dv: Vec3) -> Vec3 {
-        let ext = self.extent();
+        let ext = &self.extent;
         debug_assert!(ext.x > 0.0 && ext.y > 0.0 && ext.z > 0.0);
 
         Vec3::new(
@@ -123,9 +128,10 @@ impl SimBox {
         // Enforce low <= high per component
         self.bounds_low = Vec3::new(lo.x.min(hi.x), lo.y.min(hi.y), lo.z.min(hi.z));
         self.bounds_high = Vec3::new(lo.x.max(hi.x), lo.y.max(hi.y), lo.z.max(hi.z));
+        self.extent = self.bounds_high - self.bounds_low;
 
         debug_assert!({
-            let ext = self.extent();
+            let ext = &self.extent;
             ext.x > 0.0 && ext.y > 0.0 && ext.z > 0.0
         });
     }
@@ -223,14 +229,14 @@ impl MdState {
     }
 
     // --- CSVR (Bussi) thermostat: canonical velocity-rescale ---
-    pub fn apply_thermostat_csvr(&mut self, dt: f64, t_target_k: f64, tau_t_ps: f64) {
+    pub fn apply_thermostat_csvr(&mut self, dt: f64, t_target_k: f64) {
         use rand_distr::{ChiSquared, Distribution, StandardNormal};
 
         let dof = self.dof_for_thermo().max(2) as f64;
         let ke = self.kinetic_energy_kcal();
         let ke_bar = 0.5 * dof * KB * t_target_k;
 
-        let c = (-dt / tau_t_ps).exp();
+        let c = (-dt / self.barostat.tau_temp).exp();
         // Draw the two random variates used in the exact CSVR update:
         let r: f64 = StandardNormal.sample(&mut self.barostat.rng); // N(0,1)
         let chi = ChiSquared::new(dof - 1.0)

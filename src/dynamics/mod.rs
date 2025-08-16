@@ -108,21 +108,13 @@ use crate::{
         ambient::BerendsenBarostat,
         non_bonded::{CHARGE_UNIT_SCALER, LjTables},
         prep::HydrogenMdType,
-        water_opc::{ForcesOnWaterMol, WaterMol},
+        water_opc::WaterMol,
     },
     molecule::Atom,
 };
-// Verlet list parameters
-
-// These are for non-bonded neighbor list construction.
-const CUTOFF_NEIGHBORS: f64 = 10.0; // 9-10 Å
-const SKIN: f64 = 2.0; // Å – rebuild list if an atom moved >½·SKIN. ~2Å.
-const SKIN_SQ: f64 = SKIN * SKIN;
-const SKIN_SQ_DIV_4: f64 = SKIN_SQ / 4.;
 
 const SNAPSHOT_RATIO: usize = 1;
 
-const EPS: f64 = 1.0e-8;
 /// Convert convert kcal mol⁻¹ Å⁻¹ (Values in the Amber parameter files) to amu Å ps⁻². Multiply all bonded
 /// accelerations by this.
 const ACCEL_CONVERSION: f64 = 418.4;
@@ -349,13 +341,31 @@ pub struct MdState {
     hydrogen_md_type: HydrogenMdType,
     // todo: Hmm... Is this DRY with forces_on_water? Investigate.
     pub water_pme_sites_forces: Vec<[Vec3; 3]>,
-    /// We use this for our water molecules, as part of velocity Verlet. We don't
-    /// need to store this state for non-water VV, because we only need the accelerations from those,
-    /// which are present in the atom state.
-    forces_on_water: Vec<ForcesOnWaterMol>, // indexed by water mol.
+    // /// We use this for our water molecules, as part of velocity Verlet. We don't
+    // /// need to store this state for non-water VV, because we only need the accelerations from those,
+    // /// which are present in the atom state.
+    // forces_on_water: Vec<ForcesOnWaterMol>, // indexed by water mol.
 }
 
 impl MdState {
+    /// Reset acceleration and virial pair. Do this each step after the first half-step and drift, and
+    /// shaking the fixed hydrogens.
+    /// We must reset the virial pair prior to accumulating it, which we do when calculating non-bonded
+    /// forces. Also reset forces on water.
+    fn reset_accels(&mut self) {
+        for a in &mut self.atoms {
+            a.accel = Vec3::new_zero();
+        }
+        for mol in &mut self.water {
+            mol.o.accel = Vec3::new_zero();
+            mol.m.accel = Vec3::new_zero();
+            mol.h0.accel = Vec3::new_zero();
+            mol.h1.accel = Vec3::new_zero();
+        }
+
+        // self.forces_on_water.fill(Default::default());
+        self.barostat.virial_pair_kcal = 0.0;
+    }
     /// One **Velocity-Verlet** step (leap-frog style) of length `dt` is in picoseconds (10^-12),
     /// with typical values of 0.001, or 0.002ps (1 or 2fs).
     /// This method orchestrates the dynamics at each time step.
@@ -374,6 +384,10 @@ impl MdState {
             // self.max_disp_sq = self.max_disp_sq.max((a.vel * dt).magnitude_squared());
         }
 
+        // todo: Consider applying the thermostat between the first half-kick and drift.
+        // todo: e.g. half-kick, then shake H and settle velocity water (?), then thermostat, then drift. (?) ,
+        // todo then settle positions?
+
         // self.water_vv_first_half_and_drift(dt, &mut forces_on_water, dt_half);
         self.water_vv_first_half_and_drift(dt, dt_half);
 
@@ -382,13 +396,7 @@ impl MdState {
             self.shake_hydrogens();
         }
 
-        // Reset acceleration and virial pair. We must reset the virial pair prior to accumulating
-        // it, which we do when calculating non-bonded forces. Also reset forces on water.
-        for a in &mut self.atoms {
-            a.accel = Vec3::new_zero();
-        }
-        self.forces_on_water.fill(Default::default());
-        self.barostat.virial_pair_kcal = 0.0;
+        self.reset_accels();
 
         // Apply all forces here --------
 
@@ -471,8 +479,9 @@ impl MdState {
         }
 
         // todo: Temp rm. These are broken.
-        // self.apply_thermostat_csvr(dt, self.temp_target, self.barostat.tau_temp);
+        // I believe we must run barostat prior to thermostat, in our current configuration.
         // self.apply_barostat_berendsen(dt);
+        // self.apply_thermostat_csvr(dt, self.temp_target, self.barostat.tau_temp);
 
         self.time += dt;
         self.step_count += 1;
@@ -484,7 +493,6 @@ impl MdState {
         if self.step_count % CENTER_SIMBOX_RATIO == 0 {
             self.cell = SimBox::new_fixed_size(&self.atoms);
         }
-
 
         if self.step_count % SNAPSHOT_RATIO == 0 {
             self.take_snapshot();
