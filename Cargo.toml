@@ -18,6 +18,8 @@ na_seq = "0.3.1"
 bio_apis = {  version = "0.1.6", features = ["encode"] }
 bio_files = "0.2.6"
 mcubes = "0.1.4"
+#ewald = "0.1.0"
+ewald = { path = "../ewald" }
 
 # For loading and saving config
 bincode = "2.0.1"
@@ -48,10 +50,10 @@ regex = "1.11.1"
 
 itertools = "0.14.0" # For combinations when matching angles in MD.
 
-# We use this to get the erf error function for use in the Ewald approximation in MD
-# todo: Way to avoid this dep for something lighter?
-statrs = "0.18.0"
-rustfft = "6.4.0" # For Ewald long range
+## We use this to get the erf error function for use in the Ewald approximation in MD
+## todo: Way to avoid this dep for something lighter?
+#statrs = "0.18.0"
+#rustfft = "6.4.0" # For Ewald long range
 
 # We use these when developing locally to reduce friction.
 [patch.crates-io]
@@ -62,6 +64,7 @@ rustfft = "6.4.0" # For Ewald long range
 #bio_apis = { path = "../bio_apis" }
 #mcubes = { path = "../mcubes" }
 #bio_files = { path = "../bio_files" }
+#ewald = { path = "../ewald" }
 
 
 

@@ -83,7 +83,6 @@ mod bonded_forces;
 mod neighbors;
 mod non_bonded;
 pub mod prep;
-mod spme;
 mod water_init;
 mod water_opc;
 mod water_settle;
