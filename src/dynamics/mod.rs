@@ -116,7 +116,7 @@ use crate::{
 const SNAPSHOT_RATIO: usize = 1;
 
 /// Convert convert kcal mol⁻¹ Å⁻¹ (Values in the Amber parameter files) to amu Å ps⁻². Multiply all bonded
-/// accelerations by this.
+/// accelerations by this. TODO: we are currently multiplying *all* accelerations by this.
 const ACCEL_CONVERSION: f64 = 418.4;
 pub const ACCEL_CONVERSION_INV: f64 = 1. / ACCEL_CONVERSION;
 
@@ -341,10 +341,6 @@ pub struct MdState {
     hydrogen_md_type: HydrogenMdType,
     // todo: Hmm... Is this DRY with forces_on_water? Investigate.
     pub water_pme_sites_forces: Vec<[Vec3; 3]>,
-    // /// We use this for our water molecules, as part of velocity Verlet. We don't
-    // /// need to store this state for non-water VV, because we only need the accelerations from those,
-    // /// which are present in the atom state.
-    // forces_on_water: Vec<ForcesOnWaterMol>, // indexed by water mol.
 }
 
 impl MdState {
@@ -363,43 +359,10 @@ impl MdState {
             mol.h1.accel = Vec3::new_zero();
         }
 
-        // self.forces_on_water.fill(Default::default());
         self.barostat.virial_pair_kcal = 0.0;
     }
-    /// One **Velocity-Verlet** step (leap-frog style) of length `dt` is in picoseconds (10^-12),
-    /// with typical values of 0.001, or 0.002ps (1 or 2fs).
-    /// This method orchestrates the dynamics at each time step.
-    pub fn step(&mut self, dt: f64) {
-        let dt_half = 0.5 * dt;
 
-        // First half-kick (v += a dt/2) and drift (x += v dt)
-        // todo: Do we want traditional verlet instead of velocity verlet (VV)?
-        for a in &mut self.atoms {
-            a.vel += a.accel * dt_half; // Half-kick
-            a.posit += a.vel * dt; // Drift
-            a.posit = self.cell.wrap(a.posit);
-
-            // todo: What is this? Implement it, or remove it?
-            // track the largest squared displacement to know when to rebuild the list
-            // self.max_disp_sq = self.max_disp_sq.max((a.vel * dt).magnitude_squared());
-        }
-
-        // todo: Consider applying the thermostat between the first half-kick and drift.
-        // todo: e.g. half-kick, then shake H and settle velocity water (?), then thermostat, then drift. (?) ,
-        // todo then settle positions?
-
-        // self.water_vv_first_half_and_drift(dt, &mut forces_on_water, dt_half);
-        self.water_vv_first_half_and_drift(dt, dt_half);
-
-        // The order we perform these steps is important.
-        if let HydrogenMdType::Fixed(_) = &self.hydrogen_md_type {
-            self.shake_hydrogens();
-        }
-
-        self.reset_accels();
-
-        // Apply all forces here --------
-
+    fn apply_all_forces(&mut self) {
         // Bonded forces
         let mut start = Instant::now();
         self.apply_bond_stretching_forces();
@@ -449,17 +412,55 @@ impl MdState {
             let elapsed = start.elapsed();
             println!("Non-bonded time: {:?} μs", elapsed.as_micros());
         }
+    }
+
+    /// One **Velocity-Verlet** step (leap-frog style) of length `dt` is in picoseconds (10^-12),
+    /// with typical values of 0.001, or 0.002ps (1 or 2fs).
+    /// This method orchestrates the dynamics at each time step.
+    pub fn step(&mut self, dt: f64) {
+        let dt_half = 0.5 * dt;
+
+        // First half-kick (v += a dt/2) and drift (x += v dt)
+        // todo: Do we want traditional verlet instead of velocity verlet (VV)?
+        // Note: We do not apply the accel unit conversion, nor mass division here; they're already
+        // included in this values from the previous step.
+        for a in &mut self.atoms {
+            a.vel += a.accel * dt_half; // Half-kick
+            a.posit += a.vel * dt; // Drift
+            a.posit = self.cell.wrap(a.posit);
+
+            // todo: What is this? Implement it, or remove it?
+            // track the largest squared displacement to know when to rebuild the list
+            // self.max_disp_sq = self.max_disp_sq.max((a.vel * dt).magnitude_squared());
+        }
+
+        // todo: Consider applying the thermostat between the first half-kick and drift.
+        // todo: e.g. half-kick, then shake H and settle velocity water (?), then thermostat, then drift. (?) ,
+        // todo then settle positions?
+
+        // self.water_vv_first_half_and_drift(dt, &mut forces_on_water, dt_half);
+        self.water_vv_first_half_and_drift(dt, dt_half);
+
+        // The order we perform these steps is important.
+        if let HydrogenMdType::Fixed(_) = &self.hydrogen_md_type {
+            self.shake_hydrogens();
+        }
+
+        self.reset_accels();
+        self.apply_all_forces();
 
         // Forces (bonded and nonbonded, to dynamic and water atoms) have been applied; perform other
         // steps required for integration; second half-kick, RATTLE for hydrogens; SETTLE for water. -----
 
-        // Second half-kick using new accelerations, and update accelerations using the atom's mass;
-        // up to this point, the accelerations have been missing that step; this is an optimization to
+        // Second half-kick using the forces calculated this step, and update accelerations using the atom's mass;
+        // Between the accel reset and this step, the accelerations have been missing those factors; this is an optimization to
         // do it once at the end.
         for a in &mut self.atoms {
             // We divide by mass here, once accelerations have been computed in parts above; this
             // is an optimization to prevent dividing each accel component by it.
-            a.accel = a.accel * ACCEL_CONVERSION / a.mass;
+            // This is the step where we A: convert force to accel, and B: Convert units from the param
+            // units to the ones we use in dynamics.
+            a.accel *= ACCEL_CONVERSION / a.mass;
             a.vel += a.accel * dt_half;
         }
 
@@ -470,15 +471,9 @@ impl MdState {
             self.rattle_hydrogens();
         }
 
-        if self.step_count == 0 {
-            start = Instant::now();
-        }
-        if self.step_count == 0 {
-            let elapsed = start.elapsed();
-            println!("Water time: {:?} μs", elapsed.as_micros());
-        }
-
         // todo: Temp rm. These are broken.
+
+        // todo: You may need to update the virial in the barostat.
         // I believe we must run barostat prior to thermostat, in our current configuration.
         // self.apply_barostat_berendsen(dt);
         // self.apply_thermostat_csvr(dt, self.temp_target, self.barostat.tau_temp);
@@ -486,6 +481,7 @@ impl MdState {
         self.time += dt;
         self.step_count += 1;
 
+        // todo: Ratio for this too
         self.build_neighbors_if_needed();
 
         // Experiment: Keeping the simbox centered on the dynamics atom.

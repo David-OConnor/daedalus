@@ -1,6 +1,9 @@
 //! For Smooth-Particle-Mesh_Ewald; a standard approximation for Coulomb forces in MD.
 //! We use this to handle periodic boundary conditions properly, which we use to take the
 //! water molecules into account.
+//!
+
+// todo: How do we handle the dielectric and screening?
 
 use std::f64::consts::{FRAC_2_SQRT_PI, PI, TAU};
 

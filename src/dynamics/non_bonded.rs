@@ -408,10 +408,7 @@ impl MdState {
                     || (vec![ForcesOnWaterMol::default(); n_water_mols], 0.0_f64),
                     |(mut f, wa), (b, wb)| {
                         for i in 0..n_water_mols {
-                            f[i].f_o += b[i].f_o;
-                            f[i].f_m += b[i].f_m;
-                            f[i].f_h0 += b[i].f_h0;
-                            f[i].f_h1 += b[i].f_h1;
+                            f[i] += b[i];
                         }
                         (f, wa + wb)
                     },
@@ -512,10 +509,7 @@ impl MdState {
                     || (vec![ForcesOnWaterMol::default(); n_water_mols], 0.0_f64),
                     |(mut a, wa), (b, wb)| {
                         for i in 0..n_water_mols {
-                            a[i].f_o += b[i].f_o;
-                            a[i].f_m += b[i].f_m;
-                            a[i].f_h0 += b[i].f_h0;
-                            a[i].f_h1 += b[i].f_h1;
+                            a[i] += b[i];
                         }
                         (a, wa + wb)
                     },
@@ -619,6 +613,13 @@ pub fn f_nonbonded(
         *w += diff_wrapped.dot(result);
     }
 
+    // if dist < 4. {
+    // if f_lj.magnitude() > 1e-4 {
+    //     println!("Dist: {dist:.2}, Tgt: {:.2}, Src: {:.2}, f_lj: {:.6}, f_coulomb: {:.2}, Q0: {:.2}, q1: {:.2} els: {}, {}", tgt.posit.x,
+    //              src.posit.x, f_lj.x, f_coulomb.x, tgt.partial_charge, src.partial_charge, src.element, tgt.element);
+    // }
+
+// CAO 2025-08-17: Coul and LJ direction are both consistent.
     // f_lj
     // f_coulomb
     // Vec3::new_zero()
