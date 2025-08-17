@@ -425,6 +425,7 @@ impl MdState {
         // included in this values from the previous step.
         for a in &mut self.atoms {
             a.vel += a.accel * dt_half; // Half-kick
+
             a.posit += a.vel * dt; // Drift
             a.posit = self.cell.wrap(a.posit);
 

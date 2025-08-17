@@ -26,7 +26,7 @@ use na_seq::Element;
 
 use crate::dynamics::{
     ACCEL_CONVERSION, AtomDynamics, MdState, non_bonded::CHARGE_UNIT_SCALER,
-    water_settle::settle_opc,
+    water_settle::settle_drift,
 };
 
 // Constant parameters below are for the OPC water (JPCL, 2014, 5 (21), pp 3863-3871)
@@ -142,10 +142,12 @@ impl WaterMol {
         }
     }
 
-    /// Called twice each step, as part of the SETTLE algorithm.
+    /// Called twice each step, as part of the SETTLE algorithm. We don't velocity to M/EP,
+    /// because it's massless; we rigidly put it in place each step based on geometry.
     /// For the second half-kick, the molecule's `accel` field must have been converted
     /// from force, and contain the unit conversion.
     fn half_kick(&mut self, dt_half: f64) {
+        // println!("ACCEL: {:.3}", self.o.accel.magnitude());
         self.o.vel += self.o.accel * dt_half;
         self.h0.vel += self.h0.accel * dt_half;
         self.h1.vel += self.h1.accel * dt_half;
@@ -222,28 +224,29 @@ impl MdState {
     ///
     /// In addition to the VV half-kick and drift, it handles force projection from M/EP,
     /// and applying SETTLE to main each molecul's rigid geometry.
-    pub fn water_vv_first_half_and_drift(
-        &mut self,
-        dt: f64,
-        dt_half: f64,
-    ) {
+    pub fn water_vv_first_half_and_drift(&mut self, dt: f64, dt_half: f64) {
         let cell = self.cell;
 
         for iw in 0..self.water.len() {
             let w = &mut self.water[iw];
 
             // Take the force on M/EP, and instead apply it to the other atoms. This leaves it at 0.
-            // project_ep_force_to_real_sites(forces, w.o.posit, w.h0.posit, w.h1.posit);
 
-            // todo: Projecting EP only on second step for now. Not sure of the best approach long-term.
-            // w.project_ep_force_to_real_sites();
+            // println!("Water accel: o: {} H0: {}, h1: {}", w.o.accel, w.h0.accel, w.h1.accel);
 
             // First half-kick. Don't apply conversions here, as they've already been applied in the
             // previous step.
             w.half_kick(dt_half);
 
             // Drift the rigid molecule with SETTLE
-            settle_opc(&mut w.o, &mut w.h0, &mut w.h1, dt, &self.cell, &mut self.barostat.virial_pair_kcal);
+            settle_drift(
+                &mut w.o,
+                &mut w.h0,
+                &mut w.h1,
+                dt,
+                &self.cell,
+                &mut self.barostat.virial_pair_kcal,
+            );
 
             // Place EP on the HOH bisector
             {
@@ -263,21 +266,22 @@ impl MdState {
         }
     }
 
-    /// Verlet velocity integration for water, part 2.
+    /// Velocity-Verlet integration for water, part 2.
     /// Forces (as .accel) must be computed prior to this step.
     pub fn water_vv_second_half(&mut self, dt_half: f64) {
         for iw in 0..self.water.len() {
             let w = &mut self.water[iw];
 
             // Take the force on M/EP, and instead apply it to the other atoms. This leaves it at 0.
-            // project_ep_force_to_real_sites(forces, w.o.posit, w.h0.posit, w.h1.posit);
+            // This is the only place where we need it, since we only apply forces once per step; this
+            // will cover this step's second half-kick, and the first half-kick next step.
             w.project_ep_force_to_real_sites();
 
             // Convert forces to accel, in our native units.
             w.o.accel *= ACCEL_CONVERSION / w.o.mass;
             w.h0.accel *= ACCEL_CONVERSION / w.h0.mass;
             w.h1.accel *= ACCEL_CONVERSION / w.h1.mass;
-            
+
             // Second half-kick. Apply unit and mass conversions here, as they've
             // been reset from the previous step, and re-calculated in this one.
             w.half_kick(dt_half);

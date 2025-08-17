@@ -7,7 +7,7 @@ use std::time::Instant;
 use lin_alg::f64::Vec3;
 
 use crate::dynamics::{
-    AtomDynamics, MdState, ambient::SimBox, spme::LONG_RANGE_CUTOFF, water_opc::WaterMol,
+    AtomDynamics, MdState, ambient::SimBox, non_bonded::LONG_RANGE_CUTOFF, water_opc::WaterMol,
 };
 
 // These are for non-bonded neighbor list construction.

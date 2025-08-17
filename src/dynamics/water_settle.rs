@@ -2,13 +2,21 @@
 
 use lin_alg::f64::Vec3;
 
-use crate::dynamics::{AtomDynamics, ambient::SimBox, water_opc::{H_MASS, O_MASS}, ACCEL_CONVERSION};
+use crate::dynamics::{
+    ACCEL_CONVERSION, AtomDynamics,
+    ambient::SimBox,
+    water_opc::{H_MASS, O_MASS},
+};
 
 /// Analytic SETTLE implementation for 3‑site rigid water (Miyamoto & Kollman, JCC 1992).
 /// Works for any bond length / HOH angle.
 ///
 /// All distances & masses are in MD internal units (Å, ps, amu, kcal/mol).
-pub fn settle_opc(
+///
+/// This is handles the Verlet "drift" for a rigid molecule. It is the equivalent
+/// of updating position by adding velocity x dt, but also maintains the rigid
+/// geometry of 3-atom molecules.
+pub fn settle_drift(
     o: &mut AtomDynamics,
     h0: &mut AtomDynamics,
     h1: &mut AtomDynamics,
@@ -80,36 +88,35 @@ pub fn settle_opc(
     h1.posit = o.posit + cell.min_image(new_h1 - o.posit);
 
     // COM-frame velocities after rotation
-    let vO2  = ω.cross(rO2);
+    let vO2 = ω.cross(rO2);
     let vH02 = ω.cross(rH02);
     let vH12 = ω.cross(rH12);
 
     // ---------- NEW: constraint virial via impulses ----------
-    let dvO  = vO2  - vO;
+    let dvO = vO2 - vO;
     let dvH0 = vH02 - vH0;
     let dvH1 = vH12 - vH1;
 
     // Average constraint force over the drift interval (amu·Å/ps²)
-    let fO_amu  = dvO * O_MASS / dt;
+    let fO_amu = dvO * O_MASS / dt;
     let fH0_amu = dvH0 * H_MASS / dt;
     let fH1_amu = dvH1 * H_MASS / dt;
 
     // Convert to kcal·mol⁻¹·Å⁻¹ to match your pair-virial units
-    let fO_kcal  = fO_amu  / ACCEL_CONVERSION;
+    let fO_kcal = fO_amu / ACCEL_CONVERSION;
     let fH0_kcal = fH0_amu / ACCEL_CONVERSION;
     let fH1_kcal = fH1_amu / ACCEL_CONVERSION;
 
     // Midpoint COM-frame positions
-    let rO_mid  = (rO  + rO2)  * 0.5;
+    let rO_mid = (rO + rO2) * 0.5;
     let rH0_mid = (rH0 + rH02) * 0.5;
     let rH1_mid = (rH1 + rH12) * 0.5;
 
-    *virial_constr_kcal +=
-        rO_mid.dot(fO_kcal) + rH0_mid.dot(fH0_kcal) + rH1_mid.dot(fH1_kcal);
+    *virial_constr_kcal += rO_mid.dot(fO_kcal) + rH0_mid.dot(fH0_kcal) + rH1_mid.dot(fH1_kcal);
     // ---------------------------------------------------------
 
     // Final absolute velocities
-    o.vel  = v_com + vO2;
+    o.vel = v_com + vO2;
     h0.vel = v_com + vH02;
     h1.vel = v_com + vH12;
 }

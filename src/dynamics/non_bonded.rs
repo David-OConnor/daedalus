@@ -1,21 +1,13 @@
 //! For VDW and Coulomb forces
 
-use std::{
-    collections::HashMap,
-    ops::AddAssign,
-};
+use std::{collections::HashMap, ops::AddAssign};
 
+use ewald::{PmeRecip, force_coulomb_short_range};
 use lin_alg::f64::Vec3;
 use rayon::prelude::*;
 
-use ewald::force_coulomb_ewald_real;
-
 use crate::{
-    dynamics::{
-        AtomDynamics, MdState,
-        ambient::SimBox,
-        water_opc,
-    },
+    dynamics::{AtomDynamics, MdState, ambient::SimBox, water_opc},
     forces::{force_coulomb, force_lj},
     molecule::Atom,
 };
@@ -555,6 +547,9 @@ impl MdState {
         // todo; Removed: Pausing on thsi; we need to get it workign or change
         // todo from SPME, but it's a time sink, and not making any progress.
         // self.apply_long_range_recip_forces()
+
+        // let mut pme_recip = PmeRecip::new(0, 0, 0, 0., 0., 0., EWALD_ALPHA);
+        // let f = pme_recip.forces(posit, q);
     }
 }
 
@@ -612,7 +607,7 @@ pub fn f_nonbonded(
         // todo temp removed; using the standard Coulomb force (No approximations/optimziations)
         // todo for now while troubleshooting long-range portion of SPME/ewald.
 
-        // force_coulomb_ewald_real(
+        // force_coulomb_short_range(
         //     dir,
         //     dist,
         //     tgt.partial_charge,
@@ -642,7 +637,7 @@ pub fn f_nonbonded(
     //              src.posit.x, f_lj.x, f_coulomb.x, tgt.partial_charge, src.partial_charge, src.element, tgt.element);
     // }
 
-// CAO 2025-08-17: Coul and LJ direction are both consistent.
+    // CAO 2025-08-17: Coul and LJ direction are both consistent.
     // f_lj
     // f_coulomb
     // Vec3::new_zero()

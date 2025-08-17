@@ -4,23 +4,27 @@
     <option name="autoReloadType" value="ALL" />
   </component>
   <component name="CargoProjects">
-    <cargoProject FILE="$PROJECT_DIR$/Cargo.toml" />
+    <cargoProject FILE="$PROJECT_DIR$/Cargo.toml">
+      <package file="$PROJECT_DIR$">
+        <enabledFeature name="default" />
+      </package>
+    </cargoProject>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="8192144c-b316-4f41-946f-69ac57e30673" name="Changes" comment="">
+    <list default="true" id="56119a7d-3397-4692-902c-376cd93a301b" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/.gitignore" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/daedalus.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/daedalus.iml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/inspectionProfiles/Project_Default.xml" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-<<<<<<< HEAD
-      <change beforePath="$PROJECT_DIR$/src/dynamics/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dynamics/mod.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/dynamics/non_bonded.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dynamics/non_bonded.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/dynamics/spme.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dynamics/spme.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/dynamics/water_opc.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dynamics/water_opc.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/dynamics/water_settle.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dynamics/water_settle.rs" afterDir="false" />
-=======
       <change beforePath="$PROJECT_DIR$/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/dynamics/ambient.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dynamics/ambient.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/dynamics/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dynamics/mod.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/dynamics/neighbors.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dynamics/neighbors.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/dynamics/non_bonded.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dynamics/non_bonded.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/dynamics/spme.rs" beforeDir="false" />
->>>>>>> b73cd5daaff9e0565f95a79511a79b45ac8f68ff
+      <change beforePath="$PROJECT_DIR$/src/dynamics/water_init.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dynamics/water_init.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/dynamics/water_opc.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dynamics/water_opc.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/dynamics/water_settle.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dynamics/water_settle.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -28,68 +32,44 @@
     <option name="LAST_RESOLUTION" value="IGNORE" />
   </component>
   <component name="ExecutionTargetManager" SELECTED_TARGET="RsBuildProfile:release" />
-  <component name="FileTemplateManagerImpl">
-    <option name="RECENT_TEMPLATES">
-      <list>
-        <option value="Rust File" />
-      </list>
-    </option>
-  </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
-  <component name="GitHubPullRequestSearchHistory">{
-  &quot;lastFilter&quot;: {
-    &quot;state&quot;: &quot;OPEN&quot;,
-    &quot;assignee&quot;: &quot;David-OConnor&quot;
-  }
-}</component>
-  <component name="GithubPullRequestsUISettings">{
-  &quot;selectedUrlAndAccountId&quot;: {
-    &quot;url&quot;: &quot;https://github.com/David-OConnor/daedalus.git&quot;,
-    &quot;accountId&quot;: &quot;5e362563-beba-4912-8feb-b94e503da05b&quot;
-  }
-}</component>
   <component name="MacroExpansionManager">
-    <option name="directoryName" value="qBpgnTOV" />
+    <option name="directoryName" value="fa3CKk2B" />
   </component>
-  <component name="ProjectColorInfo">{
-  &quot;associatedIndex&quot;: 4
-}</component>
-  <component name="ProjectId" id="30mfbJMgcMOjEdQBRICDJuTx3tm" />
+  <component name="ProjectColorInfo"><![CDATA[{
+  "associatedIndex": 1
+}]]></component>
+  <component name="ProjectId" id="31QLmAo8mP5XYfMan3MUB9v2Id3" />
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;Cargo.Fmt.executor&quot;: &quot;Run&quot;,
-    &quot;Cargo.Run daedalus.executor&quot;: &quot;Run&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.rust.reset.selective.auto.import&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
-    &quot;ignore.virus.scanning.warn.message&quot;: &quot;true&quot;,
-    &quot;junie.onboarding.icon.badge.shown&quot;: &quot;true&quot;,
-    &quot;last_opened_file_path&quot;: &quot;C:/Users/the_a/code/Bio/daedalus&quot;,
-    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
-    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
-    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
-    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
-    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
-    &quot;org.rust.cargo.project.model.PROJECT_DISCOVERY&quot;: &quot;true&quot;,
-    &quot;org.rust.cargo.project.model.impl.CargoExternalSystemProjectAware.subscribe.first.balloon&quot;: &quot;&quot;,
-    &quot;org.rust.first.attach.projects&quot;: &quot;true&quot;,
-    &quot;to.speed.mode.migration.done&quot;: &quot;true&quot;,
-    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "Cargo.Fmt.executor": "Run",
+    "Cargo.Run daedalus.executor": "Run",
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.rust.reset.selective.auto.import": "true",
+    "git-widget-placeholder": "main",
+    "junie.onboarding.icon.badge.shown": "true",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "org.rust.cargo.project.model.PROJECT_DISCOVERY": "true",
+    "org.rust.cargo.project.model.impl.CargoExternalSystemProjectAware.subscribe.first.balloon": "",
+    "org.rust.first.attach.projects": "true",
+    "settings.editor.selected.configurable": "reference.settings.grazie.pro.style.in.ai.assistant",
+    "to.speed.mode.migration.done": "true",
+    "vue.rearranger.settings.migration": "true"
   }
-}</component>
-  <component name="RecentsManager">
-    <key name="CopyFile.RECENT_KEYS">
-      <recent name="C:\Users\the_a\code\Bio\daedalus\screenshots" />
-    </key>
-  </component>
+}]]></component>
   <component name="RunManager" selected="Cargo.Run daedalus">
     <configuration name="Fmt" type="CargoCommandRunConfiguration" factoryName="Cargo Command" nameIsGenerated="true">
       <option name="command" value="fmt" />
@@ -104,28 +84,13 @@
       <option name="backtrace" value="SHORT" />
       <option name="isRedirectInput" value="false" />
       <option name="redirectInputPath" value="" />
-      <method v="2" />
-    </configuration>
-    <configuration name="Run daedalus" type="CargoCommandRunConfiguration" factoryName="Cargo Command">
-      <option name="buildProfileId" value="release" />
-      <option name="command" value="run --package daedalus --bin daedalus" />
-      <option name="workingDirectory" value="file://$PROJECT_DIR$" />
-      <envs />
-      <option name="emulateTerminal" value="true" />
-      <option name="channel" value="DEFAULT" />
-      <option name="requiredFeatures" value="true" />
-      <option name="allFeatures" value="false" />
-      <option name="withSudo" value="false" />
-      <option name="buildTarget" value="REMOTE" />
-      <option name="backtrace" value="SHORT" />
-      <option name="isRedirectInput" value="false" />
-      <option name="redirectInputPath" value="" />
       <method v="2">
         <option name="CARGO.BUILD_TASK_PROVIDER" enabled="true" />
       </method>
     </configuration>
-    <configuration name="Test daedalus" type="CargoCommandRunConfiguration" factoryName="Cargo Command">
-      <option name="command" value="test --workspace" />
+    <configuration name="Run daedalus" type="CargoCommandRunConfiguration" factoryName="Cargo Command">
+      <option name="buildProfileId" value="release" />
+      <option name="command" value="run" />
       <option name="workingDirectory" value="file://$PROJECT_DIR$" />
       <envs />
       <option name="emulateTerminal" value="true" />
@@ -144,51 +109,23 @@
     <list>
       <item itemvalue="Cargo.Run daedalus" />
       <item itemvalue="Cargo.Fmt" />
-      <item itemvalue="Cargo.Test daedalus" />
     </list>
   </component>
   <component name="RustProjectSettings">
     <option name="toolchainHomeDirectory" value="$USER_HOME$/.cargo/bin" />
   </component>
-  <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
   <component name="TaskManager">
     <task active="true" id="Default" summary="Default task">
-      <changelist id="8192144c-b316-4f41-946f-69ac57e30673" name="Changes" comment="" />
-      <created>1754237739063</created>
+      <changelist id="56119a7d-3397-4692-902c-376cd93a301b" name="Changes" comment="" />
+      <created>1755451505262</created>
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
-      <updated>1754237739063</updated>
-      <workItem from="1754237740456" duration="5362000" />
-      <workItem from="1754246551601" duration="43677000" />
-      <workItem from="1754429006366" duration="450000" />
-      <workItem from="1754429783919" duration="1818000" />
-      <workItem from="1754433050450" duration="7000" />
-      <workItem from="1754433138444" duration="128000" />
-      <workItem from="1754433287753" duration="194000" />
-      <workItem from="1754433527506" duration="35577000" />
-      <workItem from="1754620659543" duration="911000" />
-      <workItem from="1754655745422" duration="39864000" />
-      <workItem from="1754777083220" duration="2402000" />
-      <workItem from="1754781905230" duration="25958000" />
-      <workItem from="1754919818662" duration="40432000" />
-      <workItem from="1755052090417" duration="81307000" />
-      <workItem from="1755345811778" duration="4349000" />
-      <workItem from="1755352389222" duration="27793000" />
+      <updated>1755451505262</updated>
+      <workItem from="1755451506322" duration="11151000" />
     </task>
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
-  </component>
-  <component name="XDebuggerManager">
-    <breakpoint-manager>
-      <breakpoints>
-        <line-breakpoint enabled="true" type="com.jetbrains.cidr.execution.debugger.OCBreakpointType">
-          <url>file://$PROJECT_DIR$/src/docking/mod.rs</url>
-          <line>19</line>
-          <option name="timeStamp" value="2" />
-        </line-breakpoint>
-      </breakpoints>
-    </breakpoint-manager>
   </component>
 </project>

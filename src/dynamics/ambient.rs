@@ -70,7 +70,8 @@ impl SimBox {
         }
     }
 
-    /// Wrap an absolute coordinate back into the box (orthorhombic)
+    /// Wrap an absolute coordinate back into the unit cell. (orthorhombic). We use it to
+    /// keep arbitrary coordinates inside it.
     pub fn wrap(&self, p: Vec3) -> Vec3 {
         let ext = &self.extent;
 
@@ -90,7 +91,8 @@ impl SimBox {
     }
 
     /// Minimum-image displacement vector. Find the closest copy
-    /// of an item to a given site, among all tiled boxes. (?)
+    /// of an item to a given site, among all tiled boxes. Maps a displacement vector to the closest
+    /// periodic image. Allows distance measurements to use the shortest separation.
     pub fn min_image(&self, dv: Vec3) -> Vec3 {
         let ext = &self.extent;
         debug_assert!(ext.x > 0.0 && ext.y > 0.0 && ext.z > 0.0);
@@ -160,7 +162,7 @@ impl Default for BerendsenBarostat {
             tau_temp: 1.,
             // Isothermal compressibility of water at 298 K.
             kappa_t: 4.5e-5,
-            virial_pair_kcal: 0.0, // todo: What should this init to?
+            virial_pair_kcal: 0.0, // Inits to 0 here, and at the start of each integrator step.
             rng: rand::rng(),
         }
     }
