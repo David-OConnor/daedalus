@@ -4,20 +4,23 @@
     <option name="autoReloadType" value="ALL" />
   </component>
   <component name="CargoProjects">
-    <cargoProject FILE="$PROJECT_DIR$/Cargo.toml">
-      <package file="$PROJECT_DIR$">
-        <enabledFeature name="default" />
-      </package>
-    </cargoProject>
+    <cargoProject FILE="$PROJECT_DIR$/Cargo.toml" />
   </component>
   <component name="ChangeListManager">
     <list default="true" id="8192144c-b316-4f41-946f-69ac57e30673" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+<<<<<<< HEAD
       <change beforePath="$PROJECT_DIR$/src/dynamics/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dynamics/mod.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/dynamics/non_bonded.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dynamics/non_bonded.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/dynamics/spme.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dynamics/spme.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/dynamics/water_opc.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dynamics/water_opc.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/dynamics/water_settle.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dynamics/water_settle.rs" afterDir="false" />
+=======
+      <change beforePath="$PROJECT_DIR$/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/dynamics/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dynamics/mod.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/dynamics/non_bonded.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dynamics/non_bonded.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/dynamics/spme.rs" beforeDir="false" />
+>>>>>>> b73cd5daaff9e0565f95a79511a79b45ac8f68ff
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

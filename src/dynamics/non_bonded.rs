@@ -1,18 +1,19 @@
 //! For VDW and Coulomb forces
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     ops::AddAssign,
 };
 
 use lin_alg::f64::Vec3;
 use rayon::prelude::*;
 
+use ewald::force_coulomb_ewald_real;
+
 use crate::{
     dynamics::{
         AtomDynamics, MdState,
         ambient::SimBox,
-        spme::{PME_MESH_SPACING, force_coulomb_ewald_real},
         water_opc,
     },
     forces::{force_coulomb, force_lj},
@@ -23,6 +24,26 @@ use crate::{
 // the ^-7 falloff.
 pub const CUTOFF_VDW: f64 = 12.0;
 // const CUTOFF_VDW_SQ: f64 = CUTOFF_VDW * CUTOFF_VDW;
+
+// Ewald SPME approximation for Coulomb force
+
+// Above this distance when calculating Coulomb forces, use the long-range Ewald approximation.
+// const EWALD_CUTOFF: f64 = 10.0; // Å. 9-10 is common.
+// const EWALD_CUTOFF_SQ: f64 = EWALD_CUTOFF * EWALD_CUTOFF;
+
+// Instead of a hard cutoff between short and long-range forces, these
+// parameters control a smooth taper.
+// todo: I believe our neighbor list must use the same cutoff as this, so we use it directly.
+const LONG_RANGE_SWITCH_START: f64 = 8.0; // start switching (Å)
+pub const LONG_RANGE_CUTOFF: f64 = 10.0;
+
+// A bigger α means more damping, and a smaller real-space contribution. (Cheaper real), but larger
+// reciprocal load.
+// Common rule for α: erfc(α r_c) ≲ 10⁻⁴…10⁻⁵
+const EWALD_ALPHA: f64 = 0.35; // Å^-1. 0.35 is good for cutoff = 10.
+pub const PME_MESH_SPACING: f64 = 1.0;
+// SPME order‑4 B‑spline interpolation
+const SPLINE_ORDER: usize = 4;
 
 // See Amber RM, section 15, "1-4 Non-Bonded Interaction Scaling"
 // "Non-bonded interactions between atoms separated by three consecutive bonds... require a special
@@ -596,6 +617,8 @@ pub fn f_nonbonded(
         //     dist,
         //     tgt.partial_charge,
         //     src.partial_charge,
+        //     (LONG_RANGE_SWITCH_START, LONG_RANGE_CUTOFF),
+        //     EWALD_ALPHA,
         // )
 
         force_coulomb(dir, dist, tgt.partial_charge, src.partial_charge, 1e-6)
