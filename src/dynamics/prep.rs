@@ -31,6 +31,7 @@ use bio_files::{
 };
 #[cfg(feature = "cuda")]
 use cudarc::driver::HostSlice;
+use ewald::PmeRecip;
 use itertools::Itertools;
 use lin_alg::f64::Vec3;
 use na_seq::{AminoAcid, AminoAcidGeneral, AminoAcidProtenationVariant, AtomTypeInRes, Element};
@@ -999,63 +1000,62 @@ impl MdState {
             &result.atoms_static,
         );
         result.water_pme_sites_forces = vec![[Vec3::new_zero(); 3]; result.water.len()];
-        // result.forces_on_water = vec![Default::default(); result.water.len()];
 
         result.setup_nonbonded_exclusion_scale_flags();
 
         result.init_neighbors();
 
+        result.regen_pme();
+
         // Set up our LJ cache.
-        if result.step_count == 0 {
-            for i in 0..result.atoms.len() {
-                for &j in &result.neighbors_nb.dy_dy[i] {
-                    if j < i {
-                        // Prevents duplication of the pair in the other order.
-                        continue;
-                    }
-
-                    non_bonded::setup_lj_cache(
-                        &result.atoms[i],
-                        &result.atoms[j],
-                        LjTableIndices::DynDyn((i, j)),
-                        &mut result.lj_tables,
-                    );
+        for i in 0..result.atoms.len() {
+            for &j in &result.neighbors_nb.dy_dy[i] {
+                if j < i {
+                    // Prevents duplication of the pair in the other order.
+                    continue;
                 }
+
+                non_bonded::setup_lj_cache(
+                    &result.atoms[i],
+                    &result.atoms[j],
+                    LjTableIndices::DynDyn((i, j)),
+                    &mut result.lj_tables,
+                );
+            }
+        }
+
+        for (i_lig, a_lig) in result.atoms.iter_mut().enumerate() {
+            // Dynamic, static
+            for (i_static, a_static) in result.atoms_static.iter().enumerate() {
+                non_bonded::setup_lj_cache(
+                    a_lig,
+                    a_static,
+                    LjTableIndices::DynStatic((i_lig, i_static)),
+                    &mut result.lj_tables,
+                );
             }
 
-            for (i_lig, a_lig) in result.atoms.iter_mut().enumerate() {
-                // Dynamic, static
-                for (i_static, a_static) in result.atoms_static.iter().enumerate() {
-                    non_bonded::setup_lj_cache(
-                        a_lig,
-                        a_static,
-                        LjTableIndices::DynStatic((i_lig, i_static)),
-                        &mut result.lj_tables,
-                    );
-                }
-
-                // Dynamic, water
-                if !result.water.is_empty() {
-                    // Each water is identical, so we only need to do this once per lig, and static atom.
-                    non_bonded::setup_lj_cache(
-                        a_lig,
-                        &result.water[0].o,
-                        LjTableIndices::DynOnWater(i_lig),
-                        &mut result.lj_tables,
-                    );
-                }
-            }
-
-            // Static, water
+            // Dynamic, water
             if !result.water.is_empty() {
-                for (i_static, a_static) in result.atoms_static.iter().enumerate() {
-                    non_bonded::setup_lj_cache(
-                        a_static,
-                        &result.water[0].o,
-                        LjTableIndices::StaticOnWater(i_static),
-                        &mut result.lj_tables,
-                    );
-                }
+                // Each water is identical, so we only need to do this once per lig, and static atom.
+                non_bonded::setup_lj_cache(
+                    a_lig,
+                    &result.water[0].o,
+                    LjTableIndices::DynOnWater(i_lig),
+                    &mut result.lj_tables,
+                );
+            }
+        }
+
+        // Static, water
+        if !result.water.is_empty() {
+            for (i_static, a_static) in result.atoms_static.iter().enumerate() {
+                non_bonded::setup_lj_cache(
+                    a_static,
+                    &result.water[0].o,
+                    LjTableIndices::StaticOnWater(i_static),
+                    &mut result.lj_tables,
+                );
             }
         }
 

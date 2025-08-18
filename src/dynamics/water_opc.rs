@@ -142,12 +142,11 @@ impl WaterMol {
         }
     }
 
-    /// Called twice each step, as part of the SETTLE algorithm. We don't velocity to M/EP,
-    /// because it's massless; we rigidly put it in place each step based on geometry.
+    /// Called twice each step, as part of the SETTLE algorithm, to update velocities. We don't apply velocity to M/EP,
+    /// because it's massless; we rigidly place it each step based on geometry.
     /// For the second half-kick, the molecule's `accel` field must have been converted
-    /// from force, and contain the unit conversion.
+    /// from force by dividing by mass, and contain the unit conversion from AMBER's, to our natural units.
     fn half_kick(&mut self, dt_half: f64) {
-        // println!("ACCEL: {:.3}", self.o.accel.magnitude());
         self.o.vel += self.o.accel * dt_half;
         self.h0.vel += self.h0.accel * dt_half;
         self.h1.vel += self.h1.accel * dt_half;

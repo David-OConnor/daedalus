@@ -96,6 +96,7 @@ use ambient::SimBox;
 use bio_files::amber_params::{
     AngleBendingParams, BondStretchingParams, DihedralParams, MassParams, VdwParams,
 };
+use ewald::{ewald_comp_force, PmeRecip};
 use lin_alg::f64::Vec3;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use lin_alg::f64::{Vec3x4, f64x4};
@@ -105,7 +106,9 @@ use neighbors::NeighborsNb;
 use crate::{
     dynamics::{
         ambient::BerendsenBarostat,
-        non_bonded::{CHARGE_UNIT_SCALER, LjTables},
+        non_bonded::{
+            CHARGE_UNIT_SCALER, EWALD_ALPHA, LjTables, SCALE_COUL_14, SPME_N,
+        },
         prep::HydrogenMdType,
         water_opc::WaterMol,
     },
@@ -339,7 +342,8 @@ pub struct MdState {
     lj_tables: LjTables,
     hydrogen_md_type: HydrogenMdType,
     // todo: Hmm... Is this DRY with forces_on_water? Investigate.
-    pub water_pme_sites_forces: Vec<[Vec3; 3]>,
+    pub water_pme_sites_forces: Vec<[Vec3; 3]>, // todo: A/R
+    pme_recip: PmeRecip,
 }
 
 impl MdState {
@@ -430,15 +434,15 @@ impl MdState {
             a.posit = self.cell.wrap(a.posit);
 
             // todo: What is this? Implement it, or remove it?
+            // todo: Should this take water displacements into account?
             // track the largest squared displacement to know when to rebuild the list
-            // self.max_disp_sq = self.max_disp_sq.max((a.vel * dt).magnitude_squared());
+            self.neighbors_nb.max_displacement_sq = self.neighbors_nb.max_displacement_sq.max((a.vel * dt).magnitude_squared());
         }
 
         // todo: Consider applying the thermostat between the first half-kick and drift.
         // todo: e.g. half-kick, then shake H and settle velocity water (?), then thermostat, then drift. (?) ,
         // todo then settle positions?
 
-        // self.water_vv_first_half_and_drift(dt, &mut forces_on_water, dt_half);
         self.water_vv_first_half_and_drift(dt, dt_half);
 
         // The order we perform these steps is important.
@@ -448,6 +452,8 @@ impl MdState {
 
         self.reset_accels();
         self.apply_all_forces();
+
+        self.handle_spme_recip();
 
         // Forces (bonded and nonbonded, to dynamic and water atoms) have been applied; perform other
         // steps required for integration; second half-kick, RATTLE for hydrogens; SETTLE for water. -----
@@ -471,28 +477,149 @@ impl MdState {
             self.rattle_hydrogens();
         }
 
-        // todo: Temp rm. These are broken.
 
         // todo: You may need to update the virial in the barostat.
         // I believe we must run barostat prior to thermostat, in our current configuration.
-        // self.apply_barostat_berendsen(dt);
-        // self.apply_thermostat_csvr(dt, self.temp_target, self.barostat.tau_temp);
+        self.apply_barostat_berendsen(dt);
+        self.apply_thermostat_csvr(dt, self.temp_target);
 
         self.time += dt;
         self.step_count += 1;
 
-        // todo: Ratio for this too
+        // todo: Ratio for this too?
         self.build_neighbors_if_needed();
 
-        // Experiment: Keeping the simbox centered on the dynamics atom.
-        // (We pick an arbitrary atom as the center)
+        // We keeping the cell centered on the dynamics atoms. Note that we don't change the dimensions,
+        // as these are under management by the barostat.
         if self.step_count % CENTER_SIMBOX_RATIO == 0 {
-            self.cell = SimBox::new_fixed_size(&self.atoms);
+            self.cell.recenter(&self.atoms);
+
+            // todo: Will this interfere with carrying over state from the previous step?
+            self.regen_pme();
         }
 
         if self.step_count % SNAPSHOT_RATIO == 0 {
             self.take_snapshot();
         }
+    }
+
+    fn handle_spme_recip(&mut self) {
+        const K_COUL: f64 = 1.; // todo: ChatGPT really wants this, but I don't think I need it.
+
+        let (pos_all, q_all, map) = self.gather_pme_particles_wrapped();
+        let mut f_recip = self.pme_recip.forces(&pos_all, &q_all);
+
+        // Scale to Amber force units if your PME returns raw qE:
+        for f in f_recip.iter_mut() { *f *= K_COUL; }
+
+        let mut w_recip = 0.0;
+        for (k, tag) in map.iter().enumerate() {
+            match *tag {
+                PMEIndex::Dyn(i) => {
+                    self.atoms[i].accel += f_recip[k];
+                    w_recip += 0.5 * pos_all[k].dot(f_recip[k]); // tin-foil virial
+                }
+                PMEIndex::WatO(i) => {
+                    self.water[i].o.accel += f_recip[k];
+                    w_recip += 0.5 * pos_all[k].dot(f_recip[k]);
+                }
+                PMEIndex::WatM(i) => {
+                    self.water[i].m.accel += f_recip[k];
+                    w_recip += 0.5 * pos_all[k].dot(f_recip[k]);
+                }
+                PMEIndex::WatH0(i) => {
+                    self.water[i].h0.accel += f_recip[k];
+                    w_recip += 0.5 * pos_all[k].dot(f_recip[k]);
+                }
+                PMEIndex::WatH1(i) => {
+                    self.water[i].h1.accel += f_recip[k];
+                    w_recip += 0.5 * pos_all[k].dot(f_recip[k]);
+                }
+                PMEIndex::Static(_) => { /* contributes to field, no accel update */ }
+            }
+        }
+        self.barostat.virial_pair_kcal += w_recip;
+
+        // 1–4 Coulomb scaling correction
+        for &(i, j) in &self.pairs_14_scaled {
+            let diff = self.cell.min_image(self.atoms[i].posit - self.atoms[j].posit);
+            let r = diff.magnitude();
+            let dir = diff / r;
+
+
+            let qi = self.atoms[i].partial_charge;
+            let qj = self.atoms[j].partial_charge;
+            let df =
+                ewald_comp_force(dir, r, qi, qj, self.pme_recip.alpha)
+                    * (SCALE_COUL_14 - 1.0) // todo: Cache this.
+                    * K_COUL;
+
+            self.atoms[i].accel += df;
+            self.atoms[j].accel -= df;
+            self.barostat.virial_pair_kcal += (dir * r).dot(df); // r·F
+        }
+    }
+
+    // todo: GPT helper. QC, and simplify as required.
+    /// Gather all particles that contribute to PME (dyn, water sites, statics).
+    /// Returns positions wrapped to the primary box, their charges, and a map telling
+    /// us which original DOF each entry corresponds to.
+    fn gather_pme_particles_wrapped(&self) -> (Vec<Vec3>, Vec<f64>, Vec<PMEIndex>) {
+        let n_dyn = self.atoms.len();
+        let n_wat = self.water.len();
+        let n_st = self.atoms_static.len();
+
+        // Capacity hint: dyn + 4*water + statics
+        let mut pos = Vec::with_capacity(n_dyn + 4 * n_wat + n_st);
+        let mut q = Vec::with_capacity(pos.capacity());
+        let mut map = Vec::with_capacity(pos.capacity());
+
+        // Dynamic atoms
+        for (i, a) in self.atoms.iter().enumerate() {
+            pos.push(self.cell.wrap(a.posit));              // [0,L) per axis
+            q.push(a.partial_charge);                       // already scaled to Amber units
+            map.push(PMEIndex::Dyn(i));
+        }
+
+        // Water sites (OPC: O usually has 0 charge; include anyway—cost is negligible)
+        for (i, w) in self.water.iter().enumerate() {
+            pos.push(self.cell.wrap(w.o.posit));
+            q.push(w.o.partial_charge);
+            map.push(PMEIndex::WatO(i));
+            pos.push(self.cell.wrap(w.m.posit));
+            q.push(w.m.partial_charge);
+            map.push(PMEIndex::WatM(i));
+            pos.push(self.cell.wrap(w.h0.posit));
+            q.push(w.h0.partial_charge);
+            map.push(PMEIndex::WatH0(i));
+            pos.push(self.cell.wrap(w.h1.posit));
+            q.push(w.h1.partial_charge);
+            map.push(PMEIndex::WatH1(i));
+        }
+
+        // Static atoms (contribute to field but you won't update accel)
+        for (i, a) in self.atoms_static.iter().enumerate() {
+            pos.push(self.cell.wrap(a.posit));
+            q.push(a.partial_charge);
+            map.push(PMEIndex::Static(i));
+        }
+
+        // Optional sanity check (debug only): near-neutral total charge
+        #[cfg(debug_assertions)]
+        {
+            let qsum: f64 = q.iter().sum();
+            if qsum.abs() > 1e-6 {
+                eprintln!("[PME] Warning: net charge = {qsum:.6e} (PME assumes neutral or a uniform background)");
+            }
+        }
+
+        (pos, q, map)
+    }
+
+    /// Run this at init, and whenever you update the sim box.
+    pub fn regen_pme(&mut self) {
+        let [lx, ly, lz] = self.cell.extent.to_arr();
+        self.pme_recip = PmeRecip::new((SPME_N, SPME_N, SPME_N), (lx, ly, lz), EWALD_ALPHA);
     }
 
     /// A helper for the thermostat
@@ -578,4 +705,20 @@ pub fn split4_mut<T>(
             &mut *base.add(i3),
         )
     }
+}
+
+// todo: Move this somewhere apt
+#[derive(Clone, Copy, Debug)]
+pub enum PMEIndex {
+    // Dynamic atoms (protein, ligand, ions, etc.)
+    Dyn(usize),
+
+    // Water sites (by molecule index)
+    WatO(usize),
+    WatM(usize),
+    WatH0(usize),
+    WatH1(usize),
+
+    // Static atoms (included in the field, but you won't update their accel)
+    Static(usize),
 }

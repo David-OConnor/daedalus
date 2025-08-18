@@ -47,6 +47,8 @@ pub struct NeighborsNb {
     /// Doesn't change.
     pub ref_pos_static: Vec<Vec3>,
     pub ref_pos_water_o: Vec<Vec3>, // use O as proxy for the rigid water
+    /// Used to determine when to rebuild neighbor lists. todo: Implement.
+    pub max_displacement_sq: f64,
 }
 
 impl MdState {
@@ -159,9 +161,9 @@ impl MdState {
 
         if rebuilt_dyn || rebuilt_wat {
             let elapsed = start.elapsed();
-            println!("Neighbor build time: {:?} μs", elapsed.as_micros());
+            // println!("Neighbor build time: {:?} μs", elapsed.as_micros());
         } else {
-            println!("No rebuild needed.");
+            // println!("No rebuild needed.");
         }
     }
 

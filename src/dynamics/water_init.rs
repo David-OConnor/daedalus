@@ -26,7 +26,8 @@ const MIN_OO_DIST: f64 = 2.8;
 // by precision limits. We use it for generating atoms based on density.
 const MASS_WATER: f64 = 18.015_28;
 
-const NA: f64 = 6.022_140_76e23; // todo: What is this? Used in density calc. mol⁻¹
+// Avogadro's constant. mol^-1.
+const N_A: f64 = 6.022_140_76e23;
 
 /// We pass atoms in so this doesn't generate water molecules that overlap with them.
 pub fn make_water_mols(
@@ -37,7 +38,7 @@ pub fn make_water_mols(
 ) -> Vec<WaterMol> {
     let vol = cell.volume();
 
-    let n_float = WATER_DENSITY * vol * (NA / (MASS_WATER * 1.0e24));
+    let n_float = WATER_DENSITY * vol * (N_A / (MASS_WATER * 1.0e24));
     let n_mols = n_float.round() as usize;
 
     let mut result = Vec::with_capacity(n_mols);

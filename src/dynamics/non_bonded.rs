@@ -25,17 +25,19 @@ pub const CUTOFF_VDW: f64 = 12.0;
 
 // Instead of a hard cutoff between short and long-range forces, these
 // parameters control a smooth taper.
-// todo: I believe our neighbor list must use the same cutoff as this, so we use it directly.
-const LONG_RANGE_SWITCH_START: f64 = 8.0; // start switching (Å)
+// Our neighbor list must use the same cutoff as this, so we use it directly.
+
+// We don't use a taper, for now.
+// const LONG_RANGE_SWITCH_START: f64 = 8.0; // start switching (Å)
 pub const LONG_RANGE_CUTOFF: f64 = 10.0;
 
 // A bigger α means more damping, and a smaller real-space contribution. (Cheaper real), but larger
 // reciprocal load.
 // Common rule for α: erfc(α r_c) ≲ 10⁻⁴…10⁻⁵
-const EWALD_ALPHA: f64 = 0.35; // Å^-1. 0.35 is good for cutoff = 10.
+pub const EWALD_ALPHA: f64 = 0.35; // Å^-1. 0.35 is good for cutoff = 10.
 pub const PME_MESH_SPACING: f64 = 1.0;
 // SPME order‑4 B‑spline interpolation
-const SPLINE_ORDER: usize = 4;
+pub const SPME_N: usize = 64;
 
 // See Amber RM, section 15, "1-4 Non-Bonded Interaction Scaling"
 // "Non-bonded interactions between atoms separated by three consecutive bonds... require a special
@@ -147,7 +149,7 @@ impl AddAssign<Self> for ForcesOnWaterMol {
 fn apply_force(
     pairs: &[(usize, usize, bool)],
     atoms_tgt: &mut [AtomDynamics],
-    // If None, src are also targets. This avoids a double-borrow.
+    // If None, src atoms are also targets. This avoids a double-borrow.
     atoms_src: Option<&[AtomDynamics]>,
     n_dyn: usize,
     cell: &SimBox,
@@ -364,10 +366,6 @@ impl MdState {
                 self.water[i].m.accel += per_mol_water_accum[i].f_m;
                 self.water[i].h0.accel += per_mol_water_accum[i].f_h0;
                 self.water[i].h1.accel += per_mol_water_accum[i].f_h1;
-
-                // todo: Which are we using: Accel, or forces_on_water? For now, update both.
-                // todo: This should be harmless, although perhaps confusing.
-                // self.forces_on_water[i] += per_mol_water_accum[i];
             }
         }
 
@@ -434,10 +432,6 @@ impl MdState {
                 self.water[i].m.accel += per_mol_water_accum[i].f_m;
                 self.water[i].h0.accel += per_mol_water_accum[i].f_h0;
                 self.water[i].h1.accel += per_mol_water_accum[i].f_h1;
-
-                // todo: Which are we using: Accel, or forces_on_water? For now, update both.
-                // todo: This should be harmless, although perhaps confusing.
-                // self.forces_on_water[i] += per_mol_water_accum[i];
             }
         }
 
@@ -537,19 +531,8 @@ impl MdState {
                 self.water[i].m.accel += per_mol_water_accum[i].f_m; // massless: handled by constraints/SETTLE
                 self.water[i].h0.accel += per_mol_water_accum[i].f_h0;
                 self.water[i].h1.accel += per_mol_water_accum[i].f_h1;
-
-                // todo: Which are we using: Accel, or forces_on_water? For now, update both.
-                // todo: This should be harmless, although perhaps confusing.
-                // self.forces_on_water[i] += per_mol_water_accum[i];
             }
         }
-
-        // todo; Removed: Pausing on thsi; we need to get it workign or change
-        // todo from SPME, but it's a time sink, and not making any progress.
-        // self.apply_long_range_recip_forces()
-
-        // let mut pme_recip = PmeRecip::new(0, 0, 0, 0., 0., 0., EWALD_ALPHA);
-        // let f = pme_recip.forces(posit, q);
     }
 }
 
@@ -607,16 +590,17 @@ pub fn f_nonbonded(
         // todo temp removed; using the standard Coulomb force (No approximations/optimziations)
         // todo for now while troubleshooting long-range portion of SPME/ewald.
 
-        // force_coulomb_short_range(
-        //     dir,
-        //     dist,
-        //     tgt.partial_charge,
-        //     src.partial_charge,
-        //     (LONG_RANGE_SWITCH_START, LONG_RANGE_CUTOFF),
-        //     EWALD_ALPHA,
-        // )
+        force_coulomb_short_range(
+            dir,
+            dist,
+            tgt.partial_charge,
+            src.partial_charge,
+            // (LONG_RANGE_SWITCH_START, LONG_RANGE_CUTOFF),
+            LONG_RANGE_CUTOFF,
+            EWALD_ALPHA,
+        )
 
-        force_coulomb(dir, dist, tgt.partial_charge, src.partial_charge, 1e-6)
+        // force_coulomb(dir, dist, tgt.partial_charge, src.partial_charge, 1e-6)
     };
 
     // See Amber RM, section 15, "1-4 Non-Bonded Interaction Scaling"
@@ -630,20 +614,6 @@ pub fn f_nonbonded(
         // Virial: r_ij · F_ij (use minimum-image)
         *w += diff_wrapped.dot(result);
     }
-
-    // if dist < 4. {
-    // if f_lj.magnitude() > 1e-4 {
-    //     println!("Dist: {dist:.2}, Tgt: {:.2}, Src: {:.2}, f_lj: {:.6}, f_coulomb: {:.2}, Q0: {:.2}, q1: {:.2} els: {}, {}", tgt.posit.x,
-    //              src.posit.x, f_lj.x, f_coulomb.x, tgt.partial_charge, src.partial_charge, src.element, tgt.element);
-    // }
-
-    // CAO 2025-08-17: Coul and LJ direction are both consistent.
-    // f_lj
-    // f_coulomb
-    // Vec3::new_zero()
-
-    // return f_lj; // todo temp
-    // return f_coulomb;
 
     result
 }

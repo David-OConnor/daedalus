@@ -17,7 +17,7 @@ const SIMBOX_PAD: f64 = 7.0; // Å
 // If we are setting up as a fixed size.
 
 // "The ewald real-space cutoff (and neighbor-list radius) must be 1/2 of the smallest box edge length
-const SIMBOX_WIDTH: f64 = 24.; // Å
+const SIMBOX_WIDTH: f64 = 26.; // Å
 const SIMBOX_WIDTH_DIV2: f64 = SIMBOX_WIDTH / 2.0;
 
 const BAR_PER_KCAL_MOL_PER_A3: f64 = 69476.95457055373;
@@ -29,7 +29,7 @@ const BAR_PER_KCAL_MOL_PER_A3: f64 = 69476.95457055373;
 pub struct SimBox {
     pub bounds_low: Vec3,
     pub bounds_high: Vec3,
-    extent: Vec3,
+    pub extent: Vec3,
 }
 
 impl SimBox {
@@ -68,6 +68,21 @@ impl SimBox {
             bounds_high,
             extent: bounds_high - bounds_low,
         }
+    }
+
+    /// We periodically run this to keep the solvent surrounding the dynamic atoms, as they move.
+    pub fn recenter(&mut self, atoms: &[AtomDynamics]) {
+        let half_ext = self.extent / 2.;
+
+        // todo: DRY with new.
+        let mut center = Vec3::new_zero();
+        for atom in atoms {
+            center += atom.posit;
+        }
+        center /= atoms.len() as f64;
+
+        self.bounds_low = center - half_ext;
+        self.bounds_high = center + half_ext;
     }
 
     /// Wrap an absolute coordinate back into the unit cell. (orthorhombic). We use it to
@@ -114,7 +129,8 @@ impl SimBox {
         (self.bounds_low + self.bounds_high) * 0.5
     }
 
-    // For use with the thermo/barostat.
+    /// For use with the barostat. It will expand or shrink the box if it determines the pressure
+    /// is too high or low based on the virial pair sum.
     pub fn scale_isotropic(&mut self, lambda: f64) {
         // Treat non-finite or tiny λ as "no-op"
         let lam = if lambda.is_finite() && lambda.abs() > 1.0e-12 {

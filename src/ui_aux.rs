@@ -251,44 +251,44 @@ pub fn md_setup(
         // Workaround for double-borrow.
         let mut run_clicked = false;
 
-        run_clicked = ui
-            .button(RichText::new("Run MD on peptide").color(Color32::GOLD))
-            .clicked();
-        if run_clicked {
-            // If not already loaded from static string to state, do so now.
-            // We load on demand to save computation.
-            // state.load_ffs_general();
-        }
-        if run_clicked {
-            let mol = state.molecule.as_mut().unwrap();
-
-            match build_dynamics_peptide(
-                &state.dev,
-                mol,
-                &state.ff_params,
-                state.to_save.num_md_steps,
-                state.to_save.md_dt,
-            ) {
-                Ok(md) => {
-                    let snap = &md.snapshots[0];
-                    draw_molecule(state, scene);
-
-                    draw_water(
-                        scene,
-                        &snap.water_o_posits,
-                        &snap.water_h0_posits,
-                        &snap.water_h1_posits,
-                        state.ui.visibility.hide_water
-                    );
-
-                    state.mol_dynamics = Some(md);
-                    state.ui.current_snapshot = 0;
-                }
-                Err(e) => handle_err(&mut state.ui, e.descrip),
-            }
-        }
-
-        ui.add_space(COL_SPACING / 2.);
+        // run_clicked = ui
+        //     .button(RichText::new("Run MD on peptide").color(Color32::GOLD))
+        //     .clicked();
+        // if run_clicked {
+        //     // If not already loaded from static string to state, do so now.
+        //     // We load on demand to save computation.
+        //     // state.load_ffs_general();
+        // }
+        // if run_clicked {
+        //     let mol = state.molecule.as_mut().unwrap();
+        //
+        //     match build_dynamics_peptide(
+        //         &state.dev,
+        //         mol,
+        //         &state.ff_params,
+        //         state.to_save.num_md_steps,
+        //         state.to_save.md_dt,
+        //     ) {
+        //         Ok(md) => {
+        //             let snap = &md.snapshots[0];
+        //             draw_molecule(state, scene);
+        //
+        //             draw_water(
+        //                 scene,
+        //                 &snap.water_o_posits,
+        //                 &snap.water_h0_posits,
+        //                 &snap.water_h1_posits,
+        //                 state.ui.visibility.hide_water
+        //             );
+        //
+        //             state.mol_dynamics = Some(md);
+        //             state.ui.current_snapshot = 0;
+        //         }
+        //         Err(e) => handle_err(&mut state.ui, e.descrip),
+        //     }
+        // }
+        //
+        // ui.add_space(COL_SPACING / 2.);
 
         let run_clicked = ui
             .button(RichText::new("Run MD docking").color(Color32::GOLD))
