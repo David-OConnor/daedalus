@@ -96,7 +96,7 @@ use ambient::SimBox;
 use bio_files::amber_params::{
     AngleBendingParams, BondStretchingParams, DihedralParams, MassParams, VdwParams,
 };
-use ewald::{ewald_comp_force, PmeRecip};
+use ewald::{PmeRecip, ewald_comp_force};
 use lin_alg::f64::Vec3;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use lin_alg::f64::{Vec3x4, f64x4};
@@ -106,9 +106,7 @@ use neighbors::NeighborsNb;
 use crate::{
     dynamics::{
         ambient::BerendsenBarostat,
-        non_bonded::{
-            CHARGE_UNIT_SCALER, EWALD_ALPHA, LjTables, SCALE_COUL_14, SPME_N,
-        },
+        non_bonded::{CHARGE_UNIT_SCALER, EWALD_ALPHA, LjTables, SCALE_COUL_14, SPME_N},
         prep::HydrogenMdType,
         water_opc::WaterMol,
     },
@@ -436,7 +434,10 @@ impl MdState {
             // todo: What is this? Implement it, or remove it?
             // todo: Should this take water displacements into account?
             // track the largest squared displacement to know when to rebuild the list
-            self.neighbors_nb.max_displacement_sq = self.neighbors_nb.max_displacement_sq.max((a.vel * dt).magnitude_squared());
+            self.neighbors_nb.max_displacement_sq = self
+                .neighbors_nb
+                .max_displacement_sq
+                .max((a.vel * dt).magnitude_squared());
         }
 
         // todo: Consider applying the thermostat between the first half-kick and drift.
@@ -477,7 +478,6 @@ impl MdState {
             self.rattle_hydrogens();
         }
 
-
         // todo: You may need to update the virial in the barostat.
         // I believe we must run barostat prior to thermostat, in our current configuration.
         self.apply_barostat_berendsen(dt);
@@ -510,7 +510,9 @@ impl MdState {
         let mut f_recip = self.pme_recip.forces(&pos_all, &q_all);
 
         // Scale to Amber force units if your PME returns raw qE:
-        for f in f_recip.iter_mut() { *f *= K_COUL; }
+        for f in f_recip.iter_mut() {
+            *f *= K_COUL;
+        }
 
         let mut w_recip = 0.0;
         for (k, tag) in map.iter().enumerate() {
@@ -542,15 +544,15 @@ impl MdState {
 
         // 1–4 Coulomb scaling correction
         for &(i, j) in &self.pairs_14_scaled {
-            let diff = self.cell.min_image(self.atoms[i].posit - self.atoms[j].posit);
+            let diff = self
+                .cell
+                .min_image(self.atoms[i].posit - self.atoms[j].posit);
             let r = diff.magnitude();
             let dir = diff / r;
 
-
             let qi = self.atoms[i].partial_charge;
             let qj = self.atoms[j].partial_charge;
-            let df =
-                ewald_comp_force(dir, r, qi, qj, self.pme_recip.alpha)
+            let df = ewald_comp_force(dir, r, qi, qj, self.pme_recip.alpha)
                     * (SCALE_COUL_14 - 1.0) // todo: Cache this.
                     * K_COUL;
 
@@ -576,8 +578,8 @@ impl MdState {
 
         // Dynamic atoms
         for (i, a) in self.atoms.iter().enumerate() {
-            pos.push(self.cell.wrap(a.posit));              // [0,L) per axis
-            q.push(a.partial_charge);                       // already scaled to Amber units
+            pos.push(self.cell.wrap(a.posit)); // [0,L) per axis
+            q.push(a.partial_charge); // already scaled to Amber units
             map.push(PMEIndex::Dyn(i));
         }
 
@@ -609,7 +611,9 @@ impl MdState {
         {
             let qsum: f64 = q.iter().sum();
             if qsum.abs() > 1e-6 {
-                eprintln!("[PME] Warning: net charge = {qsum:.6e} (PME assumes neutral or a uniform background)");
+                eprintln!(
+                    "[PME] Warning: net charge = {qsum:.6e} (PME assumes neutral or a uniform background)"
+                );
             }
         }
 

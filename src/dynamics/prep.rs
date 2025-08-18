@@ -660,7 +660,7 @@ pub fn build_dynamics_docking(
     dev: &ComputationDevice,
     lig: &mut Ligand,
     mol: &Molecule,
-    setup: &DockingSetup,
+    // setup: &DockingSetup,
     ff_params: &FfParamSet,
     n_steps: u32,
     dt: f64,
@@ -745,7 +745,11 @@ impl MdState {
 
         let ff_params_keyed_lig_specific = match ff_params.lig_specific.get(lig_ident) {
             Some(l) => l,
-            None => return Err(ParamError::new("Missing lig-specific (FRCMOD) parameters")),
+            None => {
+                return Err(ParamError::new(&format!(
+                    "Missing lig-specific (FRCMOD) parameters for {lig_ident}"
+                )));
+            }
         };
 
         // Convert FF params from keyed to index-based.

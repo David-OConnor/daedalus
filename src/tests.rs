@@ -23,29 +23,28 @@ fn test_docking_setup() {
     let receptor = Molecule::from_cif_pdb(&pdb, file);
 
     let mol_ligand = load_sdf(&PathBuf::from_str("molecules/DB03496.sdf").unwrap()).unwrap();
-    let mut ligand = Ligand::new(mol_ligand);
+    let mut lig = Ligand::new(mol_ligand);
 
     {
-        ligand.docking_site = DockingSite {
+        lig.docking_site = DockingSite {
             site_center: lin_alg::f64::Vec3::new(40.6807, 36.2017, 28.5526),
             site_radius: 10.,
         };
-        ligand.pose.anchor_posit = ligand.docking_site.site_center;
-        ligand.pose.orientation = lin_alg::f64::Quaternion::new(0.1156, -0.7155, 0.4165, 0.5488);
+        lig.pose.anchor_posit = lig.docking_site.site_center;
+        lig.pose.orientation = lin_alg::f64::Quaternion::new(0.1156, -0.7155, 0.4165, 0.5488);
 
-        if let ConformationType::AssignedTorsions { torsions } = &mut ligand.pose.conformation_type
-        {
+        if let ConformationType::AssignedTorsions { torsions } = &mut lig.pose.conformation_type {
             torsions[1].dihedral_angle = 0.884;
             torsions[0].dihedral_angle = 2.553;
         }
     }
 
-    let setup = DockingSetup::new(&receptor, &mut ligand, &lj_lut, &BhConfig::default());
+    let setup = DockingSetup::new(&receptor, &mut lig, &lj_lut, &BhConfig::default());
 
-    let poses = docking::init_poses(&ligand.docking_site, &ligand.flexible_bonds, 1, 2, 1);
+    let poses = docking::init_poses(&lig.docking_site, &lig.flexible_bonds, 1, 2, 1);
 
     // let lig_posits = ligand.position_atoms(Some(&poses[0]));
-    let lig_posits = ligand.position_atoms(None);
+    let lig_posits = lig.position_atoms(None);
 
     let len_rec = setup.rec_atoms_near_site.len();
     let len_lig = lig_posits.len();

@@ -513,6 +513,7 @@ impl Ligand {
                         result[atom_idx] = new_pos;
                     }
                 }
+
                 self.atom_posits = result;
             }
         }

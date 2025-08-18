@@ -221,7 +221,7 @@ fn is_hydrophobic(atom: &Atom) -> bool {
 /// energy may be the ideal conformation. This is used as a scoring metric.
 pub fn calc_binding_energy(
     setup: &DockingSetup,
-    ligand: &Ligand,
+    lig: &Ligand,
     lig_posits: &[Vec3F32],
 ) -> Option<BindingEnergy> {
     // todo: Integrate CUDA
@@ -278,7 +278,7 @@ pub fn calc_binding_energy(
         let lig_indices: Vec<usize> = (0..len_lig).collect();
 
         // todo: THis is not efficient; work-in for now.
-        let mut lig_atoms_positioned = ligand.molecule.atoms.clone();
+        let mut lig_atoms_positioned = lig.molecule.atoms.clone();
         for (i, atom) in lig_atoms_positioned.iter_mut().enumerate() {
             atom.posit = lig_posits[i].into();
         }
@@ -301,7 +301,7 @@ pub fn calc_binding_energy(
         let h_bonds_lig_donor = create_hydrogen_bonds_one_way(
             &lig_atoms_positioned,
             &lig_indices,
-            &ligand.molecule.bonds,
+            &lig.molecule.bonds,
             &setup.rec_atoms_near_site,
             &setup.rec_indices,
             true,
@@ -348,7 +348,7 @@ pub fn calc_binding_energy(
         // with target=protein=receptor; actually, the opposite!)
 
         // Note: Ligand positions are already positioned for the pose, by the time they enter this function.
-        for (i, lig_atom) in ligand.molecule.atoms.iter().enumerate() {
+        for (i, lig_atom) in lig.molecule.atoms.iter().enumerate() {
             // Our bh algorithm is currently hard-coded to f64.
             let force_fn = |dir: Vec3, q_src: f64, dist: f64| {
                 forces::force_coulomb_f32(
@@ -362,7 +362,7 @@ pub fn calc_binding_energy(
             };
 
             let f: Vec3F32 = barnes_hut::run_bh(
-                ligand.atom_posits[i],
+                lig.atom_posits[i],
                 999_999, // N/A, since we're comparing separate sets.
                 &setup.charge_tree,
                 &setup.bh_config,
@@ -693,7 +693,7 @@ fn vary_pose(pose: &Pose) -> Vec<Pose> {
 pub fn find_optimal_pose(
     dev: &ComputationDevice,
     setup: &DockingSetup,
-    ligand: &mut Ligand,
+    lig: &mut Ligand,
 ) -> (Pose, BindingEnergy) {
     // todo: Consider another fn for this part of the setup, so you can re-use it more easily.
 
@@ -703,7 +703,7 @@ pub fn find_optimal_pose(
     println!(
         "Atom counts. Rec: {} Lig: {}",
         setup.rec_atoms_near_site.len(),
-        ligand.molecule.atoms.len()
+        lig.molecule.atoms.len()
     );
 
     let start = Instant::now();
@@ -713,8 +713,8 @@ pub fn find_optimal_pose(
     let angles_per_bond = 3;
 
     let poses = init_poses(
-        &ligand.docking_site,
-        &ligand.flexible_bonds,
+        &lig.docking_site,
+        &lig.flexible_bonds,
         num_posits,
         num_orientations,
         angles_per_bond,
@@ -725,7 +725,7 @@ pub fn find_optimal_pose(
     let top_pose_count = 10;
 
     // Now process them in parallel and reduce to the single best pose:
-    let mut pose_energies = process_poses(&poses, setup, ligand);
+    let mut pose_energies = process_poses(&poses, setup, lig);
 
     pose_energies.sort_by(|a, b| a.1.score.partial_cmp(&b.1.score).unwrap());
     let best_pose = &poses[pose_energies[0].0];
@@ -738,7 +738,7 @@ pub fn find_optimal_pose(
     for (pose_i, energy) in &pose_energies[0..top_pose_count] {
         // continue; // todo: Put back when ready.
 
-        let mut lig_this = ligand.clone(); //  todo: DOn't like this clone.
+        let mut lig_this = lig.clone(); //  todo: DOn't like this clone.
         lig_this.pose = poses[*pose_i].clone();
 
         // let snapshots = build_dock_dynamics(dev, &mut lig_this, setup, num_vdw_steps);

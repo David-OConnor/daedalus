@@ -320,7 +320,7 @@ impl State {
                     .to_string();
 
                 self.ff_params.lig_specific.insert(
-                    mol_name.clone(),
+                    mol_name.to_uppercase(),
                     ForceFieldParamsKeyed::new(&ForceFieldParams::load_frcmod(path)?),
                 );
 
@@ -528,7 +528,7 @@ impl State {
                 if load_frcmod {
                     if let Some(frcmod) = data.frcmod {
                         self.ff_params.lig_specific.insert(
-                            ident,
+                            ident.to_uppercase(),
                             // todo: Don't unwrap.
                             ForceFieldParamsKeyed::new(
                                 &ForceFieldParams::from_frcmod(&frcmod).unwrap(),
@@ -551,8 +551,6 @@ impl State {
                             let mol: Molecule = mol2.try_into().unwrap();
                             self.ligand = Some(Ligand::new(mol, &self.ff_params.lig_specific));
                             self.mol_dynamics = None;
-
-                            println!("TEST: {:?}", self.ligand.as_ref().unwrap().atom_posits);
 
                             // self.update_from_prefs();
 

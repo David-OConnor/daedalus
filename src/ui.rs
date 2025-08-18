@@ -472,7 +472,7 @@ fn draw_cli(
     reset_cam: &mut bool,
     ui: &mut Ui,
 ) {
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         ui.label("Out: ");
         let color = if state.ui.cmd_line_out_is_err {
             COLOR_OUT_ERROR
@@ -1693,6 +1693,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                         &mut redraw_mol,
                         &mut reset_cam,
                     );
+
+                    state.ui.db_input = String::new();
                 }
             }
             if state.ui.db_input.len() == 3 {
@@ -1703,6 +1705,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 if button_clicked || enter_pressed {
                     let db_input = &state.ui.db_input.clone(); // Avoids a double borrow.
                     state.load_geostd_mol_data(&db_input, true, true, &mut redraw_lig);
+
+                    state.ui.db_input = String::new();
                 }
             }
 
@@ -1719,6 +1723,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
                                 redraw_mol = true;
                                 reset_cam = true;
+
+                                state.ui.db_input = String::new();
                             }
                             Err(_e) => {
                                 let msg = "Error loading SDF file".to_owned();
@@ -1738,6 +1744,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
                             redraw_mol = true;
                             reset_cam = true;
+
+                            state.ui.db_input = String::new();
                         }
                         Err(_e) => {
                             let msg = "Error loading SDF file".to_owned();
@@ -2048,16 +2056,20 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                             load_frcmod,
                             &mut redraw_lig,
                         );
+
+                        state.ui.popup.show_get_geostd = false;
                     }
                 }
-            });
 
-            if ui
-                .button(RichText::new("Close").color(Color32::LIGHT_RED))
-                .clicked()
-            {
-                state.ui.popup.show_get_geostd = false;
-            }
+                ui.add_space(ROW_SPACING);
+
+                if ui
+                    .button(RichText::new("Close").color(Color32::LIGHT_RED))
+                    .clicked()
+                {
+                    state.ui.popup.show_get_geostd = false;
+                }
+            });
         }
 
         if state.ui.popup.show_associated_structures {

@@ -24,7 +24,7 @@ use crate::{
         MESH_SPHERE_HIGHRES, MESH_SPHERE_LOWRES, MESH_SPHERE_MEDRES, WATER_BOND_THICKNESS,
         WATER_OPACITY, set_docking_light,
     },
-    util::orbit_center,
+    util::{handle_err, orbit_center},
 };
 
 const LIGAND_COLOR: Color = (0., 0.4, 1.);
@@ -702,6 +702,12 @@ pub fn draw_ligand(state: &State, scene: &mut Scene) {
     }
 
     let mut atoms_positioned = mol.atoms.clone();
+
+    println!(
+        "DRAWING LIG. posits: {:?}, bonds: {:?}",
+        lig.atom_posits.len(),
+        lig.molecule.bonds.len()
+    );
 
     // todo: C+P from draw_molecule. With some removed, but a lot of repeated.
     for (i, bond) in mol.bonds.iter().enumerate() {

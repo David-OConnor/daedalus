@@ -17,8 +17,9 @@ use na_seq::{AaIdent, Element};
 
 use crate::{
     CamSnapshot, PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel,
-    docking::ConformationType,
+    docking::{ConformationType, prep::DockingSetup},
     download_mols::load_cif_rcsb,
+    dynamics::prep::populate_ff_and_q,
     mol_drawing::{EntityType, MoleculeView, draw_density, draw_density_surface, draw_molecule},
     molecule::{Atom, AtomRole, Bond, Chain, Ligand, Molecule, Residue},
     render::{
@@ -575,13 +576,35 @@ pub fn load_atom_coords_rcsb(
 
             let ff_map = &state.ff_params.prot_ff_q_map.as_ref().unwrap().internal;
 
-            let mol: Molecule = match Molecule::from_mmcif(cif, ff_map) {
+            let mut mol: Molecule = match Molecule::from_mmcif(cif, ff_map) {
                 Ok(m) => m,
                 Err(e) => {
                     eprintln!("Problem parsing mmCif data into molecule: {e:?}");
                     return;
                 }
             };
+
+            // todo: This block is a direct C+P from file_io/mod.rs. Refactor into shared code.
+            // If we've loaded general FF params, apply them to get FF type and charge.
+            if let Some(charge_ff_data) = &state.ff_params.prot_ff_q_map {
+                if let Err(e) = populate_ff_and_q(&mut mol.atoms, &mol.residues, &charge_ff_data) {
+                    eprintln!(
+                        "Unable to populate FF charge and FF type for protein atoms: {:?}",
+                        e
+                    );
+                } else {
+                    // Run this to update the ff name and charge data on the set of receptor
+                    // atoms near the docking site.
+                    if let Some(lig) = &mut state.ligand {
+                        state.volatile.docking_setup = Some(DockingSetup::new(
+                            &mol,
+                            lig,
+                            &state.volatile.lj_lookup_table,
+                            &state.bh_config,
+                        ));
+                    }
+                }
+            }
 
             state.volatile.aa_seq_text = String::with_capacity(mol.atoms.len());
             for aa in &mol.aa_seq {

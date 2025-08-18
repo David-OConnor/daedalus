@@ -53,12 +53,12 @@ pub struct DockingSetup {
 impl DockingSetup {
     pub fn new(
         receptor: &Molecule,
-        ligand: &mut Ligand,
+        lig: &mut Ligand,
         lj_lut: &LjTable,
         bh_config: &BhConfig,
     ) -> Self {
         let (mut rec_atoms_near_site, rec_indices) =
-            find_rec_atoms_near_site(receptor, &ligand.docking_site);
+            find_rec_atoms_near_site(receptor, &lig.docking_site);
 
         // let (rec_indices_x8, _) = pack_slice(&rec_indices);
 
@@ -76,7 +76,7 @@ impl DockingSetup {
         //     setup_eem_charges(receptor, ligand, &mut rec_atoms_near_site, &rec_indices);
 
         // Set up the LJ data that doesn't change with pose.
-        let pair_count = rec_atoms_near_site.len() * ligand.molecule.atoms.len();
+        let pair_count = rec_atoms_near_site.len() * lig.molecule.atoms.len();
         // Atom rec el, lig el, atom rec posit, lig i. Assumes the only thing that changes with pose
         // is ligand posit.
         let mut hydrophobic = Vec::with_capacity(pair_count);
@@ -86,7 +86,7 @@ impl DockingSetup {
         // Observation: This is similar to the array of `epss` and `sigmas` you use in CUDA, but
         // with explicit indices.
         for atom_rec in &rec_atoms_near_site {
-            for atom_lig in &ligand.molecule.atoms {
+            for atom_lig in &lig.molecule.atoms {
                 let (sigma, eps) = lj_lut.get(&(atom_rec.element, atom_lig.element)).unwrap();
                 sigmas.push(*sigma);
                 epss.push(*eps);

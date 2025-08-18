@@ -15,6 +15,7 @@ use crate::{
     docking::{ConformationType, DockingSite},
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
     mol_drawing::MoleculeView,
+    util::handle_err,
 };
 
 pub const DEFAULT_PREFS_FILE: &str = "daedalus_prefs.dae";
@@ -216,7 +217,14 @@ impl State {
 
                 if let Some(lig) = &mut self.ligand {
                     lig.docking_site.site_center = data.docking_site_posit; // todo: Or docking site?
-                    lig.atom_posits = data.lig_atom_positions.clone();
+
+                    // todo: This check is a workaround for overal problems related to how we store molecules
+                    // todo and ligands. Without it, we can desync the positions, and cause index-error crashes
+                    if data.lig_atom_positions.len() == lig.atom_posits.len() {
+                        lig.atom_posits = data.lig_atom_positions.clone();
+                    } else {
+                        eprintln!("Error loading ligand atom positions; look into this.")
+                    }
 
                     lig.pose.conformation_type = ConformationType::AbsolutePosits;
                 }

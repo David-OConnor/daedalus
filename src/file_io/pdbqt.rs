@@ -79,7 +79,7 @@ impl Molecule {
         let mut chains: Vec<Chain> = Vec::new();
         let mut residues: Vec<Residue> = Vec::new();
 
-        let mut ligand: Option<Ligand> = None;
+        let mut lig: Option<Ligand> = None;
 
         let mut ident = String::new();
 
@@ -192,8 +192,8 @@ impl Molecule {
                     dock_type,
                 });
             } else if record_type == "CRYST1" {
-                if ligand.is_none() {
-                    ligand = Some(Default::default());
+                if lig.is_none() {
+                    lig = Some(Default::default());
                 }
                 // todo: What to do with this?
             } else {
@@ -203,7 +203,7 @@ impl Molecule {
 
         Ok((
             Molecule::new(ident, atoms, chains, residues, None, None, None),
-            ligand,
+            lig,
         ))
     }
 
