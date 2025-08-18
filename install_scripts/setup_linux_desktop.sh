@@ -6,9 +6,6 @@ NAME="daedalus"
 APP_DIR="$HOME/${NAME}"
 DESKTOP_PATH="$HOME/.local/share/applications/${NAME}.desktop"
 
-
-printf "Moving the ${NAME_UPPER} executable and icon to ${APP_DIR}..."
-
 chmod +x $NAME
 
 if [ ! -d "$APP_DIR" ]; then
@@ -32,4 +29,5 @@ EOF
 
 chmod +x "$DESKTOP_PATH"
 
-printf "\nComplete. You can launch ${NAME_UPPER} through the GUI (e.g., search \"${NAME_UPPER}\") and/or add it to favorites.\n"
+printf "Moved the ${NAME_UPPER} executable and icon to ${APP_DIR}."
+printf "\nYou can launch ${NAME_UPPER} through the GUI (e.g., search \"${NAME_UPPER}\") and/or add it to favorites.\n"
