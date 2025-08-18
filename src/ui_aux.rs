@@ -23,7 +23,7 @@ use crate::{
     render::set_docking_light,
     ui::{
         COL_SPACING, COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_HIGHLIGHT, COLOR_INACTIVE,
-        ROW_SPACING, int_field,
+        ROW_SPACING, int_field, int_field_u16,
     },
     util::{cam_look_at_outside, handle_err, make_egui_color, move_lig_to_res},
 };
@@ -266,6 +266,8 @@ pub fn md_setup(
                 &state.dev,
                 mol,
                 &state.ff_params,
+                state.to_save.md_temperature as f64,
+                state.to_save.md_pressure as f64 / 100., // Convert kPa to bar.
                 state.to_save.num_md_steps,
                 state.to_save.md_dt,
             ) {
@@ -318,6 +320,8 @@ pub fn md_setup(
                     mol,
                     // state.volatile.docking_setup.as_ref().unwrap(),
                     &state.ff_params,
+                    state.to_save.md_temperature as f64,
+                    state.to_save.md_pressure as f64 / 100., // Convert kPa to bar.
                     state.to_save.num_md_steps,
                     state.to_save.md_dt,
                 ) {
@@ -362,6 +366,15 @@ pub fn md_setup(
                 state.volatile.md_runtime = state.to_save.num_md_steps as f64 * v;
             }
         }
+
+        // ui.label(format!("Temp: {:.1} K", state.to_save.md_pressure));
+        int_field_u16(&mut state.to_save.md_temperature, "Temp (K):", &mut false, ui);
+        int_field_u16(&mut state.to_save.md_pressure, "Pressure (kPa):", &mut false, ui);
+
+        // ui.label(format!("Temp: {:.1} kPa", state.to_save.md_temperature));
+        // int_field(&mut state.to_save.num_md_steps, "Steps:", &mut false, ui);
+
+        ui.add_space(COL_SPACING);
 
         ui.label(format!("Runtime: {:.1} ps", state.volatile.md_runtime));
 

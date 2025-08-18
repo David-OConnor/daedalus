@@ -157,8 +157,8 @@ impl SimBox {
 
 /// Isotropic Berendsen barostat (τ=relaxation time, κT=isothermal compressibility)
 pub struct BerendsenBarostat {
-    /// bar
-    pub p_target: f64,
+    /// bar (kPa / 100)
+    pub pressure_target: f64,
     /// picoseconds
     pub tau_pressure: f64,
     pub tau_temp: f64,
@@ -172,7 +172,7 @@ impl Default for BerendsenBarostat {
     fn default() -> Self {
         Self {
             // Standard atmospheric pressure.
-            p_target: 1.,
+            pressure_target: 1.,
             // Relaxation time: 1 ps ⇒ gentle volume changes every few steps.
             tau_pressure: 1.,
             tau_temp: 1.,
@@ -187,7 +187,7 @@ impl Default for BerendsenBarostat {
 impl BerendsenBarostat {
     pub fn scale_factor(&self, p_inst: f64, dt: f64) -> f64 {
         // Δln V = (κ_T/τ_p) (P - P0) dt
-        let mut dlnv = (self.kappa_t / self.tau_pressure) * (p_inst - self.p_target) * dt;
+        let mut dlnv = (self.kappa_t / self.tau_pressure) * (p_inst - self.pressure_target) * dt;
 
         // Cap per-step volume change (e.g., ≤10%)
         const MAX_DLNV: f64 = 0.10;

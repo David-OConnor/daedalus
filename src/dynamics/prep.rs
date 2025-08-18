@@ -47,9 +47,6 @@ use crate::{
     molecule::{Atom, Bond, Ligand, Molecule, Residue, ResidueEnd, build_adjacency_list},
 };
 
-// Todo: QC this. And/or make this a setting
-const TEMP_TGT_DEFAULT: f64 = 310.; // Kelvin.
-
 // Å. Static atoms must be at least this close to a dynamic atom at the start of MD to count.
 // Set this wide to take into account motion.
 const STATIC_ATOM_DIST_THRESH: f64 = 8.; // todo: Increase (?) A/R.
@@ -662,6 +659,8 @@ pub fn build_dynamics_docking(
     mol: &Molecule,
     // setup: &DockingSetup,
     ff_params: &FfParamSet,
+    temp_target: f64,
+    pressure_target: f64,
     n_steps: u32,
     dt: f64,
 ) -> Result<MdState, ParamError> {
@@ -676,7 +675,8 @@ pub fn build_dynamics_docking(
         &lig.molecule.bonds,
         &mol.atoms,
         ff_params,
-        TEMP_TGT_DEFAULT,
+        temp_target,
+        pressure_target,
         &lig.molecule.ident,
     )?;
 
@@ -708,6 +708,7 @@ impl MdState {
         atoms_static_all: &[Atom],
         ff_params: &FfParamSet,
         temp_target: f64,
+        pressure_target: f64, // Bar
         lig_ident: &str,
         // todo: Temperature/thermostat.
     ) -> Result<Self, ParamError> {
@@ -808,6 +809,7 @@ impl MdState {
             atoms_dy_static,
             ff_params_non_static,
             temp_target,
+            pressure_target,
             hydrogen_md_type,
             adjacency_list.to_vec(),
         );
@@ -823,6 +825,7 @@ impl MdState {
         bonds: &[Bond],
         ff_params: &FfParamSet,
         temp_target: f64,
+        pressure_target: f64,
         // todo: Thermostat.
     ) -> Result<Self, ParamError> {
         let mut hydrogen_md_type = HydrogenMdType::Fixed(Vec::new());
@@ -894,6 +897,7 @@ impl MdState {
             Vec::new(),
             ff_params_non_static,
             temp_target,
+            pressure_target,
             hydrogen_md_type,
             adjacency_list.to_vec(),
         );
@@ -908,6 +912,8 @@ pub fn build_dynamics_peptide(
     dev: &ComputationDevice,
     mol: &mut Molecule,
     ff_params: &FfParamSet,
+    temp_target: f64,
+    pressure_target: f64,
     n_steps: u32,
     dt: f64,
 ) -> Result<MdState, ParamError> {
@@ -915,8 +921,14 @@ pub fn build_dynamics_peptide(
 
     let posits: Vec<_> = mol.atoms.iter().map(|a| a.posit).collect();
 
-    let mut md_state =
-        MdState::new_peptide(&mol.atoms, &posits, &mol.bonds, ff_params, TEMP_TGT_DEFAULT)?;
+    let mut md_state = MdState::new_peptide(
+        &mol.atoms,
+        &posits,
+        &mol.bonds,
+        ff_params,
+        temp_target,
+        pressure_target,
+    )?;
 
     let start = Instant::now();
 
@@ -976,7 +988,8 @@ impl MdState {
         atoms_dy: Vec<AtomDynamics>,
         atoms_static: Vec<AtomDynamics>,
         ff_params_non_static: ForceFieldParamsIndexed,
-        temp_target: f64,
+        temp_target: f64,     // K
+        pressure_target: f64, // k
         hydrogen_md_type: HydrogenMdType,
         adjacency_list: Vec<Vec<usize>>,
     ) -> Self {
@@ -996,6 +1009,8 @@ impl MdState {
             hydrogen_md_type,
             ..Default::default()
         };
+
+        result.barostat.pressure_target = pressure_target;
 
         result.water = make_water_mols(
             &result.cell,

@@ -43,6 +43,10 @@ pub struct ToSave {
     pub num_md_steps: u32,
     /// ps (10^-12). Typical values are 0.001 or 0.002.
     pub md_dt: f64,
+    /// K
+    pub md_temperature: u16,
+    /// kPa. (Note in MD state, we use bar, as a floating point)
+    pub md_pressure: u16,
 }
 
 impl Default for ToSave {
@@ -61,6 +65,8 @@ impl Default for ToSave {
             sa_surface_precision: 0.55,
             num_md_steps: 500,
             md_dt: 0.001,
+            md_temperature: 310,
+            md_pressure: 100,
         }
     }
 }

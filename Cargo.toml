@@ -18,8 +18,7 @@ na_seq = "0.3.1"
 bio_apis = {  version = "0.1.6", features = ["encode"] }
 bio_files = "0.2.6"
 mcubes = "0.1.4"
-#ewald = "0.1.0"
-ewald = { path = "../ewald" }
+ewald = "0.1.0"
 
 # For loading and saving config
 bincode = "2.0.1"

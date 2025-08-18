@@ -123,6 +123,26 @@ pub fn int_field(val: &mut u32, label: &str, redraw: &mut bool, ui: &mut Ui) {
     }
 }
 
+// todo: DRY! In general, these int fields seem important for clarity, but are not
+// todo flexible. E.g. need flexible widths too.
+pub fn int_field_u16(val: &mut u16, label: &str, redraw: &mut bool, ui: &mut Ui) {
+    ui.label(label);
+    let mut val_str = val.to_string();
+
+    if ui
+        .add_sized(
+            [40., Ui::available_height(ui)],
+            TextEdit::singleline(&mut val_str),
+        )
+        .changed()
+    {
+        if let Ok(v) = val_str.parse::<u16>() {
+            *val = v;
+            *redraw = true;
+        }
+    }
+}
+
 /// Handles keyboard and mouse input not associated with a widget.
 pub fn handle_input(
     state: &mut State,
