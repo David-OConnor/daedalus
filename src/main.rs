@@ -66,13 +66,11 @@ use bio_apis::{
     rcsb::{FilesAvailable, PdbDataResults},
 };
 use bio_files::amber_params::{ChargeParams, ForceFieldParamsKeyed};
-
 #[cfg(feature = "cuda")]
 use cudarc::{
     driver::{CudaContext, CudaModule, CudaStream},
     nvrtc::Ptx,
 };
-
 use egui_file_dialog::{FileDialog, FileDialogConfig};
 use graphics::{Camera, InputsCommanded};
 use lin_alg::{
@@ -88,9 +86,7 @@ use na_seq::{
 
 use crate::{
     aa_coords::bond_vecs::init_local_bond_vecs,
-    docking::{
-        BindingEnergy, THETA_BH, prep::DockingSetup,
-    },
+    docking::{BindingEnergy, THETA_BH, prep::DockingSetup},
     dynamics::MdState,
     molecule::{Ligand, PeptideAtomPosits},
     prefs::ToSave,

@@ -3,15 +3,14 @@
 use std::{collections::HashMap, ops::AddAssign, sync::Arc};
 
 use cudarc::driver::{CudaModule, CudaStream};
-use ewald::{PmeRecip, force_coulomb_short_range};
+use ewald::force_coulomb_short_range;
 use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 use rayon::prelude::*;
 
 use crate::{
     ComputationDevice,
     dynamics::{AtomDynamics, MdState, ambient::SimBox, water_opc},
-    forces::{force_coulomb, force_lj, force_lj_gpu, force_nonbonded_gpu},
-    molecule::Atom,
+    forces::{force_lj, force_nonbonded_gpu},
 };
 
 // Å. 9-12 should be fine; there is very little VDW force > this range due to
@@ -315,9 +314,13 @@ fn apply_force_cuda(
 
     let mut scale_14s = Vec::with_capacity(n);
 
+    // todo: Experimenting for symmetric mode
+    let mut tgt_is: Vec<u32> = Vec::with_capacity(n);
+    let mut src_is: Vec<u32> = Vec::with_capacity(n);
+
     for (i_tgt, i_src, scale14) in pairs {
         // `into()` converts Vec3s from f64 to f32.
-        posits_tgt.push(atoms_tgt[*i_tgt].posit.into());
+        // posits_tgt.push(atoms_tgt[*i_tgt].posit.into());
         posits_src.push(src[*i_src].posit.into());
 
         let indices = &indices((*i_tgt, *i_src));
@@ -335,9 +338,15 @@ fn apply_force_cuda(
         qs_src.push(src[*i_src].partial_charge as f32);
 
         scale_14s.push(*scale14);
+
+        // For symmetric mode.
+        tgt_is.push(*i_tgt as u32);
+        src_is.push(*i_src as u32);
     }
 
     // todo: Do we want a single, combined LJ + Ewald short-range kernel?
+
+    let symmetric = matches!(lj_type, LjIndexType::DynDyn);
 
     // 1-4 scaling is handled in the kernel.
     let (f_per_atom, virial_sum) = force_nonbonded_gpu(
@@ -352,6 +361,9 @@ fn apply_force_cuda(
         &scale_14s,
         cutoff as f32,
         alpha as f32,
+        symmetric,
+        &tgt_is,
+        &src_is,
     );
 
     // Handle the symmetric case; our pairs only exist in one order.
@@ -556,6 +568,7 @@ impl MdState {
                         (f_dyn, f_water, w_a + w_b)
                     },
                 );
+
             self.barostat.virial_pair_kcal += w_sum;
 
             for i in 0..n_dyn {
@@ -818,85 +831,6 @@ pub fn f_nonbonded(
 
     result
 }
-
-// #[cfg(feature = "cuda")]
-// pub fn f_nonbonded_cuda(
-//     virial_w: Option<&mut f64>,
-//     tgt: &AtomDynamics,
-//     src: &AtomDynamics,
-//     cell: &SimBox,
-//     scale14: bool, // See notes earlier in this module.
-//     lj_indices: LjTableIndices,
-//     lj_tables: &LjTables,
-//     // These flags are for use with forces on water.
-//     calc_lj: bool,
-//     calc_coulomb: bool,
-// ) -> Vec3 {
-//     let diff = tgt.posit - src.posit;
-//     let diff_wrapped = cell.min_image(diff);
-//
-//     let dist = diff_wrapped.magnitude();
-//
-//     if dist < 1e-12 {
-//         return Vec3::new_zero();
-//     }
-//
-//     let dir = diff_wrapped / dist;
-//
-//     let f_lj = if !calc_lj || dist > CUTOFF_VDW {
-//         Vec3::new_zero()
-//     } else {
-//         let (σ, ε) = match lj_indices {
-//             LjTableIndices::DynDyn(indices) => *lj_tables.dynamic.get(&indices).unwrap(),
-//             LjTableIndices::DynStatic(indices) => *lj_tables.static_.get(&indices).unwrap(),
-//             LjTableIndices::DynOnWater(i) => *lj_tables.water_dyn.get(&i).unwrap(),
-//             LjTableIndices::StaticOnWater(i) => *lj_tables.water_static.get(&i).unwrap(),
-//             LjTableIndices::WaterOnWater => (water_opc::O_SIGMA, water_opc::O_EPS),
-//         };
-//
-//         // Negative due to our mix of conventions; keep it consistent with coulomb, and net correct.
-//         let mut f = -force_lj(dir, dist, σ, ε);
-//         if scale14 {
-//             f *= SCALE_LJ_14;
-//         }
-//         f
-//     };
-//
-//     // We assume that in the AtomDynamics structs, charges are already scaled to Amber units.
-//     // (No longer in elementary charge)
-//     let mut f_coulomb = if !calc_coulomb {
-//         Vec3::new_zero()
-//     } else {
-//         // todo temp removed; using the standard Coulomb force (No approximations/optimziations)
-//         // todo for now while troubleshooting long-range portion of SPME/ewald.
-//
-//         force_coulomb_short_range(
-//             dir,
-//             dist,
-//             tgt.partial_charge,
-//             src.partial_charge,
-//             // (LONG_RANGE_SWITCH_START, LONG_RANGE_CUTOFF),
-//             LONG_RANGE_CUTOFF,
-//             EWALD_ALPHA,
-//         )
-//
-//         // force_coulomb(dir, dist, tgt.partial_charge, src.partial_charge, 1e-6)
-//     };
-//
-//     // See Amber RM, section 15, "1-4 Non-Bonded Interaction Scaling"
-//     if scale14 {
-//         f_coulomb *= SCALE_COUL_14;
-//     }
-//
-//     let result = f_lj + f_coulomb;
-//
-//     if let Some(w) = virial_w {
-//         // Virial: r_ij · F_ij (use minimum-image)
-//         *w += diff_wrapped.dot(result);
-//     }
-//
-//     result
-// }
 
 /// Helper. Returns σ, ε between an atom pair. Atom order passed as params doesn't matter.
 /// Note that this uses the traditional algorithm; not the Amber-specific version: We pre-set

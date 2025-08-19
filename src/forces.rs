@@ -167,6 +167,9 @@ pub fn force_nonbonded_gpu(
     scale_14: &[bool],
     cutoff: f32,
     alpha: f32,
+    symmetric: bool,
+    tgt_is: &[u32],
+    src_is: &[u32],
 ) -> (Vec<Vec3F32>, f32) {
     let start = Instant::now();
 
@@ -179,6 +182,8 @@ pub fn force_nonbonded_gpu(
 
     // May be safer for the GPU?
     let scale_14: Vec<_> = scale_14.iter().map(|v| *v as u8).collect();
+
+    let symmetric = symmetric as u8;
 
     // Allocate buffers
     let posits_src_gpu = vec3s_to_dev(stream, posits_src);
@@ -194,6 +199,10 @@ pub fn force_nonbonded_gpu(
 
     let qs_tgt_gpu = stream.memcpy_stod(qs_tgt).unwrap();
     let qs_src_gpu = stream.memcpy_stod(qs_src).unwrap();
+
+    // We use these indices for the symmetric case.
+    let tgt_is_gpu = stream.memcpy_stod(tgt_is).unwrap();
+    let src_is_gpu = stream.memcpy_stod(src_is).unwrap();
 
     // For Amber-style 1-4 covalent bond scaling; not general LJ.
     let scale_14_gpu = stream.memcpy_stod(&scale_14).unwrap();
@@ -219,6 +228,9 @@ pub fn force_nonbonded_gpu(
     launch_args.arg(&scale_14_gpu);
     launch_args.arg(&cutoff);
     launch_args.arg(&alpha);
+    launch_args.arg(&symmetric);
+    launch_args.arg(&tgt_is_gpu);
+    launch_args.arg(&src_is_gpu);
     // todo: Cell A/R for wrapping water
     launch_args.arg(&n);
 

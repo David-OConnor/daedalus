@@ -151,6 +151,10 @@ void nonbonded_force_kernel(
     const uint8_t* __restrict__ scale_14s,
     float cutoff,
     float alpha,
+    uint8_t symmetric,
+    // These indices allow for symmetric adding of the opposite.
+    const uint32_t* __restrict__ tgt_is,
+    const uint32_t* __restrict__ src_is,
     // todo: Cell A/R
     size_t N
 ) {
@@ -201,10 +205,18 @@ void nonbonded_force_kernel(
 
         // Virial per pair (pair counted once): -0.5 * r · F
         // todo: Cell wrapping for water.
-        float w_pair = -0.5f * (diff.x * f.x + diff.y * f.y + diff.z * f.z);
-        atomicAdd(virial, w_pair);
+        float virial_pair = (diff.x * f.x + diff.y * f.y + diff.z * f.z);
+        atomicAdd(virial, virial_pair);
 
-        out[i] = out[i] + f;
+        atomicAdd(&out[tgt_is[i]].x, f.x);
+        atomicAdd(&out[tgt_is[i]].y, f.y);
+        atomicAdd(&out[tgt_is[i]].z, f.z);
+
+        if (symmetric) {
+            atomicAdd(&out[src_is[i]].x, -f.x);
+            atomicAdd(&out[src_is[i]].y, -f.y);
+            atomicAdd(&out[src_is[i]].z, -f.z);
+        }
     }
 }
 
