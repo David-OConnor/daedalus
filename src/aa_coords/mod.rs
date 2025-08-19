@@ -104,7 +104,7 @@ pub fn tetra_legs(leg_a: Vec3, leg_b: Vec3, leg_c: Vec3) -> Vec3 {
 }
 
 pub fn tetra_atoms(atom_center: Vec3, atom_a: Vec3, atom_b: Vec3, atom_c: Vec3) -> Vec3 {
-    let mut avg = (atom_a + atom_b + atom_c) / 3.;
+    let avg = (atom_a + atom_b + atom_c) / 3.;
     (avg - atom_center).to_normalized()
 }
 

@@ -563,7 +563,7 @@ impl State {
                     }
                 }
             }
-            Err(e) => handle_err(
+            Err(_) => handle_err(
                 &mut self.ui,
                 format!("Unable to load Amber Geostd data (Server or internet problem?)"),
             ),

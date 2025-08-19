@@ -10,7 +10,7 @@ use rayon::prelude::*;
 use crate::{
     ComputationDevice,
     dynamics::{AtomDynamics, MdState, ambient::SimBox, water_opc},
-    forces::{force_coulomb, force_lj, force_lj_gpu, force_lj_gpu_pairwise},
+    forces::{force_coulomb, force_lj, force_lj_gpu, force_nonbonded_gpu},
     molecule::Atom,
 };
 
@@ -289,6 +289,8 @@ fn apply_force_cuda(
     cell: &SimBox,
     lj_type: LjIndexType,
     lj_tables: &LjTables,
+    cutoff: f64,
+    alpha: f64,
 ) -> f64 {
     let indices = |i| match lj_type {
         LjIndexType::DynDyn => LjTableIndices::DynDyn(i),
@@ -304,8 +306,13 @@ fn apply_force_cuda(
 
     let mut posits_tgt: Vec<Vec3F32> = Vec::with_capacity(n);
     let mut posits_src: Vec<Vec3F32> = Vec::with_capacity(n);
+
     let mut sigmas = Vec::with_capacity(n);
     let mut epss = Vec::with_capacity(n);
+
+    let mut qs_tgt = Vec::with_capacity(n);
+    let mut qs_src = Vec::with_capacity(n);
+
     let mut scale_14s = Vec::with_capacity(n);
 
     for (i_tgt, i_src, scale14) in pairs {
@@ -324,20 +331,27 @@ fn apply_force_cuda(
         sigmas.push(σ as f32);
         epss.push(ε as f32);
 
+        qs_tgt.push(atoms_tgt[*i_tgt].partial_charge as f32);
+        qs_src.push(src[*i_src].partial_charge as f32);
+
         scale_14s.push(*scale14);
     }
 
     // todo: Do we want a single, combined LJ + Ewald short-range kernel?
 
     // 1-4 scaling is handled in the kernel.
-    let (f_lj_per_atom, virial_sum) = force_lj_gpu_pairwise(
+    let (f_per_atom, virial_sum) = force_nonbonded_gpu(
         stream,
         module,
         &posits_tgt,
         &posits_src,
         &sigmas,
         &epss,
+        &qs_tgt,
+        &qs_src,
         &scale_14s,
+        cutoff as f32,
+        alpha as f32,
     );
 
     // Handle the symmetric case; our pairs only exist in one order.
@@ -349,11 +363,9 @@ fn apply_force_cuda(
     // println!("F LJ: {:.4?}", &f_lj_per_atom[0..10]);
 
     for (i, tgt) in atoms_tgt.iter_mut().enumerate() {
-        let f_f64: Vec3 = f_lj_per_atom[i].into();
+        let f_f64: Vec3 = f_per_atom[i].into();
         tgt.accel += f_f64;
     }
-
-    // todo: Handle Coulomb.
 
     virial_sum as f64 // kcal/mol
 }
@@ -421,6 +433,8 @@ impl MdState {
                         &self.cell,
                         LjIndexType::DynDyn,
                         &self.lj_tables,
+                        LONG_RANGE_CUTOFF,
+                        EWALD_ALPHA,
                     );
                 }
             }

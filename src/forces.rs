@@ -148,20 +148,25 @@ pub fn force_lj_gpu(
     result
 }
 
+/// Handles both LJ, and Coulomb (SPME short range) force.
 /// Inputs are structured differently here from our other one; uses pre-paired inputs and outputs, and
 /// a common index. Exclusions (e.g. Amber-style 1-2 adn 1-3) are handled upstream.
 ///
 /// todo: Sort out how you handle the symmetric case here. Maybe return a separate "forces-on-sources"?
 /// Returns (forces on targets, virial sum)
 #[cfg(feature = "cuda")]
-pub fn force_lj_gpu_pairwise(
+pub fn force_nonbonded_gpu(
     stream: &Arc<CudaStream>,
     module: &Arc<CudaModule>,
     posits_tgt: &[Vec3F32],
     posits_src: &[Vec3F32],
     sigmas: &[f32],
     epss: &[f32],
+    qs_tgt: &[f32],
+    qs_src: &[f32],
     scale_14: &[bool],
+    cutoff: f32,
+    alpha: f32,
 ) -> (Vec<Vec3F32>, f32) {
     let start = Instant::now();
 
@@ -187,26 +192,34 @@ pub fn force_lj_gpu_pairwise(
     let sigmas_gpu = stream.memcpy_stod(sigmas).unwrap();
     let epss_gpu = stream.memcpy_stod(epss).unwrap();
 
+    let qs_tgt_gpu = stream.memcpy_stod(qs_tgt).unwrap();
+    let qs_src_gpu = stream.memcpy_stod(qs_src).unwrap();
+
     // For Amber-style 1-4 covalent bond scaling; not general LJ.
     let scale_14_gpu = stream.memcpy_stod(&scale_14).unwrap();
 
     // todo: Likely load these functions (kernels) at init and pass as a param.
-    let func_lj_force = module.load_function("lj_force_kernel_pairwise").unwrap();
+    let func_force = module.load_function("nonbonded_force_kernel").unwrap();
 
     let cfg = LaunchConfig::for_num_elems(n as u32);
 
-    let mut launch_args = stream.launch_builder(&func_lj_force);
+    let mut launch_args = stream.launch_builder(&func_force);
 
     // todo: Is there a better way to pass non-arrays?
     let mut virial_gpu = stream.memcpy_stod(&[0.0f32]).unwrap();
 
     launch_args.arg(&mut result_buf);
     launch_args.arg(&mut virial_gpu);
-    launch_args.arg(&posits_src_gpu);
     launch_args.arg(&posits_tgt_gpu);
+    launch_args.arg(&posits_src_gpu);
     launch_args.arg(&sigmas_gpu);
     launch_args.arg(&epss_gpu);
+    launch_args.arg(&qs_tgt_gpu);
+    launch_args.arg(&qs_src_gpu);
     launch_args.arg(&scale_14_gpu);
+    launch_args.arg(&cutoff);
+    launch_args.arg(&alpha);
+    // todo: Cell A/R for wrapping water
     launch_args.arg(&n);
 
     unsafe { launch_args.launch(cfg) }.unwrap();

@@ -7,7 +7,6 @@ use std::{collections::HashMap, time::Instant};
 use bio_files::ResidueType;
 use egui::Color32;
 use graphics::{Camera, ControlScheme, EngineUpdates, FWD_VEC, Mesh, Scene, Vertex};
-use itertools::Itertools;
 use lin_alg::{
     f32::{Quaternion, Vec3 as Vec3F32},
     f64::Vec3,

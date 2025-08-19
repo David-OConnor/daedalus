@@ -257,7 +257,7 @@ pub fn handle_cmd(
         return Ok("Complete".to_owned());
     }
 
-    if let Some(caps) = re_orient.captures(&input) {
+    if let Some(_caps) = re_orient.captures(&input) {
         engine_updates.camera = true;
 
         return Ok("Complete".to_owned());
@@ -305,7 +305,7 @@ pub fn handle_cmd(
         return Ok("Complete".to_owned());
     }
 
-    if let Some(caps) = re_orient.captures(&input) {
+    if let Some(_caps) = re_orient.captures(&input) {
         if let Some(mol) = &state.molecule {
             let atom_sel = mol.get_sel_atom(&state.ui.selection);
 

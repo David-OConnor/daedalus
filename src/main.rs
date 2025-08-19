@@ -65,17 +65,15 @@ use bio_apis::{
     rcsb,
     rcsb::{FilesAvailable, PdbDataResults},
 };
-use bio_files::amber_params::{ChargeParams, ForceFieldParams, ForceFieldParamsKeyed};
-// #[cfg(feature = "cuda")]
-// use cuda_setup::ComputationDevice;
+use bio_files::amber_params::{ChargeParams, ForceFieldParamsKeyed};
+
 #[cfg(feature = "cuda")]
 use cudarc::{
     driver::{CudaContext, CudaModule, CudaStream},
     nvrtc::Ptx,
 };
-use egui::RichText;
+
 use egui_file_dialog::{FileDialog, FileDialogConfig};
-// use file_io::cif_pdb::load_cif_pdb;
 use graphics::{Camera, InputsCommanded};
 use lin_alg::{
     f32::{Quaternion, Vec3},
@@ -84,21 +82,20 @@ use lin_alg::{
 use mol_drawing::MoleculeView;
 use molecule::Molecule;
 use na_seq::{
-    AminoAcid, AminoAcidGeneral, Element,
+    AminoAcid, AminoAcidGeneral,
     element::{LjTable, init_lj_lut},
 };
 
 use crate::{
     aa_coords::bond_vecs::init_local_bond_vecs,
     docking::{
-        BindingEnergy, ConformationType, THETA_BH, external::check_adv_avail, prep::DockingSetup,
+        BindingEnergy, THETA_BH, prep::DockingSetup,
     },
     dynamics::MdState,
-    file_io::{mtz::load_mtz, pdbqt::load_pdbqt},
     molecule::{Ligand, PeptideAtomPosits},
     prefs::ToSave,
     render::render,
-    ui::{COL_SPACING, VIEW_DEPTH_FAR_MAX, VIEW_DEPTH_NEAR_MIN},
+    ui::{VIEW_DEPTH_FAR_MAX, VIEW_DEPTH_NEAR_MIN},
     util::handle_err,
 };
 // Include general Amber forcefield params with our program. See the Reference Manual, section ]

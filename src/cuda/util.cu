@@ -12,6 +12,11 @@ const float SOFTENING_FACTOR_SQ = 0.000001f;
 __device__
 const float TAU = 6.283185307179586f;
 
+// 1/sqrt(pi)
+__device__
+// const float INV_SQRT_PI = 1.0f / sqrtf(CUDART_PI_F);
+const float INV_SQRT_PI = 0.5641895835477563f;
+
 // __device__
 // const float EPS_DIV0 = 0.00000000001f;
 
@@ -56,44 +61,31 @@ __device__ inline float3 min_image(float3 dv, float3 box) {
 
 __device__
 float3 coulomb_force_spme_short_range(
-    float3 posit_src,
-    float3 posit_tgt,
-    float q_src,
-    float q_tgt,
+    float3 diff,
+    float r,
+    float3 dir,
+    float q_0,
+    float q_1,
     float cutoff,
     float alpha,
     float3 cell     // {Lx, Ly, Lz}; set zeros to disable PBC
 ) {
-    // Displacement with optional min-image
-    float3 diff = min_image(posit_tgt - posit_src, cell);
-    float r2 = diff.x*diff.x + diff.y*diff.y + diff.z*diff.z;
-    float cutoff2 = cutoff * cutoff;
-
     // Outside cutoff: no short-range contribution
-    if (r2 >= cutoff2) return make_float3(0.f, 0.f, 0.f);
+    if (r >= cutoff) return make_float3(0.f, 0.f, 0.f);
 
     // Protect against r ~ 0 (also skip exact self if arrays alias)
-    if (r2 < 1e-16f) return make_float3(0.f, 0.f, 0.f);
+    if (r < 1e-16f) return make_float3(0.f, 0.f, 0.f);
 
-    const float r = sqrtf(r2);
     const float inv_r = 1.0f / r;
     const float inv_r2 = inv_r * inv_r;
 
-    const float ar = alpha * r;
-    // CUDA has fast exp; erfcf is available for float
-    const float erfc_term = erfcf(ar);
-    const float exp_term  = __expf(-(ar * ar));
+    const float alpha_r = alpha * r;
+    const float erfc_term = erfcf(alpha_r);
+    const float exp_term  = __expf(-(alpha_r * alpha_r));
 
-    // 1/sqrt(pi)
-    const float INV_SQRT_PI = 1.0f / sqrtf(CUDART_PI_F);
+    const float force_mag = q_0 * q_1 * (erfc_term * inv_r2 + 2.0f * alpha * exp_term * INV_SQRT_PI * inv_r);
 
-//     const float pair = k_coul * (q_src * q_tgt);
-    const float pair = q_src * q_tgt;
-    const float scalar = pair * (erfc_term * inv_r2 + (2.0f * alpha * exp_term) * (INV_SQRT_PI * inv_r));
-
-    // dir = diff / r
-    const float3 dir = diff  * inv_r;
-    return dir * scalar;
+    return dir * force_mag;
 }
 
 __device__
@@ -115,12 +107,12 @@ float lj_V(
 
 __device__
 float3 lj_force(
-    float3 posit_0,
-    float3 posit_1,
+    float3 posit_tgt,
+    float3 posit_src,
     float sigma,
     float eps
 ) {
-    const float3 diff = posit_1 - posit_0;
+    const float3 diff = posit_src - posit_tgt;
     const float r = std::sqrt(diff.x * diff.x + diff.y * diff.y + diff.z * diff.z);
 
     const float3 dir = diff / r;

@@ -701,7 +701,7 @@ pub fn draw_ligand(state: &State, scene: &mut Scene) {
         });
     }
 
-    let mut atoms_positioned = mol.atoms.clone();
+    let atoms_positioned = mol.atoms.clone();
 
     // todo: C+P from draw_molecule. With some removed, but a lot of repeated.
     for (i, bond) in mol.bonds.iter().enumerate() {

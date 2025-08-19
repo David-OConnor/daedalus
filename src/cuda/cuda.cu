@@ -40,36 +40,36 @@ void coulomb_force_kernel(
     }
 }
 
-extern "C" __global__
-void coulomb_force_spme_short_range_kernel_pairwise(
-    float3* __restrict__ out,
-    const float3* __restrict__ posits_tgt,
-    const float3* __restrict__ posits_src,
-    const float* __restrict__ charges_tgt,
-    const float* __restrict__ charges_src,
-    size_t N,
-    float cutoff,
-    float alpha,
-    float3 cell     // {Lx, Ly, Lz}; set zeros to disable PBC
-) {
-    // todo: Ensure you're handling periodic boundary condition correctly.
-    // DRY with the non-short range version for this block/thread/grid setup adn loop.
-
-    size_t index = blockIdx.x * blockDim.x + threadIdx.x;
-    size_t stride = blockDim.x * gridDim.x;
-
-    for (size_t i = index; i < N; i += stride) {
-        const float3 pt  = posits_tgt[i];
-        const float qt  = charges_tgt[i];
-
-        const float3 ps = posits_src[i];
-        const float qs  = charges_src[i];
-
-        const float3 force = coulomb_force_spme_short_range(ps, pt, qs, qt, alpha, cutoff, cell);
-
-        out[i] = out[i] + force;
-    }
-}
+// extern "C" __global__
+// void coulomb_force_spme_short_range_kernel_pairwise(
+//     float3* __restrict__ out,
+//     const float3* __restrict__ posits_tgt,
+//     const float3* __restrict__ posits_src,
+//     const float* __restrict__ charges_tgt,
+//     const float* __restrict__ charges_src,
+//     size_t N,
+//     float cutoff,
+//     float alpha,
+//     float3 cell     // {Lx, Ly, Lz}; set zeros to disable PBC
+// ) {
+//     // todo: Ensure you're handling periodic boundary condition correctly.
+//     // DRY with the non-short range version for this block/thread/grid setup adn loop.
+//
+//     size_t index = blockIdx.x * blockDim.x + threadIdx.x;
+//     size_t stride = blockDim.x * gridDim.x;
+//
+//     for (size_t i = index; i < N; i += stride) {
+//         const float3 pt  = posits_tgt[i];
+//         const float qt  = charges_tgt[i];
+//
+//         const float3 ps = posits_src[i];
+//         const float qs  = charges_src[i];
+//
+//         const float3 force = coulomb_force_spme_short_range(ps, pt, qs, qt, alpha, cutoff, cell);
+//
+//         out[i] = out[i] + force;
+//     }
+// }
 
 extern "C" __global__
 void lj_V_kernel(
@@ -134,18 +134,24 @@ void lj_force_kernel(
     }
 }
 
-// Unlike the other LJ kernels, this assumes inputs have already been organized and flattened
+// Handles LJ and Coulomb force, pairwise.
+// Unlike some other , this assumes inputs have already been organized and flattened
 // into target/source pairs. All inputs share the same index.
 // Amber 1-2 and 1-3 exclusions are handled upstream.
 extern "C" __global__
-void lj_force_kernel_pairwise(
+void nonbonded_force_kernel(
     float3* __restrict__ out,
     float* __restrict__ virial,  // Virial pair sum, used for the barostat.
-    const float3* __restrict__ posits_src,
     const float3* __restrict__ posits_tgt,
+    const float3* __restrict__ posits_src,
     const float* __restrict__ sigmas,
     const float* __restrict__ epss,
+    const float* __restrict__ qs_tgt,
+    const float* __restrict__ qs_src,
     const uint8_t* __restrict__ scale_14s,
+    float cutoff,
+    float alpha,
+    // todo: Cell A/R
     size_t N
 ) {
     size_t index = blockIdx.x * blockDim.x + threadIdx.x;
@@ -157,26 +163,48 @@ void lj_force_kernel_pairwise(
     for (size_t i = index; i < N; i += stride) {
         const float3 posit_tgt = posits_tgt[i];
         const float3 posit_src = posits_src[i];
+
         const float sigma = sigmas[i];
         const float eps = epss[i];
+
         const uint8_t scale_14 = scale_14s[i];
 
         const float3 diff = posit_src - posit_tgt;
         const float r = std::sqrt(diff.x * diff.x + diff.y * diff.y + diff.z * diff.z);
         const float3 dir = diff / r;
 
-        float3 force = lj_force_v2(diff, r, dir, sigma, eps);
+        float3 f_lj = lj_force_v2(diff, r, dir, sigma, eps);
+
+        const float q_tgt = qs_tgt[i];
+        const float q_src = qs_src[i];
+
+        // todo: A/R
+        const float3 cell = make_float3(0.f, 0.f, 0.f);
+
+        float3 f_coulomb = coulomb_force_spme_short_range(
+            diff,
+            r,
+            dir,
+            q_tgt,
+            q_src,
+            cutoff,
+            alpha,
+            cell
+        );
+
         if (scale_14) {
-            force = force * 0.5f;
+            f_lj = f_lj * 0.5f;
+            f_coulomb = f_coulomb * 0.833333333f;
         }
 
-        out[i] = out[i] + force;
+        const float3 f = f_lj + f_coulomb;
 
         // Virial per pair (pair counted once): -0.5 * r · F
-
         // todo: Cell wrapping for water.
-        float w_pair = -0.5f * (diff.x * force.x + diff.y * force.y + diff.z * force.z);
+        float w_pair = -0.5f * (diff.x * f.x + diff.y * f.y + diff.z * f.z);
         atomicAdd(virial, w_pair);
+
+        out[i] = out[i] + f;
     }
 }
 

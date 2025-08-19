@@ -1632,7 +1632,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                                             dm_loaded = Some(dm);
                                             println!("Succsesfully loaded Map rom RSCB.");
                                         }
-                                        Err(e) => {
+                                        Err(_) => {
                                             let msg = format!(
                                                 "Error loading RCSB Map for {:?}",
                                                 &mol.ident
