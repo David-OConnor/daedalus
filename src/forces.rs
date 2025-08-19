@@ -1,6 +1,8 @@
 #![allow(non_snake_case)]
 
-//! Force, acceleration, and related computations.
+//! Force, acceleration, and related computations. There are general algorithms, and are called
+//! by our more specific ones in the docking and molecular dynamics modules. Includes CPU, SIMD,
+//! and CUDA where appropriate.
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "cuda")] {
@@ -53,6 +55,8 @@ pub fn force_coulomb_gpu_outer(
 
     // todo: Likely load these functions (kernels) at init and pass as a param.
     let func_coulomb = module.load_function("coulomb_force_kernel").unwrap();
+    // todo: Swap in when ready.
+    // let func_coulomb = module.load_function("coulomb_force_spme_short_range_kernel").unwrap();
 
     let cfg = LaunchConfig::for_num_elems(n_targets as u32);
 
@@ -103,7 +107,7 @@ pub fn force_lj_gpu(
     // Out is per target.
     let start = Instant::now();
 
-    // allocate buffers
+    // Allocate buffers
     let n_sources = posits_src.len();
     let n_targets = posits_tgt.len();
 
@@ -141,8 +145,81 @@ pub fn force_lj_gpu(
     // let time_diff = Instant::now() - start;
     // println!("GPU LJ force data collected. Time: {:?}", time_diff);
 
-    // This step is not required when using f64.
     result
+}
+
+/// Inputs are structured differently here from our other one; uses pre-paired inputs and outputs, and
+/// a common index. Exclusions (e.g. Amber-style 1-2 adn 1-3) are handled upstream.
+///
+/// todo: Sort out how you handle the symmetric case here. Maybe return a separate "forces-on-sources"?
+/// Returns (forces on targets, virial sum)
+#[cfg(feature = "cuda")]
+pub fn force_lj_gpu_pairwise(
+    stream: &Arc<CudaStream>,
+    module: &Arc<CudaModule>,
+    posits_tgt: &[Vec3F32],
+    posits_src: &[Vec3F32],
+    sigmas: &[f32],
+    epss: &[f32],
+    scale_14: &[bool],
+) -> (Vec<Vec3F32>, f32) {
+    let start = Instant::now();
+
+    let n = posits_tgt.len();
+
+    assert_eq!(posits_src.len(), n);
+    assert_eq!(sigmas.len(), n);
+    assert_eq!(epss.len(), n);
+    assert_eq!(scale_14.len(), n);
+
+    // May be safer for the GPU?
+    let scale_14: Vec<_> = scale_14.iter().map(|v| *v as u8).collect();
+
+    // Allocate buffers
+    let posits_src_gpu = vec3s_to_dev(stream, posits_src);
+    let posits_tgt_gpu = vec3s_to_dev(stream, posits_tgt);
+
+    let mut result_buf = {
+        let v = vec![Vec3F32::new_zero(); n];
+        vec3s_to_dev(stream, &v)
+    };
+
+    let sigmas_gpu = stream.memcpy_stod(sigmas).unwrap();
+    let epss_gpu = stream.memcpy_stod(epss).unwrap();
+
+    // For Amber-style 1-4 covalent bond scaling; not general LJ.
+    let scale_14_gpu = stream.memcpy_stod(&scale_14).unwrap();
+
+    // todo: Likely load these functions (kernels) at init and pass as a param.
+    let func_lj_force = module.load_function("lj_force_kernel_pairwise").unwrap();
+
+    let cfg = LaunchConfig::for_num_elems(n as u32);
+
+    let mut launch_args = stream.launch_builder(&func_lj_force);
+
+    // todo: Is there a better way to pass non-arrays?
+    let mut virial_gpu = stream.memcpy_stod(&[0.0f32]).unwrap();
+
+    launch_args.arg(&mut result_buf);
+    launch_args.arg(&mut virial_gpu);
+    launch_args.arg(&posits_src_gpu);
+    launch_args.arg(&posits_tgt_gpu);
+    launch_args.arg(&sigmas_gpu);
+    launch_args.arg(&epss_gpu);
+    launch_args.arg(&scale_14_gpu);
+    launch_args.arg(&n);
+
+    unsafe { launch_args.launch(cfg) }.unwrap();
+
+    // todo: Consider dtoh; passing to an existing vec instead of re-allocating?
+    let forces = vec3s_from_dev(stream, &result_buf);
+    // todo: QC this.
+    let virial = stream.memcpy_dtov(&virial_gpu).unwrap()[0];
+
+    // let time_diff = Instant::now() - start;
+    // println!("GPU LJ force data collected. Time: {:?}", time_diff);
+
+    (forces, virial)
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]

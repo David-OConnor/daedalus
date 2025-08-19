@@ -683,7 +683,7 @@ pub fn build_dynamics_docking(
     let start = Instant::now();
 
     for _ in 0..n_steps {
-        md_state.step(dt)
+        md_state.step(dev, dt);
     }
 
     let elapsed = start.elapsed();
@@ -933,7 +933,7 @@ pub fn build_dynamics_peptide(
     let start = Instant::now();
 
     for _ in 0..n_steps {
-        md_state.step(dt)
+        md_state.step(dev, dt)
     }
 
     let elapsed = start.elapsed();

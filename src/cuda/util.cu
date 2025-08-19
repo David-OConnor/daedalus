@@ -34,14 +34,66 @@ __device__ inline float3 operator*(const float3 &a, const float b) {
 
 __device__
 float3 coulomb_force(float3 posit_src, float3 posit_tgt, float q_src, float q_tgt) {
-    float3 diff = posit_tgt - posit_src; // todo: QC direction
-    float dist = std::sqrt(diff.x * diff.x + diff.y * diff.y + diff.z * diff.z);
+    const float3 diff = posit_tgt - posit_src; // todo: QC direction
+    const float dist = std::sqrt(diff.x * diff.x + diff.y * diff.y + diff.z * diff.z);
 
-    float3 dir = diff / dist;
+    const float3 dir = diff / dist;
 
-    float mag = q_src * q_tgt / (dist * dist + SOFTENING_FACTOR_SQ);
+    const float mag = q_src * q_tgt / (dist * dist + SOFTENING_FACTOR_SQ);
 
     return dir * mag;
+}
+
+// Minimum-image for orthorhombic box if box.{x,y,z} > 0
+__device__ inline float3 min_image(float3 dv, float3 box) {
+    if (box.x > 0.f && box.y > 0.f && box.z > 0.f) {
+        dv.x -= rintf(dv.x / box.x) * box.x;
+        dv.y -= rintf(dv.y / box.y) * box.y;
+        dv.z -= rintf(dv.z / box.z) * box.z;
+    }
+    return dv;
+}
+
+__device__
+float3 coulomb_force_spme_short_range(
+    float3 posit_src,
+    float3 posit_tgt,
+    float q_src,
+    float q_tgt,
+    float cutoff,
+    float alpha,
+    float3 cell     // {Lx, Ly, Lz}; set zeros to disable PBC
+) {
+    // Displacement with optional min-image
+    float3 diff = min_image(posit_tgt - posit_src, cell);
+    float r2 = diff.x*diff.x + diff.y*diff.y + diff.z*diff.z;
+    float cutoff2 = cutoff * cutoff;
+
+    // Outside cutoff: no short-range contribution
+    if (r2 >= cutoff2) return make_float3(0.f, 0.f, 0.f);
+
+    // Protect against r ~ 0 (also skip exact self if arrays alias)
+    if (r2 < 1e-16f) return make_float3(0.f, 0.f, 0.f);
+
+    const float r = sqrtf(r2);
+    const float inv_r = 1.0f / r;
+    const float inv_r2 = inv_r * inv_r;
+
+    const float ar = alpha * r;
+    // CUDA has fast exp; erfcf is available for float
+    const float erfc_term = erfcf(ar);
+    const float exp_term  = __expf(-(ar * ar));
+
+    // 1/sqrt(pi)
+    const float INV_SQRT_PI = 1.0f / sqrtf(CUDART_PI_F);
+
+//     const float pair = k_coul * (q_src * q_tgt);
+    const float pair = q_src * q_tgt;
+    const float scalar = pair * (erfc_term * inv_r2 + (2.0f * alpha * exp_term) * (INV_SQRT_PI * inv_r));
+
+    // dir = diff / r
+    const float3 dir = diff  * inv_r;
+    return dir * scalar;
 }
 
 __device__
@@ -51,12 +103,12 @@ float lj_V(
     float sigma,
     float eps
 ) {
-    float3 diff = posit_1 - posit_0;
-    float r = std::sqrt(diff.x * diff.x + diff.y * diff.y + diff.z * diff.z);
+    const float3 diff = posit_1 - posit_0;
+    const float r = std::sqrt(diff.x * diff.x + diff.y * diff.y + diff.z * diff.z);
 
-    float sr = sigma / r;
-    float sr6 = powf(sr, 6.);
-    float sr12 = sr6 * sr6;
+    const float sr = sigma / r;
+    const float sr6 = powf(sr, 6.);
+    const float sr12 = sr6 * sr6;
 
     return 4.0f * eps * (sr12 - sr6);
 }
@@ -68,16 +120,34 @@ float3 lj_force(
     float sigma,
     float eps
 ) {
-    float3 diff = posit_1 - posit_0;
-    float r = std::sqrt(diff.x * diff.x + diff.y * diff.y + diff.z * diff.z);
+    const float3 diff = posit_1 - posit_0;
+    const float r = std::sqrt(diff.x * diff.x + diff.y * diff.y + diff.z * diff.z);
 
-    float3 dir = diff / r;
+    const float3 dir = diff / r;
 
-    float sr = sigma / r;
-    float sr6 = powf(sr, 6.);
-    float sr12 = sr6 * sr6;
+    const float sr = sigma / r;
+    const float sr6 = powf(sr, 6.);
+    const float sr12 = sr6 * sr6;
 
-    float mag = -24.0f * eps * (2. * sr12 - sr6) / (r * r);
+    const float mag = -24.0f * eps * (2. * sr12 - sr6) / (r * r);
+
+    return dir * mag;
+}
+
+// Different API.
+__device__
+float3 lj_force_v2(
+    float3 diff,
+    float r,
+    float3 dir,
+    float sigma,
+    float eps
+) {
+    const float sr = sigma / r;
+    const float sr6 = powf(sr, 6.);
+    const float sr12 = sr6 * sr6;
+
+    const float mag = -24.0f * eps * (2. * sr12 - sr6) / (r * r);
 
     return dir * mag;
 }

@@ -1,14 +1,16 @@
 //! For VDW and Coulomb forces
 
-use std::{collections::HashMap, ops::AddAssign};
+use std::{collections::HashMap, ops::AddAssign, sync::Arc};
 
+use cudarc::driver::{CudaModule, CudaStream};
 use ewald::{PmeRecip, force_coulomb_short_range};
-use lin_alg::f64::Vec3;
+use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 use rayon::prelude::*;
 
 use crate::{
+    ComputationDevice,
     dynamics::{AtomDynamics, MdState, ambient::SimBox, water_opc},
-    forces::{force_coulomb, force_lj},
+    forces::{force_coulomb, force_lj, force_lj_gpu, force_lj_gpu_pairwise},
     molecule::Atom,
 };
 
@@ -143,10 +145,76 @@ impl AddAssign<Self> for ForcesOnWaterMol {
 /// upstream.
 ///
 /// Currently only works with static on dynamic, and dynamic on dynamic.
+/// todo: Figure out how to abstract over water sources and targets here as well, to
+/// todo prevent repetition; especially given the SIMD and CUDA variants.
 ///
 /// Return W, the virial pair we accumulate. For use with the temp/barostat. (kcal/mol)
-/// todo: Use CUDA and SIMD here.
 fn apply_force(
+    // (tgt, src, scale14)
+    pairs: &[(usize, usize, bool)],
+    atoms_tgt: &mut [AtomDynamics],
+    // If None, src atoms are also targets. This avoids a double-borrow.
+    atoms_src: Option<&[AtomDynamics]>,
+    n_dyn: usize,
+    cell: &SimBox,
+    lj_type: LjIndexType,
+    lj_tables: &LjTables,
+) -> f64 {
+    let indices = |i| match lj_type {
+        LjIndexType::DynDyn => LjTableIndices::DynDyn(i),
+        LjIndexType::DynStatic => LjTableIndices::DynStatic(i),
+    };
+
+    let src = match atoms_src {
+        Some(src) => src,
+        None => atoms_tgt,
+    };
+
+    let (per_atom_accum, virial_sum) = pairs
+        .par_iter()
+        .fold(
+            || (vec![Vec3::new_zero(); n_dyn], 0.0_f64),
+            |(mut f_on_tgt, mut w_virial_local), &(i_tgt, i_src, scale14)| {
+                let f = f_nonbonded(
+                    Some(&mut w_virial_local),
+                    &atoms_tgt[i_tgt],
+                    &src[i_src],
+                    cell,
+                    scale14,
+                    indices((i_tgt, i_src)),
+                    lj_tables,
+                    true,
+                    true,
+                );
+
+                f_on_tgt[i_tgt] += f;
+                if matches!(lj_type, LjIndexType::DynDyn) {
+                    f_on_tgt[i_src] -= f;
+                }
+                (f_on_tgt, w_virial_local)
+            },
+        )
+        .reduce(
+            || (vec![Vec3::new_zero(); n_dyn], 0.0_f64),
+            |(mut f, w_a), (b, w_b)| {
+                for k in 0..n_dyn {
+                    f[k] += b[k];
+                }
+                (f, w_a + w_b)
+            },
+        );
+
+    for i in 0..n_dyn {
+        // We divide by mass in `step`.
+        atoms_tgt[i].accel += per_atom_accum[i];
+    }
+
+    virial_sum // kcal/mol
+}
+
+// todo: Come back to this A/R. Probably after CUDA is working.
+fn apply_force_x8(
+    // (tgt, src, scale14)
     pairs: &[(usize, usize, bool)],
     atoms_tgt: &mut [AtomDynamics],
     // If None, src atoms are also targets. This avoids a double-borrow.
@@ -208,11 +276,93 @@ fn apply_force(
     w_sum // kcal/mol
 }
 
+#[cfg(feature = "cuda")]
+fn apply_force_cuda(
+    stream: &Arc<CudaStream>,
+    module: &Arc<CudaModule>,
+    // (tgt, src, scale14)
+    pairs: &[(usize, usize, bool)],
+    atoms_tgt: &mut [AtomDynamics],
+    // If None, src atoms are also targets. This avoids a double-borrow.
+    atoms_src: Option<&[AtomDynamics]>,
+    n_dyn: usize,
+    cell: &SimBox,
+    lj_type: LjIndexType,
+    lj_tables: &LjTables,
+) -> f64 {
+    let indices = |i| match lj_type {
+        LjIndexType::DynDyn => LjTableIndices::DynDyn(i),
+        LjIndexType::DynStatic => LjTableIndices::DynStatic(i),
+    };
+
+    let src = match atoms_src {
+        Some(src) => src,
+        None => atoms_tgt,
+    };
+
+    let n = pairs.len();
+
+    let mut posits_tgt: Vec<Vec3F32> = Vec::with_capacity(n);
+    let mut posits_src: Vec<Vec3F32> = Vec::with_capacity(n);
+    let mut sigmas = Vec::with_capacity(n);
+    let mut epss = Vec::with_capacity(n);
+    let mut scale_14s = Vec::with_capacity(n);
+
+    for (i_tgt, i_src, scale14) in pairs {
+        // `into()` converts Vec3s from f64 to f32.
+        posits_tgt.push(atoms_tgt[*i_tgt].posit.into());
+        posits_src.push(src[*i_src].posit.into());
+
+        let indices = &indices((*i_tgt, *i_src));
+
+        let (σ, ε) = match indices {
+            LjTableIndices::DynDyn(indices) => *lj_tables.dynamic.get(indices).unwrap(),
+            LjTableIndices::DynStatic(indices) => *lj_tables.static_.get(indices).unwrap(),
+            _ => unreachable!(),
+        };
+
+        sigmas.push(σ as f32);
+        epss.push(ε as f32);
+
+        scale_14s.push(*scale14);
+    }
+
+    // todo: Do we want a single, combined LJ + Ewald short-range kernel?
+
+    // 1-4 scaling is handled in the kernel.
+    let (f_lj_per_atom, virial_sum) = force_lj_gpu_pairwise(
+        stream,
+        module,
+        &posits_tgt,
+        &posits_src,
+        &sigmas,
+        &epss,
+        &scale_14s,
+    );
+
+    // Handle the symmetric case; our pairs only exist in one order.
+    if matches!(lj_type, LjIndexType::DynDyn) {
+        // todo: Handle the symmetry for dyn-dyn here.
+        // f_on_tgt[i_src] -= f;
+    }
+
+    // println!("F LJ: {:.4?}", &f_lj_per_atom[0..10]);
+
+    for (i, tgt) in atoms_tgt.iter_mut().enumerate() {
+        let f_f64: Vec3 = f_lj_per_atom[i].into();
+        tgt.accel += f_f64;
+    }
+
+    // todo: Handle Coulomb.
+
+    virial_sum as f64 // kcal/mol
+}
+
 impl MdState {
     /// Applies Coulomb and Van der Waals (Lennard-Jones) forces on dynamic atoms, in place.
     /// We use the MD-standard [S]PME approach to handle approximated Coulomb forces. This function
     /// applies forces from dynamic, static, and water sources.
-    pub fn apply_nonbonded_forces(&mut self) {
+    pub fn apply_nonbonded_forces(&mut self, dev: &ComputationDevice) {
         let n_dyn = self.atoms.len();
         let n_water_mols = self.water.len();
 
@@ -226,7 +376,9 @@ impl MdState {
             let scaled_set = &self.pairs_14_scaled;
 
             // Set up pairs ahead of time; conducive to parallel iteration. We skip excluded pairs,
-            // and mark scaled ones.
+            // and mark scaled ones. These pairs, in symmetric cases (e.g. dynamic-dynamic), only
+            // count each combination once; no reversed order.
+            // (tgt, source, scale_14)
             let pairs: Vec<(usize, usize, bool)> = (0..n_dyn)
                 .flat_map(|i| {
                     self.neighbors_nb.dy_dy[i]
@@ -244,19 +396,52 @@ impl MdState {
                 })
                 .collect();
 
-            self.barostat.virial_pair_kcal += apply_force(
-                &pairs,
-                &mut self.atoms,
-                None,
-                n_dyn,
-                &self.cell,
-                LjIndexType::DynDyn,
-                &self.lj_tables,
-            );
+            #[cfg(feature = "cuda")]
+            match dev {
+                ComputationDevice::Cpu => {
+                    // C+P from the non-cuda feature call.
+                    self.barostat.virial_pair_kcal += apply_force(
+                        &pairs,
+                        &mut self.atoms,
+                        None,
+                        n_dyn,
+                        &self.cell,
+                        LjIndexType::DynDyn,
+                        &self.lj_tables,
+                    );
+                }
+                ComputationDevice::Gpu((stream, module)) => {
+                    self.barostat.virial_pair_kcal += apply_force_cuda(
+                        stream,
+                        module,
+                        &pairs,
+                        &mut self.atoms,
+                        None,
+                        n_dyn,
+                        &self.cell,
+                        LjIndexType::DynDyn,
+                        &self.lj_tables,
+                    );
+                }
+            }
+
+            #[cfg(not(feature = "cuda"))]
+            {
+                self.barostat.virial_pair_kcal += apply_force(
+                    &pairs,
+                    &mut self.atoms,
+                    None,
+                    n_dyn,
+                    &self.cell,
+                    LjIndexType::DynDyn,
+                    &self.lj_tables,
+                );
+            }
         }
 
         // ------ Forces from static atoms on dynamic ones ------
         {
+            // (tgt, source, scale_14)
             let pairs: Vec<(usize, usize, bool)> = (0..n_dyn)
                 .flat_map(|i_dyn| {
                     self.neighbors_nb.dy_static[i_dyn]
@@ -276,6 +461,8 @@ impl MdState {
                 &self.lj_tables,
             );
         }
+
+        // todo: Ensure you're handling diffs using the minimum image convention here.
 
         // ------ Forces from water on dynamic atoms, and vice-versa ------
         {
@@ -553,15 +740,15 @@ pub fn f_nonbonded(
     calc_coulomb: bool,
 ) -> Vec3 {
     let diff = tgt.posit - src.posit;
-    let diff_wrapped = cell.min_image(diff);
+    let dif_min_img = cell.min_image(diff);
 
-    let dist = diff_wrapped.magnitude();
+    let dist = dif_min_img.magnitude();
 
     if dist < 1e-12 {
         return Vec3::new_zero();
     }
 
-    let dir = diff_wrapped / dist;
+    let dir = dif_min_img / dist;
 
     let f_lj = if !calc_lj || dist > CUTOFF_VDW {
         Vec3::new_zero()
@@ -612,11 +799,90 @@ pub fn f_nonbonded(
 
     if let Some(w) = virial_w {
         // Virial: r_ij · F_ij (use minimum-image)
-        *w += diff_wrapped.dot(result);
+        *w += dif_min_img.dot(result);
     }
 
     result
 }
+
+// #[cfg(feature = "cuda")]
+// pub fn f_nonbonded_cuda(
+//     virial_w: Option<&mut f64>,
+//     tgt: &AtomDynamics,
+//     src: &AtomDynamics,
+//     cell: &SimBox,
+//     scale14: bool, // See notes earlier in this module.
+//     lj_indices: LjTableIndices,
+//     lj_tables: &LjTables,
+//     // These flags are for use with forces on water.
+//     calc_lj: bool,
+//     calc_coulomb: bool,
+// ) -> Vec3 {
+//     let diff = tgt.posit - src.posit;
+//     let diff_wrapped = cell.min_image(diff);
+//
+//     let dist = diff_wrapped.magnitude();
+//
+//     if dist < 1e-12 {
+//         return Vec3::new_zero();
+//     }
+//
+//     let dir = diff_wrapped / dist;
+//
+//     let f_lj = if !calc_lj || dist > CUTOFF_VDW {
+//         Vec3::new_zero()
+//     } else {
+//         let (σ, ε) = match lj_indices {
+//             LjTableIndices::DynDyn(indices) => *lj_tables.dynamic.get(&indices).unwrap(),
+//             LjTableIndices::DynStatic(indices) => *lj_tables.static_.get(&indices).unwrap(),
+//             LjTableIndices::DynOnWater(i) => *lj_tables.water_dyn.get(&i).unwrap(),
+//             LjTableIndices::StaticOnWater(i) => *lj_tables.water_static.get(&i).unwrap(),
+//             LjTableIndices::WaterOnWater => (water_opc::O_SIGMA, water_opc::O_EPS),
+//         };
+//
+//         // Negative due to our mix of conventions; keep it consistent with coulomb, and net correct.
+//         let mut f = -force_lj(dir, dist, σ, ε);
+//         if scale14 {
+//             f *= SCALE_LJ_14;
+//         }
+//         f
+//     };
+//
+//     // We assume that in the AtomDynamics structs, charges are already scaled to Amber units.
+//     // (No longer in elementary charge)
+//     let mut f_coulomb = if !calc_coulomb {
+//         Vec3::new_zero()
+//     } else {
+//         // todo temp removed; using the standard Coulomb force (No approximations/optimziations)
+//         // todo for now while troubleshooting long-range portion of SPME/ewald.
+//
+//         force_coulomb_short_range(
+//             dir,
+//             dist,
+//             tgt.partial_charge,
+//             src.partial_charge,
+//             // (LONG_RANGE_SWITCH_START, LONG_RANGE_CUTOFF),
+//             LONG_RANGE_CUTOFF,
+//             EWALD_ALPHA,
+//         )
+//
+//         // force_coulomb(dir, dist, tgt.partial_charge, src.partial_charge, 1e-6)
+//     };
+//
+//     // See Amber RM, section 15, "1-4 Non-Bonded Interaction Scaling"
+//     if scale14 {
+//         f_coulomb *= SCALE_COUL_14;
+//     }
+//
+//     let result = f_lj + f_coulomb;
+//
+//     if let Some(w) = virial_w {
+//         // Virial: r_ij · F_ij (use minimum-image)
+//         *w += diff_wrapped.dot(result);
+//     }
+//
+//     result
+// }
 
 /// Helper. Returns σ, ε between an atom pair. Atom order passed as params doesn't matter.
 /// Note that this uses the traditional algorithm; not the Amber-specific version: We pre-set

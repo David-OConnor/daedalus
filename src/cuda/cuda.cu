@@ -1,26 +1,11 @@
 // #include <math.h>
 #include <initializer_list>
 
+// todo: A/R
+// #include <math.h>
+#include <math_constants.h> // CUDART_PI_F
+
 #include "util.cu"
-
-
-// __device__
-// void leaves(dtype3 posit_target,  )
-
-// extern "C" __global__
-// void acc_bh_kernel(
-//     dtype *out,
-//     dtype3 *nodes
-//     dtype3 posit_target,
-//     size_t id_target,
-//     Vec3 *node, // todo temp
-//     dtype theta,
-//     size_t max_bodies_per_mode,
-// ) {
-// //     dtype3 acc_diff =
-// //     dtype dist = calc_dist(); // todo: You are double-subtracting; don't do that.
-// }
-
 
 // In this approach, we parallelize operations per sample, but run the
 // charge computations in serial, due to the cumulative addition step. This appears
@@ -28,10 +13,10 @@
 // to the CPU in the other approach.
 extern "C" __global__
 void coulomb_force_kernel(
-    float3 *out,
-    const float3 *posits_src,
-    const float3 *posits_tgt,
-    const float *charges,
+    float3* out,
+    const float3* __restrict__ posits_src,
+    const float3* __restrict__ posits_tgt,
+    const float* __restrict__ charges,
     size_t N_srcs,
     size_t N_tgts
 ) {
@@ -39,12 +24,13 @@ void coulomb_force_kernel(
     size_t stride = blockDim.x * gridDim.x;
 
     for (size_t i_tgt = index; i_tgt < N_tgts; i_tgt += stride) {
+        const float3 posit_tgt = posits_tgt[i_tgt];
+
         // Compute the sum serially, as it may not be possible to naively apply it in parallel,
         // and we may still be saturating GPU cores given the large number of targets.
         // todo: QC that.
         for (size_t i_src = 0; i_src < N_srcs; i_src++) {
-            float3 posit_src = posits_src[i_src];
-            float3 posit_tgt = posits_tgt[i_tgt];
+            const float3 posit_src = posits_src[i_src];
 
             if (i_tgt < N_tgts) {
                 // todo: Likely need two sets of charges too.
@@ -55,12 +41,43 @@ void coulomb_force_kernel(
 }
 
 extern "C" __global__
+void coulomb_force_spme_short_range_kernel_pairwise(
+    float3* __restrict__ out,
+    const float3* __restrict__ posits_tgt,
+    const float3* __restrict__ posits_src,
+    const float* __restrict__ charges_tgt,
+    const float* __restrict__ charges_src,
+    size_t N,
+    float cutoff,
+    float alpha,
+    float3 cell     // {Lx, Ly, Lz}; set zeros to disable PBC
+) {
+    // todo: Ensure you're handling periodic boundary condition correctly.
+    // DRY with the non-short range version for this block/thread/grid setup adn loop.
+
+    size_t index = blockIdx.x * blockDim.x + threadIdx.x;
+    size_t stride = blockDim.x * gridDim.x;
+
+    for (size_t i = index; i < N; i += stride) {
+        const float3 pt  = posits_tgt[i];
+        const float qt  = charges_tgt[i];
+
+        const float3 ps = posits_src[i];
+        const float qs  = charges_src[i];
+
+        const float3 force = coulomb_force_spme_short_range(ps, pt, qs, qt, alpha, cutoff, cell);
+
+        out[i] = out[i] + force;
+    }
+}
+
+extern "C" __global__
 void lj_V_kernel(
-    float *out,
-    const float3 *posits_0,
-    const float3 *posits_1,
-    const float *sigmas,
-    const float *epsilons,
+    float* __restrict__ out,
+    const float3* __restrict__ posits_0,
+    const float3* __restrict__ posits_1,
+    const float* __restrict__ sigmas,
+    const float* __restrict__ epsilons,
     size_t N_srcs,
     size_t N_tgts
 ) {
@@ -72,12 +89,12 @@ void lj_V_kernel(
         // and we may still be saturating GPU cores given the large number of tgts.
         // todo: QC that.
         for (size_t i_src = 0; i_src < N_srcs; i_src++) {
-            float3 posit_0 = posits_0[i_src];
-            float3 posit_1 = posits_1[i_tgt];
+            const float3 posit_0 = posits_0[i_src];
+            const float3 posit_1 = posits_1[i_tgt];
 
             // todo: Sort out the index here.
-            float sigma = sigmas[0];
-            float eps = epsilons[0];
+            const float sigma = sigmas[0];
+            const float eps = epsilons[0];
 
             if (i_tgt < N_tgts) {
                 out[i_tgt] += lj_V(posit_0, posit_1, sigma, eps);
@@ -88,11 +105,11 @@ void lj_V_kernel(
 
 extern "C" __global__
 void lj_force_kernel(
-    float3 *out,
-    const float3 *posits_src,
-    const float3 *posits_tgt,
-    const float *sigmas,
-    const float *epss,
+    float3* __restrict__ out,
+    const float3* __restrict__ posits_src,
+    const float3* __restrict__ posits_tgt,
+    const float* __restrict__ sigmas,
+    const float* __restrict__ epss,
     size_t N_srcs,
     size_t N_tgts
 ) {
@@ -100,14 +117,14 @@ void lj_force_kernel(
     size_t stride = blockDim.x * gridDim.x;
 
     for (size_t i_tgt = index; i_tgt < N_tgts; i_tgt += stride) {
-        float3 posit_tgt = posits_tgt[i_tgt];
+        const float3 posit_tgt = posits_tgt[i_tgt];
 
         for (size_t i_src = 0; i_src < N_srcs; i_src++) {
-            float3 posit_src = posits_src[i_src];
+            const float3 posit_src = posits_src[i_src];
 
-            size_t i_sig_eps = i_tgt * N_srcs + i_src;
-            float sigma = sigmas[i_sig_eps];
-            float eps = epss[i_sig_eps];
+            const size_t i_sig_eps = i_tgt * N_srcs + i_src;
+            const float sigma = sigmas[i_sig_eps];
+            const float eps = epss[i_sig_eps];
 
             if (i_tgt < N_tgts) {
                 // Summing on GPU.
@@ -117,19 +134,65 @@ void lj_force_kernel(
     }
 }
 
+// Unlike the other LJ kernels, this assumes inputs have already been organized and flattened
+// into target/source pairs. All inputs share the same index.
+// Amber 1-2 and 1-3 exclusions are handled upstream.
+extern "C" __global__
+void lj_force_kernel_pairwise(
+    float3* __restrict__ out,
+    float* __restrict__ virial,  // Virial pair sum, used for the barostat.
+    const float3* __restrict__ posits_src,
+    const float3* __restrict__ posits_tgt,
+    const float* __restrict__ sigmas,
+    const float* __restrict__ epss,
+    const uint8_t* __restrict__ scale_14s,
+    size_t N
+) {
+    size_t index = blockIdx.x * blockDim.x + threadIdx.x;
+    size_t stride = blockDim.x * gridDim.x;
+
+    // todo: When you apply this to water, you must use the unit cell
+    // todo to take a min image of the diff, vice using it directly.
+
+    for (size_t i = index; i < N; i += stride) {
+        const float3 posit_tgt = posits_tgt[i];
+        const float3 posit_src = posits_src[i];
+        const float sigma = sigmas[i];
+        const float eps = epss[i];
+        const uint8_t scale_14 = scale_14s[i];
+
+        const float3 diff = posit_src - posit_tgt;
+        const float r = std::sqrt(diff.x * diff.x + diff.y * diff.y + diff.z * diff.z);
+        const float3 dir = diff / r;
+
+        float3 force = lj_force_v2(diff, r, dir, sigma, eps);
+        if (scale_14) {
+            force = force * 0.5f;
+        }
+
+        out[i] = out[i] + force;
+
+        // Virial per pair (pair counted once): -0.5 * r · F
+
+        // todo: Cell wrapping for water.
+        float w_pair = -0.5f * (diff.x * force.x + diff.y * force.y + diff.z * force.z);
+        atomicAdd(virial, w_pair);
+    }
+}
+
 // Perform the fourier transform required to compute electron density from reflection data.
 // todo: f32 ok?
 
 extern "C" __global__
 void reflection_transform_kernel(
-    float *out,
-    const float3 *posits,
-    const float *h,
-    const float *k,
-    const float *l,
-    const float *phase,
+    float* __restrict__ out,
+    const float3* __restrict__ posits,
+    const float* __restrict__ h,
+    const float* __restrict__ k,
+    const float* __restrict__ l,
+    const float* __restrict__ phase,
     // pre-chosen amplitude (weighted or unweighted).
-    const float *amp,
+    const float* __restrict__ amp,
     size_t N
 ) {
     size_t i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -140,7 +203,7 @@ void reflection_transform_kernel(
          if (amp[i] == 0.0f) continue;
 
         //  2π(hx + ky + lz)  (negative sign because CCP4/Coot convention)
-        float arg = -TAU * (
+        const float arg = -TAU * (
             h[i] * posits[i].x +
             k[i] * posits[i].y +
             l[i] * posits[i].z

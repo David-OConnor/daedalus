@@ -233,7 +233,8 @@ Unpack, and place these under `resources`.
 If you're not running on a machine with an nvidia GPU or without CUDA installed, append the `--no-default-features` to the build command.
 
 Note: If using CUDA, you must set the environment var `LD_LIBARARY_PATH` (Linux) or `PATH` (Windows) to your CUDA bin
-directory, e.g. `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0\bin`.
+directory, e.g. `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0\bin`. You may also need the build tools
+containing `cl.exe` or similar in the path, e.g.: `C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64`
 
 CUDA v13.0 or higher must be installed on the machine that compiles if compiling with CUDA. TBD on if you need a CUDA
 toolkit installed on the machine running it.

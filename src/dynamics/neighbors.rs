@@ -204,8 +204,8 @@ pub fn build_neighbors(
     let src_len = src_posits.len();
 
     let mut inner = |i_src: usize, i_tgt: usize| {
-        let diff_wrapped = cell.min_image(tgt_posits[i_tgt] - src_posits[i_src]);
-        if diff_wrapped.magnitude_squared() < CUTOFF_SKIN_SQ {
+        let diff_min_img = cell.min_image(tgt_posits[i_tgt] - src_posits[i_src]);
+        if diff_min_img.magnitude_squared() < CUTOFF_SKIN_SQ {
             neighbors[i_tgt].push(i_src);
 
             if symmetric {
@@ -239,8 +239,8 @@ pub fn max_displacement_sq_since_build(
     let mut result: f64 = 0.0;
 
     for (i, posit) in targets.iter().enumerate() {
-        let diff_wrapped = cell.min_image(*posit - neighbor_ref_posits[i]);
-        result = result.max(diff_wrapped.magnitude_squared());
+        let diff_min_img = cell.min_image(*posit - neighbor_ref_posits[i]);
+        result = result.max(diff_min_img.magnitude_squared());
     }
     result
 }

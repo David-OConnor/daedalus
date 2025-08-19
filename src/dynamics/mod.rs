@@ -104,6 +104,7 @@ use na_seq::Element;
 use neighbors::NeighborsNb;
 
 use crate::{
+    ComputationDevice,
     dynamics::{
         ambient::BerendsenBarostat,
         non_bonded::{CHARGE_UNIT_SCALER, EWALD_ALPHA, LjTables, SCALE_COUL_14, SPME_N},
@@ -363,7 +364,7 @@ impl MdState {
         self.barostat.virial_pair_kcal = 0.0;
     }
 
-    fn apply_all_forces(&mut self) {
+    fn apply_all_forces(&mut self, dev: &ComputationDevice) {
         // Bonded forces
         let mut start = Instant::now();
         self.apply_bond_stretching_forces();
@@ -408,7 +409,7 @@ impl MdState {
         }
 
         // Note: Non-bonded takes the vast majority of time.
-        self.apply_nonbonded_forces();
+        self.apply_nonbonded_forces(dev);
         if self.step_count == 0 {
             let elapsed = start.elapsed();
             println!("Non-bonded time: {:?} μs", elapsed.as_micros());
@@ -418,7 +419,7 @@ impl MdState {
     /// One **Velocity-Verlet** step (leap-frog style) of length `dt` is in picoseconds (10^-12),
     /// with typical values of 0.001, or 0.002ps (1 or 2fs).
     /// This method orchestrates the dynamics at each time step.
-    pub fn step(&mut self, dt: f64) {
+    pub fn step(&mut self, dev: &ComputationDevice, dt: f64) {
         let dt_half = 0.5 * dt;
 
         // First half-kick (v += a dt/2) and drift (x += v dt)
@@ -452,7 +453,7 @@ impl MdState {
         }
 
         self.reset_accels();
-        self.apply_all_forces();
+        self.apply_all_forces(dev);
 
         self.handle_spme_recip();
 

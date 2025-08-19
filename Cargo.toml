@@ -68,7 +68,8 @@ itertools = "0.14.0" # For combinations when matching angles in MD.
 
 
 [build-dependencies]
-cuda_setup = { version = "0.1.4", optional = true }
+cuda_setup = { version = "0.1.5", optional = true }
+#cuda_setup = { path = "../../cuda_setup", optional = true }
 # This is for embedding an application icon, on Windows.
 winresource = "0.1.20"
 

@@ -703,12 +703,6 @@ pub fn draw_ligand(state: &State, scene: &mut Scene) {
 
     let mut atoms_positioned = mol.atoms.clone();
 
-    println!(
-        "DRAWING LIG. posits: {:?}, bonds: {:?}",
-        lig.atom_posits.len(),
-        lig.molecule.bonds.len()
-    );
-
     // todo: C+P from draw_molecule. With some removed, but a lot of repeated.
     for (i, bond) in mol.bonds.iter().enumerate() {
         let atom_0 = &mol.atoms[bond.atom_0];

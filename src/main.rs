@@ -505,7 +505,7 @@ impl State {
 
 fn main() {
     #[cfg(feature = "cuda")]
-    let _dev = {
+    let dev = {
         let runtime_v = cudarc::runtime::result::version::get_runtime_version();
         let driver_v = cudarc::runtime::result::version::get_driver_version();
         println!("CUDA runtime: {runtime_v:?}. Driver: {driver_v:?}");
@@ -540,9 +540,6 @@ fn main() {
     };
 
     #[cfg(not(feature = "cuda"))]
-    let _dev = ComputationDevice::Cpu;
-
-    // todo For now. GPU currently is going slower than CPU for VDW.
     let dev = ComputationDevice::Cpu;
 
     #[cfg(target_arch = "x86_64")]
@@ -555,6 +552,8 @@ fn main() {
             println!("AVX is not available.\n");
         }
     }
+
+    println!("Using computing device: {:?}\n", dev);
 
     // Sets up write-once static muts.
     init_local_bond_vecs();
