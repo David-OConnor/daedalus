@@ -14,9 +14,9 @@
 extern "C" __global__
 void coulomb_force_kernel(
     float3* out,
-    const float3* __restrict__ posits_src,
-    const float3* __restrict__ posits_tgt,
-    const float* __restrict__ charges,
+    const float3* posits_src,
+    const float3* posits_tgt,
+    const float* charges,
     size_t N_srcs,
     size_t N_tgts
 ) {
@@ -42,11 +42,11 @@ void coulomb_force_kernel(
 
 // extern "C" __global__
 // void coulomb_force_spme_short_range_kernel_pairwise(
-//     float3* __restrict__ out,
-//     const float3* __restrict__ posits_tgt,
-//     const float3* __restrict__ posits_src,
-//     const float* __restrict__ charges_tgt,
-//     const float* __restrict__ charges_src,
+//     float3* out,
+//     const float3* posits_tgt,
+//     const float3* posits_src,
+//     const float* charges_tgt,
+//     const float* charges_src,
 //     size_t N,
 //     float cutoff,
 //     float alpha,
@@ -73,11 +73,11 @@ void coulomb_force_kernel(
 
 extern "C" __global__
 void lj_V_kernel(
-    float* __restrict__ out,
-    const float3* __restrict__ posits_0,
-    const float3* __restrict__ posits_1,
-    const float* __restrict__ sigmas,
-    const float* __restrict__ epsilons,
+    float* out,
+    const float3* posits_0,
+    const float3* posits_1,
+    const float* sigmas,
+    const float* epsilons,
     size_t N_srcs,
     size_t N_tgts
 ) {
@@ -105,11 +105,11 @@ void lj_V_kernel(
 
 extern "C" __global__
 void lj_force_kernel(
-    float3* __restrict__ out,
-    const float3* __restrict__ posits_src,
-    const float3* __restrict__ posits_tgt,
-    const float* __restrict__ sigmas,
-    const float* __restrict__ epss,
+    float3* out,
+    const float3* posits_src,
+    const float3* posits_tgt,
+    const float* sigmas,
+    const float* epss,
     size_t N_srcs,
     size_t N_tgts
 ) {
@@ -140,21 +140,20 @@ void lj_force_kernel(
 // Amber 1-2 and 1-3 exclusions are handled upstream.
 extern "C" __global__
 void nonbonded_force_kernel(
-    float3* __restrict__ out,
-    float* __restrict__ virial,  // Virial pair sum, used for the barostat.
-    const float3* __restrict__ posits_tgt,
-    const float3* __restrict__ posits_src,
-    const float* __restrict__ sigmas,
-    const float* __restrict__ epss,
-    const float* __restrict__ qs_tgt,
-    const float* __restrict__ qs_src,
-    const uint8_t* __restrict__ scale_14s,
+    float3* out,
+    float* virial,  // Virial pair sum, used for the barostat.
+    const uint32_t* tgt_is,
+    const uint32_t* src_is,
+    const float3* posits_tgt,
+    const float3* posits_src,
+    const float* sigmas,
+    const float* epss,
+    const float* qs_tgt,
+    const float* qs_src,
+    const uint8_t* scale_14s,
     float cutoff,
     float alpha,
     uint8_t symmetric,
-    // These indices allow for symmetric adding of the opposite.
-    const uint32_t* __restrict__ tgt_is,
-    const uint32_t* __restrict__ src_is,
     // todo: Cell A/R
     size_t N
 ) {
@@ -225,14 +224,14 @@ void nonbonded_force_kernel(
 
 extern "C" __global__
 void reflection_transform_kernel(
-    float* __restrict__ out,
-    const float3* __restrict__ posits,
-    const float* __restrict__ h,
-    const float* __restrict__ k,
-    const float* __restrict__ l,
-    const float* __restrict__ phase,
+    float* out,
+    const float3* posits,
+    const float* h,
+    const float* k,
+    const float* l,
+    const float* phase,
     // pre-chosen amplitude (weighted or unweighted).
-    const float* __restrict__ amp,
+    const float* amp,
     size_t N
 ) {
     size_t i = blockIdx.x * blockDim.x + threadIdx.x;

@@ -158,6 +158,8 @@ pub fn force_lj_gpu(
 pub fn force_nonbonded_gpu(
     stream: &Arc<CudaStream>,
     module: &Arc<CudaModule>,
+    tgt_is: &[u32],
+    src_is: &[u32],
     posits_tgt: &[Vec3F32],
     posits_src: &[Vec3F32],
     sigmas: &[f32],
@@ -168,8 +170,7 @@ pub fn force_nonbonded_gpu(
     cutoff: f32,
     alpha: f32,
     symmetric: bool,
-    tgt_is: &[u32],
-    src_is: &[u32],
+    n_targets: usize,
 ) -> (Vec<Vec3F32>, f32) {
     let start = Instant::now();
 
@@ -178,7 +179,11 @@ pub fn force_nonbonded_gpu(
     assert_eq!(posits_src.len(), n);
     assert_eq!(sigmas.len(), n);
     assert_eq!(epss.len(), n);
+    assert_eq!(qs_tgt.len(), n);
+    assert_eq!(qs_src.len(), n);
     assert_eq!(scale_14.len(), n);
+    assert_eq!(tgt_is.len(), n);
+    assert_eq!(src_is.len(), n);
 
     // May be safer for the GPU?
     let scale_14: Vec<_> = scale_14.iter().map(|v| *v as u8).collect();
@@ -190,7 +195,7 @@ pub fn force_nonbonded_gpu(
     let posits_tgt_gpu = vec3s_to_dev(stream, posits_tgt);
 
     let mut result_buf = {
-        let v = vec![Vec3F32::new_zero(); n];
+        let v = vec![Vec3F32::new_zero(); n_targets];
         vec3s_to_dev(stream, &v)
     };
 
@@ -200,7 +205,6 @@ pub fn force_nonbonded_gpu(
     let qs_tgt_gpu = stream.memcpy_stod(qs_tgt).unwrap();
     let qs_src_gpu = stream.memcpy_stod(qs_src).unwrap();
 
-    // We use these indices for the symmetric case.
     let tgt_is_gpu = stream.memcpy_stod(tgt_is).unwrap();
     let src_is_gpu = stream.memcpy_stod(src_is).unwrap();
 
@@ -208,6 +212,7 @@ pub fn force_nonbonded_gpu(
     let scale_14_gpu = stream.memcpy_stod(&scale_14).unwrap();
 
     // todo: Likely load these functions (kernels) at init and pass as a param.
+    // todo: Seems to take only 4 μs (per time step), so should be fine here.
     let func_force = module.load_function("nonbonded_force_kernel").unwrap();
 
     let cfg = LaunchConfig::for_num_elems(n as u32);
@@ -219,6 +224,8 @@ pub fn force_nonbonded_gpu(
 
     launch_args.arg(&mut result_buf);
     launch_args.arg(&mut virial_gpu);
+    launch_args.arg(&tgt_is_gpu);
+    launch_args.arg(&src_is_gpu);
     launch_args.arg(&posits_tgt_gpu);
     launch_args.arg(&posits_src_gpu);
     launch_args.arg(&sigmas_gpu);
@@ -229,8 +236,6 @@ pub fn force_nonbonded_gpu(
     launch_args.arg(&cutoff);
     launch_args.arg(&alpha);
     launch_args.arg(&symmetric);
-    launch_args.arg(&tgt_is_gpu);
-    launch_args.arg(&src_is_gpu);
     // todo: Cell A/R for wrapping water
     launch_args.arg(&n);
 

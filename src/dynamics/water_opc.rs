@@ -60,6 +60,14 @@ pub const O_EPS: f64 = 0.212_800_813_0;
 const Q_H: f64 = 0.6791 * CHARGE_UNIT_SCALER;
 const Q_EP: f64 = -2. * Q_H;
 
+#[derive(Copy, Clone, PartialEq)]
+pub enum WaterSite {
+    O,
+    M,
+    H0,
+    H1,
+}
+
 /// Contains 4 atoms for each water molecules, at a given time step. Note that these
 /// are not independent, but are useful in our general MD APIs, for compatibility with
 /// non-water atoms.
