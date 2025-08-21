@@ -454,14 +454,16 @@ pub fn force_lj_f32(dir: Vec3F32, dist: f32, sigma: f32, eps: f32) -> Vec3F32 {
     -dir * mag
 }
 
-/// See notes on `V_lj()`.
-pub fn force_lj(dir: Vec3, dist: f64, sigma: f64, eps: f64) -> Vec3 {
-    let s_r = sigma / dist;
+/// See notes on `V_lj()`. We set up the dist params we do to share computation
+/// with Coulomb.
+pub fn force_lj(dir: Vec3, inv_dist: f64, inv_dist_sq: f64, sigma: f64, eps: f64) -> Vec3 {
+    let s_r = sigma * inv_dist;
     let s_r_6 = s_r.powi(6);
     let s_r_12 = s_r_6.powi(2);
 
     // todo: ChatGPT is convinced I divide by r here, not r^2...
-    let mag = 24. * eps * (2. * s_r_12 - s_r_6) / dist.powi(2);
+    // let mag = 24. * eps * (2. * s_r_12 - s_r_6) * inv_dist_sq;
+    let mag = 24. * eps * (2. * s_r_12 - s_r_6) * inv_dist;
     -dir * mag
 }
 

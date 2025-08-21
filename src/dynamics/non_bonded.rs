@@ -13,11 +13,10 @@ use crate::{
         AtomDynamics, MdState,
         ambient::SimBox,
         water_opc,
-        water_opc::{WaterMol, WaterSite},
+        water_opc::{O_EPS, O_SIGMA, WaterMol, WaterSite},
     },
     forces::{force_lj, force_nonbonded_gpu},
 };
-use crate::dynamics::water_opc::{O_EPS, O_SIGMA};
 
 // Å. 9-12 should be fine; there is very little VDW force > this range due to
 // the ^-7 falloff.
@@ -566,7 +565,7 @@ impl MdState {
                             lj_indices: LjTableIndices::DynWater(i_dyn),
                             calc_lj: site == WaterSite::O,
                             calc_coulomb: site != WaterSite::O,
-                            symmetric: false,
+                            symmetric: true,
                         })
                     })
             })
@@ -666,19 +665,20 @@ pub fn f_nonbonded(
     calc_coulomb: bool,
 ) -> Vec3 {
     let diff = tgt.posit - src.posit;
-    let dif_min_img = cell.min_image(diff);
+    let diff = cell.min_image(diff);
 
-    let dist = dif_min_img.magnitude();
+    // We compute these dist-related values once, and share them between
+    // LJ and Coulomb.
+    let dist_sq = diff.magnitude_squared();
 
-    if dist < 1e-12 {
+    if dist_sq < 1e-12 {
         return Vec3::new_zero();
     }
 
-    // todo: Consider, like in your CUDA kernal, pre-computing the 1/r, and 1/r^2 terms,
-    // todo, then passing them to the functions. This is so you only have to do it once,
-    // todo instead of in both LJ and Coulomb.
-
-    let dir = dif_min_img / dist;
+    let dist = dist_sq.sqrt();
+    let inv_dist = 1.0 / dist;
+    let inv_dist_sq = inv_dist * inv_dist;
+    let dir = diff * inv_dist;
 
     let f_lj = if !calc_lj || dist > CUTOFF_VDW {
         Vec3::new_zero()
@@ -686,7 +686,7 @@ pub fn f_nonbonded(
         let (σ, ε) = lj_tables.lookup(lj_indices);
 
         // Negative due to our mix of conventions; keep it consistent with coulomb, and net correct.
-        let mut f = -force_lj(dir, dist, σ, ε);
+        let mut f = -force_lj(dir, inv_dist, inv_dist_sq, σ, ε);
         if scale14 {
             f *= SCALE_LJ_14;
         }
@@ -698,12 +698,11 @@ pub fn f_nonbonded(
     let mut f_coulomb = if !calc_coulomb {
         Vec3::new_zero()
     } else {
-        // todo temp removed; using the standard Coulomb force (No approximations/optimziations)
-        // todo for now while troubleshooting long-range portion of SPME/ewald.
-
         force_coulomb_short_range(
             dir,
             dist,
+            inv_dist,
+            inv_dist_sq,
             tgt.partial_charge,
             src.partial_charge,
             // (LONG_RANGE_SWITCH_START, LONG_RANGE_CUTOFF),
@@ -723,7 +722,7 @@ pub fn f_nonbonded(
 
     if let Some(w) = virial_w {
         // Virial: r_ij · F_ij (use minimum-image)
-        *w += dif_min_img.dot(result);
+        *w += diff.dot(result);
     }
 
     result

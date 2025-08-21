@@ -533,7 +533,7 @@ fn main() {
     #[cfg(not(feature = "cuda"))]
     let dev = ComputationDevice::Cpu;
 
-    // let dev = ComputationDevice::Cpu; // todo temp.
+    let dev = ComputationDevice::Cpu; // todo temp.
 
     // Time comparison, from 2025-08-20. (100 steps). Not as impressive as I'd hoped.
     // 9950x CPU. 4080 GPU. CPU used thread pools, but not SIMD. Long range ewald and neighbors built on CPU.

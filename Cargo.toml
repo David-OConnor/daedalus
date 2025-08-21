@@ -63,7 +63,7 @@ itertools = "0.14.0" # For combinations when matching angles in MD.
 #bio_apis = { path = "../bio_apis" }
 #mcubes = { path = "../mcubes" }
 #bio_files = { path = "../bio_files" }
-#ewald = { path = "../ewald" }
+ewald = { path = "../ewald" }
 
 
 

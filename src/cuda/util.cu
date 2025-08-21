@@ -147,6 +147,7 @@ float3 lj_force_v2(
     const float sr12 = sr6 * sr6;
 
     // todo: ChatGPT is convinced I divide by r here, not r^2...
-    const float mag = -24.0f * eps * (2. * sr12 - sr6) * inv_r_sq;
+//     const float mag = -24.0f * eps * (2. * sr12 - sr6) * inv_r_sq;
+    const float mag = -24.0f * eps * (2. * sr12 - sr6) * inv_r;
     return dir * mag;
 }
