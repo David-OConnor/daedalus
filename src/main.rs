@@ -528,21 +528,26 @@ fn main() {
         } else {
             ComputationDevice::Cpu
         }
-
-        // println!("Using the GPU for computations.");
     };
 
     #[cfg(not(feature = "cuda"))]
     let dev = ComputationDevice::Cpu;
 
+    // let dev = ComputationDevice::Cpu; // todo temp.
+
+    // Time comparison, from 2025-08-20. (100 steps). Not as impressive as I'd hoped.
+    // 9950x CPU. 4080 GPU. CPU used thread pools, but not SIMD. Long range ewald and neighbors built on CPU.
+    // CPU, f64: Non-bonded time: 57907 μs. MD complete in 8 s
+    // GPU, f32: Non-bonded time: 29677 μs. MD complete in 3 s
+
     #[cfg(target_arch = "x86_64")]
     {
         if is_x86_feature_detected!("avx512f") {
-            println!("AVX-512 is available\n");
+            println!("AVX-512 is available");
         } else if is_x86_feature_detected!("avx") {
-            println!("AVX (256-bit) is available\n");
+            println!("AVX (256-bit) is available");
         } else {
-            println!("AVX is not available.\n");
+            println!("AVX is not available.");
         }
     }
 

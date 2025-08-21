@@ -53,6 +53,7 @@ pub struct NeighborsNb {
 
 impl MdState {
     /// Call during each step; determines if we need to rebuild neighbors, and does so A/R.
+    /// todo: Run on GPU?
     pub fn build_neighbors_if_needed(&mut self) {
         let start = Instant::now();
 
@@ -187,6 +188,7 @@ impl MdState {
 }
 
 /// [Re]build a neighbor list, used for non-bonded interactions. Run this periodically.
+/// todo: Run on GPU?
 pub fn build_neighbors(
     neighbors: &mut Vec<Vec<usize>>,
     // todo: Consider accepting target and source posits to avoid cloning water atoms.

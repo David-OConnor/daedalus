@@ -18,6 +18,7 @@
 //! to be cheaper, and more robust than Shake/Rattle. It's less general, but it works here.
 //! Settle is specifically tailored for three-atom rigid bodies.
 //!
+//! This module, in particular, contains structs, constants, and the integrator.
 //!
 //! todo: H bond avg time: 1-20ps: Use this to validate your water model
 
@@ -60,12 +61,14 @@ pub const O_EPS: f64 = 0.212_800_813_0;
 const Q_H: f64 = 0.6791 * CHARGE_UNIT_SCALER;
 const Q_EP: f64 = -2. * Q_H;
 
+// We use this encoding when passing to CUDA. We reserve 0 for non-water atoms.
 #[derive(Copy, Clone, PartialEq)]
+#[repr(u8)]
 pub enum WaterSite {
-    O,
-    M,
-    H0,
-    H1,
+    O = 1,
+    M = 2,
+    H0 = 3,
+    H1 = 4,
 }
 
 /// Contains 4 atoms for each water molecules, at a given time step. Note that these
@@ -203,27 +206,27 @@ impl WaterMol {
 }
 
 impl MdState {
-    /// Add reciprocal (PME) water-site forces into a per-water force array.
-    /// Expects self.water_pme_sites_forces[iw] == [f_M, f_H0, f_H1] at current coords.
-    ///
-    /// Note that because this is for recip only, we don't apply force to O, because it's
-    /// chargeless. (LJ only)
-    // fn add_recip_to_water_forces(&self, fw: &mut [ForcesOnWaterMol]) {
-    fn add_recip_to_water_forces(&mut self) {
-        // todo: QC that this is set up and working.
-        for (i, water_mol) in self.water.iter_mut().enumerate() {
-            let [f_m, f_h0, f_h1] = self
-                // todo: Hmmmm... do we want this pme_sites_forces at all?
-                .water_pme_sites_forces
-                .get(i)
-                .copied()
-                .unwrap_or([Vec3::new_zero(); 3]);
-
-            water_mol.m.accel += f_m;
-            water_mol.h0.accel += f_h0;
-            water_mol.h1.accel += f_h1;
-        }
-    }
+    // /// Add reciprocal (PME) water-site forces into a per-water force array.
+    // /// Expects self.water_pme_sites_forces[iw] == [f_M, f_H0, f_H1] at current coords.
+    // ///
+    // /// Note that because this is for recip only, we don't apply force to O, because it's
+    // /// chargeless. (LJ only)
+    // // fn add_recip_to_water_forces(&self, fw: &mut [ForcesOnWaterMol]) {
+    // fn add_recip_to_water_forces(&mut self) {
+    //     // todo: QC that this is set up and working.
+    //     for (i, water_mol) in self.water.iter_mut().enumerate() {
+    //         let [f_m, f_h0, f_h1] = self
+    //             // todo: Hmmmm... do we want this pme_sites_forces at all?
+    //             .water_pme_sites_forces
+    //             .get(i)
+    //             .copied()
+    //             .unwrap_or([Vec3::new_zero(); 3]);
+    //
+    //         water_mol.m.accel += f_m;
+    //         water_mol.h0.accel += f_h0;
+    //         water_mol.h1.accel += f_h1;
+    //     }
+    // }
 
     /// Verlet velocity integration for water, part 1. Forces for this step must
     /// be pre-calculated. Accepts as mutable to allow projecting M/EP force onto the

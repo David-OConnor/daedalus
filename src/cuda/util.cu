@@ -37,6 +37,13 @@ __device__ inline float3 operator*(const float3 &a, const float b) {
     return make_float3(a.x * b, a.y * b, a.z * b);
 }
 
+// Apparently normally adding to output can cause race conditions.
+__device__ __forceinline__ void atomicAddFloat3(float3* addr, const float3 v) {
+    atomicAdd(&addr->x, v.x);
+    atomicAdd(&addr->y, v.y);
+    atomicAdd(&addr->z, v.z);
+}
+
 __device__
 float3 coulomb_force(float3 posit_src, float3 posit_tgt, float q_src, float q_tgt) {
     const float3 diff = posit_tgt - posit_src; // todo: QC direction
@@ -49,41 +56,36 @@ float3 coulomb_force(float3 posit_src, float3 posit_tgt, float q_src, float q_tg
     return dir * mag;
 }
 
-// Minimum-image for orthorhombic box if box.{x,y,z} > 0
-__device__ inline float3 min_image(float3 dv, float3 box) {
-    if (box.x > 0.f && box.y > 0.f && box.z > 0.f) {
-        dv.x -= rintf(dv.x / box.x) * box.x;
-        dv.y -= rintf(dv.y / box.y) * box.y;
-        dv.z -= rintf(dv.z / box.z) * box.z;
-    }
+__device__ inline float3 min_image(float3 ext, float3 dv) {
+    dv.x -= rintf(dv.x / ext.x) * ext.x;
+    dv.y -= rintf(dv.y / ext.y) * ext.y;
+    dv.z -= rintf(dv.z / ext.z) * ext.z;
+
     return dv;
 }
 
+// These params include inv_r and inv_r_sq due to it being shared with LJ.
 __device__
 float3 coulomb_force_spme_short_range(
-    float3 diff,
     float r,
+    float inv_r,
+    float inv_r_sq,
     float3 dir,
     float q_0,
     float q_1,
-    float cutoff,
-    float alpha,
-    float3 cell     // {Lx, Ly, Lz}; set zeros to disable PBC
+    float cutoff_dist,
+    float alpha
 ) {
     // Outside cutoff: no short-range contribution
-    if (r >= cutoff) return make_float3(0.f, 0.f, 0.f);
-
-    // Protect against r ~ 0 (also skip exact self if arrays alias)
-    if (r < 1e-16f) return make_float3(0.f, 0.f, 0.f);
-
-    const float inv_r = 1.0f / r;
-    const float inv_r2 = inv_r * inv_r;
+    if (r >= cutoff_dist) {
+        return make_float3(0.f, 0.f, 0.f);
+    }
 
     const float alpha_r = alpha * r;
     const float erfc_term = erfcf(alpha_r);
     const float exp_term  = __expf(-(alpha_r * alpha_r));
 
-    const float force_mag = q_0 * q_1 * (erfc_term * inv_r2 + 2.0f * alpha * exp_term * INV_SQRT_PI * inv_r);
+    const float force_mag = q_0 * q_1 * (erfc_term * inv_r_sq + 2.0f * alpha * exp_term * INV_SQRT_PI * inv_r);
 
     return dir * force_mag;
 }
@@ -113,15 +115,18 @@ float3 lj_force(
     float eps
 ) {
     const float3 diff = posit_src - posit_tgt;
-    const float r = std::sqrt(diff.x * diff.x + diff.y * diff.y + diff.z * diff.z);
+    const float r_sq = diff.x * diff.x + diff.y * diff.y + diff.z * diff.z;
+    const float r = std::sqrt(r_sq);
+    const float inv_r = 1.0f / r;
 
-    const float3 dir = diff / r;
+    const float3 dir = diff * inv_r;
 
-    const float sr = sigma / r;
+    const float sr = sigma * inv_r;
     const float sr6 = powf(sr, 6.);
     const float sr12 = sr6 * sr6;
 
-    const float mag = -24.0f * eps * (2. * sr12 - sr6) / (r * r);
+    // todo: ChatGPT is convinced I divide by r here, not r^2...
+    const float mag = -24.0f * eps * (2. * sr12 - sr6) / r_sq;
 
     return dir * mag;
 }
@@ -131,15 +136,17 @@ __device__
 float3 lj_force_v2(
     float3 diff,
     float r,
+    float inv_r,
+    float inv_r_sq,
     float3 dir,
     float sigma,
     float eps
 ) {
-    const float sr = sigma / r;
+    const float sr = sigma * inv_r;
     const float sr6 = powf(sr, 6.);
     const float sr12 = sr6 * sr6;
 
-    const float mag = -24.0f * eps * (2. * sr12 - sr6) / (r * r);
-
+    // todo: ChatGPT is convinced I divide by r here, not r^2...
+    const float mag = -24.0f * eps * (2. * sr12 - sr6) * inv_r_sq;
     return dir * mag;
 }

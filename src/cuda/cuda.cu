@@ -135,13 +135,18 @@ void lj_force_kernel(
 }
 
 // Handles LJ and Coulomb force, pairwise.
-// Unlike some other , this assumes inputs have already been organized and flattened
-// into target/source pairs. All inputs share the same index.
+// This assumes inputs have already been organized and flattened. All inputs share the same index.
 // Amber 1-2 and 1-3 exclusions are handled upstream.
 extern "C" __global__
 void nonbonded_force_kernel(
-    float3* out,
+    // Out arrays and values
+    float3* out_dyn,
+    float3* out_water_o,
+    float3* out_water_m,
+    float3* out_water_h0,
+    float3* out_water_h1,
     float* virial,  // Virial pair sum, used for the barostat.
+    // Pair-wise inputs
     const uint32_t* tgt_is,
     const uint32_t* src_is,
     const float3* posits_tgt,
@@ -150,11 +155,21 @@ void nonbonded_force_kernel(
     const float* epss,
     const float* qs_tgt,
     const float* qs_src,
+    // We use these two indices to know which output array to assign
+    // forces to.
+    const uint8_t* atom_types_tgt,
+    const uint8_t* water_types_tgt,
+    // For symmetric application
+    const uint8_t* atom_types_src,
+    const uint8_t* water_types_src,
     const uint8_t* scale_14s,
-    float cutoff,
-    float alpha,
-    uint8_t symmetric,
-    // todo: Cell A/R
+    const uint8_t* calc_ljs,
+    const uint8_t* calc_coulombs,
+    const uint8_t* symmetric,
+    // Non-array inputs
+    float3 cell_extent,
+    float cutoff_ewald,
+    float alpha_ewald,
     size_t N
 ) {
     size_t index = blockIdx.x * blockDim.x + threadIdx.x;
@@ -172,28 +187,47 @@ void nonbonded_force_kernel(
 
         const uint8_t scale_14 = scale_14s[i];
 
-        const float3 diff = posit_src - posit_tgt;
-        const float r = std::sqrt(diff.x * diff.x + diff.y * diff.y + diff.z * diff.z);
-        const float3 dir = diff / r;
+        float3 diff = posit_tgt - posit_src;
+        diff = min_image(cell_extent, diff);
 
-        float3 f_lj = lj_force_v2(diff, r, dir, sigma, eps);
+        // We set up r and its variants like this to share between the Coulomb and LJ
+        // functions.
+        const float r_sq = diff.x * diff.x + diff.y * diff.y + diff.z * diff.z;
+
+        // Protect against r ~ 0 (also skip exact self if arrays alias)
+        if (r_sq < 1e-16f) {
+            continue;
+        }
+
+        // `rsqrtf` is a fast/approximate CUDA function. Maybe worth revisiting if it introduces
+        // errors.
+        const float inv_r = rsqrtf(r_sq);
+        const float r = r_sq * inv_r;
+        const float inv_r_sq = inv_r * inv_r;
+
+        const float3 dir = diff * inv_r;
+
+        float3 f_lj = make_float3(0.f, 0.f, 0.f);
+        if (calc_ljs[i]) {
+            f_lj = lj_force_v2(diff, r, inv_r, inv_r_sq, dir, sigma, eps);
+        }
 
         const float q_tgt = qs_tgt[i];
         const float q_src = qs_src[i];
 
-        // todo: A/R
-        const float3 cell = make_float3(0.f, 0.f, 0.f);
-
-        float3 f_coulomb = coulomb_force_spme_short_range(
-            diff,
-            r,
-            dir,
-            q_tgt,
-            q_src,
-            cutoff,
-            alpha,
-            cell
-        );
+        float3 f_coulomb = make_float3(0.f, 0.f, 0.f);
+        if (calc_coulombs[i]) {
+            f_coulomb = coulomb_force_spme_short_range(
+                r,
+                inv_r,
+                inv_r_sq,
+                dir,
+                q_tgt,
+                q_src,
+                cutoff_ewald,
+                alpha_ewald
+            );
+        }
 
         if (scale_14) {
             f_lj = f_lj * 0.5f;
@@ -207,14 +241,39 @@ void nonbonded_force_kernel(
         float virial_pair = (diff.x * f.x + diff.y * f.y + diff.z * f.z);
         atomicAdd(virial, virial_pair);
 
-        atomicAdd(&out[tgt_is[i]].x, f.x);
-        atomicAdd(&out[tgt_is[i]].y, f.y);
-        atomicAdd(&out[tgt_is[i]].z, f.z);
+        const uint32_t out_i = tgt_is[i];
 
-        if (symmetric) {
-            atomicAdd(&out[src_is[i]].x, -f.x);
-            atomicAdd(&out[src_is[i]].y, -f.y);
-            atomicAdd(&out[src_is[i]].z, -f.z);
+        if (atom_types_tgt[i] == 0) {
+            atomicAddFloat3(&out_dyn[out_i], f);
+        } else {
+            if (water_types_tgt[i] == 1) {
+                atomicAddFloat3(&out_water_o[out_i], f);
+            } else if (water_types_tgt[i] == 2) {
+                atomicAddFloat3(&out_water_m[out_i], f);
+            } else if (water_types_tgt[i] == 3) {
+                atomicAddFloat3(&out_water_h0[out_i], f);
+            } else {
+                atomicAddFloat3(&out_water_h1[out_i], f);
+            }
+        }
+
+        if (symmetric[i]) {
+            const uint32_t out_i_s = src_is[i];
+            const float3 f_s = f * -1.0f;
+
+            if (atom_types_src[i] == 0) {
+                atomicAddFloat3(&out_dyn[out_i_s], f_s);
+            } else {
+                if (water_types_src[i] == 1) {
+                    atomicAddFloat3(&out_water_o[out_i_s], f_s);
+                } else if (water_types_src[i] == 2) {
+                    atomicAddFloat3(&out_water_m[out_i_s], f_s);
+                } else if (water_types_src[i] == 3) {
+                    atomicAddFloat3(&out_water_h0[out_i_s], f_s);
+                } else {
+                    atomicAddFloat3(&out_water_h1[out_i_s], f_s);
+                }
+            }
         }
     }
 }

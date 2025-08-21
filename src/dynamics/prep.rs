@@ -1060,7 +1060,7 @@ impl MdState {
                 non_bonded::setup_lj_cache(
                     a_lig,
                     &result.water[0].o,
-                    LjTableIndices::DynOnWater(i_lig),
+                    LjTableIndices::DynWater(i_lig),
                     &mut result.lj_tables,
                 );
             }
@@ -1072,7 +1072,7 @@ impl MdState {
                 non_bonded::setup_lj_cache(
                     a_static,
                     &result.water[0].o,
-                    LjTableIndices::StaticOnWater(i_static),
+                    LjTableIndices::StaticWater(i_static),
                     &mut result.lj_tables,
                 );
             }

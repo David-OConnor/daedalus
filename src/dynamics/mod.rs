@@ -81,7 +81,7 @@ mod ambient;
 mod bonded;
 mod bonded_forces;
 mod neighbors;
-mod non_bonded;
+pub mod non_bonded;
 pub mod prep;
 mod water_init;
 mod water_opc;
@@ -479,7 +479,6 @@ impl MdState {
             self.rattle_hydrogens();
         }
 
-        // todo: You may need to update the virial in the barostat.
         // I believe we must run barostat prior to thermostat, in our current configuration.
         self.apply_barostat_berendsen(dt);
         self.apply_thermostat_csvr(dt, self.temp_target);

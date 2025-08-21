@@ -63,8 +63,8 @@ impl Default for ToSave {
             movement_speed: MOVEMENT_SENS as u8,
             rotation_sens: (ROTATE_SENS * 100.) as u8,
             sa_surface_precision: 0.55,
-            num_md_steps: 500,
-            md_dt: 0.001,
+            num_md_steps: 100,
+            md_dt: 0.002,
             md_temperature: 310,
             md_pressure: 100,
         }
