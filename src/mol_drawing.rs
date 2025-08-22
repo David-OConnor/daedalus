@@ -1,6 +1,6 @@
 //! Handles drawing molecules, bonds etc.
 
-use std::{fmt, io, io::ErrorKind, str::FromStr};
+use std::{fmt, fmt::Display, io, io::ErrorKind, str::FromStr};
 
 use bincode::{Decode, Encode};
 use bio_files::{BondType, ResidueType};
@@ -183,7 +183,7 @@ impl FromStr for MoleculeView {
     }
 }
 
-impl fmt::Display for MoleculeView {
+impl Display for MoleculeView {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let val = match self {
             Self::Backbone => "Backbone",
@@ -460,11 +460,12 @@ fn bond_entities(
             let (posit_0_inner, posit_1_inner, center_inner, dist_half_inner) = {
                 // A vector perpendicular to the plane of the bonds (e.g. the ring)
                 // This direction only works in some cases; need a more reliable way.
-                // todo: WHen finding neighbors, prefear other ones to aromatic bonds?
+                // Note: This has problems at the connections to rings, but is works for most aromatic
+                // bonds. WHen it fails, it shows the shorter part on the outside.
                 let perp_vec = if neighbor.1 {
                     diff.cross(neighbor.0 - posit_1)
                 } else {
-                    diff.cross(posit_0 - neighbor.0)
+                    diff.cross(neighbor.0 - posit_0)
                 }
                 .to_normalized();
 

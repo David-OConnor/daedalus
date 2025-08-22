@@ -11,14 +11,45 @@ use lin_alg::f32::{Quaternion, Vec3};
 use crate::{
     Selection, State, StateUi,
     molecule::Ligand,
-    render::{CAM_INIT_OFFSET, RENDER_DIST_FAR, RENDER_DIST_NEAR, set_flashlight},
+    render::{CAM_INIT_OFFSET, set_flashlight},
     ui::{
-        COL_SPACING, COLOR_HIGHLIGHT, VIEW_DEPTH_FAR_MAX, VIEW_DEPTH_FAR_MIN, VIEW_DEPTH_NEAR_MAX,
-        VIEW_DEPTH_NEAR_MIN, aux, aux::section_box, get_snap_name,
+        COL_SPACING, COLOR_HIGHLIGHT, get_snap_name,
+        misc::{self, section_box},
     },
     util,
     util::{cam_look_at, cam_look_at_outside, handle_err, orbit_center, reset_camera},
 };
+
+// This control the clip planes in the camera frustum.
+pub const RENDER_DIST_NEAR: f32 = 0.2;
+pub const RENDER_DIST_FAR: f32 = 1_000.;
+
+// These are Å multiplied by 10. Affects the user-setting near property.
+// Near sets the camera frustum's near property.
+pub const VIEW_DEPTH_NEAR_MIN: u16 = 2;
+pub const VIEW_DEPTH_NEAR_MAX: u16 = 300;
+
+// Distance between start and end of the fade. A smaller distance is a more aggressive fade.
+pub const FOG_HALF_DEPTH: u16 = 40;
+
+// The range to start fading distance objects, and when the fade is complete.
+pub const FOG_DIST_DEFAULT: u16 = 100;
+
+// Affects the user-setting far property.
+// Sets the fog center point in its fade.
+pub const FOG_DIST_MIN: u16 = 5;
+pub const FOG_DIST_MAX: u16 = FOG_DIST_DEFAULT;
+
+pub fn calc_fog_dists(dist: u16) -> (f32, f32) {
+    // Clamp.
+    let min = if dist > FOG_HALF_DEPTH {
+        dist - FOG_HALF_DEPTH
+    } else {
+        0
+    };
+
+    (min as f32, (dist + FOG_HALF_DEPTH) as f32)
+}
 
 pub fn cam_controls(
     scene: &mut Scene,
@@ -84,7 +115,7 @@ pub fn cam_controls(
                 let arc_active = scene.input_settings.control_scheme != ControlScheme::FreeCamera;
 
                 if ui
-                    .button(RichText::new("Free").color(aux::active_color_sel(free_active)))
+                    .button(RichText::new("Free").color(misc::active_color_sel(free_active)))
                     .on_hover_text("Set the camera is a first-person mode, where your controls move its position. Similar to video games.")
                     .clicked()
                 {
@@ -93,7 +124,7 @@ pub fn cam_controls(
                 }
 
                 if ui
-                    .button(RichText::new("Arc").color(aux::active_color_sel(arc_active)))
+                    .button(RichText::new("Arc").color(misc::active_color_sel(arc_active)))
                     .on_hover_text("Set the camera to orbit around a point: Either the center of the molecule, or the selection.")
                     .clicked()
                 {
@@ -109,7 +140,7 @@ pub fn cam_controls(
                     if ui
                         .button(
                             RichText::new("Orbit sel")
-                                .color(aux::active_color(state.ui.orbit_around_selection)),
+                                .color(misc::active_color(state.ui.orbit_around_selection)),
                         )
                         .on_hover_text("Toggle whether the camera orbits around the selection, or the molecule center.")
                         .clicked()
@@ -165,31 +196,43 @@ pub fn cam_controls(
                 let depth_prev = state.ui.view_depth;
                 ui.spacing_mut().slider_width = 60.;
 
-                ui.label("Depth. Near(x10):");
+                let hover_text = "Don't render objects closer to the camera than this distance, in Å.";
+                ui.label("Depth. Near(×10):")
+                    .on_hover_text(hover_text);
+
                 ui.add(Slider::new(
                     &mut state.ui.view_depth.0,
                     VIEW_DEPTH_NEAR_MIN..=VIEW_DEPTH_NEAR_MAX,
-                ));
+                )).on_hover_text(hover_text);
 
-                ui.label("Far:");
+                let hover_text = "Fade distant objects. This may make it easier to see objects near the camera. Objects at this distance in Å from the \
+                    camera are attentuated to 50% opacity.";
+                ui.label("Far:")
+                    .on_hover_text(hover_text);
+
                 ui.add(Slider::new(
                     &mut state.ui.view_depth.1,
-                    VIEW_DEPTH_FAR_MIN..=VIEW_DEPTH_FAR_MAX,
-                ));
+                    FOG_DIST_MIN..=FOG_DIST_MAX,
+                )).on_hover_text(hover_text)    ;
 
                 if state.ui.view_depth != depth_prev {
                     // Interpret the slider being at min or max position to mean (effectively) unlimited.
+
                     scene.camera.near = if state.ui.view_depth.0 == VIEW_DEPTH_NEAR_MIN {
                         RENDER_DIST_NEAR
                     } else {
                         state.ui.view_depth.0 as f32 / 10.
                     };
 
-                    scene.camera.far = if state.ui.view_depth.1 == VIEW_DEPTH_FAR_MAX {
-                        RENDER_DIST_FAR
+                    let (fog_start, fog_end) = if state.ui.view_depth.1 == FOG_DIST_MAX {
+                        (0., 0.) // No fog will render.
                     } else {
-                        state.ui.view_depth.1 as f32
+                        let val = state.ui.view_depth.1;
+                        calc_fog_dists(val)
                     };
+
+                    scene.camera.fog_start = fog_start;
+                    scene.camera.fog_end = fog_end;
 
                     scene.camera.update_proj_mat();
                     changed = true;
@@ -218,7 +261,11 @@ pub fn cam_snapshots(
         // ui.label("Label:");
         ui.add(TextEdit::singleline(&mut state.ui.cam_snapshot_name).desired_width(60.));
 
-        if ui.button("Save").clicked() {
+        if ui
+            .button("Save")
+            .on_hover_text("Save the current camera position and orientation to a scene.")
+            .clicked()
+        {
             let name = if !state.ui.cam_snapshot_name.is_empty() {
                 state.ui.cam_snapshot_name.clone()
             } else {
@@ -243,7 +290,9 @@ pub fn cam_snapshots(
                         get_snap_name(Some(i), &state.cam_snapshots),
                     );
                 }
-            });
+            })
+            .response
+            .on_hover_text("Set the camera to a previously-saved scene.");
 
         if let Some(i) = state.ui.cam_snapshot {
             if ui.button(RichText::new("❌").color(Color32::RED)).clicked() {
@@ -276,12 +325,16 @@ pub fn move_cam_to_lig(
     } else {
         lig.position_atoms(None);
 
-        let lig_pos: lin_alg::f32::Vec3 = lig.atom_posits[lig.anchor_atom].into();
-        let ctr: lin_alg::f32::Vec3 = mol_center.into();
+        let lig_pos: Vec3 = lig.atom_posits[lig.anchor_atom].into();
+        let ctr: Vec3 = mol_center.into();
 
         cam_look_at_outside(&mut scene.camera, lig_pos, ctr);
 
         engine_updates.camera = true;
+
+        set_flashlight(scene);
+        engine_updates.lighting = true;
+
         state_ui.cam_snapshot = None;
     }
 }

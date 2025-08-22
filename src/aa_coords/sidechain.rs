@@ -3,7 +3,7 @@
 //! This module contains info related to side chains, including their geometry
 
 // Don't show warnings for un`
-use std::{f64::consts::TAU, fmt};
+use std::{f64::consts::TAU, fmt, fmt::Display};
 
 use lin_alg::f64::{Quaternion, Vec3};
 use na_seq::AminoAcid;
@@ -66,7 +66,7 @@ impl Default for Sidechain {
     }
 }
 
-impl fmt::Display for Sidechain {
+impl Display for Sidechain {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Arg(aa) => {

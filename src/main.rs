@@ -48,7 +48,9 @@ mod tests;
 
 use std::{
     collections::HashMap,
-    env, fmt, io,
+    env, fmt,
+    fmt::Display,
+    io,
     io::ErrorKind,
     path::{Path, PathBuf},
     str::FromStr,
@@ -89,10 +91,8 @@ use crate::{
     molecule::{Ligand, PeptideAtomPosits},
     prefs::ToSave,
     render::render,
-    ui::{VIEW_DEPTH_FAR_MAX, VIEW_DEPTH_NEAR_MIN},
     util::handle_err,
 };
-
 // ------Including files into the executable
 
 // Include general Amber forcefield params with our program. See the Reference Manual, section ]
@@ -141,7 +141,7 @@ pub enum ViewSelLevel {
     Residue,
 }
 
-impl fmt::Display for ViewSelLevel {
+impl Display for ViewSelLevel {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Atom => write!(f, "Atom"),
@@ -577,7 +577,6 @@ fn main() {
             ..Default::default()
         },
         ui: StateUi {
-            view_depth: (VIEW_DEPTH_NEAR_MIN, VIEW_DEPTH_FAR_MAX),
             nearby_dist_thresh: 15,
             density_iso_level: 1.8,
             ..Default::default()

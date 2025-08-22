@@ -23,11 +23,13 @@ use crate::{
     molecule::{Atom, AtomRole, Bond, Chain, Ligand, Molecule, Residue},
     render::{
         CAM_INIT_OFFSET, Color, MESH_DENSITY_SURFACE, MESH_SECONDARY_STRUCTURE,
-        MESH_SOLVENT_SURFACE, RENDER_DIST_FAR, RENDER_DIST_NEAR, set_flashlight, set_static_light,
+        MESH_SOLVENT_SURFACE, set_flashlight, set_static_light,
     },
     ribbon_mesh::build_cartoon_mesh,
     sa_surface::make_sas_mesh,
-    ui::{VIEW_DEPTH_FAR_MAX, VIEW_DEPTH_NEAR_MIN},
+    ui::cam::{
+        FOG_DIST_DEFAULT, RENDER_DIST_FAR, RENDER_DIST_NEAR, VIEW_DEPTH_NEAR_MIN, calc_fog_dists,
+    },
 };
 
 const MOVE_TO_TARGET_DIST: f32 = 15.;
@@ -695,6 +697,12 @@ pub fn reset_camera(
 
     scene.camera.near = RENDER_DIST_NEAR;
     scene.camera.far = RENDER_DIST_FAR;
+
+    let (start, end) = calc_fog_dists(FOG_DIST_DEFAULT);
+
+    scene.camera.fog_start = start;
+    scene.camera.fog_end = end;
+
     scene.camera.update_proj_mat();
 
     set_static_light(scene, center, mol.size);
@@ -703,7 +711,7 @@ pub fn reset_camera(
     engine_updates.camera = true;
     engine_updates.lighting = true;
 
-    *view_depth = (VIEW_DEPTH_NEAR_MIN, VIEW_DEPTH_FAR_MAX);
+    *view_depth = (VIEW_DEPTH_NEAR_MIN, FOG_DIST_DEFAULT);
 }
 
 /// Utility function that prints to stderr, and the CLI output. Sets the out flag.

@@ -846,7 +846,7 @@ fn res_sns_to_indices(sn_tgt: u32, res_set: &[Residue]) -> Option<usize> {
     None
 }
 
-impl fmt::Display for Residue {
+impl Display for Residue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "#{}: {}", self.serial_number, self.res_type)?;
 

@@ -342,8 +342,6 @@ pub fn force_nonbonded_gpu(
     // let time_diff = Instant::now() - start;
     // println!("GPU LJ force data collected. Time: {:?}", time_diff);
 
-    println!("Virial GPU: {:?}", virial);
-
     (forces_on_dyn, forces_on_water, virial)
 }
 

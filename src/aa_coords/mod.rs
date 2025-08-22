@@ -1,6 +1,10 @@
 //! Adapted from `peptide`. Operations related to the geometry of atomic coordinates.
 
-use std::{f64::consts::TAU, fmt, fmt::Formatter};
+use std::{
+    f64::consts::TAU,
+    fmt,
+    fmt::{Display, Formatter},
+};
 
 use bio_files::ResidueType;
 use lin_alg::f64::{Quaternion, Vec3, calc_dihedral_angle, calc_dihedral_angle_v2};
@@ -76,7 +80,7 @@ pub struct Dihedral {
     // pub dipole: Vec3,
 }
 
-impl fmt::Display for Dihedral {
+impl Display for Dihedral {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let mut result = String::new();
 

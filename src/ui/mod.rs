@@ -34,10 +34,9 @@ use crate::{
     molecule::{Ligand, Molecule},
     render::{set_docking_light, set_flashlight, set_static_light},
     ui::{
-        aux::{md_setup, section_box},
         cam::{cam_snapshots, move_cam_to_lig},
+        misc::{md_setup, section_box},
     },
-    util,
     util::{
         cam_look_at_outside, check_prefs_save, close_lig, close_mol, cycle_selected, handle_err,
         handle_scene_flags, handle_success, load_atom_coords_rcsb, move_lig_to_res, orbit_center,
@@ -45,18 +44,11 @@ use crate::{
     },
 };
 
-mod aux;
-mod cam;
+pub mod cam;
+pub mod misc;
 
 pub const ROW_SPACING: f32 = 10.;
 pub const COL_SPACING: f32 = 30.;
-
-// These are Å multiplied by 10.
-pub const VIEW_DEPTH_NEAR_MIN: u16 = 2;
-pub const VIEW_DEPTH_NEAR_MAX: u16 = 300;
-
-pub const VIEW_DEPTH_FAR_MIN: u16 = 10;
-pub const VIEW_DEPTH_FAR_MAX: u16 = 60;
 
 const DENS_ISO_MIN: f32 = 1.0;
 const DENS_ISO_MAX: f32 = 3.0;
@@ -245,7 +237,7 @@ fn chain_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
         ui.label("Chain vis:");
         if let Some(mol) = &mut state.molecule {
             for chain in &mut mol.chains {
-                let color = aux::active_color(chain.visible);
+                let color = misc::active_color(chain.visible);
 
                 if ui
                     .button(RichText::new(chain.id.clone()).color(color))
@@ -746,7 +738,7 @@ fn selection_section(
                 for view in &[ViewSelLevel::Atom, ViewSelLevel::Residue] {
                     ui.selectable_value(&mut state.ui.view_sel_level, *view, view.to_string());
                 }
-            });
+            }).response.on_hover_text(help_text);
 
         if state.ui.view_sel_level != prev_view {
             *redraw = true;
@@ -893,7 +885,11 @@ fn mol_descrip(mol: &Molecule, ui: &mut Ui) {
 
     if mol.ident.len() <= 5 {
         // todo: You likely need a better approach.
-        if ui.button("View on RCSB").clicked() {
+        if ui
+            .button("View on RCSB")
+            .on_hover_text("Open a web browser to the RCSB PDB page for this molecule.")
+            .clicked()
+        {
             rcsb::open_overview(&mol.ident);
         }
     }
@@ -947,19 +943,19 @@ fn view_settings(
 
             ui.label("Vis:");
 
-            aux::vis_check(
+            misc::vis_check(
                 &mut state.ui.visibility.hide_non_hetero,
                 "Peptide",
                 ui,
                 redraw,
             );
-            aux::vis_check(&mut state.ui.visibility.hide_hetero, "Hetero", ui, redraw);
+            misc::vis_check(&mut state.ui.visibility.hide_hetero, "Hetero", ui, redraw);
 
             ui.add_space(COL_SPACING / 2.);
 
             if !state.ui.visibility.hide_non_hetero {
                 // Subset of peptide.
-                aux::vis_check(
+                misc::vis_check(
                     &mut state.ui.visibility.hide_sidechains,
                     "Sidechains",
                     ui,
@@ -967,13 +963,13 @@ fn view_settings(
                 );
             }
 
-            aux::vis_check(&mut state.ui.visibility.hide_hydrogen, "H", ui, redraw);
+            misc::vis_check(&mut state.ui.visibility.hide_hydrogen, "H", ui, redraw);
 
             // We allow toggling water now regardless of hide hetero, as it's part of our MD sim.
             // if !state.ui.visibility.hide_hetero {
             // Subset of hetero.
             let water_prev = state.ui.visibility.hide_water;
-            aux::vis_check(&mut state.ui.visibility.hide_water, "Water", ui, redraw);
+            misc::vis_check(&mut state.ui.visibility.hide_water, "Water", ui, redraw);
             // }
 
             if let Some(md) = &state.mol_dynamics {
@@ -991,7 +987,7 @@ fn view_settings(
             }
 
             if state.ligand.is_some() {
-                let color = aux::active_color(!state.ui.visibility.hide_ligand);
+                let color = misc::active_color(!state.ui.visibility.hide_ligand);
                 if ui.button(RichText::new("Lig").color(color)).clicked() {
                     state.ui.visibility.hide_ligand = !state.ui.visibility.hide_ligand;
 
@@ -1009,13 +1005,13 @@ fn view_settings(
                 }
             }
 
-            aux::vis_check(&mut state.ui.visibility.hide_h_bonds, "H bonds", ui, redraw);
+            misc::vis_check(&mut state.ui.visibility.hide_h_bonds, "H bonds", ui, redraw);
             // vis_check(&mut state.ui.visibility.dim_peptide, "Dim peptide", ui, redraw);
 
             if state.ligand.is_some() {
                 ui.add_space(COL_SPACING / 2.);
                 // Not using `vis_check` for this because its semantics are inverted.
-                let color = aux::active_color(state.ui.visibility.dim_peptide);
+                let color = misc::active_color(state.ui.visibility.dim_peptide);
                 if ui
                     .button(RichText::new("Dim peptide").color(color))
                     .clicked()
@@ -1028,7 +1024,7 @@ fn view_settings(
             if let Some(mol) = &state.molecule {
                 if let Some(dens) = &mol.elec_density {
                     let mut redraw_dens = false;
-                    aux::vis_check(
+                    misc::vis_check(
                         &mut state.ui.visibility.hide_density,
                         "Density",
                         ui,
@@ -1047,7 +1043,7 @@ fn view_settings(
                     }
 
                     let mut redraw_dens_surface = false;
-                    aux::vis_check(
+                    misc::vis_check(
                         &mut state.ui.visibility.hide_density_surface,
                         "Density sfc",
                         ui,
@@ -1737,7 +1733,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         });
 
         if let Some(mol) = &state.molecule {
-            aux::selected_data(mol, &state.ligand, &state.ui.selection, ui);
+            misc::selected_data(mol, &state.ligand, &state.ui.selection, ui);
         }
 
         ui.horizontal(|ui| {
