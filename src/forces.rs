@@ -13,7 +13,6 @@ cfg_if::cfg_if! {
 }
 use std::time::Instant;
 
-use cudarc::driver::CudaFunction;
 use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use lin_alg::{
@@ -194,7 +193,7 @@ pub fn force_nonbonded_gpu(
     cell_extent: Vec3F32,
     n_dyn: usize,
     n_water: usize,
-) -> (Vec<Vec3F32>, Vec<ForcesOnWaterMol>, f32) {
+) -> (Vec<Vec3F32>, Vec<ForcesOnWaterMol>, f64) {
     let start = Instant::now();
 
     let n = posits_tgt.len();
@@ -248,7 +247,7 @@ pub fn force_nonbonded_gpu(
         vec3s_to_dev(stream, &v)
     };
 
-    let mut virial_gpu = stream.memcpy_stod(&[0.0f32]).unwrap();
+    let mut virial_gpu = stream.memcpy_stod(&[0.0f64]).unwrap();
 
     // Store immutable input arrays to the device.
 
@@ -338,11 +337,12 @@ pub fn force_nonbonded_gpu(
         });
     }
 
-    // todo: QC this.
     let virial = stream.memcpy_dtov(&virial_gpu).unwrap()[0];
 
     // let time_diff = Instant::now() - start;
     // println!("GPU LJ force data collected. Time: {:?}", time_diff);
+
+    println!("Virial GPU: {:?}", virial);
 
     (forces_on_dyn, forces_on_water, virial)
 }
@@ -451,11 +451,12 @@ pub fn force_lj_f32(dir: Vec3F32, dist: f32, sigma: f32, eps: f32) -> Vec3F32 {
 
     // todo: ChatGPT is convinced I divide by r here, not r^2...
     let mag = 24. * eps * (2. * s_r_12 - s_r_6) / dist.powi(2);
-    -dir * mag
+    dir * mag
 }
 
 /// See notes on `V_lj()`. We set up the dist params we do to share computation
 /// with Coulomb.
+/// This assumes diff (and dir) is in order tgt - src.
 pub fn force_lj(dir: Vec3, inv_dist: f64, inv_dist_sq: f64, sigma: f64, eps: f64) -> Vec3 {
     let s_r = sigma * inv_dist;
     let s_r_6 = s_r.powi(6);
@@ -464,7 +465,7 @@ pub fn force_lj(dir: Vec3, inv_dist: f64, inv_dist_sq: f64, sigma: f64, eps: f64
     // todo: ChatGPT is convinced I divide by r here, not r^2...
     // let mag = 24. * eps * (2. * s_r_12 - s_r_6) * inv_dist_sq;
     let mag = 24. * eps * (2. * s_r_12 - s_r_6) * inv_dist;
-    -dir * mag
+    dir * mag
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -476,6 +477,5 @@ pub fn force_lj_x8(dir: Vec3x8, dist: f32x8, sigma: f32x8, eps: f32x8) -> Vec3x8
 
     // todo: ChatGPT is convinced I divide by r here, not r^2...
     let mag = f32x8::splat(24.) * eps * (f32x8::splat(2.) * s_r_12 - s_r_6) / dist.powi(2);
-
-    -dir * mag
+    dir * mag
 }

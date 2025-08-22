@@ -22,7 +22,7 @@ pub type Color = (f32, f32, f32);
 
 const WINDOW_TITLE: &str = "Daedalus";
 const WINDOW_SIZE_X: f32 = 1_600.;
-const WINDOW_SIZE_Y: f32 = 1_000.;
+const WINDOW_SIZE_Y: f32 = 1_200.;
 pub const BACKGROUND_COLOR: Color = (0., 0., 0.);
 
 pub const RENDER_DIST_NEAR: f32 = 0.2;

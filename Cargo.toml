@@ -12,13 +12,13 @@ egui-file-dialog = "0.11.0" #  For file dialogs.
 
 cfg-if = "1.0.1"
 
-lin_alg = { version = "1.3.4", features = ["encode"] }
+lin_alg = { version = "1.3.5", features = ["encode"] }
 barnes_hut = { version = "1.0.8"}  # enc temp rem
 na_seq = "0.3.1"
 bio_apis = {  version = "0.1.6", features = ["encode"] }
-bio_files = "0.2.6"
+bio_files = "0.2.7"
 mcubes = "0.1.4"
-ewald = "0.1.0"
+ewald = "0.1.1"
 
 # For loading and saving config
 bincode = "2.0.1"
@@ -28,31 +28,17 @@ rayon = "1.10.0"  # Parallel execution on CPU using thread pools.
 # todo: Do we want the `dynamic-linking` cudarc feature? Instead of dynamic-loading?
 # todo: If you use it, rem def features, and add specifically the other defaults.
 
-# See [polarthene's comment here](https://github.com/coreylowman/cudarc/issues/408) for details
-# on dynamic linking vs loading, and CUDA version. CUDA versions higher than the specified version
-# will work, so set a reasonably low version.
-# Note: Dynamic linking not working.
-#cudarc = { version = "0.17.2", features = ["cuda-12060"], optional=true }
-cudarc = { version = "0.17.2", features = ["cuda-13000"], optional=true }
-
-# These are the default features, with dynamic-loading replaced by dynamic-linking.
-#cudarc = { version = "0.16.4", features = [
-#    "std", "cublas", "cublaslt", "curand", "driver", "runtime", "nvrtc", "dynamic-linking", "cuda-12060"
-#], default-features = false, optional=true }
+# Static linking results in an error when compiling. Dyanmic loading seems to require the PC that runs it
+# to have CUDA installed. So, we use dynamic-linking.
+cudarc = { version = "0.17.2", default-features = false, features = ["std", "driver", "dynamic-linking", "cuda-13000"], optional=true }
+#cudarc = { version = "0.17.2", default-features = false, features = ["std", "driver", "dynamic-loading", "cuda-13000"], optional=true }
 
 rand = "0.9.1"
 rand_distr  = "0.5.1"
 regex = "1.11.1"
 
-# nalgebra: For solving linear systems of equations when generating partial changes.
-#nalgebra = "0.33.2"
-
 itertools = "0.14.0" # For combinations when matching angles in MD.
 
-## We use this to get the erf error function for use in the Ewald approximation in MD
-## todo: Way to avoid this dep for something lighter?
-#statrs = "0.18.0"
-#rustfft = "6.4.0" # For Ewald long range
 
 # We use these when developing locally to reduce friction.
 [patch.crates-io]
@@ -63,13 +49,13 @@ itertools = "0.14.0" # For combinations when matching angles in MD.
 #bio_apis = { path = "../bio_apis" }
 #mcubes = { path = "../mcubes" }
 #bio_files = { path = "../bio_files" }
-ewald = { path = "../ewald" }
+#ewald = { path = "../ewald" }
+#cuda_setup = { path = "../../cuda_setup" }
 
 
 
 [build-dependencies]
-cuda_setup = { version = "0.1.5", optional = true }
-#cuda_setup = { path = "../../cuda_setup", optional = true }
+cuda_setup = { version = "0.1.6", optional = true }
 # This is for embedding an application icon, on Windows.
 winresource = "0.1.20"
 

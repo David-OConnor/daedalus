@@ -43,8 +43,6 @@ mod cli;
 mod dynamics;
 mod reflection;
 
-mod ui_aux;
-
 #[cfg(test)]
 mod tests;
 
@@ -94,6 +92,9 @@ use crate::{
     ui::{VIEW_DEPTH_FAR_MAX, VIEW_DEPTH_NEAR_MIN},
     util::handle_err,
 };
+
+// ------Including files into the executable
+
 // Include general Amber forcefield params with our program. See the Reference Manual, section ]
 // 3.1.1 for details on which we include. (The recommended ones for Proteins, and ligands).
 
@@ -107,7 +108,17 @@ const AMINO_CT12: &str = include_str!("../resources/aminoct12.lib"); // Charge; 
 // Ligands/small organic molecules: *General Amber Force Fields*.
 const GAFF2: &str = include_str!("../resources/gaff2.dat");
 
+// Include the compiled CUDA ptx in the binary.
+// const KERN_PTX: &str = include_str!(concat!(env!("OUT_DIR"), "/my_kernel.ptx"));
+
+// Note: If you haven't generated this file yet when compiling (e.g. from a freshly-cloned repo),
+// make an edit to one of the CUDA files (e.g. add a newline), then run, to create this file.
+#[cfg(feature = "cuda")]
+const PTX: &str = include_str!("../daedalus.ptx");
+
 // Note: Water parameters are concise; we store them directly.
+
+// ------ End file includes.
 
 // todo: Eventually, implement a system that automatically checks for changes, and don't
 // todo save to disk if there are no changes.
@@ -499,17 +510,19 @@ impl State {
 fn main() {
     #[cfg(feature = "cuda")]
     let dev = {
-        let runtime_v = cudarc::runtime::result::version::get_runtime_version();
-        let driver_v = cudarc::runtime::result::version::get_driver_version();
-        println!("CUDA runtime: {runtime_v:?}. Driver: {driver_v:?}");
+        // We're compiling without the cuda runtime requirement for now.
 
-        if runtime_v.is_ok() && driver_v.is_ok() {
+        // let runtime_v = cudarc::runtime::result::version::get_runtime_version();
+        // let driver_v = cudarc::runtime::result::version::get_driver_version();
+        // println!("CUDA runtime: {runtime_v:?}. Driver: {driver_v:?}");
+
+        if cudarc::driver::result::init().is_ok() {
+            // if runtime_v.is_ok() && driver_v.is_ok() {
             // This is compiled in `build_`.
             let ctx = CudaContext::new(0).unwrap();
             let stream = ctx.default_stream();
 
-            let ptx_file = "./cuda.ptx";
-            let module = ctx.load_module(Ptx::from_file(ptx_file));
+            let module = ctx.load_module(Ptx::from_src(PTX));
 
             match module {
                 Ok(m) => {
@@ -521,7 +534,7 @@ fn main() {
                     ComputationDevice::Gpu((stream, m))
                 }
                 Err(e) => {
-                    eprintln!("Error loading CUDA module: {ptx_file}; not using CUDA. Error: {e}");
+                    eprintln!("Error loading CUDA module: {PTX}; not using CUDA. Error: {e}");
                     ComputationDevice::Cpu
                 }
             }
@@ -533,7 +546,7 @@ fn main() {
     #[cfg(not(feature = "cuda"))]
     let dev = ComputationDevice::Cpu;
 
-    let dev = ComputationDevice::Cpu; // todo temp.
+    // let dev = ComputationDevice::Cpu; // todo temp.
 
     // Time comparison, from 2025-08-20. (100 steps). Not as impressive as I'd hoped.
     // 9950x CPU. 4080 GPU. CPU used thread pools, but not SIMD. Long range ewald and neighbors built on CPU.

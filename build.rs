@@ -9,8 +9,10 @@ use winresource::WindowsResource;
 fn main() {
     #[cfg(feature = "cuda")]
     build(
-        GpuArchitecture::Rtx4,
+        // Select the min supported GPU architecture.
+        GpuArchitecture::Rtx3,
         &["src/cuda/cuda.cu", "src/cuda/util.cu"],
+        "daedalus",
     );
 
     if env::var_os("CARGO_CFG_WINDOWS").is_some() {

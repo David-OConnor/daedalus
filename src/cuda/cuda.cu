@@ -145,7 +145,7 @@ void nonbonded_force_kernel(
     float3* out_water_m,
     float3* out_water_h0,
     float3* out_water_h1,
-    float* virial,  // Virial pair sum, used for the barostat.
+    double* virial,  // Virial pair sum, used for the barostat.
     // Pair-wise inputs
     const uint32_t* tgt_is,
     const uint32_t* src_is,
@@ -236,9 +236,8 @@ void nonbonded_force_kernel(
 
         const float3 f = f_lj + f_coulomb;
 
-        // Virial per pair (pair counted once): -0.5 * r · F
-        // todo: Cell wrapping for water.
-        float virial_pair = (diff.x * f.x + diff.y * f.y + diff.z * f.z);
+        // Virial per pair · F
+        double virial_pair = ((double)diff.x * (double)f.x + (double)diff.y * (double)f.y + (double)diff.z * (double)f.z);
         atomicAdd(virial, virial_pair);
 
         const uint32_t out_i = tgt_is[i];

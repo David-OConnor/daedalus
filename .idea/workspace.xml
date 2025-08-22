@@ -12,12 +12,23 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="56119a7d-3397-4692-902c-376cd93a301b" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/src/ui/cam.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/ui/mod.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/build.rs" beforeDir="false" afterPath="$PROJECT_DIR$/build.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/bond_inference.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/bond_inference.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/cuda/cuda.cu" beforeDir="false" afterPath="$PROJECT_DIR$/src/cuda/cuda.cu" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/cuda/util.cu" beforeDir="false" afterPath="$PROJECT_DIR$/src/cuda/util.cu" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/docking/prep.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/docking/prep.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/dynamics/non_bonded.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dynamics/non_bonded.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/forces.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/forces.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/main.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/mol_drawing.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/mol_drawing.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/molecule.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/molecule.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/render.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/ui.rs" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/ui_aux.rs" beforeDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -25,6 +36,13 @@
     <option name="LAST_RESOLUTION" value="IGNORE" />
   </component>
   <component name="ExecutionTargetManager" SELECTED_TARGET="RsBuildProfile:release" />
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="Rust File" />
+      </list>
+    </option>
+  </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
@@ -42,7 +60,7 @@
   <component name="PropertiesComponent"><![CDATA[{
   "keyToString": {
     "Cargo.Fmt.executor": "Run",
-    "Cargo.Run daedalus.executor": "Run",
+    "Cargo.Run daedalus.executor": "Debug",
     "ModuleVcsDetector.initialDetectionPerformed": "true",
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
@@ -63,6 +81,11 @@
     "vue.rearranger.settings.migration": "true"
   }
 }]]></component>
+  <component name="RecentsManager">
+    <key name="MoveFile.RECENT_KEYS">
+      <recent name="C:\Users\the_a\code\Bio\daedalus\src\ui" />
+    </key>
+  </component>
   <component name="RunManager" selected="Cargo.Run daedalus">
     <configuration name="Fmt" type="CargoCommandRunConfiguration" factoryName="Cargo Command" nameIsGenerated="true">
       <option name="command" value="fmt" />
@@ -116,23 +139,13 @@
       <updated>1755451505262</updated>
       <workItem from="1755451506322" duration="33335000" />
       <workItem from="1755564519673" duration="27103000" />
-      <workItem from="1755641667152" duration="39976000" />
+      <workItem from="1755641667152" duration="52392000" />
+      <workItem from="1755798686150" duration="13253000" />
     </task>
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
-  </component>
-  <component name="XDebuggerManager">
-    <breakpoint-manager>
-      <breakpoints>
-        <line-breakpoint enabled="true" type="com.jetbrains.cidr.execution.debugger.OCBreakpointType">
-          <url>file://$PROJECT_DIR$/build.rs</url>
-          <line>4</line>
-          <option name="timeStamp" value="1" />
-        </line-breakpoint>
-      </breakpoints>
-    </breakpoint-manager>
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />

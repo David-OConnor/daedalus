@@ -5,6 +5,7 @@
 use std::fmt::Display;
 
 use barnes_hut::{BhConfig, Cube, Tree};
+use bio_files::BondType;
 use lin_alg::f32::Vec3;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use lin_alg::f32::{Vec3x8, f32x8, pack_x8};
@@ -15,7 +16,7 @@ use crate::{
         ATOM_NEAR_SITE_DIST_THRESH, DockingSite, is_hydrophobic, partial_charge::PartialCharge,
     },
     forces::setup_sigma_eps_x8,
-    molecule::{Atom, Bond, BondCount, BondType, Ligand, Molecule},
+    molecule::{Atom, Bond, Ligand, Molecule},
 };
 
 // Increase this to take fewer receptor atoms when sampling for some cheap computatoins.
@@ -420,11 +421,7 @@ pub fn setup_flexibility(mol: &Molecule) -> Vec<usize> {
 
     for (i, bond) in mol.bonds.iter().enumerate() {
         // Only consider single bonds.
-        let bond_count = match bond.bond_type {
-            BondType::Covalent { count, .. } => count,
-            _ => BondCount::Triple,
-        };
-        if bond_count != BondCount::Single {
+        if bond.bond_type != BondType::Single {
             continue;
         }
 

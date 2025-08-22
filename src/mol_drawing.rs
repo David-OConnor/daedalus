@@ -3,11 +3,11 @@
 use std::{fmt, io, io::ErrorKind, str::FromStr};
 
 use bincode::{Decode, Encode};
-use bio_files::ResidueType;
+use bio_files::{BondType, ResidueType};
 use egui::Color32;
 use graphics::{ControlScheme, Entity, FWD_VEC, Scene, UP_VEC};
 use lin_alg::{
-    f32::{Quaternion, Vec3},
+    f32::{Quaternion, Vec3, calc_dihedral_angle_v2},
     f64::Vec3 as Vec3F64,
     map_linear,
 };
@@ -15,7 +15,7 @@ use na_seq::Element;
 
 use crate::{
     Selection, State, ViewSelLevel,
-    molecule::{Atom, AtomRole, BondCount, BondType, Chain, PeptideAtomPosits, Residue, aa_color},
+    molecule::{Atom, AtomRole, Chain, PeptideAtomPosits, Residue, aa_color},
     reflection::ElectronDensity,
     render::{
         ATOM_SHININESS, BACKGROUND_COLOR, BALL_RADIUS_WATER_H, BALL_RADIUS_WATER_O,
@@ -48,9 +48,11 @@ pub const COLOR_DOCKING_SITE_MESH: Color = (0.5, 0.5, 0.9);
 const COLOR_SA_SURFACE: Color = (0.3, 0.2, 1.);
 
 pub const BOND_RADIUS: f32 = 0.10;
-pub const BOND_RADIUS_LIGAND_RATIO: f32 = 1.3; // Of bond radius.
-// const BOND_CAP_RADIUS: f32 = 1./BOND_RADIUS;
-pub const BOND_RADIUS_DOUBLE: f32 = 0.07;
+pub const BOND_RADIUS_LIG_RATIO: f32 = 1.3; // Of bond radius.
+// Aromatic inner radius, relative to bond radius.
+pub const BOND_RADIUS_AR_INNER_RATIO: f32 = 0.4; // Of bond radius.
+pub const AR_INNER_OFFSET: f32 = 0.6;
+const AR_INNER_SHORTEN_FACTOR: f32 = 0.6;
 
 pub const SIZE_SFC_DOT: f32 = 0.03;
 
@@ -425,9 +427,13 @@ fn bond_entities(
     mut color_1: Color,
     bond_type: BondType,
     ligand: bool,
+    // No caps for ball and stick
+    caps: bool,
+    // Neighbors, in the case of aromataic bonds. We use this to compute the dihedral angle for
+    // correct inner bond mesh placement. This is (posit prior to posit_0, posit after posit_1.
+    // Also for double-bonds.
+    ar_neighbors: Option<(Vec3, Vec3)>,
 ) {
-    // todo: You probably need to update this to display double bonds correctly.
-
     // todo: YOur multibond plane logic is off.
 
     let center: Vec3 = (posit_0 + posit_1) / 2.;
@@ -437,30 +443,51 @@ fn bond_entities(
     let orientation = Quaternion::from_unit_vecs(UP_VEC, diff_unit);
     let dist_half = diff.magnitude() / 2.;
 
-    let caps = true; // todo: Remove caps if ball+ stick
-
-    let bond_count = match bond_type {
-        BondType::Covalent { count } => count,
-        BondType::Hydrogen => BondCount::Single,
-        _ => unimplemented!(),
-    };
-
-    if bond_type == BondType::Hydrogen {
+    // Dummy not ideal.
+    if bond_type == BondType::Dummy {
         color_0 = COLOR_H_BOND;
         color_1 = COLOR_H_BOND;
     }
 
-    // todo: Put this multibond code back.
-    // todo: Lots of DRY!
-    match bond_count {
-        // BondCount::Single => {
-        BondCount::Single | BondCount::SingleDoubleHybrid => {
-            let thickness = if bond_type == BondType::Hydrogen {
-                RADIUS_H_BOND
-            } else {
-                if ligand { BOND_RADIUS_LIGAND_RATIO } else { 1. }
+    match bond_type {
+        // Draw a normal mesh, the same as a single, and a second thinner and shorter inner one.
+        BondType::Aromatic => {
+            // Compute the dihedral angle so we always place the smaller, offset bond on the inside.
+
+            let (posit_0_inner, posit_1_inner, center_inner) = {
+                // let (posit_left, posit_right) = ar_neighbors.unwrap();
+
+                let rot_ortho = Quaternion::from_unit_vecs(FWD_VEC, UP_VEC);
+                let rotator = rot_ortho * orientation;
+
+                // Offset towards the inside of the ring.
+                // todo: How do we know when to negate the offset, i.e. ensure we're moving inside, not outside?
+                let offset = rotator.rotate_vec(Vec3::new(AR_INNER_OFFSET, 0., 0.));
+
+                let mut p0 = posit_0 + offset;
+                let mut p1 = posit_1 + offset;
+
+                // Make the length shorter.
+                let diff = p1 - p0;
+                let dist = diff.magnitude();
+                let dir = diff / dist;
+
+                let shorten_vec = dir * AR_INNER_SHORTEN_FACTOR * dist;
+
+                p0 += shorten_vec;
+                p1 -= shorten_vec;
+
+                (p0, p1, center + offset)
             };
 
+            let thickness_outer = if ligand { BOND_RADIUS_LIG_RATIO } else { 1. };
+            let thickness_inner = if ligand {
+                BOND_RADIUS_LIG_RATIO * BOND_RADIUS_AR_INNER_RATIO
+            } else {
+                BOND_RADIUS_AR_INNER_RATIO
+            };
+
+            // Primary bond exactly like a normal single bond.
             add_bond(
                 entities,
                 (posit_0, posit_1),
@@ -469,48 +496,24 @@ fn bond_entities(
                 orientation,
                 dist_half,
                 caps,
-                thickness,
+                thickness_outer,
+                ligand,
+            );
+
+            // Smaller bond on the inside.
+            add_bond(
+                entities,
+                (posit_0_inner, posit_1_inner),
+                (color_0, color_1),
+                center_inner,
+                orientation,
+                dist_half,
+                caps,
+                thickness_inner,
                 ligand,
             );
         }
-        // todo: Put back once you have a dihedral-angle-based approach.
-        // BondCount::SingleDoubleHybrid => {
-        //     // Draw two offset bond cylinders.
-        //     // todo: Set rot_ortho based on dihedral angle.
-        //     let rot_ortho = Quaternion::from_unit_vecs(FWD_VEC, UP_VEC);
-        //     let rotator = rot_ortho * orientation;
-        //
-        //     let offset_a = rotator.rotate_vec(Vec3::new(0.2, 0., 0.));
-        //     let offset_b = rotator.rotate_vec(Vec3::new(-0.2, 0., 0.));
-        //
-        //     // todo: Make this one better
-        //
-        //     add_bond(
-        //         entities,
-        //         posit_0 + offset_a,
-        //         posit_1 + offset_a,
-        //         center + offset_a,
-        //         color_0,
-        //         color_1,
-        //         orientation,
-        //         dist_half,
-        //         caps,
-        //         0.7,
-        //     );
-        //     add_bond(
-        //         entities,
-        //         posit_0 + offset_b,
-        //         posit_1 + offset_b,
-        //         center + offset_b,
-        //         color_0,
-        //         color_1,
-        //         orientation,
-        //         dist_half,
-        //         caps,
-        //         0.4,
-        //     );
-        // }
-        BondCount::Double => {
+        BondType::Double => {
             // Draw two offset bond cylinders.
             // todo: Set rot_ortho based on dihedral angle.
             let rot_ortho = Quaternion::from_unit_vecs(FWD_VEC, UP_VEC);
@@ -530,6 +533,7 @@ fn bond_entities(
                 0.5,
                 ligand,
             );
+
             add_bond(
                 entities,
                 (posit_0 + offset_b, posit_1 + offset_b),
@@ -542,7 +546,7 @@ fn bond_entities(
                 ligand,
             );
         }
-        BondCount::Triple => {
+        BondType::Triple => {
             // Draw two offset bond cylinders.
             // todo: Set rot_ortho based on dihedral angle.
             let rot_ortho = Quaternion::from_unit_vecs(FWD_VEC, UP_VEC);
@@ -582,6 +586,27 @@ fn bond_entities(
                 dist_half,
                 caps,
                 0.4,
+                ligand,
+            );
+        }
+        // Single bonds, and others.
+        _ => {
+            // Hydrogen bond placeholder.
+            let thickness = if bond_type == BondType::Dummy {
+                RADIUS_H_BOND
+            } else {
+                if ligand { BOND_RADIUS_LIG_RATIO } else { 1. }
+            };
+
+            add_bond(
+                entities,
+                (posit_0, posit_1),
+                (color_0, color_1),
+                center,
+                orientation,
+                dist_half,
+                caps,
+                thickness,
                 ligand,
             );
         }
@@ -770,6 +795,8 @@ pub fn draw_ligand(state: &State, scene: &mut Scene) {
             color_1,
             bond.bond_type,
             true,
+            true,
+            None,
         );
     }
 
@@ -788,8 +815,10 @@ pub fn draw_ligand(state: &State, scene: &mut Scene) {
                 posit_acceptor,
                 COLOR_H_BOND,
                 COLOR_H_BOND,
-                BondType::Hydrogen,
+                BondType::Dummy,
                 true,
+                true,
+                None,
             );
         }
     }
@@ -1155,7 +1184,8 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
             continue;
         }
 
-        if bond.bond_type == BondType::Hydrogen && ui.visibility.hide_h_bonds {
+        // Hmm. This could get things confused with other dummy bonds.
+        if bond.bond_type == BondType::Dummy && ui.visibility.hide_h_bonds {
             continue;
         }
 
@@ -1273,6 +1303,8 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
             color_1,
             bond.bond_type,
             false,
+            state.ui.mol_view != MoleculeView::BallAndStick,
+            None,
         );
     }
 
@@ -1350,8 +1382,10 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
                 atom_acceptor.posit.into(),
                 COLOR_H_BOND,
                 COLOR_H_BOND,
-                BondType::Hydrogen,
+                BondType::Dummy,
                 false,
+                state.ui.mol_view != MoleculeView::BallAndStick,
+                None,
             );
         }
     }
