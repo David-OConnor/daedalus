@@ -24,7 +24,7 @@ use crate::{
         MESH_SPHERE_HIGHRES, MESH_SPHERE_LOWRES, MESH_SPHERE_MEDRES, WATER_BOND_THICKNESS,
         WATER_OPACITY, set_docking_light,
     },
-    util::{handle_err, orbit_center},
+    util::{find_neighbor_posit, handle_err, orbit_center},
 };
 
 const LIGAND_COLOR: Color = (0., 0.4, 1.);
@@ -50,9 +50,12 @@ const COLOR_SA_SURFACE: Color = (0.3, 0.2, 1.);
 pub const BOND_RADIUS: f32 = 0.10;
 pub const BOND_RADIUS_LIG_RATIO: f32 = 1.3; // Of bond radius.
 // Aromatic inner radius, relative to bond radius.
-pub const BOND_RADIUS_AR_INNER_RATIO: f32 = 0.4; // Of bond radius.
-pub const AR_INNER_OFFSET: f32 = 0.6;
-const AR_INNER_SHORTEN_FACTOR: f32 = 0.6;
+const BOND_RADIUS_AR_INNER_RATIO: f32 = 0.4; // Of bond radius.
+const AR_INNER_OFFSET: f32 = 0.3; // Å
+// const AR_INNER_SHORTEN_FACTOR: f32 = 0.7;
+const AR_SHORTEN_AMT: f32 = 0.4; // Å. Applied to each half.
+const DBL_BOND_OFFSET: f32 = 0.1; // Two of these is the separation.
+const TRIPLE_BOND_OFFSET: f32 = 0.07; // Two of these is the separation.
 
 pub const SIZE_SFC_DOT: f32 = 0.03;
 
@@ -429,10 +432,10 @@ fn bond_entities(
     ligand: bool,
     // No caps for ball and stick
     caps: bool,
-    // Neighbors, in the case of aromataic bonds. We use this to compute the dihedral angle for
-    // correct inner bond mesh placement. This is (posit prior to posit_0, posit after posit_1.
-    // Also for double-bonds.
-    ar_neighbors: Option<(Vec3, Vec3)>,
+    // A Neighbor, in the case of aromataic, double bonds, and triple bonds. We use this to determine how
+    // to orient the bond meshes, e.g. in plane with a ring. Second pararm is if the bond is from posit 1,
+    // vice posit 0.
+    neighbor: (Vec3, bool),
 ) {
     // todo: YOur multibond plane logic is off.
 
@@ -454,15 +457,19 @@ fn bond_entities(
         BondType::Aromatic => {
             // Compute the dihedral angle so we always place the smaller, offset bond on the inside.
 
-            let (posit_0_inner, posit_1_inner, center_inner) = {
-                // let (posit_left, posit_right) = ar_neighbors.unwrap();
+            let (posit_0_inner, posit_1_inner, center_inner, dist_half_inner) = {
+                // A vector perpendicular to the plane of the bonds (e.g. the ring)
+                // This direction only works in some cases; need a more reliable way.
+                // todo: WHen finding neighbors, prefear other ones to aromatic bonds?
+                let perp_vec = if neighbor.1 {
+                    diff.cross(neighbor.0 - posit_1)
+                } else {
+                    diff.cross(posit_0 - neighbor.0)
+                }
+                .to_normalized();
 
-                let rot_ortho = Quaternion::from_unit_vecs(FWD_VEC, UP_VEC);
-                let rotator = rot_ortho * orientation;
-
-                // Offset towards the inside of the ring.
-                // todo: How do we know when to negate the offset, i.e. ensure we're moving inside, not outside?
-                let offset = rotator.rotate_vec(Vec3::new(AR_INNER_OFFSET, 0., 0.));
+                let dir_in = perp_vec.cross(diff.to_normalized()).to_normalized();
+                let offset = dir_in * AR_INNER_OFFSET;
 
                 let mut p0 = posit_0 + offset;
                 let mut p1 = posit_1 + offset;
@@ -472,12 +479,11 @@ fn bond_entities(
                 let dist = diff.magnitude();
                 let dir = diff / dist;
 
-                let shorten_vec = dir * AR_INNER_SHORTEN_FACTOR * dist;
-
+                let shorten_vec = dir * AR_SHORTEN_AMT;
                 p0 += shorten_vec;
                 p1 -= shorten_vec;
 
-                (p0, p1, center + offset)
+                (p0, p1, center + offset, (p1 - p0).magnitude() / 2.)
             };
 
             let thickness_outer = if ligand { BOND_RADIUS_LIG_RATIO } else { 1. };
@@ -507,7 +513,7 @@ fn bond_entities(
                 (color_0, color_1),
                 center_inner,
                 orientation,
-                dist_half,
+                dist_half_inner,
                 caps,
                 thickness_inner,
                 ligand,
@@ -515,12 +521,18 @@ fn bond_entities(
         }
         BondType::Double => {
             // Draw two offset bond cylinders.
-            // todo: Set rot_ortho based on dihedral angle.
-            let rot_ortho = Quaternion::from_unit_vecs(FWD_VEC, UP_VEC);
-            let rotator = rot_ortho * orientation;
+            // See notes above in the Aromatic section.
 
-            let offset_a = rotator.rotate_vec(Vec3::new(0.15, 0., 0.));
-            let offset_b = rotator.rotate_vec(Vec3::new(-0.15, 0., 0.));
+            let (offset_a, offset_b) = {
+                // The compare doesn't matter here, as it's symmetric.
+                let perp_vec = diff.cross(posit_1 - neighbor.0).to_normalized();
+
+                let dir_in = perp_vec.cross(diff.to_normalized()).to_normalized();
+                let offset_a = dir_in * DBL_BOND_OFFSET;
+                let offset_b = -dir_in * DBL_BOND_OFFSET;
+
+                (offset_a, offset_b)
+            };
 
             add_bond(
                 entities,
@@ -548,12 +560,17 @@ fn bond_entities(
         }
         BondType::Triple => {
             // Draw two offset bond cylinders.
-            // todo: Set rot_ortho based on dihedral angle.
-            let rot_ortho = Quaternion::from_unit_vecs(FWD_VEC, UP_VEC);
-            let rotator = rot_ortho * orientation;
+            // todo: DRY
+            let (offset_a, offset_b) = {
+                // The compare doesn't matter here, as it's symmetric.
+                let perp_vec = diff.cross(posit_1 - neighbor.0).to_normalized();
 
-            let offset_a = rotator.rotate_vec(Vec3::new(0.25, 0., 0.));
-            let offset_b = rotator.rotate_vec(Vec3::new(-0.25, 0., 0.));
+                let dir_in = perp_vec.cross(diff.to_normalized()).to_normalized();
+                let offset_a = dir_in * TRIPLE_BOND_OFFSET;
+                let offset_b = -dir_in * TRIPLE_BOND_OFFSET;
+
+                (offset_a, offset_b)
+            };
 
             add_bond(
                 entities,
@@ -728,6 +745,12 @@ pub fn draw_ligand(state: &State, scene: &mut Scene) {
 
     let atoms_positioned = mol.atoms.clone();
 
+    // For determining inside of rings.
+    let mut hydrogen_is = Vec::with_capacity(lig.molecule.atoms.len());
+    for atom in &lig.molecule.atoms {
+        hydrogen_is.push(atom.element == Element::Hydrogen);
+    }
+
     // todo: C+P from draw_molecule. With some removed, but a lot of repeated.
     for (i, bond) in mol.bonds.iter().enumerate() {
         let atom_0 = &mol.atoms[bond.atom_0];
@@ -741,6 +764,13 @@ pub fn draw_ligand(state: &State, scene: &mut Scene) {
 
         let posit_0: Vec3 = lig.atom_posits[bond.atom_0].into();
         let posit_1: Vec3 = lig.atom_posits[bond.atom_1].into();
+
+        // For determining how to orient multiple-bonds.
+        let neighbor_i = find_neighbor_posit(&lig.molecule, bond.atom_0, bond.atom_1, &hydrogen_is);
+        let neighbor_posit = match neighbor_i {
+            Some((i, p1)) => (lig.atom_posits[i].into(), p1),
+            None => (lig.atom_posits[0].into(), false),
+        };
 
         let mut color_0 = atom_color(
             atom_0,
@@ -796,7 +826,7 @@ pub fn draw_ligand(state: &State, scene: &mut Scene) {
             bond.bond_type,
             true,
             true,
-            None,
+            neighbor_posit,
         );
     }
 
@@ -818,7 +848,7 @@ pub fn draw_ligand(state: &State, scene: &mut Scene) {
                 BondType::Dummy,
                 true,
                 true,
-                None,
+                (Vec3::new_zero(), false),
             );
         }
     }
@@ -1177,6 +1207,12 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
         }
     }
 
+    // For determining inside of rings.
+    let mut hydrogen_is = Vec::with_capacity(mol.atoms.len());
+    for atom in &mol.atoms {
+        hydrogen_is.push(atom.element == Element::Hydrogen);
+    }
+
     // Draw bonds.
     // if ![MoleculeView::SpaceFill].contains(&ui.mol_view) || atom.hetero {
     for bond in &mol.bonds {
@@ -1264,6 +1300,13 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
         let posit_0: Vec3 = (*atom_0_posit).into();
         let posit_1: Vec3 = (*atom_1_posit).into();
 
+        // For determining how to orient multiple-bonds.
+        let neighbor_i = find_neighbor_posit(mol, bond.atom_0, bond.atom_1, &hydrogen_is);
+        let neighbor_posit = match neighbor_i {
+            Some((i, p1)) => (mol.atoms[i].posit.into(), p1),
+            None => (mol.atoms[0].posit.into(), false),
+        };
+
         let dim_peptide = if state.ligand.is_some() && !&mol.atoms[bond.atom_0].hetero {
             state.ui.visibility.dim_peptide
         } else {
@@ -1304,7 +1347,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
             bond.bond_type,
             false,
             state.ui.mol_view != MoleculeView::BallAndStick,
-            None,
+            neighbor_posit,
         );
     }
 
@@ -1385,7 +1428,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
                 BondType::Dummy,
                 false,
                 state.ui.mol_view != MoleculeView::BallAndStick,
-                None,
+                (Vec3::new_zero(), false), // N/A
             );
         }
     }

@@ -963,3 +963,38 @@ pub fn move_lig_to_res(lig: &mut Ligand, mol: &Molecule, res: &Residue) -> Vec3 
 
     posit
 }
+
+/// A helper used, for example, for orienting double bonds. Finds an arbitrary neighbor to the bond.
+/// Returns neighbor's index. Return the index instead of posit for flexibility, e.g. with lig.atom_posits.
+/// Returns (index, if index is from atom 1). This is important for knowing which side we're working with.
+///
+/// Note: We don't take Hydrogens into account, because they confuse the situation of aromatic rings.
+pub fn find_neighbor_posit(
+    mol: &Molecule,
+    atom_0: usize,
+    atom_1: usize,
+    hydrogen_is: &[bool],
+) -> Option<(usize, bool)> {
+    let neighbors_0 = &mol.adjacency_list[atom_0];
+
+    if neighbors_0.len() >= 2 {
+        for neighbor in neighbors_0 {
+            if !hydrogen_is[*neighbor] {}
+            if *neighbor != atom_1 && !hydrogen_is[*neighbor] {
+                return Some((*neighbor, false));
+            }
+        }
+    }
+
+    let neighbors_1 = &mol.adjacency_list[atom_1];
+
+    if !neighbors_1.len() >= 2 {
+        for neighbor in neighbors_1 {
+            if *neighbor != atom_0 && !hydrogen_is[*neighbor] {
+                return Some((*neighbor, true));
+            }
+        }
+    }
+
+    None
+}
