@@ -30,15 +30,15 @@ pub const VIEW_DEPTH_NEAR_MIN: u16 = 2;
 pub const VIEW_DEPTH_NEAR_MAX: u16 = 300;
 
 // Distance between start and end of the fade. A smaller distance is a more aggressive fade.
-pub const FOG_HALF_DEPTH: u16 = 40;
+pub const FOG_HALF_DEPTH: u16 = 30;
 
 // The range to start fading distance objects, and when the fade is complete.
-pub const FOG_DIST_DEFAULT: u16 = 100;
+pub const FOG_DIST_DEFAULT: u16 = 70;
 
 // Affects the user-setting far property.
 // Sets the fog center point in its fade.
 pub const FOG_DIST_MIN: u16 = 5;
-pub const FOG_DIST_MAX: u16 = FOG_DIST_DEFAULT;
+pub const FOG_DIST_MAX: u16 = 100;
 
 pub fn calc_fog_dists(dist: u16) -> (f32, f32) {
     // Clamp.
@@ -256,57 +256,59 @@ pub fn cam_snapshots(
     engine_updates: &mut EngineUpdates,
     ui: &mut Ui,
 ) {
+    // todo: Wraping isn't working here.
     section_box().show(ui, |ui| {
-        ui.label("Scenes");
-        // ui.label("Label:");
-        ui.add(TextEdit::singleline(&mut state.ui.cam_snapshot_name).desired_width(60.));
+        ui.horizontal(|ui| {
+            ui.label("Scenes");
+            ui.add(TextEdit::singleline(&mut state.ui.cam_snapshot_name).desired_width(60.));
 
-        if ui
-            .button("Save")
-            .on_hover_text("Save the current camera position and orientation to a scene.")
-            .clicked()
-        {
-            let name = if !state.ui.cam_snapshot_name.is_empty() {
-                state.ui.cam_snapshot_name.clone()
-            } else {
-                format!("Scene {}", state.cam_snapshots.len() + 1)
-            };
+            if ui
+                .button("Save")
+                .on_hover_text("Save the current camera position and orientation to a scene.")
+                .clicked()
+            {
+                let name = if !state.ui.cam_snapshot_name.is_empty() {
+                    state.ui.cam_snapshot_name.clone()
+                } else {
+                    format!("Scene {}", state.cam_snapshots.len() + 1)
+                };
 
-            util::save_snap(state, &scene.camera, &name);
-        }
-
-        let prev_snap = state.ui.cam_snapshot;
-        let snap_name = get_snap_name(prev_snap, &state.cam_snapshots);
-
-        ComboBox::from_id_salt(2)
-            .width(80.)
-            .selected_text(snap_name)
-            .show_ui(ui, |ui| {
-                ui.selectable_value(&mut state.ui.cam_snapshot, None, "(None)");
-                for (i, _snap) in state.cam_snapshots.iter().enumerate() {
-                    ui.selectable_value(
-                        &mut state.ui.cam_snapshot,
-                        Some(i),
-                        get_snap_name(Some(i), &state.cam_snapshots),
-                    );
-                }
-            })
-            .response
-            .on_hover_text("Set the camera to a previously-saved scene.");
-
-        if let Some(i) = state.ui.cam_snapshot {
-            if ui.button(RichText::new("❌").color(Color32::RED)).clicked() {
-                if i < state.cam_snapshots.len() {
-                    state.cam_snapshots.remove(i);
-                }
-                state.ui.cam_snapshot = None;
-                state.update_save_prefs(false);
+                util::save_snap(state, &scene.camera, &name);
             }
-        }
 
-        if state.ui.cam_snapshot != prev_snap {
-            util::load_snap(state, scene, engine_updates);
-        }
+            let prev_snap = state.ui.cam_snapshot;
+            let snap_name = get_snap_name(prev_snap, &state.cam_snapshots);
+
+            ComboBox::from_id_salt(2)
+                .width(80.)
+                .selected_text(snap_name)
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut state.ui.cam_snapshot, None, "(None)");
+                    for (i, _snap) in state.cam_snapshots.iter().enumerate() {
+                        ui.selectable_value(
+                            &mut state.ui.cam_snapshot,
+                            Some(i),
+                            get_snap_name(Some(i), &state.cam_snapshots),
+                        );
+                    }
+                })
+                .response
+                .on_hover_text("Set the camera to a previously-saved scene.");
+
+            if let Some(i) = state.ui.cam_snapshot {
+                if ui.button(RichText::new("❌").color(Color32::RED)).clicked() {
+                    if i < state.cam_snapshots.len() {
+                        state.cam_snapshots.remove(i);
+                    }
+                    state.ui.cam_snapshot = None;
+                    state.update_save_prefs(false);
+                }
+            }
+
+            if state.ui.cam_snapshot != prev_snap {
+                util::load_snap(state, scene, engine_updates);
+            }
+        });
     });
 }
 

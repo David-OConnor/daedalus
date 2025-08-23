@@ -346,6 +346,19 @@ pub fn cycle_selected(state: &mut State, scene: &mut Scene, reverse: bool) {
                     }
                 }
             }
+            Selection::AtomLigand(atom_i) => {
+                let Some(lig) = &state.ligand else { return };
+
+                // todo: DRY with the above for peptide atoms.
+                let mut new_atom_i = atom_i as isize;
+
+                while new_atom_i < (lig.molecule.atoms.len() as isize) - 1 && new_atom_i >= 0 {
+                    new_atom_i += dir;
+                    let nri = new_atom_i as usize;
+                    state.ui.selection = Selection::AtomLigand(nri);
+                    break;
+                }
+            }
             _ => {
                 if !mol.atoms.is_empty() {
                     state.ui.selection = Selection::Atom(0);

@@ -193,8 +193,6 @@ impl GridPoint for ElectronDensity {
 }
 
 fn compute_density(reflections: &[Reflection], posit: Vec3, unit_cell_vol: f32) -> f64 {
-    // todo: Use SIMD or GPU for this.
-
     const EPS: f64 = 0.0000001;
     let mut rho = 0.0;
 
@@ -229,12 +227,13 @@ fn compute_density(reflections: &[Reflection], posit: Vec3, unit_cell_vol: f32) 
 }
 
 /// Compute electron density from reflection data. Simmilar to gemmi's `sf2map`.
+/// todo: GPU?
 pub fn compute_density_grid(data: &ReflectionsData) -> Vec<ElectronDensity> {
     let grid = data.regular_fractional_grid(90);
     let unit_cell_vol = data.cell_len_a * data.cell_len_b * data.cell_len_c;
 
     println!(
-        "Computing electron density from refletions onver {} points...",
+        "Computing electron density from refletions onvr {} points...",
         grid.len()
     );
 
@@ -453,7 +452,7 @@ pub struct DensityRect {
     pub step: [f64; 3],
     /// (nx, ny, nz) – number of voxels stored
     pub dims: [usize; 3],
-    /// Row-major file-order data:  z → y → x fastest
+    /// Row-major file-order data: z → y → x fastest
     pub data: Vec<f32>,
 }
 
@@ -574,10 +573,14 @@ impl DensityRect {
         cell: &UnitCell,
         dist_thresh: f64,
     ) -> Vec<ElectronDensity> {
+        // todo: Use GPU for this. It is very slow for large sets.
+        println!("Making electron densities...");
+        let start = Instant::now();
+
         // Step vectors along a, b, c.
         let cols = cell.ortho.to_cols();
 
-        // length of one voxel along the a-axis in Å  =  a / mx
+        // length of one voxel along the a-axis in Å = a / mx
         let step_vec_a = cols.0 * (self.step[0] / cell.a); //  = a_vec / mx
         let step_vec_b = cols.1 * (self.step[1] / cell.b); //  = b_vec / my
         let step_vec_c = cols.2 * (self.step[2] / cell.c); //  = c_vec / mz
@@ -600,7 +603,7 @@ impl DensityRect {
                     let idx = (kz * ny + ky) * nx + kx;
                     let mut density = self.data[idx] as f64;
 
-                    // Cartesian centre of this voxel
+                    // Cartesian center of this voxel
                     let coords = self.origin_cart
                         + step_vec_a * kx as f64
                         + step_vec_b * ky as f64
@@ -636,6 +639,10 @@ impl DensityRect {
                 }
             }
         }
+
+        let elapsed = start.elapsed().as_millis();
+        println!("Complete, in {elapsed} ms");
+
         out
     }
 }

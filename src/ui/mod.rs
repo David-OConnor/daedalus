@@ -34,8 +34,8 @@ use crate::{
     molecule::{Ligand, Molecule},
     render::{set_docking_light, set_flashlight, set_static_light},
     ui::{
-        cam::{cam_snapshots, move_cam_to_lig},
-        misc::{md_setup, section_box},
+        cam::{cam_controls, cam_snapshots, move_cam_to_lig},
+        misc::{lig_section, md_setup, section_box},
     },
     util::{
         cam_look_at_outside, check_prefs_save, close_lig, close_mol, cycle_selected, handle_err,
@@ -292,7 +292,7 @@ fn draw_cli(
     state: &mut State,
     scene: &mut Scene,
     engine_updates: &mut EngineUpdates,
-    redraw: &mut bool,
+    redraw_mol: &mut bool,
     reset_cam: &mut bool,
     ui: &mut Ui,
 ) {
@@ -362,7 +362,7 @@ fn draw_cli(
         if (button_clicked || enter_pressed) && state.ui.cmd_line_input.len() >= 2 {
             // todo: Error color
             state.ui.cmd_line_output =
-                match cli::handle_cmd(state, scene, engine_updates, redraw, reset_cam) {
+                match cli::handle_cmd(state, scene, engine_updates, redraw_mol, reset_cam) {
                     Ok(out) => {
                         state.ui.cmd_line_out_is_err = false;
                         out
@@ -378,6 +378,9 @@ fn draw_cli(
             // Compensates for the default lose focus behavior; we still want the cursor to remain here.
             edit_resp.request_focus();
         }
+
+        ui.add_space(COL_SPACING);
+        residue_search(state, scene, redraw_mol, ui);
     });
 }
 
@@ -1299,7 +1302,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     // }
                     if files_avail.validation_2fo_fc {
                         if ui
-                            .button(RichText::new("2fo-fc").color(COLOR_HIGHLIGHT))
+                            .button(RichText::new("Load ρ: 2fo-fc").color(COLOR_HIGHLIGHT))
+                            .on_hover_text("Load 2fo-fc electron density data from RCSB PDB. Convert to CCP4 map format and display.")
                             .clicked()
                         {
                             // todo: For now, we rely on Gemmi being available on the Path.
@@ -1314,7 +1318,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                                 }
                                 Err(e) => {
                                     let msg = format!(
-                                        "Error loading RCSB 2fo-fc map for {:?}",
+                                        "Error loading or processing RCSB 2fo-fc map for {:?}: {e:?}",
                                         &mol.ident
                                     );
                                     handle_err(&mut state.ui, msg);
@@ -1561,165 +1565,9 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         });
 
         ui.add_space(ROW_SPACING);
+
         let mut close_ligand = false; // to avoid borrow error.
-
-        if let Some(lig) = &mut state.ligand {
-            ui.horizontal(|ui| {
-                mol_descrip(&lig.molecule, ui);
-
-                if ui.button("Close lig").clicked() {
-                    close_ligand = true;
-                }
-
-                ui.add_space(COL_SPACING);
-
-                // todo status color helper?
-                ui.label("Loaded:");
-                let color = if lig.ff_params_loaded {
-                    Color32::LIGHT_GREEN
-                } else {
-                    Color32::LIGHT_RED
-                };
-                ui.label(RichText::new("FF/q").color(color)).on_hover_text(
-                    "Green if force field names, and partial charges are assigned \
-                    for all ligand atoms. Required for ligand moleculer dynamics and docking.",
-                );
-
-                ui.add_space(COL_SPACING / 4.);
-
-                let color = if lig.frcmod_loaded {
-                    Color32::LIGHT_GREEN
-                } else {
-                    Color32::LIGHT_RED
-                };
-                ui.label(RichText::new("Frcmod").color(color))
-                    .on_hover_text(
-                        "Green if molecule-specific Amber force field parameters are \
-                    loaded for this ligand. Required for ligand molecular dynamics and docking.",
-                    );
-
-                if let Some(cid) = lig.molecule.pubchem_cid {
-                    if ui.button("Find associated structs").clicked() {
-                        // todo: Don't block.
-                        if lig.associated_structures.is_empty() {
-                            match pubchem::load_associated_structures(cid) {
-                                Ok(data) => {
-                                    lig.associated_structures = data;
-                                    state.ui.popup.show_associated_structures = true;
-                                }
-                                Err(_) => handle_err(
-                                    &mut state.ui,
-                                    "Unable to find structures for this ligand".to_owned(),
-                                ),
-                            }
-                        } else {
-                            state.ui.popup.show_associated_structures = true;
-                        }
-                    }
-                }
-
-                // ui.label("Rotate bonds:");
-                // for i in 0..ligand.flexible_bonds.len() {
-                //     if let ConformationType::Flexible { torsions } =
-                //         &mut ligand.pose.conformation_type
-                //     {
-                //         if ui.button(format!("{i}")).clicked() {
-                //             torsions[i].dihedral_angle =
-                //                 (torsions[i].dihedral_angle + TAU / 64.) % TAU;
-                //
-                //             ligand.position_atoms(None);
-                //
-                //             redraw_mol = true;
-                //         }
-                //     }
-                // }
-
-                ui.add_space(COL_SPACING);
-
-                if let Some(energy) = &state.ui.binding_energy_disp {
-                    ui.label(format!("{:.2?}", energy)); // todo placeholder.
-                }
-
-                // todo: temp, or at least temp here
-                ui.label(format!("Lig pos: {}", lig.pose.anchor_posit));
-                ui.label(format!("Lig or: {}", lig.pose.orientation));
-                if let ConformationType::AssignedTorsions { torsions } = &lig.pose.conformation_type
-                {
-                    for torsion in torsions {
-                        ui.label(format!("T: {:.3}", torsion.dihedral_angle));
-                    }
-                }
-            });
-        }
-
-        // If no ligand, provide convenience functionality for loading one based on hetero residues
-        // in the protein.
-        if state.ligand.is_none() {
-            let mut load_data = None; // Avoids dbl-borrow.
-
-            if let Some(mol) = &mut state.molecule {
-                let mut count_geostd_candidate = 0;
-                for res in &mol.het_residues {
-                    if let ResidueType::Other(name) = &res.res_type {
-                        if name.len() == 3 {
-                            count_geostd_candidate += 1;
-                        }
-                    }
-                }
-
-                if count_geostd_candidate > 0 {
-                    ui.horizontal(|ui| {
-                        ui.label("Load Amber Geostd lig from: ").on_hover_text(
-                            "Attempt to load a ligand molecule and force field \
-                            params from a hetero residue included in the protein file.",
-                        );
-
-                        for res in &mol.het_residues {
-                            let name = match &res.res_type {
-                                ResidueType::Other(name) => name,
-                                _ => "hetero residue",
-                            };
-                            if name.len() == 3 {
-                                if ui
-                                    .button(RichText::new(name).color(Color32::GOLD))
-                                    .clicked()
-                                {
-                                    match amber_geostd::find_mols(&name) {
-                                        Ok(data) => match data.len() {
-                                            0 => handle_err(
-                                                &mut state.ui,
-                                                "Unable to find an Amber molecule for this residue"
-                                                    .to_string(),
-                                            ),
-                                            1 => {
-                                                load_data = Some(data[0].clone());
-                                            }
-                                            _ => {
-                                                load_data = Some(data[0].clone());
-                                                eprintln!("More than 1 geostd items available");
-                                            }
-                                        },
-                                        Err(e) => handle_err(
-                                            &mut state.ui,
-                                            format!("Problem loading mol data online: {e:?}"),
-                                        ),
-                                    }
-                                }
-                            }
-                        }
-                    });
-                }
-            }
-
-            // Avoids dbl-borrow
-            if let Some(data) = load_data {
-                handle_success(
-                    &mut state.ui,
-                    format!("Loaded {} from Amber Geostd", data.ident),
-                );
-                state.load_geostd_mol_data(&data.ident, true, data.frcmod_avail, &mut redraw_lig);
-            }
-        }
+        lig_section(state, scene, ui, &mut redraw_lig, &mut close_ligand);
 
         ui.add_space(ROW_SPACING);
         selection_section(state, scene, &mut redraw_mol, &mut engine_updates, ui);
@@ -1727,7 +1575,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         ui.add_space(ROW_SPACING);
 
         ui.horizontal_wrapped(|ui| {
-            cam::cam_controls(scene, state, &mut engine_updates, ui);
+            cam_controls(scene, state, &mut engine_updates, ui);
 
             cam_snapshots(state, scene, &mut engine_updates, ui);
         });
@@ -1749,11 +1597,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         });
 
         ui.add_space(ROW_SPACING);
-
-        ui.horizontal(|ui| {
-            residue_search(state, scene, &mut redraw_mol, ui);
-            ui.add_space(COL_SPACING);
-        });
 
         md_setup(state, scene, &mut engine_updates, &mut redraw_lig, ui);
 
@@ -1873,7 +1716,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 // todo: I don't like this clone, but not sure how else to do it.
                 associated_structs = lig.associated_structures.clone();
             }
-            // if let Some(lig) = &state.ligand {
 
             if state.ligand.is_some() {
                 let popup_id = ui.make_persistent_id("associated_structs_popup");

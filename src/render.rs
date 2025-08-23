@@ -126,7 +126,7 @@ pub fn render(mut state: State) {
         orientation: Quaternion::from_axis_angle(RIGHT_VEC, 0.),
         // This affects how aggressive the fog is in fading objects to the background.
         // A lower value will leave objects dim, but visible.
-        fog_density: 5.,
+        fog_density: 4.,
         fog_power: 6.,
         fog_start,
         fog_end,

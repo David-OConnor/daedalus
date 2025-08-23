@@ -309,7 +309,6 @@ pub fn force_nonbonded_gpu(
     launch_args.arg(&cell_extent);
     launch_args.arg(&cutoff_ewald);
     launch_args.arg(&alpha_ewald);
-    // todo: Cell A/R for wrapping water
     launch_args.arg(&n);
 
     unsafe { launch_args.launch(cfg) }.unwrap();

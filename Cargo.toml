@@ -42,13 +42,13 @@ itertools = "0.14.0" # For combinations when matching angles in MD.
 
 # We use these when developing locally to reduce friction.
 [patch.crates-io]
-#graphics = { path = "../../graphics" }
+# graphics = { path = "../../graphics" }
 #lin_alg = { path = "../../lin_alg" }
 #barnes_hut = { path = "../../barnes_hut" }
 #na_seq = { path = "../na_seq" }
 #bio_apis = { path = "../bio_apis" }
 #mcubes = { path = "../mcubes" }
-#bio_files = { path = "../bio_files" }
+bio_files = { path = "../bio_files" }
 #ewald = { path = "../ewald" }
 #cuda_setup = { path = "../../cuda_setup" }
 

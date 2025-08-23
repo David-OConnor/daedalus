@@ -392,9 +392,29 @@ impl State {
                 }
                 None => return Err(io::Error::new(ErrorKind::InvalidData, "No ligand to save")),
             },
-            "map" => {
-                // todo
-            }
+            // todo: Consider if you want to store the original map bytes, as you do with
+            // todo mmCIF files, instead of saving what you parsed.
+            "map" => match &self.molecule {
+                Some(mol) => match &mol.density_map {
+                    Some(dm) => {
+                        dm.save(path)?;
+                        self.to_save.last_map_opened = Some(path.to_owned());
+                        self.update_save_prefs(false)
+                    }
+                    None => {
+                        return Err(io::Error::new(
+                            ErrorKind::InvalidData,
+                            "No density map loaded for this molecule; can't save it.",
+                        ));
+                    }
+                },
+                None => {
+                    return Err(io::Error::new(
+                        ErrorKind::InvalidData,
+                        "No molecule open; can't save a density Map.",
+                    ));
+                }
+            },
             _ => {
                 return Err(io::Error::new(
                     ErrorKind::InvalidData,
