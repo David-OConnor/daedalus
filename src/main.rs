@@ -46,23 +46,15 @@ mod reflection;
 #[cfg(test)]
 mod tests;
 
-use std::{
-    collections::HashMap,
-    env, fmt,
-    fmt::Display,
-    io,
-    io::ErrorKind,
-    path::{Path, PathBuf},
-    str::FromStr,
-    sync::{Arc, mpsc::Receiver},
-};
+#[cfg(feature = "cuda")]
+use std::sync::Arc;
+use std::{collections::HashMap, env, fmt, fmt::Display, path::PathBuf, sync::mpsc::Receiver};
 
 use barnes_hut::BhConfig;
 use bincode::{Decode, Encode};
 use bio_apis::{
     ReqError,
     amber_geostd::GeostdItem,
-    rcsb,
     rcsb::{FilesAvailable, PdbDataResults},
 };
 use bio_files::amber_params::{ChargeParams, ForceFieldParamsKeyed};
@@ -80,7 +72,7 @@ use lin_alg::{
 use mol_drawing::MoleculeView;
 use molecule::Molecule;
 use na_seq::{
-    AminoAcid, AminoAcidGeneral,
+    AminoAcidGeneral,
     element::{LjTable, init_lj_lut},
 };
 

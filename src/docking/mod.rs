@@ -541,11 +541,11 @@ fn process_poses(
         let lig_posits_sample: Vec<Vec3F32> = posits_this_pose
             .iter()
             .enumerate()
-            .filter(|(i, a)| {
+            .filter(|(i, _)| {
                 let atom = &lig.molecule.atoms[*i];
                 atom.element == Element::Carbon && i % LIGAND_SAMPLE_RATIO == 0
             })
-            .map(|(_i, v)| *v)
+            .map(|(_, v)| *v)
             .collect();
 
         lig_posits.push(posits_this_pose);

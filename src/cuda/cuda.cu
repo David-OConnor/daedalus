@@ -311,31 +311,54 @@ void reflection_transform_kernel(
     }
 }
 
-// todo: We may no longer need this.
-//
-// extern "C" __global__
-// void make_densities_kernel(
-//     float3* coords,
-//     float* densities,
-//     const uint32_t3* posits_src, // tood: How do you pass these triplets?
-//     const float* data,
-//     const float3* atom_posits,
-//     const float3 stop_vec_0,
-//     const float3 stop_vec_1,
-//     const float3 stop_vec_2,
-//     const float dist_thresh,
-//     const uint32_t nx,
-//     const uint32_t ny,
-//     size_t N
-// ) {
-//     size_t index = blockIdx.x * blockDim.x + threadIdx.x;
-//     size_t stride = blockDim.x * gridDim.x;
-//
-//     for (size_t i = index; i < N; i += stride) {
-//         const uint32_t idx = (kz * ny + ky) * nx + kx;
-//
-//         float density = data[i];
-//
-//
-//     }
-// }
+extern "C" __global__
+void make_densities_kernel(
+    float3* out_coords,
+    float* out_densities,
+    const uint3* triplets,
+    const float3* atom_posits,
+    const float* data,
+    const float3 step_vec_0,
+    const float3 step_vec_1,
+    const float3 step_vec_2,
+    const float3 origin,
+    const float dist_thresh_sq,
+    const size_t nx,
+    const size_t ny,
+    size_t N,
+    size_t N_atom_posits
+) {
+    size_t index = blockIdx.x * blockDim.x + threadIdx.x;
+    size_t stride = blockDim.x * gridDim.x;
+
+    for (size_t i = index; i < N; i += stride) {
+        uint32_t kx = triplets[i].x;
+        uint32_t ky = triplets[i].y;
+        uint32_t kz = triplets[i].z;
+
+        const size_t i_data = (kz * ny + ky) * nx + kx;
+        float density = data[i_data];
+
+        const float3 coords = origin + step_vec_0 * (float)kx + step_vec_1 * (float)ky + step_vec_2 * (float)kz;
+
+        float nearest_dist_sq = 9999999.f;
+        for (size_t j = 0; j < N_atom_posits; j++) {
+
+            const float dx = atom_posits[j].x - coords.x;
+            const float dy = atom_posits[j].y - coords.y;
+            const float dz = atom_posits[j].z - coords.z;
+            const float dist_sq = dx * dx + dy * dy + dz * dz;
+
+            if (dist_sq < nearest_dist_sq) {
+                nearest_dist_sq = dist_sq;
+            }
+        }
+
+        if (nearest_dist_sq > dist_thresh_sq) {
+            density = 0.0f;
+        }
+
+        out_coords[i] = coords;
+        out_densities[i] = density;
+    }
+}

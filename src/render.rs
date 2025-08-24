@@ -117,7 +117,7 @@ pub fn render(mut state: State) {
 
     let (fog_start, fog_end) = calc_fog_dists(FOG_DIST_DEFAULT);
 
-    let mut camera = Camera {
+    let camera = Camera {
         fov_y: TAU / 8.,
         position: Vec3::new(0., 0., -60.),
         far: RENDER_DIST_FAR,

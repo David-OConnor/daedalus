@@ -26,6 +26,7 @@ use crate::{
         ConformationType, calc_binding_energy, find_optimal_pose, find_sites::find_docking_sites,
     },
     download_mols::{load_sdf_drugbank, load_sdf_pubchem},
+    file_io::gemmi_path,
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
     mol_drawing::{
         EntityType, MoleculeView, draw_density_point_cloud, draw_density_surface, draw_ligand,
@@ -1309,12 +1310,10 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                             // todo: For now, we rely on Gemmi being available on the Path.
                             // todo: We will eventually get our own reflections loader working.
 
-                            match density_from_2fo_fc_rcsb_gemmi(&mol.ident) {
+                            match density_from_2fo_fc_rcsb_gemmi(&mol.ident, gemmi_path()) {
                                 Ok(dm) => {
                                     dm_loaded = Some(dm);
-                                    println!(
-                                        "Succsesfully loaded density data from RSCB using Gemmi."
-                                    );
+                                    handle_success(&mut state.ui, "Loaded density data from RSCB".to_owned());
                                 }
                                 Err(e) => {
                                     let msg = format!(
@@ -1324,29 +1323,9 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                                     handle_err(&mut state.ui, msg);
                                 }
                             }
-
-                            // match ReflectionsData::load_from_rcsb(&mol.ident) {
-                            //     Ok(d) => {
-                            //         println!("Successfully loaded reflections and density map data");
-                            //
-                            //         let density = compute_density_grid(&d);
-                            //
-                            //         mol.reflections_data = Some(d);
-                            //         mol.elec_density = Some(density);
-                            //
-                            //         // todo: Update A/R based on how we visualize this.
-                            //         redraw = true;
-                            //     }
-                            //     Err(e) => {
-                            //         eprintln!("Error loading reflections and density map data.: {e:?}");
-                            //     }
-                            // }
-
-                            // match rcsb::load_validation_2fo_fc_cif(&mol.ident) {
-                            // }
                         }
                     }
-                    // todo: Add these if you end up with a way to use them. fo-fc is likely for visualizations.
+                    // todo: Add these if you end up with a way to use them. We currently use 2fo-fc only.
                     // if files_avail.validation_fo_fc {
                     //     if ui
                     //         .button(RichText::new("fo-fc").color(COLOR_HIGHLIGHT))

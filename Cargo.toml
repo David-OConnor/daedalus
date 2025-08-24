@@ -16,7 +16,7 @@ lin_alg = { version = "1.3.5", features = ["encode"] }
 barnes_hut = { version = "1.0.8"}  # enc temp rem
 na_seq = "0.3.1"
 bio_apis = {  version = "0.1.6", features = ["encode"] }
-bio_files = "0.2.7"
+bio_files = "0.2.8"
 mcubes = "0.1.4"
 ewald = "0.1.1"
 
@@ -31,7 +31,6 @@ rayon = "1.10.0"  # Parallel execution on CPU using thread pools.
 # Static linking results in an error when compiling. Dyanmic loading seems to require the PC that runs it
 # to have CUDA installed. So, we use dynamic-linking.
 cudarc = { version = "0.17.2", default-features = false, features = ["std", "driver", "dynamic-linking", "cuda-13000"], optional=true }
-#cudarc = { version = "0.17.2", default-features = false, features = ["std", "driver", "dynamic-loading", "cuda-13000"], optional=true }
 
 rand = "0.9.1"
 rand_distr  = "0.5.1"
@@ -48,7 +47,7 @@ itertools = "0.14.0" # For combinations when matching angles in MD.
 #na_seq = { path = "../na_seq" }
 #bio_apis = { path = "../bio_apis" }
 #mcubes = { path = "../mcubes" }
-bio_files = { path = "../bio_files" }
+#bio_files = { path = "../bio_files" }
 #ewald = { path = "../ewald" }
 #cuda_setup = { path = "../../cuda_setup" }
 

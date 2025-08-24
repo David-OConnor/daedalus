@@ -58,7 +58,7 @@ impl DockingSetup {
         lj_lut: &LjTable,
         bh_config: &BhConfig,
     ) -> Self {
-        let (mut rec_atoms_near_site, rec_indices) =
+        let (rec_atoms_near_site, rec_indices) =
             find_rec_atoms_near_site(receptor, &lig.docking_site);
 
         // let (rec_indices_x8, _) = pack_slice(&rec_indices);

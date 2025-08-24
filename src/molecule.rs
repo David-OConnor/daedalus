@@ -649,36 +649,28 @@ impl Bond {
     }
 }
 
-// impl From<&BondGeneric> for Bond {
 impl Bond {
-    // fn from(bond: &BondGeneric) -> Self {
     fn from_generic(bond: &BondGeneric, atom_set: &[Atom]) -> io::Result<Self> {
-        let mut atom_0 = 0;
-        let mut atom_1 = 0;
+        let atom_0 = match atom_sns_to_indices(bond.atom_0_sn, atom_set) {
+            Some(i) => i,
+            None => {
+                return Err(io::Error::new(
+                    ErrorKind::InvalidData,
+                    "Unable to find atom SN when loading from generic res",
+                ));
+            }
+        };
 
-        match atom_sns_to_indices(bond.atom_0_sn, atom_set) {
-            Some(i) => {
-                atom_0 = i;
-            }
-            None => {
-                return Err(io::Error::new(
-                    ErrorKind::InvalidData,
-                    "Unable to find atom SN when loading from generic res",
-                ));
-            }
-        }
         // todo DRY
-        match atom_sns_to_indices(bond.atom_1_sn, atom_set) {
-            Some(i) => {
-                atom_1 = i;
-            }
+        let atom_1 = match atom_sns_to_indices(bond.atom_1_sn, atom_set) {
+            Some(i) => i,
             None => {
                 return Err(io::Error::new(
                     ErrorKind::InvalidData,
                     "Unable to find atom SN when loading from generic res",
                 ));
             }
-        }
+        };
 
         Ok(Self {
             bond_type: bond.bond_type,
@@ -1251,7 +1243,7 @@ impl Molecule {
 
         // This allows saving as Mol2, for example, with residue types, without breaking
         // bindings
-        let res_new = Residue {
+        let _res_new = Residue {
             atoms: Vec::new(),
             atom_sns: atoms_this.iter().map(|a| a.serial_number).collect(),
             ..res.clone()

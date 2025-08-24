@@ -507,7 +507,7 @@ impl MdState {
 
         // Set up pairs ahead of time; conducive to parallel iteration. We skip excluded pairs,
         // and mark scaled ones. These pairs, in symmetric cases (e.g. dynamic-dynamic), only
-        let mut pairs_dyn_dyn: Vec<_> = (0..n_dyn)
+        let pairs_dyn_dyn: Vec<_> = (0..n_dyn)
             .flat_map(|i_tgt| {
                 self.neighbors_nb.dy_dy[i_tgt]
                     .iter()

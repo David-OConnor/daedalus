@@ -1,10 +1,6 @@
 //! For calculating the accessible surface (AS), a proxy for acccessibility of solvents
 //! to a molecule. Used for drawing *surface*, *dots*, and related meshes. Related to the van der Waals
 //! radius.
-//!
-//! Uses the Shrake-Rupley, or similar "rolling ball" methods.
-//! [This Rust lib](https://github.com/maxall41/RustSASA) appearse to be unsuitable to our purpose;
-//! it provides a single 'total SASA value', vice a set of points defining a surface.
 
 use graphics::{Mesh, Vertex};
 use lin_alg::f32::Vec3;
@@ -13,7 +9,6 @@ use mcubes::{MarchingCubes, MeshSide};
 use crate::molecule::Atom;
 
 const SOLVENT_RAD: f32 = 1.4; // water probe
-// const GRID_H: f32 = 0.5; // voxel edge length
 
 /// Create a mesh of the solvent-accessible surface. We do this using the ball-rolling method
 /// based on Van-der-Waals radius, then use the Marching Cubes algorithm to generate an iso mesh with

@@ -23,7 +23,7 @@ pub fn load_sdf_drugbank(ident: &str) -> Result<Molecule, ReqError> {
 
     match Mol2::new(&sdf_data) {
         Ok(m) => Ok(m.try_into().map_err(|e| ReqError::from(e))?),
-        Err(e) => Err(ReqError::Http),
+        Err(_) => Err(ReqError::Http),
     }
 }
 

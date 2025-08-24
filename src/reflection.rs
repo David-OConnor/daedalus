@@ -1,5 +1,7 @@
 //! For displaying electron density as measured by crytalographics reflection data. From precomputed
-//! data, or from Miller indices.
+//! data, or Miller indices.
+//!
+//! Note: We currently
 
 #![allow(unused)]
 
@@ -9,18 +11,22 @@ use bio_apis::{ReqError, rcsb};
 use bio_files::{DensityMap, MapHeader, UnitCell};
 #[cfg(feature = "cuda")]
 use cudarc::driver::{CudaModule, CudaStream, LaunchConfig, PushKernelArg};
-use lin_alg::{
-    f32::{Vec3 as Vec3F32, vec3s_from_dev, vec3s_to_dev},
-    f64::Vec3,
-};
+#[cfg(feature = "cuda")]
+use lin_alg::f32::{vec3s_from_dev, vec3s_to_dev};
+use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 use mcubes::GridPoint;
 use rayon::prelude::*;
 
-use crate::{dynamics::non_bonded::ForcesOnWaterMol, molecule::Atom, util::setup_neighbor_pairs};
+use crate::{
+    ComputationDevice, dynamics::non_bonded::ForcesOnWaterMol, molecule::Atom,
+    util::setup_neighbor_pairs,
+};
 
 pub const DENSITY_CELL_MARGIN: f64 = 2.0;
-// Density points must be within this distance in Å of a (backbone?) atom to be generated.
-pub const DENSITY_MAX_DIST: f64 = 3.0;
+
+// Density points must be within this distance in Å of a protein atom to be generated.
+pub const DENSITY_MAX_DIST: f64 = 3.5;
+const DIST_TO_ATOMS_SAMPLE_RATIO: usize = 6;
 
 #[derive(Clone, Copy, PartialEq, Debug, Default)]
 pub enum MapStatus {
@@ -99,87 +105,41 @@ pub struct ReflectionsData {
 }
 
 impl ReflectionsData {
-    /// Load reflections data from RCSB, then parse. (SF, 2fo_fc, and fo_fc)
-    pub fn load_from_rcsb(ident: &str) -> Result<Self, ReqError> {
-        println!("Downloading structure factors and Map data for {ident}...");
-
-        let sf = match rcsb::load_structure_factors_cif(ident) {
-            Ok(m) => Some(m),
-            Err(_) => {
-                eprintln!("Error loading structure factors CIF");
-                None
-            }
-        };
-
-        let map_2fo_fc = match rcsb::load_validation_2fo_fc_cif(ident) {
-            Ok(m) => Some(m),
-            Err(_) => {
-                eprintln!("Error loading 2fo_fc map");
-                None
-            }
-        };
-
-        let map_fo_fc = match rcsb::load_validation_fo_fc_cif(ident) {
-            Ok(m) => Some(m),
-            Err(_) => {
-                eprintln!("Error loading fo_fc map");
-                None
-            }
-        };
-
-        println!("Download complete. Parsing...");
-        Ok(Self::from_cifs(
-            sf.as_deref(),
-            map_2fo_fc.as_deref(),
-            map_fo_fc.as_deref(),
-        ))
-    }
-
-    //     /// 1. Make a regular fractional grid that spans 0–1 along a, b, c.
-    //     /// We use this grid for computing electron densitites; it must be converted to real space,
-    //     /// e.g. in angstroms, prior to display.
-    //     pub fn regular_fractional_grid(&self, n: usize) -> Vec<Vec3> {
-    //         let mut pts = Vec::with_capacity(n.pow(3));
-    //         let step = 1. / n as f64;
+    // /// Load reflections data from RCSB, then parse. (SF, 2fo_fc, and fo_fc)
+    // pub fn load_from_rcsb(ident: &str) -> Result<Self, ReqError> {
+    //     println!("Downloading structure factors and Map data for {ident}...");
     //
-    //         for i in 0..n {
-    //             for j in 0..n {
-    //                 for k in 0..n {
-    //                     pts.push(Vec3 {
-    //                         x: i as f64 * step,
-    //                         y: j as f64 * step,
-    //                         z: k as f64 * step,
-    //                     });
-    //                 }
-    //             }
+    //     let sf = match rcsb::load_structure_factors_cif(ident) {
+    //         Ok(m) => Some(m),
+    //         Err(_) => {
+    //             eprintln!("Error loading structure factors CIF");
+    //             None
     //         }
+    //     };
     //
-    //         pts
-    //     }
+    //     let map_2fo_fc = match rcsb::load_validation_2fo_fc_cif(ident) {
+    //         Ok(m) => Some(m),
+    //         Err(_) => {
+    //             eprintln!("Error loading 2fo_fc map");
+    //             None
+    //         }
+    //     };
+    //
+    //     let map_fo_fc = match rcsb::load_validation_fo_fc_cif(ident) {
+    //         Ok(m) => Some(m),
+    //         Err(_) => {
+    //             eprintln!("Error loading fo_fc map");
+    //             None
+    //         }
+    //     };
+    //
+    //     println!("Download complete. Parsing...");
+    //     Ok(Self::from_cifs(
+    //         sf.as_deref(),
+    //         map_2fo_fc.as_deref(),
+    //         map_fo_fc.as_deref(),
+    //     ))
     // }
-
-    /// 1. Make a regular fractional grid that spans 0–1 along a, b, c.
-    /// We use this grid for computing electron densitites; it must be converted to real space,
-    /// e.g. in angstroms, prior to display.
-    pub fn regular_fractional_grid(&self, n: usize) -> Vec<Vec3> {
-        let step = 1.0 / n as f64;
-        let shift = -0.5 + step / 2.0; // put voxel centres at –½…+½
-        let mut pts = Vec::with_capacity(n.pow(3));
-
-        for i in 0..n {
-            for j in 0..n {
-                for k in 0..n {
-                    pts.push(Vec3 {
-                        x: i as f64 * step + shift,
-                        y: j as f64 * step + shift,
-                        z: k as f64 * step + shift,
-                    });
-                }
-            }
-        }
-
-        pts
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -194,248 +154,6 @@ impl GridPoint for ElectronDensity {
     // fn coords(&self) -> Vec3 {self.coords}
     fn value(&self) -> f64 {
         self.density
-    }
-}
-
-fn compute_density(reflections: &[Reflection], posit: Vec3, unit_cell_vol: f32) -> f64 {
-    const EPS: f64 = 0.0000001;
-    let mut rho = 0.0;
-
-    for r in reflections {
-        if r.status != MapStatus::Observed {
-            continue;
-        }
-
-        let amp = r.amp_weighted.unwrap_or(r.amp);
-        if amp.abs() < EPS {
-            continue;
-        }
-
-        let Some(phase) = r.phase_weighted else {
-            continue;
-        };
-
-        //  2π(hx + ky + lz)  (negative sign because CCP4/Coot convention)
-        let arg = TAU * (r.h as f64 * posit.x + r.k as f64 * posit.y + r.l as f64 * posit.z);
-        //  real part of  F · e^{iφ} · e^{iarg} = amp·cos(φ+arg)
-
-        // todo: Which sign/order?
-        rho += amp * (arg + phase.to_radians()).cos();
-        // rho += amp * (arg - phase.to_radians()).cos();
-    }
-
-    // Normalize.
-    // rho / unit_cell_vol as f64
-
-    // todo temp
-    rho * 4. / unit_cell_vol as f64
-}
-
-/// Compute electron density from reflection data. Simmilar to gemmi's `sf2map`.
-/// todo: GPU?
-pub fn compute_density_grid(data: &ReflectionsData) -> Vec<ElectronDensity> {
-    let grid = data.regular_fractional_grid(90);
-    let unit_cell_vol = data.cell_len_a * data.cell_len_b * data.cell_len_c;
-
-    println!(
-        "Computing electron density from refletions onvr {} points...",
-        grid.len()
-    );
-
-    let start = Instant::now();
-
-    let len_a = data.cell_len_a as f64;
-    let len_b = data.cell_len_b as f64;
-    let len_c = data.cell_len_c as f64;
-
-    let result = grid
-        .par_iter()
-        .map(|p| ElectronDensity {
-            coords: frac_to_cart3(
-                *p,
-                len_a,
-                len_b,
-                len_c,
-                (data.cell_angle_alpha as f64).to_radians(),
-                (data.cell_angle_beta as f64).to_radians(),
-                (data.cell_angle_gamma as f64).to_radians(),
-            ),
-            density: compute_density(&data.points, *p, unit_cell_vol),
-        })
-        .collect();
-
-    let elapsed = start.elapsed().as_millis();
-
-    println!("Complete. Time: {:?}ms", elapsed);
-    result
-}
-
-/// Convert from fractical coordinates, as used in reflections, to real space in Angstroms.
-fn frac_to_cart(fr: Vec3, a: f64, b: f64, c: f64, α: f64, β: f64, γ: f64) -> Vec3 {
-    // Angles in radians
-    let (ca, cb, cg) = (α.cos(), β.cos(), γ.cos());
-    let sg = γ.sin();
-
-    // Volume factor
-    let v = (1.0 - ca * ca - cb * cb - cg * cg + 2.0 * ca * cb * cg).sqrt();
-
-    // Orthogonalisation matrix (PDB convention 1)
-    let ox = Vec3 {
-        x: a,
-        y: 0.0,
-        z: 0.0,
-    };
-    let oy = Vec3 {
-        x: b * cg,
-        y: b * sg,
-        z: 0.0,
-    };
-    let oz = Vec3 {
-        x: c * cb,
-        y: c * (ca - cb * cg) / sg,
-        z: c * v / sg,
-    };
-
-    Vec3 {
-        x: ox.x * fr.x + oy.x * fr.y + oz.x * fr.z,
-        y: ox.y * fr.x + oy.y * fr.y + oz.y * fr.z,
-        z: ox.z * fr.x + oy.z * fr.y + oz.z * fr.z,
-    }
-}
-
-fn frac_to_cart3(
-    frac: Vec3,
-    a: f64,
-    b: f64,
-    c: f64,
-    alpha_deg: f64,
-    beta_deg: f64,
-    gamma_deg: f64,
-) -> Vec3 {
-    let (alpha, beta, gamma) = (
-        alpha_deg.to_radians(),
-        beta_deg.to_radians(),
-        gamma_deg.to_radians(),
-    );
-
-    // cos and sin of the angles
-    let (ca, cb, cg) = (alpha.cos(), beta.cos(), gamma.cos());
-    let sg = gamma.sin();
-
-    // volume factor (G² in International Tables)
-    let v = (1.0 - ca * ca - cb * cb - cg * cg + 2.0 * ca * cb * cg).sqrt();
-
-    // International Tables orthogonalisation, PDB convention
-    let x = a * frac.x + b * cg * frac.y + c * cb * frac.z;
-
-    let y = b * sg * frac.y + c * (ca - cb * cg) / sg * frac.z;
-
-    let z = c * v / sg * frac.z;
-
-    Vec3 { x, y, z }
-}
-
-/// Electron density maps are ususally provided in terms of a cell which may not directly
-/// encompass the entire protein. We copy electron density from the opposite side until
-/// the protein is enclosed. We also remove parts of the density not near the protein.
-pub fn handle_map_symmetry(map: &mut [ElectronDensity], hdr: &MapHeader, atoms: &[Atom]) {}
-
-// /// Intermediate struct required by the IsoSurface lib.
-// struct Source {
-//
-// }
-//
-// fn make_mesh(density: &[ElectronDensity], iso_val: f32)
-
-//////////////// gpt below...
-
-/// Convert Å → fractional using inverse cell matrix
-fn cart_to_frac(p: Vec3, inv: &[[f64; 3]; 3]) -> Vec3 {
-    Vec3::new(
-        inv[0][0] * p.x + inv[0][1] * p.y + inv[0][2] * p.z,
-        inv[1][0] * p.x + inv[1][1] * p.y + inv[1][2] * p.z,
-        inv[2][0] * p.x + inv[2][1] * p.y + inv[2][2] * p.z,
-    )
-}
-
-/// Convert fractional → Å using the cell vectors
-fn frac_to_cart2(f: Vec3, ax: Vec3, bx: Vec3, cx: Vec3) -> Vec3 {
-    ax * f.x + bx * f.y + cx * f.z
-}
-
-/// Build the cell vectors (ax,bx,cx) and inverse matrix (Å⁻¹)
-fn cell_matrices(cell: &[f32; 6]) -> (Vec3, Vec3, Vec3, [[f64; 3]; 3]) {
-    let (a, b, c) = (cell[0] as f64, cell[1] as f64, cell[2] as f64);
-    let (al, be, ga) = (
-        cell[3] as f64 * TAU / 360.,
-        cell[4] as f64 * TAU / 360.,
-        cell[5] as f64 * TAU / 360.,
-    );
-
-    let ax = Vec3::new(a, 0.0, 0.0);
-    let bx = Vec3::new(b * ga.cos(), b * ga.sin(), 0.0);
-    let cx = {
-        let cx = c * be.cos();
-        let cy = c * (al.cos() - be.cos() * ga.cos()) / ga.sin();
-        let cz = c
-            * (1.0 - al.cos().powi(2) - be.cos().powi(2) - ga.cos().powi(2)
-                + 2.0 * al.cos() * be.cos() * ga.cos())
-            .sqrt()
-            / ga.sin();
-        Vec3::new(cx, cy, cz)
-    };
-
-    // inverse(A) where A has columns ax,bx,cx
-    let a_inv = {
-        let det = ax.x * (bx.y * cx.z - bx.z * cx.y) - bx.x * (ax.y * cx.z - ax.z * cx.y)
-            + cx.x * (ax.y * bx.z - ax.z * bx.y);
-        let inv = 1.0 / det;
-        let m = |v: Vec3| v;
-        [
-            [
-                (m(bx).y * m(cx).z - m(bx).z * m(cx).y) * inv,
-                (m(ax).z * m(cx).y - m(ax).y * m(cx).z) * inv,
-                (m(ax).y * m(bx).z - m(ax).z * m(bx).y) * inv,
-            ],
-            [
-                (m(bx).z * m(cx).x - m(bx).x * m(cx).z) * inv,
-                (m(ax).x * m(cx).z - m(ax).z * m(cx).x) * inv,
-                (m(ax).z * m(bx).x - m(ax).x * m(bx).z) * inv,
-            ],
-            [
-                (m(bx).x * m(cx).y - m(bx).y * m(cx).x) * inv,
-                (m(ax).y * m(cx).x - m(ax).x * m(cx).y) * inv,
-                (m(ax).x * m(bx).y - m(ax).y * m(bx).x) * inv,
-            ],
-        ]
-    };
-
-    (ax, bx, cx, a_inv)
-}
-
-/// Wrap every atom coordinate back into the unit cell so the
-/// existing *single* asymmetric-unit map encloses them.
-///
-/// After this call your renderer can sample `map` without ever
-/// running out of density.
-pub fn wrap_atoms_into_cell(hdr: &MapHeader, atoms: &mut [Atom]) {
-    if atoms.is_empty() {
-        return;
-    }
-
-    let (ax, bx, cx, a_inv) = cell_matrices(&hdr.cell);
-
-    for at in atoms {
-        // ● Å → fractional
-        let mut f = cart_to_frac(at.posit, &a_inv);
-
-        // ● wrap each fractional coord into [0,1)
-        f.x -= f.x.floor();
-        f.y -= f.y.floor();
-        f.z -= f.z.floor();
-
-        // ● back to Cartesian Å
-        at.posit = frac_to_cart2(f, ax, bx, cx);
     }
 }
 
@@ -460,9 +178,7 @@ impl DensityRect {
         let hdr = &map.hdr;
         let cell = &map.cell;
 
-        // ────────────────────────────────────────────────────────────────
-        // 1. Atom bounds in fractional coords *relative to map origin*
-        // ────────────────────────────────────────────────────────────────
+        // Atom bounds in fractional coords, relative to map origin
         let mut min_r = Vec3::new(f64::INFINITY, f64::INFINITY, f64::INFINITY);
         let mut max_r = Vec3::new(f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
 
@@ -482,9 +198,7 @@ impl DensityRect {
         min_r -= margin_r;
         max_r += margin_r;
 
-        // ────────────────────────────────────────────────────────────────
-        // 2.  Fractional → voxel indices (no wrapping)
-        // ────────────────────────────────────────────────────────────────
+        // Convert fractional to voxel indices
         let to_idx = |fr: f64, n: i32| -> isize { (fr * n as f64 - 0.5).floor() as isize };
 
         let lo_i = [
@@ -505,9 +219,6 @@ impl DensityRect {
             (hi_i[2] - lo_i[2] + 1) as usize,
         ];
 
-        // ────────────────────────────────────────────────────────────────
-        // 3. Cartesian centre of voxel (0,0,0); add origin_frac only once
-        // ────────────────────────────────────────────────────────────────
         let lo_frac = Vec3::new(
             (lo_i[0] as f64 + 0.5) / hdr.mx as f64,
             (lo_i[1] as f64 + 0.5) / hdr.my as f64,
@@ -523,8 +234,6 @@ impl DensityRect {
             cell.c / hdr.mz as f64,
         ];
 
-        // ——————————————————————————————————————————
-        // 4.  Sample the map
         let mut data = Vec::with_capacity(dims[0] * dims[1] * dims[2]);
 
         for kz in 0..dims[2] {
@@ -560,11 +269,14 @@ impl DensityRect {
         }
     }
 
-    /// Convert a DensityCube into (coords, density) structs, which represent density over 3D space.
+    /// Convert a DensityRect into (coords, density) structs, which represent density over 3D space,
+    /// and can be visualized. It is computationally intensive currently, due to our filter for only
+    /// items near the atom coordinates. This may speed up rendering downstream, and declutter the view.
     ///
-    /// Works for any unit-cell.
+    /// We assume `atom_posits` has been filtered to not include Hydrogens, for performance reasons.
     pub fn make_densities(
         &self,
+        dev: &ComputationDevice,
         atom_posits: &[Vec3],
         cell: &UnitCell,
         dist_thresh: f64,
@@ -585,15 +297,48 @@ impl DensityRect {
         let (nx, ny, nz) = (self.dims[0], self.dims[1], self.dims[2]);
 
         let mut triplets = Vec::with_capacity(nx * ny * nz);
-        for kz in 0..nz {
+        for kx in 0..nx {
             for ky in 0..ny {
-                for kx in 0..nx {
+                for kz in 0..nz {
                     triplets.push((kx, ky, kz));
                 }
             }
         }
 
-        let out = self.make_densities_inner(triplets, atom_posits, step_vecs, dist_thresh, nx, ny);
+        // Convert to f64, and don't example every atom. The latter reduces computation time, roughly
+        // by a factor of `SAMPLE_RATIO`.
+        let atom_posits_sample: Vec<Vec3> = atom_posits
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| i % DIST_TO_ATOMS_SAMPLE_RATIO == 0)
+            .map(|(_, a)| (*a).into())
+            .collect();
+
+        // Note: We get a big speedup from both Rayon, and then GPU on top of that. e.g.:
+        // CPU without rayon: 20,000ms
+        // CPU, with rayon (No SIMD): 780ms
+        // GPU: 54ms
+        let out = match dev {
+            ComputationDevice::Cpu => self.make_densities_inner(
+                triplets,
+                &atom_posits_sample,
+                step_vecs,
+                dist_thresh,
+                nx,
+                ny,
+            ),
+            #[cfg(feature = "cuda")]
+            ComputationDevice::Gpu((stream, module)) => self.make_densities_inner_gpu(
+                stream,
+                module,
+                triplets,
+                &atom_posits_sample,
+                step_vecs,
+                dist_thresh.powi(2),
+                nx,
+                ny,
+            ),
+        };
 
         let elapsed = start.elapsed().as_millis();
         println!("Complete, in {elapsed} ms");
@@ -601,7 +346,6 @@ impl DensityRect {
         out
     }
 
-    // todo: Unused for now, and may never be used depending on how we approach this.
     #[cfg(feature = "cuda")]
     /// Separate helper, to isolate from the CPU version.
     fn make_densities_inner_gpu(
@@ -616,6 +360,7 @@ impl DensityRect {
         ny: usize,
     ) -> Vec<ElectronDensity> {
         let n = triplets.len();
+        let n_atom_posits = atom_posits.len();
 
         let mut coords_gpu = {
             let v = vec![Vec3F32::new_zero(); n];
@@ -639,6 +384,12 @@ impl DensityRect {
             vec3s_to_dev(stream, &p_f32)
         };
 
+        // Convert vec3s to f32.
+        let step_vecs_0: Vec3F32 = step_vecs.0.into();
+        let step_vecs_1: Vec3F32 = step_vecs.1.into();
+        let step_vecs_2: Vec3F32 = step_vecs.2.into();
+        let origin_f32: Vec3F32 = self.origin_cart.into();
+
         let data_gpu = stream.memcpy_stod(&self.data).unwrap();
 
         let dist_thresh = dist_thresh as f32;
@@ -656,14 +407,16 @@ impl DensityRect {
         launch_args.arg(&atom_posits_gpu);
         launch_args.arg(&data_gpu);
         //
-        launch_args.arg(&step_vecs.0);
-        launch_args.arg(&step_vecs.1);
-        launch_args.arg(&step_vecs.2);
+        launch_args.arg(&step_vecs_0);
+        launch_args.arg(&step_vecs_1);
+        launch_args.arg(&step_vecs_2);
+        launch_args.arg(&origin_f32);
         //
         launch_args.arg(&dist_thresh);
         launch_args.arg(&nx);
         launch_args.arg(&ny);
         launch_args.arg(&n);
+        launch_args.arg(&n_atom_posits);
 
         unsafe { launch_args.launch(cfg) }.unwrap();
 
@@ -692,14 +445,17 @@ impl DensityRect {
         nx: usize,
         ny: usize,
     ) -> Vec<ElectronDensity> {
+
+        let dist_thresh_sq = dist_thresh * dist_thresh;
+
         // Note: We get a big speedup from using rayon here. For example, 200ms vs 5s, or 2.5s vs 70s
         // for a larger file. (9950x CPU)
         triplets
             .par_iter()
             .map(|&(kx, ky, kz)| {
                 // Linear index in self.data  (z → y → x fastest)
-                let idx = (kz * ny + ky) * nx + kx;
-                let mut density = self.data[idx] as f64;
+                let i_data = (kz * ny + ky) * nx + kx;
+                let mut density = self.data[i_data] as f64;
 
                 // Cartesian center of this voxel
                 let coords = self.origin_cart
@@ -708,17 +464,16 @@ impl DensityRect {
                     + step_vecs.2 * kz as f64;
 
                 // todo: Too slow, but can work for now.
-                // todo: Find a faster way.
                 // We don't want to set up density points not near the atom coordinates.
-                let mut nearest_dist = 99999.;
+                let mut nearest_dist_sq = f64::MAX;
                 for p in atom_posits {
-                    let dist = (*p - coords).magnitude();
-                    if dist < nearest_dist {
-                        nearest_dist = dist;
+                    let dist_sq = (*p - coords).magnitude_squared();
+                    if dist_sq < nearest_dist_sq {
+                        nearest_dist_sq = dist_sq;
                     }
                 }
 
-                if nearest_dist > dist_thresh {
+                if nearest_dist_sq > dist_thresh_sq {
                     // We set density to 0, vice removing the coordinates; our marching cubes
                     // algorithm requires a regular grid, with no absent values.
                     density = 0.;

@@ -3,7 +3,8 @@ use std::{
     fs::File,
     io,
     io::{ErrorKind, Read},
-    path::Path,
+    path::{Path, PathBuf},
+    str::FromStr,
     time::Instant,
 };
 
@@ -18,7 +19,6 @@ use crate::{
     molecule::{Ligand, Molecule},
 };
 
-pub mod cif_sf;
 pub mod pdbqt;
 
 use bio_files::{
@@ -103,7 +103,8 @@ impl State {
                     // so we handle here. We handle map and MTZ files elsewhere, even though they use a
                     // similar pipeline.
                     if name.contains("2fo") && name.contains("fc") {
-                        let dm = gemmi_sf_to_map(path.to_str().unwrap())?;
+                        gemmi_sf_to_map(path, gemmi_path())?;
+                        let dm = gemmi_sf_to_map(path, gemmi_path())?;
                         self.load_density(dm);
                     }
                 }
@@ -233,14 +234,12 @@ impl State {
             let atom_posits: Vec<_> = mol
                 .atoms
                 .iter()
-                // .filter(|a| a.is_backbone() && a.element == Element::Nitrogen)
                 .filter(|a| a.element != Element::Hydrogen)
-                // .filter(|a| a.is_backbone())
                 .map(|a| a.posit)
                 .collect();
 
             let dens_rect = DensityRect::new(&atom_posits, &dm, DENSITY_CELL_MARGIN);
-            let dens = dens_rect.make_densities(&atom_posits, &dm.cell, DENSITY_MAX_DIST);
+            let dens = dens_rect.make_densities(&self.dev, &atom_posits, &dm.cell, DENSITY_MAX_DIST);
 
             let elec_dens: Vec<_> = dens
                 .iter()
@@ -272,7 +271,7 @@ impl State {
 
     /// An electron density MTZ file. We use Gemmi's sf2map functionality, as we do for 2fo-fc files.
     pub fn open_mtz(&mut self, path: &Path) -> io::Result<()> {
-        let dm = gemmi_sf_to_map(path.to_str().unwrap())?;
+        let dm = gemmi_sf_to_map(path, gemmi_path())?;
         self.load_density(dm);
 
         Ok(())
@@ -642,5 +641,18 @@ impl State {
                 handle_err(&mut self.ui, e.to_string());
             }
         }
+    }
+}
+
+/// Utility for finding the Gemmi application, used for opening mmCIF structure factors,
+/// and MTZ. This allows gemmi to be distributed in a folder colacated with this program's executable.
+pub fn gemmi_path() -> Option<&'static Path> {
+    let local_gemmi = Path::new("./gemmi");
+    if local_gemmi.exists() {
+        Some(&local_gemmi)
+    } else {
+        // If Gemmi is not in a folder colacated with the application, fall back
+        // to the system Path.
+        None
     }
 }
