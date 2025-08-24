@@ -310,3 +310,32 @@ void reflection_transform_kernel(
         out[i] += amp[i]* cosf(phase[i] + arg);
     }
 }
+
+// todo: We may no longer need this.
+//
+// extern "C" __global__
+// void make_densities_kernel(
+//     float3* coords,
+//     float* densities,
+//     const uint32_t3* posits_src, // tood: How do you pass these triplets?
+//     const float* data,
+//     const float3* atom_posits,
+//     const float3 stop_vec_0,
+//     const float3 stop_vec_1,
+//     const float3 stop_vec_2,
+//     const float dist_thresh,
+//     const uint32_t nx,
+//     const uint32_t ny,
+//     size_t N
+// ) {
+//     size_t index = blockIdx.x * blockDim.x + threadIdx.x;
+//     size_t stride = blockDim.x * gridDim.x;
+//
+//     for (size_t i = index; i < N; i += stride) {
+//         const uint32_t idx = (kz * ny + ky) * nx + kx;
+//
+//         float density = data[i];
+//
+//
+//     }
+// }

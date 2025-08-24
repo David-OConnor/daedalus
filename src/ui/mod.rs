@@ -28,8 +28,8 @@ use crate::{
     download_mols::{load_sdf_drugbank, load_sdf_pubchem},
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
     mol_drawing::{
-        EntityType, MoleculeView, draw_density, draw_density_surface, draw_ligand, draw_molecule,
-        draw_water,
+        EntityType, MoleculeView, draw_density_point_cloud, draw_density_surface, draw_ligand,
+        draw_molecule, draw_water,
     },
     molecule::{Ligand, Molecule},
     render::{set_docking_light, set_flashlight, set_static_light},
@@ -1028,19 +1028,19 @@ fn view_settings(
                 if let Some(dens) = &mol.elec_density {
                     let mut redraw_dens = false;
                     misc::vis_check(
-                        &mut state.ui.visibility.hide_density,
+                        &mut state.ui.visibility.hide_density_point_cloud,
                         "Density",
                         ui,
                         &mut redraw_dens,
                     );
 
                     if redraw_dens {
-                        if state.ui.visibility.hide_density {
+                        if state.ui.visibility.hide_density_point_cloud {
                             scene
                                 .entities
-                                .retain(|ent| ent.class != EntityType::Density as u32);
+                                .retain(|ent| ent.class != EntityType::DensityPoint as u32);
                         } else {
-                            draw_density(&mut scene.entities, dens);
+                            draw_density_point_cloud(&mut scene.entities, dens);
                         }
                         engine_updates.entities = true;
                     }
@@ -1062,7 +1062,7 @@ fn view_settings(
                             DENS_ISO_MIN..=DENS_ISO_MAX,
                         ));
                         if state.ui.density_iso_level != iso_prev {
-                            state.volatile.flags.make_density_mesh = true;
+                            state.volatile.flags.make_density_iso_mesh = true;
                         }
                     }
 
@@ -1302,7 +1302,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     // }
                     if files_avail.validation_2fo_fc {
                         if ui
-                            .button(RichText::new("Load ρ: 2fo-fc").color(COLOR_HIGHLIGHT))
+                            .button(RichText::new("Fetch elec ρ").color(COLOR_HIGHLIGHT))
                             .on_hover_text("Load 2fo-fc electron density data from RCSB PDB. Convert to CCP4 map format and display.")
                             .clicked()
                         {

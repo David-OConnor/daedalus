@@ -3,15 +3,20 @@
 
 #![allow(unused)]
 
-use std::{f64::consts::TAU, time::Instant};
+use std::{f64::consts::TAU, sync::Arc, time::Instant};
 
 use bio_apis::{ReqError, rcsb};
 use bio_files::{DensityMap, MapHeader, UnitCell};
-use lin_alg::f64::Vec3;
+#[cfg(feature = "cuda")]
+use cudarc::driver::{CudaModule, CudaStream, LaunchConfig, PushKernelArg};
+use lin_alg::{
+    f32::{Vec3 as Vec3F32, vec3s_from_dev, vec3s_to_dev},
+    f64::Vec3,
+};
 use mcubes::GridPoint;
 use rayon::prelude::*;
 
-use crate::{molecule::Atom, util::setup_neighbor_pairs};
+use crate::{dynamics::non_bonded::ForcesOnWaterMol, molecule::Atom, util::setup_neighbor_pairs};
 
 pub const DENSITY_CELL_MARGIN: f64 = 2.0;
 // Density points must be within this distance in Å of a (backbone?) atom to be generated.
@@ -246,14 +251,6 @@ pub fn compute_density_grid(data: &ReflectionsData) -> Vec<ElectronDensity> {
     let result = grid
         .par_iter()
         .map(|p| ElectronDensity {
-            // coords: *p,
-            // Convert coords to real space, in angstroms.
-            // coords: Vec3 {
-            //     x: p.x * len_a,
-            //     y: p.y * len_b,
-            //     z: p.z * len_c,
-            // },
-            // coords: frac_to_cart(
             coords: frac_to_cart3(
                 *p,
                 len_a,
@@ -563,10 +560,9 @@ impl DensityRect {
         }
     }
 
-    /// Convert a DensityCube into (coords, density) structs.
+    /// Convert a DensityCube into (coords, density) structs, which represent density over 3D space.
     ///
-    /// Works for any unit-cell.  We rely on the same `UnitCell` you already have,
-    /// so non-orthogonal (triclinic, monoclinic, …) cells come out correct.
+    /// Works for any unit-cell.
     pub fn make_densities(
         &self,
         atom_posits: &[Vec3],
@@ -584,65 +580,152 @@ impl DensityRect {
         let step_vec_a = cols.0 * (self.step[0] / cell.a); //  = a_vec / mx
         let step_vec_b = cols.1 * (self.step[1] / cell.b); //  = b_vec / my
         let step_vec_c = cols.2 * (self.step[2] / cell.c); //  = c_vec / mz
+        let step_vecs = (step_vec_a, step_vec_b, step_vec_c);
 
         let (nx, ny, nz) = (self.dims[0], self.dims[1], self.dims[2]);
-        let mut out = Vec::with_capacity(nx * ny * nz);
 
-        // todo: Experimenting with neighbor grid here
-        let indices: Vec<_> = (0..atom_posits.len()).collect();
-
-        // todo: Temp dealing with the ref vs not.
-        // let atom_posits2: Vec<&_> = atom_posits.iter().map(|p| p).collect();
-        // const GRID: f64 = 1.0; // todo: Experiment.
-        // let neighbor_pairs = setup_neighbor_pairs(&atom_posits2, &indices, GRID);
-
+        let mut triplets = Vec::with_capacity(nx * ny * nz);
         for kz in 0..nz {
             for ky in 0..ny {
                 for kx in 0..nx {
-                    // linear index in self.data  (z → y → x fastest)
-                    let idx = (kz * ny + ky) * nx + kx;
-                    let mut density = self.data[idx] as f64;
-
-                    // Cartesian center of this voxel
-                    let coords = self.origin_cart
-                        + step_vec_a * kx as f64
-                        + step_vec_b * ky as f64
-                        + step_vec_c * kz as f64;
-
-                    // todo: Insert code here to, using a neighbors algorithm and/or only select
-                    // todo backboneo atoms (e.g. only Calpha etc), don't include points pas a certain
-                    // todo min distance from this backbone. (Performance saver over checking all atoms)
-
-                    // neighbor_pairs
-                    //     .par_iter()
-                    //     .filter_map(|(i, j)| {
-                    //         let atom_0 = &atom_posits[*i];
-                    //         let atom_1 = &atom_posits[*j];
-                    //         let dist = (atom_0 - atom_1).magnitude();
-
-                    // todo: Too slow, but can work for now.
-                    let mut nearest_dist = 99999.;
-                    for p in atom_posits {
-                        let dist = (*p - coords).magnitude();
-                        if dist < nearest_dist {
-                            nearest_dist = dist;
-                        }
-                    }
-
-                    if nearest_dist > dist_thresh {
-                        // We set density to 0, vice removing the coordinates; our marching cubes
-                        // algorithm requires a regular grid, with no absent values.
-                        density = 0.;
-                    }
-
-                    out.push(ElectronDensity { coords, density });
+                    triplets.push((kx, ky, kz));
                 }
             }
         }
+
+        let out = self.make_densities_inner(triplets, atom_posits, step_vecs, dist_thresh, nx, ny);
 
         let elapsed = start.elapsed().as_millis();
         println!("Complete, in {elapsed} ms");
 
         out
+    }
+
+    // todo: Unused for now, and may never be used depending on how we approach this.
+    #[cfg(feature = "cuda")]
+    /// Separate helper, to isolate from the CPU version.
+    fn make_densities_inner_gpu(
+        &self,
+        stream: &Arc<CudaStream>,
+        module: &Arc<CudaModule>,
+        triplets: Vec<(usize, usize, usize)>,
+        atom_posits: &[Vec3],
+        step_vecs: (Vec3, Vec3, Vec3),
+        dist_thresh: f64,
+        nx: usize,
+        ny: usize,
+    ) -> Vec<ElectronDensity> {
+        let n = triplets.len();
+
+        let mut coords_gpu = {
+            let v = vec![Vec3F32::new_zero(); n];
+            vec3s_to_dev(stream, &v)
+        };
+
+        let mut densities_gpu = stream.memcpy_stod(&vec![0.0f32; n]).unwrap();
+
+        let triplets_gpu = {
+            let mut trip_flat = Vec::with_capacity(n * 3);
+            for (x, y, z) in triplets {
+                trip_flat.push(x as u32);
+                trip_flat.push(y as u32);
+                trip_flat.push(z as u32);
+            }
+            stream.memcpy_stod(&trip_flat).unwrap()
+        };
+
+        let atom_posits_gpu = {
+            let p_f32: Vec<Vec3F32> = atom_posits.iter().map(|a| (*a).into()).collect();
+            vec3s_to_dev(stream, &p_f32)
+        };
+
+        let data_gpu = stream.memcpy_stod(&self.data).unwrap();
+
+        let dist_thresh = dist_thresh as f32;
+
+        let kernel = module.load_function("make_densities_kernel").unwrap();
+
+        let cfg = LaunchConfig::for_num_elems(n as u32);
+
+        let mut launch_args = stream.launch_builder(&kernel);
+
+        launch_args.arg(&mut coords_gpu);
+        launch_args.arg(&mut densities_gpu);
+        //
+        launch_args.arg(&triplets_gpu);
+        launch_args.arg(&atom_posits_gpu);
+        launch_args.arg(&data_gpu);
+        //
+        launch_args.arg(&step_vecs.0);
+        launch_args.arg(&step_vecs.1);
+        launch_args.arg(&step_vecs.2);
+        //
+        launch_args.arg(&dist_thresh);
+        launch_args.arg(&nx);
+        launch_args.arg(&ny);
+        launch_args.arg(&n);
+
+        unsafe { launch_args.launch(cfg) }.unwrap();
+
+        // todo: Consider dtoh; passing to an existing vec instead of re-allocating?
+        let coords = vec3s_from_dev(stream, &coords_gpu);
+        let densities = stream.memcpy_dtov(&densities_gpu).unwrap();
+
+        let mut result = Vec::with_capacity(n);
+        for i in 0..n {
+            result.push(ElectronDensity {
+                coords: coords[i].into(),
+                density: densities[i] as f64,
+            })
+        }
+
+        result
+    }
+
+    /// Separate helper, to isolate from the GPU version.
+    fn make_densities_inner(
+        &self,
+        triplets: Vec<(usize, usize, usize)>,
+        atom_posits: &[Vec3],
+        step_vecs: (Vec3, Vec3, Vec3),
+        dist_thresh: f64,
+        nx: usize,
+        ny: usize,
+    ) -> Vec<ElectronDensity> {
+        // Note: We get a big speedup from using rayon here. For example, 200ms vs 5s, or 2.5s vs 70s
+        // for a larger file. (9950x CPU)
+        triplets
+            .par_iter()
+            .map(|&(kx, ky, kz)| {
+                // Linear index in self.data  (z → y → x fastest)
+                let idx = (kz * ny + ky) * nx + kx;
+                let mut density = self.data[idx] as f64;
+
+                // Cartesian center of this voxel
+                let coords = self.origin_cart
+                    + step_vecs.0 * kx as f64
+                    + step_vecs.1 * ky as f64
+                    + step_vecs.2 * kz as f64;
+
+                // todo: Too slow, but can work for now.
+                // todo: Find a faster way.
+                // We don't want to set up density points not near the atom coordinates.
+                let mut nearest_dist = 99999.;
+                for p in atom_posits {
+                    let dist = (*p - coords).magnitude();
+                    if dist < nearest_dist {
+                        nearest_dist = dist;
+                    }
+                }
+
+                if nearest_dist > dist_thresh {
+                    // We set density to 0, vice removing the coordinates; our marching cubes
+                    // algorithm requires a regular grid, with no absent values.
+                    density = 0.;
+                }
+
+                ElectronDensity { coords, density }
+            })
+            .collect()
     }
 }

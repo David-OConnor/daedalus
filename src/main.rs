@@ -206,7 +206,7 @@ struct SceneFlags {
     pub update_sas_mesh: bool,
     pub ss_mesh_created: bool,
     pub sas_mesh_created: bool,
-    pub make_density_mesh: bool,
+    pub make_density_iso_mesh: bool,
     pub clear_density_drawing: bool,
     pub new_density_loaded: bool,
     pub new_mol_loaded: bool,
@@ -276,7 +276,7 @@ struct Visibility {
     hide_hydrogen: bool,
     hide_h_bonds: bool,
     dim_peptide: bool,
-    hide_density: bool,
+    hide_density_point_cloud: bool,
     hide_density_surface: bool,
     // todo: Seq here, or not?
 }
@@ -292,7 +292,7 @@ impl Default for Visibility {
             hide_hydrogen: true,
             hide_h_bonds: false,
             dim_peptide: false,
-            hide_density: false,
+            hide_density_point_cloud: false,
             hide_density_surface: false,
         }
     }

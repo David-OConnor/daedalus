@@ -59,8 +59,9 @@ Many UI items provide tooltip descriptions, when you hover the mouse.
 ## File formats
 - Proteins: mmCIF (.pdb supported removed; use mmCIF instead)
 - Small molecules: SDF, Mol2, and PDBQT
-- Electron density: 2fo-fc CIF, and Map.
-- Force field parameters: dat, and frcmode (Amber)
+- Electron density: 2fo-fc mmCIF, Map, and MTZ
+- Force field parameters: dat, and frcmod (Amber)
+
 
 ![ELectron density](screenshots/iso_a.png)
 
@@ -160,11 +161,11 @@ If *orbit sel* is set in the GUI, the orbit center will be the selected atom or 
 
 ## Reflections and electron density
 Supports volumetric and isosurface views for electron density data, e.g. from Cryo-EM and X-Ray crystallography data. 
-It can download this data from RCSB PDB, or load files directly. Currently, to convert *2fo-fc* files to map data, you must
+It can download this data from RCSB PDB, or load files directly. To open *2fo-fc* and *MTZ* files, you must
 have [Gemmi](https://gemmi.readthedocs.io/en/latest/install.html) available on your PC's *Path*. For convenience, we provide [a download link](https://github.com/David-OConnor/daedalus/releases/download/0.1.3/gemmi.zip)
 of the Windows version of Gemmi.
 
-Can import Map files directly. MTZ support is not yet available.
+Can import Map files directly, and save load density to Map format.
 
 
 ## PyMol-like Command line interface

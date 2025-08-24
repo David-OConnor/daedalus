@@ -19,7 +19,9 @@ use crate::{
     docking::{ConformationType, prep::DockingSetup},
     download_mols::load_cif_rcsb,
     dynamics::prep::populate_ff_and_q,
-    mol_drawing::{EntityType, MoleculeView, draw_density, draw_density_surface, draw_molecule},
+    mol_drawing::{
+        EntityType, MoleculeView, draw_density_point_cloud, draw_density_surface, draw_molecule,
+    },
     molecule::{Atom, AtomRole, Bond, Chain, Ligand, Molecule, Residue},
     render::{
         CAM_INIT_OFFSET, Color, MESH_DENSITY_SURFACE, MESH_SECONDARY_STRUCTURE,
@@ -747,7 +749,7 @@ pub fn close_mol(state: &mut State, scene: &mut Scene, engine_updates: &mut Engi
 
     scene.entities.retain(|ent| {
         ent.class != EntityType::Protein as u32
-            && ent.class != EntityType::Density as u32
+            && ent.class != EntityType::DensityPoint as u32
             && ent.class != EntityType::DensitySurface as u32
             && ent.class != EntityType::SecondaryStructure as u32
             && ent.class != EntityType::SaSurface as u32
@@ -854,10 +856,11 @@ pub fn handle_scene_flags(
         state.volatile.flags.new_density_loaded = false;
 
         if let Some(mol) = &state.molecule {
-            if !state.ui.visibility.hide_density {
+            if !state.ui.visibility.hide_density_point_cloud {
                 if let Some(density) = &mol.elec_density {
-                    draw_density(&mut scene.entities, density);
+                    draw_density_point_cloud(&mut scene.entities, density);
                     engine_updates.entities = true;
+                    return;
                 }
             }
         }
@@ -867,14 +870,13 @@ pub fn handle_scene_flags(
         state.volatile.flags.clear_density_drawing = false;
 
         scene.entities.retain(|ent| {
-            ent.class != EntityType::Density as u32
+            ent.class != EntityType::DensityPoint as u32
                 && ent.class != EntityType::DensitySurface as u32
         });
     }
 
-    // todo: temp experiencing a crash from wgpu on vertex buffer
-    if state.volatile.flags.make_density_mesh {
-        state.volatile.flags.make_density_mesh = false;
+    if state.volatile.flags.make_density_iso_mesh {
+        state.volatile.flags.make_density_iso_mesh = false;
         make_density_mesh(state, scene, engine_updates);
     }
 

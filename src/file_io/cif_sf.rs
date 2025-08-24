@@ -142,6 +142,8 @@ impl ReflectionsData {
     /// * `sf`              – contents of `*.sf.cif`
     /// * `map_2fo_fc` – optional contents of `*2fo-fc_map_coef.cif`
     /// * `map_fo_fc` – optional contents of `*fo-fc_map_coef.cif`
+    // todo: This is unused. We currently lean on Gemmi to convert to map files, then parse
+    // the map files in bio-files. This might be correct though.
     pub fn from_cifs(sf: Option<&str>, map_2fo_fc: Option<&str>, map_fo_fc: Option<&str>) -> Self {
         let mut reflections: HashMap<(i32, i32, i32), Reflection> = HashMap::new();
 

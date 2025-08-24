@@ -194,8 +194,6 @@ pub fn force_nonbonded_gpu(
     n_dyn: usize,
     n_water: usize,
 ) -> (Vec<Vec3F32>, Vec<ForcesOnWaterMol>, f64) {
-    let start = Instant::now();
-
     let n = posits_tgt.len();
 
     assert_eq!(tgt_is.len(), n);
@@ -337,9 +335,6 @@ pub fn force_nonbonded_gpu(
     }
 
     let virial = stream.memcpy_dtov(&virial_gpu).unwrap()[0];
-
-    // let time_diff = Instant::now() - start;
-    // println!("GPU LJ force data collected. Time: {:?}", time_diff);
 
     (forces_on_dyn, forces_on_water, virial)
 }

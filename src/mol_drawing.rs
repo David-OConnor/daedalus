@@ -97,7 +97,7 @@ const MESH_SURFACE_DOT: usize = MESH_CUBE;
 pub enum EntityType {
     Protein = 0,
     Ligand = 1,
-    Density = 2,
+    DensityPoint = 2,
     DensitySurface = 3,
     SecondaryStructure = 4,
     SaSurface = 5,
@@ -858,9 +858,9 @@ pub fn draw_ligand(state: &State, scene: &mut Scene) {
 }
 
 /// A visual representation of volumetric electron density,
-/// as loaded from .map files or similar.
-pub fn draw_density(entities: &mut Vec<Entity>, density: &[ElectronDensity]) {
-    entities.retain(|ent| ent.class != EntityType::Density as u32);
+/// as loaded from .map files or similar. This is our point-based approach; not the isosurface.
+pub fn draw_density_point_cloud(entities: &mut Vec<Entity>, density: &[ElectronDensity]) {
+    entities.retain(|ent| ent.class != EntityType::DensityPoint as u32);
 
     const EPS: f64 = 0.0000001;
 
@@ -877,12 +877,9 @@ pub fn draw_density(entities: &mut Vec<Entity>, density: &[ElectronDensity]) {
             Quaternion::new_identity(),
             0.03 * point.density.powf(1.3) as f32,
             (point.density as f32 * 2., 0.0, 0.2),
-            // (1., 0.7, 0.5),
             ATOM_SHININESS,
         );
-        ent.class = EntityType::Density as u32;
-
-        // ent.opacity =point.density as f32 * 10.;
+        ent.class = EntityType::DensityPoint as u32;
 
         entities.push(ent);
     }
