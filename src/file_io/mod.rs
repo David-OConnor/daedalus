@@ -227,7 +227,7 @@ impl State {
         Ok(())
     }
 
-    pub fn load_density(&mut self, dm: DensityMap) {
+    pub fn load_density(&mut self, dens_map: DensityMap) {
         if let Some(mol) = &mut self.molecule {
             // We are filtering for backbone atoms of one type for now, for performance reasons. This is
             // a sample. Good enough?
@@ -238,8 +238,9 @@ impl State {
                 .map(|a| a.posit)
                 .collect();
 
-            let dens_rect = DensityRect::new(&atom_posits, &dm, DENSITY_CELL_MARGIN);
-            let dens = dens_rect.make_densities(&self.dev, &atom_posits, &dm.cell, DENSITY_MAX_DIST);
+            let dens_rect = DensityRect::new(&atom_posits, &dens_map, DENSITY_CELL_MARGIN);
+            let dens =
+                dens_rect.make_densities(&self.dev, &atom_posits, &dens_map.cell, DENSITY_MAX_DIST);
 
             let elec_dens: Vec<_> = dens
                 .iter()
@@ -249,7 +250,7 @@ impl State {
                 })
                 .collect();
 
-            mol.density_map = Some(dm);
+            mol.density_map = Some(dens_map);
             mol.density_rect = Some(dens_rect);
             mol.elec_density = Some(elec_dens);
 

@@ -260,7 +260,9 @@ pub fn cam_snapshots(
     section_box().show(ui, |ui| {
         ui.horizontal(|ui| {
             ui.label("Scenes");
-            ui.add(TextEdit::singleline(&mut state.ui.cam_snapshot_name).desired_width(60.));
+
+            ui.add(TextEdit::singleline(&mut state.ui.cam_snapshot_name).desired_width(60.))
+                .on_hover_text("Choose a name to save this scene as.");
 
             if ui
                 .button("Save")

@@ -776,61 +776,64 @@ pub fn close_lig(state: &mut State, scene: &mut Scene, engine_updates: &mut Engi
     state.update_save_prefs(false);
 }
 
-/// Populdate the electron-density mesh (isosurface). This assumes the density_rect is already set up.
+/// Populate the electron-density mesh (isosurface). This assumes the density_rect is already set up.
 pub fn make_density_mesh(state: &mut State, scene: &mut Scene, engine_updates: &mut EngineUpdates) {
-    if let Some(mol) = &state.molecule {
-        // todo: Adapt this to your new approach, if it works.
-        if let Some(rect) = &mol.density_rect {
-            let dims = (rect.dims[0], rect.dims[1], rect.dims[2]); // (nx,ny,nz)
+    let Some(mol) = &state.molecule else {
+        return;
+    };
+    let Some(rect) = &mol.density_rect else {
+        return;
+    };
+    let Some(density) = &mol.elec_density else {
+        return;
+    };
 
-            let size = (
-                (rect.step[0] * rect.dims[0] as f64) as f32, // Δx * nx  (Å)
-                (rect.step[1] * rect.dims[1] as f64) as f32,
-                (rect.step[2] * rect.dims[2] as f64) as f32,
-            );
+    let dims = (rect.dims[0], rect.dims[1], rect.dims[2]); // (nx, ny, nz)
 
-            // “sampling interval” in the original code is really the number of
-            // samples along each axis (= nx,ny,nz), so just cast dims to f32:
-            let samples = (
-                rect.dims[0] as f32,
-                rect.dims[1] as f32,
-                rect.dims[2] as f32,
-            );
+    let size = (
+        (rect.step[0] * rect.dims[0] as f64) as f32, // Δx * nx  (Å)
+        (rect.step[1] * rect.dims[1] as f64) as f32,
+        (rect.step[2] * rect.dims[2] as f64) as f32,
+    );
 
-            match MarchingCubes::from_gridpoints(
-                dims,
-                size,
-                samples,
-                rect.origin_cart.into(),
-                mol.elec_density.as_ref().unwrap(),
-                state.ui.density_iso_level,
-            ) {
-                Ok(mc) => {
-                    let mesh = mc.generate(MeshSide::OutsideOnly);
+    let sampling_interval = (
+        rect.dims[0] as f32,
+        rect.dims[1] as f32,
+        rect.dims[2] as f32,
+    );
 
-                    // Convert from `mcubes::Mesh` to `graphics::Mesh`.
-                    let vertices = mesh
-                        .vertices
-                        .iter()
-                        .map(|v| Vertex::new(v.posit.to_arr(), v.normal))
-                        .collect();
+    match MarchingCubes::from_gridpoints(
+        dims,
+        size,
+        sampling_interval,
+        rect.origin_cart.into(),
+        density,
+        state.ui.density_iso_level,
+    ) {
+        Ok(mc) => {
+            let mesh = mc.generate(MeshSide::OutsideOnly);
 
-                    scene.meshes[MESH_DENSITY_SURFACE] = Mesh {
-                        vertices,
-                        indices: mesh.indices,
-                        material: 0,
-                    };
+            // Convert from `mcubes::Mesh` to `graphics::Mesh`.
+            let vertices = mesh
+                .vertices
+                .iter()
+                .map(|v| Vertex::new(v.posit.to_arr(), v.normal))
+                .collect();
 
-                    if !state.ui.visibility.hide_density_surface {
-                        draw_density_surface(&mut scene.entities);
-                    }
+            scene.meshes[MESH_DENSITY_SURFACE] = Mesh {
+                vertices,
+                indices: mesh.indices,
+                material: 0,
+            };
 
-                    engine_updates.meshes = true;
-                    engine_updates.entities = true;
-                }
-                Err(e) => handle_err(&mut state.ui, e.to_string()),
+            if !state.ui.visibility.hide_density_surface {
+                draw_density_surface(&mut scene.entities);
             }
+
+            engine_updates.meshes = true;
+            engine_updates.entities = true;
         }
+        Err(e) => handle_err(&mut state.ui, e.to_string()),
     }
 }
 

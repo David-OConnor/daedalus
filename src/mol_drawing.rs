@@ -859,6 +859,7 @@ pub fn draw_ligand(state: &State, scene: &mut Scene) {
 
 /// A visual representation of volumetric electron density,
 /// as loaded from .map files or similar. This is our point-based approach; not the isosurface.
+/// We change size based on density, and not linearly, for visual effect.
 pub fn draw_density_point_cloud(entities: &mut Vec<Entity>, density: &[ElectronDensity]) {
     entities.retain(|ent| ent.class != EntityType::DensityPoint as u32);
 
@@ -868,6 +869,12 @@ pub fn draw_density_point_cloud(entities: &mut Vec<Entity>, density: &[ElectronD
         // For example, points we filter out for not being near the atoms; we set them to 0 density,
         // vice ommitting them. Skipping them here makes rendering more efficient.
         if point.density.abs() < EPS {
+            continue;
+        }
+
+        // Todo: Sort out how you'll handle this. Currently, You discard these, or they'd go NaN
+        // todo on the power computation.
+        if point.density < 0.0 {
             continue;
         }
 

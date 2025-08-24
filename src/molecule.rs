@@ -993,7 +993,6 @@ pub const fn aa_color(aa: AminoAcid) -> (f32, f32, f32) {
 
 impl Molecule {
     pub fn from_mmcif(m: MmCif, ff_map: &ProtFfMap) -> Result<Self, io::Error> {
-        // fn try_from(m: MmCif) -> Result<Self, Self::Error> {
         let mut atoms: Vec<_> = m.atoms.iter().map(|a| a.into()).collect();
 
         // todo: Crude logic for finding the C terminus. Relies on atom position,
@@ -1068,6 +1067,14 @@ impl Molecule {
             None,
             Some(ff_map),
         );
+
+        // todo: It seems this section isn't required, but I can't figure out where the title
+        // todo is gettign inserted elsewhere.
+        if let Some(title) = m.metadata.get("_struct.title") {
+            result.metadata = Some(PdbMetaData {
+                prim_cit_title: title.to_string(),
+            });
+        }
 
         result.experimental_method = m.experimental_method.clone();
         result.secondary_structure = m.secondary_structure.clone();

@@ -453,9 +453,15 @@ impl MdState {
         }
 
         self.reset_accels();
+
         self.apply_all_forces(dev);
 
+        let mut start = Instant::now();
         self.handle_spme_recip();
+        if self.step_count == 0 {
+            let elapsed = start.elapsed();
+            println!("SPME recip time: {:?} μs", elapsed.as_micros());
+        }
 
         // Forces (bonded and nonbonded, to dynamic and water atoms) have been applied; perform other
         // steps required for integration; second half-kick, RATTLE for hydrogens; SETTLE for water. -----
@@ -503,6 +509,7 @@ impl MdState {
         }
     }
 
+    // todo: Make work on GPU.
     fn handle_spme_recip(&mut self) {
         const K_COUL: f64 = 1.; // todo: ChatGPT really wants this, but I don't think I need it.
 

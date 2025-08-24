@@ -25,8 +25,9 @@ use crate::{
 pub const DENSITY_CELL_MARGIN: f64 = 2.0;
 
 // Density points must be within this distance in Å of a protein atom to be generated.
-pub const DENSITY_MAX_DIST: f64 = 3.5;
-const DIST_TO_ATOMS_SAMPLE_RATIO: usize = 6;
+// This prevents displaying shapes from the neighbor
+pub const DENSITY_MAX_DIST: f64 = 4.;
+const DIST_TO_ATOMS_SAMPLE_RATIO: usize = 5;
 
 #[derive(Clone, Copy, PartialEq, Debug, Default)]
 pub enum MapStatus {
@@ -193,7 +194,7 @@ impl DensityRect {
             max_r = Vec3::new(max_r.x.max(f.x), max_r.y.max(f.y), max_r.z.max(f.z));
         }
 
-        // extra margin in fractional units
+        // Extra margin in fractional units
         let margin_r = Vec3::new(margin / cell.a, margin / cell.b, margin / cell.c);
         min_r -= margin_r;
         max_r += margin_r;
@@ -245,7 +246,7 @@ impl DensityRect {
                         lo_i[2] + kz as isize,
                     ];
 
-                    // crystallographic → Cartesian centre of this voxel
+                    // Crystallographic → Cartesian center of this voxel
                     let frac = map.origin_frac
                         + Vec3::new(
                             (idx_c[0] as f64 + 0.5) / hdr.mx as f64,
@@ -445,7 +446,6 @@ impl DensityRect {
         nx: usize,
         ny: usize,
     ) -> Vec<ElectronDensity> {
-
         let dist_thresh_sq = dist_thresh * dist_thresh;
 
         // Note: We get a big speedup from using rayon here. For example, 200ms vs 5s, or 2.5s vs 70s

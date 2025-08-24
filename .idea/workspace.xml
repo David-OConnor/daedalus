@@ -16,18 +16,17 @@
       <change beforePath="$PROJECT_DIR$/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/cuda/cuda.cu" beforeDir="false" afterPath="$PROJECT_DIR$/src/cuda/cuda.cu" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/docking/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/docking/mod.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/docking/prep.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/docking/prep.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/download_mols.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/download_mols.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/dynamics/non_bonded.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dynamics/non_bonded.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/file_io/cif_sf.rs" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/dynamics/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dynamics/mod.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/file_io/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/file_io/mod.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/main.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/mol_drawing.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/mol_drawing.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/molecule.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/molecule.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/prefs.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/prefs.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/reflection.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/reflection.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/render.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/render.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/sa_surface.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/sa_surface.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/ui/cam.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/ui/cam.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/ui/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/ui/mod.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/util.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/util.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -56,31 +55,31 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "Cargo.Fmt.executor": "Run",
-    "Cargo.Run daedalus.executor": "Run",
-    "ModuleVcsDetector.initialDetectionPerformed": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "RunOnceActivity.rust.reset.selective.auto.import": "true",
-    "git-widget-placeholder": "main",
-    "ignore.virus.scanning.warn.message": "true",
-    "junie.onboarding.icon.badge.shown": "true",
-    "node.js.detected.package.eslint": "true",
-    "node.js.detected.package.tslint": "true",
-    "node.js.selected.package.eslint": "(autodetect)",
-    "node.js.selected.package.tslint": "(autodetect)",
-    "nodejs_package_manager_path": "npm",
-    "org.rust.cargo.project.model.PROJECT_DISCOVERY": "true",
-    "org.rust.cargo.project.model.impl.CargoExternalSystemProjectAware.subscribe.first.balloon": "",
-    "org.rust.first.attach.projects": "true",
-    "settings.editor.selected.configurable": "preferences.pluginManager",
-    "to.speed.mode.migration.done": "true",
-    "vue.rearranger.settings.migration": "true"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;Cargo.Fmt.executor&quot;: &quot;Run&quot;,
+    &quot;Cargo.Run daedalus.executor&quot;: &quot;Run&quot;,
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.rust.reset.selective.auto.import&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;ignore.virus.scanning.warn.message&quot;: &quot;true&quot;,
+    &quot;junie.onboarding.icon.badge.shown&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;org.rust.cargo.project.model.PROJECT_DISCOVERY&quot;: &quot;true&quot;,
+    &quot;org.rust.cargo.project.model.impl.CargoExternalSystemProjectAware.subscribe.first.balloon&quot;: &quot;&quot;,
+    &quot;org.rust.first.attach.projects&quot;: &quot;true&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;preferences.pluginManager&quot;,
+    &quot;to.speed.mode.migration.done&quot;: &quot;true&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
-}]]></component>
+}</component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
       <recent name="C:\Users\the_a\code\Bio\daedalus\src\ui" />
@@ -143,7 +142,8 @@
       <workItem from="1755798686150" duration="30184000" />
       <workItem from="1755903916568" duration="1240000" />
       <workItem from="1755906666530" duration="13968000" />
-      <workItem from="1755980844932" duration="30588000" />
+      <workItem from="1755980844932" duration="38225000" />
+      <workItem from="1756072246160" duration="5044000" />
     </task>
     <servers />
   </component>

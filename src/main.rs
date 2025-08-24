@@ -540,11 +540,6 @@ fn main() {
 
     // let dev = ComputationDevice::Cpu; // todo temp.
 
-    // Time comparison, from 2025-08-20. (100 steps). Not as impressive as I'd hoped.
-    // 9950x CPU. 4080 GPU. CPU used thread pools, but not SIMD. Long range ewald and neighbors built on CPU.
-    // CPU, f64: Non-bonded time: 57907 μs. MD complete in 8 s
-    // GPU, f32: Non-bonded time: 29677 μs. MD complete in 3 s
-
     #[cfg(target_arch = "x86_64")]
     {
         if is_x86_feature_detected!("avx512f") {

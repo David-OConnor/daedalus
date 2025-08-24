@@ -30,7 +30,6 @@ pub struct ToSave {
     pub last_ligand_opened: Option<PathBuf>,
     pub last_map_opened: Option<PathBuf>,
     pub last_frcmod_opened: Option<PathBuf>,
-    // pub autodock_vina_path: Option<PathBuf>,
     pub control_scheme: ControlScheme,
     pub msaa: MsaaSetting,
     /// Direct conversion from engine standard
@@ -57,7 +56,6 @@ impl Default for ToSave {
             last_ligand_opened: Default::default(),
             last_frcmod_opened: Default::default(),
             last_map_opened: Default::default(),
-            // autodock_vina_path: Default::default(),
             control_scheme: Default::default(),
             msaa: Default::default(),
             movement_speed: MOVEMENT_SENS as u8,

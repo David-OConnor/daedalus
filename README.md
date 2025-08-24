@@ -251,7 +251,6 @@ CUDA v13.0 or higher must be installed on the compiling machine, but is not requ
 
 ### Errata
 - Ribbon (cartoon) view is unavailable.
-- Opening a molecule by drag + drop may not work until minimizing/unminimizing the program.
 - Loading map (electron density) files that are very large (e.g. high detail, especially Map files directly available
 on RCSB, vice created from 2fo-fc) may crash the program.
 - Opening electron density files in general can be slow. This can lead to the program starting slowly if it was

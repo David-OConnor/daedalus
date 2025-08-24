@@ -105,25 +105,26 @@ pub fn make_sas_mesh(atoms: &[&Atom], mut precision: f32) -> Mesh {
     }
 
     // Convert to a mesh using Marchine Cubes.
-    //  scale = precision because size / sampling_interval = precision
-    let size = (
-        (grid_dim.0 as f32 - 1.0) * precision,
-        (grid_dim.1 as f32 - 1.0) * precision,
-        (grid_dim.2 as f32 - 1.0) * precision,
-    );
-    let samp = (
+
+    let sampling_interval = (
         grid_dim.0 as f32 - 1.0,
         grid_dim.1 as f32 - 1.0,
         grid_dim.2 as f32 - 1.0,
     );
 
+    //  scale = precision because size / sampling_interval = precision
+    let size = (
+        sampling_interval.0 * precision,
+        sampling_interval.1 * precision,
+        sampling_interval.2 * precision,
+    );
+
     // todo: The holes in our mesh seem related to the iso level chosen.
-    let mc =
-        MarchingCubes::new(grid_dim, size, samp, bb_min, field, 0.).expect("marching cubes init");
+    let mc = MarchingCubes::new(grid_dim, size, sampling_interval, bb_min, field, 0.)
+        .expect("marching cubes init");
 
     // Note: We're experiencing the opposite behavior than we expect here; we really want to draw outside.
     let mc_mesh = mc.generate(MeshSide::InsideOnly);
-    // let mc_mesh = mc.generate(MeshSide::Both);
 
     let vertices: Vec<Vertex> = mc_mesh
         .vertices

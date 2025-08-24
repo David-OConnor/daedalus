@@ -884,6 +884,8 @@ fn mol_descrip(mol: &Molecule, ui: &mut Ui) {
             // Allow hovering to see the full title.
             ui.label(RichText::new(title_abbrev).color(Color32::WHITE).size(12.))
                 .on_hover_text(&metadata.prim_cit_title);
+        } else {
+            ui.label(RichText::new(title_abbrev).color(Color32::WHITE).size(12.));
         }
     }
 
@@ -1061,7 +1063,8 @@ fn view_settings(
                         ui.add(Slider::new(
                             &mut state.ui.density_iso_level,
                             DENS_ISO_MIN..=DENS_ISO_MAX,
-                        ));
+                        ))
+                        .on_hover_text("The density value at which to draw the ISO surface");
                         if state.ui.density_iso_level != iso_prev {
                             state.volatile.flags.make_density_iso_mesh = true;
                         }
@@ -1219,7 +1222,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             settings(state, scene, ui);
         }
 
-        ui.horizontal_wrapped(|ui| {
+        ui.horizontal(|ui| {
             let color_settings = if state.ui.popup.show_settings {
                 Color32::LIGHT_RED
             } else {
