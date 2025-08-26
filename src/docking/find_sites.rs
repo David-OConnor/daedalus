@@ -4,11 +4,11 @@ use lin_alg::f64::Vec3;
 
 use crate::{
     docking::{DockingSite, GRID_SPACING_SITE_FINDING},
-    molecule::Molecule,
+    molecule::MoleculePeptide,
 };
 
 /// Attempt to find docking sites, using cavity detection.
-pub fn find_docking_sites(mol: &Molecule) -> Vec<DockingSite> {
+pub fn find_docking_sites(mol: &MoleculePeptide) -> Vec<DockingSite> {
     // todo: Super chatGPT rough!!
 
     let mut result = Vec::new();

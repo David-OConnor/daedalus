@@ -10,7 +10,7 @@ use std::{
 
 use crate::{
     docking::{DockingSite, Pose},
-    molecule::{Ligand, Molecule},
+    molecule::{Ligand, MoleculePeptide},
 };
 
 pub fn check_adv_avail(path: &Path) -> bool {

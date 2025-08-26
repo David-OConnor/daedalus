@@ -16,8 +16,9 @@ use crate::{
         ATOM_NEAR_SITE_DIST_THRESH, DockingSite, is_hydrophobic, partial_charge::PartialCharge,
     },
     forces::setup_sigma_eps_x8,
-    molecule::{Atom, Bond, Ligand, Molecule},
+    molecule::{Atom, Bond, BondType, Ligand, MoleculePeptide},
 };
+use crate::molecule::MoleculeLigand;
 
 // Increase this to take fewer receptor atoms when sampling for some cheap computatoins.
 const REC_SAMPLE_RATIO: usize = 6;
@@ -53,7 +54,7 @@ pub struct DockingSetup {
 
 impl DockingSetup {
     pub fn new(
-        receptor: &Molecule,
+        receptor: &MoleculePeptide,
         lig: &mut Ligand,
         lj_lut: &LjTable,
         bh_config: &BhConfig,
@@ -408,7 +409,7 @@ pub struct Torsion {
 }
 
 /// Counts the number of bonds connected to a given atom. Used for flexibility computation.
-fn count_bonds(atom_index: usize, mol: &Molecule) -> usize {
+fn count_bonds(atom_index: usize, mol: &MoleculePeptide) -> usize {
     mol.bonds
         .iter()
         .filter(|bond| bond.atom_0 == atom_index || bond.atom_1 == atom_index)
@@ -416,10 +417,10 @@ fn count_bonds(atom_index: usize, mol: &Molecule) -> usize {
 }
 
 // Set up which atoms in a ligand are flexible.
-pub fn setup_flexibility(mol: &Molecule) -> Vec<usize> {
+pub fn setup_flexibility(mol: &MoleculeLigand) -> Vec<usize> {
     let mut flexible_bonds = Vec::new();
 
-    for (i, bond) in mol.bonds.iter().enumerate() {
+    for (i, bond) in mol.common.bonds.iter().enumerate() {
         // Only consider single bonds.
         if bond.bond_type != BondType::Single {
             continue;
@@ -431,8 +432,8 @@ pub fn setup_flexibility(mol: &Molecule) -> Vec<usize> {
         }
 
         // Retrieve atoms at each end.
-        let atom0 = &mol.atoms[bond.atom_0];
-        let atom1 = &mol.atoms[bond.atom_1];
+        let atom0 = &mol.common.atoms[bond.atom_0];
+        let atom1 = &mol.common.atoms[bond.atom_1];
 
         // Check if both atoms are carbon.
         if atom0.element != Element::Carbon || atom1.element != Element::Carbon {
@@ -453,7 +454,7 @@ pub fn setup_flexibility(mol: &Molecule) -> Vec<usize> {
 }
 
 /// Returns the list of neighboring atom indices for a given atom.
-fn get_neighbors(atom_index: usize, mol: &Molecule) -> Vec<usize> {
+fn get_neighbors(atom_index: usize, mol: &MoleculePeptide) -> Vec<usize> {
     let mut neighbors = Vec::new();
     for bond in &mol.bonds {
         if bond.atom_0 == atom_index {
@@ -467,7 +468,7 @@ fn get_neighbors(atom_index: usize, mol: &Molecule) -> Vec<usize> {
 
 /// Checks if a bond is part of a ring.
 /// This function performs a DFS from one atom to see if the other can be reached without using the bond itself.
-fn is_bond_in_ring(bond: &Bond, mol: &Molecule) -> bool {
+fn is_bond_in_ring(bond: &Bond, mol: &MoleculePeptide) -> bool {
     let start = bond.atom_0;
     let target = bond.atom_1;
     let mut visited = vec![false; mol.atoms.len()];
@@ -501,7 +502,7 @@ fn is_bond_in_ring(bond: &Bond, mol: &Molecule) -> bool {
 
 /// Find the subet of receptor atoms near a docking site. Only perform force calculations
 /// between this set and the ligand, to keep computational complexity under control.
-fn find_rec_atoms_near_site(receptor: &Molecule, site: &DockingSite) -> (Vec<Atom>, Vec<usize>) {
+fn find_rec_atoms_near_site(receptor: &MoleculePeptide, site: &DockingSite) -> (Vec<Atom>, Vec<usize>) {
     let dist_thresh = ATOM_NEAR_SITE_DIST_THRESH * site.site_radius;
 
     let mut indices = Vec::new();

@@ -32,6 +32,10 @@ use crate::{
         EntityType, MoleculeView, draw_density_point_cloud, draw_density_surface, draw_ligand,
         draw_molecule, draw_water,
     },
+    molecule::{Ligand, MoleculePeptide},
+    render::{
+        CAM_INIT_OFFSET,  set_docking_light, set_flashlight,
+        set_static_light,
     molecule::{Ligand, Molecule},
     render::{set_docking_light, set_flashlight, set_static_light},
     ui::{
@@ -870,7 +874,7 @@ fn selection_section(
     });
 }
 
-fn mol_descrip(mol: &Molecule, ui: &mut Ui) {
+fn mol_descrip(mol: &MoleculePeptide, ui: &mut Ui) {
     ui.heading(RichText::new(mol.ident.clone()).color(Color32::GOLD));
 
     ui.label(format!("{} atoms", mol.atoms.len()));

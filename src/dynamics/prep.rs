@@ -44,7 +44,7 @@ use crate::{
         ambient::SimBox, neighbors::build_neighbors, non_bonded, non_bonded::LjTableIndices,
         water_init::make_water_mols,
     },
-    molecule::{Atom, Bond, Ligand, Molecule, Residue, ResidueEnd, build_adjacency_list},
+    molecule::{Atom, Bond, Ligand, MoleculePeptide, Residue, ResidueEnd, build_adjacency_list},
 };
 
 // Å. Static atoms must be at least this close to a dynamic atom at the start of MD to count.
@@ -656,7 +656,7 @@ pub fn populate_ff_and_q(
 pub fn build_dynamics_docking(
     dev: &ComputationDevice,
     lig: &mut Ligand,
-    mol: &Molecule,
+    mol: &MoleculePeptide,
     // setup: &DockingSetup,
     ff_params: &FfParamSet,
     temp_target: f64,
@@ -910,7 +910,7 @@ impl MdState {
 /// number of atoms.
 pub fn build_dynamics_peptide(
     dev: &ComputationDevice,
-    mol: &mut Molecule,
+    mol: &mut MoleculePeptide,
     ff_params: &FfParamSet,
     temp_target: f64,
     pressure_target: f64,
@@ -957,7 +957,7 @@ pub fn change_snapshot_docking(
 }
 
 pub fn change_snapshot_peptide(
-    mol: &mut Molecule,
+    mol: &mut MoleculePeptide,
     atoms_dy: &[AtomDynamics],
     snapshot: &SnapshotDynamics,
 ) {
