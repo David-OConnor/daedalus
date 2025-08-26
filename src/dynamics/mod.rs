@@ -107,7 +107,9 @@ use crate::{
     ComputationDevice,
     dynamics::{
         ambient::BerendsenBarostat,
-        non_bonded::{CHARGE_UNIT_SCALER, EWALD_ALPHA, LjTables, SCALE_COUL_14, SPME_N},
+        non_bonded::{
+            CHARGE_UNIT_SCALER, EWALD_ALPHA, LONG_RANGE_CUTOFF, LjTables, SCALE_COUL_14, SPME_N,
+        },
         prep::HydrogenMdType,
         water_opc::WaterMol,
     },
@@ -457,7 +459,7 @@ impl MdState {
         self.apply_all_forces(dev);
 
         let mut start = Instant::now();
-        self.handle_spme_recip();
+        self.handle_spme_recip(dev);
         if self.step_count == 0 {
             let elapsed = start.elapsed();
             println!("SPME recip time: {:?} μs", elapsed.as_micros());
@@ -510,11 +512,18 @@ impl MdState {
     }
 
     // todo: Make work on GPU.
-    fn handle_spme_recip(&mut self) {
+    fn handle_spme_recip(&mut self, dev: &ComputationDevice) {
         const K_COUL: f64 = 1.; // todo: ChatGPT really wants this, but I don't think I need it.
 
         let (pos_all, q_all, map) = self.gather_pme_particles_wrapped();
-        let mut f_recip = self.pme_recip.forces(&pos_all, &q_all);
+
+        let mut f_recip = match dev {
+            ComputationDevice::Cpu => self.pme_recip.forces(&pos_all, &q_all),
+            #[cfg(feature = "cuda")]
+            ComputationDevice::Gpu((stream, module)) => {
+                self.pme_recip.forces_gpu(stream, module, &pos_all, &q_all)
+            }
+        };
 
         // Scale to Amber force units if your PME returns raw qE:
         for f in f_recip.iter_mut() {
@@ -559,6 +568,7 @@ impl MdState {
 
             let qi = self.atoms[i].partial_charge;
             let qj = self.atoms[j].partial_charge;
+
             let df = ewald_comp_force(dir, r, qi, qj, self.pme_recip.alpha)
                     * (SCALE_COUL_14 - 1.0) // todo: Cache this.
                     * K_COUL;

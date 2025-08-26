@@ -1,10 +1,13 @@
 //! This module contains code for maintaining non-bonded neighbor lists.
 //! This is an optimization to determine which atoms we count in Lennard Jones (Van der Waals)
 //!, and short-term Ewald Coulomb interactions.
+//!
+//! Note: GPU is probably not a good fit for rebuilding neighbor lists.
 
 use std::time::Instant;
 
 use lin_alg::f64::Vec3;
+use rayon::prelude::*;
 
 use crate::dynamics::{
     AtomDynamics, MdState, ambient::SimBox, non_bonded::LONG_RANGE_CUTOFF, water_opc::WaterMol,
@@ -57,9 +60,6 @@ impl MdState {
     pub fn build_neighbors_if_needed(&mut self) {
         let start = Instant::now();
 
-        let n_dyn = self.atoms.len();
-        let n_w = self.water.len();
-
         // Current positions
         let dyn_pos_now = positions_of(&self.atoms);
         let water_o_pos_now = positions_of_water_o(&self.water);
@@ -80,30 +80,21 @@ impl MdState {
         let mut rebuilt_wat = false;
 
         if dyn_disp_sq > SKIN_SQ_DIV_4 {
-            let mut water_atoms = Vec::with_capacity(self.water.len());
-            // todo: Fix this clone.
-            for mol in &self.water {
-                water_atoms.push(mol.o.clone());
-            }
-
-            build_neighbors(
-                &mut self.neighbors_nb.dy_dy,
+            self.neighbors_nb.dy_dy = build_neighbors(
                 &self.neighbors_nb.ref_pos_dyn,
                 &self.neighbors_nb.ref_pos_dyn,
                 &self.cell,
                 true,
             );
 
-            build_neighbors(
-                &mut self.neighbors_nb.dy_static,
+            self.neighbors_nb.dy_static = build_neighbors(
                 &self.neighbors_nb.ref_pos_dyn,
                 &self.neighbors_nb.ref_pos_static,
                 &self.cell,
                 false,
             );
 
-            build_neighbors(
-                &mut self.neighbors_nb.dy_water,
+            self.neighbors_nb.dy_water = build_neighbors(
                 &self.neighbors_nb.ref_pos_dyn,
                 &self.neighbors_nb.ref_pos_water_o,
                 &self.cell,
@@ -115,16 +106,14 @@ impl MdState {
         }
 
         if wat_disp_sq > SKIN_SQ_DIV_4 {
-            build_neighbors(
-                &mut self.neighbors_nb.water_static,
+            self.neighbors_nb.water_static = build_neighbors(
                 &self.neighbors_nb.ref_pos_water_o,
                 &self.neighbors_nb.ref_pos_static,
                 &self.cell,
                 false,
             );
 
-            build_neighbors(
-                &mut self.neighbors_nb.water_water,
+            self.neighbors_nb.water_water = build_neighbors(
                 &self.neighbors_nb.ref_pos_water_o,
                 &self.neighbors_nb.ref_pos_water_o,
                 &self.cell,
@@ -133,8 +122,7 @@ impl MdState {
 
             if !rebuilt_dyn {
                 // Don't double-run this, but it's required for both paths.
-                build_neighbors(
-                    &mut self.neighbors_nb.dy_water,
+                self.neighbors_nb.dy_water = build_neighbors(
                     &self.neighbors_nb.ref_pos_dyn,
                     &self.neighbors_nb.ref_pos_water_o,
                     &self.cell,
@@ -160,9 +148,15 @@ impl MdState {
             }
         }
 
+        static mut PRINTED: bool = false;
         if rebuilt_dyn || rebuilt_wat {
             let elapsed = start.elapsed();
-            // println!("Neighbor build time: {:?} μs", elapsed.as_micros());
+            if !unsafe { PRINTED } {
+                println!("Neighbor build time: {:?} μs", elapsed.as_micros());
+                unsafe {
+                    PRINTED = true;
+                }
+            }
         } else {
             // println!("No rebuild needed.");
         }
@@ -188,47 +182,60 @@ impl MdState {
 }
 
 /// [Re]build a neighbor list, used for non-bonded interactions. Run this periodically.
-/// todo: Run on GPU?
 pub fn build_neighbors(
-    neighbors: &mut Vec<Vec<usize>>,
-    // todo: Consider accepting target and source posits to avoid cloning water atoms.
     tgt_posits: &[Vec3],
     src_posits: &[Vec3],
     cell: &SimBox,
     symmetric: bool,
-) {
+) -> Vec<Vec<usize>> {
     const CUTOFF_SKIN_SQ: f64 = (LONG_RANGE_CUTOFF + SKIN) * (LONG_RANGE_CUTOFF + SKIN);
-
-    neighbors.clear();
-    neighbors.resize(tgt_posits.len(), Vec::new());
 
     let tgt_len = tgt_posits.len();
     let src_len = src_posits.len();
 
-    let mut inner = |i_src: usize, i_tgt: usize| {
-        let diff_min_img = cell.min_image(tgt_posits[i_tgt] - src_posits[i_src]);
-        if diff_min_img.magnitude_squared() < CUTOFF_SKIN_SQ {
-            neighbors[i_tgt].push(i_src);
-
-            if symmetric {
-                neighbors[i_src].push(i_tgt);
-            }
-        }
-    };
-
     if symmetric {
-        assert_eq!(src_len, tgt_len);
-        for i_tgt in 0..tgt_len {
-            for i_src in i_tgt + 1..src_len {
-                inner(i_src, i_tgt);
+        assert_eq!(src_len, tgt_len, "symmetric=true requires identical sets");
+        let n = tgt_len;
+
+        let half: Vec<Vec<usize>> = (0..n)
+            .into_par_iter()
+            .map(|i| {
+                let mut out = Vec::new();
+                let pi = tgt_posits[i];
+                for j in (i + 1)..n {
+                    let d = cell.min_image(pi - src_posits[j]);
+                    if d.magnitude_squared() < CUTOFF_SKIN_SQ {
+                        out.push(j);
+                    }
+                }
+                out
+            })
+            .collect();
+
+        let mut full = vec![Vec::<usize>::new(); n];
+        for i in 0..n {
+            full[i].reserve(half[i].len());
+            for &j in &half[i] {
+                full[i].push(j);
+                full[j].push(i);
             }
         }
+        full
     } else {
-        for i_tgt in 0..tgt_len {
-            for i_src in 0..src_len {
-                inner(i_src, i_tgt);
-            }
-        }
+        (0..tgt_len)
+            .into_par_iter()
+            .map(|i_tgt| {
+                let mut out = Vec::with_capacity(src_len);
+                let pt = tgt_posits[i_tgt];
+                for i_src in 0..src_len {
+                    let d = cell.min_image(pt - src_posits[i_src]);
+                    if d.magnitude_squared() < CUTOFF_SKIN_SQ {
+                        out.push(i_src);
+                    }
+                }
+                out
+            })
+            .collect()
     }
 }
 

@@ -343,7 +343,6 @@ void make_densities_kernel(
 
         float nearest_dist_sq = 9999999.f;
         for (size_t j = 0; j < N_atom_posits; j++) {
-
             const float dx = atom_posits[j].x - coords.x;
             const float dy = atom_posits[j].y - coords.y;
             const float dz = atom_posits[j].z - coords.z;

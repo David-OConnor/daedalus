@@ -18,7 +18,7 @@ na_seq = "0.3.1"
 bio_apis = {  version = "0.1.6", features = ["encode"] }
 bio_files = "0.2.8"
 mcubes = "0.1.4"
-ewald = "0.1.1"
+ewald = { version = "0.1.1", features = ["cuda"] }
 
 # For loading and saving config
 bincode = "2.0.1"
@@ -30,7 +30,13 @@ rayon = "1.10.0"  # Parallel execution on CPU using thread pools.
 
 # Static linking results in an error when compiling. Dyanmic loading seems to require the PC that runs it
 # to have CUDA installed. So, we use dynamic-linking.
+
+# It appears, to work on systems without nvidia drivers, we need dynamic-linking on Linux, and dynamic-loading
+# on Windows. # todo: Still not able to get running on a Linux machine that doesn't have CUDA
+[target.'cfg(not(target_os = "windows"))'.dependencies]
 cudarc = { version = "0.17.2", default-features = false, features = ["std", "driver", "dynamic-linking", "cuda-13000"], optional=true }
+[target.'cfg(target_os = "windows")'.dependencies]
+cudarc = { version = "0.17.2", default-features = false, features = ["std", "driver", "dynamic-loading", "cuda-13000"], optional=true }
 
 rand = "0.9.2"
 rand_distr  = "0.5.1"
@@ -48,8 +54,8 @@ itertools = "0.14.0" # For combinations when matching angles in MD.
 #bio_apis = { path = "../bio_apis" }
 #mcubes = { path = "../mcubes" }
 bio_files = { path = "../bio_files" }
-#ewald = { path = "../ewald" }
-#cuda_setup = { path = "../../cuda_setup" }
+ewald = { path = "../ewald" }
+cuda_setup = { path = "../../cuda_setup" }
 
 
 

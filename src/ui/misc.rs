@@ -25,7 +25,6 @@ use crate::{
         draw_water,
     },
     molecule::{Atom, Ligand, Molecule, PeptideAtomPosits, Residue, aa_color},
-    render::set_docking_light,
     ui::{
         COL_SPACING, COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_INACTIVE, ROW_SPACING,
         cam::move_cam_to_lig, int_field, int_field_u16, mol_descrip,
@@ -317,59 +316,61 @@ pub fn md_setup(
 
             ui.add_space(COL_SPACING / 2.);
 
-            let run_clicked = ui
-                .button(RichText::new("Run MD docking").color(Color32::GOLD))
-                .on_hover_text("Run a molecular dynamics simulation on the ligand. The peptide atoms apply\
+            if state.ligand.is_some() {
+                let run_clicked = ui
+                    .button(RichText::new("Run MD docking").color(Color32::GOLD))
+                    .on_hover_text("Run a molecular dynamics simulation on the ligand. The peptide atoms apply\
             Coulomb and Van der Waals forces, but do not move themselves. This is intended to be run\
             with the ligand positioned near a receptor site.")
-                .clicked();
+                    .clicked();
 
-            let mut ready_to_run = true;
+                let mut ready_to_run = true;
 
-            if run_clicked {
-                let Some(lig) = state.ligand.as_mut() else {
-                    return;
-                };
+                if run_clicked {
+                    let Some(lig) = state.ligand.as_mut() else {
+                        return;
+                    };
 
-                if !lig.ff_params_loaded || !lig.frcmod_loaded {
-                    state.ui.popup.show_get_geostd = true;
-                    ready_to_run = false;
-                }
+                    if !lig.ff_params_loaded || !lig.frcmod_loaded {
+                        state.ui.popup.show_get_geostd = true;
+                        ready_to_run = false;
+                    }
 
-                if ready_to_run {
-                    let mol = state.molecule.as_mut().unwrap();
+                    if ready_to_run {
+                        let mol = state.molecule.as_mut().unwrap();
 
-                    // todo: Set a loading indicator, and trigger the build next GUI frame.
-                    move_cam_to_lig(&mut state.ui, scene, lig, mol.center, engine_updates);
+                        // todo: Set a loading indicator, and trigger the build next GUI frame.
+                        move_cam_to_lig(&mut state.ui, scene, lig, mol.center, engine_updates);
 
-                    match build_dynamics_docking(
-                        &state.dev,
-                        lig,
-                        mol,
-                        // state.volatile.docking_setup.as_ref().unwrap(),
-                        &state.ff_params,
-                        state.to_save.md_temperature as f64,
-                        state.to_save.md_pressure as f64 / 100., // Convert kPa to bar.
-                        state.to_save.num_md_steps,
-                        state.to_save.md_dt,
-                    ) {
-                        Ok(md) => {
-                            let snap = &md.snapshots[0];
+                        match build_dynamics_docking(
+                            &state.dev,
+                            lig,
+                            mol,
+                            // state.volatile.docking_setup.as_ref().unwrap(),
+                            &state.ff_params,
+                            state.to_save.md_temperature as f64,
+                            state.to_save.md_pressure as f64 / 100., // Convert kPa to bar.
+                            state.to_save.num_md_steps,
+                            state.to_save.md_dt,
+                        ) {
+                            Ok(md) => {
+                                let snap = &md.snapshots[0];
 
-                            draw_molecule(state, scene);
-                            draw_water(
-                                scene,
-                                &snap.water_o_posits,
-                                &snap.water_h0_posits,
-                                &snap.water_h1_posits,
-                                state.ui.visibility.hide_water
-                            );
+                                draw_molecule(state, scene);
+                                draw_water(
+                                    scene,
+                                    &snap.water_o_posits,
+                                    &snap.water_h0_posits,
+                                    &snap.water_h1_posits,
+                                    state.ui.visibility.hide_water
+                                );
 
-                            state.ui.current_snapshot = 0;
-                            engine_updates.entities = true;
-                            state.mol_dynamics = Some(md);
+                                state.ui.current_snapshot = 0;
+                                engine_updates.entities = true;
+                                state.mol_dynamics = Some(md);
+                            }
+                            Err(e) => handle_err(&mut state.ui, e.descrip),
                         }
-                        Err(e) => handle_err(&mut state.ui, e.descrip),
                     }
                 }
             }
@@ -435,6 +436,7 @@ pub fn lig_section(
     ui: &mut Ui,
     redraw_lig: &mut bool,
     close_lig: &mut bool,
+    engine_updates: &mut EngineUpdates,
 ) {
     if let Some(lig) = &mut state.ligand {
         ui.horizontal(|ui| {
@@ -644,5 +646,11 @@ pub fn lig_section(
             format!("Loaded {} from Amber Geostd", data.ident),
         );
         state.load_geostd_mol_data(&data.ident, true, data.frcmod_avail, redraw_lig);
+
+        if let Some(lig) = &mut state.ligand {
+            if let Some(mol) = &state.molecule {
+                move_cam_to_lig(&mut state.ui, scene, lig, mol.center, engine_updates);
+            }
+        }
     }
 }

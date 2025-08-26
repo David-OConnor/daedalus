@@ -46,7 +46,7 @@ Launch the program. Either open a molecule using the "Open" or "Open Lig" button
 enter a protein identifier in the *Query databases* field, or click *I'm feeling lucky*, to load a recently-uploaded protein
 from the [RCSB PDB](https://www.rcsb.org/).
 
-Many UI items provide tooltip descriptions, when you hover the mouse.
+**Most UI items provide tooltip descriptions, when you hover the mouse over them.**
 
 
 ## Goals
@@ -256,3 +256,8 @@ on RCSB, vice created from 2fo-fc) may crash the program.
 - Opening electron density files in general can be slow. This can lead to the program starting slowly if it was
 last shut down with electron density data open.
 - The GUI doesn't handle proteins with many chains well.
+- Electron density isosurfaces are currently broken
+- GPU on Linux is finicky at the moment. You might get an error on launch if not on an nvidia GPU with drivers installed,
+instead of falling back to the CPU. The latest linux drivers available on Ubuntu's official tool don't support CUDA 13, 
+which is currently required. We provide CUDA and non-CUDA linux downloads until this is resolved.
+- On some displays, dragging the MD time slider may also move the camera. To workaround, click the slider instead of dragging.

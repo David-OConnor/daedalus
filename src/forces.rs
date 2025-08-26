@@ -275,9 +275,7 @@ pub fn force_nonbonded_gpu(
     // todo: Likely load these functions (kernels) at init and pass as a param.
     // todo: Seems to take only 4 μs (per time step), so should be fine here.
     let kernel = module.load_function("nonbonded_force_kernel").unwrap();
-
     let cfg = LaunchConfig::for_num_elems(n as u32);
-
     let mut launch_args = stream.launch_builder(&kernel);
 
     launch_args.arg(&mut forces_on_dyn);
