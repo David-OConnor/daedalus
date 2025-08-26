@@ -415,6 +415,18 @@ pub fn md_setup(
 
             ui.add_space(COL_SPACING);
             ui.label(format!("Runtime: {:.1} ps", state.volatile.md_runtime));
+
+            if let Some(md) = &state.mol_dynamics {
+                let snap = &md.snapshots[state.ui.current_snapshot];
+
+                ui.add_space(COL_SPACING);
+                ui.label("E (kcal/mol). Kinetic: ");
+                ui.label(RichText::new(format!("{:.2}", snap.energy_kinetic)).color(Color32::GOLD));
+
+                ui.label("Potential: ");
+                ui.label(RichText::new(format!("{:.2}", snap.energy_potential)).color(Color32::GOLD));
+            }
+
         });
     });
 
