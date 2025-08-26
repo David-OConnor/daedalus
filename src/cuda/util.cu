@@ -107,6 +107,33 @@ float lj_V(
     return 4.0f * eps * (sr12 - sr6);
 }
 
+// This assumes diff (and dir) is in order tgt - src.
+// Different API.
+__device__
+float3 lj_force_v2(
+    float3 diff,
+    float r,
+    float inv_r,
+    // todo: You can remove inv_r_sq if you keep it div r.
+    float inv_r_sq,
+    float3 dir,
+    float sigma,
+    float eps
+) {
+    // todo: You can get a more efficient version possibly.
+
+
+    const float sr = sigma * inv_r;
+    const float sr6 = powf(sr, 6.);
+    const float sr12 = sr6 * sr6;
+
+    // todo: ChatGPT is convinced I divide by r here, not r^2...
+//     const float mag = -24.0f * eps * (2. * sr12 - sr6) * inv_r_sq;
+    const float mag = 24.0f * eps * (2. * sr12 - sr6) * inv_r;
+    return dir * mag;
+}
+
+// This assumes diff (and dir) is in order tgt - src.
 __device__
 float3 lj_force(
     float3 posit_tgt,
@@ -114,40 +141,23 @@ float3 lj_force(
     float sigma,
     float eps
 ) {
-    const float3 diff = posit_src - posit_tgt;
+    const float3 diff = posit_tgt - posit_src;
     const float r_sq = diff.x * diff.x + diff.y * diff.y + diff.z * diff.z;
     const float r = std::sqrt(r_sq);
     const float inv_r = 1.0f / r;
 
+    // todo: You can remove inv_r_sq if you keep it div r.
+    const float inv_r_sq = inv_r * inv_r;
+
     const float3 dir = diff * inv_r;
 
-    const float sr = sigma * inv_r;
-    const float sr6 = powf(sr, 6.);
-    const float sr12 = sr6 * sr6;
-
-    // todo: ChatGPT is convinced I divide by r here, not r^2...
-    const float mag = -24.0f * eps * (2. * sr12 - sr6) / r_sq;
-
-    return dir * mag;
-}
-
-// Different API.
-__device__
-float3 lj_force_v2(
-    float3 diff,
-    float r,
-    float inv_r,
-    float inv_r_sq,
-    float3 dir,
-    float sigma,
-    float eps
-) {
-    const float sr = sigma * inv_r;
-    const float sr6 = powf(sr, 6.);
-    const float sr12 = sr6 * sr6;
-
-    // todo: ChatGPT is convinced I divide by r here, not r^2...
-//     const float mag = -24.0f * eps * (2. * sr12 - sr6) * inv_r_sq;
-    const float mag = -24.0f * eps * (2. * sr12 - sr6) * inv_r;
-    return dir * mag;
+    return lj_force_v2(
+        diff,
+        r,
+        inv_r,
+        inv_r_sq,
+        dir,
+        sigma,
+        eps
+    );
 }

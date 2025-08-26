@@ -9,6 +9,7 @@
 
 use std::f64::consts::TAU;
 
+use bio_files::BondType;
 use na_seq::{
     Element,
     Element::{Carbon, Fluorine, Hydrogen, Nitrogen, Oxygen, Sulfur},
@@ -16,12 +17,7 @@ use na_seq::{
 use rayon::prelude::*;
 
 use crate::{
-    molecule::{
-        Atom, Bond,
-        BondCount::*,
-        BondType::{self, *},
-        HydrogenBond,
-    },
+    molecule::{Atom, Bond, HydrogenBond},
     util::{find_atom, setup_neighbor_pairs},
 };
 
@@ -65,10 +61,11 @@ const H_BOND_ANGLE_THRESH: f64 = TAU / 3.;
 #[rustfmt::skip]
 fn get_specs() -> Vec<BondSpecs> {
     // Code shorteners
-    let single = Covalent { count: Single };
-    let hybrid = Covalent { count: SingleDoubleHybrid };
-    let double = Covalent { count: Double };
-    let triple = Covalent { count: Triple };
+    let single = BondType::Single;
+    let amide = BondType::Aromatic;
+    let double = BondType::Double;
+    let triple = BondType::Triple;
+    // todo: Can we identify other bond types, mainly Amide?
 
     vec![
         // --------------------
@@ -83,19 +80,19 @@ fn get_specs() -> Vec<BondSpecs> {
         BondSpecs::new(1.51, (Carbon, Carbon), single),
 
         // C–C sp²–sp³ single bond, e.g. connecting Phe's ring to the rest of the atom.
-        BondSpecs::new(1.50, (Carbon, Carbon), hybrid),
+        BondSpecs::new(1.50, (Carbon, Carbon), amide),
 
         // Workaround for Phe's ring in some cases.
-        BondSpecs::new(1.47, (Carbon, Carbon), hybrid),
-        BondSpecs::new(1.44, (Carbon, Carbon), hybrid),
-        BondSpecs::new(1.41, (Carbon, Carbon), hybrid),
+        BondSpecs::new(1.47, (Carbon, Carbon), amide),
+        BondSpecs::new(1.44, (Carbon, Carbon), amide),
+        BondSpecs::new(1.41, (Carbon, Carbon), amide),
 
         // C-C phenyl (aromatic) ring bond, or benzene ring.
         // Found in alkynes, where carbons are sp-hybridized (linear). ~1.37-1.40 Å
-        BondSpecs::new(1.39, (Carbon, Carbon), hybrid),
+        BondSpecs::new(1.39, (Carbon, Carbon), amide),
 
         // C-C Seems to be required for one fo the Trp rings?
-        BondSpecs::new(1.36, (Carbon, Carbon), hybrid),
+        BondSpecs::new(1.36, (Carbon, Carbon), amide),
 
         // C=C double bond
         // Common in alkenes (sp²-hybridized). Range: ~1.33–1.34 Å

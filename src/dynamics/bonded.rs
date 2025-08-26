@@ -17,11 +17,13 @@ impl MdState {
         for (indices, params) in &self.force_field_params.bond_stretching {
             let (a_0, a_1) = split2_mut(&mut self.atoms, indices.0, indices.1);
 
-            let f = bonded_forces::f_bond_stretching(a_0.posit, a_1.posit, params);
+            let (f, energy) = bonded_forces::f_bond_stretching(a_0.posit, a_1.posit, params);
 
             // We divide by mass in `step`.
             a_0.accel += f;
             a_1.accel -= f;
+
+            self.potential_energy += energy;
         }
     }
 
@@ -37,13 +39,15 @@ impl MdState {
         for (indices, params) in &self.force_field_params.angle {
             let (a_0, a_1, a_2) = split3_mut(&mut self.atoms, indices.0, indices.1, indices.2);
 
-            let (f_0, f_1, f_2) =
+            let ((f_0, f_1, f_2), energy) =
                 bonded_forces::f_angle_bending(a_0.posit, a_1.posit, a_2.posit, params);
 
             // We divide by mass in `step`.
             a_0.accel += f_0;
             a_1.accel += f_1;
             a_2.accel += f_2;
+
+            self.potential_energy += energy;
         }
     }
 
@@ -65,7 +69,7 @@ impl MdState {
             let (a_0, a_1, a_2, a_3) =
                 split4_mut(&mut self.atoms, indices.0, indices.1, indices.2, indices.3);
 
-            let (f_0, f_1, f_2, f3) = bonded_forces::f_dihedral(
+            let ((f_0, f_1, f_2, f3), energy) = bonded_forces::f_dihedral(
                 a_0.posit, a_1.posit, a_2.posit, a_3.posit, params, improper,
             );
 
@@ -74,6 +78,8 @@ impl MdState {
             a_1.accel += f_1;
             a_2.accel += f_2;
             a_3.accel += f3;
+
+            self.potential_energy += energy;
         }
     }
 

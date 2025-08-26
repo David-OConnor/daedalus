@@ -15,18 +15,18 @@ use crate::{
     inputs::{RUN_FACTOR, SCROLL_MOVE_AMT, SCROLL_ROTATE_AMT},
     mol_drawing,
     mol_drawing::BOND_RADIUS,
-    ui::ui_handler,
+    ui::{
+        cam::{FOG_DIST_DEFAULT, RENDER_DIST_FAR, RENDER_DIST_NEAR, calc_fog_dists},
+        ui_handler,
+    },
 };
 
 pub type Color = (f32, f32, f32);
 
 const WINDOW_TITLE: &str = "Daedalus";
 const WINDOW_SIZE_X: f32 = 1_600.;
-const WINDOW_SIZE_Y: f32 = 1_000.;
+const WINDOW_SIZE_Y: f32 = 1_200.;
 pub const BACKGROUND_COLOR: Color = (0., 0., 0.);
-
-pub const RENDER_DIST_NEAR: f32 = 0.2;
-pub const RENDER_DIST_FAR: f32 = 1_000.;
 
 // todo: Shinyness broken?
 pub const ATOM_SHININESS: f32 = 0.9;
@@ -115,6 +115,25 @@ pub fn render(mut state: State) {
     let white = [1., 1., 1., 0.5];
     let pink = [1., 0., 1., 1.];
 
+    let (fog_start, fog_end) = calc_fog_dists(FOG_DIST_DEFAULT);
+
+    let camera = Camera {
+        fov_y: TAU / 8.,
+        position: Vec3::new(0., 0., -60.),
+        far: RENDER_DIST_FAR,
+        near: RENDER_DIST_NEAR,
+        // orientation: Quaternion::from_axis_angle(Vec3::new(1., 0., 0.), TAU / 16.),
+        orientation: Quaternion::from_axis_angle(RIGHT_VEC, 0.),
+        // This affects how aggressive the fog is in fading objects to the background.
+        // A lower value will leave objects dim, but visible.
+        fog_density: 4.,
+        fog_power: 6.,
+        fog_start,
+        fog_end,
+        fog_color: [BACKGROUND_COLOR.0, BACKGROUND_COLOR.1, BACKGROUND_COLOR.2],
+        ..Default::default()
+    };
+
     let mut scene = Scene {
         meshes: vec![
             Mesh::new_sphere(1., 3),
@@ -130,15 +149,7 @@ pub fn render(mut state: State) {
         ],
         entities: Vec::new(),
         gaussians: Vec::new(),
-        camera: Camera {
-            fov_y: TAU / 8.,
-            position: Vec3::new(0., 0., -60.),
-            far: RENDER_DIST_FAR,
-            near: RENDER_DIST_NEAR,
-            // orientation: Quaternion::from_axis_angle(Vec3::new(1., 0., 0.), TAU / 16.),
-            orientation: Quaternion::from_axis_angle(RIGHT_VEC, 0.),
-            ..Default::default()
-        },
+        camera,
         // Lighting is set when drawing mwolecules; placeholder here.
         lighting: Lighting {
             ambient_color: white,
@@ -171,7 +182,6 @@ pub fn render(mut state: State) {
             ],
         },
         input_settings: InputSettings {
-            // control_scheme: ControlScheme::FreeCamera,
             control_scheme: state.to_save.control_scheme,
             move_sens: state.to_save.movement_speed as f32,
             rotate_sens: (state.to_save.rotation_sens as f32) / 100.,

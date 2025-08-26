@@ -43,27 +43,19 @@ mod cli;
 mod dynamics;
 mod reflection;
 
-mod ui_aux;
-
 #[cfg(test)]
 mod tests;
 mod nucleic_acid;
 
-use std::{
-    collections::HashMap,
-    env, fmt, io,
-    io::ErrorKind,
-    path::{Path, PathBuf},
-    str::FromStr,
-    sync::{Arc, mpsc::Receiver},
-};
+#[cfg(feature = "cuda")]
+use std::sync::Arc;
+use std::{collections::HashMap, env, fmt, fmt::Display, path::PathBuf, sync::mpsc::Receiver};
 
 use barnes_hut::BhConfig;
 use bincode::{Decode, Encode};
 use bio_apis::{
     ReqError,
     amber_geostd::GeostdItem,
-    rcsb,
     rcsb::{FilesAvailable, PdbDataResults},
 };
 use bio_files::amber_params::{ChargeParams, ForceFieldParamsKeyed};
@@ -81,7 +73,7 @@ use lin_alg::{
 use mol_drawing::MoleculeView;
 use molecule::MoleculePeptide;
 use na_seq::{
-    AminoAcid, AminoAcidGeneral,
+    AminoAcidGeneral,
     element::{LjTable, init_lj_lut},
 };
 
@@ -92,9 +84,10 @@ use crate::{
     molecule::{Ligand, PeptideAtomPosits},
     prefs::ToSave,
     render::render,
-    ui::{VIEW_DEPTH_FAR_MAX, VIEW_DEPTH_NEAR_MIN},
     util::handle_err,
 };
+// ------Including files into the executable
+
 // Include general Amber forcefield params with our program. See the Reference Manual, section ]
 // 3.1.1 for details on which we include. (The recommended ones for Proteins, and ligands).
 
@@ -108,7 +101,17 @@ const AMINO_CT12: &str = include_str!("../resources/aminoct12.lib"); // Charge; 
 // Ligands/small organic molecules: *General Amber Force Fields*.
 const GAFF2: &str = include_str!("../resources/gaff2.dat");
 
+// Include the compiled CUDA ptx in the binary.
+// const KERN_PTX: &str = include_str!(concat!(env!("OUT_DIR"), "/my_kernel.ptx"));
+
+// Note: If you haven't generated this file yet when compiling (e.g. from a freshly-cloned repo),
+// make an edit to one of the CUDA files (e.g. add a newline), then run, to create this file.
+#[cfg(feature = "cuda")]
+const PTX: &str = include_str!("../daedalus.ptx");
+
 // Note: Water parameters are concise; we store them directly.
+
+// ------ End file includes.
 
 // todo: Eventually, implement a system that automatically checks for changes, and don't
 // todo save to disk if there are no changes.
@@ -131,7 +134,7 @@ pub enum ViewSelLevel {
     Residue,
 }
 
-impl fmt::Display for ViewSelLevel {
+impl Display for ViewSelLevel {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Atom => write!(f, "Atom"),
@@ -196,7 +199,7 @@ struct SceneFlags {
     pub update_sas_mesh: bool,
     pub ss_mesh_created: bool,
     pub sas_mesh_created: bool,
-    pub make_density_mesh: bool,
+    pub make_density_iso_mesh: bool,
     pub clear_density_drawing: bool,
     pub new_density_loaded: bool,
     pub new_mol_loaded: bool,
@@ -266,7 +269,7 @@ struct Visibility {
     hide_hydrogen: bool,
     hide_h_bonds: bool,
     dim_peptide: bool,
-    hide_density: bool,
+    hide_density_point_cloud: bool,
     hide_density_surface: bool,
     // todo: Seq here, or not?
 }
@@ -282,7 +285,7 @@ impl Default for Visibility {
             hide_hydrogen: true,
             hide_h_bonds: false,
             dim_peptide: false,
-            hide_density: false,
+            hide_density_point_cloud: false,
             hide_density_surface: false,
         }
     }
@@ -500,17 +503,19 @@ impl State {
 fn main() {
     #[cfg(feature = "cuda")]
     let dev = {
-        let runtime_v = cudarc::runtime::result::version::get_runtime_version();
-        let driver_v = cudarc::runtime::result::version::get_driver_version();
-        println!("CUDA runtime: {runtime_v:?}. Driver: {driver_v:?}");
+        // We're compiling without the cuda runtime requirement for now.
 
-        if runtime_v.is_ok() && driver_v.is_ok() {
+        // let runtime_v = cudarc::runtime::result::version::get_runtime_version();
+        // let driver_v = cudarc::runtime::result::version::get_driver_version();
+        // println!("CUDA runtime: {runtime_v:?}. Driver: {driver_v:?}");
+
+        if cudarc::driver::result::init().is_ok() {
+            // if runtime_v.is_ok() && driver_v.is_ok() {
             // This is compiled in `build_`.
             let ctx = CudaContext::new(0).unwrap();
             let stream = ctx.default_stream();
 
-            let ptx_file = "./cuda.ptx";
-            let module = ctx.load_module(Ptx::from_file(ptx_file));
+            let module = ctx.load_module(Ptx::from_src(PTX));
 
             match module {
                 Ok(m) => {
@@ -522,7 +527,7 @@ fn main() {
                     ComputationDevice::Gpu((stream, m))
                 }
                 Err(e) => {
-                    eprintln!("Error loading CUDA module: {ptx_file}; not using CUDA. Error: {e}");
+                    eprintln!("Error loading CUDA module: {PTX}; not using CUDA. Error: {e}");
                     ComputationDevice::Cpu
                 }
             }
@@ -534,12 +539,7 @@ fn main() {
     #[cfg(not(feature = "cuda"))]
     let dev = ComputationDevice::Cpu;
 
-    let dev = ComputationDevice::Cpu; // todo temp.
-
-    // Time comparison, from 2025-08-20. (100 steps). Not as impressive as I'd hoped.
-    // 9950x CPU. 4080 GPU. CPU used thread pools, but not SIMD. Long range ewald and neighbors built on CPU.
-    // CPU, f64: Non-bonded time: 57907 μs. MD complete in 8 s
-    // GPU, f32: Non-bonded time: 29677 μs. MD complete in 3 s
+    // let dev = ComputationDevice::Cpu; // todo temp.
 
     #[cfg(target_arch = "x86_64")]
     {
@@ -565,7 +565,6 @@ fn main() {
             ..Default::default()
         },
         ui: StateUi {
-            view_depth: (VIEW_DEPTH_NEAR_MIN, VIEW_DEPTH_FAR_MAX),
             nearby_dist_thresh: 15,
             density_iso_level: 1.8,
             ..Default::default()

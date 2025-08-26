@@ -19,15 +19,24 @@ use crate::{
     docking::{ConformationType, prep::DockingSetup},
     download_mols::load_cif_rcsb,
     dynamics::prep::populate_ff_and_q,
+<<<<<<< HEAD
     mol_drawing::{EntityType, MoleculeView, draw_density, draw_density_surface, draw_molecule},
     molecule::{Atom, AtomRole, Bond, Chain, Ligand, MoleculePeptide, Residue},
+=======
+    mol_drawing::{
+        EntityType, MoleculeView, draw_density_point_cloud, draw_density_surface, draw_molecule,
+    },
+    molecule::{Atom, AtomRole, Bond, Chain, Ligand, Molecule, Residue},
+>>>>>>> 20e19517f0173bd591a240f5e0c4a928e4a43f00
     render::{
         CAM_INIT_OFFSET, Color, MESH_DENSITY_SURFACE, MESH_SECONDARY_STRUCTURE,
-        MESH_SOLVENT_SURFACE, RENDER_DIST_FAR, RENDER_DIST_NEAR, set_flashlight, set_static_light,
+        MESH_SOLVENT_SURFACE, set_flashlight, set_static_light,
     },
     ribbon_mesh::build_cartoon_mesh,
     sa_surface::make_sas_mesh,
-    ui::{VIEW_DEPTH_FAR_MAX, VIEW_DEPTH_NEAR_MIN},
+    ui::cam::{
+        FOG_DIST_DEFAULT, RENDER_DIST_FAR, RENDER_DIST_NEAR, VIEW_DEPTH_NEAR_MIN, calc_fog_dists,
+    },
 };
 
 const MOVE_TO_TARGET_DIST: f32 = 15.;
@@ -342,6 +351,19 @@ pub fn cycle_selected(state: &mut State, scene: &mut Scene, reverse: bool) {
                         }
                         break;
                     }
+                }
+            }
+            Selection::AtomLigand(atom_i) => {
+                let Some(lig) = &state.ligand else { return };
+
+                // todo: DRY with the above for peptide atoms.
+                let mut new_atom_i = atom_i as isize;
+
+                while new_atom_i < (lig.molecule.atoms.len() as isize) - 1 && new_atom_i >= 0 {
+                    new_atom_i += dir;
+                    let nri = new_atom_i as usize;
+                    state.ui.selection = Selection::AtomLigand(nri);
+                    break;
                 }
             }
             _ => {
@@ -695,6 +717,12 @@ pub fn reset_camera(
 
     scene.camera.near = RENDER_DIST_NEAR;
     scene.camera.far = RENDER_DIST_FAR;
+
+    let (start, end) = calc_fog_dists(FOG_DIST_DEFAULT);
+
+    scene.camera.fog_start = start;
+    scene.camera.fog_end = end;
+
     scene.camera.update_proj_mat();
 
     set_static_light(scene, center, mol.size);
@@ -703,7 +731,7 @@ pub fn reset_camera(
     engine_updates.camera = true;
     engine_updates.lighting = true;
 
-    *view_depth = (VIEW_DEPTH_NEAR_MIN, VIEW_DEPTH_FAR_MAX);
+    *view_depth = (VIEW_DEPTH_NEAR_MIN, FOG_DIST_DEFAULT);
 }
 
 /// Utility function that prints to stderr, and the CLI output. Sets the out flag.
@@ -726,7 +754,7 @@ pub fn close_mol(state: &mut State, scene: &mut Scene, engine_updates: &mut Engi
 
     scene.entities.retain(|ent| {
         ent.class != EntityType::Protein as u32
-            && ent.class != EntityType::Density as u32
+            && ent.class != EntityType::DensityPoint as u32
             && ent.class != EntityType::DensitySurface as u32
             && ent.class != EntityType::SecondaryStructure as u32
             && ent.class != EntityType::SaSurface as u32
@@ -753,61 +781,64 @@ pub fn close_lig(state: &mut State, scene: &mut Scene, engine_updates: &mut Engi
     state.update_save_prefs(false);
 }
 
-/// Populdate the electron-density mesh (isosurface). This assumes the density_rect is already set up.
+/// Populate the electron-density mesh (isosurface). This assumes the density_rect is already set up.
 pub fn make_density_mesh(state: &mut State, scene: &mut Scene, engine_updates: &mut EngineUpdates) {
-    if let Some(mol) = &state.molecule {
-        // todo: Adapt this to your new approach, if it works.
-        if let Some(rect) = &mol.density_rect {
-            let dims = (rect.dims[0], rect.dims[1], rect.dims[2]); // (nx,ny,nz)
+    let Some(mol) = &state.molecule else {
+        return;
+    };
+    let Some(rect) = &mol.density_rect else {
+        return;
+    };
+    let Some(density) = &mol.elec_density else {
+        return;
+    };
 
-            let size = (
-                (rect.step[0] * rect.dims[0] as f64) as f32, // Δx * nx  (Å)
-                (rect.step[1] * rect.dims[1] as f64) as f32,
-                (rect.step[2] * rect.dims[2] as f64) as f32,
-            );
+    let dims = (rect.dims[0], rect.dims[1], rect.dims[2]); // (nx, ny, nz)
 
-            // “sampling interval” in the original code is really the number of
-            // samples along each axis (= nx,ny,nz), so just cast dims to f32:
-            let samples = (
-                rect.dims[0] as f32,
-                rect.dims[1] as f32,
-                rect.dims[2] as f32,
-            );
+    let size = (
+        (rect.step[0] * rect.dims[0] as f64) as f32, // Δx * nx  (Å)
+        (rect.step[1] * rect.dims[1] as f64) as f32,
+        (rect.step[2] * rect.dims[2] as f64) as f32,
+    );
 
-            match MarchingCubes::from_gridpoints(
-                dims,
-                size,
-                samples,
-                rect.origin_cart.into(),
-                mol.elec_density.as_ref().unwrap(),
-                state.ui.density_iso_level,
-            ) {
-                Ok(mc) => {
-                    let mesh = mc.generate(MeshSide::OutsideOnly);
+    let sampling_interval = (
+        rect.dims[0] as f32,
+        rect.dims[1] as f32,
+        rect.dims[2] as f32,
+    );
 
-                    // Convert from `mcubes::Mesh` to `graphics::Mesh`.
-                    let vertices = mesh
-                        .vertices
-                        .iter()
-                        .map(|v| Vertex::new(v.posit.to_arr(), v.normal))
-                        .collect();
+    match MarchingCubes::from_gridpoints(
+        dims,
+        size,
+        sampling_interval,
+        rect.origin_cart.into(),
+        density,
+        state.ui.density_iso_level,
+    ) {
+        Ok(mc) => {
+            let mesh = mc.generate(MeshSide::OutsideOnly);
 
-                    scene.meshes[MESH_DENSITY_SURFACE] = Mesh {
-                        vertices,
-                        indices: mesh.indices,
-                        material: 0,
-                    };
+            // Convert from `mcubes::Mesh` to `graphics::Mesh`.
+            let vertices = mesh
+                .vertices
+                .iter()
+                .map(|v| Vertex::new(v.posit.to_arr(), v.normal))
+                .collect();
 
-                    if !state.ui.visibility.hide_density_surface {
-                        draw_density_surface(&mut scene.entities);
-                    }
+            scene.meshes[MESH_DENSITY_SURFACE] = Mesh {
+                vertices,
+                indices: mesh.indices,
+                material: 0,
+            };
 
-                    engine_updates.meshes = true;
-                    engine_updates.entities = true;
-                }
-                Err(e) => handle_err(&mut state.ui, e.to_string()),
+            if !state.ui.visibility.hide_density_surface {
+                draw_density_surface(&mut scene.entities);
             }
+
+            engine_updates.meshes = true;
+            engine_updates.entities = true;
         }
+        Err(e) => handle_err(&mut state.ui, e.to_string()),
     }
 }
 
@@ -833,10 +864,11 @@ pub fn handle_scene_flags(
         state.volatile.flags.new_density_loaded = false;
 
         if let Some(mol) = &state.molecule {
-            if !state.ui.visibility.hide_density {
+            if !state.ui.visibility.hide_density_point_cloud {
                 if let Some(density) = &mol.elec_density {
-                    draw_density(&mut scene.entities, density);
+                    draw_density_point_cloud(&mut scene.entities, density);
                     engine_updates.entities = true;
+                    return;
                 }
             }
         }
@@ -846,14 +878,13 @@ pub fn handle_scene_flags(
         state.volatile.flags.clear_density_drawing = false;
 
         scene.entities.retain(|ent| {
-            ent.class != EntityType::Density as u32
+            ent.class != EntityType::DensityPoint as u32
                 && ent.class != EntityType::DensitySurface as u32
         });
     }
 
-    // todo: temp experiencing a crash from wgpu on vertex buffer
-    if state.volatile.flags.make_density_mesh {
-        state.volatile.flags.make_density_mesh = false;
+    if state.volatile.flags.make_density_iso_mesh {
+        state.volatile.flags.make_density_iso_mesh = false;
         make_density_mesh(state, scene, engine_updates);
     }
 
@@ -962,4 +993,39 @@ pub fn move_lig_to_res(lig: &mut Ligand, mol: &MoleculePeptide, res: &Residue) -
     };
 
     posit
+}
+
+/// A helper used, for example, for orienting double bonds. Finds an arbitrary neighbor to the bond.
+/// Returns neighbor's index. Return the index instead of posit for flexibility, e.g. with lig.atom_posits.
+/// Returns (index, if index is from atom 1). This is important for knowing which side we're working with.
+///
+/// Note: We don't take Hydrogens into account, because they confuse the situation of aromatic rings.
+pub fn find_neighbor_posit(
+    mol: &Molecule,
+    atom_0: usize,
+    atom_1: usize,
+    hydrogen_is: &[bool],
+) -> Option<(usize, bool)> {
+    let neighbors_0 = &mol.adjacency_list[atom_0];
+
+    if neighbors_0.len() >= 2 {
+        for neighbor in neighbors_0 {
+            if !hydrogen_is[*neighbor] {}
+            if *neighbor != atom_1 && !hydrogen_is[*neighbor] {
+                return Some((*neighbor, false));
+            }
+        }
+    }
+
+    let neighbors_1 = &mol.adjacency_list[atom_1];
+
+    if !neighbors_1.len() >= 2 {
+        for neighbor in neighbors_1 {
+            if *neighbor != atom_0 && !hydrogen_is[*neighbor] {
+                return Some((*neighbor, true));
+            }
+        }
+    }
+
+    None
 }

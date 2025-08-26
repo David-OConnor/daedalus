@@ -178,11 +178,21 @@ pub fn event_dev_handler(
                 ElementState::Pressed => match key.physical_key {
                     Code(KeyCode::ArrowLeft) => {
                         cycle_selected(state_, scene, true);
-                        redraw_protein = true;
+                        if matches!(state_.ui.selection, Selection::Atom(_)) {
+                            redraw_protein = true;
+                        }
+                        if matches!(state_.ui.selection, Selection::AtomLigand(_)) {
+                            redraw_lig = true;
+                        }
                     }
                     Code(KeyCode::ArrowRight) => {
                         cycle_selected(state_, scene, false);
-                        redraw_protein = true;
+                        if matches!(state_.ui.selection, Selection::Atom(_)) {
+                            redraw_protein = true;
+                        }
+                        if matches!(state_.ui.selection, Selection::AtomLigand(_)) {
+                            redraw_lig = true;
+                        }
                     }
                     Code(KeyCode::Escape) => {
                         state_.ui.selection = Selection::None;

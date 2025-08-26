@@ -19,8 +19,9 @@ use bio_apis::{
     rcsb::{FilesAvailable, PdbDataResults, PdbMetaData},
 };
 use bio_files::{
-    AtomGeneric, BackboneSS, BondGeneric, ChainGeneric, ChargeType, DensityMap, ExperimentalMethod,
-    MmCif, Mol2, MolType, ResidueGeneric, ResidueType, Sdf, amber_params::ForceFieldParamsKeyed,
+    AtomGeneric, BackboneSS, BondGeneric, BondType, ChainGeneric, ChargeType, DensityMap,
+    ExperimentalMethod, MmCif, Mol2, MolType, ResidueGeneric, ResidueType, Sdf,
+    amber_params::ForceFieldParamsKeyed,
 };
 use lin_alg::{
     f32::Vec3 as Vec3F32,
@@ -652,82 +653,82 @@ impl Ligand {
     }
 }
 
-#[allow(unused)]
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub enum BondType {
-    Covalent {
-        count: BondCount,
-    },
-    /// Donor is always `atom0`.`
-    Hydrogen,
-    Disulfide,
-    MetalCoordination,
-    MisMatchedBasePairs,
-    SaltBridge,
-    CovalentModificationResidue,
-    CovalentModificationNucleotideBase,
-    CovalentModificationNucleotideSugar,
-    CovalentModificationNucleotidePhosphate,
-}
+// #[allow(unused)]
+// #[derive(Clone, Copy, PartialEq, Debug)]
+// pub enum BondType {
+//     Covalent {
+//         count: BondCount,
+//     },
+//     /// Donor is always `atom0`.`
+//     Hydrogen,
+//     Disulfide,
+//     MetalCoordination,
+//     MisMatchedBasePairs,
+//     SaltBridge,
+//     CovalentModificationResidue,
+//     CovalentModificationNucleotideBase,
+//     CovalentModificationNucleotideSugar,
+//     CovalentModificationNucleotidePhosphate,
+// }
 
-#[derive(Clone, Copy, PartialEq, Debug, Default)]
-pub enum BondCount {
-    #[default]
-    Single,
-    SingleDoubleHybrid,
-    Double,
-    Triple,
-}
-
-impl BondCount {
-    pub fn value(&self) -> f64 {
-        match self {
-            Self::Single => 1.0,
-            Self::SingleDoubleHybrid => 1.5,
-            Self::Double => 2.0,
-            Self::Triple => 3.0,
-        }
-    }
-
-    pub fn _from_count(count: u8) -> Self {
-        match count {
-            1 => Self::Single,
-            2 => Self::Double,
-            3 => Self::Triple,
-            _ => {
-                eprintln!("Error: Invalid count value: {}", count);
-                Self::Single
-            }
-        }
-    }
-
-    /// E.g. the Mol2 format.
-    pub fn from_str(val: &str) -> Self {
-        // 1 = single
-        // 2 = double
-        // 3 = triple
-        // am = amide
-        // ar = aromatic
-        // du = dummy
-        // un = unknown (cannot be determined from the parameter tables)
-        // nc = not connected
-        match val {
-            "1" => Self::Single,
-            "2" => Self::Double,
-            "3" => Self::Triple,
-            // todo: How should we handle these? New types in the enum?
-            "am" => Self::SingleDoubleHybrid,
-            "ar" => Self::Triple,
-            "du" => Self::Single,
-            "un" => Self::Single,
-            "nc" => Self::Single,
-            _ => {
-                eprintln!("Error: Invalid count value: {}", val);
-                Self::Single
-            }
-        }
-    }
-}
+// #[derive(Clone, Copy, PartialEq, Debug, Default)]
+// pub enum BondCount {
+//     #[default]
+//     Single,
+//     SingleDoubleHybrid,
+//     Double,
+//     Triple,
+// }
+//
+// impl BondCount {
+//     pub fn value(&self) -> f64 {
+//         match self {
+//             Self::Single => 1.0,
+//             Self::SingleDoubleHybrid => 1.5,
+//             Self::Double => 2.0,
+//             Self::Triple => 3.0,
+//         }
+//     }
+//
+//     pub fn _from_count(count: u8) -> Self {
+//         match count {
+//             1 => Self::Single,
+//             2 => Self::Double,
+//             3 => Self::Triple,
+//             _ => {
+//                 eprintln!("Error: Invalid count value: {}", count);
+//                 Self::Single
+//             }
+//         }
+//     }
+//
+//     /// E.g. the Mol2 format.
+//     pub fn from_str(val: &str) -> Self {
+//         // 1 = single
+//         // 2 = double
+//         // 3 = triple
+//         // am = amide
+//         // ar = aromatic
+//         // du = dummy
+//         // un = unknown (cannot be determined from the parameter tables)
+//         // nc = not connected
+//         match val {
+//             "1" => Self::Single,
+//             "2" => Self::Double,
+//             "3" => Self::Triple,
+//             // todo: How should we handle these? New types in the enum?
+//             "am" => Self::SingleDoubleHybrid,
+//             "ar" => Self::Triple,
+//             "du" => Self::Single,
+//             "un" => Self::Single,
+//             "nc" => Self::Single,
+//             _ => {
+//                 eprintln!("Error: Invalid count value: {}", val);
+//                 Self::Single
+//             }
+//         }
+//     }
+// }
 
 #[derive(Debug, Clone)]
 pub struct Bond {
@@ -744,48 +745,38 @@ pub struct Bond {
 impl Bond {
     pub fn to_generic(&self) -> BondGeneric {
         BondGeneric {
-            bond_type: "1".to_owned(), // todo!
+            bond_type: self.bond_type,
             atom_0_sn: self.atom_0_sn,
             atom_1_sn: self.atom_1_sn,
         }
     }
 }
 
-// impl From<&BondGeneric> for Bond {
 impl Bond {
-    // fn from(bond: &BondGeneric) -> Self {
     fn from_generic(bond: &BondGeneric, atom_set: &[Atom]) -> io::Result<Self> {
-        let mut atom_0 = 0;
-        let mut atom_1 = 0;
+        let atom_0 = match atom_sns_to_indices(bond.atom_0_sn, atom_set) {
+            Some(i) => i,
+            None => {
+                return Err(io::Error::new(
+                    ErrorKind::InvalidData,
+                    "Unable to find atom SN when loading from generic res",
+                ));
+            }
+        };
 
-        match atom_sns_to_indices(bond.atom_0_sn, atom_set) {
-            Some(i) => {
-                atom_0 = i;
-            }
-            None => {
-                return Err(io::Error::new(
-                    ErrorKind::InvalidData,
-                    "Unable to find atom SN when loading from generic res",
-                ));
-            }
-        }
         // todo DRY
-        match atom_sns_to_indices(bond.atom_1_sn, atom_set) {
-            Some(i) => {
-                atom_1 = i;
-            }
+        let atom_1 = match atom_sns_to_indices(bond.atom_1_sn, atom_set) {
+            Some(i) => i,
             None => {
                 return Err(io::Error::new(
                     ErrorKind::InvalidData,
                     "Unable to find atom SN when loading from generic res",
                 ));
             }
-        }
+        };
 
         Ok(Self {
-            bond_type: BondType::Covalent {
-                count: BondCount::from_str(&bond.bond_type),
-            },
+            bond_type: bond.bond_type,
             atom_0_sn: bond.atom_0_sn,
             atom_1_sn: bond.atom_1_sn,
             atom_0,
@@ -950,7 +941,7 @@ fn res_sns_to_indices(sn_tgt: u32, res_set: &[Residue]) -> Option<usize> {
     None
 }
 
-impl fmt::Display for Residue {
+impl Display for Residue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "#{}: {}", self.serial_number, self.res_type)?;
 
@@ -1105,7 +1096,6 @@ pub const fn aa_color(aa: AminoAcid) -> (f32, f32, f32) {
 
 impl MoleculePeptide {
     pub fn from_mmcif(m: MmCif, ff_map: &ProtFfMap) -> Result<Self, io::Error> {
-        // fn try_from(m: MmCif) -> Result<Self, Self::Error> {
         let mut atoms: Vec<_> = m.atoms.iter().map(|a| a.into()).collect();
 
         // todo: Crude logic for finding the C terminus. Relies on atom position,
@@ -1178,6 +1168,14 @@ impl MoleculePeptide {
             residues,
             Some(ff_map),
         );
+
+        // todo: It seems this section isn't required, but I can't figure out where the title
+        // todo is gettign inserted elsewhere.
+        if let Some(title) = m.metadata.get("_struct.title") {
+            result.metadata = Some(PdbMetaData {
+                prim_cit_title: title.to_string(),
+            });
+        }
 
         result.experimental_method = m.experimental_method.clone();
         result.secondary_structure = m.secondary_structure.clone();
@@ -1318,7 +1316,7 @@ impl MoleculePeptide {
 
         // This allows saving as Mol2, for example, with residue types, without breaking
         // bindings
-        let res_new = Residue {
+        let _res_new = Residue {
             atoms: Vec::new(),
             atom_sns: atoms_this.iter().map(|a| a.serial_number).collect(),
             ..res.clone()

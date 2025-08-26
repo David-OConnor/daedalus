@@ -3,12 +3,13 @@ use std::{
     fs::File,
     io,
     io::{ErrorKind, Read},
-    path::Path,
+    path::{Path, PathBuf},
+    str::FromStr,
     time::Instant,
 };
 
 use bio_apis::amber_geostd;
-use bio_files::{DensityMap, MmCif, gemmi_cif_to_map};
+use bio_files::{DensityMap, MmCif, gemmi_sf_to_map};
 use lin_alg::f64::Vec3;
 use na_seq::{AaIdent, Element};
 
@@ -18,8 +19,6 @@ use crate::{
     molecule::{Ligand, MoleculePeptide},
 };
 
-pub mod cif_sf;
-pub mod mtz;
 pub mod pdbqt;
 
 use bio_files::{
@@ -32,7 +31,7 @@ use crate::{
     docking::prep::DockingSetup,
     dynamics::prep::{merge_params, populate_ff_and_q},
     reflection::{DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityRect, ElectronDensity},
-    util::handle_err,
+    util::{handle_err, handle_success},
 };
 use crate::molecule::{MoleculeCommon, MoleculeGeneric};
 
@@ -46,8 +45,10 @@ impl State {
             .to_str()
             .unwrap_or_default()
         {
+            // The cif branch here handles 2fo-fc mmCIF files.
             "sdf" | "mol2" | "pdbqt" | "pdb" | "cif" => self.open_molecule(path)?,
             "map" => self.open_map(path)?,
+            "mtz" => self.open_mtz(path)?,
             // todo: lib, .dat etc as required. Using Amber force fields and its format
             // todo to start. We assume it'll be generalizable later.
             "frcmod" | "dat" => self.open_force_field(path)?,
@@ -58,6 +59,17 @@ impl State {
                 ));
             }
         }
+
+        handle_success(
+            &mut self.ui,
+            format!(
+                "Loaded file {}",
+                Path::new(&path)
+                    .file_name()
+                    .and_then(|f| f.to_str())
+                    .unwrap_or("<unknown>")
+            ),
+        );
 
         Ok(())
     }
@@ -78,8 +90,12 @@ impl State {
                 // is rough here, but good enough for now.
                 // todo: This isn't really opening a molecule, so is out of place. Good enough for now.
                 if let Some(name) = path.file_name().and_then(|os| os.to_str()) {
+                    // Note: This isn' tthe ideal place to handle 2fo-fc files, but they're in mmCIF format,
+                    // so we handle here. We handle map and MTZ files elsewhere, even though they use a
+                    // similar pipeline.
                     if name.contains("2fo") && name.contains("fc") {
-                        let dm = gemmi_cif_to_map(path.to_str().unwrap())?;
+                        gemmi_sf_to_map(path, gemmi_path())?;
+                        let dm = gemmi_sf_to_map(path, gemmi_path())?;
                         self.load_density(dm);
                     }
                 }
@@ -205,21 +221,20 @@ impl State {
         Ok(())
     }
 
-    pub fn load_density(&mut self, dm: DensityMap) {
+    pub fn load_density(&mut self, dens_map: DensityMap) {
         if let Some(mol) = &mut self.molecule {
             // We are filtering for backbone atoms of one type for now, for performance reasons. This is
             // a sample. Good enough?
             let atom_posits: Vec<_> = mol
                 .atoms
                 .iter()
-                // .filter(|a| a.is_backbone() && a.element == Element::Nitrogen)
                 .filter(|a| a.element != Element::Hydrogen)
-                // .filter(|a| a.is_backbone())
                 .map(|a| a.posit)
                 .collect();
 
-            let dens_rect = DensityRect::new(&atom_posits, &dm, DENSITY_CELL_MARGIN);
-            let dens = dens_rect.make_densities(&atom_posits, &dm.cell, DENSITY_MAX_DIST);
+            let dens_rect = DensityRect::new(&atom_posits, &dens_map, DENSITY_CELL_MARGIN);
+            let dens =
+                dens_rect.make_densities(&self.dev, &atom_posits, &dens_map.cell, DENSITY_MAX_DIST);
 
             let elec_dens: Vec<_> = dens
                 .iter()
@@ -229,23 +244,30 @@ impl State {
                 })
                 .collect();
 
-            mol.density_map = Some(dm);
+            mol.density_map = Some(dens_map);
             mol.density_rect = Some(dens_rect);
             mol.elec_density = Some(elec_dens);
 
             self.volatile.flags.new_density_loaded = true;
-            self.volatile.flags.make_density_mesh = true;
+            self.volatile.flags.make_density_iso_mesh = true;
         }
     }
 
     /// An electron density map file, e.g. a .map file.
-    /// todo: Support opening MTZ files.
     pub fn open_map(&mut self, path: &Path) -> io::Result<()> {
         let dm = DensityMap::load(path)?;
         self.load_density(dm);
 
         self.to_save.last_map_opened = Some(path.to_owned());
         self.update_save_prefs(false);
+
+        Ok(())
+    }
+
+    /// An electron density MTZ file. We use Gemmi's sf2map functionality, as we do for 2fo-fc files.
+    pub fn open_mtz(&mut self, path: &Path) -> io::Result<()> {
+        let dm = gemmi_sf_to_map(path, gemmi_path())?;
+        self.load_density(dm);
 
         Ok(())
     }
@@ -386,9 +408,29 @@ impl State {
                 }
                 None => return Err(io::Error::new(ErrorKind::InvalidData, "No ligand to save")),
             },
-            "map" => {
-                // todo
-            }
+            // todo: Consider if you want to store the original map bytes, as you do with
+            // todo mmCIF files, instead of saving what you parsed.
+            "map" => match &self.molecule {
+                Some(mol) => match &mol.density_map {
+                    Some(dm) => {
+                        dm.save(path)?;
+                        self.to_save.last_map_opened = Some(path.to_owned());
+                        self.update_save_prefs(false)
+                    }
+                    None => {
+                        return Err(io::Error::new(
+                            ErrorKind::InvalidData,
+                            "No density map loaded for this molecule; can't save it.",
+                        ));
+                    }
+                },
+                None => {
+                    return Err(io::Error::new(
+                        ErrorKind::InvalidData,
+                        "No molecule open; can't save a density Map.",
+                    ));
+                }
+            },
             _ => {
                 return Err(io::Error::new(
                     ErrorKind::InvalidData,
@@ -594,5 +636,18 @@ impl State {
                 handle_err(&mut self.ui, e.to_string());
             }
         }
+    }
+}
+
+/// Utility for finding the Gemmi application, used for opening mmCIF structure factors,
+/// and MTZ. This allows gemmi to be distributed in a folder colacated with this program's executable.
+pub fn gemmi_path() -> Option<&'static Path> {
+    let local_gemmi = Path::new("./gemmi");
+    if local_gemmi.exists() {
+        Some(&local_gemmi)
+    } else {
+        // If Gemmi is not in a folder colacated with the application, fall back
+        // to the system Path.
+        None
     }
 }

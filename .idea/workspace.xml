@@ -10,6 +10,7 @@
     <list default="true" id="56119a7d-3397-4692-902c-376cd93a301b" name="Changes" comment="">
       <change afterPath="$PROJECT_DIR$/src/nucleic_acid.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+<<<<<<< HEAD
       <change beforePath="$PROJECT_DIR$/src/add_hydrogens.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/add_hydrogens.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/docking/external.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/docking/external.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/docking/find_sites.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/docking/find_sites.rs" afterDir="false" />
@@ -26,6 +27,14 @@
       <change beforePath="$PROJECT_DIR$/src/ui.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/ui.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/ui_aux.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/ui_aux.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/util.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/util.rs" afterDir="false" />
+=======
+      <change beforePath="$PROJECT_DIR$/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/dynamics/bonded.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dynamics/bonded.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/dynamics/bonded_forces.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dynamics/bonded_forces.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/dynamics/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dynamics/mod.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/forces.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/forces.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/ui/misc.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/ui/misc.rs" afterDir="false" />
+>>>>>>> 20e19517f0173bd591a240f5e0c4a928e4a43f00
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -54,6 +63,7 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
+<<<<<<< HEAD
   <component name="PropertiesComponent"><![CDATA[{
   "keyToString": {
     "Cargo.Fmt.executor": "Run",
@@ -77,8 +87,38 @@
     "settings.editor.selected.configurable": "Errors",
     "to.speed.mode.migration.done": "true",
     "vue.rearranger.settings.migration": "true"
+=======
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;Cargo.Fmt.executor&quot;: &quot;Run&quot;,
+    &quot;Cargo.Run daedalus.executor&quot;: &quot;Run&quot;,
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.rust.reset.selective.auto.import&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;ignore.virus.scanning.warn.message&quot;: &quot;true&quot;,
+    &quot;junie.onboarding.icon.badge.shown&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;org.rust.cargo.project.model.PROJECT_DISCOVERY&quot;: &quot;true&quot;,
+    &quot;org.rust.cargo.project.model.impl.CargoExternalSystemProjectAware.subscribe.first.balloon&quot;: &quot;&quot;,
+    &quot;org.rust.first.attach.projects&quot;: &quot;true&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;preferences.pluginManager&quot;,
+    &quot;to.speed.mode.migration.done&quot;: &quot;true&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+>>>>>>> 20e19517f0173bd591a240f5e0c4a928e4a43f00
   }
-}]]></component>
+}</component>
+  <component name="RecentsManager">
+    <key name="MoveFile.RECENT_KEYS">
+      <recent name="C:\Users\the_a\code\Bio\daedalus\src\ui" />
+    </key>
+  </component>
   <component name="RunManager" selected="Cargo.Run daedalus">
     <configuration name="Fmt" type="CargoCommandRunConfiguration" factoryName="Cargo Command" nameIsGenerated="true">
       <option name="command" value="fmt" />
@@ -133,24 +173,22 @@
       <updated>1755451505262</updated>
       <workItem from="1755451506322" duration="33335000" />
       <workItem from="1755564519673" duration="27103000" />
+<<<<<<< HEAD
       <workItem from="1755641667152" duration="39976000" />
       <workItem from="1756221592415" duration="4495000" />
+=======
+      <workItem from="1755641667152" duration="52392000" />
+      <workItem from="1755798686150" duration="30184000" />
+      <workItem from="1755903916568" duration="1240000" />
+      <workItem from="1755906666530" duration="13968000" />
+      <workItem from="1755980844932" duration="38225000" />
+      <workItem from="1756072246160" duration="37775000" />
+>>>>>>> 20e19517f0173bd591a240f5e0c4a928e4a43f00
     </task>
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
-  </component>
-  <component name="XDebuggerManager">
-    <breakpoint-manager>
-      <breakpoints>
-        <line-breakpoint enabled="true" type="com.jetbrains.cidr.execution.debugger.OCBreakpointType">
-          <url>file://$PROJECT_DIR$/build.rs</url>
-          <line>4</line>
-          <option name="timeStamp" value="1" />
-        </line-breakpoint>
-      </breakpoints>
-    </breakpoint-manager>
   </component>
   <component name="XSLT-Support.FileAssociations.UIState">
     <expand />

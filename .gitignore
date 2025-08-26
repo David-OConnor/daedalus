@@ -26,6 +26,4 @@ Cargo.lock
 *.opc
 
 # Our prefs format.
-# todo: Old fmt; delete bcv
-*.bcv
 *.dae

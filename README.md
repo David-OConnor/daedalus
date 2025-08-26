@@ -10,7 +10,7 @@ Conceptually similar to [PyMol](https://www.pymol.org/), [Chimera](https://www.c
 and [VMD](https://www.ks.uiuc.edu/Research/vmd/) as well.
 
 Designed to be as easy to use, and fast as possible. Has tight integration with RSCB, Pubchem, drugbank,
-and Amber.
+and Amber. Uses parallel computing to accelerate calculations. (GPU, SIMD, and thread pools.)
 
 
 ## Installation
@@ -35,7 +35,7 @@ and disabling CUDA.
 
 - View the 3D structure of proteins and small molecules
 - Visualize ligand docking
-- Molecular dynamics, using Amber force fields, and an OPC water model
+- Molecular dynamics, using Amber force fields, and the OPC water model
 - WIP: This software is a platform for ab-initio simulations of electron density.
 
 ![Ligand dynamics](screenshots/daedalus_md_2025-08-03.png)
@@ -46,7 +46,7 @@ Launch the program. Either open a molecule using the "Open" or "Open Lig" button
 enter a protein identifier in the *Query databases* field, or click *I'm feeling lucky*, to load a recently-uploaded protein
 from the [RCSB PDB](https://www.rcsb.org/).
 
-Many UI items provide tooltip descriptions, when you hover the mouse.
+**Most UI items provide tooltip descriptions, when you hover the mouse over them.**
 
 
 ## Goals
@@ -59,12 +59,20 @@ Many UI items provide tooltip descriptions, when you hover the mouse.
 ## File formats
 - Proteins: mmCIF (.pdb supported removed; use mmCIF instead)
 - Small molecules: SDF, Mol2, and PDBQT
-- Electron density: 2fo-fc CIF, and Map.
-- Force field parameters: dat, and frcmode (Amber)
+- Electron density: 2fo-fc mmCIF, Map, and MTZ
+- Force field parameters: dat, and frcmod (Amber)
+
 
 ![ELectron density](screenshots/iso_a.png)
 
 ![Docking A](screenshots/docking_a.png)
+
+
+## Parallel computing
+If an nVidia GPU of at least RTX 3 series is available, molecular dynamics, docking, and electron density calculations
+will be performed using the GPU (via CUDA kernels). If not, the CPU will be used, leveraging thread pools
+and SIMD instructions. It uses all cores available, and either 512-bit, or 256-bit, SIMD instructions, depending
+on CPU capability.
 
 
 ## Molecular dynamics
@@ -99,7 +107,6 @@ We load partial charges for ligands from *mol2*, *PDBQT* etc files. Protein dyna
 using parameters built-in to the program (The Amber one above). Simulating ligands requires the loaded
 file (e.g. *mol2*) include partial charges. we recommend including ligand-specific override
 files as well, e.g. to load dihedral angles from *.frcmod* that aren't present in *Gaff2*.
-
 
 
 ## The camera
@@ -160,11 +167,12 @@ If *orbit sel* is set in the GUI, the orbit center will be the selected atom or 
 
 ## Reflections and electron density
 Supports volumetric and isosurface views for electron density data, e.g. from Cryo-EM and X-Ray crystallography data. 
-It can download this data from RCSB PDB, or load files directly. Currently, to convert *2fo-fc* files to map data, you must
-have [Gemmi](https://gemmi.readthedocs.io/en/latest/install.html) available on your PC's *Path*. For convenience, we provide [a download link](https://github.com/David-OConnor/daedalus/releases/download/0.1.3/gemmi.zip)
-of the Windows version of Gemmi.
+It can download this data from RCSB PDB, or load files directly. To open *2fo-fc* and *MTZ* files, we use the
+ [Gemmi](https://gemmi.readthedocs.io/en/latest/install.html) program. For convenience, we package it with the program's releases. For this to work, the `gemmi` folder
+we include must remain co-located with the program's executable. If not there, the program will attempt to run Gemmi
+from the system path. (E.g., installed as part of [CCP4](https://www.ccp4.ac.uk/)).
 
-Can import Map files directly. MTZ support is not yet available.
+Can import Map files directly, and save load density to Map format.
 
 
 ## PyMol-like Command line interface
@@ -228,21 +236,28 @@ These are available in [Amber tools](https://ambermd.org/GetAmber.php). Download
 
 We provide a [copy of these files](https://github.com/David-OConnor/daedalus/releases/download/0.1.3/amber_params_august_2025.zip)
 for convenience; this is a much smaller download than the entire Amber package, and prevents needing to locate the specific files.
-Unpack, and place these under `resources`.
+Unpack, and place these under `resources` prior to compiling.
 
-If you're not running on a machine with an nvidia GPU or without CUDA installed, append the `--no-default-features` to the build command.
+If you're not running on a machine with an nVidia GPU or without the CUDA toolkit installed, append the 
+`--no-default-features` to the build command. This will disable GPU support.
 
-Note: If using CUDA, you must set the environment var `LD_LIBARARY_PATH` (Linux) or `PATH` (Windows) to your CUDA bin
+#### Compiling with GPU support
+If compiling with GPU support, you must set the environment var `LD_LIBARARY_PATH` (Linux) or `Path` (Windows) to your CUDA bin
 directory, e.g. `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0\bin`. You may also need the build tools
 containing `cl.exe` or similar in the path, e.g.: `C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64`
 
-CUDA v13.0 or higher must be installed on the machine that compiles if compiling with CUDA. TBD on if you need a CUDA
-toolkit installed on the machine running it.
+CUDA v13.0 or higher must be installed on the compiling machine, but is not required to run the program.
 
 
 ### Errata
-- Ribbon (cartoon) view is currently unavailable.
-- Opening a molecule by drag + drop may not work until minimizing/unminimizing the program
-- Loading map files that are very large (e.g. high detail, especially Map files directly available
+- Ribbon (cartoon) view is unavailable.
+- Loading map (electron density) files that are very large (e.g. high detail, especially Map files directly available
 on RCSB, vice created from 2fo-fc) may crash the program.
+- Opening electron density files in general can be slow. This can lead to the program starting slowly if it was
+last shut down with electron density data open.
 - The GUI doesn't handle proteins with many chains well.
+- Electron density isosurfaces are currently broken
+- GPU on Linux is finicky at the moment. You might get an error on launch if not on an nvidia GPU with drivers installed,
+instead of falling back to the CPU. The latest linux drivers available on Ubuntu's official tool don't support CUDA 13, 
+which is currently required. We provide CUDA and non-CUDA linux downloads until this is resolved.
+- On some displays, dragging the MD time slider may also move the camera. To workaround, click the slider instead of dragging.

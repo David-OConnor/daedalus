@@ -128,6 +128,7 @@ pub fn handle_cmd(
         let path = PathBuf::from_str(filename).unwrap();
 
         load_file(&path, state, redraw, reset_cam, engine_updates)?;
+
         set_flashlight(scene);
         engine_updates.lighting = true;
 

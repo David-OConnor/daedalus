@@ -1,10 +1,6 @@
 //! For calculating the accessible surface (AS), a proxy for acccessibility of solvents
 //! to a molecule. Used for drawing *surface*, *dots*, and related meshes. Related to the van der Waals
 //! radius.
-//!
-//! Uses the Shrake-Rupley, or similar "rolling ball" methods.
-//! [This Rust lib](https://github.com/maxall41/RustSASA) appearse to be unsuitable to our purpose;
-//! it provides a single 'total SASA value', vice a set of points defining a surface.
 
 use graphics::{Mesh, Vertex};
 use lin_alg::f32::Vec3;
@@ -13,7 +9,6 @@ use mcubes::{MarchingCubes, MeshSide};
 use crate::molecule::Atom;
 
 const SOLVENT_RAD: f32 = 1.4; // water probe
-// const GRID_H: f32 = 0.5; // voxel edge length
 
 /// Create a mesh of the solvent-accessible surface. We do this using the ball-rolling method
 /// based on Van-der-Waals radius, then use the Marching Cubes algorithm to generate an iso mesh with
@@ -110,25 +105,26 @@ pub fn make_sas_mesh(atoms: &[&Atom], mut precision: f32) -> Mesh {
     }
 
     // Convert to a mesh using Marchine Cubes.
-    //  scale = precision because size / sampling_interval = precision
-    let size = (
-        (grid_dim.0 as f32 - 1.0) * precision,
-        (grid_dim.1 as f32 - 1.0) * precision,
-        (grid_dim.2 as f32 - 1.0) * precision,
-    );
-    let samp = (
+
+    let sampling_interval = (
         grid_dim.0 as f32 - 1.0,
         grid_dim.1 as f32 - 1.0,
         grid_dim.2 as f32 - 1.0,
     );
 
+    //  scale = precision because size / sampling_interval = precision
+    let size = (
+        sampling_interval.0 * precision,
+        sampling_interval.1 * precision,
+        sampling_interval.2 * precision,
+    );
+
     // todo: The holes in our mesh seem related to the iso level chosen.
-    let mc =
-        MarchingCubes::new(grid_dim, size, samp, bb_min, field, 0.).expect("marching cubes init");
+    let mc = MarchingCubes::new(grid_dim, size, sampling_interval, bb_min, field, 0.)
+        .expect("marching cubes init");
 
     // Note: We're experiencing the opposite behavior than we expect here; we really want to draw outside.
     let mc_mesh = mc.generate(MeshSide::InsideOnly);
-    // let mc_mesh = mc.generate(MeshSide::Both);
 
     let vertices: Vec<Vertex> = mc_mesh
         .vertices

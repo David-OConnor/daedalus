@@ -145,7 +145,7 @@ void nonbonded_force_kernel(
     float3* out_water_m,
     float3* out_water_h0,
     float3* out_water_h1,
-    float* virial,  // Virial pair sum, used for the barostat.
+    double* virial,  // Virial pair sum, used for the barostat.
     // Pair-wise inputs
     const uint32_t* tgt_is,
     const uint32_t* src_is,
@@ -236,9 +236,8 @@ void nonbonded_force_kernel(
 
         const float3 f = f_lj + f_coulomb;
 
-        // Virial per pair (pair counted once): -0.5 * r · F
-        // todo: Cell wrapping for water.
-        float virial_pair = (diff.x * f.x + diff.y * f.y + diff.z * f.z);
+        // Virial per pair · F
+        double virial_pair = ((double)diff.x * (double)f.x + (double)diff.y * (double)f.y + (double)diff.z * (double)f.z);
         atomicAdd(virial, virial_pair);
 
         const uint32_t out_i = tgt_is[i];
@@ -279,8 +278,8 @@ void nonbonded_force_kernel(
 }
 
 // Perform the fourier transform required to compute electron density from reflection data.
-// todo: f32 ok?
 
+// todo: This is currently unused.
 extern "C" __global__
 void reflection_transform_kernel(
     float* out,
@@ -309,5 +308,56 @@ void reflection_transform_kernel(
 
         //  real part of  F · e^{iφ} · e^{iarg} = amp·cos(φ+arg)
         out[i] += amp[i]* cosf(phase[i] + arg);
+    }
+}
+
+extern "C" __global__
+void make_densities_kernel(
+    float3* out_coords,
+    float* out_densities,
+    const uint3* triplets,
+    const float3* atom_posits,
+    const float* data,
+    const float3 step_vec_0,
+    const float3 step_vec_1,
+    const float3 step_vec_2,
+    const float3 origin,
+    const float dist_thresh_sq,
+    const size_t nx,
+    const size_t ny,
+    size_t N,
+    size_t N_atom_posits
+) {
+    size_t index = blockIdx.x * blockDim.x + threadIdx.x;
+    size_t stride = blockDim.x * gridDim.x;
+
+    for (size_t i = index; i < N; i += stride) {
+        uint32_t kx = triplets[i].x;
+        uint32_t ky = triplets[i].y;
+        uint32_t kz = triplets[i].z;
+
+        const size_t i_data = (kz * ny + ky) * nx + kx;
+        float density = data[i_data];
+
+        const float3 coords = origin + step_vec_0 * (float)kx + step_vec_1 * (float)ky + step_vec_2 * (float)kz;
+
+        float nearest_dist_sq = 9999999.f;
+        for (size_t j = 0; j < N_atom_posits; j++) {
+            const float dx = atom_posits[j].x - coords.x;
+            const float dy = atom_posits[j].y - coords.y;
+            const float dz = atom_posits[j].z - coords.z;
+            const float dist_sq = dx * dx + dy * dy + dz * dz;
+
+            if (dist_sq < nearest_dist_sq) {
+                nearest_dist_sq = dist_sq;
+            }
+        }
+
+        if (nearest_dist_sq > dist_thresh_sq) {
+            density = 0.0f;
+        }
+
+        out_coords[i] = coords;
+        out_densities[i] = density;
     }
 }

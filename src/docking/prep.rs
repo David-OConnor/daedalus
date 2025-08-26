@@ -5,6 +5,7 @@
 use std::fmt::Display;
 
 use barnes_hut::{BhConfig, Cube, Tree};
+use bio_files::BondType;
 use lin_alg::f32::Vec3;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use lin_alg::f32::{Vec3x8, f32x8, pack_x8};
@@ -15,7 +16,11 @@ use crate::{
         ATOM_NEAR_SITE_DIST_THRESH, DockingSite, is_hydrophobic, partial_charge::PartialCharge,
     },
     forces::setup_sigma_eps_x8,
+<<<<<<< HEAD
     molecule::{Atom, Bond, BondCount, BondType, Ligand, MoleculePeptide},
+=======
+    molecule::{Atom, Bond, Ligand, Molecule},
+>>>>>>> 20e19517f0173bd591a240f5e0c4a928e4a43f00
 };
 use crate::molecule::MoleculeLigand;
 
@@ -58,7 +63,7 @@ impl DockingSetup {
         lj_lut: &LjTable,
         bh_config: &BhConfig,
     ) -> Self {
-        let (mut rec_atoms_near_site, rec_indices) =
+        let (rec_atoms_near_site, rec_indices) =
             find_rec_atoms_near_site(receptor, &lig.docking_site);
 
         // let (rec_indices_x8, _) = pack_slice(&rec_indices);
@@ -421,11 +426,7 @@ pub fn setup_flexibility(mol: &MoleculeLigand) -> Vec<usize> {
 
     for (i, bond) in mol.common.bonds.iter().enumerate() {
         // Only consider single bonds.
-        let bond_count = match bond.bond_type {
-            BondType::Covalent { count, .. } => count,
-            _ => BondCount::Triple,
-        };
-        if bond_count != BondCount::Single {
+        if bond.bond_type != BondType::Single {
             continue;
         }
 

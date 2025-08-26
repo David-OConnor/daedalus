@@ -1,5 +1,4 @@
 use std::{
-    f32::consts::TAU,
     io,
     io::Cursor,
     path::Path,
@@ -9,11 +8,11 @@ use std::{
 
 use bio_apis::{amber_geostd, drugbank, pubchem, rcsb};
 use egui::{
-    Color32, ComboBox, Context, Frame, Key, Popup, PopupAnchor, Pos2, RectAlign, RichText, Slider,
+    Color32, ComboBox, Context, Key, Popup, PopupAnchor, Pos2, RectAlign, RichText, Slider,
     TextEdit, TopBottomPanel, Ui,
 };
-use graphics::{ControlScheme, EngineUpdates, RIGHT_VEC, Scene, UP_VEC};
-use lin_alg::f32::{Quaternion, Vec3};
+use graphics::{ControlScheme, EngineUpdates, Scene};
+use lin_alg::f32::Vec3;
 use na_seq::AaIdent;
 
 static INIT_COMPLETE: AtomicBool = AtomicBool::new(false);
@@ -27,35 +26,37 @@ use crate::{
         ConformationType, calc_binding_energy, find_optimal_pose, find_sites::find_docking_sites,
     },
     download_mols::{load_sdf_drugbank, load_sdf_pubchem},
+    file_io::gemmi_path,
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
     mol_drawing::{
-        EntityType, MoleculeView, draw_density, draw_density_surface, draw_ligand, draw_molecule,
-        draw_water,
+        EntityType, MoleculeView, draw_density_point_cloud, draw_density_surface, draw_ligand,
+        draw_molecule, draw_water,
     },
+<<<<<<< HEAD:src/ui.rs
     molecule::{Ligand, MoleculePeptide},
     render::{
         CAM_INIT_OFFSET, RENDER_DIST_FAR, RENDER_DIST_NEAR, set_docking_light, set_flashlight,
         set_static_light,
+=======
+    molecule::{Ligand, Molecule},
+    render::{set_docking_light, set_flashlight, set_static_light},
+    ui::{
+        cam::{cam_controls, cam_snapshots, move_cam_to_lig},
+        misc::{lig_section, md_setup, section_box},
+>>>>>>> 20e19517f0173bd591a240f5e0c4a928e4a43f00:src/ui/mod.rs
     },
-    ui_aux,
-    ui_aux::{md_setup, move_cam_to_lig},
-    util,
     util::{
-        cam_look_at, cam_look_at_outside, check_prefs_save, close_lig, close_mol, cycle_selected,
-        handle_err, handle_scene_flags, handle_success, load_atom_coords_rcsb, move_lig_to_res,
-        orbit_center, reset_camera, select_from_search,
+        cam_look_at_outside, check_prefs_save, close_lig, close_mol, cycle_selected, handle_err,
+        handle_scene_flags, handle_success, load_atom_coords_rcsb, move_lig_to_res, orbit_center,
+        reset_camera, select_from_search,
     },
 };
 
+pub mod cam;
+pub mod misc;
+
 pub const ROW_SPACING: f32 = 10.;
 pub const COL_SPACING: f32 = 30.;
-
-// These are Å multiplied by 10.
-pub const VIEW_DEPTH_NEAR_MIN: u16 = 2;
-pub const VIEW_DEPTH_NEAR_MAX: u16 = 300;
-
-pub const VIEW_DEPTH_FAR_MIN: u16 = 10;
-pub const VIEW_DEPTH_FAR_MAX: u16 = 60;
 
 const DENS_ISO_MIN: f32 = 1.0;
 const DENS_ISO_MAX: f32 = 3.0;
@@ -170,195 +171,6 @@ fn get_snap_name(snap: Option<usize>, snaps: &[CamSnapshot]) -> String {
     }
 }
 
-fn cam_snapshots(
-    state: &mut State,
-    scene: &mut Scene,
-    engine_updates: &mut EngineUpdates,
-    ui: &mut Ui,
-) {
-    ui.heading("Scenes:");
-    ui.label("Label:");
-    ui.add(TextEdit::singleline(&mut state.ui.cam_snapshot_name).desired_width(60.));
-
-    if ui.button("Save").clicked() {
-        let name = if !state.ui.cam_snapshot_name.is_empty() {
-            state.ui.cam_snapshot_name.clone()
-        } else {
-            format!("Scene {}", state.cam_snapshots.len() + 1)
-        };
-
-        util::save_snap(state, &scene.camera, &name);
-    }
-
-    let prev_snap = state.ui.cam_snapshot;
-    let snap_name = get_snap_name(prev_snap, &state.cam_snapshots);
-
-    ComboBox::from_id_salt(2)
-        .width(80.)
-        .selected_text(snap_name)
-        .show_ui(ui, |ui| {
-            ui.selectable_value(&mut state.ui.cam_snapshot, None, "(None)");
-            for (i, _snap) in state.cam_snapshots.iter().enumerate() {
-                ui.selectable_value(
-                    &mut state.ui.cam_snapshot,
-                    Some(i),
-                    get_snap_name(Some(i), &state.cam_snapshots),
-                );
-            }
-        });
-
-    if let Some(i) = state.ui.cam_snapshot {
-        if ui.button(RichText::new("❌").color(Color32::RED)).clicked() {
-            if i < state.cam_snapshots.len() {
-                state.cam_snapshots.remove(i);
-            }
-            state.ui.cam_snapshot = None;
-            state.update_save_prefs(false);
-        }
-    }
-
-    if state.ui.cam_snapshot != prev_snap {
-        util::load_snap(state, scene, engine_updates);
-    }
-}
-
-fn cam_controls(
-    scene: &mut Scene,
-    state: &mut State,
-    engine_updates: &mut EngineUpdates,
-    ui: &mut Ui,
-) {
-    // todo: Here and at init, set the camera dist dynamically based on mol size.
-    // todo: Set the position not relative to 0, but  relative to the center of the atoms.
-
-    let mut changed = false;
-
-    // let cam = &mut scene.camera;
-
-    ui.horizontal(|ui| {
-        ui.label("Cam:");
-
-        // Preset buttons
-        if ui.button("Front").clicked() {
-            if let Some(mol) = &state.molecule {
-                reset_camera(scene, &mut state.ui.view_depth, engine_updates, mol);
-                changed = true;
-            }
-        }
-
-        if ui.button("Top").clicked() {
-            if let Some(mol) = &state.molecule {
-                let center: Vec3 = mol.center.into();
-                reset_camera(scene, &mut state.ui.view_depth, engine_updates, mol);
-                scene.camera.position =
-                    Vec3::new(center.x, center.y + (mol.size + CAM_INIT_OFFSET), center.z);
-                scene.camera.orientation = Quaternion::from_axis_angle(RIGHT_VEC, TAU / 4.);
-
-                changed = true;
-            }
-        }
-
-        if ui.button("Left").clicked() {
-            if let Some(mol) = &state.molecule {
-                let center: Vec3 = mol.center.into();
-                reset_camera(scene, &mut state.ui.view_depth, engine_updates, mol);
-                scene.camera.position =
-                    Vec3::new(center.x - (mol.size + CAM_INIT_OFFSET), center.y, center.z);
-                scene.camera.orientation = Quaternion::from_axis_angle(UP_VEC, TAU / 4.);
-
-                changed = true;
-            }
-        }
-
-        ui.add_space(COL_SPACING);
-
-        let free_active = scene.input_settings.control_scheme == ControlScheme::FreeCamera;
-        let arc_active = scene.input_settings.control_scheme != ControlScheme::FreeCamera;
-
-        if ui
-            .button(RichText::new("Free").color(ui_aux::active_color_sel(free_active)))
-            .clicked()
-        {
-            scene.input_settings.control_scheme = ControlScheme::FreeCamera;
-            state.to_save.control_scheme = ControlScheme::FreeCamera;
-        }
-
-        if ui
-            .button(RichText::new("Arc").color(ui_aux::active_color_sel(arc_active)))
-            .clicked()
-        {
-            let center = match &state.molecule {
-                Some(mol) => mol.center.into(),
-                None => Vec3::new_zero(),
-            };
-            scene.input_settings.control_scheme = ControlScheme::Arc { center };
-            state.to_save.control_scheme = ControlScheme::Arc { center };
-        }
-
-        if arc_active {
-            if ui
-                .button(
-                    RichText::new("Orbit sel")
-                        .color(ui_aux::active_color(state.ui.orbit_around_selection)),
-                )
-                .clicked()
-            {
-                state.ui.orbit_around_selection = !state.ui.orbit_around_selection;
-
-                let center = orbit_center(state);
-                scene.input_settings.control_scheme = ControlScheme::Arc { center };
-            }
-        }
-
-        ui.add_space(COL_SPACING);
-
-        // todo: Grey-out, instead of setting render dist. (e.g. fog)
-        let depth_prev = state.ui.view_depth;
-        ui.spacing_mut().slider_width = 60.;
-
-        ui.label("Depth. Near(x10):");
-        ui.add(Slider::new(
-            &mut state.ui.view_depth.0,
-            VIEW_DEPTH_NEAR_MIN..=VIEW_DEPTH_NEAR_MAX,
-        ));
-
-        ui.label("Far:");
-        ui.add(Slider::new(
-            &mut state.ui.view_depth.1,
-            VIEW_DEPTH_FAR_MIN..=VIEW_DEPTH_FAR_MAX,
-        ));
-
-        if state.ui.view_depth != depth_prev {
-            // Interpret the slider being at min or max position to mean (effectively) unlimited.
-            scene.camera.near = if state.ui.view_depth.0 == VIEW_DEPTH_NEAR_MIN {
-                RENDER_DIST_NEAR
-            } else {
-                state.ui.view_depth.0 as f32 / 10.
-            };
-
-            scene.camera.far = if state.ui.view_depth.1 == VIEW_DEPTH_FAR_MAX {
-                RENDER_DIST_FAR
-            } else {
-                state.ui.view_depth.1 as f32
-            };
-
-            scene.camera.update_proj_mat();
-            changed = true;
-        }
-
-        ui.add_space(COL_SPACING);
-    });
-
-    if changed {
-        engine_updates.camera = true;
-
-        set_flashlight(scene);
-        engine_updates.lighting = true; // flashlight.
-
-        state.ui.cam_snapshot = None;
-    }
-}
-
 fn residue_selector(state: &mut State, scene: &mut Scene, redraw: &mut bool, ui: &mut Ui) {
     // This is a bit fuzzy, as the size varies by residue name (Not always 1 for non-AAs), and index digits.
 
@@ -429,55 +241,57 @@ fn residue_selector(state: &mut State, scene: &mut Scene, redraw: &mut bool, ui:
 /// Toggles chain visibility
 fn chain_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
     // todo: For now, DRY with res selec
+    let Some(mol) = &mut state.molecule else {
+        return;
+    };
+
     ui.horizontal(|ui| {
         ui.label("Chain vis:");
-        if let Some(mol) = &mut state.molecule {
-            for chain in &mut mol.chains {
-                let color = ui_aux::active_color(chain.visible);
+        for chain in &mut mol.chains {
+            let color = misc::active_color(chain.visible);
 
-                if ui
-                    .button(RichText::new(chain.id.clone()).color(color))
-                    .clicked()
-                {
-                    chain.visible = !chain.visible;
-                    *redraw = true;
+            if ui
+                .button(RichText::new(chain.id.clone()).color(color))
+                .clicked()
+            {
+                chain.visible = !chain.visible;
+                *redraw = true;
+            }
+        }
+
+        ui.add_space(COL_SPACING);
+
+        ui.label("Select residues from:");
+
+        for (i, chain) in mol.chains.iter().enumerate() {
+            let mut color = Color32::GRAY;
+            if let Some(i_sel) = state.ui.chain_to_pick_res {
+                if i == i_sel {
+                    color = COLOR_ACTIVE
                 }
             }
-
-            ui.add_space(COL_SPACING);
-
-            ui.label("Select residues from:");
-
-            for (i, chain) in mol.chains.iter().enumerate() {
-                let mut color = Color32::GRAY;
-                if let Some(i_sel) = state.ui.chain_to_pick_res {
-                    if i == i_sel {
-                        color = COLOR_ACTIVE
-                    }
-                }
-                if ui
-                    .button(RichText::new(chain.id.clone()).color(color))
-                    .clicked()
-                {
-                    // Toggle behavior.
-                    if let Some(sel_i) = state.ui.chain_to_pick_res {
-                        if i == sel_i {
-                            state.ui.chain_to_pick_res = None;
-                        } else {
-                            state.ui.chain_to_pick_res = Some(i);
-                        }
+            if ui
+                .button(RichText::new(chain.id.clone()).color(color))
+                .clicked()
+            {
+                // Toggle behavior.
+                if let Some(sel_i) = state.ui.chain_to_pick_res {
+                    if i == sel_i {
+                        state.ui.chain_to_pick_res = None;
                     } else {
                         state.ui.chain_to_pick_res = Some(i);
                     }
-                    state.volatile.ui_height = ui.ctx().used_size().y;
+                } else {
+                    state.ui.chain_to_pick_res = Some(i);
                 }
+                state.volatile.ui_height = ui.ctx().used_size().y;
             }
+        }
 
-            if state.ui.chain_to_pick_res.is_some() {
-                if ui.button("(None)").clicked() {
-                    state.ui.chain_to_pick_res = None;
-                    state.volatile.ui_height = ui.ctx().used_size().y;
-                }
+        if state.ui.chain_to_pick_res.is_some() {
+            if ui.button("(None)").clicked() {
+                state.ui.chain_to_pick_res = None;
+                state.volatile.ui_height = ui.ctx().used_size().y;
             }
         }
     });
@@ -488,7 +302,7 @@ fn draw_cli(
     state: &mut State,
     scene: &mut Scene,
     engine_updates: &mut EngineUpdates,
-    redraw: &mut bool,
+    redraw_mol: &mut bool,
     reset_cam: &mut bool,
     ui: &mut Ui,
 ) {
@@ -558,7 +372,7 @@ fn draw_cli(
         if (button_clicked || enter_pressed) && state.ui.cmd_line_input.len() >= 2 {
             // todo: Error color
             state.ui.cmd_line_output =
-                match cli::handle_cmd(state, scene, engine_updates, redraw, reset_cam) {
+                match cli::handle_cmd(state, scene, engine_updates, redraw_mol, reset_cam) {
                     Ok(out) => {
                         state.ui.cmd_line_out_is_err = false;
                         out
@@ -574,6 +388,9 @@ fn draw_cli(
             // Compensates for the default lose focus behavior; we still want the cursor to remain here.
             edit_resp.request_focus();
         }
+
+        ui.add_space(COL_SPACING);
+        residue_search(state, scene, redraw_mol, ui);
     });
 }
 
@@ -934,7 +751,7 @@ fn selection_section(
                 for view in &[ViewSelLevel::Atom, ViewSelLevel::Residue] {
                     ui.selectable_value(&mut state.ui.view_sel_level, *view, view.to_string());
                 }
-            });
+            }).response.on_hover_text(help_text);
 
         if state.ui.view_sel_level != prev_view {
             *redraw = true;
@@ -1041,6 +858,8 @@ fn selection_section(
         if state.ui.show_near_sel_only || state.ui.show_near_lig_only {
             ui.label("Dist:");
             let dist_prev = state.ui.nearby_dist_thresh;
+            ui.spacing_mut().slider_width = 160.;
+
             ui.add(Slider::new(
                 &mut state.ui.nearby_dist_thresh,
                 NEARBY_THRESH_MIN..=NEARBY_THRESH_MAX,
@@ -1053,48 +872,7 @@ fn selection_section(
 
         if let Some(mol) = &state.molecule {
             ui.add_space(COL_SPACING);
-
-            if state.ui.selection != Selection::None {
-                if ui
-                    .button(RichText::new("Cam to sel").color(COLOR_HIGHLIGHT))
-                    .clicked()
-                {
-                    if let Selection::AtomLigand(i) = &state.ui.selection {
-                        if let Some(lig) = &state.ligand {
-                            cam_look_at(&mut scene.camera, lig.atom_posits[*i]);
-                            engine_updates.camera = true;
-                            state.ui.cam_snapshot = None;
-                        }
-                    } else {
-                        let atom_sel = mol.get_sel_atom(&state.ui.selection);
-
-                        if let Some(atom) = atom_sel {
-                            cam_look_at(&mut scene.camera, atom.posit);
-                            engine_updates.camera = true;
-                            state.ui.cam_snapshot = None;
-                        }
-                    }
-                }
-            }
-
-            if let Some(lig) = &mut state.ligand {
-                ui.add_space(COL_SPACING / 2.);
-                if ui
-                    .button(RichText::new("Cam to lig").color(COLOR_HIGHLIGHT))
-                    .clicked()
-                {
-                    move_cam_to_lig(
-                        &mut state.ui,
-                        scene,
-                        lig,
-                        mol.center,
-                        engine_updates,
-                    )
-                }
-            }
-
-            ui.add_space(COL_SPACING / 2.);
-            ui_aux::selected_data(mol, &state.ligand, &state.ui.selection, ui);
+            misc::selected_data(mol, &state.ligand, &state.ui.selection, ui);
         }
     });
 }
@@ -1122,12 +900,18 @@ fn mol_descrip(mol: &MoleculePeptide, ui: &mut Ui) {
             // Allow hovering to see the full title.
             ui.label(RichText::new(title_abbrev).color(Color32::WHITE).size(12.))
                 .on_hover_text(&metadata.prim_cit_title);
+        } else {
+            ui.label(RichText::new(title_abbrev).color(Color32::WHITE).size(12.));
         }
     }
 
     if mol.ident.len() <= 5 {
         // todo: You likely need a better approach.
-        if ui.button("View on RCSB").clicked() {
+        if ui
+            .button("View on RCSB")
+            .on_hover_text("Open a web browser to the RCSB PDB page for this molecule.")
+            .clicked()
+        {
             rcsb::open_overview(&mol.ident);
         }
     }
@@ -1152,168 +936,171 @@ fn view_settings(
     redraw: &mut bool,
     ui: &mut Ui,
 ) {
-    ui.horizontal(|ui| {
-        ui.label("View:");
-        let prev_view = state.ui.mol_view;
-        ComboBox::from_id_salt(0)
-            .width(80.)
-            .selected_text(state.ui.mol_view.to_string())
-            .show_ui(ui, |ui| {
-                for view in &[
-                    MoleculeView::Backbone,
-                    MoleculeView::Sticks,
-                    MoleculeView::BallAndStick,
-                    // MoleculeView::Cartoon,
-                    MoleculeView::SpaceFill,
-                    MoleculeView::Surface,
-                    MoleculeView::Dots,
-                ] {
-                    ui.selectable_value(&mut state.ui.mol_view, *view, view.to_string());
-                }
-            });
+    section_box().show(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.label("View:");
+            let prev_view = state.ui.mol_view;
+            ComboBox::from_id_salt(0)
+                .width(80.)
+                .selected_text(state.ui.mol_view.to_string())
+                .show_ui(ui, |ui| {
+                    for view in &[
+                        MoleculeView::Backbone,
+                        MoleculeView::Sticks,
+                        MoleculeView::BallAndStick,
+                        // MoleculeView::Cartoon,
+                        MoleculeView::SpaceFill,
+                        MoleculeView::Surface,
+                        MoleculeView::Dots,
+                    ] {
+                        ui.selectable_value(&mut state.ui.mol_view, *view, view.to_string());
+                    }
+                });
 
-        if state.ui.mol_view != prev_view {
-            *redraw = true;
-        }
+            if state.ui.mol_view != prev_view {
+                *redraw = true;
+            }
 
-        ui.add_space(COL_SPACING);
+            ui.add_space(COL_SPACING);
 
-        ui.label("Vis:");
+            ui.label("Vis:");
 
-        ui_aux::vis_check(
-            &mut state.ui.visibility.hide_non_hetero,
-            "Peptide",
-            ui,
-            redraw,
-        );
-        ui_aux::vis_check(&mut state.ui.visibility.hide_hetero, "Hetero", ui, redraw);
-
-        ui.add_space(COL_SPACING / 2.);
-
-        if !state.ui.visibility.hide_non_hetero {
-            // Subset of peptide.
-            ui_aux::vis_check(
-                &mut state.ui.visibility.hide_sidechains,
-                "Sidechains",
+            misc::vis_check(
+                &mut state.ui.visibility.hide_non_hetero,
+                "Peptide",
                 ui,
                 redraw,
             );
-        }
+            misc::vis_check(&mut state.ui.visibility.hide_hetero, "Hetero", ui, redraw);
 
-        ui_aux::vis_check(&mut state.ui.visibility.hide_hydrogen, "H", ui, redraw);
-
-        // We allow toggling water now regardless of hide hetero, as it's part of our MD sim.
-        // if !state.ui.visibility.hide_hetero {
-        // Subset of hetero.
-        let water_prev = state.ui.visibility.hide_water;
-        ui_aux::vis_check(&mut state.ui.visibility.hide_water, "Water", ui, redraw);
-        // }
-
-        if let Some(md) = &state.mol_dynamics {
-            if state.ui.visibility.hide_water != water_prev {
-                let snap = &md.snapshots[0];
-
-                draw_water(
-                    scene,
-                    &snap.water_o_posits,
-                    &snap.water_h0_posits,
-                    &snap.water_h1_posits,
-                    state.ui.visibility.hide_water,
-                );
-            }
-        }
-
-        if state.ligand.is_some() {
-            let color = ui_aux::active_color(!state.ui.visibility.hide_ligand);
-            if ui.button(RichText::new("Lig").color(color)).clicked() {
-                state.ui.visibility.hide_ligand = !state.ui.visibility.hide_ligand;
-
-                if state.ui.visibility.hide_ligand {
-                    scene.entities.retain(|ent| {
-                        ent.class != EntityType::Ligand as u32
-                            && ent.class != EntityType::DockingSite as u32
-                    });
-                } else {
-                    draw_ligand(state, scene);
-                }
-
-                engine_updates.entities = true;
-                engine_updates.lighting = true; // docking light.
-            }
-        }
-
-        ui_aux::vis_check(&mut state.ui.visibility.hide_h_bonds, "H bonds", ui, redraw);
-        // vis_check(&mut state.ui.visibility.dim_peptide, "Dim peptide", ui, redraw);
-
-        if state.ligand.is_some() {
             ui.add_space(COL_SPACING / 2.);
-            // Not using `vis_check` for this because its semantics are inverted.
-            let color = ui_aux::active_color(state.ui.visibility.dim_peptide);
-            if ui
-                .button(RichText::new("Dim peptide").color(color))
-                .clicked()
-            {
-                state.ui.visibility.dim_peptide = !state.ui.visibility.dim_peptide;
-                *redraw = true;
+
+            if !state.ui.visibility.hide_non_hetero {
+                // Subset of peptide.
+                misc::vis_check(
+                    &mut state.ui.visibility.hide_sidechains,
+                    "Sidechains",
+                    ui,
+                    redraw,
+                );
             }
-        }
 
-        if let Some(mol) = &state.molecule {
-            if let Some(dens) = &mol.elec_density {
-                let mut redraw_dens = false;
-                ui_aux::vis_check(
-                    &mut state.ui.visibility.hide_density,
-                    "Density",
-                    ui,
-                    &mut redraw_dens,
-                );
+            misc::vis_check(&mut state.ui.visibility.hide_hydrogen, "H", ui, redraw);
 
-                if redraw_dens {
-                    if state.ui.visibility.hide_density {
-                        scene
-                            .entities
-                            .retain(|ent| ent.class != EntityType::Density as u32);
-                    } else {
-                        draw_density(&mut scene.entities, dens);
-                    }
-                    engine_updates.entities = true;
-                }
+            // We allow toggling water now regardless of hide hetero, as it's part of our MD sim.
+            // if !state.ui.visibility.hide_hetero {
+            // Subset of hetero.
+            let water_prev = state.ui.visibility.hide_water;
+            misc::vis_check(&mut state.ui.visibility.hide_water, "Water", ui, redraw);
+            // }
 
-                let mut redraw_dens_surface = false;
-                ui_aux::vis_check(
-                    &mut state.ui.visibility.hide_density_surface,
-                    "Density sfc",
-                    ui,
-                    &mut redraw_dens_surface,
-                );
+            if let Some(md) = &state.mol_dynamics {
+                if state.ui.visibility.hide_water != water_prev {
+                    let snap = &md.snapshots[0];
 
-                if !state.ui.visibility.hide_density_surface {
-                    let iso_prev = state.ui.density_iso_level;
-
-                    ui.spacing_mut().slider_width = 300.;
-                    ui.add(Slider::new(
-                        &mut state.ui.density_iso_level,
-                        DENS_ISO_MIN..=DENS_ISO_MAX,
-                    ));
-                    if state.ui.density_iso_level != iso_prev {
-                        state.volatile.flags.make_density_mesh = true;
-                    }
-                }
-
-                // todo
-                if redraw_dens_surface {
-                    if state.ui.visibility.hide_density_surface {
-                        let _ = &mut scene
-                            .entities
-                            .retain(|ent| ent.class != EntityType::DensitySurface as u32);
-                    } else {
-                        draw_density_surface(&mut scene.entities);
-                    }
-                    engine_updates.entities = true;
-                    redraw_dens_surface = false;
+                    draw_water(
+                        scene,
+                        &snap.water_o_posits,
+                        &snap.water_h0_posits,
+                        &snap.water_h1_posits,
+                        state.ui.visibility.hide_water,
+                    );
                 }
             }
-        }
+
+            if state.ligand.is_some() {
+                let color = misc::active_color(!state.ui.visibility.hide_ligand);
+                if ui.button(RichText::new("Lig").color(color)).clicked() {
+                    state.ui.visibility.hide_ligand = !state.ui.visibility.hide_ligand;
+
+                    if state.ui.visibility.hide_ligand {
+                        scene.entities.retain(|ent| {
+                            ent.class != EntityType::Ligand as u32
+                                && ent.class != EntityType::DockingSite as u32
+                        });
+                    } else {
+                        draw_ligand(state, scene);
+                    }
+
+                    engine_updates.entities = true;
+                    engine_updates.lighting = true; // docking light.
+                }
+            }
+
+            misc::vis_check(&mut state.ui.visibility.hide_h_bonds, "H bonds", ui, redraw);
+            // vis_check(&mut state.ui.visibility.dim_peptide, "Dim peptide", ui, redraw);
+
+            if state.ligand.is_some() {
+                ui.add_space(COL_SPACING / 2.);
+                // Not using `vis_check` for this because its semantics are inverted.
+                let color = misc::active_color(state.ui.visibility.dim_peptide);
+                if ui
+                    .button(RichText::new("Dim peptide").color(color))
+                    .clicked()
+                {
+                    state.ui.visibility.dim_peptide = !state.ui.visibility.dim_peptide;
+                    *redraw = true;
+                }
+            }
+
+            if let Some(mol) = &state.molecule {
+                if let Some(dens) = &mol.elec_density {
+                    let mut redraw_dens = false;
+                    misc::vis_check(
+                        &mut state.ui.visibility.hide_density_point_cloud,
+                        "Density",
+                        ui,
+                        &mut redraw_dens,
+                    );
+
+                    if redraw_dens {
+                        if state.ui.visibility.hide_density_point_cloud {
+                            scene
+                                .entities
+                                .retain(|ent| ent.class != EntityType::DensityPoint as u32);
+                        } else {
+                            draw_density_point_cloud(&mut scene.entities, dens);
+                        }
+                        engine_updates.entities = true;
+                    }
+
+                    let mut redraw_dens_surface = false;
+                    misc::vis_check(
+                        &mut state.ui.visibility.hide_density_surface,
+                        "Density sfc",
+                        ui,
+                        &mut redraw_dens_surface,
+                    );
+
+                    if !state.ui.visibility.hide_density_surface {
+                        let iso_prev = state.ui.density_iso_level;
+
+                        ui.spacing_mut().slider_width = 300.;
+                        ui.add(Slider::new(
+                            &mut state.ui.density_iso_level,
+                            DENS_ISO_MIN..=DENS_ISO_MAX,
+                        ))
+                        .on_hover_text("The density value at which to draw the ISO surface");
+                        if state.ui.density_iso_level != iso_prev {
+                            state.volatile.flags.make_density_iso_mesh = true;
+                        }
+                    }
+
+                    // todo
+                    if redraw_dens_surface {
+                        if state.ui.visibility.hide_density_surface {
+                            let _ = &mut scene
+                                .entities
+                                .retain(|ent| ent.class != EntityType::DensitySurface as u32);
+                        } else {
+                            draw_density_surface(&mut scene.entities);
+                        }
+                        engine_updates.entities = true;
+                        redraw_dens_surface = false;
+                    }
+                }
+            }
+        });
     });
 }
 
@@ -1451,7 +1238,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             settings(state, scene, ui);
         }
 
-        ui.horizontal_wrapped(|ui| {
+        ui.horizontal(|ui| {
             let color_settings = if state.ui.popup.show_settings {
                 Color32::LIGHT_RED
             } else {
@@ -1535,50 +1322,29 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     // }
                     if files_avail.validation_2fo_fc {
                         if ui
-                            .button(RichText::new("2fo-fc").color(COLOR_HIGHLIGHT))
+                            .button(RichText::new("Fetch elec ρ").color(COLOR_HIGHLIGHT))
+                            .on_hover_text("Load 2fo-fc electron density data from RCSB PDB. Convert to CCP4 map format and display.")
                             .clicked()
                         {
                             // todo: For now, we rely on Gemmi being available on the Path.
                             // todo: We will eventually get our own reflections loader working.
 
-                            match density_from_2fo_fc_rcsb_gemmi(&mol.ident) {
+                            match density_from_2fo_fc_rcsb_gemmi(&mol.ident, gemmi_path()) {
                                 Ok(dm) => {
                                     dm_loaded = Some(dm);
-                                    println!(
-                                        "Succsesfully loaded density data from RSCB using Gemmi."
-                                    );
+                                    handle_success(&mut state.ui, "Loaded density data from RSCB".to_owned());
                                 }
                                 Err(e) => {
                                     let msg = format!(
-                                        "Error loading RCSB 2fo-fc map for {:?}",
+                                        "Error loading or processing RCSB 2fo-fc map for {:?}: {e:?}",
                                         &mol.ident
                                     );
                                     handle_err(&mut state.ui, msg);
                                 }
                             }
-
-                            // match ReflectionsData::load_from_rcsb(&mol.ident) {
-                            //     Ok(d) => {
-                            //         println!("Successfully loaded reflections and density map data");
-                            //
-                            //         let density = compute_density_grid(&d);
-                            //
-                            //         mol.reflections_data = Some(d);
-                            //         mol.elec_density = Some(density);
-                            //
-                            //         // todo: Update A/R based on how we visualize this.
-                            //         redraw = true;
-                            //     }
-                            //     Err(e) => {
-                            //         eprintln!("Error loading reflections and density map data.: {e:?}");
-                            //     }
-                            // }
-
-                            // match rcsb::load_validation_2fo_fc_cif(&mol.ident) {
-                            // }
                         }
                     }
-                    // todo: Add these if you end up with a way to use them. fo-fc is likely for visualizations.
+                    // todo: Add these if you end up with a way to use them. We currently use 2fo-fc only.
                     // if files_avail.validation_fo_fc {
                     //     if ui
                     //         .button(RichText::new("fo-fc").color(COLOR_HIGHLIGHT))
@@ -1797,154 +1563,9 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         });
 
         ui.add_space(ROW_SPACING);
+
         let mut close_ligand = false; // to avoid borrow error.
-
-        if let Some(lig) = &mut state.ligand {
-            ui.horizontal(|ui| {
-                mol_descrip(&lig.molecule, ui);
-
-                if ui.button("Close lig").clicked() {
-                    close_ligand = true;
-                }
-
-                ui.add_space(COL_SPACING);
-
-                // todo status color helper?
-                ui.label("Loaded:");
-                let color = if lig.ff_params_loaded {
-                    Color32::LIGHT_GREEN
-                } else {
-                    Color32::LIGHT_RED
-                };
-                ui.label(RichText::new("FF/q").color(color)).on_hover_text(
-                    "Green if force field names, and partial charges are assigned \
-                    for all ligand atoms. Required for ligand moleculer dynamics and docking.",
-                );
-
-                ui.add_space(COL_SPACING / 4.);
-
-                let color = if lig.frcmod_loaded {
-                    Color32::LIGHT_GREEN
-                } else {
-                    Color32::LIGHT_RED
-                };
-                ui.label(RichText::new("Frcmod").color(color))
-                    .on_hover_text(
-                        "Green if molecule-specific Amber force field parameters are \
-                    loaded for this ligand. Required for ligand molecular dynamics and docking.",
-                    );
-
-                if let Some(cid) = lig.molecule.pubchem_cid {
-                    if ui.button("Find associated structs").clicked() {
-                        // todo: Don't block.
-                        if lig.associated_structures.is_empty() {
-                            match pubchem::load_associated_structures(cid) {
-                                Ok(data) => {
-                                    lig.associated_structures = data;
-                                    state.ui.popup.show_associated_structures = true;
-                                }
-                                Err(_) => handle_err(
-                                    &mut state.ui,
-                                    "Unable to find structures for this ligand".to_owned(),
-                                ),
-                            }
-                        } else {
-                            state.ui.popup.show_associated_structures = true;
-                        }
-                    }
-                }
-
-                // ui.label("Rotate bonds:");
-                // for i in 0..ligand.flexible_bonds.len() {
-                //     if let ConformationType::Flexible { torsions } =
-                //         &mut ligand.pose.conformation_type
-                //     {
-                //         if ui.button(format!("{i}")).clicked() {
-                //             torsions[i].dihedral_angle =
-                //                 (torsions[i].dihedral_angle + TAU / 64.) % TAU;
-                //
-                //             ligand.position_atoms(None);
-                //
-                //             redraw_mol = true;
-                //         }
-                //     }
-                // }
-
-                ui.add_space(COL_SPACING);
-
-                if let Some(energy) = &state.ui.binding_energy_disp {
-                    ui.label(format!("{:.2?}", energy)); // todo placeholder.
-                }
-
-                // todo: temp, or at least temp here
-                ui.label(format!("Lig pos: {}", lig.pose.anchor_posit));
-                ui.label(format!("Lig or: {}", lig.pose.orientation));
-                if let ConformationType::AssignedTorsions { torsions } = &lig.pose.conformation_type
-                {
-                    for torsion in torsions {
-                        ui.label(format!("T: {:.3}", torsion.dihedral_angle));
-                    }
-                }
-            });
-        }
-
-        // If no ligand, provide convenience functionality for loading one based on hetero residues
-        // in the protein.
-        if state.ligand.is_none() {
-            let mut load_data = None; // Avoids dbl-borrow.
-
-            if let Some(mol) = &mut state.molecule {
-                if !mol.het_residues.is_empty() {
-                    ui.horizontal(|ui| {
-                        ui.label("Load Amber Geostd lig from: ").on_hover_text(
-                            "Attempt to load a ligand molecule and force field \
-                            params from a hetero residue included in the protein file.",
-                        );
-
-                        for res in &mol.het_residues {
-                            let name = match &res.res_type {
-                                ResidueType::Other(name) => name,
-                                _ => "hetero residue",
-                            };
-                            if ui
-                                .button(RichText::new(name).color(Color32::GOLD))
-                                .clicked()
-                            {
-                                match amber_geostd::find_mols(&name) {
-                                    Ok(data) => match data.len() {
-                                        0 => handle_err(
-                                            &mut state.ui,
-                                            "Unable to find an Amber molecule for this residue"
-                                                .to_string(),
-                                        ),
-                                        1 => {
-                                            load_data = Some(data[0].clone());
-                                        }
-                                        _ => {
-                                            load_data = Some(data[0].clone());
-                                            eprintln!("More than 1 geostd items available");
-                                        }
-                                    },
-                                    Err(e) => handle_err(
-                                        &mut state.ui,
-                                        format!("Problem loading mol data online: {e:?}"),
-                                    ),
-                                }
-                            }
-                        }
-                    });
-                }
-            }
-
-            // Avoids dbl-borrow
-            if let Some(data) = load_data {
-                handle_success(
-                    &mut state.ui,
-                    format!("Loaded {} from Amber Geostd", data.ident),
-                );
-                state.load_geostd_mol_data(&data.ident, true, data.frcmod_avail, &mut redraw_lig);
-            }
-        }
+        lig_section(state, scene, ui, &mut redraw_lig, &mut close_ligand, &mut engine_updates);
 
         ui.add_space(ROW_SPACING);
         selection_section(state, scene, &mut redraw_mol, &mut engine_updates, ui);
@@ -1954,31 +1575,20 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         ui.horizontal_wrapped(|ui| {
             cam_controls(scene, state, &mut engine_updates, ui);
 
-            ui.add_space(COL_SPACING);
-
             cam_snapshots(state, scene, &mut engine_updates, ui);
         });
-
-        ui.add_space(ROW_SPACING);
 
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
                 view_settings(state, scene, &mut engine_updates, &mut redraw_mol, ui);
-                ui.add_space(ROW_SPACING);
                 chain_selector(state, &mut redraw_mol, ui);
-
                 // todo: Show hide based on AaCategory? i.e. residue.amino_acid.category(). Hydrophilic, acidic etc.
 
                 residue_selector(state, scene, &mut redraw_mol, ui);
             });
         });
 
-        ui.add_space(ROW_SPACING);
-
-        ui.horizontal(|ui| {
-            residue_search(state, scene, &mut redraw_mol, ui);
-            ui.add_space(COL_SPACING);
-        });
+        // ui.add_space(ROW_SPACING);
 
         md_setup(state, scene, &mut engine_updates, &mut redraw_lig, ui);
 
@@ -2018,78 +1628,78 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 PopupAnchor::Position(Pos2::new(60., 60.)),
                 ui.layer_id(), // draw on top of the current layer
             )
-            .align(RectAlign::TOP)
-            // .align(RectAlign::BOTTOM_START)
-            .open(true)
-            .gap(4.0)
-            .show(|ui| {
-                // These vars avoid dbl borrow.
-                let load_ff = !state.ligand.as_ref().unwrap().ff_params_loaded;
-                let load_frcmod = !state.ligand.as_ref().unwrap().frcmod_loaded;
+                .align(RectAlign::TOP)
+                // .align(RectAlign::BOTTOM_START)
+                .open(true)
+                .gap(4.0)
+                .show(|ui| {
+                    // These vars avoid dbl borrow.
+                    let load_ff = !state.ligand.as_ref().unwrap().ff_params_loaded;
+                    let load_frcmod = !state.ligand.as_ref().unwrap().frcmod_loaded;
 
-                let Some(lig) = state.ligand.as_mut() else {
-                    return;
-                };
-                let mut msg = String::from("Not ready for dynamics: ");
+                    let Some(lig) = state.ligand.as_mut() else {
+                        return;
+                    };
+                    let mut msg = String::from("Not ready for dynamics: ");
 
-                if !lig.ff_params_loaded {
-                    msg += "No FF params or partial charges are present on this ligand."
-                }
-                if !lig.frcmod_loaded {
-                    msg += "No FRCMOD parameters loaded for this ligand."
-                }
-
-                ui.label(RichText::new(msg).color(Color32::LIGHT_RED));
-
-                ui.add_space(ROW_SPACING);
-
-                // todo: What about cases where a SDF from pubchem or drugbank doesn't include teh name used by Amber?
-                if ui.button("Check online").clicked() {
-                    // let Some(lig) = state.ligand.as_mut() else {
-                    //     return;
-                    // };
-
-                    match amber_geostd::find_mols(&lig.molecule.ident) {
-                        Ok(data) => {
-                            state.ui.popup.get_geostd_items = data;
-                        }
-                        Err(e) => handle_err(
-                            &mut state.ui,
-                            format!("Problem loading mol data online: {e:?}"),
-                        ),
+                    if !lig.ff_params_loaded {
+                        msg += "No FF params or partial charges are present on this ligand."
                     }
-                }
+                    if !lig.frcmod_loaded {
+                        msg += "No FRCMOD parameters loaded for this ligand."
+                    }
 
-                // This clone is annoying; db borrow.
-                let items = state.ui.popup.get_geostd_items.clone();
-                for mol_data in items {
+                    ui.label(RichText::new(msg).color(Color32::LIGHT_RED));
+
+                    ui.add_space(ROW_SPACING);
+
+                    // todo: What about cases where a SDF from pubchem or drugbank doesn't include teh name used by Amber?
+                    if ui.button("Check online").clicked() {
+                        // let Some(lig) = state.ligand.as_mut() else {
+                        //     return;
+                        // };
+
+                        match amber_geostd::find_mols(&lig.molecule.ident) {
+                            Ok(data) => {
+                                state.ui.popup.get_geostd_items = data;
+                            }
+                            Err(e) => handle_err(
+                                &mut state.ui,
+                                format!("Problem loading mol data online: {e:?}"),
+                            ),
+                        }
+                    }
+
+                    // This clone is annoying; db borrow.
+                    let items = state.ui.popup.get_geostd_items.clone();
+                    for mol_data in items {
+                        if ui
+                            .button(
+                                RichText::new(format!("Load params for {}", mol_data.ident))
+                                    .color(COLOR_HIGHLIGHT),
+                            )
+                            .clicked()
+                        {
+                            state.load_geostd_mol_data(
+                                &mol_data.ident,
+                                load_ff,
+                                load_frcmod,
+                                &mut redraw_lig,
+                            );
+
+                            state.ui.popup.show_get_geostd = false;
+                        }
+                    }
+
+                    ui.add_space(ROW_SPACING);
+
                     if ui
-                        .button(
-                            RichText::new(format!("Load params for {}", mol_data.ident))
-                                .color(COLOR_HIGHLIGHT),
-                        )
+                        .button(RichText::new("Close").color(Color32::LIGHT_RED))
                         .clicked()
                     {
-                        state.load_geostd_mol_data(
-                            &mol_data.ident,
-                            load_ff,
-                            load_frcmod,
-                            &mut redraw_lig,
-                        );
-
                         state.ui.popup.show_get_geostd = false;
                     }
-                }
-
-                ui.add_space(ROW_SPACING);
-
-                if ui
-                    .button(RichText::new("Close").color(Color32::LIGHT_RED))
-                    .clicked()
-                {
-                    state.ui.popup.show_get_geostd = false;
-                }
-            });
+                });
         }
 
         if state.ui.popup.show_associated_structures {
@@ -2098,7 +1708,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 // todo: I don't like this clone, but not sure how else to do it.
                 associated_structs = lig.associated_structures.clone();
             }
-            // if let Some(lig) = &state.ligand {
 
             if state.ligand.is_some() {
                 let popup_id = ui.make_persistent_id("associated_structs_popup");
@@ -2108,47 +1717,47 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     PopupAnchor::Position(Pos2::new(300., 60.)),
                     ui.layer_id(), // draw on top of the current layer
                 )
-                .align(RectAlign::TOP)
-                .open(true)
-                .gap(4.0)
-                .show(|ui| {
-                    for s in &associated_structs {
-                        ui.horizontal(|ui| {
-                            if ui
-                                .button(
-                                    RichText::new(format!("{}", s.pdb_id)).color(COLOR_HIGHLIGHT),
-                                )
-                                .clicked()
-                            {
-                                rcsb::open_overview(&s.pdb_id);
-                            }
-                            ui.add_space(COL_SPACING);
+                    .align(RectAlign::TOP)
+                    .open(true)
+                    .gap(4.0)
+                    .show(|ui| {
+                        for s in &associated_structs {
+                            ui.horizontal(|ui| {
+                                if ui
+                                    .button(
+                                        RichText::new(format!("{}", s.pdb_id)).color(COLOR_HIGHLIGHT),
+                                    )
+                                    .clicked()
+                                {
+                                    rcsb::open_overview(&s.pdb_id);
+                                }
+                                ui.add_space(COL_SPACING);
 
-                            if ui
-                                .button(
-                                    RichText::new(format!("Open this protein"))
-                                        .color(COLOR_HIGHLIGHT),
-                                )
-                                .clicked()
-                            {
-                                load_atom_coords_rcsb(
-                                    &s.pdb_id,
-                                    state,
-                                    scene,
-                                    &mut engine_updates,
-                                    &mut redraw_mol,
-                                    &mut reset_cam,
-                                );
-                            }
-                        });
+                                if ui
+                                    .button(
+                                        RichText::new(format!("Open this protein"))
+                                            .color(COLOR_HIGHLIGHT),
+                                    )
+                                    .clicked()
+                                {
+                                    load_atom_coords_rcsb(
+                                        &s.pdb_id,
+                                        state,
+                                        scene,
+                                        &mut engine_updates,
+                                        &mut redraw_mol,
+                                        &mut reset_cam,
+                                    );
+                                }
+                            });
 
-                        ui.label(RichText::new(format!("{}", s.description)));
+                            ui.label(RichText::new(format!("{}", s.description)));
+
+                            ui.add_space(ROW_SPACING);
+                        }
 
                         ui.add_space(ROW_SPACING);
-                    }
-
-                    ui.add_space(ROW_SPACING);
-                });
+                    });
 
                 ui.add_space(ROW_SPACING);
                 if ui

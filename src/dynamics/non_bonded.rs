@@ -2,20 +2,22 @@
 
 use std::{collections::HashMap, ops::AddAssign, sync::Arc};
 
+#[cfg(feature = "cuda")]
 use cudarc::driver::{CudaModule, CudaStream};
 use ewald::force_coulomb_short_range;
 use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 use rayon::prelude::*;
 
+#[cfg(feature = "cuda")]
+use crate::forces::force_nonbonded_gpu;
 use crate::{
     ComputationDevice,
     dynamics::{
         AtomDynamics, MdState,
         ambient::SimBox,
-        water_opc,
         water_opc::{O_EPS, O_SIGMA, WaterMol, WaterSite},
     },
-    forces::{force_lj, force_nonbonded_gpu},
+    forces::force_lj,
 };
 
 // Å. 9-12 should be fine; there is very little VDW force > this range due to
@@ -241,7 +243,7 @@ fn calc_force(
                 let a_s = p.src.get(atoms_dyn, atoms_static, water);
 
                 let f = f_nonbonded(
-                    Some(&mut w_local),
+                    &mut w_local,
                     a_t,
                     a_s,
                     cell,
@@ -402,6 +404,7 @@ fn calc_force_cuda(
 
     let cell_extent: Vec3F32 = cell.extent.into();
 
+    // Note that we perform virial accumulation as f64, even on GPU.
     let (f_on_dyn_f32, f_on_water, virial) = force_nonbonded_gpu(
         stream,
         module,
@@ -428,10 +431,9 @@ fn calc_force_cuda(
         n_water,
     );
 
-    // Convert back to f64.
     let f_on_dyn = f_on_dyn_f32.into_iter().map(|f| f.into()).collect();
 
-    (f_on_dyn, f_on_water, virial as f64)
+    (f_on_dyn, f_on_water, virial)
 }
 
 impl MdState {
@@ -505,7 +507,7 @@ impl MdState {
 
         // Set up pairs ahead of time; conducive to parallel iteration. We skip excluded pairs,
         // and mark scaled ones. These pairs, in symmetric cases (e.g. dynamic-dynamic), only
-        let mut pairs_dyn_dyn: Vec<_> = (0..n_dyn)
+        let pairs_dyn_dyn: Vec<_> = (0..n_dyn)
             .flat_map(|i_tgt| {
                 self.neighbors_nb.dy_dy[i_tgt]
                     .iter()
@@ -653,7 +655,7 @@ impl MdState {
 ///
 /// We use a hard distance cutoff for Vdw, enabled by its ^-7 falloff.
 pub fn f_nonbonded(
-    virial_w: Option<&mut f64>,
+    virial_w: &mut f64,
     tgt: &AtomDynamics,
     src: &AtomDynamics,
     cell: &SimBox,
@@ -685,8 +687,7 @@ pub fn f_nonbonded(
     } else {
         let (σ, ε) = lj_tables.lookup(lj_indices);
 
-        // Negative due to our mix of conventions; keep it consistent with coulomb, and net correct.
-        let mut f = -force_lj(dir, inv_dist, inv_dist_sq, σ, ε);
+        let mut f = force_lj(dir, inv_dist, inv_dist_sq, σ, ε);
         if scale14 {
             f *= SCALE_LJ_14;
         }
@@ -713,6 +714,11 @@ pub fn f_nonbonded(
         // force_coulomb(dir, dist, tgt.partial_charge, src.partial_charge, 1e-6)
     };
 
+    // // todo: Temp dir test
+    // if dist < 3.1 && dist > 2.9 {
+    //     println!("Dist: {:.2}, Src: {:.2} Tgt: {:.2}, q0: {:.2} q1: {:.2} LJ: {:.5} Coul: {:.5}", dist, src.posit.x, tgt.posit.x, src.partial_charge, tgt.partial_charge, f_lj.x, f_coulomb.x);
+    // }
+
     // See Amber RM, section 15, "1-4 Non-Bonded Interaction Scaling"
     if scale14 {
         f_coulomb *= SCALE_COUL_14;
@@ -720,10 +726,7 @@ pub fn f_nonbonded(
 
     let result = f_lj + f_coulomb;
 
-    if let Some(w) = virial_w {
-        // Virial: r_ij · F_ij (use minimum-image)
-        *w += diff.dot(result);
-    }
+    *virial_w += diff.dot(result);
 
     result
 }

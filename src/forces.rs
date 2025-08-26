@@ -13,7 +13,6 @@ cfg_if::cfg_if! {
 }
 use std::time::Instant;
 
-use cudarc::driver::CudaFunction;
 use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use lin_alg::{
@@ -26,140 +25,6 @@ use rayon::prelude::*;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use crate::dynamics::AtomDynamicsx4;
 use crate::dynamics::non_bonded::ForcesOnWaterMol;
-
-// The rough Van der Waals (Lennard-Jones) minimum potential value, for two carbon atoms.
-const LJ_MIN_R_CC: f32 = 3.82;
-
-#[cfg(feature = "cuda")]
-pub fn force_coulomb_gpu_outer(
-    stream: &Arc<CudaStream>,
-    module: &Arc<CudaModule>,
-    posits_src: &[Vec3F32],
-    posits_tgt: &[Vec3F32],
-    charges: &[f64], // Corresponds 1:1 with `posit_charges`.
-) -> Vec<f64> {
-    let start = Instant::now();
-
-    // allocate buffers
-    let n_sources = posits_src.len();
-    let n_targets = posits_tgt.len();
-
-    let posit_charges_gpus = vec3s_to_dev(stream, posits_src);
-    let posits_sample_gpu = vec3s_to_dev(stream, posits_tgt);
-
-    // Note: This step is not required when using f64ss.
-    let charges: Vec<f32> = charges.iter().map(|c| *c as f32).collect();
-
-    let mut charges_gpu = stream.alloc_zeros::<f32>(n_sources).unwrap();
-    stream.memcpy_htod(&charges, &mut charges_gpu).unwrap();
-
-    let mut V_per_sample = stream.alloc_zeros::<f32>(n_targets).unwrap();
-
-    // todo: Likely load these functions (kernels) at init and pass as a param.
-    let kernel = module.load_function("coulomb_force_kernel").unwrap();
-    // todo: Swap in when ready.
-    // let func_coulomb = module.load_function("coulomb_force_spme_short_range_kernel").unwrap();
-
-    let cfg = LaunchConfig::for_num_elems(n_targets as u32);
-
-    // let cfg = {
-    //     const NUM_THREADS: u32 = 1024;
-    //     let num_blocks = (n_targets as u32).div_ceil(NUM_THREADS);
-    //
-    //     // Custom launch config for 2-dimensional data (?)
-    //     LaunchConfig {
-    //         grid_dim: (num_blocks, 1, 1),
-    //         block_dim: (NUM_THREADS, 1, 1),
-    //         shared_mem_bytes: 0,
-    //     }
-    // };
-
-    let mut launch_args = stream.launch_builder(&kernel);
-
-    launch_args.arg(&mut V_per_sample);
-    launch_args.arg(&posit_charges_gpus);
-    launch_args.arg(&posits_sample_gpu);
-    launch_args.arg(&charges_gpu);
-    launch_args.arg(&n_sources);
-    launch_args.arg(&n_targets);
-
-    unsafe { launch_args.launch(cfg) }.unwrap();
-
-    // todo: Consider dtoh; passing to an existing vec instead of re-allocating
-    let result = stream.memcpy_dtov(&V_per_sample).unwrap();
-    // stream.memcpy_dtoh(&V_per_sample, &mut result_buf).unwrap();
-
-    let time_diff = Instant::now() - start;
-    println!("GPU coulomb data collected. Time: {:?}", time_diff);
-
-    // This step is not required when using f64.
-    result.iter().map(|v| *v as f64).collect()
-    // result
-}
-
-#[cfg(feature = "cuda")]
-pub fn force_lj_gpu(
-    stream: &Arc<CudaStream>,
-    module: &Arc<CudaModule>,
-    posits_tgt: &[Vec3F32],
-    posits_src: &[Vec3F32],
-    sigmas: &[f32],
-    epss: &[f32],
-) -> Vec<Vec3F32> {
-    // Out is per target.
-    let start = Instant::now();
-
-    // Allocate buffers
-    let n_sources = posits_src.len();
-    let n_targets = posits_tgt.len();
-
-    let posits_src_gpu = vec3s_to_dev(stream, posits_src);
-    let posits_tgt_gpu = vec3s_to_dev(stream, posits_tgt);
-
-    let mut result_buf = {
-        let v = vec![Vec3F32::new_zero(); n_targets];
-        vec3s_to_dev(stream, &v)
-    };
-
-    let sigmas_gpu = stream.memcpy_stod(sigmas).unwrap();
-    let epss_gpu = stream.memcpy_stod(epss).unwrap();
-
-    // todo: Likely load these functions (kernels) at init and pass as a param.
-    let kernel = module.load_function("lj_force_kernel").unwrap();
-
-    let cfg = LaunchConfig::for_num_elems(n_targets as u32);
-
-    let mut launch_args = stream.launch_builder(&kernel);
-
-    launch_args.arg(&mut result_buf);
-    launch_args.arg(&posits_src_gpu);
-    launch_args.arg(&posits_tgt_gpu);
-    launch_args.arg(&sigmas_gpu);
-    launch_args.arg(&epss_gpu);
-    launch_args.arg(&n_sources);
-    launch_args.arg(&n_targets);
-
-    unsafe { launch_args.launch(cfg) }.unwrap();
-
-    // todo: Consider dtoh; passing to an existing vec instead of re-allocating
-    let result = vec3s_from_dev(stream, &result_buf);
-
-    // let time_diff = Instant::now() - start;
-    // println!("GPU LJ force data collected. Time: {:?}", time_diff);
-
-    result
-}
-
-// todo: Start.
-// fn run_kernel(
-//     stream: &Arc<CudaStream>,
-//     module: &Arc<CudaModule>,
-//     kernel: &CudaFunction,
-//     params: &Token,
-//     output: &Token,
-// ) {
-//
-// }
 
 /// Handles both LJ, and Coulomb (SPME short range) force.
 /// Inputs are structured differently here from our other one; uses pre-paired inputs and outputs, and
@@ -194,9 +59,7 @@ pub fn force_nonbonded_gpu(
     cell_extent: Vec3F32,
     n_dyn: usize,
     n_water: usize,
-) -> (Vec<Vec3F32>, Vec<ForcesOnWaterMol>, f32) {
-    let start = Instant::now();
-
+) -> (Vec<Vec3F32>, Vec<ForcesOnWaterMol>, f64) {
     let n = posits_tgt.len();
 
     assert_eq!(tgt_is.len(), n);
@@ -248,7 +111,7 @@ pub fn force_nonbonded_gpu(
         vec3s_to_dev(stream, &v)
     };
 
-    let mut virial_gpu = stream.memcpy_stod(&[0.0f32]).unwrap();
+    let mut virial_gpu = stream.memcpy_stod(&[0.0f64]).unwrap();
 
     // Store immutable input arrays to the device.
 
@@ -278,9 +141,7 @@ pub fn force_nonbonded_gpu(
     // todo: Likely load these functions (kernels) at init and pass as a param.
     // todo: Seems to take only 4 μs (per time step), so should be fine here.
     let kernel = module.load_function("nonbonded_force_kernel").unwrap();
-
     let cfg = LaunchConfig::for_num_elems(n as u32);
-
     let mut launch_args = stream.launch_builder(&kernel);
 
     launch_args.arg(&mut forces_on_dyn);
@@ -310,7 +171,6 @@ pub fn force_nonbonded_gpu(
     launch_args.arg(&cell_extent);
     launch_args.arg(&cutoff_ewald);
     launch_args.arg(&alpha_ewald);
-    // todo: Cell A/R for wrapping water
     launch_args.arg(&n);
 
     unsafe { launch_args.launch(cfg) }.unwrap();
@@ -338,11 +198,7 @@ pub fn force_nonbonded_gpu(
         });
     }
 
-    // todo: QC this.
     let virial = stream.memcpy_dtov(&virial_gpu).unwrap()[0];
-
-    // let time_diff = Instant::now() - start;
-    // println!("GPU LJ force data collected. Time: {:?}", time_diff);
 
     (forces_on_dyn, forces_on_water, virial)
 }
@@ -451,11 +307,12 @@ pub fn force_lj_f32(dir: Vec3F32, dist: f32, sigma: f32, eps: f32) -> Vec3F32 {
 
     // todo: ChatGPT is convinced I divide by r here, not r^2...
     let mag = 24. * eps * (2. * s_r_12 - s_r_6) / dist.powi(2);
-    -dir * mag
+    dir * mag
 }
 
 /// See notes on `V_lj()`. We set up the dist params we do to share computation
 /// with Coulomb.
+/// This assumes diff (and dir) is in order tgt - src.
 pub fn force_lj(dir: Vec3, inv_dist: f64, inv_dist_sq: f64, sigma: f64, eps: f64) -> Vec3 {
     let s_r = sigma * inv_dist;
     let s_r_6 = s_r.powi(6);
@@ -464,7 +321,7 @@ pub fn force_lj(dir: Vec3, inv_dist: f64, inv_dist_sq: f64, sigma: f64, eps: f64
     // todo: ChatGPT is convinced I divide by r here, not r^2...
     // let mag = 24. * eps * (2. * s_r_12 - s_r_6) * inv_dist_sq;
     let mag = 24. * eps * (2. * s_r_12 - s_r_6) * inv_dist;
-    -dir * mag
+    dir * mag
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -476,6 +333,5 @@ pub fn force_lj_x8(dir: Vec3x8, dist: f32x8, sigma: f32x8, eps: f32x8) -> Vec3x8
 
     // todo: ChatGPT is convinced I divide by r here, not r^2...
     let mag = f32x8::splat(24.) * eps * (f32x8::splat(2.) * s_r_12 - s_r_6) / dist.powi(2);
-
-    -dir * mag
+    dir * mag
 }

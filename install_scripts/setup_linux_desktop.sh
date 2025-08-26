@@ -13,6 +13,7 @@ if [ ! -d "$APP_DIR" ]; then
 fi
 
 cp "$NAME" "$APP_DIR"
+cp -R gemmi "$APP_DIR"
 cp icon.png "$APP_DIR/icon.png"
 
 # We create a .desktop file dynamically here; one fewer file to manage.

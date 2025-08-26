@@ -1089,24 +1089,21 @@ impl MdState {
         self.neighbors_nb.ref_pos_static = self.atoms_static.iter().map(|a| a.posit).collect();
         self.neighbors_nb.ref_pos_water_o = self.water.iter().map(|m| m.o.posit).collect();
 
-        build_neighbors(
-            &mut self.neighbors_nb.dy_dy,
+        self.neighbors_nb.dy_dy = build_neighbors(
             &self.neighbors_nb.ref_pos_dyn,
             &self.neighbors_nb.ref_pos_dyn,
             &self.cell,
             true,
         );
 
-        build_neighbors(
-            &mut self.neighbors_nb.dy_static,
+        self.neighbors_nb.dy_static = build_neighbors(
             &self.neighbors_nb.ref_pos_dyn,
             &self.neighbors_nb.ref_pos_static,
             &self.cell,
             false,
         );
 
-        build_neighbors(
-            &mut self.neighbors_nb.dy_water,
+        self.neighbors_nb.dy_water = build_neighbors(
             &self.neighbors_nb.ref_pos_dyn,
             &self.neighbors_nb.ref_pos_water_o,
             &self.cell,
@@ -1114,16 +1111,14 @@ impl MdState {
         );
         self.rebuild_dy_water_inv();
 
-        build_neighbors(
-            &mut self.neighbors_nb.water_static,
+        self.neighbors_nb.water_static = build_neighbors(
             &self.neighbors_nb.ref_pos_water_o,
             &self.neighbors_nb.ref_pos_static,
             &self.cell,
             false,
         );
 
-        build_neighbors(
-            &mut self.neighbors_nb.water_water,
+        self.neighbors_nb.water_water = build_neighbors(
             &self.neighbors_nb.ref_pos_water_o,
             &self.neighbors_nb.ref_pos_water_o,
             &self.cell,

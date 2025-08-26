@@ -107,7 +107,9 @@ use crate::{
     ComputationDevice,
     dynamics::{
         ambient::BerendsenBarostat,
-        non_bonded::{CHARGE_UNIT_SCALER, EWALD_ALPHA, LjTables, SCALE_COUL_14, SPME_N},
+        non_bonded::{
+            CHARGE_UNIT_SCALER, EWALD_ALPHA, LONG_RANGE_CUTOFF, LjTables, SCALE_COUL_14, SPME_N,
+        },
         prep::HydrogenMdType,
         water_opc::WaterMol,
     },
@@ -184,6 +186,8 @@ pub struct SnapshotDynamics {
     pub water_o_posits: Vec<Vec3>,
     pub water_h0_posits: Vec<Vec3>,
     pub water_h1_posits: Vec<Vec3>,
+    pub energy_kinetic: f32,
+    pub energy_potential: f32,
     // For now, I believe velocities are unused, but tracked here for non-water atoms.
     // We can add water velocities if needed.
 }
@@ -343,6 +347,8 @@ pub struct MdState {
     // todo: Hmm... Is this DRY with forces_on_water? Investigate.
     pub water_pme_sites_forces: Vec<[Vec3; 3]>, // todo: A/R
     pme_recip: PmeRecip,
+    /// kcal/mol
+    pub potential_energy: f64,
 }
 
 impl MdState {
@@ -362,6 +368,7 @@ impl MdState {
         }
 
         self.barostat.virial_pair_kcal = 0.0;
+        self.potential_energy = 0.;
     }
 
     fn apply_all_forces(&mut self, dev: &ComputationDevice) {
@@ -453,9 +460,15 @@ impl MdState {
         }
 
         self.reset_accels();
+
         self.apply_all_forces(dev);
 
-        self.handle_spme_recip();
+        let mut start = Instant::now();
+        self.handle_spme_recip(dev);
+        if self.step_count == 0 {
+            let elapsed = start.elapsed();
+            println!("SPME recip time: {:?} μs", elapsed.as_micros());
+        }
 
         // Forces (bonded and nonbonded, to dynamic and water atoms) have been applied; perform other
         // steps required for integration; second half-kick, RATTLE for hydrogens; SETTLE for water. -----
@@ -503,11 +516,22 @@ impl MdState {
         }
     }
 
-    fn handle_spme_recip(&mut self) {
+    // todo: Make work on GPU.
+    fn handle_spme_recip(&mut self, dev: &ComputationDevice) {
         const K_COUL: f64 = 1.; // todo: ChatGPT really wants this, but I don't think I need it.
 
         let (pos_all, q_all, map) = self.gather_pme_particles_wrapped();
-        let mut f_recip = self.pme_recip.forces(&pos_all, &q_all);
+
+        let mut f_recip = match dev {
+            ComputationDevice::Cpu => self.pme_recip.forces(&pos_all, &q_all),
+            #[cfg(feature = "cuda")]
+            ComputationDevice::Gpu((stream, module)) => {
+                // self.pme_recip.forces_gpu(stream, module, &pos_all, &q_all)
+                // self.pme_recip.forces_gpu(stream, module, &pos_all, &q_all)
+                // todo: GPU isn't improving this, but it should be
+                self.pme_recip.forces(&pos_all, &q_all)
+            }
+        };
 
         // Scale to Amber force units if your PME returns raw qE:
         for f in f_recip.iter_mut() {
@@ -552,6 +576,7 @@ impl MdState {
 
             let qi = self.atoms[i].partial_charge;
             let qj = self.atoms[j].partial_charge;
+
             let df = ewald_comp_force(dir, r, qi, qj, self.pme_recip.alpha)
                     * (SCALE_COUL_14 - 1.0) // todo: Cache this.
                     * K_COUL;
@@ -626,7 +651,7 @@ impl MdState {
         self.pme_recip = PmeRecip::new((SPME_N, SPME_N, SPME_N), (lx, ly, lz), EWALD_ALPHA);
     }
 
-    /// A helper for the thermostat
+    /// Note: This is currently only for the dynamic atoms; does not take water kinetic energy into account.
     fn current_kinetic_energy(&self) -> f64 {
         self.atoms
             .iter()
@@ -652,6 +677,9 @@ impl MdState {
             water_o_posits,
             water_h0_posits,
             water_h1_posits,
+            // todo: Calculate and store kinetic energy elsewhere, A/R.
+            energy_kinetic: self.current_kinetic_energy() as f32,
+            energy_potential: self.potential_energy as f32,
         })
     }
 }
