@@ -37,6 +37,12 @@ __device__ inline float3 operator*(const float3 &a, const float b) {
     return make_float3(a.x * b, a.y * b, a.z * b);
 }
 
+// For returning both from a function.
+struct ForceEnergy {
+    float3 force;
+    float energy;
+};
+
 // Apparently normally adding to output can cause race conditions.
 __device__ __forceinline__ void atomicAddFloat3(float3* addr, const float3 v) {
     atomicAdd(&addr->x, v.x);
@@ -64,30 +70,37 @@ __device__ inline float3 min_image(float3 ext, float3 dv) {
     return dv;
 }
 
-// These params include inv_r and inv_r_sq due to it being shared with LJ.
+// These params includes inv_r due to it being shared with LJ.
 __device__
-float3 coulomb_force_spme_short_range(
+ForceEnergy coulomb_force_spme_short_range(
     float r,
     float inv_r,
-    float inv_r_sq,
     float3 dir,
     float q_0,
     float q_1,
     float cutoff_dist,
     float alpha
 ) {
+    ForceEnergy result;
+
     // Outside cutoff: no short-range contribution
     if (r >= cutoff_dist) {
-        return make_float3(0.f, 0.f, 0.f);
+        result.force  = make_float3(0.f, 0.f, 0.f);
+        result.energy = 0.f;
+        return result;
     }
 
     const float alpha_r = alpha * r;
     const float erfc_term = erfcf(alpha_r);
+    const float charge_term = q_0 * q_1;
+
     const float exp_term  = __expf(-(alpha_r * alpha_r));
 
-    const float force_mag = q_0 * q_1 * (erfc_term * inv_r_sq + 2.0f * alpha * exp_term * INV_SQRT_PI * inv_r);
+    const float force_mag = charge_term * (erfc_term * inv_r * inv_r + 2.0f * alpha * exp_term * INV_SQRT_PI * inv_r);
 
-    return dir * force_mag;
+    result.force = dir * force_mag;
+    result.energy = charge_term * inv_r * erfc_term;
+    return result;
 }
 
 __device__
@@ -110,32 +123,30 @@ float lj_V(
 // This assumes diff (and dir) is in order tgt - src.
 // Different API.
 __device__
-float3 lj_force_v2(
+ForceEnergy lj_force_v2(
     float3 diff,
     float r,
     float inv_r,
-    // todo: You can remove inv_r_sq if you keep it div r.
-    float inv_r_sq,
     float3 dir,
     float sigma,
     float eps
 ) {
-    // todo: You can get a more efficient version possibly.
-
-
     const float sr = sigma * inv_r;
     const float sr6 = powf(sr, 6.);
     const float sr12 = sr6 * sr6;
 
-    // todo: ChatGPT is convinced I divide by r here, not r^2...
-//     const float mag = -24.0f * eps * (2. * sr12 - sr6) * inv_r_sq;
     const float mag = 24.0f * eps * (2. * sr12 - sr6) * inv_r;
-    return dir * mag;
+
+    ForceEnergy result;
+    result.force = dir * mag;
+    result.energy = 4. * eps * (sr12 - sr6);
+
+    return result;
 }
 
 // This assumes diff (and dir) is in order tgt - src.
 __device__
-float3 lj_force(
+ForceEnergy lj_force(
     float3 posit_tgt,
     float3 posit_src,
     float sigma,
@@ -146,16 +157,12 @@ float3 lj_force(
     const float r = std::sqrt(r_sq);
     const float inv_r = 1.0f / r;
 
-    // todo: You can remove inv_r_sq if you keep it div r.
-    const float inv_r_sq = inv_r * inv_r;
-
     const float3 dir = diff * inv_r;
 
     return lj_force_v2(
         diff,
         r,
         inv_r,
-        inv_r_sq,
         dir,
         sigma,
         eps

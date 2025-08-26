@@ -19,6 +19,7 @@ use crate::{
     },
     forces::force_lj,
 };
+use crate::forces::force_e_lj;
 
 // Å. 9-12 should be fine; there is very little VDW force > this range due to
 // the ^-7 falloff.
@@ -224,7 +225,7 @@ fn calc_force(
     water: &[WaterMol],
     cell: &SimBox,
     lj_tables: &LjTables,
-) -> (Vec<Vec3>, Vec<ForcesOnWaterMol>, f64) {
+) -> (Vec<Vec3>, Vec<ForcesOnWaterMol>, f64, f64) {
     let n_dyn = atoms_dyn.len();
     let n_wat = water.len();
 
@@ -236,13 +237,14 @@ fn calc_force(
                     vec![Vec3::new_zero(); n_dyn],
                     vec![ForcesOnWaterMol::default(); n_wat],
                     0.0_f64,
+                    0.0_f64,
                 )
             },
-            |(mut acc_d, mut acc_w, mut w_local), p| {
+            |(mut acc_d, mut acc_w, mut w_local, mut energy), p| {
                 let a_t = p.tgt.get(atoms_dyn, atoms_static, water);
                 let a_s = p.src.get(atoms_dyn, atoms_static, water);
 
-                let f = f_nonbonded(
+                let (f, energy) = f_nonbonded(
                     &mut w_local,
                     a_t,
                     a_s,
@@ -259,7 +261,7 @@ fn calc_force(
                     add_to_sink(&mut acc_d, &mut acc_w, p.src, -f);
                 }
 
-                (acc_d, acc_w, w_local)
+                (acc_d, acc_w, w_local, energy)
             },
         )
         .reduce(
@@ -268,9 +270,10 @@ fn calc_force(
                     vec![Vec3::new_zero(); n_dyn],
                     vec![ForcesOnWaterMol::default(); n_wat],
                     0.0_f64,
+                    0.0_f64,
                 )
             },
-            |(mut f_on_dyn, mut f_on_water, virial_a), (db, wb, virial_b)| {
+            |(mut f_on_dyn, mut f_on_water, virial_a, e_a), (db, wb, virial_b, e_b)| {
                 for i in 0..n_dyn {
                     f_on_dyn[i] += db[i];
                 }
@@ -280,7 +283,8 @@ fn calc_force(
                     f_on_water[i].f_h0 += wb[i].f_h0;
                     f_on_water[i].f_h1 += wb[i].f_h1;
                 }
-                (f_on_dyn, f_on_water, virial_a + virial_b)
+
+                (f_on_dyn, f_on_water, virial_a + virial_b, e_a + e_b)
             },
         )
 }
@@ -298,7 +302,7 @@ fn calc_force_cuda(
     lj_tables: &LjTables,
     cutoff_ewald: f64,
     alpha_ewald: f64,
-) -> (Vec<Vec3>, Vec<ForcesOnWaterMol>, f64) {
+) -> (Vec<Vec3>, Vec<ForcesOnWaterMol>, f64, f64) {
     let n_dyn = atoms_dyn.len();
     let n_water = water.len();
 
@@ -405,7 +409,7 @@ fn calc_force_cuda(
     let cell_extent: Vec3F32 = cell.extent.into();
 
     // Note that we perform virial accumulation as f64, even on GPU.
-    let (f_on_dyn_f32, f_on_water, virial) = force_nonbonded_gpu(
+    let (f_on_dyn_f32, f_on_water, virial, energy) = force_nonbonded_gpu(
         stream,
         module,
         &tgt_is,
@@ -433,14 +437,14 @@ fn calc_force_cuda(
 
     let f_on_dyn = f_on_dyn_f32.into_iter().map(|f| f.into()).collect();
 
-    (f_on_dyn, f_on_water, virial)
+    (f_on_dyn, f_on_water, virial, energy)
 }
 
 impl MdState {
     /// Run the appropriate force-computation function to get force on dynamic atoms, force
     /// on water atoms, and virial sum for the barostat. Uses GPU if available.
     fn apply_force(&mut self, dev: &ComputationDevice, pairs: &[NonBondedPair]) {
-        let (f_on_dyn, f_on_water, virial) = match dev {
+        let (f_on_dyn, f_on_water, virial, energy) = match dev {
             ComputationDevice::Cpu => calc_force(
                 &pairs,
                 &self.atoms,
@@ -483,6 +487,7 @@ impl MdState {
         }
 
         self.barostat.virial_pair_kcal += virial;
+        self.potential_energy += energy;
     }
 
     /// Applies Coulomb and Van der Waals (Lennard-Jones) forces on dynamic atoms, in place.
@@ -654,6 +659,7 @@ impl MdState {
 /// We run long-range SPME Coulomb force separately.
 ///
 /// We use a hard distance cutoff for Vdw, enabled by its ^-7 falloff.
+/// Returns energy as well.
 pub fn f_nonbonded(
     virial_w: &mut f64,
     tgt: &AtomDynamics,
@@ -665,16 +671,15 @@ pub fn f_nonbonded(
     // These flags are for use with forces on water.
     calc_lj: bool,
     calc_coulomb: bool,
-) -> Vec3 {
-    let diff = tgt.posit - src.posit;
-    let diff = cell.min_image(diff);
+) -> (Vec3, f64) {
+    let diff = cell.min_image(tgt.posit - src.posit);
 
     // We compute these dist-related values once, and share them between
     // LJ and Coulomb.
     let dist_sq = diff.magnitude_squared();
 
     if dist_sq < 1e-12 {
-        return Vec3::new_zero();
+        return (Vec3::new_zero(), 0.);
     }
 
     let dist = dist_sq.sqrt();
@@ -682,22 +687,23 @@ pub fn f_nonbonded(
     let inv_dist_sq = inv_dist * inv_dist;
     let dir = diff * inv_dist;
 
-    let f_lj = if !calc_lj || dist > CUTOFF_VDW {
-        Vec3::new_zero()
+    let (f_lj, energy_lj) = if !calc_lj || dist > CUTOFF_VDW {
+        (Vec3::new_zero(), 0.)
     } else {
         let (σ, ε) = lj_tables.lookup(lj_indices);
 
-        let mut f = force_lj(dir, inv_dist, inv_dist_sq, σ, ε);
+        let (mut f, mut e) = force_e_lj(dir, inv_dist, σ, ε);
         if scale14 {
             f *= SCALE_LJ_14;
+            e *= SCALE_LJ_14;
         }
-        f
+        (f, e)
     };
 
     // We assume that in the AtomDynamics structs, charges are already scaled to Amber units.
     // (No longer in elementary charge)
-    let mut f_coulomb = if !calc_coulomb {
-        Vec3::new_zero()
+    let (mut f_coulomb, mut e_coulomb) = if !calc_coulomb {
+        (Vec3::new_zero(), 0.)
     } else {
         force_coulomb_short_range(
             dir,
@@ -722,13 +728,15 @@ pub fn f_nonbonded(
     // See Amber RM, section 15, "1-4 Non-Bonded Interaction Scaling"
     if scale14 {
         f_coulomb *= SCALE_COUL_14;
+        e_coulomb *= SCALE_COUL_14;
     }
 
-    let result = f_lj + f_coulomb;
+    let force = f_lj + f_coulomb;
+    let energy = energy_lj + energy_lj;
 
-    *virial_w += diff.dot(result);
+    *virial_w += diff.dot(force);
 
-    result
+    (force, energy)
 }
 
 /// Helper. Returns σ, ε between an atom pair. Atom order passed as params doesn't matter.

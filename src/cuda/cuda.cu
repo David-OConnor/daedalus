@@ -71,6 +71,7 @@ void coulomb_force_kernel(
 //     }
 // }
 
+// Currently  unused
 extern "C" __global__
 void lj_V_kernel(
     float* out,
@@ -103,6 +104,7 @@ void lj_V_kernel(
     }
 }
 
+// Currently unused
 extern "C" __global__
 void lj_force_kernel(
     float3* out,
@@ -146,6 +148,7 @@ void nonbonded_force_kernel(
     float3* out_water_h0,
     float3* out_water_h1,
     double* virial,  // Virial pair sum, used for the barostat.
+    double* energy,
     // Pair-wise inputs
     const uint32_t* tgt_is,
     const uint32_t* src_is,
@@ -203,24 +206,28 @@ void nonbonded_force_kernel(
         // errors.
         const float inv_r = rsqrtf(r_sq);
         const float r = r_sq * inv_r;
-        const float inv_r_sq = inv_r * inv_r;
 
         const float3 dir = diff * inv_r;
 
-        float3 f_lj = make_float3(0.f, 0.f, 0.f);
+        ForceEnergy f_lj;
+        f_lj.force = make_float3(0.f, 0.f, 0.f);
+        f_lj.energy = 0.f;
+
         if (calc_ljs[i]) {
-            f_lj = lj_force_v2(diff, r, inv_r, inv_r_sq, dir, sigma, eps);
+            f_lj = lj_force_v2(diff, r, inv_r, dir, sigma, eps);
         }
 
         const float q_tgt = qs_tgt[i];
         const float q_src = qs_src[i];
 
-        float3 f_coulomb = make_float3(0.f, 0.f, 0.f);
+        ForceEnergy f_coulomb;
+        f_coulomb.force = make_float3(0.f, 0.f, 0.f);
+        f_coulomb.energy = 0.f;
+
         if (calc_coulombs[i]) {
-            f_coulomb = coulomb_force_spme_short_range(
+            f_e_coulomb = coulomb_force_spme_short_range(
                 r,
                 inv_r,
-                inv_r_sq,
                 dir,
                 q_tgt,
                 q_src,
@@ -230,11 +237,15 @@ void nonbonded_force_kernel(
         }
 
         if (scale_14) {
-            f_lj = f_lj * 0.5f;
-            f_coulomb = f_coulomb * 0.833333333f;
+            f_lj.force *= 0.5;
+            f_lj.energy *= 0.5;
+
+            f_coulomb.force *= 0.833333333f;
+            f_coulomb.energy *= 0.833333333f;
         }
 
-        const float3 f = f_lj + f_coulomb;
+        const float3 f = f_lj.force + f_coulomb.force;
+        const float3 energy = f_lj.energy + f_coulomb.energy;
 
         // Virial per pair · F
         double virial_pair = ((double)diff.x * (double)f.x + (double)diff.y * (double)f.y + (double)diff.z * (double)f.z);

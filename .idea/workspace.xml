@@ -13,10 +13,10 @@
   <component name="ChangeListManager">
     <list default="true" id="56119a7d-3397-4692-902c-376cd93a301b" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/dynamics/bonded.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dynamics/bonded.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/dynamics/bonded_forces.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dynamics/bonded_forces.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/cuda/cuda.cu" beforeDir="false" afterPath="$PROJECT_DIR$/src/cuda/cuda.cu" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/cuda/util.cu" beforeDir="false" afterPath="$PROJECT_DIR$/src/cuda/util.cu" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/dynamics/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dynamics/mod.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/dynamics/non_bonded.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dynamics/non_bonded.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/forces.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/forces.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/ui/misc.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/ui/misc.rs" afterDir="false" />
     </list>
@@ -135,7 +135,7 @@
       <workItem from="1755903916568" duration="1240000" />
       <workItem from="1755906666530" duration="13968000" />
       <workItem from="1755980844932" duration="38225000" />
-      <workItem from="1756072246160" duration="37775000" />
+      <workItem from="1756072246160" duration="44297000" />
     </task>
     <servers />
   </component>

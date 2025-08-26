@@ -522,16 +522,18 @@ impl MdState {
 
         let (pos_all, q_all, map) = self.gather_pme_particles_wrapped();
 
+        // todo: THe CPU versoin is returning 0s, and the GPU one is not??
         let mut f_recip = match dev {
             ComputationDevice::Cpu => self.pme_recip.forces(&pos_all, &q_all),
             #[cfg(feature = "cuda")]
             ComputationDevice::Gpu((stream, module)) => {
                 // self.pme_recip.forces_gpu(stream, module, &pos_all, &q_all)
-                // self.pme_recip.forces_gpu(stream, module, &pos_all, &q_all)
                 // todo: GPU isn't improving this, but it should be
                 self.pme_recip.forces(&pos_all, &q_all)
             }
         };
+
+        println!("F RECIP: {:?}", &f_recip[0..20]);
 
         // Scale to Amber force units if your PME returns raw qE:
         for f in f_recip.iter_mut() {

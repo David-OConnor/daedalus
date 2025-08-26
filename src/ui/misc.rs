@@ -421,10 +421,10 @@ pub fn md_setup(
 
                 ui.add_space(COL_SPACING);
                 ui.label("E (kcal/mol). Kinetic: ");
-                ui.label(RichText::new(format!("{:.2}", snap.energy_kinetic)).color(Color32::GOLD));
+                ui.label(RichText::new(format!("{:.1}", snap.energy_kinetic)).color(Color32::GOLD));
 
                 ui.label("Potential: ");
-                ui.label(RichText::new(format!("{:.2}", snap.energy_potential)).color(Color32::GOLD));
+                ui.label(RichText::new(format!("{:.1}", snap.energy_potential)).color(Color32::GOLD));
             }
 
         });

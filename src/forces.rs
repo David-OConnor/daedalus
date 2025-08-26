@@ -30,6 +30,8 @@ use crate::dynamics::non_bonded::ForcesOnWaterMol;
 /// Inputs are structured differently here from our other one; uses pre-paired inputs and outputs, and
 /// a common index. Exclusions (e.g. Amber-style 1-2 adn 1-3) are handled upstream.
 ///
+/// Returns force, virial sum, and potential energy.
+///
 /// todo: This class of function is just connecting, and I believe could be automated
 /// todo with a macro or code gen. look into how to do that. Start with your ideal API.
 #[cfg(feature = "cuda")]
@@ -59,7 +61,7 @@ pub fn force_nonbonded_gpu(
     cell_extent: Vec3F32,
     n_dyn: usize,
     n_water: usize,
-) -> (Vec<Vec3F32>, Vec<ForcesOnWaterMol>, f64) {
+) -> (Vec<Vec3F32>, Vec<ForcesOnWaterMol>, f64, f64) {
     let n = posits_tgt.len();
 
     assert_eq!(tgt_is.len(), n);
@@ -112,6 +114,7 @@ pub fn force_nonbonded_gpu(
     };
 
     let mut virial_gpu = stream.memcpy_stod(&[0.0f64]).unwrap();
+    let mut energy_gpu = stream.memcpy_stod(&[0.0f64]).unwrap();
 
     // Store immutable input arrays to the device.
 
@@ -150,6 +153,7 @@ pub fn force_nonbonded_gpu(
     launch_args.arg(&mut forces_on_water_h0);
     launch_args.arg(&mut forces_on_water_h1);
     launch_args.arg(&mut virial_gpu);
+    launch_args.arg(&mut energy_gpu);
     //
     launch_args.arg(&tgt_is_gpu);
     launch_args.arg(&src_is_gpu);
@@ -199,8 +203,9 @@ pub fn force_nonbonded_gpu(
     }
 
     let virial = stream.memcpy_dtov(&virial_gpu).unwrap()[0];
+    let energy = stream.memcpy_dtov(&energy_gpu).unwrap()[0];
 
-    (forces_on_dyn, forces_on_water, virial)
+    (forces_on_dyn, forces_on_water, virial, energy)
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -313,25 +318,37 @@ pub fn force_lj_f32(dir: Vec3F32, dist: f32, sigma: f32, eps: f32) -> Vec3F32 {
 /// See notes on `V_lj()`. We set up the dist params we do to share computation
 /// with Coulomb.
 /// This assumes diff (and dir) is in order tgt - src.
-pub fn force_lj(dir: Vec3, inv_dist: f64, inv_dist_sq: f64, sigma: f64, eps: f64) -> Vec3 {
-    let s_r = sigma * inv_dist;
-    let s_r_6 = s_r.powi(6);
-    let s_r_12 = s_r_6.powi(2);
+pub fn force_lj(dir: Vec3, inv_dist: f64, sigma: f64, eps: f64) -> Vec3 {
+    let sr = sigma * inv_dist;
+    let sr6 = sr.powi(6);
+    let sr12 = sr6.powi(2);
 
-    // todo: ChatGPT is convinced I divide by r here, not r^2...
-    // let mag = 24. * eps * (2. * s_r_12 - s_r_6) * inv_dist_sq;
-    let mag = 24. * eps * (2. * s_r_12 - s_r_6) * inv_dist;
+    let mag = 24. * eps * (2. * sr12 - sr6) * inv_dist;
     dir * mag
+}
+
+/// See notes on `V_lj()`. We set up the dist params we do to share computation
+/// with Coulomb.
+/// This assumes diff (and dir) is in order tgt - src.
+/// This variant also computes energy.
+pub fn force_e_lj(dir: Vec3, inv_dist: f64, sigma: f64, eps: f64) -> (Vec3, f64) {
+    let sr = sigma * inv_dist;
+    let sr6 = sr.powi(6);
+    let sr12 = sr6.powi(2);
+
+    let mag = 24. * eps * (2. * sr12 - sr6) * inv_dist;
+
+    let energy = 4. * eps * (sr12 - sr6);
+    (dir * mag, energy)
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 /// See notes on `V_lj()`.
-pub fn force_lj_x8(dir: Vec3x8, dist: f32x8, sigma: f32x8, eps: f32x8) -> Vec3x8 {
-    let s_r = sigma / dist;
-    let s_r_6 = s_r.powi(6);
-    let s_r_12 = s_r_6.powi(2);
+pub fn force_lj_x8(dir: Vec3x8, inv_dist: f32x8, sigma: f32x8, eps: f32x8) -> Vec3x8 {
+    let sr = sigma * inv_dist;
+    let sr6 = sr.powi(6);
+    let sr12 = sr6.powi(2);
 
-    // todo: ChatGPT is convinced I divide by r here, not r^2...
-    let mag = f32x8::splat(24.) * eps * (f32x8::splat(2.) * s_r_12 - s_r_6) / dist.powi(2);
+    let mag = f32x8::splat(24.) * eps * (f32x8::splat(2.) * sr12 - sr6) * inv_dist;
     dir * mag
 }
