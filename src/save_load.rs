@@ -1,7 +1,7 @@
 use std::{fs::File, path::Path};
 
-use crate::molecule::Molecule;
+use crate::molecule::MoleculePeptide;
 
 struct SaveData {
-    molecule: Molecule,
+    molecule: MoleculePeptide,
 }

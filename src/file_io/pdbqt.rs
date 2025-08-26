@@ -20,8 +20,9 @@ use crate::{
         ConformationType,
         prep::{DockType, UnitCellDims},
     },
-    molecule::{Atom, AtomRole, Chain, Ligand, Molecule, Residue, ResidueEnd},
+    molecule::{Atom, AtomRole, Chain, Ligand, Residue, ResidueEnd},
 };
+use crate::molecule::MoleculeLigand;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum TorsionStatus {
@@ -69,7 +70,7 @@ fn parse_optional_f32(s: &str) -> io::Result<Option<f32>> {
     }
 }
 
-impl Molecule {
+impl MoleculeLigand {
     /// From PQBQT text, e.g. loaded from a file.
     pub fn from_pdbqt(pdb_text: &str) -> io::Result<(Self, Option<Ligand>)> {
         let mut atoms = Vec::new();
@@ -201,8 +202,11 @@ impl Molecule {
             }
         }
 
+        // todo: Handle bonds. Are they in the file, or should we infer them?
+        let bonds = Vec::new();
+
         Ok((
-            Molecule::new(ident, atoms, chains, residues, None, None, None),
+            MoleculeLigand::new(ident, atoms, bonds, None, None),
             lig,
         ))
     }
@@ -340,7 +344,7 @@ impl Molecule {
     }
 }
 
-pub fn load_pdbqt(path: &Path) -> io::Result<(Molecule, Option<Ligand>)> {
+pub fn load_pdbqt(path: &Path) -> io::Result<(MoleculeLigand, Option<Ligand>)> {
     let mut file = File::open(path)?;
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer)?;
@@ -348,5 +352,5 @@ pub fn load_pdbqt(path: &Path) -> io::Result<(Molecule, Option<Ligand>)> {
     let data_str: String = String::from_utf8(buffer)
         .map_err(|_| io::Error::new(ErrorKind::InvalidData, "Invalid UTF8"))?;
 
-    Molecule::from_pdbqt(&data_str)
+    MoleculeLigand::from_pdbqt(&data_str)
 }

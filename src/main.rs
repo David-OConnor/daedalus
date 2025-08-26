@@ -47,6 +47,7 @@ mod ui_aux;
 
 #[cfg(test)]
 mod tests;
+mod nucleic_acid;
 
 use std::{
     collections::HashMap,
@@ -78,7 +79,7 @@ use lin_alg::{
     f64::Vec3 as Vec3F64,
 };
 use mol_drawing::MoleculeView;
-use molecule::Molecule;
+use molecule::MoleculePeptide;
 use na_seq::{
     AminoAcid, AminoAcidGeneral,
     element::{LjTable, init_lj_lut},
@@ -437,7 +438,7 @@ struct State {
     pub volatile: StateVolatile,
     // pub pdb: Option<PDB>,
     pub cif_pdb_raw: Option<String>,
-    pub molecule: Option<Molecule>,
+    pub molecule: Option<MoleculePeptide>,
     pub ligand: Option<Ligand>,
     pub cam_snapshots: Vec<CamSnapshot>,
     /// This allows us to keep in-memory data for other molecules.

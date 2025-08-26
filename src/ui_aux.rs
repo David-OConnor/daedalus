@@ -19,7 +19,7 @@ use crate::{
         CHARGE_MAP_MAX, CHARGE_MAP_MIN, COLOR_AA_NON_RESIDUE_EGUI, draw_ligand, draw_molecule,
         draw_water,
     },
-    molecule::{Atom, Ligand, Molecule, PeptideAtomPosits, Residue, aa_color},
+    molecule::{Atom, Ligand, MoleculePeptide, PeptideAtomPosits, Residue, aa_color},
     render::set_docking_light,
     ui::{
         COL_SPACING, COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_HIGHLIGHT, COLOR_INACTIVE,
@@ -89,7 +89,7 @@ fn disp_atom_data(atom: &Atom, residues: &[Residue], posit_override: Option<Vec3
 }
 
 /// Display text of the selected atom
-pub fn selected_data(mol: &Molecule, ligand: &Option<Ligand>, selection: &Selection, ui: &mut Ui) {
+pub fn selected_data(mol: &MoleculePeptide, ligand: &Option<Ligand>, selection: &Selection, ui: &mut Ui) {
     match selection {
         Selection::Atom(sel_i) => {
             if *sel_i >= mol.atoms.len() {
@@ -408,7 +408,7 @@ pub fn md_setup(
                 {
                     let res_type = res.res_type.clone(); // Avoids dbl-borrow.
 
-                    let mol_fm_res = Molecule::from_res(res, &mol.atoms, false);
+                    let mol_fm_res = MoleculePeptide::from_res(res, &mol.atoms, false);
                     let mut lig = Ligand::new(mol_fm_res, &state.ff_params.lig_specific);
                     state.mol_dynamics = None;
 

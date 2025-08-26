@@ -4,20 +4,28 @@
     <option name="autoReloadType" value="ALL" />
   </component>
   <component name="CargoProjects">
-    <cargoProject FILE="$PROJECT_DIR$/Cargo.toml">
-      <package file="$PROJECT_DIR$">
-        <enabledFeature name="default" />
-      </package>
-    </cargoProject>
+    <cargoProject FILE="$PROJECT_DIR$/Cargo.toml" />
   </component>
   <component name="ChangeListManager">
     <list default="true" id="56119a7d-3397-4692-902c-376cd93a301b" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/src/nucleic_acid.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/cuda/util.cu" beforeDir="false" afterPath="$PROJECT_DIR$/src/cuda/util.cu" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/dynamics/non_bonded.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dynamics/non_bonded.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/forces.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/forces.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/add_hydrogens.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/add_hydrogens.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/docking/external.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/docking/external.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/docking/find_sites.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/docking/find_sites.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/docking/prep.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/docking/prep.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/download_mols.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/download_mols.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/drug_like.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/drug_like.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/dynamics/prep.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dynamics/prep.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/file_io/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/file_io/mod.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/file_io/pdbqt.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/file_io/pdbqt.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/main.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/molecule.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/molecule.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/save_load.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/save_load.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/tests.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/tests.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/ui.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/ui.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/ui_aux.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/ui_aux.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/util.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/util.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -25,6 +33,13 @@
     <option name="LAST_RESOLUTION" value="IGNORE" />
   </component>
   <component name="ExecutionTargetManager" SELECTED_TARGET="RsBuildProfile:release" />
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="Rust File" />
+      </list>
+    </option>
+  </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
@@ -49,6 +64,7 @@
     "RunOnceActivity.git.unshallow": "true",
     "RunOnceActivity.rust.reset.selective.auto.import": "true",
     "git-widget-placeholder": "main",
+    "ignore.virus.scanning.warn.message": "true",
     "junie.onboarding.icon.badge.shown": "true",
     "node.js.detected.package.eslint": "true",
     "node.js.detected.package.tslint": "true",
@@ -107,6 +123,7 @@
   <component name="RustProjectSettings">
     <option name="toolchainHomeDirectory" value="$USER_HOME$/.cargo/bin" />
   </component>
+  <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="project-level" UseSingleDictionary="true" transferred="true" />
   <component name="TaskManager">
     <task active="true" id="Default" summary="Default task">
       <changelist id="56119a7d-3397-4692-902c-376cd93a301b" name="Changes" comment="" />
@@ -117,6 +134,7 @@
       <workItem from="1755451506322" duration="33335000" />
       <workItem from="1755564519673" duration="27103000" />
       <workItem from="1755641667152" duration="39976000" />
+      <workItem from="1756221592415" duration="4495000" />
     </task>
     <servers />
   </component>

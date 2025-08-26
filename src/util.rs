@@ -20,7 +20,7 @@ use crate::{
     download_mols::load_cif_rcsb,
     dynamics::prep::populate_ff_and_q,
     mol_drawing::{EntityType, MoleculeView, draw_density, draw_density_surface, draw_molecule},
-    molecule::{Atom, AtomRole, Bond, Chain, Ligand, Molecule, Residue},
+    molecule::{Atom, AtomRole, Bond, Chain, Ligand, MoleculePeptide, Residue},
     render::{
         CAM_INIT_OFFSET, Color, MESH_DENSITY_SURFACE, MESH_SECONDARY_STRUCTURE,
         MESH_SOLVENT_SURFACE, RENDER_DIST_FAR, RENDER_DIST_NEAR, set_flashlight, set_static_light,
@@ -575,7 +575,7 @@ pub fn load_atom_coords_rcsb(
 
             let ff_map = &state.ff_params.prot_ff_q_map.as_ref().unwrap().internal;
 
-            let mut mol: Molecule = match Molecule::from_mmcif(cif, ff_map) {
+            let mut mol: MoleculePeptide = match MoleculePeptide::from_mmcif(cif, ff_map) {
                 Ok(m) => m,
                 Err(e) => {
                     eprintln!("Problem parsing mmCif data into molecule: {e:?}");
@@ -686,7 +686,7 @@ pub fn reset_camera(
     scene: &mut Scene,
     view_depth: &mut (u16, u16),
     engine_updates: &mut EngineUpdates,
-    mol: &Molecule,
+    mol: &MoleculePeptide,
 ) {
     let center: lin_alg::f32::Vec3 = mol.center.into();
     scene.camera.position =
@@ -915,7 +915,7 @@ pub fn make_egui_color(color: Color) -> Color32 {
 /// use a flexible conformation, or match partly.
 ///
 /// Return a center suitable for docking.
-pub fn move_lig_to_res(lig: &mut Ligand, mol: &Molecule, res: &Residue) -> Vec3 {
+pub fn move_lig_to_res(lig: &mut Ligand, mol: &MoleculePeptide, res: &Residue) -> Vec3 {
     // todo: Pick center-of-mass atom, or better yet, match it to the anchor atom.
     let posit = mol.atoms[res.atoms[0]].posit;
 

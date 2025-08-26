@@ -20,7 +20,7 @@ fn test_docking_setup() {
     let path = PathBuf::from_str("molecules/1c8k.cif").unwrap();
     let pdb = load_cif_pdb(&path).unwrap();
     let file = File::open(&path).unwrap();
-    let receptor = Molecule::from_cif_pdb(&pdb, file);
+    let receptor = MoleculePeptide::from_cif_pdb(&pdb, file);
 
     let mol_ligand = load_sdf(&PathBuf::from_str("molecules/DB03496.sdf").unwrap()).unwrap();
     let mut lig = Ligand::new(mol_ligand);

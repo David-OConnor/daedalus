@@ -29,7 +29,7 @@ use crate::{
     ProtFfMap,
     aa_coords::aa_data_from_coords,
     dynamics::ParamError,
-    molecule::{Atom, AtomRole, Molecule},
+    molecule::{Atom, AtomRole, MoleculePeptide},
 };
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -344,7 +344,7 @@ pub fn h_type_in_res_sidechain(
     Ok(result)
 }
 
-impl Molecule {
+impl MoleculePeptide {
     /// Adds hydrogens, and populdates residue dihedral angles.
     pub fn populate_hydrogens_angles(&mut self, ff_map: &ProtFfMap) -> Result<(), ParamError> {
         println!("Populating hydrogens and measuring dihedrals...");
