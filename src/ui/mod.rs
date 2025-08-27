@@ -974,6 +974,15 @@ fn view_settings(
             // Subset of hetero.
             let water_prev = state.ui.visibility.hide_water;
             misc::vis_check(&mut state.ui.visibility.hide_water, "Water", ui, redraw);
+
+            if !state.nucleid_acids.is_empty() {
+                misc::vis_check(
+                    &mut state.ui.visibility.hide_nucleic_acids,
+                    "Nucleic acids",
+                    ui,
+                    redraw,
+                );
+            }
             // }
 
             if let Some(md) = &state.mol_dynamics {
@@ -1027,14 +1036,18 @@ fn view_settings(
 
             // todo temp
             if ui.button("Load DNA").clicked() {
-                state.nucleid_acids = vec![MoleculeNucleicAcid::from_seq(&[
-                    Nucleotide::A,
-                    Nucleotide::C,
-                    Nucleotide::G,
-                    Nucleotide::T,
-                    Nucleotide::G,
-                    Nucleotide::C,
-                ])];
+                // state.nucleid_acids = vec![MoleculeNucleicAcid::from_seq(&[
+                //     Nucleotide::A,
+                //     Nucleotide::C,
+                //     Nucleotide::G,
+                //     Nucleotide::T,
+                //     Nucleotide::G,
+                //     Nucleotide::C,
+                // ])];
+                //
+                if let Some(mol) = &state.molecule {
+                    state.nucleid_acids = vec![MoleculeNucleicAcid::from_peptide(&mol)];
+                }
                 draw_nucleic_acid(state, scene);
                 engine_updates.entities = true;
             }

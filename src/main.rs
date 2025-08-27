@@ -268,7 +268,7 @@ struct Visibility {
     dim_peptide: bool,
     hide_density_point_cloud: bool,
     hide_density_surface: bool,
-    // todo: Seq here, or not?
+    hide_nucleic_acids: bool,
 }
 
 impl Default for Visibility {
@@ -284,6 +284,7 @@ impl Default for Visibility {
             dim_peptide: false,
             hide_density_point_cloud: false,
             hide_density_surface: false,
+            hide_nucleic_acids: false,
         }
     }
 }

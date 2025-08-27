@@ -6,7 +6,11 @@ use std::{collections::HashMap, f64::consts::TAU};
 
 use bio_files::{BondType, ResidueType};
 use lin_alg::f64::Vec3;
-use na_seq::{AminoAcid, Element, Nucleotide};
+use na_seq::{
+    AminoAcid,
+    Element::{self, *},
+    Nucleotide,
+};
 
 use crate::molecule::{Atom, Bond, MoleculeCommon, MoleculeGeneric, MoleculePeptide};
 
@@ -38,113 +42,117 @@ impl MoleculeNucleicAcid {
     /// This is a minimal “it renders now” model you can extend with full atom templates later.
     /// Initializes a linear molecule.
     pub fn from_seq(seq: &[Nucleotide]) -> Self {
-        // ---- Helical parameters (B-form style) ----
-        const RISE: f64 = 3.4; // Å per nucleotide along helix axis
-        const TWIST_DEG: f64 = 36.0; // degrees per nucleotide
-        const R_BACKBONE: f64 = 4.2; // Å radius for phosphate/sugar path
-        const R_BASE: f64 = 6.0; // Å radius for base anchor (sticks out)
-        const SUGAR_OFFSET_ANG: f64 = 0.35; // radians offset P→S around the axis
-        const SUGAR_OFFSET_Z: f64 = 0.6; // Å small axial offset P→S
-        const BASE_OFFSET_ANG: f64 = TAU * 0.5; // bases roughly opposite backbone
-        const BASE_OFFSET_Z: f64 = 0.2; // Å small axial offset S→B
-
-        let twist = TWIST_DEG.to_radians();
-
-        // Helper closure to place a point on a helix at index i, angle offset, radius, z offset.
-        let helix_point = |i: usize, ang_off: f64, radius: f64, z_off: f64| -> Vec3 {
-            let t = i as f64 * twist + ang_off;
-            Vec3::new(radius * t.cos(), radius * t.sin(), i as f64 * RISE + z_off)
+        let is_rna = matches!(infer_na(seq), NucleicAcidType::Rna);
+        let helix = if is_rna {
+            // A-form-ish
+            HelixGeom {
+                rise: 2.60,
+                twist: 33.0_f64.to_radians(),
+                r_backbone: 4.6,
+                base_rad: 6.2,
+                sugar_ang: 0.35,
+                sugar_dz: 0.6,
+                base_ang: TAU / 2., // bases roughly opposite backbone
+                base_dz: 0.25,
+            }
+        } else {
+            // B-DNA-ish
+            HelixGeom {
+                rise: 3.40,
+                twist: 36.0_f64.to_radians(),
+                r_backbone: 4.2,
+                base_rad: 6.0,
+                sugar_ang: 0.35,
+                sugar_dz: 0.6,
+                base_ang: TAU / 2.,
+                base_dz: 0.20,
+            }
         };
 
         let mut common = MoleculeCommon::default();
-        common.ident = format!("{}-nt nucleic acid", seq.len());
+        common.ident = format!(
+            "{}-nt {} strand",
+            seq.len(),
+            if is_rna { "RNA" } else { "DNA" }
+        );
 
-        // Reserve a bit to reduce reallocs
-        common.atoms.reserve(seq.len() * 3);
-        common.adjacency_list.reserve(seq.len() * 3);
+        // Reserve roughly (#atoms per residue ≈ 18 backbone + 10–12 base) × n
+        common.atoms.reserve(seq.len() * 32);
+        common.adjacency_list.reserve(seq.len() * 32);
 
-        // Keep indices so we can wire bonds
-        let mut p_idx: Vec<usize> = Vec::with_capacity(seq.len());
-        let mut s_idx: Vec<usize> = Vec::with_capacity(seq.len());
-        let mut b_idx: Vec<usize> = Vec::with_capacity(seq.len());
+        // Keep per-residue name→index for wiring bonds
+        let mut idx_maps: Vec<HashMap<&'static str, usize>> = Vec::with_capacity(seq.len());
 
-        // Utility: push atom and return its index
-        let mut push_atom = |posit: Vec3, element: Element, residue: usize| -> usize {
-            let idx = common.atoms.len();
-            common.atoms.push(Atom {
-                serial_number: (idx as u32) + 1,
-                posit,
-                element,
-                // Keep template fields minimal for now:
-                type_in_res: None,
-                force_field_type: None,
-                dock_type: None,
-                role: None,
-                residue: Some(residue),
-                chain: Some(0),
-                hetero: false,
-                occupancy: None,
-                partial_charge: None,
-                temperature_factor: None,
-            });
-            common.adjacency_list.push(Vec::new());
-            idx
-        };
-
-        // Place atoms
+        // Build residues
         for (i, nt) in seq.iter().enumerate() {
-            // Phosphate (P) roughly on backbone radius
-            let p_pos = helix_point(i, 0.0, R_BACKBONE, 0.0);
-            let p_i = push_atom(p_pos, Element::Phosphorus, i);
-            p_idx.push(p_i);
+            // Residue placement on helix
+            let angle = i as f64 * helix.twist;
+            let s_world = helix_point(i, 0.0, helix.r_backbone, helix.sugar_dz, &helix);
+            let s_world = rotate_xy(s_world, angle);
+            // Local frame at residue (C1′ origin):
+            //   e_r: outward radial (base points roughly along +x_local = +e_r)
+            //   e_t: tangential (around the helix)
+            //   e_z: helix axis (z)
+            let e_r = Vec3::new(angle.cos(), angle.sin(), 0.0);
+            let e_t = Vec3::new(-angle.sin(), angle.cos(), 0.0);
+            let e_z = Vec3::new(0.0, 0.0, 1.0);
+            let frame = Frame {
+                o: s_world,
+                ex: e_r,
+                ey: e_t,
+                ez: e_z,
+            };
 
-            // “Sugar anchor” (use C4′ proxy): nearby around the helix
-            let s_pos = helix_point(i, SUGAR_OFFSET_ANG, R_BACKBONE, SUGAR_OFFSET_Z);
-            let s_i = push_atom(s_pos, Element::Carbon, i);
-            s_idx.push(s_i);
+            let mut name_to_idx: HashMap<&'static str, usize> = HashMap::new();
 
-            // Base anchor atom:
-            //   Purines (A,G) connect via N9; Pyrimidines (C,T,U) via N1.
-            //   We just set the element to N and place it further out from the axis.
-            let base_is_purine = matches!(nt, Nucleotide::A | Nucleotide::G);
-            let _anchor_name = if base_is_purine { "N9" } else { "N1" };
-            let b_pos = helix_point(
-                i,
-                BASE_OFFSET_ANG + SUGAR_OFFSET_ANG,
-                R_BASE,
-                SUGAR_OFFSET_Z + BASE_OFFSET_Z,
-            );
-            let b_i = push_atom(b_pos, Element::Nitrogen, i);
-            b_idx.push(b_i);
+            // === Sugar + phosphate ===
+            let sugar = sugar_template(is_rna);
+            let phos = phosphate_template();
+            for a in sugar.iter().chain(phos.iter()) {
+                let pos = frame.apply(a.coord);
+                let idx = push_atom(&mut common, pos, a.element, i);
+                name_to_idx.insert(a.name, idx);
+            }
+
+            // === Base (ring + exocyclics) ===
+            let base = base_template(*nt);
+            for a in &base.atoms {
+                // Base is further out from axis; we offset its local x by base radial delta.
+                // The coordinates below are already drawn in the base plane; we add a global outward
+                // shift so the base sits ~base_rad from axis.
+                let local = Vec3::new(a.coord.x + base.anchor_shift, a.coord.y, a.coord.z);
+                let pos = frame.apply(local);
+                let idx = push_atom(&mut common, pos, a.element, i);
+                name_to_idx.insert(a.name, idx);
+            }
+
+            // === Bonds within residue ===
+            // Sugar bonds
+            for (a, b) in sugar_bonds(is_rna) {
+                push_bond_by_name(&mut common, &name_to_idx, a, b, true);
+            }
+            // Phosphate bonds (O5′—P and two non-bridging oxygens)
+            for (a, b) in phosphate_bonds() {
+                push_bond_by_name(&mut common, &name_to_idx, a, b, true);
+            }
+            // Glycosidic bond C1′—(N9 or N1)
+            push_bond_by_name(&mut common, &name_to_idx, "C1'", base.anchor, false);
+            // Base internal bonds
+            for (a, b) in &base.bonds {
+                push_bond_by_name(&mut common, &name_to_idx, a, b, false);
+            }
+
+            idx_maps.push(name_to_idx);
         }
 
-        // Utility: push bond and wire adjacency
-        let mut push_bond = |a: usize, b: usize, is_backbone: bool| {
-            let (a_sn, b_sn) = (common.atoms[a].serial_number, common.atoms[b].serial_number);
-            common.bonds.push(Bond {
-                bond_type: BondType::Single,
-                atom_0_sn: a_sn,
-                atom_1_sn: b_sn,
-                atom_0: a,
-                atom_1: b,
-                is_backbone,
-            });
-            common.adjacency_list[a].push(b);
-            common.adjacency_list[b].push(a);
-        };
-
-        // Intra-residue bonds: P—S and S—B
-        for i in 0..seq.len() {
-            push_bond(p_idx[i], s_idx[i], true); // phosphate to sugar
-            push_bond(s_idx[i], b_idx[i], false); // sugar to base
+        // Inter-residue phosphodiester: O3′(i) — P(i+1)
+        for i in 0..seq.len().saturating_sub(1) {
+            let i0 = idx_maps[i]["O3'"];
+            let i1 = idx_maps[i + 1]["P"];
+            push_bond_indices(&mut common, i0, i1, true);
         }
 
-        // Inter-residue phosphodiester: S(i-1) — P(i)
-        for i in 1..seq.len() {
-            push_bond(s_idx[i - 1], p_idx[i], true);
-        }
-
-        // Mirror atom positions into common.atom_posits for your engine’s convenience
+        // Positions mirror
         common.atom_posits = common.atoms.iter().map(|a| a.posit).collect();
 
         Self {
@@ -167,5 +175,414 @@ impl MoleculeNucleicAcid {
         }
 
         Self::from_seq(&seq)
+    }
+}
+
+#[derive(Clone, Copy)]
+struct HelixGeom {
+    rise: f64,
+    twist: f64,
+    r_backbone: f64,
+    base_rad: f64,
+    sugar_ang: f64,
+    sugar_dz: f64,
+    base_ang: f64,
+    base_dz: f64,
+}
+
+fn infer_na(seq: &[Nucleotide]) -> NucleicAcidType {
+    // todo
+    // if seq.iter().any(|n| matches!(n, Nucleotide::U)) {
+    //     NucleicAcidType::Rna
+    // } else {
+    NucleicAcidType::Dna
+    // }
+}
+
+fn helix_point(i: usize, ang_off: f64, radius: f64, dz: f64, h: &HelixGeom) -> Vec3 {
+    let t = i as f64 * h.twist + ang_off;
+    Vec3::new(radius * t.cos(), radius * t.sin(), i as f64 * h.rise + dz)
+}
+
+fn rotate_xy(v: Vec3, angle: f64) -> Vec3 {
+    let (c, s) = (angle.cos(), angle.sin());
+    Vec3::new(c * v.x - s * v.y, s * v.x + c * v.y, v.z)
+}
+
+struct Frame {
+    o: Vec3,
+    ex: Vec3,
+    ey: Vec3,
+    ez: Vec3,
+}
+impl Frame {
+    fn apply(&self, local: Vec3) -> Vec3 {
+        self.o + self.ex * local.x + self.ey * local.y + self.ez * local.z
+    }
+}
+
+// todo: What is this?? Don't like.
+#[derive(Clone, Copy)]
+struct TAtom {
+    name: &'static str,
+    element: Element,
+    coord: Vec3,
+}
+
+fn push_atom(common: &mut MoleculeCommon, pos: Vec3, element: Element, residue: usize) -> usize {
+    let idx = common.atoms.len();
+    common.atoms.push(Atom {
+        serial_number: (idx as u32) + 1,
+        posit: pos,
+        element,
+        type_in_res: None,
+        force_field_type: None,
+        dock_type: None,
+        role: None,
+        residue: Some(residue),
+        chain: Some(0),
+        hetero: false,
+        occupancy: None,
+        partial_charge: None,
+        temperature_factor: None,
+    });
+    common.adjacency_list.push(Vec::new());
+    idx
+}
+
+fn push_bond_indices(common: &mut MoleculeCommon, a: usize, b: usize, is_backbone: bool) {
+    let (a_sn, b_sn) = (common.atoms[a].serial_number, common.atoms[b].serial_number);
+    common.bonds.push(Bond {
+        bond_type: BondType::Single,
+        atom_0_sn: a_sn,
+        atom_1_sn: b_sn,
+        atom_0: a,
+        atom_1: b,
+        is_backbone,
+    });
+    common.adjacency_list[a].push(b);
+    common.adjacency_list[b].push(a);
+}
+
+fn push_bond_by_name(
+    common: &mut MoleculeCommon,
+    name_to_idx: &HashMap<&'static str, usize>,
+    a: &'static str,
+    b: &'static str,
+    is_backbone: bool,
+) {
+    let ia = *name_to_idx.get(a).expect("atom name missing");
+    let ib = *name_to_idx.get(b).expect("atom name missing");
+    push_bond_indices(common, ia, ib, is_backbone);
+}
+
+/* ------------------------------- Backbone ------------------------------- */
+
+fn sugar_template(is_rna: bool) -> Vec<TAtom> {
+    // Local frame: origin at C1′.
+    // Coordinates are approximate but chemically sensible; units Å.
+    let mut v = vec![
+        TAtom {
+            name: "C1'",
+            element: Carbon,
+            coord: v(0.00, 0.00, 0.00),
+        },
+        TAtom {
+            name: "O4'",
+            element: Oxygen,
+            coord: v(-1.40, 0.10, 0.05),
+        },
+        TAtom {
+            name: "C4'",
+            element: Carbon,
+            coord: v(-2.05, -0.70, 0.00),
+        },
+        TAtom {
+            name: "C3'",
+            element: Carbon,
+            coord: v(-1.60, -2.05, 0.08),
+        },
+        TAtom {
+            name: "O3'",
+            element: Oxygen,
+            coord: v(-1.75, -3.25, 0.10),
+        },
+        TAtom {
+            name: "C2'",
+            element: Carbon,
+            coord: v(-0.25, -2.20, -0.05),
+        },
+        TAtom {
+            name: "C5'",
+            element: Carbon,
+            coord: v(-3.40, -0.25, 0.10),
+        },
+        TAtom {
+            name: "O5'",
+            element: Oxygen,
+            coord: v(-3.85, 1.05, 0.20),
+        },
+    ];
+    if is_rna {
+        v.push(TAtom {
+            name: "O2'",
+            element: Oxygen,
+            coord: Vec3::new(0.55, -3.35, -0.05),
+        });
+    }
+    v
+}
+
+fn sugar_bonds(is_rna: bool) -> &'static [(&'static str, &'static str)] {
+    // Within residue sugar ring + exocyclic O5′
+    if is_rna {
+        &[
+            ("C1'", "O4'"),
+            ("O4'", "C4'"),
+            ("C4'", "C3'"),
+            ("C3'", "O3'"),
+            ("C3'", "C2'"),
+            ("C2'", "C1'"),
+            ("C2'", "O2'"),
+            ("C4'", "C5'"),
+            ("C5'", "O5'"),
+        ]
+    } else {
+        &[
+            ("C1'", "O4'"),
+            ("O4'", "C4'"),
+            ("C4'", "C3'"),
+            ("C3'", "O3'"),
+            ("C3'", "C2'"),
+            ("C2'", "C1'"),
+            ("C4'", "C5'"),
+            ("C5'", "O5'"),
+        ]
+    }
+}
+
+fn phosphate_template() -> Vec<TAtom> {
+    vec![
+        TAtom {
+            name: "P",
+            element: Phosphorus,
+            coord: v(-5.10, 1.30, 0.20),
+        },
+        TAtom {
+            name: "OP1",
+            element: Oxygen,
+            coord: v(-6.25, 2.20, 0.20),
+        },
+        TAtom {
+            name: "OP2",
+            element: Oxygen,
+            coord: v(-5.60, 0.00, 1.45),
+        },
+        // O5′ is on sugar; the P—O5′ bond is added via phosphate_bonds()
+    ]
+}
+
+fn phosphate_bonds() -> &'static [(&'static str, &'static str)] {
+    &[("O5'", "P"), ("P", "OP1"), ("P", "OP2")]
+}
+
+/* -------------------------------- Bases -------------------------------- */
+
+struct BaseTemplate {
+    atoms: Vec<TAtom>,
+    bonds: Vec<(&'static str, &'static str)>,
+    anchor: &'static str, // "N9" (purines) or "N1" (pyrimidines)
+    anchor_shift: f64,    // shift along +x(local) so base sits near helix shell
+}
+
+fn base_template(nt: Nucleotide) -> BaseTemplate {
+    match nt {
+        Nucleotide::A => base_purine_adenine(),
+        Nucleotide::G => base_purine_guanine(),
+        Nucleotide::C => base_pyrimidine_cytosine(),
+        Nucleotide::T => base_pyrimidine_thymine(),
+        // todo
+        // Nucleotide::U => base_pyrimidine_uracil(),
+        _ => base_pyrimidine_cytosine(), // fallback
+    }
+}
+
+// Simple planar purine; anchor N9 at ~1.47 Å from C1′ along +x.
+fn base_purine_adenine() -> BaseTemplate {
+    let a = 1.47; // glycosidic C1′—N9
+    let atoms = vec![
+        t("N9", Nitrogen, a, 0.00, 0.00),
+        t("C8", Carbon, a + 1.20, 0.80, 0.00),
+        t("N7", Nitrogen, a + 0.70, 2.00, 0.00),
+        t("C5", Carbon, a - 0.50, 1.95, 0.00),
+        t("C6", Carbon, a - 1.05, 0.70, 0.00),
+        t("N6", Nitrogen, a - 2.35, 0.70, 0.00), // exocyclic amino on C6
+        t("N1", Nitrogen, a - 0.50, -0.55, 0.00),
+        t("C2", Carbon, a + 0.70, -0.85, 0.00),
+        t("N3", Nitrogen, a + 1.35, 0.30, 0.00),
+        t("C4", Carbon, a + 0.55, 1.40, 0.00),
+    ];
+    let bonds = vec![
+        ("N9", "C8"),
+        ("C8", "N7"),
+        ("N7", "C5"),
+        ("C5", "C6"),
+        ("C6", "N1"),
+        ("N1", "C2"),
+        ("C2", "N3"),
+        ("N3", "C4"),
+        ("C4", "C5"),
+        ("C6", "N6"),
+    ];
+    BaseTemplate {
+        atoms,
+        bonds,
+        anchor: "N9",
+        anchor_shift: 4.8,
+    }
+}
+
+fn base_purine_guanine() -> BaseTemplate {
+    let a = 1.47;
+    let atoms = vec![
+        t("N9", Nitrogen, a, 0.00, 0.00),
+        t("C8", Carbon, a + 1.20, 0.80, 0.00),
+        t("N7", Nitrogen, a + 0.70, 2.00, 0.00),
+        t("C5", Carbon, a - 0.50, 1.95, 0.00),
+        t("C6", Carbon, a - 1.05, 0.70, 0.00),
+        t("O6", Oxygen, a - 2.25, 0.70, 0.00), // carbonyl on C6
+        t("N1", Nitrogen, a - 0.50, -0.55, 0.00),
+        t("C2", Carbon, a + 0.70, -0.85, 0.00),
+        t("N2", Nitrogen, a + 1.75, -1.75, 0.00), // exocyclic amino on C2
+        t("N3", Nitrogen, a + 1.35, 0.30, 0.00),
+        t("C4", Carbon, a + 0.55, 1.40, 0.00),
+    ];
+    let bonds = vec![
+        ("N9", "C8"),
+        ("C8", "N7"),
+        ("N7", "C5"),
+        ("C5", "C6"),
+        ("C6", "N1"),
+        ("N1", "C2"),
+        ("C2", "N3"),
+        ("N3", "C4"),
+        ("C4", "C5"),
+        ("C6", "O6"),
+        ("C2", "N2"),
+    ];
+    BaseTemplate {
+        atoms,
+        bonds,
+        anchor: "N9",
+        anchor_shift: 4.8,
+    }
+}
+
+// Pyrimidine templates — anchor is N1
+fn base_pyrimidine_cytosine() -> BaseTemplate {
+    let a = 1.47; // C1′—N1
+    let atoms = vec![
+        t("N1", Nitrogen, a, 0.00, 0.00),
+        t("C2", Carbon, a + 1.30, 0.00, 0.00),
+        t("O2", Oxygen, a + 2.45, 0.00, 0.00), // carbonyl at C2
+        t("N3", Nitrogen, a + 1.25, 1.15, 0.00),
+        t("C4", Carbon, a + 0.10, 1.85, 0.00),
+        t("N4", Nitrogen, a - 0.05, 3.05, 0.00), // amino at C4
+        t("C5", Carbon, a - 1.05, 1.15, 0.00),
+        t("C6", Carbon, a - 1.00, 0.00, 0.00),
+    ];
+    let bonds = vec![
+        ("N1", "C2"),
+        ("C2", "N3"),
+        ("N3", "C4"),
+        ("C4", "C5"),
+        ("C5", "C6"),
+        ("C6", "N1"),
+        ("C2", "O2"),
+        ("C4", "N4"),
+    ];
+    BaseTemplate {
+        atoms,
+        bonds,
+        anchor: "N1",
+        anchor_shift: 4.6,
+    }
+}
+
+fn base_pyrimidine_thymine() -> BaseTemplate {
+    let a = 1.47;
+    let atoms = vec![
+        t("N1", Nitrogen, a, 0.00, 0.00),
+        t("C2", Carbon, a + 1.30, 0.00, 0.00),
+        t("O2", Oxygen, a + 2.45, 0.00, 0.00),
+        t("N3", Nitrogen, a + 1.25, 1.15, 0.00),
+        t("C4", Carbon, a + 0.10, 1.85, 0.00),
+        t("O4", Oxygen, a + 0.10, 3.00, 0.00), // carbonyl at C4
+        t("C5", Carbon, a - 1.05, 1.15, 0.00),
+        t("C5M", Carbon, a - 1.95, 2.10, 0.00), // methyl (no Hs drawn)
+        t("C6", Carbon, a - 1.00, 0.00, 0.00),
+    ];
+    let bonds = vec![
+        ("N1", "C2"),
+        ("C2", "N3"),
+        ("N3", "C4"),
+        ("C4", "C5"),
+        ("C5", "C6"),
+        ("C6", "N1"),
+        ("C2", "O2"),
+        ("C4", "O4"),
+        ("C5", "C5M"),
+    ];
+    BaseTemplate {
+        atoms,
+        bonds,
+        anchor: "N1",
+        anchor_shift: 4.6,
+    }
+}
+
+fn base_pyrimidine_uracil() -> BaseTemplate {
+    let a = 1.47;
+    let atoms = vec![
+        t("N1", Nitrogen, a, 0.00, 0.00),
+        t("C2", Carbon, a + 1.30, 0.00, 0.00),
+        t("O2", Element::Oxygen, a + 2.45, 0.00, 0.00),
+        t("N3", Nitrogen, a + 1.25, 1.15, 0.00),
+        t("C4", Carbon, a + 0.10, 1.85, 0.00),
+        t("O4", Oxygen, a + 0.10, 3.00, 0.00),
+        t("C5", Carbon, a - 1.05, 1.15, 0.00),
+        t("C6", Carbon, a - 1.00, 0.00, 0.00),
+    ];
+    let bonds = vec![
+        ("N1", "C2"),
+        ("C2", "N3"),
+        ("N3", "C4"),
+        ("C4", "C5"),
+        ("C5", "C6"),
+        ("C6", "N1"),
+        ("C2", "O2"),
+        ("C4", "O4"),
+    ];
+    BaseTemplate {
+        atoms,
+        bonds,
+        anchor: "N1",
+        anchor_shift: 4.6,
+    }
+}
+
+/* ------------------------------- utilities ------------------------------ */
+
+#[inline]
+fn v(x: f64, y: f64, z: f64) -> Vec3 {
+    Vec3::new(x, y, z)
+}
+
+#[inline]
+fn t(name: &'static str, el: Element, x: f64, y: f64, z: f64) -> TAtom {
+    TAtom {
+        name,
+        element: el,
+        coord: v(x, y, z),
     }
 }

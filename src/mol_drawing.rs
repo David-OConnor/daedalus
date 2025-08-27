@@ -1005,10 +1005,8 @@ pub fn draw_nucleic_acid(state: &mut State, scene: &mut Scene) {
         .entities
         .retain(|ent| ent.class != EntityType::NucleicAcid as u32);
 
-    println!("DRAWING.");
     for mol in &state.nucleid_acids {
         for (i, atom) in mol.common.atoms.iter().enumerate() {
-            println!("ATOM: {:?}", atom);
             let atom_posit = get_atom_posit(
                 state.ui.peptide_atom_posits,
                 Some(&mol.common.atom_posits),
