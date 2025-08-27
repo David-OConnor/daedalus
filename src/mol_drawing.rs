@@ -1005,6 +1005,7 @@ pub fn draw_nucleic_acid(state: &mut State, scene: &mut Scene) {
         .entities
         .retain(|ent| ent.class != EntityType::NucleicAcid as u32);
 
+    // Atoms
     for mol in &state.nucleid_acids {
         for (i, atom) in mol.common.atoms.iter().enumerate() {
             let atom_posit = get_atom_posit(
@@ -1014,7 +1015,7 @@ pub fn draw_nucleic_acid(state: &mut State, scene: &mut Scene) {
                 atom,
             );
 
-            let (mut radius, mesh) = match atom.element {
+            let (radius, mesh) = match atom.element {
                 Element::Hydrogen => (BALL_STICK_RADIUS_H, MESH_BALL_STICK_SPHERE),
                 _ => (BALL_STICK_RADIUS, MESH_BALL_STICK_SPHERE),
             };
@@ -1030,9 +1031,54 @@ pub fn draw_nucleic_acid(state: &mut State, scene: &mut Scene) {
             entity.class = EntityType::NucleicAcid as u32;
             scene.entities.push(entity);
         }
-    }
 
-    // todo: Bonds
+        // Bonds
+        for bond in &mol.common.bonds {
+            let atom_0 = &mol.common.atoms[bond.atom_0];
+            let atom_1 = &mol.common.atoms[bond.atom_1];
+
+            let atom_0_posit = get_atom_posit(
+                state.ui.peptide_atom_posits,
+                Some(&mol.common.atom_posits),
+                bond.atom_0,
+                atom_0,
+            );
+            let atom_1_posit = get_atom_posit(
+                state.ui.peptide_atom_posits,
+                Some(&mol.common.atom_posits),
+                bond.atom_1,
+                atom_1,
+            );
+
+            let posit_0: Vec3 = (*atom_0_posit).into();
+            let posit_1: Vec3 = (*atom_1_posit).into();
+
+            // // For determining how to orient multiple-bonds.
+            // let hydrogen_is = Vec::new(); // todo A/R
+            // let neighbor_i = find_neighbor_posit(&mol.common, bond.atom_0, bond.atom_1, &hydrogen_is);
+            //
+            // let neighbor_posit = match neighbor_i {
+            //     Some((i, p1)) => (mol.common.atoms[i].posit.into(), p1),
+            //     None => (mol.common.atoms[0].posit.into(), false),
+            // };
+            let neighbor_posit = Vec3::new_zero(); // todo: A/R
+
+            let color_0 = atom_0.element.color();
+            let color_1 = atom_1.element.color();
+
+            bond_entities(
+                &mut scene.entities,
+                posit_0,
+                posit_1,
+                color_0,
+                color_1,
+                bond.bond_type,
+                false,
+                state.ui.mol_view != MoleculeView::BallAndStick,
+                (neighbor_posit, false)
+            );
+        }
+    }
 }
 
 /// Refreshes entities with the model passed.
@@ -1258,7 +1304,6 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
     }
 
     // Draw bonds.
-    // if ![MoleculeView::SpaceFill].contains(&ui.mol_view) || atom.hetero {
     for bond in &mol.common.bonds {
         if ui.mol_view == MoleculeView::Backbone && !bond.is_backbone {
             continue;

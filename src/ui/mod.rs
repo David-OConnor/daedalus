@@ -46,6 +46,7 @@ use crate::{
         reset_camera, select_from_search,
     },
 };
+use crate::nucleic_acid::NucleicAcidType;
 
 pub mod cam;
 pub mod misc;
@@ -1046,7 +1047,7 @@ fn view_settings(
                 // ])];
                 //
                 if let Some(mol) = &state.molecule {
-                    state.nucleid_acids = vec![MoleculeNucleicAcid::from_peptide(&mol)];
+                    state.nucleid_acids = vec![MoleculeNucleicAcid::from_peptide(&mol, NucleicAcidType::Dna)];
                 }
                 draw_nucleic_acid(state, scene);
                 engine_updates.entities = true;

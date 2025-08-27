@@ -14,7 +14,7 @@ use na_seq::{
 
 use crate::molecule::{Atom, Bond, MoleculeCommon, MoleculeGeneric, MoleculePeptide};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum NucleicAcidType {
     Dna,
     Rna,
@@ -41,31 +41,33 @@ impl MoleculeNucleicAcid {
     /// Geometry is **idealized B-DNA-like**: rise ~3.4 Å, twist 36°, with simple radial offsets.
     /// This is a minimal “it renders now” model you can extend with full atom templates later.
     /// Initializes a linear molecule.
-    pub fn from_seq(seq: &[Nucleotide]) -> Self {
-        let is_rna = matches!(infer_na(seq), NucleicAcidType::Rna);
-        let helix = if is_rna {
-            // A-form-ish
-            HelixGeom {
-                rise: 2.60,
-                twist: 33.0_f64.to_radians(),
-                r_backbone: 4.6,
-                base_rad: 6.2,
-                sugar_ang: 0.35,
-                sugar_dz: 0.6,
-                base_ang: TAU / 2., // bases roughly opposite backbone
-                base_dz: 0.25,
+    pub fn from_seq(seq: &[Nucleotide], na_type: NucleicAcidType) -> Self {
+        let helix = match na_type {
+            NucleicAcidType::Rna => {
+                // A-form-ish
+                HelixGeom {
+                    rise: 2.60,
+                    twist: 33.0_f64.to_radians(),
+                    r_backbone: 4.6,
+                    base_rad: 6.2,
+                    sugar_ang: 0.35,
+                    sugar_dz: 0.6,
+                    base_ang: TAU / 2., // bases roughly opposite backbone
+                    base_dz: 0.25,
+                }
             }
-        } else {
-            // B-DNA-ish
-            HelixGeom {
-                rise: 3.40,
-                twist: 36.0_f64.to_radians(),
-                r_backbone: 4.2,
-                base_rad: 6.0,
-                sugar_ang: 0.35,
-                sugar_dz: 0.6,
-                base_ang: TAU / 2.,
-                base_dz: 0.20,
+            NucleicAcidType::Dna => {
+                // B-DNA-ish
+                HelixGeom {
+                    rise: 3.40,
+                    twist: 36.0_f64.to_radians(),
+                    r_backbone: 4.2,
+                    base_rad: 6.0,
+                    sugar_ang: 0.35,
+                    sugar_dz: 0.6,
+                    base_ang: TAU / 2.,
+                    base_dz: 0.20,
+                }
             }
         };
 
@@ -73,12 +75,14 @@ impl MoleculeNucleicAcid {
         common.ident = format!(
             "{}-nt {} strand",
             seq.len(),
-            if is_rna { "RNA" } else { "DNA" }
+            match na_type {
+                NucleicAcidType::Rna => "RNA",
+                NucleicAcidType::Dna => "DNA",
+            }
         );
 
         // Reserve roughly (#atoms per residue ≈ 18 backbone + 10–12 base) × n
         common.atoms.reserve(seq.len() * 32);
-        common.adjacency_list.reserve(seq.len() * 32);
 
         // Keep per-residue name→index for wiring bonds
         let mut idx_maps: Vec<HashMap<&'static str, usize>> = Vec::with_capacity(seq.len());
@@ -106,7 +110,7 @@ impl MoleculeNucleicAcid {
             let mut name_to_idx: HashMap<&'static str, usize> = HashMap::new();
 
             // === Sugar + phosphate ===
-            let sugar = sugar_template(is_rna);
+            let sugar = sugar_template(na_type);
             let phos = phosphate_template();
             for a in sugar.iter().chain(phos.iter()) {
                 let pos = frame.apply(a.coord);
@@ -128,7 +132,7 @@ impl MoleculeNucleicAcid {
 
             // === Bonds within residue ===
             // Sugar bonds
-            for (a, b) in sugar_bonds(is_rna) {
+            for (a, b) in sugar_bonds(na_type) {
                 push_bond_by_name(&mut common, &name_to_idx, a, b, true);
             }
             // Phosphate bonds (O5′—P and two non-bridging oxygens)
@@ -155,6 +159,8 @@ impl MoleculeNucleicAcid {
         // Positions mirror
         common.atom_posits = common.atoms.iter().map(|a| a.posit).collect();
 
+        common.build_adjacency_list();
+
         Self {
             common,
             seq: seq.to_vec(),
@@ -166,7 +172,7 @@ impl MoleculeNucleicAcid {
     /// This wrapper that extracts the AA sequence, then chooses a suitable DNA sequence.
     /// note that there are many possible combinations due to multiple codons corresponding
     /// to some AAs.
-    pub fn from_peptide(peptide: &MoleculePeptide) -> Self {
+    pub fn from_peptide(peptide: &MoleculePeptide, na_type: NucleicAcidType) -> Self {
         let mut seq = Vec::with_capacity(&peptide.residues.len() * 3);
         for res in &peptide.residues {
             seq.push(Nucleotide::A);
@@ -174,7 +180,7 @@ impl MoleculeNucleicAcid {
             seq.push(Nucleotide::A);
         }
 
-        Self::from_seq(&seq)
+        Self::from_seq(&seq, na_type)
     }
 }
 
@@ -246,7 +252,6 @@ fn push_atom(common: &mut MoleculeCommon, pos: Vec3, element: Element, residue: 
         partial_charge: None,
         temperature_factor: None,
     });
-    common.adjacency_list.push(Vec::new());
     idx
 }
 
@@ -260,8 +265,6 @@ fn push_bond_indices(common: &mut MoleculeCommon, a: usize, b: usize, is_backbon
         atom_1: b,
         is_backbone,
     });
-    common.adjacency_list[a].push(b);
-    common.adjacency_list[b].push(a);
 }
 
 fn push_bond_by_name(
@@ -278,7 +281,7 @@ fn push_bond_by_name(
 
 /* ------------------------------- Backbone ------------------------------- */
 
-fn sugar_template(is_rna: bool) -> Vec<TAtom> {
+fn sugar_template(na_type: NucleicAcidType) -> Vec<TAtom> {
     // Local frame: origin at C1′.
     // Coordinates are approximate but chemically sensible; units Å.
     let mut v = vec![
@@ -323,7 +326,7 @@ fn sugar_template(is_rna: bool) -> Vec<TAtom> {
             coord: v(-3.85, 1.05, 0.20),
         },
     ];
-    if is_rna {
+    if na_type == NucleicAcidType::Rna {
         v.push(TAtom {
             name: "O2'",
             element: Oxygen,
@@ -333,10 +336,20 @@ fn sugar_template(is_rna: bool) -> Vec<TAtom> {
     v
 }
 
-fn sugar_bonds(is_rna: bool) -> &'static [(&'static str, &'static str)] {
+fn sugar_bonds(na_type: NucleicAcidType) -> &'static [(&'static str, &'static str)] {
     // Within residue sugar ring + exocyclic O5′
-    if is_rna {
-        &[
+    match na_type {
+        NucleicAcidType::Dna => &[
+            ("C1'", "O4'"),
+            ("O4'", "C4'"),
+            ("C4'", "C3'"),
+            ("C3'", "O3'"),
+            ("C3'", "C2'"),
+            ("C2'", "C1'"),
+            ("C4'", "C5'"),
+            ("C5'", "O5'"),
+        ],
+        NucleicAcidType::Rna => &[
             ("C1'", "O4'"),
             ("O4'", "C4'"),
             ("C4'", "C3'"),
@@ -344,17 +357,6 @@ fn sugar_bonds(is_rna: bool) -> &'static [(&'static str, &'static str)] {
             ("C3'", "C2'"),
             ("C2'", "C1'"),
             ("C2'", "O2'"),
-            ("C4'", "C5'"),
-            ("C5'", "O5'"),
-        ]
-    } else {
-        &[
-            ("C1'", "O4'"),
-            ("O4'", "C4'"),
-            ("C4'", "C3'"),
-            ("C3'", "O3'"),
-            ("C3'", "C2'"),
-            ("C2'", "C1'"),
             ("C4'", "C5'"),
             ("C5'", "O5'"),
         ]
