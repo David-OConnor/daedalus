@@ -58,7 +58,6 @@ ewald = { path = "../ewald" }
 #cuda_setup = { path = "../../cuda_setup" }
 
 
-
 [build-dependencies]
 cuda_setup = { version = "0.1.7", optional = true }
 # This is for embedding an application icon, on Windows.

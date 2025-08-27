@@ -361,7 +361,7 @@ impl MoleculePeptide {
 
         // Increment H serial number, starting with the final atom present prior to adding H + 1)
         let mut highest_sn = 0;
-        for atom in &self.atoms {
+        for atom in &self.common.atoms {
             if atom.serial_number > highest_sn {
                 highest_sn = atom.serial_number;
             }
@@ -369,21 +369,21 @@ impl MoleculePeptide {
         let mut next_sn = highest_sn + 1;
 
         for (res_i, res) in self.residues.iter_mut().enumerate() {
-            let atoms: Vec<&Atom> = res.atoms.iter().map(|i| &self.atoms[*i]).collect();
+            let atoms: Vec<&Atom> = res.atoms.iter().map(|i| &self.common.atoms[*i]).collect();
 
             let mut n_next_pos = None;
             // todo: Messy DRY from the aa_data_from_coords fn.
             if res_i < res_len - 1 {
                 let res_next = &res_clone[res_i + 1];
                 let n_next = res_next.atoms.iter().find(|i| {
-                    if let Some(role) = &self.atoms[**i].role {
+                    if let Some(role) = &self.common.atoms[**i].role {
                         *role == AtomRole::N_Backbone
                     } else {
                         false
                     }
                 });
                 if let Some(n_next) = n_next {
-                    n_next_pos = Some(self.atoms[*n_next].posit);
+                    n_next_pos = Some(self.common.atoms[*n_next].posit);
                 }
             }
 
@@ -408,8 +408,8 @@ impl MoleculePeptide {
 
             for mut h in h_added_this_res {
                 h.serial_number = next_sn;
-                self.atoms.push(h);
-                res.atoms.push(self.atoms.len() - 1);
+                self.common.atoms.push(h);
+                res.atoms.push(self.common.atoms.len() - 1);
 
                 // todo: Add to the chains
                 next_sn += 1;

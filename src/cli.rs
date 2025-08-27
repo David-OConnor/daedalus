@@ -218,7 +218,7 @@ pub fn handle_cmd(
             match item.as_ref() {
                 "solvents" => {
                     // todo: Remove residues as well?
-                    mol.atoms.retain(|a| {
+                    mol.common.atoms.retain(|a| {
                         if let Some(role) = a.role {
                             role != AtomRole::Water
                         } else {
@@ -227,11 +227,11 @@ pub fn handle_cmd(
                     });
                 }
                 "hetatm" => {
-                    mol.atoms.retain(|a| !a.hetero);
+                    mol.common.atoms.retain(|a| !a.hetero);
                 }
                 "resn hoh" => {
                     // todo: Remove residues as well?
-                    mol.atoms.retain(|a| {
+                    mol.common.atoms.retain(|a| {
                         if let Some(role) = a.role {
                             role != AtomRole::Water
                         } else {
@@ -240,7 +240,7 @@ pub fn handle_cmd(
                     });
                 }
                 "hydro" => {
-                    mol.atoms.retain(|a| a.element != Element::Hydrogen);
+                    mol.common.atoms.retain(|a| a.element != Element::Hydrogen);
                     state.ui.visibility.hide_hydrogen = true;
                 }
                 _ => (),
@@ -390,7 +390,7 @@ pub fn handle_cmd(
             let el = Element::from_letter(&caps[1])?;
 
             let mut result = Vec::new();
-            for (i, atom) in mol.atoms.iter().enumerate() {
+            for (i, atom) in mol.common.atoms.iter().enumerate() {
                 if atom.element == el {
                     result.push(i);
                 }

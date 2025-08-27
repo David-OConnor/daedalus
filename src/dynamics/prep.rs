@@ -38,7 +38,7 @@ use na_seq::{AminoAcid, AminoAcidGeneral, AminoAcidProtenationVariant, AtomTypeI
 
 use crate::{
     ComputationDevice, FfParamSet, ProtFFTypeChargeMap,
-    docking::{BindingEnergy, ConformationType, prep::DockingSetup},
+    docking::{BindingEnergy, ConformationType},
     dynamics::{
         AtomDynamics, ForceFieldParamsIndexed, MdMode, MdState, ParamError, SnapshotDynamics,
         ambient::SimBox, neighbors::build_neighbors, non_bonded, non_bonded::LjTableIndices,
@@ -669,15 +669,15 @@ pub fn build_dynamics_docking(
     lig.pose.conformation_type = ConformationType::AbsolutePosits;
 
     let mut md_state = MdState::new_docking(
-        &lig.molecule.atoms,
-        &lig.atom_posits,
-        &lig.molecule.adjacency_list,
-        &lig.molecule.bonds,
-        &mol.atoms,
+        &lig.mol.common.atoms,
+        &lig.mol.common.atom_posits,
+        &lig.mol.common.adjacency_list,
+        &lig.mol.common.bonds,
+        &mol.common.atoms,
         ff_params,
         temp_target,
         pressure_target,
-        &lig.molecule.ident,
+        &lig.mol.common.ident,
     )?;
 
     let start = Instant::now();
@@ -690,7 +690,7 @@ pub fn build_dynamics_docking(
     println!("MD complete in {:.2} s", elapsed.as_secs());
 
     for (i, atom) in md_state.atoms.iter().enumerate() {
-        lig.atom_posits[i] = atom.posit;
+        lig.mol.common.atom_posits[i] = atom.posit;
     }
     change_snapshot_docking(lig, &md_state.snapshots[0], &mut None);
 
@@ -919,12 +919,12 @@ pub fn build_dynamics_peptide(
 ) -> Result<MdState, ParamError> {
     println!("Building peptide dynamics...");
 
-    let posits: Vec<_> = mol.atoms.iter().map(|a| a.posit).collect();
+    let posits: Vec<_> = mol.common.atoms.iter().map(|a| a.posit).collect();
 
     let mut md_state = MdState::new_peptide(
-        &mol.atoms,
+        &mol.common.atoms,
         &posits,
-        &mol.bonds,
+        &mol.common.bonds,
         ff_params,
         temp_target,
         pressure_target,
@@ -952,7 +952,7 @@ pub fn change_snapshot_docking(
     energy_disp: &mut Option<BindingEnergy>,
 ) {
     lig.pose.conformation_type = ConformationType::AbsolutePosits;
-    lig.atom_posits = snapshot.atom_posits.iter().map(|p| (*p).into()).collect();
+    lig.mol.common.atom_posits = snapshot.atom_posits.iter().map(|p| (*p).into()).collect();
     // *energy_disp = snapshot.energy.clone();
 }
 
@@ -961,11 +961,11 @@ pub fn change_snapshot_peptide(
     atoms_dy: &[AtomDynamics],
     snapshot: &SnapshotDynamics,
 ) {
-    let mut posits = Vec::with_capacity(mol.atoms.len());
+    let mut posits = Vec::with_capacity(mol.common.atoms.len());
 
     // todo: This is slow. Use a predefined mapping; much faster.
     // If the atom's SN is present in the snap, use it; otherwise, use the original posit (e.g. hetero)
-    for atom in &mol.atoms {
+    for atom in &mol.common.atoms {
         let mut found = false;
         for (i_dy, atom_dy) in atoms_dy.iter().enumerate() {
             if atom_dy.serial_number == atom.serial_number {
@@ -979,7 +979,7 @@ pub fn change_snapshot_peptide(
         }
     }
 
-    mol.atom_posits = Some(posits);
+    mol.common.atom_posits = posits;
 }
 
 impl MdState {

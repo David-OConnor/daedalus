@@ -92,11 +92,11 @@ fn disp_atom_data(atom: &Atom, residues: &[Residue], posit_override: Option<Vec3
 pub fn selected_data(mol: &MoleculePeptide, ligand: &Option<Ligand>, selection: &Selection, ui: &mut Ui) {
     match selection {
         Selection::Atom(sel_i) => {
-            if *sel_i >= mol.atoms.len() {
+            if *sel_i >= mol.common.atoms.len() {
                 return;
             }
 
-            let atom = &mol.atoms[*sel_i];
+            let atom = &mol.common.atoms[*sel_i];
             disp_atom_data(atom, &mol.residues, None, ui);
         }
         Selection::AtomLigand(sel_i) => {
@@ -108,7 +108,7 @@ pub fn selected_data(mol: &MoleculePeptide, ligand: &Option<Ligand>, selection: 
             }
 
             let atom = &lig.molecule.atoms[*sel_i];
-            let posit = lig.atom_posits[*sel_i];
+            let posit = lig.mol.common.atom_posits[*sel_i];
             disp_atom_data(atom, &[], Some(posit), ui);
         }
         Selection::Residue(sel_i) => {
@@ -383,7 +383,7 @@ pub fn md_setup(
         if let Some(mol) = &state.molecule {
             let res_selected = match state.ui.selection {
                 Selection::Atom(sel_i) => {
-                    let atom = &mol.atoms[sel_i];
+                    let atom = &mol.common.atoms[sel_i];
                     if let Some(res_i) = &atom.residue {
                         Some(&mol.residues[*res_i])
                     } else {
@@ -408,7 +408,7 @@ pub fn md_setup(
                 {
                     let res_type = res.res_type.clone(); // Avoids dbl-borrow.
 
-                    let mol_fm_res = MoleculePeptide::from_res(res, &mol.atoms, false);
+                    let mol_fm_res = MoleculePeptide::from_res(res, &mol.common.atoms, false);
                     let mut lig = Ligand::new(mol_fm_res, &state.ff_params.lig_specific);
                     state.mol_dynamics = None;
 
@@ -461,7 +461,7 @@ pub fn move_cam_to_lig(
     } else {
         lig.position_atoms(None);
 
-        let lig_pos: lin_alg::f32::Vec3 = lig.atom_posits[lig.anchor_atom].into();
+        let lig_pos: lin_alg::f32::Vec3 = lig.mol.common.atom_posits[lig.anchor_atom].into();
         let ctr: lin_alg::f32::Vec3 = mol_center.into();
 
         cam_look_at_outside(&mut scene.camera, lig_pos, ctr);

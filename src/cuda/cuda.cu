@@ -130,7 +130,7 @@ void lj_force_kernel(
 
             if (i_tgt < N_tgts) {
                 // Summing on GPU.
-                out[i_tgt] = out[i_tgt] + lj_force(posit_tgt, posit_src, sigma, eps);
+                out[i_tgt] = out[i_tgt] + lj_force(posit_tgt, posit_src, sigma, eps).force;
             }
         }
     }
@@ -147,8 +147,8 @@ void nonbonded_force_kernel(
     float3* out_water_m,
     float3* out_water_h0,
     float3* out_water_h1,
-    double* virial,  // Virial pair sum, used for the barostat.
-    double* energy,
+    double* out_virial,  // Virial pair sum, used for the barostat.
+    double* out_energy,
     // Pair-wise inputs
     const uint32_t* tgt_is,
     const uint32_t* src_is,
@@ -225,7 +225,7 @@ void nonbonded_force_kernel(
         f_coulomb.energy = 0.f;
 
         if (calc_coulombs[i]) {
-            f_e_coulomb = coulomb_force_spme_short_range(
+            f_coulomb = coulomb_force_spme_short_range(
                 r,
                 inv_r,
                 dir,
@@ -237,24 +237,27 @@ void nonbonded_force_kernel(
         }
 
         if (scale_14) {
-            f_lj.force *= 0.5;
-            f_lj.energy *= 0.5;
+            f_lj.force = f_lj.force * 0.5f;
+            f_lj.energy = f_lj.energy * 0.5f;
 
-            f_coulomb.force *= 0.833333333f;
-            f_coulomb.energy *= 0.833333333f;
+            f_coulomb.force = f_coulomb.force * 0.833333333f;
+            f_coulomb.energy = f_coulomb.energy * 0.833333333f;
         }
 
         const float3 f = f_lj.force + f_coulomb.force;
-        const float3 energy = f_lj.energy + f_coulomb.energy;
+        const double e_pair = (double)f_lj.energy + (double)f_coulomb.energy;
 
         // Virial per pair · F
         double virial_pair = ((double)diff.x * (double)f.x + (double)diff.y * (double)f.y + (double)diff.z * (double)f.z);
-        atomicAdd(virial, virial_pair);
+        atomicAdd(out_virial, virial_pair);
 
         const uint32_t out_i = tgt_is[i];
 
         if (atom_types_tgt[i] == 0) {
             atomicAddFloat3(&out_dyn[out_i], f);
+            // We don't currently track energy on water atoms. Keep this in sync
+            // with application assumptions, and how you handle it on the CPU.
+            atomicAdd(out_energy, e_pair);
         } else {
             if (water_types_tgt[i] == 1) {
                 atomicAddFloat3(&out_water_o[out_i], f);

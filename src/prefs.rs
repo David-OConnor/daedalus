@@ -3,7 +3,7 @@
 use std::{collections::HashMap, path::PathBuf};
 
 use bincode::{Decode, Encode};
-use bio_apis::rcsb::{FilesAvailable, PdbDataResults, PdbMetaData, load_metadata};
+use bio_apis::rcsb::{FilesAvailable, PdbDataResults};
 use graphics::{
     ControlScheme,
     app_utils::{load, save},
@@ -15,7 +15,6 @@ use crate::{
     docking::{ConformationType, DockingSite},
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
     mol_drawing::MoleculeView,
-    util::handle_err,
 };
 
 pub const DEFAULT_PREFS_FILE: &str = "daedalus_prefs.dae";
@@ -86,7 +85,8 @@ pub struct PerMolToSave {
     chain_vis: Vec<bool>,
     chain_to_pick_res: Option<usize>,
     visibility: Visibility,
-    metadata: Option<MolMetaData>,
+    // todo: A/R
+    // metadata: Option<MolMetaData>,
     pub docking_site: DockingSite,
     show_docking_tools: bool,
     res_color_by_index: bool,
@@ -102,18 +102,18 @@ pub struct PerMolToSave {
 impl PerMolToSave {
     pub fn from_state(state: &State, on_init: bool) -> Self {
         let mut chain_vis = Vec::new();
-        let mut metadata = None;
+        // let mut metadata = None;
         let mut rcsb_data = None;
         let mut rcsb_files_avail = None;
 
         if let Some(mol) = &state.molecule {
             chain_vis = mol.chains.iter().map(|c| c.visible).collect();
 
-            if let Some(md) = &mol.metadata {
-                metadata = Some(MolMetaData {
-                    prim_cit_title: md.prim_cit_title.clone(),
-                });
-            }
+            // if let Some(title) = mol.common.metadata.get("prim_cit_title") {
+            //     metadata = Some(MolMetaData {
+            //         prim_cit_title: title.clone(),
+            //     });
+            // }
 
             rcsb_data = mol.rcsb_data.clone();
             rcsb_files_avail = mol.rcsb_files_avail.clone();
@@ -133,9 +133,9 @@ impl PerMolToSave {
             // todo: If you find a more robust way to handle saving order-dependent data,
             // todo: remove this.
             if !on_init {
-                lig_atom_positions = lig.atom_posits.clone();
-                if !lig.atom_posits.is_empty() {
-                    println!("\nSaving atom posits: {:?}", lig.atom_posits[0]); // todo temp
+                lig_atom_positions = lig.mol.common.atom_posits.clone();
+                if !lig.mol.common.atom_posits.is_empty() {
+                    println!("\nSaving atom posits: {:?}", lig.mol.common.atom_posits[0]); // todo temp
                 }
             }
         }
@@ -151,7 +151,7 @@ impl PerMolToSave {
             chain_vis,
             chain_to_pick_res: state.ui.chain_to_pick_res,
             visibility: state.ui.visibility.clone(),
-            metadata,
+            // metadata,
             docking_site,
             show_docking_tools: state.ui.show_docking_tools,
             res_color_by_index: state.ui.res_color_by_index,
@@ -183,7 +183,7 @@ impl State {
         if let Some(mol) = &self.molecule {
             let data = PerMolToSave::from_state(self, on_init);
 
-            self.to_save.per_mol.insert(mol.ident.clone(), data);
+            self.to_save.per_mol.insert(mol.common.ident.clone(), data);
         }
 
         if let Err(e) = save(
@@ -202,8 +202,8 @@ impl State {
         let mut center = Vec3::new_zero();
 
         if let Some(mol) = &mut self.molecule {
-            if self.to_save.per_mol.contains_key(&mol.ident) {
-                let data = &self.to_save.per_mol[&mol.ident];
+            if self.to_save.per_mol.contains_key(&mol.common.ident) {
+                let data = &self.to_save.per_mol[&mol.common.ident];
 
                 self.ui.selection = data.selection.clone();
                 self.cam_snapshots = data.cam_snapshots.clone();
@@ -224,8 +224,8 @@ impl State {
 
                     // todo: This check is a workaround for overal problems related to how we store molecules
                     // todo and ligands. Without it, we can desync the positions, and cause index-error crashes
-                    if data.lig_atom_positions.len() == lig.atom_posits.len() {
-                        lig.atom_posits = data.lig_atom_positions.clone();
+                    if data.lig_atom_positions.len() == lig.mol.common.atom_posits.len() {
+                        lig.mol.common.atom_posits = data.lig_atom_positions.clone();
                     } else {
                         eprintln!("Error loading ligand atom positions; look into this.")
                     }
@@ -233,11 +233,17 @@ impl State {
                     lig.pose.conformation_type = ConformationType::AbsolutePosits;
                 }
 
-                if let Some(md) = &data.metadata {
-                    mol.metadata = Some(PdbMetaData {
-                        prim_cit_title: md.prim_cit_title.clone(),
-                    })
-                }
+                // if let Some(title) = mol.common.metadata.get("prim_cit_title") {
+                //     metadata = Some(MolMetaData {
+                //         prim_cit_title: title.clone(),
+                //     });
+                // }
+
+                // if let Some(md) = &data.metadata {
+                //     mol.metadata = Some(PdbMetaData {
+                //         prim_cit_title: md.prim_cit_title.clone(),
+                //     })
+                // }
 
                 for (i, chain) in mol.chains.iter_mut().enumerate() {
                     if i < data.chain_vis.len() {
@@ -252,13 +258,13 @@ impl State {
             }
 
             // If loaded from file or not.
-            if mol.metadata.is_none() {
-                println!("Getting MD");
-                match load_metadata(&mol.ident) {
-                    Ok(md) => mol.metadata = Some(md),
-                    Err(_) => eprintln!("Error loading metadata for: {}", mol.ident),
-                }
-            }
+            // if mol.metadata.is_none() {
+            //     println!("Getting MD");
+            //     match load_metadata(&mol.common.ident) {
+            //         Ok(md) => mol.metadata = Some(md),
+            //         Err(_) => eprintln!("Error loading metadata for: {}", mol.common.ident),
+            //     }
+            // }
         }
 
         self.ui.movement_speed_input = self.to_save.movement_speed.to_string();

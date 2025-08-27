@@ -110,13 +110,13 @@ pub fn event_dev_handler(
                                 };
 
                                 let mut lig_atoms_temp = Vec::new();
-                                // todo: You must use lig.atom_posits!
+                                // todo: You must use lig.mol.common.atom_posits!
                                 let lig_atoms = if let Some(lig) = &state_.ligand {
                                     // Not sure how else to do this.
-                                    for (i, atom) in lig.molecule.atoms.iter().enumerate() {
+                                    for (i, atom) in lig.mol.common.atoms.iter().enumerate() {
                                         // Just the fields we need.
                                         lig_atoms_temp.push(Atom {
-                                            posit: lig.atom_posits[i],
+                                            posit: lig.mol.common.atom_posits[i],
                                             element: atom.element,
                                             ..Default::default()
                                         });
@@ -128,7 +128,7 @@ pub fn event_dev_handler(
 
                                 let (atoms_along_ray, atoms_along_ray_lig) = points_along_ray(
                                     selected_ray,
-                                    &mol.atoms,
+                                    &mol.common.atoms,
                                     lig_atoms,
                                     dist_thresh,
                                 );
@@ -136,7 +136,7 @@ pub fn event_dev_handler(
                                 let selection = find_selected_atom(
                                     &atoms_along_ray,
                                     &atoms_along_ray_lig,
-                                    &mol.atoms,
+                                    &mol.common.atoms,
                                     &mol.residues,
                                     lig_atoms,
                                     &selected_ray,

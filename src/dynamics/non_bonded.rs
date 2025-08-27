@@ -17,9 +17,8 @@ use crate::{
         ambient::SimBox,
         water_opc::{O_EPS, O_SIGMA, WaterMol, WaterSite},
     },
-    forces::force_lj,
+    forces::force_e_lj,
 };
-use crate::forces::force_e_lj;
 
 // Å. 9-12 should be fine; there is very little VDW force > this range due to
 // the ^-7 falloff.
@@ -240,11 +239,11 @@ fn calc_force(
                     0.0_f64,
                 )
             },
-            |(mut acc_d, mut acc_w, mut w_local, mut energy), p| {
+            |(mut acc_d, mut acc_w, mut w_local, energy), p| {
                 let a_t = p.tgt.get(atoms_dyn, atoms_static, water);
                 let a_s = p.src.get(atoms_dyn, atoms_static, water);
 
-                let (f, energy) = f_nonbonded(
+                let (f, mut energy) = f_nonbonded(
                     &mut w_local,
                     a_t,
                     a_s,
@@ -259,6 +258,15 @@ fn calc_force(
                 add_to_sink(&mut acc_d, &mut acc_w, p.tgt, f);
                 if p.symmetric {
                     add_to_sink(&mut acc_d, &mut acc_w, p.src, -f);
+                }
+
+                // We are not interested, in this point, at energy that does not involve our dyanamic (ligand) atoms.
+                // We skip water-water, and water-static interations.
+                let involves_dyn =
+                    matches!(p.tgt, BodyRef::Dyn(_)) || matches!(p.src, BodyRef::Dyn(_));
+
+                if !involves_dyn {
+                    energy = 0.;
                 }
 
                 (acc_d, acc_w, w_local, energy)
@@ -702,7 +710,7 @@ pub fn f_nonbonded(
 
     // We assume that in the AtomDynamics structs, charges are already scaled to Amber units.
     // (No longer in elementary charge)
-    let (mut f_coulomb, mut e_coulomb) = if !calc_coulomb {
+    let (mut f_coulomb, mut energy_coulomb) = if !calc_coulomb {
         (Vec3::new_zero(), 0.)
     } else {
         force_coulomb_short_range(
@@ -728,11 +736,13 @@ pub fn f_nonbonded(
     // See Amber RM, section 15, "1-4 Non-Bonded Interaction Scaling"
     if scale14 {
         f_coulomb *= SCALE_COUL_14;
-        e_coulomb *= SCALE_COUL_14;
+        energy_coulomb *= SCALE_COUL_14;
     }
 
+    // todo: How do we prevent accumulating energy on static atoms and water?
+
     let force = f_lj + f_coulomb;
-    let energy = energy_lj + energy_lj;
+    let energy = energy_lj + energy_coulomb;
 
     *virial_w += diff.dot(force);
 

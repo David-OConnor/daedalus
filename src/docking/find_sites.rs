@@ -17,11 +17,11 @@ pub fn find_docking_sites(mol: &MoleculePeptide) -> Vec<DockingSite> {
     let (mut min_x, mut min_y, mut min_z) = (f64::MAX, f64::MAX, f64::MAX);
     let (mut max_x, mut max_y, mut max_z) = (f64::MIN, f64::MIN, f64::MIN);
 
-    if mol.atoms.is_empty() {
+    if mol.common.atoms.is_empty() {
         return result; // No atoms, no sites
     }
 
-    for atom in &mol.atoms {
+    for atom in &mol.common.atoms {
         let p = atom.posit;
         if p.x < min_x {
             min_x = p.x;
@@ -56,7 +56,7 @@ pub fn find_docking_sites(mol: &MoleculePeptide) -> Vec<DockingSite> {
     // Helper function to see if a point is "inside" (within any atom's radius).
     let is_inside_molecule = |x: f64, y: f64, z: f64| -> bool {
         let pt = Vec3 { x, y, z };
-        for atom in &mol.atoms {
+        for atom in &mol.common.atoms {
             let dx = pt.x - atom.posit.x;
             let dy = pt.y - atom.posit.y;
             let dz = pt.z - atom.posit.z;

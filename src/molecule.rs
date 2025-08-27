@@ -38,8 +38,8 @@ use crate::{
         ConformationType, DockingSite, Pose,
         prep::{DockType, setup_flexibility},
     },
-    nucleic_acid::MoleculeNucleicAcid,
     dynamics::ForceFieldParamsIndexed,
+    nucleic_acid::MoleculeNucleicAcid,
     reflection::{DensityRect, ElectronDensity, ReflectionsData},
     util::mol_center_size,
 };
@@ -60,6 +60,7 @@ pub struct MoleculeCommon {
     /// the molecule atoms' (relative) positions.
     /// Note: Alternatively, we could make this an option, and use the atom.posit fields directly if None.
     pub atom_posits: Vec<Vec3>,
+    pub metadata: HashMap<String, String>,
 }
 
 impl MoleculeCommon {
@@ -77,8 +78,9 @@ impl MoleculeCommon {
             ident,
             atoms,
             bonds,
-            adjacency_list,
-            atom_posits
+            adjacency_list: Vec::new(),
+            atom_posits,
+            metadata: HashMap::new(),
         };
 
         result.build_adjacency_list();
@@ -91,13 +93,7 @@ impl MoleculeCommon {
     ///
     /// Run this after populate hydrogens.
     pub fn build_adjacency_list(&mut self) {
-        self.adjacency_list = vec![Vec::new(); self.atoms.len()];
-
-        // For each bond, record its atoms as neighbors of each other
-        for bond in &self.bonds {
-            self.adjacency_list[bond.atom_0].push(bond.atom_1);
-            self.adjacency_list[bond.atom_1].push(bond.atom_0);
-        }
+        self.adjacency_list = build_adjacency_list(&self.bonds, self.atoms.len());
     }
 }
 
@@ -126,6 +122,23 @@ impl MoleculeGeneric {
     }
 }
 
+// We currently use this for mol description.
+#[derive(Debug)]
+pub enum MoleculeGenericRef<'a> {
+    Peptide(&'a MoleculePeptide),
+    Ligand(&'a MoleculeLigand),
+    NucleicAcid(&'a MoleculeNucleicAcid),
+}
+
+impl<'a> MoleculeGenericRef<'a> {
+    pub fn common(&self) -> &MoleculeCommon {
+        match self {
+            Self::Peptide(m) => &m.common,
+            Self::Ligand(m) => &m.common,
+            Self::NucleicAcid(m) => &m.common,
+        }
+    }
+}
 
 /// A molecue representing a small organic molecule. Omits mol-generic fields.
 #[derive(Debug, Default, Clone)]
@@ -148,7 +161,7 @@ impl MoleculeLigand {
         println!("Loading atoms into ligand...");
 
         let mut result = Self {
-            common: MoleculeCommon::new(ident, atoms, bonds),
+            common: MoleculeCommon::new(ident, atoms, Some(bonds)),
             pubchem_cid,
             drugbank_id,
             ..Default::default()
@@ -166,7 +179,6 @@ impl MoleculeLigand {
     }
 }
 
-
 /// A molecule; many fields are specific to polypeptides, but we also use this for ligands.
 /// todo: Consider *not* using this for ligands; most of the fields are N/A.
 #[derive(Debug, Default, Clone)]
@@ -175,7 +187,6 @@ pub struct MoleculePeptide {
     pub bonds_hydrogen: Vec<HydrogenBond>,
     pub chains: Vec<Chain>,
     pub residues: Vec<Residue>,
-    pub metadata: Option<PdbMetaData>,
     /// Solvent-accessible surface. Details may evolve.
     /// Current structure is a Vec of rings.
     /// Initializes to empty; updated A/R when the appropriate view is selected.
@@ -236,7 +247,8 @@ impl MoleculePeptide {
             // todo; For now, you are skipping both. Example when this comes up: Ligands.
             // Attempt to only populate Hydrogens if there aren't many.
             if result
-                .common.atoms
+                .common
+                .atoms
                 .iter()
                 .filter(|a| a.element == Element::Hydrogen)
                 .count()
@@ -318,7 +330,7 @@ impl MoleculePeptide {
         println!("Existing data: {:?}", self.rcsb_data);
         println!("Existing files: {:?}", self.rcsb_files_avail);
 
-        let ident = self.ident.clone(); // data the worker needs
+        let ident = self.common.ident.clone(); // data the worker needs
         let (tx, rx) = mpsc::channel(); // one-shot channel
 
         println!("Getting RCSB data...");
@@ -368,7 +380,7 @@ impl MoleculePeptide {
 
                 // FilesAvailable failed (even if PdbDataResults succeeded):
                 Ok((_, Err(e))) => {
-                    eprintln!("Failed to fetch file‐list for {}: {e:?}", self.ident);
+                    eprintln!("Failed to fetch file‐list for {}: {e:?}", self.common.ident);
                     *pending_data_avail = None;
                 }
 
@@ -452,7 +464,7 @@ impl Display for AtomRole {
 pub struct Ligand {
     /// Molecule atom positions remain relative.
     // pub molecule: Molecule,
-    pub molecule: MoleculeLigand,
+    pub mol: MoleculeLigand,
     pub anchor_atom: usize, // Index.
     /// Note: We may deprecate this in favor of our Amber MD-based approach to flexibility.
     pub flexible_bonds: Vec<usize>, // Index
@@ -488,14 +500,14 @@ impl Ligand {
         }
 
         let mut result = Self {
-            molecule: mol,
+            mol: mol,
             ff_params_loaded,
             frcmod_loaded,
             ..Default::default()
         };
 
         result.set_anchor();
-        result.flexible_bonds = setup_flexibility(&result.molecule);
+        result.flexible_bonds = setup_flexibility(&result.mol.common);
 
         // result.pose.conformation_type = ConformationType::AssignedTorsions {
         //     torsions: result
@@ -518,21 +530,21 @@ impl Ligand {
     /// Reset atom positions to be at their internal values, e.g. as present in the Mol2 or SDF files.
     pub fn reset_posits(&mut self) {
         self.pose.conformation_type = ConformationType::AbsolutePosits;
-        self.atom_posits = self.molecule.atoms.iter().map(|a| a.posit).collect();
+        self.mol.common.atom_posits = self.mol.common.atoms.iter().map(|a| a.posit).collect();
     }
 
     /// Separate from constructor; run when the pose changes, for now.
     pub fn set_anchor(&mut self) {
         let mut center = Vec3::new_zero();
-        for atom in &self.molecule.atoms {
+        for atom in &self.mol.common.atoms {
             center += atom.posit;
         }
-        center /= self.molecule.atoms.len() as f64;
+        center /= self.mol.common.atoms.len() as f64;
 
         let mut anchor_atom = 0;
         let mut best_dist = 999999.;
 
-        for (i, atom) in self.molecule.atoms.iter().enumerate() {
+        for (i, atom) in self.mol.common.atoms.iter().enumerate() {
             let dist = (atom.posit - center).magnitude();
             if dist < best_dist {
                 best_dist = dist;
@@ -560,17 +572,18 @@ impl Ligand {
                 // take no action; we are assigning and accessing the `atom_posits` field directly.
             }
             ConformationType::AssignedTorsions { torsions } => {
-                if self.anchor_atom >= self.molecule.atoms.len() {
+                if self.anchor_atom >= self.mol.common.atoms.len() {
                     eprintln!(
                         "Error positioning ligand atoms: Anchor outside atom count. Atom cound: {:?}",
-                        self.molecule.atoms.len()
+                        self.mol.common.atoms.len()
                     );
                     return;
                 }
-                let anchor = self.molecule.atoms[self.anchor_atom].posit;
+                let anchor = self.mol.common.atoms[self.anchor_atom].posit;
 
                 let mut result: Vec<_> = self
-                    .molecule
+                    .mol
+                    .common
                     .atoms
                     .par_iter()
                     .map(|atom| {
@@ -583,7 +596,7 @@ impl Ligand {
                 // by `torsions[i]`: The dihedral angle along this bond. If there are ambiguities in this
                 // process, it may mean the bond should not have been marked as flexible.
                 for torsion in torsions {
-                    let bond = &self.molecule.bonds[torsion.bond];
+                    let bond = &self.mol.common.bonds[torsion.bond];
 
                     // -- Step 1: measure how many atoms would be "downstream" from each side
                     let side0_downstream = self.find_downstream_atoms(bond.atom_1, bond.atom_0);
@@ -618,7 +631,7 @@ impl Ligand {
                     }
                 }
 
-                self.atom_posits = result;
+                self.mol.common.atom_posits = result;
             }
         }
     }
@@ -628,7 +641,7 @@ impl Ligand {
     pub fn find_downstream_atoms(&self, pivot: usize, side: usize) -> Vec<usize> {
         // adjacency_list[atom] -> list of neighbors
         // We want all atoms reachable from `side` when we remove the edge (side->pivot).
-        let mut visited = vec![false; self.molecule.common.atoms.len()];
+        let mut visited = vec![false; self.mol.common.atoms.len()];
         let mut stack = vec![side];
         let mut result = vec![];
 
@@ -637,7 +650,7 @@ impl Ligand {
         while let Some(current) = stack.pop() {
             result.push(current);
 
-            for &nbr in &self.molecule.common.adjacency_list[current] {
+            for &nbr in &self.mol.common.adjacency_list[current] {
                 // skip the pivot to avoid going back across the chosen bond
                 if nbr == pivot {
                     continue;
@@ -997,7 +1010,7 @@ impl Atom {
                 AtomRole::C_Prime,
                 AtomRole::O_Backbone,
             ]
-                .contains(&r),
+            .contains(&r),
             None => false,
         }
     }
@@ -1161,20 +1174,13 @@ impl MoleculePeptide {
             }
         }
 
-        let mut result = Self::new(
-            m.ident.clone(),
-            atoms,
-            chains,
-            residues,
-            Some(ff_map),
-        );
+        let mut result = Self::new(m.ident.clone(), atoms, chains, residues, Some(ff_map));
 
-        // todo: It seems this section isn't required, but I can't figure out where the title
-        // todo is gettign inserted elsewhere.
         if let Some(title) = m.metadata.get("_struct.title") {
-            result.metadata = Some(PdbMetaData {
-                prim_cit_title: title.to_string(),
-            });
+            result
+                .common
+                .metadata
+                .insert("prim_cit_title".to_string(), title.to_string());
         }
 
         result.experimental_method = m.experimental_method.clone();
@@ -1220,7 +1226,13 @@ impl TryFrom<Sdf> for MoleculeLigand {
             .map(|b| Bond::from_generic(b, &atoms))
             .collect::<Result<_, _>>()?;
 
-        Ok(Self::new(m.ident, atoms, bonds, m.pubchem_cid, m.drugbank_id))
+        Ok(Self::new(
+            m.ident,
+            atoms,
+            bonds,
+            m.pubchem_cid,
+            m.drugbank_id,
+        ))
     }
 }
 
@@ -1256,7 +1268,6 @@ impl MoleculeLigand {
     }
 }
 
-
 #[derive(Clone, Copy, PartialEq, Default)]
 pub enum PeptideAtomPosits {
     #[default]
@@ -1276,7 +1287,7 @@ impl Display for PeptideAtomPosits {
     }
 }
 
-impl MoleculePeptide {
+impl MoleculeLigand {
     /// For example, this can be used to create a ligand from a residue that was loaded with a mmCIF
     /// file from RCSB. It can then be used for docking, or saving to a Mol2 or SDF file.
     ///
@@ -1289,22 +1300,21 @@ impl MoleculePeptide {
     /// todo: How do we get partial charge and ff type? We normally *get* those from Amber-provided
     /// todo Mol2 files. If we do this from an AA, it works, but it doesn't from hereo residues.
     ///
-    pub fn from_res(res: &Residue, atoms: &[Atom], use_sns: bool) -> Self {
-        let mut atoms_this: Vec<_> = if use_sns {
-            unimplemented!()
-        } else {
-            res.atoms
-                .iter()
-                .enumerate()
-                .map(|(i, atom_i)| Atom {
-                    serial_number: i as u32 + 1,
-                    // residue: Some(0), // The one and only residue: The one we create this from.
-                    residue: None,
-                    chain: None,
-                    ..atoms[*atom_i].clone()
-                })
-                .collect()
-        };
+    pub fn from_res(res: &Residue, atoms: &[Atom], bonds: &[Bond], use_sns: bool) -> Self {
+        // todo: Handle `use_sns`.
+        let mut atoms_this = Vec::with_capacity(res.atoms.len());
+        let mut atom_indices = Vec::with_capacity(res.atoms.len());
+
+        for (i, atom_i) in res.atoms.iter().enumerate() {
+            atoms_this.push(Atom {
+                serial_number: i as u32 + 1,
+                // residue: Some(0), // The one and only residue: The one we create this from.
+                residue: None,
+                chain: None,
+                ..atoms[*atom_i].clone()
+            });
+            atom_indices.push(*atom_i);
+        }
 
         // Reposition atoms so they're near the origin.
         if !atoms_this.is_empty() {
@@ -1314,6 +1324,12 @@ impl MoleculePeptide {
             }
         }
 
+        let bonds_this = bonds
+            .iter()
+            .filter(|b| atom_indices.contains(&b.atom_0) || atom_indices.contains(&b.atom_1))
+            .cloned()
+            .collect();
+
         // This allows saving as Mol2, for example, with residue types, without breaking
         // bindings
         let _res_new = Residue {
@@ -1322,16 +1338,18 @@ impl MoleculePeptide {
             ..res.clone()
         };
 
-        Self::new(
-            res.res_type.to_string(),
-            atoms_this,
-            // No chains, residues, or pubchem/drugbank identifiers.
-            Vec::new(),
-            Vec::new(),
-            // vec![res_new],
-            None,
-            // None,
-            // None,
-        )
+        Self::new(res.res_type.to_string(), atoms_this, bonds_this, None, None)
     }
+}
+
+pub fn build_adjacency_list(bonds: &Vec<Bond>, atoms_len: usize) -> Vec<Vec<usize>> {
+    let mut result = vec![Vec::new(); atoms_len];
+
+    // For each bond, record its atoms as neighbors of each other
+    for bond in bonds {
+        result[bond.atom_0].push(bond.atom_1);
+        result[bond.atom_1].push(bond.atom_0);
+    }
+
+    result
 }

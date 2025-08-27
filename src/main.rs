@@ -10,12 +10,7 @@
 // `cargo check --target aarch64-pc-windows-msvc`
 // note: Currently getting Clang errors when I attempt htis.
 
-// todo: Features to add:
-// - qvina2/qvina-w/gpuvina implementations too along with stuff like haddock for affinity-based
-// protein-protein.
-// - CLI interface or scripting, like PyMol
-// - mol2 support
-// - Better color scheme for residues?
+// todo: Consider APBS: https://github.com/Electrostatics/apbs (For a type of surface visulaization?)P
 
 //! [S3 Gemmi link](https://daedalus-mols.s3.us-east-1.amazonaws.com/gemmi.exe)
 //! [S3 Geostd link](https://daedalus-mols.s3.us-east-1.amazonaws.com/amber_geostd)
@@ -24,6 +19,7 @@ mod aa_coords;
 mod add_hydrogens;
 mod bond_inference;
 mod docking;
+mod docking_v2;
 mod download_mols;
 mod drug_like;
 mod file_io;
@@ -43,9 +39,9 @@ mod cli;
 mod dynamics;
 mod reflection;
 
+mod nucleic_acid;
 #[cfg(test)]
 mod tests;
-mod nucleic_acid;
 
 #[cfg(feature = "cuda")]
 use std::sync::Arc;
@@ -82,6 +78,7 @@ use crate::{
     docking::{BindingEnergy, THETA_BH, prep::DockingSetup},
     dynamics::MdState,
     molecule::{Ligand, PeptideAtomPosits},
+    nucleic_acid::MoleculeNucleicAcid,
     prefs::ToSave,
     render::render,
     util::handle_err,
@@ -441,8 +438,11 @@ struct State {
     pub volatile: StateVolatile,
     // pub pdb: Option<PDB>,
     pub cif_pdb_raw: Option<String>,
+    // todo: Allow multiple?
     pub molecule: Option<MoleculePeptide>,
+    // todo: Allow multiple.
     pub ligand: Option<Ligand>,
+    pub nucleid_acids: Vec<MoleculeNucleicAcid>,
     pub cam_snapshots: Vec<CamSnapshot>,
     /// This allows us to keep in-memory data for other molecules.
     pub to_save: ToSave,
@@ -598,7 +598,9 @@ fn main() {
     }
 
     if let Some(mol) = &state.molecule {
-        let posit = state.to_save.per_mol[&mol.ident].docking_site.site_center;
+        let posit = state.to_save.per_mol[&mol.common.ident]
+            .docking_site
+            .site_center;
         // state.update_docking_site(posit);
     }
 

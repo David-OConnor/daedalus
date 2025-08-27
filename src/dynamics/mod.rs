@@ -107,9 +107,7 @@ use crate::{
     ComputationDevice,
     dynamics::{
         ambient::BerendsenBarostat,
-        non_bonded::{
-            CHARGE_UNIT_SCALER, EWALD_ALPHA, LONG_RANGE_CUTOFF, LjTables, SCALE_COUL_14, SPME_N,
-        },
+        non_bonded::{CHARGE_UNIT_SCALER, EWALD_ALPHA, LjTables, SCALE_COUL_14, SPME_N},
         prep::HydrogenMdType,
         water_opc::WaterMol,
     },
@@ -464,6 +462,7 @@ impl MdState {
         self.apply_all_forces(dev);
 
         let mut start = Instant::now();
+        // todo: YOu need to update potential energy from LR PME as well.
         self.handle_spme_recip(dev);
         if self.step_count == 0 {
             let elapsed = start.elapsed();
@@ -533,7 +532,7 @@ impl MdState {
             }
         };
 
-        println!("F RECIP: {:?}", &f_recip[0..20]);
+        // println!("F RECIP: {:?}", &f_recip[0..20]);
 
         // Scale to Amber force units if your PME returns raw qE:
         for f in f_recip.iter_mut() {

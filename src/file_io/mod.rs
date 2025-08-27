@@ -30,10 +30,11 @@ use bio_files::{
 use crate::{
     docking::prep::DockingSetup,
     dynamics::prep::{merge_params, populate_ff_and_q},
+    file_io::pdbqt::save_pdbqt,
+    molecule::{MoleculeCommon, MoleculeGeneric, MoleculeLigand},
     reflection::{DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityRect, ElectronDensity},
     util::{handle_err, handle_success},
 };
-use crate::molecule::{MoleculeCommon, MoleculeGeneric};
 
 impl State {
     /// A single endpoint to open a number of file types
@@ -79,11 +80,10 @@ impl State {
         let binding = path.extension().unwrap_or_default().to_ascii_lowercase();
         let extension = binding;
 
-        let mut ligand = None;
         let molecule = match extension.to_str().unwrap() {
             "sdf" => Ok(MoleculeGeneric::Ligand(Sdf::load(path)?.try_into()?)),
-            "mol2" => Ok(MoleculeGeneric::Ligand(Mol2::load(path)?.try_into()?)),
-            "pdbqt" => Ok(MoleculeGeneric::Ligand(load_pdbqt(path)?.try_into()?)),
+            "mol2" | "pdbqt" => Ok(MoleculeGeneric::Ligand(Mol2::load(path)?.try_into()?)),
+            // "pdbqt" => Ok(MoleculeGeneric::Ligand(load_pdbqt(path)?.try_into()?)),
             "pdb" | "cif" => {
                 // If a 2fo-fc CIF, use gemmi to convert it to Map data.
                 // Using the filename to determine if this is a 2fo-fc file, vice atom coordinates,
@@ -153,65 +153,53 @@ impl State {
             Ok(mol_gen) => {
                 match mol_gen {
                     MoleculeGeneric::Ligand(mol) => {
-                        let het_residues = mol.het_residues.clone();
-                        let mol_atoms = mol.common.atoms.clone();
-
-                        let mut init_posit = Vec3::new_zero();
-
-                        let lig = Ligand::new(mol, & self.ff_params.lig_specific);
+                        let lig = Ligand::new(mol, &self.ff_params.lig_specific);
                         self.mol_dynamics = None;
-
-                        // Align to a hetero residue in the open molecule, if there is a match.
-                        // todo: Keep this in sync with the UI button-based code; this will have updated.
-                        for res in het_residues {
-                        if (res.atoms.len() as i16 - lig.molecule.atoms.len() as i16).abs() < 22 {
-                        init_posit = mol_atoms[res.atoms[0]].posit;
-                        }
-                        }
 
                         self.ligand = Some(lig);
                         self.to_save.last_ligand_opened = Some(path.to_owned());
 
                         // self.update_docking_site(init_posit);
-                    MoleculeGeneric::Peptide => {
-                    self.to_save.last_opened = Some(path.to_owned());
-
-                    self.volatile.aa_seq_text = String::with_capacity(mol.atoms.len());
-                    for aa in & mol.aa_seq {
-                    self.volatile
-                    .aa_seq_text
-                    .push_str( & aa.to_str(AaIdent::OneLetter));
                     }
+                    MoleculeGeneric::Peptide(m) => {
+                        self.to_save.last_opened = Some(path.to_owned());
 
-                    self.volatile.flags.ss_mesh_created = false;
-                    self.volatile.flags.sas_mesh_created = false;
-
-                    self.volatile.flags.clear_density_drawing = true;
-                    self.molecule = Some(mol);
-
-                    // Only updating if not loading a ligand.
-                    // Update from prefs based on the molecule-specific items.
-                    self.update_from_prefs();
-                    }
-
-                    if let Some(mol) = &mut self.molecule {
-                        // Only after updating from prefs (to prevent unecesasary loading) do we update data avail.
-                        mol.updates_rcsb_data( & mut self.volatile.mol_pending_data_avail);
-                    }
-
-                    // Now, save prefs: This is to save last opened. Note that anomolies happen
-                    // if we update the molecule here, e.g. with docking site posit.
-                        self.update_save_prefs_no_mol();
-
-                    if self.ligand.is_some() {
-                        if self.get_make_docking_setup().is_none() {
-                            eprintln!("Problem making or getting docking setup.");
+                        self.volatile.aa_seq_text = String::with_capacity(m.common.atoms.len());
+                        for aa in &m.aa_seq {
+                            self.volatile
+                                .aa_seq_text
+                                .push_str(&aa.to_str(AaIdent::OneLetter));
                         }
-                    }
 
-                    self.volatile.flags.new_mol_loaded = true;
+                        self.volatile.flags.ss_mesh_created = false;
+                        self.volatile.flags.sas_mesh_created = false;
+
+                        self.volatile.flags.clear_density_drawing = true;
+                        self.molecule = Some(m);
+
+                        // Only updating if not loading a ligand.
+                        // Update from prefs based on the molecule-specific items.
+                        self.update_from_prefs();
+                    }
+                    MoleculeGeneric::NucleicAcid(m) => (), // todo
                 }
-                    MoleculeGeneric::NucleicAcid(m) => () // todo
+
+                if let Some(mol) = &mut self.molecule {
+                    // Only after updating from prefs (to prevent unnecessary loading) do we update data avail.
+                    mol.updates_rcsb_data(&mut self.volatile.mol_pending_data_avail);
+                }
+
+                // Now, save prefs: This is to save last opened. Note that anomolies happen
+                // if we update the molecule here, e.g. with docking site posit.
+                self.update_save_prefs_no_mol();
+
+                if self.ligand.is_some() {
+                    if self.get_make_docking_setup().is_none() {
+                        eprintln!("Problem making or getting docking setup.");
+                    }
+                }
+
+                self.volatile.flags.new_mol_loaded = true;
             }
             Err(e) => {
                 return Err(e);
@@ -226,6 +214,7 @@ impl State {
             // We are filtering for backbone atoms of one type for now, for performance reasons. This is
             // a sample. Good enough?
             let atom_posits: Vec<_> = mol
+                .common
                 .atoms
                 .iter()
                 .filter(|a| a.element != Element::Hydrogen)
@@ -342,7 +331,7 @@ impl State {
 
                 // Update the lig's FRCMOD status A/R, if the ligand is opened already.
                 if let Some(lig) = &mut self.ligand {
-                    if &lig.molecule.ident.to_uppercase() == &mol_name.to_uppercase() {
+                    if &lig.mol.common.ident.to_uppercase() == &mol_name.to_uppercase() {
                         lig.frcmod_loaded = true;
                     }
                 }
@@ -384,7 +373,7 @@ impl State {
             }
             "sdf" => match &self.ligand {
                 Some(lig) => {
-                    lig.molecule.to_sdf().save(path)?;
+                    lig.mol.to_sdf().save(path)?;
 
                     self.to_save.last_ligand_opened = Some(path.to_owned());
                     self.update_save_prefs(false)
@@ -393,7 +382,7 @@ impl State {
             },
             "mol2" => match &self.ligand {
                 Some(lig) => {
-                    lig.molecule.to_mol2().save(path)?;
+                    lig.mol.to_mol2().save(path)?;
 
                     self.to_save.last_ligand_opened = Some(path.to_owned());
                     self.update_save_prefs(false)
@@ -402,7 +391,7 @@ impl State {
             },
             "pdbqt" => match &self.ligand {
                 Some(lig) => {
-                    lig.molecule.save_pdbqt(path, None)?;
+                    save_pdbqt(&lig.mol.to_mol2(), path, None)?;
                     self.to_save.last_ligand_opened = Some(path.to_owned());
                     self.update_save_prefs(false)
                 }
@@ -458,7 +447,8 @@ impl State {
         };
 
         if let Some(mol) = &mut self.molecule {
-            if let Err(e) = populate_ff_and_q(&mut mol.atoms, &mol.residues, &ff_charge_data) {
+            if let Err(e) = populate_ff_and_q(&mut mol.common.atoms, &mol.residues, &ff_charge_data)
+            {
                 eprintln!(
                     "Unable to populate FF charge and FF type for protein atoms: {:?}",
                     e
@@ -584,7 +574,7 @@ impl State {
                 if load_mol2 {
                     match Mol2::new(&data.mol2) {
                         Ok(mol2) => {
-                            let mol: MoleculePeptide = mol2.try_into().unwrap();
+                            let mol: MoleculeLigand = mol2.try_into().unwrap();
                             self.ligand = Some(Ligand::new(mol, &self.ff_params.lig_specific));
                             self.mol_dynamics = None;
 

@@ -13,11 +13,12 @@ use egui::{
 };
 use graphics::{ControlScheme, EngineUpdates, Scene};
 use lin_alg::f32::Vec3;
-use na_seq::AaIdent;
+use na_seq::{AaIdent, Nucleotide};
 
 static INIT_COMPLETE: AtomicBool = AtomicBool::new(false);
 
 use bio_files::{DensityMap, ResidueType, density_from_2fo_fc_rcsb_gemmi};
+use na_seq::CodingResult::AminoAcid;
 
 use crate::{
     CamSnapshot, MsaaSetting, Selection, State, ViewSelLevel, cli,
@@ -30,13 +31,10 @@ use crate::{
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
     mol_drawing::{
         EntityType, MoleculeView, draw_density_point_cloud, draw_density_surface, draw_ligand,
-        draw_molecule, draw_water,
+        draw_molecule, draw_nucleic_acid, draw_water,
     },
-    molecule::{Ligand, MoleculePeptide},
-    render::{
-        CAM_INIT_OFFSET,  set_docking_light, set_flashlight,
-        set_static_light,
-    molecule::{Ligand, Molecule},
+    molecule::{Ligand, MoleculeGeneric, MoleculeGenericRef, MoleculePeptide},
+    nucleic_acid::MoleculeNucleicAcid,
     render::{set_docking_light, set_flashlight, set_static_light},
     ui::{
         cam::{cam_controls, cam_snapshots, move_cam_to_lig},
@@ -438,7 +436,7 @@ fn docking(
                 lig.position_atoms(None);
 
                 lig.position_atoms(None);
-                let lig_pos: Vec3 = lig.atom_posits[lig.anchor_atom].into();
+                let lig_pos: Vec3 = lig.mol.common.atom_posits[lig.anchor_atom].into();
                 let ctr: Vec3 = mol.center.into();
 
                 cam_look_at_outside(&mut scene.camera, lig_pos, ctr);
@@ -464,7 +462,7 @@ fn docking(
                 lig.position_atoms(Some(&pose));
 
                 let posits_this_pose: Vec<_> =
-                    lig.atom_posits.iter().map(|p| (*p).into()).collect();
+                    lig.mol.common.atom_posits.iter().map(|p| (*p).into()).collect();
 
                 // partial_charges_lig.push(create_partial_charges(
                 //     &ligand.molecule.atoms,
@@ -559,7 +557,7 @@ fn docking(
         if let Some(mol) = &state.molecule {
             for res in &mol.het_residues {
                 // Note: This is crude.
-                if (res.atoms.len() - lig.molecule.atoms.len()) < 5 {
+                if (res.atoms.len() - lig.mol.common.atoms.len()) < 5 {
                     // todo: Don't list multiple; pick teh closest, at least in len.
                     let name = match &res.res_type {
                         ResidueType::Other(name) => name,
@@ -633,8 +631,8 @@ fn docking(
             lig.reset_posits();
             state.mol_dynamics = None;
 
-            if !lig.atom_posits.is_empty() {
-                docking_posit_update = Some(lig.atom_posits[0].into());
+            if !lig.mol.common.atom_posits.is_empty() {
+                docking_posit_update = Some(lig.mol.common.atom_posits[0].into());
                 docking_init_changed = true;
             }
 
@@ -736,192 +734,179 @@ fn selection_section(
 ) {
     // todo: DRY with view.
     ui.horizontal_wrapped(|ui| {
-        let help_text = "Hotkeys: square brackets [ ] to cycle";
-        ui.label("View/Select:").on_hover_text(help_text);
-        let prev_view = state.ui.view_sel_level;
+        section_box().show(ui, |ui| {
+            let help_text = "Hotkeys: square brackets [ ] to cycle";
+            ui.label("View/Select:").on_hover_text(help_text);
+            let prev_view = state.ui.view_sel_level;
 
-        // Ideally hover text here too, but I'm not sure how.
-        ComboBox::from_id_salt(1)
-            .width(80.)
-            .selected_text(state.ui.view_sel_level.to_string())
-            .show_ui(ui, |ui| {
-                for view in &[ViewSelLevel::Atom, ViewSelLevel::Residue] {
-                    ui.selectable_value(&mut state.ui.view_sel_level, *view, view.to_string());
-                }
-            }).response.on_hover_text(help_text);
-
-        if state.ui.view_sel_level != prev_view {
-            *redraw = true;
-            // If we change from atom to res, select the prev-selected atom's res. If vice-versa,
-            // select that residue's Cα.
-            // state.ui.selection = Selection::None;
-            if let Some(mol) = &state.molecule {
-                match state.ui.view_sel_level {
-                    ViewSelLevel::Residue => {
-                        state.ui.selection = match state.ui.selection {
-                            Selection::Atom(i) => {
-                                Selection::Residue(mol.atoms[i].residue.unwrap_or_default())
-                            }
-                            _ => Selection::None,
-                        };
+            // Ideally hover text here too, but I'm not sure how.
+            ComboBox::from_id_salt(1)
+                .width(80.)
+                .selected_text(state.ui.view_sel_level.to_string())
+                .show_ui(ui, |ui| {
+                    for view in &[ViewSelLevel::Atom, ViewSelLevel::Residue] {
+                        ui.selectable_value(&mut state.ui.view_sel_level, *view, view.to_string());
                     }
-                    ViewSelLevel::Atom => {
-                        state.ui.selection = match state.ui.selection {
-                            // It seems [0] is often N, and [1] is Cα
-                            Selection::Residue(i) => {
-                                if mol.residues[i].atoms.len() <= 2 {
-                                    Selection::Atom(mol.residues[i].atoms[1])
-                                } else {
-                                    Selection::None
+                }).response.on_hover_text(help_text);
+
+            if state.ui.view_sel_level != prev_view {
+                *redraw = true;
+                // If we change from atom to res, select the prev-selected atom's res. If vice-versa,
+                // select that residue's Cα.
+                // state.ui.selection = Selection::None;
+                if let Some(mol) = &state.molecule {
+                    match state.ui.view_sel_level {
+                        ViewSelLevel::Residue => {
+                            state.ui.selection = match state.ui.selection {
+                                Selection::Atom(i) => {
+                                    Selection::Residue(mol.common.atoms[i].residue.unwrap_or_default())
                                 }
-                            }
+                                _ => Selection::None,
+                            };
+                        }
+                        ViewSelLevel::Atom => {
+                            state.ui.selection = match state.ui.selection {
+                                // It seems [0] is often N, and [1] is Cα
+                                Selection::Residue(i) => {
+                                    if mol.residues[i].atoms.len() <= 2 {
+                                        Selection::Atom(mol.residues[i].atoms[1])
+                                    } else {
+                                        Selection::None
+                                    }
+                                }
 
-                            _ => Selection::None,
-                        };
+                                _ => Selection::None,
+                            };
+                        }
                     }
                 }
             }
-        }
 
-        // Buttons to alter the color profile, e.g. for res position, or partial charge.
-        ui.add_space(COL_SPACING / 2.);
-        match state.ui.view_sel_level {
-            ViewSelLevel::Atom => {
-                let color = if state.ui.atom_color_by_charge {
-                    COLOR_ACTIVE
-                } else {
-                    COLOR_INACTIVE
-                };
+            // Buttons to alter the color profile, e.g. for res position, or partial charge.
+            ui.add_space(COL_SPACING / 2.);
+            match state.ui.view_sel_level {
+                ViewSelLevel::Atom => {
+                    let color = if state.ui.atom_color_by_charge {
+                        COLOR_ACTIVE
+                    } else {
+                        COLOR_INACTIVE
+                    };
 
-                if ui
-                    .button(RichText::new("Color by q").color(color))
-                    .on_hover_text("Color the atom by partial charge, instead of element-specific colors")
-                    .clicked()
-                {
-                    state.ui.atom_color_by_charge = !state.ui.atom_color_by_charge;
-                    state.ui.view_sel_level = ViewSelLevel::Atom;
-                    *redraw = true;
+                    if ui
+                        .button(RichText::new("Color by q").color(color))
+                        .on_hover_text("Color the atom by partial charge, instead of element-specific colors")
+                        .clicked()
+                    {
+                        state.ui.atom_color_by_charge = !state.ui.atom_color_by_charge;
+                        state.ui.view_sel_level = ViewSelLevel::Atom;
+                        *redraw = true;
+                    }
+                }
+                ViewSelLevel::Residue => {
+                    let color = if state.ui.res_color_by_index {
+                        COLOR_ACTIVE
+                    } else {
+                        COLOR_INACTIVE
+                    };
+
+                    if ui
+                        .button(RichText::new("Color by res #").color(color))
+                        .on_hover_text("Color the atom by its position in the primary sequence, instead of residue (e.g. AA) -specific colors")
+                        .clicked()
+                    {
+                        state.ui.res_color_by_index = !state.ui.res_color_by_index;
+                        state.ui.view_sel_level = ViewSelLevel::Residue;
+                        *redraw = true;
+                    }
                 }
             }
-            ViewSelLevel::Residue => {
-                let color = if state.ui.res_color_by_index {
-                    COLOR_ACTIVE
-                } else {
-                    COLOR_INACTIVE
-                };
 
-                if ui
-                    .button(RichText::new("Color by res #").color(color))
-                    .on_hover_text("Color the atom by its position in the primary sequence, instead of residue (e.g. AA) -specific colors")
-                    .clicked()
-                {
-                    state.ui.res_color_by_index = !state.ui.res_color_by_index;
-                    state.ui.view_sel_level = ViewSelLevel::Residue;
-                    *redraw = true;
-                }
-            }
-        }
+            ui.add_space(COL_SPACING);
 
-        ui.add_space(COL_SPACING);
-
-        let help = "Hide all atoms not near the selection";
-        ui.label("Nearby sel only:").on_hover_text(help);
-        if ui.checkbox(&mut state.ui.show_near_sel_only, "")
-            .on_hover_text(help)
-            .changed() {
-            *redraw = true;
-
-            // todo: For now, only allow one of near sel/lig
-            if state.ui.show_near_sel_only {
-                state.ui.show_near_lig_only = false
-            }
-        }
-
-        if state.ligand.is_some() {
-            let help = "Hide all atoms not near the ligand";
-            ui.label("Nearby lig only:").on_hover_text(help);
-            if ui.checkbox(&mut state.ui.show_near_lig_only, "")
+            let help = "Hide all atoms not near the selection";
+            ui.label("Nearby sel only:").on_hover_text(help);
+            if ui.checkbox(&mut state.ui.show_near_sel_only, "")
                 .on_hover_text(help)
                 .changed() {
                 *redraw = true;
 
                 // todo: For now, only allow one of near sel/lig
-                if state.ui.show_near_lig_only {
-                    state.ui.show_near_sel_only = false
+                if state.ui.show_near_sel_only {
+                    state.ui.show_near_lig_only = false
                 }
             }
-        }
 
-        if state.ui.show_near_sel_only || state.ui.show_near_lig_only {
-            ui.label("Dist:");
-            let dist_prev = state.ui.nearby_dist_thresh;
-            ui.spacing_mut().slider_width = 160.;
+            if state.ligand.is_some() {
+                let help = "Hide all atoms not near the ligand";
+                ui.label("Nearby lig only:").on_hover_text(help);
+                if ui.checkbox(&mut state.ui.show_near_lig_only, "")
+                    .on_hover_text(help)
+                    .changed() {
+                    *redraw = true;
 
-            ui.add(Slider::new(
-                &mut state.ui.nearby_dist_thresh,
-                NEARBY_THRESH_MIN..=NEARBY_THRESH_MAX,
-            ));
-
-            if state.ui.nearby_dist_thresh != dist_prev {
-                *redraw = true;
+                    // todo: For now, only allow one of near sel/lig
+                    if state.ui.show_near_lig_only {
+                        state.ui.show_near_sel_only = false
+                    }
+                }
             }
-        }
+
+            if state.ui.show_near_sel_only || state.ui.show_near_lig_only {
+                ui.label("Dist:");
+                let dist_prev = state.ui.nearby_dist_thresh;
+                ui.spacing_mut().slider_width = 160.;
+
+                ui.add(Slider::new(
+                    &mut state.ui.nearby_dist_thresh,
+                    NEARBY_THRESH_MIN..=NEARBY_THRESH_MAX,
+                ));
+
+                if state.ui.nearby_dist_thresh != dist_prev {
+                    *redraw = true;
+                }
+            }
+        });
 
         if let Some(mol) = &state.molecule {
-            ui.add_space(COL_SPACING);
             misc::selected_data(mol, &state.ligand, &state.ui.selection, ui);
         }
     });
 }
 
-fn mol_descrip(mol: &MoleculePeptide, ui: &mut Ui) {
-    ui.heading(RichText::new(mol.ident.clone()).color(Color32::GOLD));
+fn mol_descrip(mol: &MoleculeGenericRef, ui: &mut Ui) {
+    ui.heading(RichText::new(mol.common().ident.clone()).color(Color32::GOLD));
 
-    ui.label(format!("{} atoms", mol.atoms.len()));
+    ui.label(format!("{} atoms", mol.common().atoms.len()));
 
-    if let Some(method) = mol.experimental_method {
-        ui.label(method.to_str_short());
+    if let MoleculeGenericRef::Peptide(m) = mol {
+        if let Some(method) = m.experimental_method {
+            ui.label(method.to_str_short());
+        }
     }
 
-    if let Some(metadata) = &mol.metadata {
+    if let Some(title) = mol.common().metadata.get("prim_cit_title") {
         // Limit size to prevent UI problems.
-        let mut title_abbrev: String = metadata
-            .prim_cit_title
-            .chars()
-            .take(MAX_TITLE_LEN)
-            .collect();
+        let mut title_abbrev: String = title.chars().take(MAX_TITLE_LEN).collect();
 
-        if title_abbrev.len() != metadata.prim_cit_title.len() {
+        if title_abbrev.len() != title.len() {
             title_abbrev += "...";
 
             // Allow hovering to see the full title.
             ui.label(RichText::new(title_abbrev).color(Color32::WHITE).size(12.))
-                .on_hover_text(&metadata.prim_cit_title);
+                .on_hover_text(title);
         } else {
             ui.label(RichText::new(title_abbrev).color(Color32::WHITE).size(12.));
         }
     }
 
-    if mol.ident.len() <= 5 {
+    if mol.common().ident.len() <= 5 {
         // todo: You likely need a better approach.
         if ui
             .button("View on RCSB")
             .on_hover_text("Open a web browser to the RCSB PDB page for this molecule.")
             .clicked()
         {
-            rcsb::open_overview(&mol.ident);
-        }
-    }
-
-    if let Some(id) = &mol.drugbank_id {
-        if ui.button("View on Drugbank").clicked() {
-            drugbank::open_overview(id);
-        }
-    }
-
-    if let Some(id) = mol.pubchem_cid {
-        if ui.button("View on PubChem").clicked() {
-            pubchem::open_overview(id);
+            rcsb::open_overview(&mol.common().ident);
         }
     }
 }
@@ -1038,6 +1023,20 @@ fn view_settings(
                     state.ui.visibility.dim_peptide = !state.ui.visibility.dim_peptide;
                     *redraw = true;
                 }
+            }
+
+            // todo temp
+            if ui.button("Load DNA").clicked() {
+                state.nucleid_acids = vec![MoleculeNucleicAcid::from_seq(&[
+                    Nucleotide::A,
+                    Nucleotide::C,
+                    Nucleotide::G,
+                    Nucleotide::T,
+                    Nucleotide::G,
+                    Nucleotide::C,
+                ])];
+                draw_nucleic_acid(state, scene);
+                engine_updates.entities = true;
             }
 
             if let Some(mol) = &state.molecule {
@@ -1250,7 +1249,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
             let metadata_loaded = false; // avoids borrow error.
             if let Some(mol) = &mut state.molecule {
-                mol_descrip(mol, ui);
+                mol_descrip(&MoleculeGenericRef::Peptide(&mol), ui);
 
                 if ui.button("Close").clicked() {
                     close_mol(state, scene, &mut engine_updates);
@@ -1282,10 +1281,10 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     let extension = "cif";
 
                     let filename = {
-                        let name = if mol.ident.is_empty() {
+                        let name = if mol.common.ident.is_empty() {
                             "molecule".to_string()
                         } else {
-                            mol.ident.clone()
+                            mol.common.ident.clone()
                         };
                         format!("{name}.{extension}")
                     };
@@ -1302,14 +1301,14 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     //         .button(RichText::new("SF").color(COLOR_HIGHLIGHT))
                     //         .clicked()
                     //     {
-                    //         match rcsb::load_structure_factors_cif(&mol.ident) {
+                    //         match rcsb::load_structure_factors_cif(&mol.common.ident) {
                     //             Ok(data) => {
                     //                 // println!("SF data: {:?}", data);
                     //             }
                     //             Err(_) => {
                     //                 let msg = format!(
                     //                     "Error loading RCSB structure factors for {:?}",
-                    //                     &mol.ident
+                    //                     &mol.common.ident
                     //                 );
                     //
                     //                 handle_err(&mut state.ui, msg);
@@ -1326,7 +1325,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                             // todo: For now, we rely on Gemmi being available on the Path.
                             // todo: We will eventually get our own reflections loader working.
 
-                            match density_from_2fo_fc_rcsb_gemmi(&mol.ident, gemmi_path()) {
+                            match density_from_2fo_fc_rcsb_gemmi(&mol.common.ident, gemmi_path()) {
                                 Ok(dm) => {
                                     dm_loaded = Some(dm);
                                     handle_success(&mut state.ui, "Loaded density data from RSCB".to_owned());
@@ -1334,7 +1333,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                                 Err(e) => {
                                     let msg = format!(
                                         "Error loading or processing RCSB 2fo-fc map for {:?}: {e:?}",
-                                        &mol.ident
+                                        &mol.common.ident
                                     );
                                     handle_err(&mut state.ui, msg);
                                 }
@@ -1347,14 +1346,14 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     //         .button(RichText::new("fo-fc").color(COLOR_HIGHLIGHT))
                     //         .clicked()
                     //     {
-                    //         match rcsb::load_validation_fo_fc_cif(&mol.ident) {
+                    //         match rcsb::load_validation_fo_fc_cif(&mol.common.ident) {
                     //             Ok(data) => {
                     //                 // println!("SF data: {:?}", data);
                     //             }
                     //             Err(_) => {
                     //                 let msg = format!(
                     //                     "Error loading RCSB fo-fc map for {:?}",
-                    //                     &mol.ident
+                    //                     &mol.common.ident
                     //                 );
                     //                 handle_err(&mut state.ui, msg);
                     //             }
@@ -1367,14 +1366,14 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     //         .button(RichText::new("Val").color(COLOR_HIGHLIGHT))
                     //         .clicked()
                     //     {
-                    //         match rcsb::load_validation_cif(&mol.ident) {
+                    //         match rcsb::load_validation_cif(&mol.common.ident) {
                     //             Ok(data) => {
                     //                 // println!("VAL DATA: {:?}", data);
                     //             }
                     //             Err(_) => {
                     //                 let msg = format!(
                     //                     "Error loading RCSB validation for {:?}",
-                    //                     &mol.ident
+                    //                     &mol.common.ident
                     //                 );
                     //                 handle_err(&mut state.ui, msg);
                     //             }
@@ -1387,7 +1386,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                             .button(RichText::new("Map").color(COLOR_HIGHLIGHT))
                             .clicked()
                         {
-                            match rcsb::load_map(&mol.ident) {
+                            match rcsb::load_map(&mol.common.ident) {
                                 Ok(data) => {
                                     let mut cursor = Cursor::new(data);
                                     match DensityMap::new(&mut cursor) {
@@ -1398,7 +1397,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                                         Err(_) => {
                                             let msg = format!(
                                                 "Error loading RCSB Map for {:?}",
-                                                &mol.ident
+                                                &mol.common.ident
                                             );
                                             handle_err(&mut state.ui, msg);
                                         }
@@ -1406,7 +1405,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                                 }
                                 Err(_) => {
                                     let msg =
-                                        format!("Error loading RCSB Map for {:?}", &mol.ident);
+                                        format!("Error loading RCSB Map for {:?}", &mol.common.ident);
                                     handle_err(&mut state.ui, msg);
                                 }
                             }
@@ -1430,10 +1429,10 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     let extension = "mol2"; // The default; more robust than SDF.
 
                     let filename = {
-                        let name = if lig.molecule.ident.is_empty() {
+                        let name = if lig.mol.common.ident.is_empty() {
                             "molecule".to_string()
                         } else {
-                            lig.molecule.ident.clone()
+                            lig.mol.common.ident.clone()
                         };
                         format!("{name}.{extension}")
                     };
@@ -1656,7 +1655,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                         //     return;
                         // };
 
-                        match amber_geostd::find_mols(&lig.molecule.ident) {
+                        match amber_geostd::find_mols(&lig.mol.common.ident) {
                             Ok(data) => {
                                 state.ui.popup.get_geostd_items = data;
                             }
@@ -1801,12 +1800,12 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         // if let Some(path_dir) = &state.volatile.dialogs.save_pdbqt.take_picked() {
         //     if let Some(mol) = &mut state.molecule {
-        //         let filename = format!("{}_target.pdbqt", mol.ident);
+        //         let filename = format!("{}_target.pdbqt", mol.common.ident);
         //         let path = Path::new(path_dir).join(filename);
         //
         //         // todo: You will likely need to add charges earlier, so you can view their data in the UI.
-        //         // setup_partial_charges(&mut mol.atoms, PartialChargeType::Gasteiger);
-        //         // create_partial_charges(&mut mol.atoms);
+        //         // setup_partial_charges(&mut mol.common.atoms, PartialChargeType::Gasteiger);
+        //         // create_partial_charges(&mut mol.common.atoms);
         //
         //         if mol.save_pdbqt(&path, None).is_err() {
         //             eprintln!("Error saving PDBQT target");
@@ -1831,7 +1830,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             draw_ligand(state, scene); // todo: Hmm.
 
             if let Some(mol) = &state.molecule {
-                set_window_title(&mol.ident, scene);
+                set_window_title(&mol.common.ident, scene);
             }
 
             engine_updates.entities = true;
@@ -1881,13 +1880,13 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         // todo: Move to new_mol_loaded code block?
         if let Some(mol) = &state.molecule {
             if let Some(lig) = &mut state.ligand {
-                if lig.anchor_atom >= lig.molecule.atoms.len() {
+                if lig.anchor_atom >= lig.mol.common.atoms.len() {
                     let msg = "Error positioning ligand atoms; anchor outside len".to_owned();
                     handle_err(&mut state.ui, msg);
                 } else {
                     lig.position_atoms(None);
 
-                    let lig_pos: Vec3 = lig.atom_posits[lig.anchor_atom].into();
+                    let lig_pos: Vec3 = lig.mol.common.atom_posits[lig.anchor_atom].into();
                     let ctr: Vec3 = mol.center.into();
 
                     cam_look_at_outside(&mut scene.camera, lig_pos, ctr);

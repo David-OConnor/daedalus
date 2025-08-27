@@ -19,12 +19,13 @@ use crate::{
     docking::{ConformationType, prep::DockingSetup},
     download_mols::load_cif_rcsb,
     dynamics::prep::populate_ff_and_q,
-    mol_drawing::{EntityType, MoleculeView, draw_density, draw_density_surface, draw_molecule},
-    molecule::{Atom, AtomRole, Bond, Chain, Ligand, MoleculePeptide, Residue},
     mol_drawing::{
         EntityType, MoleculeView, draw_density_point_cloud, draw_density_surface, draw_molecule,
     },
-    molecule::{Atom, AtomRole, Bond, Chain, Ligand, Molecule, Residue},
+    molecule::{
+        Atom, AtomRole, Bond, Chain, Ligand, MoleculeCommon, MoleculeGeneric, MoleculePeptide,
+        Residue,
+    },
     render::{
         CAM_INIT_OFFSET, Color, MESH_DENSITY_SURFACE, MESH_SECONDARY_STRUCTURE,
         MESH_SOLVENT_SURFACE, set_flashlight, set_static_light,
@@ -291,7 +292,7 @@ pub fn select_from_search(state: &mut State) {
 
     match state.ui.view_sel_level {
         ViewSelLevel::Atom => {
-            for (i, atom) in mol.atoms.iter().enumerate() {
+            for (i, atom) in mol.common.atoms.iter().enumerate() {
                 // if query.contains(&atom.serial_number.to_string()) {
                 if query == &atom.serial_number.to_string() {
                     state.ui.selection = Selection::Atom(i);
@@ -338,7 +339,8 @@ pub fn cycle_selected(state: &mut State, scene: &mut Scene, reverse: bool) {
                     if chain.atoms.contains(&atom_i) {
                         let mut new_atom_i = atom_i as isize;
 
-                        while new_atom_i < (mol.atoms.len() as isize) - 1 && new_atom_i >= 0 {
+                        while new_atom_i < (mol.common.atoms.len() as isize) - 1 && new_atom_i >= 0
+                        {
                             new_atom_i += dir;
                             let nri = new_atom_i as usize;
                             if chain.atoms.contains(&nri) {
@@ -356,7 +358,7 @@ pub fn cycle_selected(state: &mut State, scene: &mut Scene, reverse: bool) {
                 // todo: DRY with the above for peptide atoms.
                 let mut new_atom_i = atom_i as isize;
 
-                while new_atom_i < (lig.molecule.atoms.len() as isize) - 1 && new_atom_i >= 0 {
+                while new_atom_i < (lig.mol.common.atoms.len() as isize) - 1 && new_atom_i >= 0 {
                     new_atom_i += dir;
                     let nri = new_atom_i as usize;
                     state.ui.selection = Selection::AtomLigand(nri);
@@ -364,7 +366,7 @@ pub fn cycle_selected(state: &mut State, scene: &mut Scene, reverse: bool) {
                 }
             }
             _ => {
-                if !mol.atoms.is_empty() {
+                if !mol.common.atoms.is_empty() {
                     state.ui.selection = Selection::Atom(0);
                 }
             }
@@ -508,7 +510,7 @@ pub fn orbit_center(state: &State) -> Vec3F32 {
         match &state.ui.selection {
             Selection::Atom(i) => {
                 if let Some(mol) = &state.molecule {
-                    match mol.atoms.get(*i) {
+                    match mol.common.atoms.get(*i) {
                         Some(a) => a.posit.into(),
                         None => Vec3F32::new_zero(),
                     }
@@ -518,7 +520,7 @@ pub fn orbit_center(state: &State) -> Vec3F32 {
             }
             Selection::AtomLigand(i) => {
                 if let Some(lig) = &state.ligand {
-                    lig.atom_posits[*i].into()
+                    lig.mol.common.atom_posits[*i].into()
                 } else {
                     Vec3F32::new_zero()
                 }
@@ -527,7 +529,7 @@ pub fn orbit_center(state: &State) -> Vec3F32 {
                 if let Some(mol) = &state.molecule {
                     match mol.residues.get(*i) {
                         Some(res) => {
-                            match mol.atoms.get(match res.atoms.first() {
+                            match mol.common.atoms.get(match res.atoms.first() {
                                 Some(a) => *a,
                                 None => return Vec3F32::new_zero(),
                             }) {
@@ -543,7 +545,7 @@ pub fn orbit_center(state: &State) -> Vec3F32 {
             }
             Selection::Atoms(is) => {
                 if let Some(mol) = &state.molecule {
-                    match mol.atoms.get(is[0]) {
+                    match mol.common.atoms.get(is[0]) {
                         Some(a) => a.posit.into(),
                         None => Vec3F32::new_zero(),
                     }
@@ -605,7 +607,9 @@ pub fn load_atom_coords_rcsb(
             // todo: This block is a direct C+P from file_io/mod.rs. Refactor into shared code.
             // If we've loaded general FF params, apply them to get FF type and charge.
             if let Some(charge_ff_data) = &state.ff_params.prot_ff_q_map {
-                if let Err(e) = populate_ff_and_q(&mut mol.atoms, &mol.residues, &charge_ff_data) {
+                if let Err(e) =
+                    populate_ff_and_q(&mut mol.common.atoms, &mol.residues, &charge_ff_data)
+                {
                     eprintln!(
                         "Unable to populate FF charge and FF type for protein atoms: {:?}",
                         e
@@ -624,7 +628,7 @@ pub fn load_atom_coords_rcsb(
                 }
             }
 
-            state.volatile.aa_seq_text = String::with_capacity(mol.atoms.len());
+            state.volatile.aa_seq_text = String::with_capacity(mol.common.atoms.len());
             for aa in &mol.aa_seq {
                 state
                     .volatile
@@ -634,7 +638,7 @@ pub fn load_atom_coords_rcsb(
 
             // todo: DRY from `open_molecule`. Refactor into shared code?
 
-            state.volatile.aa_seq_text = String::with_capacity(mol.atoms.len());
+            state.volatile.aa_seq_text = String::with_capacity(mol.common.atoms.len());
             for aa in &mol.aa_seq {
                 state
                     .volatile
@@ -891,7 +895,7 @@ pub fn handle_scene_flags(
 
         if let Some(mol) = &state.molecule {
             scene.meshes[MESH_SECONDARY_STRUCTURE] =
-                build_cartoon_mesh(&mol.secondary_structure, &mol.atoms);
+                build_cartoon_mesh(&mol.secondary_structure, &mol.common.atoms);
 
             engine_updates.meshes = true;
         }
@@ -902,7 +906,7 @@ pub fn handle_scene_flags(
         state.volatile.flags.sas_mesh_created = true;
 
         if let Some(mol) = &state.molecule {
-            let atoms: Vec<&_> = mol.atoms.iter().filter(|a| !a.hetero).collect();
+            let atoms: Vec<&_> = mol.common.atoms.iter().filter(|a| !a.hetero).collect();
             scene.meshes[MESH_SOLVENT_SURFACE] =
                 make_sas_mesh(&atoms, state.to_save.sa_surface_precision);
 
@@ -945,25 +949,25 @@ pub fn make_egui_color(color: Color) -> Color32 {
 /// Return a center suitable for docking.
 pub fn move_lig_to_res(lig: &mut Ligand, mol: &MoleculePeptide, res: &Residue) -> Vec3 {
     // todo: Pick center-of-mass atom, or better yet, match it to the anchor atom.
-    let posit = mol.atoms[res.atoms[0]].posit;
+    let posit = mol.common.atoms[res.atoms[0]].posit;
 
     // todo: YOu need to add hydrogens to hetero atoms.
 
     let mut all_found = false;
-    for (lig_i, atom_lig) in lig.molecule.atoms.iter().enumerate() {
+    for (lig_i, atom_lig) in lig.mol.common.atoms.iter().enumerate() {
         if atom_lig.type_in_res.is_none() {
             continue;
         }
         let mut found = false;
 
         for i in &res.atoms {
-            let atom_res = &mol.atoms[*i];
+            let atom_res = &mol.common.atoms[*i];
             if atom_res.type_in_res.is_none() {
                 continue;
             }
 
             if atom_res.type_in_res == atom_lig.type_in_res {
-                lig.atom_posits[lig_i] = atom_res.posit;
+                lig.mol.common.atom_posits[lig_i] = atom_res.posit;
                 found = true;
                 break;
             }
@@ -993,12 +997,12 @@ pub fn move_lig_to_res(lig: &mut Ligand, mol: &MoleculePeptide, res: &Residue) -
 }
 
 /// A helper used, for example, for orienting double bonds. Finds an arbitrary neighbor to the bond.
-/// Returns neighbor's index. Return the index instead of posit for flexibility, e.g. with lig.atom_posits.
+/// Returns neighbor's index. Return the index instead of posit for flexibility, e.g. with lig.mol.common.atom_posits.
 /// Returns (index, if index is from atom 1). This is important for knowing which side we're working with.
 ///
 /// Note: We don't take Hydrogens into account, because they confuse the situation of aromatic rings.
 pub fn find_neighbor_posit(
-    mol: &Molecule,
+    mol: &MoleculeCommon,
     atom_0: usize,
     atom_1: usize,
     hydrogen_is: &[bool],

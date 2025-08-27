@@ -38,7 +38,7 @@ pub const FOG_DIST_DEFAULT: u16 = 70;
 // Affects the user-setting far property.
 // Sets the fog center point in its fade.
 pub const FOG_DIST_MIN: u16 = 5;
-pub const FOG_DIST_MAX: u16 = 100;
+pub const FOG_DIST_MAX: u16 = 120;
 
 pub fn calc_fog_dists(dist: u16) -> (f32, f32) {
     // Clamp.
@@ -163,7 +163,7 @@ pub fn cam_controls(
                         {
                             if let Selection::AtomLigand(i) = &state.ui.selection {
                                 if let Some(lig) = &state.ligand {
-                                    cam_look_at(&mut scene.camera, lig.atom_posits[*i]);
+                                    cam_look_at(&mut scene.camera, lig.mol.common.atom_posits[*i]);
                                     engine_updates.camera = true;
                                     state.ui.cam_snapshot = None;
                                 }
@@ -321,7 +321,7 @@ pub fn move_cam_to_lig(
     mol_center: lin_alg::f64::Vec3,
     engine_updates: &mut EngineUpdates,
 ) {
-    if lig.anchor_atom >= lig.molecule.atoms.len() {
+    if lig.anchor_atom >= lig.mol.common.atoms.len() {
         handle_err(
             state_ui,
             "Problem positioning ligand atoms. Len shorter than anchor.".to_owned(),
@@ -329,7 +329,7 @@ pub fn move_cam_to_lig(
     } else {
         lig.position_atoms(None);
 
-        let lig_pos: Vec3 = lig.atom_posits[lig.anchor_atom].into();
+        let lig_pos: Vec3 = lig.mol.common.atom_posits[lig.anchor_atom].into();
         let ctr: Vec3 = mol_center.into();
 
         cam_look_at_outside(&mut scene.camera, lig_pos, ctr);

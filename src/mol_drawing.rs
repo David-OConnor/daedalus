@@ -97,12 +97,13 @@ const MESH_SURFACE_DOT: usize = MESH_CUBE;
 pub enum EntityType {
     Protein = 0,
     Ligand = 1,
-    DensityPoint = 2,
-    DensitySurface = 3,
-    SecondaryStructure = 4,
-    SaSurface = 5,
-    DockingSite = 6,
-    WaterModel = 7,
+    NucleicAcid = 2,
+    DensityPoint = 3,
+    DensitySurface = 4,
+    SecondaryStructure = 5,
+    SaSurface = 6,
+    DockingSite = 7,
+    WaterModel = 8,
     Other = 10,
 }
 
@@ -124,9 +125,9 @@ fn mod_color_for_ligand(color: &Color) -> Color {
 
 #[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]
 pub enum MoleculeView {
-    Sticks,
-    #[default]
     Backbone,
+    #[default]
+    Sticks,
     BallAndStick,
     /// i.e. Van der Waals radius, or CPK.
     SpaceFill,
@@ -724,7 +725,7 @@ pub fn draw_ligand(state: &State, scene: &mut Scene) {
         return;
     }
 
-    let mol = &lig.molecule;
+    let mol = &lig.mol;
 
     // todo: You have problems with transparent objects like the view cube in conjunction
     // todo with the transparent surface; workaround to not draw the cube here.
@@ -744,18 +745,16 @@ pub fn draw_ligand(state: &State, scene: &mut Scene) {
         });
     }
 
-    let atoms_positioned = mol.atoms.clone();
-
     // For determining inside of rings.
-    let mut hydrogen_is = Vec::with_capacity(lig.molecule.atoms.len());
-    for atom in &lig.molecule.atoms {
+    let mut hydrogen_is = Vec::with_capacity(lig.mol.common.atoms.len());
+    for atom in &lig.mol.common.atoms {
         hydrogen_is.push(atom.element == Element::Hydrogen);
     }
 
     // todo: C+P from draw_molecule. With some removed, but a lot of repeated.
-    for (i, bond) in mol.bonds.iter().enumerate() {
-        let atom_0 = &mol.atoms[bond.atom_0];
-        let atom_1 = &mol.atoms[bond.atom_1];
+    for (i, bond) in mol.common.bonds.iter().enumerate() {
+        let atom_0 = &mol.common.atoms[bond.atom_0];
+        let atom_1 = &mol.common.atoms[bond.atom_1];
 
         if state.ui.visibility.hide_hydrogen
             && (atom_0.element == Element::Hydrogen || atom_1.element == Element::Hydrogen)
@@ -763,14 +762,15 @@ pub fn draw_ligand(state: &State, scene: &mut Scene) {
             continue;
         }
 
-        let posit_0: Vec3 = lig.atom_posits[bond.atom_0].into();
-        let posit_1: Vec3 = lig.atom_posits[bond.atom_1].into();
+        let posit_0: Vec3 = lig.mol.common.atom_posits[bond.atom_0].into();
+        let posit_1: Vec3 = lig.mol.common.atom_posits[bond.atom_1].into();
 
         // For determining how to orient multiple-bonds.
-        let neighbor_i = find_neighbor_posit(&lig.molecule, bond.atom_0, bond.atom_1, &hydrogen_is);
+        let neighbor_i =
+            find_neighbor_posit(&lig.mol.common, bond.atom_0, bond.atom_1, &hydrogen_is);
         let neighbor_posit = match neighbor_i {
-            Some((i, p1)) => (lig.atom_posits[i].into(), p1),
-            None => (lig.atom_posits[0].into(), false),
+            Some((i, p1)) => (lig.mol.common.atom_posits[i].into(), p1),
+            None => (lig.mol.common.atom_posits[0].into(), false),
         };
 
         let mut color_0 = atom_color(
@@ -831,28 +831,29 @@ pub fn draw_ligand(state: &State, scene: &mut Scene) {
         );
     }
 
-    if !state.ui.visibility.hide_h_bonds {
-        for bond in &mol.bonds_hydrogen {
-            let atom_donor = &atoms_positioned[bond.donor];
-            let atom_acceptor = &atoms_positioned[bond.acceptor];
-
-            let posit_donor: Vec3 = atom_donor.posit.into();
-
-            let posit_acceptor: Vec3 = atom_acceptor.posit.into();
-
-            bond_entities(
-                &mut scene.entities,
-                posit_donor,
-                posit_acceptor,
-                COLOR_H_BOND,
-                COLOR_H_BOND,
-                BondType::Dummy,
-                true,
-                true,
-                (Vec3::new_zero(), false),
-            );
-        }
-    }
+    // todo: Add back if you include lig H bonds.
+    // if !state.ui.visibility.hide_h_bonds {
+    //     for bond in &mol.bonds_hydrogen {
+    //         let atom_donor = &atoms_positioned[bond.donor];
+    //         let atom_acceptor = &atoms_positioned[bond.acceptor];
+    //
+    //         let posit_donor: Vec3 = atom_donor.posit.into();
+    //
+    //         let posit_acceptor: Vec3 = atom_acceptor.posit.into();
+    //
+    //         bond_entities(
+    //             &mut scene.entities,
+    //             posit_donor,
+    //             posit_acceptor,
+    //             COLOR_H_BOND,
+    //             COLOR_H_BOND,
+    //             BondType::Dummy,
+    //             true,
+    //             true,
+    //             (Vec3::new_zero(), false),
+    //         );
+    //     }
+    // }
 
     set_docking_light(scene, Some(&state.ligand.as_ref().unwrap().docking_site));
 }
@@ -985,7 +986,7 @@ pub fn draw_secondary_structure(update_mesh: &mut bool, mesh_created: bool, scen
 /// Helper
 fn get_atom_posit<'a>(
     mode: PeptideAtomPosits,
-    posits: &'a Option<Vec<Vec3F64>>,
+    posits: Option<&'a Vec<Vec3F64>>,
     i: usize,
     atom: &'a Atom,
 ) -> &'a Vec3F64 {
@@ -996,6 +997,44 @@ fn get_atom_posit<'a>(
             None => &atom.posit,
         },
     }
+}
+
+// todo: You need to generalize your drawing code so you have less repetition, and it's more consistent.
+pub fn draw_nucleic_acid(state: &mut State, scene: &mut Scene) {
+    scene
+        .entities
+        .retain(|ent| ent.class != EntityType::NucleicAcid as u32);
+
+    println!("DRAWING.");
+    for mol in &state.nucleid_acids {
+        for (i, atom) in mol.common.atoms.iter().enumerate() {
+            println!("ATOM: {:?}", atom);
+            let atom_posit = get_atom_posit(
+                state.ui.peptide_atom_posits,
+                Some(&mol.common.atom_posits),
+                i,
+                atom,
+            );
+
+            let (mut radius, mesh) = match atom.element {
+                Element::Hydrogen => (BALL_STICK_RADIUS_H, MESH_BALL_STICK_SPHERE),
+                _ => (BALL_STICK_RADIUS, MESH_BALL_STICK_SPHERE),
+            };
+
+            let mut entity = Entity::new(
+                mesh,
+                (*atom_posit).into(),
+                Quaternion::new_identity(),
+                radius,
+                atom.element.color(),
+                ATOM_SHININESS,
+            );
+            entity.class = EntityType::NucleicAcid as u32;
+            scene.entities.push(entity);
+        }
+    }
+
+    // todo: Bonds
 }
 
 /// Refreshes entities with the model passed.
@@ -1021,8 +1060,6 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
     // todo: You may wish to integrate Cartoon into this workflow.
     scene.entities.retain(|ent| {
         ent.class != EntityType::Protein as u32 && ent.class != EntityType::SaSurface as u32
-        // ent.class != EntityType::DensitySurface as u32 &&
-        // ent.class != EntityType::Density as u32
     });
 
     let ui = &state.ui;
@@ -1061,7 +1098,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
         MoleculeView::Sticks | MoleculeView::BallAndStick
     ) && !state.ui.visibility.hide_water
     {
-        for (i, atom) in mol.atoms.iter().enumerate() {
+        for (i, atom) in mol.common.atoms.iter().enumerate() {
             if atom.hetero {
                 // todo: Excessive nesting.
                 if let Some(role) = atom.role {
@@ -1097,9 +1134,13 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
 
     // Draw atoms.
     if [MoleculeView::BallAndStick, MoleculeView::SpaceFill].contains(&ui.mol_view) {
-        for (i, atom) in mol.atoms.iter().enumerate() {
-            let atom_posit =
-                get_atom_posit(state.ui.peptide_atom_posits, &mol.atom_posits, i, atom);
+        for (i, atom) in mol.common.atoms.iter().enumerate() {
+            let atom_posit = get_atom_posit(
+                state.ui.peptide_atom_posits,
+                Some(&mol.common.atom_posits),
+                i,
+                atom,
+            );
 
             if atom.hetero {
                 let mut water = false;
@@ -1159,7 +1200,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
             }
             if let Some(lig) = &state.ligand {
                 if ui.show_near_lig_only {
-                    let atom_sel = lig.atom_posits[lig.anchor_atom];
+                    let atom_sel = lig.mol.common.atom_posits[lig.anchor_atom];
                     if (*atom_posit - atom_sel).magnitude() as f32 > ui.nearby_dist_thresh as f32 {
                         continue;
                     }
@@ -1213,14 +1254,14 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
     }
 
     // For determining inside of rings.
-    let mut hydrogen_is = Vec::with_capacity(mol.atoms.len());
-    for atom in &mol.atoms {
+    let mut hydrogen_is = Vec::with_capacity(mol.common.atoms.len());
+    for atom in &mol.common.atoms {
         hydrogen_is.push(atom.element == Element::Hydrogen);
     }
 
     // Draw bonds.
     // if ![MoleculeView::SpaceFill].contains(&ui.mol_view) || atom.hetero {
-    for bond in &mol.bonds {
+    for bond in &mol.common.bonds {
         if ui.mol_view == MoleculeView::Backbone && !bond.is_backbone {
             continue;
         }
@@ -1230,18 +1271,18 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
             continue;
         }
 
-        let atom_0 = &mol.atoms[bond.atom_0];
-        let atom_1 = &mol.atoms[bond.atom_1];
+        let atom_0 = &mol.common.atoms[bond.atom_0];
+        let atom_1 = &mol.common.atoms[bond.atom_1];
 
         let atom_0_posit = get_atom_posit(
             state.ui.peptide_atom_posits,
-            &mol.atom_posits,
+            Some(&mol.common.atom_posits),
             bond.atom_0,
             atom_0,
         );
         let atom_1_posit = get_atom_posit(
             state.ui.peptide_atom_posits,
-            &mol.atom_posits,
+            Some(&mol.common.atom_posits),
             bond.atom_1,
             atom_1,
         );
@@ -1261,7 +1302,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
         }
         if let Some(lig) = &state.ligand {
             if ui.show_near_lig_only {
-                let atom_sel = lig.atom_posits[lig.anchor_atom];
+                let atom_sel = lig.mol.common.atom_posits[lig.anchor_atom];
                 if (*atom_0_posit - atom_sel).magnitude() as f32 > ui.nearby_dist_thresh as f32 {
                     continue;
                 }
@@ -1306,13 +1347,13 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
         let posit_1: Vec3 = (*atom_1_posit).into();
 
         // For determining how to orient multiple-bonds.
-        let neighbor_i = find_neighbor_posit(mol, bond.atom_0, bond.atom_1, &hydrogen_is);
+        let neighbor_i = find_neighbor_posit(&mol.common, bond.atom_0, bond.atom_1, &hydrogen_is);
         let neighbor_posit = match neighbor_i {
-            Some((i, p1)) => (mol.atoms[i].posit.into(), p1),
-            None => (mol.atoms[0].posit.into(), false),
+            Some((i, p1)) => (mol.common.atoms[i].posit.into(), p1),
+            None => (mol.common.atoms[0].posit.into(), false),
         };
 
-        let dim_peptide = if state.ligand.is_some() && !&mol.atoms[bond.atom_0].hetero {
+        let dim_peptide = if state.ligand.is_some() && !&mol.common.atoms[bond.atom_0].hetero {
             state.ui.visibility.dim_peptide
         } else {
             false
@@ -1364,8 +1405,8 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
         && state.ui.mol_view != MoleculeView::SpaceFill
     {
         for bond in &mol.bonds_hydrogen {
-            let atom_donor = &mol.atoms[bond.donor];
-            let atom_acceptor = &mol.atoms[bond.acceptor];
+            let atom_donor = &mol.common.atoms[bond.donor];
+            let atom_acceptor = &mol.common.atoms[bond.acceptor];
 
             // todo: DRY with above.
             if state.ui.visibility.hide_sidechains || state.ui.mol_view == MoleculeView::Backbone {
@@ -1391,7 +1432,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
             }
             if let Some(lig) = &state.ligand {
                 if ui.show_near_lig_only {
-                    let atom_sel = lig.atom_posits[lig.anchor_atom];
+                    let atom_sel = lig.mol.common.atom_posits[lig.anchor_atom];
                     if (atom_donor.posit - atom_sel).magnitude() as f32
                         > ui.nearby_dist_thresh as f32
                     {
