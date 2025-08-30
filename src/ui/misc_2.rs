@@ -7,6 +7,10 @@ use lin_alg::f64::Vec3;
 
 use crate::{
     Selection, State, StateUi,
+    drawing::{
+        self, CHARGE_MAP_MAX, CHARGE_MAP_MIN, COLOR_AA_NON_RESIDUE_EGUI, draw_ligand, draw_peptide,
+        draw_water,
+    },
     dynamics::{
         MdMode,
         prep::{
@@ -14,16 +18,13 @@ use crate::{
             change_snapshot_peptide,
         },
     },
-    mol_drawing,
-    mol_drawing::{
-        CHARGE_MAP_MAX, CHARGE_MAP_MIN, COLOR_AA_NON_RESIDUE_EGUI, draw_ligand, draw_molecule,
-        draw_water,
+    molecule::{
+        Atom, Ligand, MoleculeLigand, MoleculePeptide, PeptideAtomPosits, Residue, aa_color,
     },
-    molecule::{Atom, Ligand, MoleculePeptide, PeptideAtomPosits, Residue, aa_color},
     render::set_docking_light,
     ui::{
-        COL_SPACING, COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_HIGHLIGHT, COLOR_INACTIVE,
-        ROW_SPACING, int_field, int_field_u16,
+        COL_SPACING, COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_INACTIVE, ROW_SPACING, int_field,
+        int_field_u16,
     },
     util::{cam_look_at_outside, handle_err, make_egui_color, move_lig_to_res},
 };
@@ -78,7 +79,7 @@ fn disp_atom_data(atom: &Atom, residues: &[Residue], posit_override: Option<Vec3
 
     if let Some(q) = &atom.partial_charge {
         let plus = if *q > 0. { "+" } else { "" };
-        let color = make_egui_color(mol_drawing::color_viridis_float(
+        let color = make_egui_color(drawing::color_viridis_float(
             *q,
             CHARGE_MAP_MIN,
             CHARGE_MAP_MAX,
@@ -89,7 +90,12 @@ fn disp_atom_data(atom: &Atom, residues: &[Residue], posit_override: Option<Vec3
 }
 
 /// Display text of the selected atom
-pub fn selected_data(mol: &MoleculePeptide, ligand: &Option<Ligand>, selection: &Selection, ui: &mut Ui) {
+pub fn selected_data(
+    mol: &MoleculePeptide,
+    ligand: &Option<Ligand>,
+    selection: &Selection,
+    ui: &mut Ui,
+) {
     match selection {
         Selection::Atom(sel_i) => {
             if *sel_i >= mol.common.atoms.len() {
@@ -103,11 +109,11 @@ pub fn selected_data(mol: &MoleculePeptide, ligand: &Option<Ligand>, selection: 
             let Some(lig) = ligand else {
                 return;
             };
-            if *sel_i >= lig.molecule.atoms.len() {
+            if *sel_i >= lig.mol.common.atoms.len() {
                 return;
             }
 
-            let atom = &lig.molecule.atoms[*sel_i];
+            let atom = &lig.mol.common.atoms[*sel_i];
             let posit = lig.mol.common.atom_posits[*sel_i];
             disp_atom_data(atom, &[], Some(posit), ui);
         }
@@ -175,7 +181,7 @@ pub fn dynamics_player(
             });
 
         if state.ui.peptide_atom_posits != prev {
-            draw_molecule(state, scene);
+            draw_peptide(state, scene);
             engine_updates.entities = true;
         }
 
@@ -214,7 +220,7 @@ pub fn dynamics_player(
                         let mol = state.molecule.as_mut().unwrap();
 
                         change_snapshot_peptide(mol, &md.atoms, snap);
-                        draw_molecule(state, scene);
+                        draw_peptide(state, scene);
                     }
                 }
 
@@ -273,7 +279,7 @@ pub fn md_setup(
             ) {
                 Ok(md) => {
                     let snap = &md.snapshots[0];
-                    draw_molecule(state, scene);
+                    draw_peptide(state, scene);
 
                     draw_water(
                         scene,
@@ -328,7 +334,7 @@ pub fn md_setup(
                     Ok(md) => {
                         let snap = &md.snapshots[0];
 
-                        draw_molecule(state, scene);
+                        draw_peptide(state, scene);
                         draw_water(
                             scene,
                             &snap.water_o_posits,
@@ -408,7 +414,7 @@ pub fn md_setup(
                 {
                     let res_type = res.res_type.clone(); // Avoids dbl-borrow.
 
-                    let mol_fm_res = MoleculePeptide::from_res(res, &mol.common.atoms, false);
+                    let mol_fm_res = MoleculeLigand::from_res(res, &mol.common.atoms, &mol.common.bonds, false);
                     let mut lig = Ligand::new(mol_fm_res, &state.ff_params.lig_specific);
                     state.mol_dynamics = None;
 
@@ -453,7 +459,7 @@ pub fn move_cam_to_lig(
     mol_center: Vec3,
     engine_updates: &mut EngineUpdates,
 ) {
-    if lig.anchor_atom >= lig.molecule.atoms.len() {
+    if lig.anchor_atom >= lig.mol.common.atoms.len() {
         handle_err(
             state_ui,
             "Problem positioning ligand atoms. Len shorter than anchor.".to_owned(),

@@ -124,7 +124,7 @@ pub fn f_dihedral(
     let per = params.periodicity as f64;
 
     let (dV_dφ, dφ) = if improper {
-        let dφ = (dihe_measured - params.phase as f64);
+        let dφ = dihe_measured - params.phase as f64;
         (2.0 * k * dφ, dφ)
     } else {
         let dφ = per * dihe_measured - params.phase as f64;

@@ -1,11 +1,15 @@
 //! For VDW and Coulomb forces
 
-use std::{collections::HashMap, ops::AddAssign, sync::Arc};
+#[cfg(feature = "cuda")]
+use std::sync::Arc;
+use std::{collections::HashMap, ops::AddAssign};
 
 #[cfg(feature = "cuda")]
 use cudarc::driver::{CudaModule, CudaStream};
 use ewald::force_coulomb_short_range;
-use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
+#[cfg(feature = "cuda")]
+use lin_alg::f32::Vec3 as Vec3F32;
+use lin_alg::f64::Vec3;
 use rayon::prelude::*;
 
 #[cfg(feature = "cuda")]

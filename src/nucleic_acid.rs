@@ -4,20 +4,49 @@
 
 use std::{collections::HashMap, f64::consts::TAU};
 
-use bio_files::{BondType, ResidueType};
+use bio_files::{BondType};
 use lin_alg::f64::Vec3;
-use na_seq::{
-    AminoAcid,
-    Element::{self, *},
-    Nucleotide,
-};
+use na_seq::{AminoAcid, Element::{self, *}, Nucleotide::{self, *}};
 
-use crate::molecule::{Atom, Bond, MoleculeCommon, MoleculeGeneric, MoleculePeptide};
+use crate::molecule::{Atom, Bond, MoleculeCommon, MoleculePeptide};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum NucleicAcidType {
     Dna,
     Rna,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Strands {
+    Single,
+    Double,
+}
+
+/// Returns an arbitrary nucleotide combination that codes for the AA in question.
+fn nts_from_aa(aa: AminoAcid) -> [Nucleotide; 3] {
+    match aa {
+            AminoAcid::Arg => [A, G, G],
+        AminoAcid::His => [C, A, C],
+        AminoAcid::Lys => [A, A, G],
+        AminoAcid::Asp =>[G, A, C],
+        AminoAcid::Glu => [G, A, G],
+        AminoAcid::Ser => [T, C, A],
+        AminoAcid::Thr => [A, C, A],
+        AminoAcid::Asn => [A, A, C],
+        AminoAcid::Gln => [C, A, G],
+        AminoAcid::Cys => [T, G, C],
+        AminoAcid::Sec => [A, A, A], // todo temp. Find it.,
+        AminoAcid::Gly => [G, G, A],
+        AminoAcid::Pro => [C, C, A] ,
+        AminoAcid::Ala =>[G, C, A],
+        AminoAcid::Val => [G, T, A],
+        AminoAcid::Ile => [A, T, A],
+        AminoAcid::Leu => [C, T, A],
+        AminoAcid::Met => [A, T, G],
+        AminoAcid::Phe => [T, T, C],
+        AminoAcid::Tyr => [T, A, C],
+        AminoAcid::Trp => [T, G, G],
+    }
 }
 
 /// Represents a nucleic acid as a collection of atoms and bonds. Omits mol-generic fields.
@@ -26,9 +55,9 @@ pub struct MoleculeNucleicAcid {
     pub common: MoleculeCommon,
     pub seq: Vec<Nucleotide>,
     // pub bonds_hydrogen: Vec<HydrogenBond>,
-    pub features: Vec<(String, (usize, usize))>, // todo: A/R
-    // todo: A/R
-    pub metadata: HashMap<String, String>,
+    /// This is in the same vein as used by nucleic acid sequencing tools
+    /// todo: Use the same struct as PlasCAD, or similar?
+    pub features: Vec<(String, (usize, usize))>,
     // todo: A/R.
     // pub ff_params: Option<ForceFieldParamsIndexed>,
 }
@@ -41,7 +70,7 @@ impl MoleculeNucleicAcid {
     /// Geometry is **idealized B-DNA-like**: rise ~3.4 Å, twist 36°, with simple radial offsets.
     /// This is a minimal “it renders now” model you can extend with full atom templates later.
     /// Initializes a linear molecule.
-    pub fn from_seq(seq: &[Nucleotide], na_type: NucleicAcidType) -> Self {
+    pub fn from_seq(seq: &[Nucleotide], na_type: NucleicAcidType, strands: Strands) -> Self {
         let helix = match na_type {
             NucleicAcidType::Rna => {
                 // A-form-ish
@@ -72,6 +101,7 @@ impl MoleculeNucleicAcid {
         };
 
         let mut common = MoleculeCommon::default();
+
         common.ident = format!(
             "{}-nt {} strand",
             seq.len(),
@@ -165,14 +195,17 @@ impl MoleculeNucleicAcid {
             common,
             seq: seq.to_vec(),
             features: Vec::new(),
-            metadata: HashMap::new(),
         }
     }
 
     /// This wrapper that extracts the AA sequence, then chooses a suitable DNA sequence.
     /// note that there are many possible combinations due to multiple codons corresponding
     /// to some AAs.
-    pub fn from_peptide(peptide: &MoleculePeptide, na_type: NucleicAcidType) -> Self {
+    pub fn from_peptide(
+        peptide: &MoleculePeptide,
+        na_type: NucleicAcidType,
+        strands: Strands,
+    ) -> Self {
         let mut seq = Vec::with_capacity(&peptide.residues.len() * 3);
         for res in &peptide.residues {
             seq.push(Nucleotide::A);
@@ -180,7 +213,7 @@ impl MoleculeNucleicAcid {
             seq.push(Nucleotide::A);
         }
 
-        Self::from_seq(&seq, na_type)
+        Self::from_seq(&seq, na_type, strands)
     }
 }
 
@@ -359,7 +392,7 @@ fn sugar_bonds(na_type: NucleicAcidType) -> &'static [(&'static str, &'static st
             ("C2'", "O2'"),
             ("C4'", "C5'"),
             ("C5'", "O5'"),
-        ]
+        ],
     }
 }
 
@@ -405,7 +438,6 @@ fn base_template(nt: Nucleotide) -> BaseTemplate {
         Nucleotide::T => base_pyrimidine_thymine(),
         // todo
         // Nucleotide::U => base_pyrimidine_uracil(),
-        _ => base_pyrimidine_cytosine(), // fallback
     }
 }
 

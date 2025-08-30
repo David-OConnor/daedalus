@@ -21,17 +21,15 @@ mod bond_inference;
 mod docking;
 mod docking_v2;
 mod download_mols;
-mod drug_like;
+mod drawing;
 mod file_io;
 mod forces;
 mod inputs;
-mod mol_drawing;
 mod molecule;
 mod prefs;
 mod render;
 mod ribbon_mesh;
 mod sa_surface;
-mod save_load;
 mod ui;
 mod util;
 
@@ -60,13 +58,13 @@ use cudarc::{
     driver::{CudaContext, CudaModule, CudaStream},
     nvrtc::Ptx,
 };
+use drawing::MoleculeView;
 use egui_file_dialog::{FileDialog, FileDialogConfig};
 use graphics::{Camera, InputsCommanded};
 use lin_alg::{
     f32::{Quaternion, Vec3},
     f64::Vec3 as Vec3F64,
 };
-use mol_drawing::MoleculeView;
 use molecule::MoleculePeptide;
 use na_seq::{
     AminoAcidGeneral,
@@ -481,22 +479,9 @@ impl State {
         if let Some(lig) = &mut self.ligand {
             lig.docking_site.site_center = posit;
 
-            // lig.pose.anchor_posit = lig.docking_site.site_center;
-            // lig.position_atoms(None);
-
             self.ui.docking_site_x = posit.x.to_string();
             self.ui.docking_site_y = posit.y.to_string();
             self.ui.docking_site_z = posit.z.to_string();
-
-            // // todo: Make sure this isn't too computationally intensive to put here.
-            // if let Some(mol) = &self.molecule {
-            //     self.volatile.docking_setup = Some(DockingSetup::new(
-            //         mol,
-            //         lig,
-            //         &self.volatile.lj_lookup_table,
-            //         &self.bh_config,
-            //     ));
-            // }
         }
     }
 }
@@ -602,7 +587,7 @@ fn main() {
         let posit = state.to_save.per_mol[&mol.common.ident]
             .docking_site
             .site_center;
-        // state.update_docking_site(posit);
+        state.update_docking_site(posit);
     }
 
     if let Err(e) = state.load_aa_charges_ff() {

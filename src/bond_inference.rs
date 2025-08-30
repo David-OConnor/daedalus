@@ -334,7 +334,7 @@ pub fn create_hydrogen_bonds_one_way(
     let potential_acceptors: Vec<(usize, &Atom)> = atoms_acc
         .iter()
         .enumerate()
-        .filter(|(i, a)| h_bond_candidate_el(a))
+        .filter(|(_, a)| h_bond_candidate_el(a))
         .map(|(i, a)| (atoms_acc_i[i], a))
         .collect();
 

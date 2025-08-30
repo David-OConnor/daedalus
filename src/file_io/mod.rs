@@ -3,19 +3,17 @@ use std::{
     fs::File,
     io,
     io::{ErrorKind, Read},
-    path::{Path, PathBuf},
+    path::Path,
     str::FromStr,
     time::Instant,
 };
 
 use bio_apis::amber_geostd;
 use bio_files::{DensityMap, MmCif, gemmi_sf_to_map};
-use lin_alg::f64::Vec3;
 use na_seq::{AaIdent, Element};
 
 use crate::{
     AMINO_19, AMINO_CT12, AMINO_NT12, FRCMOD_FF19SB, GAFF2, PARM_19, ProtFFTypeChargeMap, State,
-    file_io::pdbqt::load_pdbqt,
     molecule::{Ligand, MoleculePeptide},
 };
 
@@ -31,7 +29,7 @@ use crate::{
     docking::prep::DockingSetup,
     dynamics::prep::{merge_params, populate_ff_and_q},
     file_io::pdbqt::save_pdbqt,
-    molecule::{MoleculeCommon, MoleculeGeneric, MoleculeLigand},
+    molecule::{MoleculeGeneric, MoleculeLigand},
     reflection::{DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityRect, ElectronDensity},
     util::{handle_err, handle_success},
 };

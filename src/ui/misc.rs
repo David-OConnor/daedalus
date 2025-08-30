@@ -11,7 +11,11 @@ use lin_alg::f64::Vec3;
 const COLOR_SECTION_BOX: Color32 = Color32::from_rgb(100, 100, 140);
 
 use crate::{
-    ComputationDevice, Selection, State,
+    ComputationDevice, Selection, State, drawing,
+    drawing::{
+        CHARGE_MAP_MAX, CHARGE_MAP_MIN, COLOR_AA_NON_RESIDUE_EGUI, draw_ligand, draw_peptide,
+        draw_water,
+    },
     dynamics::{
         MdMode,
         prep::{
@@ -19,14 +23,9 @@ use crate::{
             change_snapshot_peptide,
         },
     },
-    mol_drawing,
-    mol_drawing::{
-        CHARGE_MAP_MAX, CHARGE_MAP_MIN, COLOR_AA_NON_RESIDUE_EGUI, draw_ligand, draw_molecule,
-        draw_water,
-    },
     molecule::{
-        Atom, Ligand, MoleculeGeneric, MoleculeGenericRef, MoleculeLigand, MoleculePeptide,
-        PeptideAtomPosits, Residue, aa_color,
+        Atom, Ligand, MoleculeGenericRef, MoleculeLigand, MoleculePeptide, PeptideAtomPosits,
+        Residue, aa_color,
     },
     ui::{
         COL_SPACING, COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_INACTIVE, ROW_SPACING,
@@ -85,7 +84,7 @@ fn disp_atom_data(atom: &Atom, residues: &[Residue], posit_override: Option<Vec3
 
     if let Some(q) = &atom.partial_charge {
         let plus = if *q > 0. { "+" } else { "" };
-        let color = make_egui_color(mol_drawing::color_viridis_float(
+        let color = make_egui_color(drawing::color_viridis_float(
             *q,
             CHARGE_MAP_MIN,
             CHARGE_MAP_MAX,
@@ -206,7 +205,7 @@ pub fn dynamics_player(
             .on_hover_text(help_text);
 
         if state.ui.peptide_atom_posits != prev {
-            draw_molecule(state, scene);
+            draw_peptide(state, scene);
             engine_updates.entities = true;
         }
 
@@ -245,7 +244,7 @@ pub fn dynamics_player(
                         let mol = state.molecule.as_mut().unwrap();
 
                         change_snapshot_peptide(mol, &md.atoms, snap);
-                        draw_molecule(state, scene);
+                        draw_peptide(state, scene);
                     }
                 }
 
@@ -279,19 +278,9 @@ pub fn md_setup(
 ) {
     section_box().show(ui, |ui| {
         ui.horizontal(|ui| {
-            // todo: Move A/R
-            // Workaround for double-borrow.
-            let mut run_clicked = false;
-
-            run_clicked = ui
+            if ui
                 .button(RichText::new("Run MD on peptide").color(Color32::GOLD))
-                .clicked();
-            if run_clicked {
-                // If not already loaded from static string to state, do so now.
-                // We load on demand to save computation.
-                // state.load_ffs_general();
-            }
-            if run_clicked {
+                .clicked() {
                 let mol = state.molecule.as_mut().unwrap();
 
                 match build_dynamics_peptide(
@@ -305,7 +294,7 @@ pub fn md_setup(
                 ) {
                     Ok(md) => {
                         let snap = &md.snapshots[0];
-                        draw_molecule(state, scene);
+                        draw_peptide(state, scene);
 
                         draw_water(
                             scene,
@@ -364,7 +353,7 @@ pub fn md_setup(
                             Ok(md) => {
                                 let snap = &md.snapshots[0];
 
-                                draw_molecule(state, scene);
+                                draw_peptide(state, scene);
                                 draw_water(
                                     scene,
                                     &snap.water_o_posits,
@@ -585,9 +574,9 @@ pub fn lig_section(
                         state.mol_dynamics = None;
 
                         let docking_center = move_lig_to_res(&mut lig_new, mol, res);
-                        // state.update_docking_site(docking_center);
 
                         // todo: Put this save back / fix dble-borrow?
+                        // state.update_docking_site(docking_center);
                         // state.update_save_prefs(false);
                         // set_docking_light(scene, Some(&lig.docking_site));
                         // engine_updates.lighting = true;

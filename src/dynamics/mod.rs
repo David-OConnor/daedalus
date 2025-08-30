@@ -461,7 +461,7 @@ impl MdState {
 
         self.apply_all_forces(dev);
 
-        let mut start = Instant::now();
+        let start = Instant::now();
         // todo: YOu need to update potential energy from LR PME as well.
         self.handle_spme_recip(dev);
         if self.step_count == 0 {

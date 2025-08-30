@@ -83,7 +83,7 @@ pub fn handle_cmd(
     let re_orient = Regex::new(r"(?i)^orient\s*(?:sel)?$").unwrap();
     let re_turn = Regex::new(r"(?i)^turn\s+([xyz]),\s*(-*\d{1,4})$").unwrap();
     let re_move = Regex::new(r"(?i)^move\s+([xyz]),\s*(-*\d{1,4})$").unwrap();
-    let re_zoom = Regex::new(r"(?i)^zoom\s+([a-z0-9\s]+)$").unwrap();
+    let _re_zoom = Regex::new(r"(?i)^zoom\s+([a-z0-9\s]+)$").unwrap();
     let re_reset = Regex::new(r"(?i)^reset\s*$").unwrap();
     //
     let re_pwd = Regex::new(r"(?i)^pwd\s*$").unwrap();

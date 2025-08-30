@@ -1,13 +1,14 @@
-//! Handles drawing molecules, bonds etc.
+//! Handles drawing molecules, atoms, bonds, and other items of interest. This
+//! adds entities to the scene based on structs.
 
 use std::{fmt, fmt::Display, io, io::ErrorKind, str::FromStr};
 
 use bincode::{Decode, Encode};
 use bio_files::{BondType, ResidueType};
 use egui::Color32;
-use graphics::{ControlScheme, Entity, FWD_VEC, Scene, UP_VEC};
+use graphics::{ControlScheme, Entity, Scene, UP_VEC};
 use lin_alg::{
-    f32::{Quaternion, Vec3, calc_dihedral_angle_v2},
+    f32::{Quaternion, Vec3},
     f64::Vec3 as Vec3F64,
     map_linear,
 };
@@ -24,7 +25,7 @@ use crate::{
         MESH_SPHERE_HIGHRES, MESH_SPHERE_LOWRES, MESH_SPHERE_MEDRES, WATER_BOND_THICKNESS,
         WATER_OPACITY, set_docking_light,
     },
-    util::{find_neighbor_posit, handle_err, orbit_center},
+    util::{find_neighbor_posit, orbit_center},
 };
 
 const LIGAND_COLOR: Color = (0., 0.4, 1.);
@@ -105,6 +106,25 @@ pub enum EntityType {
     DockingSite = 7,
     WaterModel = 8,
     Other = 10,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum MolType {
+    Peptide,
+    Ligand,
+    NucleicAcid,
+    Water,
+}
+
+impl MolType {
+    pub fn entity_type(&self) -> EntityType {
+        match self {
+            Self::Peptide => EntityType::Protein,
+            Self::Ligand => EntityType::Ligand,
+            Self::NucleicAcid => EntityType::NucleicAcid,
+            Self::Water => EntityType::Protein, // todo for now
+        }
+    }
 }
 
 // todo: For ligands that are flexible, highlight the fleixble bonds in a bright color.
@@ -263,7 +283,7 @@ fn atom_color(
     dimmed: bool,
     res_color_by_index: bool,
     atom_color_by_q: bool,
-    is_ligand: bool,
+    mol_type: MolType,
 ) -> Color {
     let mut result = match view_sel_level {
         ViewSelLevel::Atom => {
@@ -312,7 +332,7 @@ fn atom_color(
     // If selected, the selected color overrides the element or residue color.
     match selection {
         Selection::Atom(sel_i) => {
-            if !is_ligand && *sel_i == i {
+            if mol_type != MolType::Ligand && *sel_i == i {
                 result = COLOR_SELECTED;
             }
         }
@@ -329,7 +349,7 @@ fn atom_color(
             }
         }
         Selection::AtomLigand(sel_i) => {
-            if is_ligand && *sel_i == i {
+            if mol_type != MolType::Ligand && *sel_i == i {
                 result = COLOR_SELECTED;
             }
         }
@@ -356,18 +376,14 @@ fn add_bond(
     dist_half: f32,
     caps: bool,
     thickness: f32,
-    ligand: bool,
+    mol_type: MolType,
 ) {
     // Split the bond into two entities, so you can color-code them separately based
     // on which atom the half is closer to.
     let center_0 = (posits.0 + center) / 2.;
     let center_1 = (posits.1 + center) / 2.;
 
-    let entity_type = if ligand {
-        EntityType::Ligand
-    } else {
-        EntityType::Protein
-    } as u32;
+    let entity_type = mol_type.entity_type() as u32;
 
     let mut entity_0 = Entity::new(
         MESH_BOND,
@@ -430,7 +446,7 @@ fn bond_entities(
     mut color_0: Color,
     mut color_1: Color,
     bond_type: BondType,
-    ligand: bool,
+    mol_type: MolType,
     // No caps for ball and stick
     caps: bool,
     // A Neighbor, in the case of aromataic, double bonds, and triple bonds. We use this to determine how
@@ -488,8 +504,12 @@ fn bond_entities(
                 (p0, p1, center + offset, (p1 - p0).magnitude() / 2.)
             };
 
-            let thickness_outer = if ligand { BOND_RADIUS_LIG_RATIO } else { 1. };
-            let thickness_inner = if ligand {
+            let thickness_outer = if mol_type == MolType::Ligand {
+                BOND_RADIUS_LIG_RATIO
+            } else {
+                1.
+            };
+            let thickness_inner = if mol_type == MolType::Ligand {
                 BOND_RADIUS_LIG_RATIO * BOND_RADIUS_AR_INNER_RATIO
             } else {
                 BOND_RADIUS_AR_INNER_RATIO
@@ -505,7 +525,7 @@ fn bond_entities(
                 dist_half,
                 caps,
                 thickness_outer,
-                ligand,
+                mol_type,
             );
 
             // Smaller bond on the inside.
@@ -518,7 +538,7 @@ fn bond_entities(
                 dist_half_inner,
                 caps,
                 thickness_inner,
-                ligand,
+                mol_type,
             );
         }
         BondType::Double => {
@@ -545,7 +565,7 @@ fn bond_entities(
                 dist_half,
                 caps,
                 0.5,
-                ligand,
+                mol_type,
             );
 
             add_bond(
@@ -557,7 +577,7 @@ fn bond_entities(
                 dist_half,
                 caps,
                 0.5,
-                ligand,
+                mol_type,
             );
         }
         BondType::Triple => {
@@ -583,7 +603,7 @@ fn bond_entities(
                 dist_half,
                 caps,
                 0.4,
-                ligand,
+                mol_type,
             );
             add_bond(
                 entities,
@@ -594,7 +614,7 @@ fn bond_entities(
                 dist_half,
                 caps,
                 0.4,
-                ligand,
+                mol_type,
             );
             add_bond(
                 entities,
@@ -605,7 +625,7 @@ fn bond_entities(
                 dist_half,
                 caps,
                 0.4,
-                ligand,
+                mol_type,
             );
         }
         // Single bonds, and others.
@@ -614,7 +634,11 @@ fn bond_entities(
             let thickness = if bond_type == BondType::Dummy {
                 RADIUS_H_BOND
             } else {
-                if ligand { BOND_RADIUS_LIG_RATIO } else { 1. }
+                if mol_type == MolType::Ligand {
+                    BOND_RADIUS_LIG_RATIO
+                } else {
+                    1.
+                }
             };
 
             add_bond(
@@ -626,7 +650,7 @@ fn bond_entities(
                 dist_half,
                 caps,
                 thickness,
-                ligand,
+                mol_type,
             );
         }
     }
@@ -783,7 +807,7 @@ pub fn draw_ligand(state: &State, scene: &mut Scene) {
             false,
             false,
             false,
-            true,
+            MolType::Ligand,
         );
         let mut color_1 = atom_color(
             atom_1,
@@ -796,7 +820,7 @@ pub fn draw_ligand(state: &State, scene: &mut Scene) {
             false,
             false,
             false,
-            true,
+            MolType::Ligand,
         );
 
         if color_0 != COLOR_SELECTED && color_1 != COLOR_SELECTED {
@@ -825,7 +849,7 @@ pub fn draw_ligand(state: &State, scene: &mut Scene) {
             color_0,
             color_1,
             bond.bond_type,
-            true,
+            MolType::Ligand,
             true,
             neighbor_posit,
         );
@@ -848,7 +872,7 @@ pub fn draw_ligand(state: &State, scene: &mut Scene) {
     //             COLOR_H_BOND,
     //             COLOR_H_BOND,
     //             BondType::Dummy,
-    //             true,
+    //             MolType::Ligand,
     //             true,
     //             (Vec3::new_zero(), false),
     //         );
@@ -1073,9 +1097,9 @@ pub fn draw_nucleic_acid(state: &mut State, scene: &mut Scene) {
                 color_0,
                 color_1,
                 bond.bond_type,
-                false,
+                MolType::NucleicAcid,
                 state.ui.mol_view != MoleculeView::BallAndStick,
-                (neighbor_posit, false)
+                (neighbor_posit, false),
             );
         }
     }
@@ -1083,7 +1107,7 @@ pub fn draw_nucleic_acid(state: &mut State, scene: &mut Scene) {
 
 /// Refreshes entities with the model passed.
 /// Sensitive to various view configuration parameters.
-pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
+pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
     let Some(mol) = state.molecule.as_ref() else {
         return;
     };
@@ -1157,7 +1181,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
                             false,
                             false,
                             false,
-                            false,
+                            MolType::Peptide,
                         );
 
                         let mut entity = Entity::new(
@@ -1281,7 +1305,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
                 dim_peptide,
                 state.ui.res_color_by_index,
                 state.ui.atom_color_by_charge,
-                false,
+                MolType::Peptide,
             );
 
             let mut entity = Entity::new(
@@ -1412,7 +1436,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
             dim_peptide,
             state.ui.res_color_by_index,
             state.ui.atom_color_by_charge,
-            false,
+            MolType::Peptide,
         );
         let color_1 = atom_color(
             atom_1,
@@ -1424,7 +1448,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
             dim_peptide,
             state.ui.res_color_by_index,
             state.ui.atom_color_by_charge,
-            false,
+            MolType::Peptide,
         );
 
         bond_entities(
@@ -1434,7 +1458,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
             color_0,
             color_1,
             bond.bond_type,
-            false,
+            MolType::Peptide,
             state.ui.mol_view != MoleculeView::BallAndStick,
             neighbor_posit,
         );
@@ -1515,7 +1539,7 @@ pub fn draw_molecule(state: &mut State, scene: &mut Scene) {
                 COLOR_H_BOND,
                 COLOR_H_BOND,
                 BondType::Dummy,
-                false,
+                MolType::Peptide,
                 state.ui.mol_view != MoleculeView::BallAndStick,
                 (Vec3::new_zero(), false), // N/A
             );

@@ -1,10 +1,7 @@
 /// Camera controls and related.
 use std::f32::consts::TAU;
 
-use egui::{
-    Color32, ComboBox, CornerRadius, Frame, Margin, RichText, Rounding, Slider, Stroke, TextEdit,
-    Ui,
-};
+use egui::{Color32, ComboBox, RichText, Slider, TextEdit, Ui};
 use graphics::{ControlScheme, EngineUpdates, RIGHT_VEC, Scene, UP_VEC};
 use lin_alg::f32::{Quaternion, Vec3};
 

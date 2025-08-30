@@ -3,18 +3,18 @@
 use std::f32::consts::TAU;
 
 use graphics::{
-    Camera, ControlScheme, EngineUpdates, FWD_VEC, GraphicsSettings, InputSettings, LightType,
-    Lighting, Mesh, PointLight, RIGHT_VEC, Scene, ScrollBehavior, UiLayout, UiSettings,
+    Camera, EngineUpdates, GraphicsSettings, InputSettings, Lighting, Mesh, PointLight, RIGHT_VEC,
+    Scene, ScrollBehavior, UiLayout, UiSettings,
 };
 use lin_alg::f32::{Quaternion, Vec3};
 
 use crate::{
     State,
     docking::DockingSite,
+    drawing,
+    drawing::BOND_RADIUS,
     inputs,
     inputs::{RUN_FACTOR, SCROLL_MOVE_AMT, SCROLL_ROTATE_AMT},
-    mol_drawing,
-    mol_drawing::BOND_RADIUS,
     ui::{
         cam::{FOG_DIST_DEFAULT, RENDER_DIST_FAR, RENDER_DIST_NEAR, calc_fog_dists},
         ui_handler,
@@ -202,8 +202,8 @@ pub fn render(mut state: State) {
         icon_path: Some("resources/icon.png".to_owned()),
     };
 
-    mol_drawing::draw_molecule(&mut state, &mut scene);
-    mol_drawing::draw_ligand(&mut state, &mut scene);
+    drawing::draw_peptide(&mut state, &mut scene);
+    drawing::draw_ligand(&mut state, &mut scene);
 
     set_flashlight(&mut scene);
 
