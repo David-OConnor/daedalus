@@ -26,7 +26,7 @@ use crate::{
     ProtFfMap, Selection,
     aa_coords::Dihedral,
     bond_inference::{create_bonds, create_hydrogen_bonds},
-    docking::prep::DockType,
+    // docking::prep::DockType,
     dynamics::ForceFieldParamsIndexed,
     mol_lig::MoleculeSmall,
     nucleic_acid::MoleculeNucleicAcid,
@@ -221,7 +221,7 @@ impl MoleculePeptide {
         // todo: Don't like this clone.
         let atoms_clone = result.common.atoms.clone();
         for atom in &mut result.common.atoms {
-            atom.dock_type = Some(DockType::infer(atom, &result.common.bonds, &atoms_clone));
+            // atom.dock_type = Some(DockType::infer(atom, &result.common.bonds, &atoms_clone));
         }
 
         result
