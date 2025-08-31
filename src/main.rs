@@ -81,6 +81,7 @@ use crate::{
     render::render,
     util::handle_err,
 };
+use crate::molecule::MoleculeSmall;
 // ------Including files into the executable
 
 // Include general Amber forcefield params with our program. See the Reference Manual, section ]
@@ -435,13 +436,13 @@ pub struct FfParamSet {
 struct State {
     pub ui: StateUi,
     pub volatile: StateVolatile,
-    // pub pdb: Option<PDB>,
     pub cif_pdb_raw: Option<String>,
     // todo: Allow multiple?
     pub molecule: Option<MoleculePeptide>,
     // todo: Allow multiple.
-    pub ligand: Option<Ligand>,
-    pub nucleid_acids: Vec<MoleculeNucleicAcid>,
+    // pub ligand: Option<MoleculeSmall>,
+    pub ligands: Vec<MoleculeSmall>,
+    pub nucleic_acids: Vec<MoleculeNucleicAcid>,
     pub cam_snapshots: Vec<CamSnapshot>,
     /// This allows us to keep in-memory data for other molecules.
     pub to_save: ToSave,
@@ -477,11 +478,13 @@ impl State {
 
     pub fn update_docking_site(&mut self, posit: Vec3F64) {
         if let Some(lig) = &mut self.ligand {
-            lig.docking_site.site_center = posit;
+            if let Some(data) = &mut lig.lig_data {
+                data.docking_site.site_center = posit;
 
-            self.ui.docking_site_x = posit.x.to_string();
-            self.ui.docking_site_y = posit.y.to_string();
-            self.ui.docking_site_z = posit.z.to_string();
+                self.ui.docking_site_x = posit.x.to_string();
+                self.ui.docking_site_y = posit.y.to_string();
+                self.ui.docking_site_z = posit.z.to_string();
+            }
         }
     }
 }
@@ -579,8 +582,10 @@ fn main() {
 
     // Update ligand positions, e.g. from the docking position site center loaded from prefs.
     if let Some(lig) = &mut state.ligand {
-        lig.pose.anchor_posit = lig.docking_site.site_center;
-        lig.position_atoms(None);
+        if let Some(data) = &mut lig.lig_data {
+            data.pose.anchor_posit = data.docking_site.site_center;
+            lig.position_atoms(None);
+        }
     }
 
     if let Some(mol) = &state.molecule {

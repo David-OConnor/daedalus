@@ -43,6 +43,7 @@ use crate::{
     },
     molecule::{Atom, Bond, Ligand, MoleculePeptide, Residue, ResidueEnd, build_adjacency_list},
 };
+use crate::molecule::MoleculeSmall;
 
 // Å. Static atoms must be at least this close to a dynamic atom at the start of MD to count.
 // Set this wide to take into account motion.
@@ -652,7 +653,7 @@ pub fn populate_ff_and_q(
 /// non-bonded contributors. (Vdw and coulomb)
 pub fn build_dynamics_docking(
     dev: &ComputationDevice,
-    lig: &mut Ligand,
+    lig: &mut MoleculeSmall,
     mol: &MoleculePeptide,
     // setup: &DockingSetup,
     ff_params: &FfParamSet,
@@ -663,18 +664,20 @@ pub fn build_dynamics_docking(
 ) -> Result<MdState, ParamError> {
     println!("Building docking dyanmics...");
 
-    lig.pose.conformation_type = ConformationType::AbsolutePosits;
+    if let Some(data) = &mut lig.lig_data {
+        data.pose.conformation_type = ConformationType::AbsolutePosits;
+    }
 
     let mut md_state = MdState::new_docking(
-        &lig.mol.common.atoms,
-        &lig.mol.common.atom_posits,
-        &lig.mol.common.adjacency_list,
-        &lig.mol.common.bonds,
+        &lig.common.atoms,
+        &lig.common.atom_posits,
+        &lig.common.adjacency_list,
+        &lig.common.bonds,
         &mol.common.atoms,
         ff_params,
         temp_target,
         pressure_target,
-        &lig.mol.common.ident,
+        &lig.common.ident,
     )?;
 
     let start = Instant::now();
@@ -687,7 +690,7 @@ pub fn build_dynamics_docking(
     println!("MD complete in {:.2} s", elapsed.as_secs());
 
     for (i, atom) in md_state.atoms.iter().enumerate() {
-        lig.mol.common.atom_posits[i] = atom.posit;
+        lig.common.atom_posits[i] = atom.posit;
     }
     change_snapshot_docking(lig, &md_state.snapshots[0], &mut None);
 
@@ -945,12 +948,16 @@ pub fn build_dynamics_peptide(
 /// Set ligand atom positions to that of a snapshot. We assume a rigid receptor.
 /// Body masses are separate from the snapshot, since it's invariant.
 pub fn change_snapshot_docking(
-    lig: &mut Ligand,
+    lig: &mut MoleculeSmall,
     snapshot: &SnapshotDynamics,
     energy_disp: &mut Option<BindingEnergy>,
 ) {
-    lig.pose.conformation_type = ConformationType::AbsolutePosits;
-    lig.mol.common.atom_posits = snapshot.atom_posits.iter().map(|p| (*p).into()).collect();
+    let Some(data) = &mut lig.lig_data else {
+        return;
+    };
+
+    data.pose.conformation_type = ConformationType::AbsolutePosits;
+    lig.common.atom_posits = snapshot.atom_posits.iter().map(|p| (*p).into()).collect();
     // *energy_disp = snapshot.energy.clone();
 }
 

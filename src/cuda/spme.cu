@@ -5,74 +5,74 @@
 #include <cufft.h>
 #include <cufftXt.h>
 
-#define CUDA_OK(x) do { cudaError_t e=(x); if(e!=cudaSuccess){ printf("CUDA %s @%s:%d\n", cudaGetErrorString(e), __FILE__, __LINE__); return; } } while(0)
-#define CUFFT_OK(x) do { cufftResult r=(x); if(r!=CUFFT_SUCCESS){ printf("CUFFT err %d @%s:%d\n", int(r), __FILE__, __LINE__); return; } } while(0)
 
-extern "C" __global__
-void scale_complex_kernel(cufftComplex* __restrict__ data, size_t n, float scale) {
-    size_t i = blockIdx.x * size_t(blockDim.x) + threadIdx.x;
-    if (i < n) {
-        data[i].x *= scale;  // real
-        data[i].y *= scale;  // imag
-    }
+
+extern "C" {
+// Opaque handle we keep in Rust as a pointer
+void* spme_make_plan_c2c(int nx, int ny, int nz, void* cu_stream /*CUstream or cudaStream_t*/);
+void  spme_exec_inverse_3_c2c(void* plan,
+                              cufftComplex* exk,
+                              cufftComplex* eyk,
+                              cufftComplex* ezk);
+void  spme_destroy_plan(void* plan);
+void  spme_scale_c2c(cufftComplex* data, size_t n, float scale, void* cu_stream);
 }
 
-// Host wrapper: 3 inverse FFTs + scaling on GPU
-extern "C"
-void spme_inverse_ffts_3_c2c(
-    cufftComplex* exk,
-    cufftComplex* eyk,
-    cufftComplex* ezk,
-    int nx, int ny, int nz
-//     cudaStream_t stream
-) {
-//     if (nx<=0 || ny<=0 || nz<=0) return;
-//
-//     cufftHandle plan;
-//     CUFFT_OK(cufftCreate(&plan));
-//     CUFFT_OK(cufftSetStream(plan, stream));
-//     // Layout matches your row-major (x fastest): plan3d(nx, ny, nz)
-//     CUFFT_OK(cufftPlan3d(&plan, nx, ny, nz, CUFFT_C2C));
-//
-//     // Execute 3 inverse transforms in-place
-//     CUFFT_OK(cufftExecC2C(plan, exk, exk, CUFFT_INVERSE));
-//     CUFFT_OK(cufftExecC2C(plan, eyk, eyk, CUFFT_INVERSE));
-//     CUFFT_OK(cufftExecC2C(plan, ezk, ezk, CUFFT_INVERSE));
-//
-//     // cuFFT is unnormalized; apply 1/N with a tiny kernel
-//     const size_t n = size_t(nx) * size_t(ny) * size_t(nz);
-//     const int block = 256;
-//     const int grid  = int((n + block - 1) / block);
-//     const float scale = 1.0f / float(n);
-//
-//     scale_complex_kernel<<<grid, block, 0, stream>>>(exk, n, scale);
-//     CUDA_OK(cudaGetLastError());
-//     scale_complex_kernel<<<grid, block, 0, stream>>>(eyk, n, scale);
-//     CUDA_OK(cudaGetLastError());
-//     scale_complex_kernel<<<grid, block, 0, stream>>>(ezk, n, scale);
-//     CUDA_OK(cudaGetLastError());
-//
-//     CUFFT_OK(cufftDestroy(plan));
+// #define CUDA_OK(x) do { cudaError_t e=(x); if(e!=cudaSuccess){ printf("CUDA %s @%s:%d\n", cudaGetErrorString(e), __FILE__, __LINE__); return; } } while(0)
+// #define CUFFT_OK(x) do { cufftResult r=(x); if(r!=CUFFT_SUCCESS){ printf("CUFFT err %d @%s:%d\n", int(r), __FILE__, __LINE__); return; } } while(0)
 
-    if (nx<=0 || ny<=0 || nz<=0) return;
+static __global__ void scale_c(cufftComplex* a, size_t n, float s){
+    size_t i = blockIdx.x * size_t(blockDim.x) + threadIdx.x;
+    if (i < n) { a[i].x *= s; a[i].y *= s; }
+}
 
+struct PlanWrap {
     cufftHandle plan;
-    cufftCreate(&plan);
+    size_t n_per_grid;
+    cudaStream_t stream;
+};
 
-    // Bind to default stream 0
-    cufftSetStream(plan, 0);
+extern "C"
+void* spme_make_plan_c2c(int nx, int ny, int nz, void* cu_stream) {
+    auto* w = new PlanWrap();
+    w->n_per_grid = size_t(nx) * ny * nz;
+#if defined(__CUDA_API_VERSION) && __CUDA_API_VERSION >= 11000
+    w->stream = reinterpret_cast<cudaStream_t>(cu_stream);
+#else
+    w->stream = (cudaStream_t)cu_stream;
+#endif
+    int n[3] = {nx, ny, nz};
+    CUFFT_SAFE_CALL(cufftCreate(&w->plan));
+    // One plan, 3 batches
+    CUFFT_SAFE_CALL(cufftPlanMany(&w->plan, 3, n,
+                                  nullptr, 1, w->n_per_grid,
+                                  nullptr, 1, w->n_per_grid,
+                                  CUFFT_C2C, 3));
+    cufftSetStream(w->plan, w->stream);
+    return w;
+}
 
-    cufftPlan3d(&plan, nx, ny, nz, CUFFT_C2C);
+extern "C"
+void spme_exec_inverse_3_c2c(void* plan, cufftComplex* exk, cufftComplex* eyk, cufftComplex* ezk) {
+    auto* w = reinterpret_cast<PlanWrap*>(plan);
+    // Execute three batches via separate pointers:
+    cufftExecC2C(w->plan, exk, exk, CUFFT_INVERSE);
+    cufftExecC2C(w->plan, eyk, eyk, CUFFT_INVERSE);
+    cufftExecC2C(w->plan, ezk, ezk, CUFFT_INVERSE);
+}
 
-    auto* ex = reinterpret_cast<cufftComplex*>(exk);
-    auto* ey = reinterpret_cast<cufftComplex*>(eyk);
-    auto* ez = reinterpret_cast<cufftComplex*>(ezk);
+extern "C"
+void spme_scale_c2c(cufftComplex* data, size_t n, float scale, void* cu_stream) {
+    auto stream = reinterpret_cast<cudaStream_t>(cu_stream);
+    int threads = 256;
+    int blocks  = int((n + threads - 1) / threads);
+    scale_c<<<blocks, threads, 0, stream>>>(data, n, scale);
+}
 
-    cufftExecC2C(plan, ex, ex, CUFFT_INVERSE);
-    cufftExecC2C(plan, ey, ey, CUFFT_INVERSE);
-    cufftExecC2C(plan, ez, ez, CUFFT_INVERSE);
-
-    // scale by 1/N (tiny kernel or cublas scal — omitted here for brevity)
-
-    cufftDestroy(plan);
+extern "C"
+void spme_destroy_plan(void* plan) {
+    auto* w = reinterpret_cast<PlanWrap*>(plan);
+    if (!w) return;
+    cufftDestroy(w->plan);
+    delete w;
 }

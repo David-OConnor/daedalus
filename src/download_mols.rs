@@ -3,7 +3,7 @@
 use bio_apis::{ReqError, drugbank, pubchem, rcsb};
 use bio_files::{MmCif, Mol2};
 
-use crate::molecule::{MoleculeLigand, MoleculePeptide};
+use crate::molecule::{MoleculeSmall, MoleculePeptide};
 
 /// Download mmCIF file from the RSCB, parse into a struct.
 pub fn load_cif_rcsb(ident: &str) -> Result<(MmCif, String), ReqError> {
@@ -18,7 +18,7 @@ pub fn load_cif_rcsb(ident: &str) -> Result<(MmCif, String), ReqError> {
 }
 
 /// Download an SDF file from DrugBank, and parse as a molecule.
-pub fn load_sdf_drugbank(ident: &str) -> Result<MoleculeLigand, ReqError> {
+pub fn load_sdf_drugbank(ident: &str) -> Result<MoleculeSmall, ReqError> {
     let sdf_data = drugbank::load_sdf(ident)?;
 
     match Mol2::new(&sdf_data) {
@@ -28,7 +28,7 @@ pub fn load_sdf_drugbank(ident: &str) -> Result<MoleculeLigand, ReqError> {
 }
 
 /// Download an SDF file from DrugBank, and parse as a molecule.
-pub fn load_sdf_pubchem(ident: &str) -> Result<MoleculeLigand, ReqError> {
+pub fn load_sdf_pubchem(ident: &str) -> Result<MoleculeSmall, ReqError> {
     let sdf_data = pubchem::load_sdf(ident)?;
 
     match Mol2::new(&sdf_data) {

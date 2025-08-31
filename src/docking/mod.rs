@@ -62,6 +62,7 @@ use crate::{
     forces::{V_lj, V_lj_x8},
     molecule::{Atom, Ligand},
 };
+use crate::molecule::MoleculeSmall;
 
 pub mod find_sites;
 pub mod prep;
@@ -275,7 +276,7 @@ pub fn calc_binding_energy(
         let lig_indices: Vec<usize> = (0..len_lig).collect();
 
         // todo: THis is not efficient; work-in for now.
-        let mut lig_atoms_positioned = lig.mol.common.atoms.clone();
+        let mut lig_atoms_positioned = lig.common.atoms.clone();
         for (i, atom) in lig_atoms_positioned.iter_mut().enumerate() {
             atom.posit = lig_posits[i].into();
         }
@@ -298,7 +299,7 @@ pub fn calc_binding_energy(
         let h_bonds_lig_donor = create_hydrogen_bonds_one_way(
             &lig_atoms_positioned,
             &lig_indices,
-            &lig.mol.common.bonds,
+            &lig.common.bonds,
             &setup.rec_atoms_near_site,
             &setup.rec_indices,
             true,
@@ -345,7 +346,7 @@ pub fn calc_binding_energy(
         // with target=protein=receptor; actually, the opposite!)
 
         // Note: Ligand positions are already positioned for the pose, by the time they enter this function.
-        for (i, lig_atom) in lig.mol.common.atoms.iter().enumerate() {
+        for (i, lig_atom) in lig.common.atoms.iter().enumerate() {
             // Our bh algorithm is currently hard-coded to f64.
             let force_fn = |dir: Vec3, q_src: f64, dist: f64| {
                 forces::force_coulomb_f32(
@@ -359,7 +360,7 @@ pub fn calc_binding_energy(
             };
 
             let f: Vec3F32 = barnes_hut::run_bh(
-                lig.mol.common.atom_posits[i],
+                lig.common.atom_posits[i],
                 999_999, // N/A, since we're comparing separate sets.
                 &setup.charge_tree,
                 &setup.bh_config,
@@ -545,7 +546,7 @@ fn process_poses(
             .iter()
             .enumerate()
             .filter(|(i, _)| {
-                let atom = &lig.mol.common.atoms[*i];
+                let atom = &lig.common.atoms[*i];
                 atom.element == Element::Carbon && i % LIGAND_SAMPLE_RATIO == 0
             })
             .map(|(_, v)| *v)
@@ -696,7 +697,7 @@ fn vary_pose(pose: &Pose) -> Vec<Pose> {
 pub fn find_optimal_pose(
     dev: &ComputationDevice,
     setup: &DockingSetup,
-    lig: &mut Ligand,
+    lig: &mut MoleculeSmall,
 ) -> (Pose, BindingEnergy) {
     // todo: Consider another fn for this part of the setup, so you can re-use it more easily.
 
@@ -706,7 +707,7 @@ pub fn find_optimal_pose(
     println!(
         "Atom counts. Rec: {} Lig: {}",
         setup.rec_atoms_near_site.len(),
-        lig.mol.common.atoms.len()
+        lig.common.atoms.len()
     );
 
     let start = Instant::now();

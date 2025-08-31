@@ -29,7 +29,7 @@ use crate::{
     docking::prep::DockingSetup,
     dynamics::prep::{merge_params, populate_ff_and_q},
     file_io::pdbqt::save_pdbqt,
-    molecule::{MoleculeGeneric, MoleculeLigand},
+    molecule::{MoleculeGeneric, MoleculeSmall},
     reflection::{DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityRect, ElectronDensity},
     util::{handle_err, handle_success},
 };
@@ -160,7 +160,7 @@ impl State {
                         // self.update_docking_site(init_posit);
                     }
                     MoleculeGeneric::Peptide(m) => {
-                        self.to_save.last_opened = Some(path.to_owned());
+                        self.to_save.opened_items = Some(path.to_owned());
 
                         self.volatile.aa_seq_text = String::with_capacity(m.common.atoms.len());
                         for aa in &m.aa_seq {
@@ -329,7 +329,7 @@ impl State {
 
                 // Update the lig's FRCMOD status A/R, if the ligand is opened already.
                 if let Some(lig) = &mut self.ligand {
-                    if &lig.mol.common.ident.to_uppercase() == &mol_name.to_uppercase() {
+                    if &lig.common.ident.to_uppercase() == &mol_name.to_uppercase() {
                         lig.frcmod_loaded = true;
                     }
                 }
@@ -365,7 +365,7 @@ impl State {
                 // }
                 if let Some(data) = &mut self.cif_pdb_raw {
                     fs::write(path, data)?;
-                    self.to_save.last_opened = Some(path.to_owned());
+                    self.to_save.opened_items = Some(path.to_owned());
                     self.update_save_prefs(false)
                 }
             }
@@ -572,7 +572,7 @@ impl State {
                 if load_mol2 {
                     match Mol2::new(&data.mol2) {
                         Ok(mol2) => {
-                            let mol: MoleculeLigand = mol2.try_into().unwrap();
+                            let mol: MoleculeSmall = mol2.try_into().unwrap();
                             self.ligand = Some(Ligand::new(mol, &self.ff_params.lig_specific));
                             self.mol_dynamics = None;
 
@@ -596,7 +596,7 @@ impl State {
 
     /// We run this at init. Loads all relevant files marked as "last opened".
     pub fn load_last_opened(&mut self) {
-        let last_opened = self.to_save.last_opened.clone();
+        let last_opened = self.to_save.opened_items.clone();
         if let Some(path) = &last_opened {
             if let Err(e) = self.open_molecule(path) {
                 handle_err(&mut self.ui, e.to_string());

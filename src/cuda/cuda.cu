@@ -292,7 +292,6 @@ void nonbonded_force_kernel(
 }
 
 // Perform the fourier transform required to compute electron density from reflection data.
-
 // todo: This is currently unused.
 extern "C" __global__
 void reflection_transform_kernel(

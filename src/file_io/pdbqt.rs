@@ -20,7 +20,7 @@ use crate::{
         ConformationType,
         prep::{DockType, UnitCellDims},
     },
-    molecule::{Atom, AtomRole, Chain, Ligand, MoleculeLigand, Residue, ResidueEnd},
+    molecule::{Atom, AtomRole, Chain, Ligand, MoleculeSmall, Residue, ResidueEnd},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -247,10 +247,10 @@ pub fn save_pdbqt(mol: &Mol2, path: &Path, ligand: Option<&Ligand>) -> io::Resul
             }
 
             for (i, torsion) in torsions.iter().enumerate() {
-                let atom_0_i = lig.mol.common.bonds[torsion.bond].atom_0;
-                let atom_1_i = lig.mol.common.bonds[torsion.bond].atom_1;
-                let atom_0 = &lig.mol.common.atoms[atom_0_i];
-                let atom_1 = &lig.mol.common.atoms[atom_1_i];
+                let atom_0_i = lig.common.bonds[torsion.bond].atom_0;
+                let atom_1_i = lig.common.bonds[torsion.bond].atom_1;
+                let atom_0 = &lig.common.atoms[atom_0_i];
+                let atom_1 = &lig.common.atoms[atom_1_i];
 
                 let atom_0_text = format!("{}_{}", atom_0.element.to_letter(), atom_0_i);
                 let atom_1_text = format!("{}_{}", atom_1.element.to_letter(), atom_1_i);

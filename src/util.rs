@@ -355,7 +355,7 @@ pub fn cycle_selected(state: &mut State, scene: &mut Scene, reverse: bool) {
                 // todo: DRY with the above for peptide atoms.
                 let mut new_atom_i = atom_i as isize;
 
-                while new_atom_i < (lig.mol.common.atoms.len() as isize) - 1 && new_atom_i >= 0 {
+                while new_atom_i < (lig.common.atoms.len() as isize) - 1 && new_atom_i >= 0 {
                     new_atom_i += dir;
                     let nri = new_atom_i as usize;
                     state.ui.selection = Selection::AtomLigand(nri);
@@ -517,7 +517,7 @@ pub fn orbit_center(state: &State) -> Vec3F32 {
             }
             Selection::AtomLigand(i) => {
                 if let Some(lig) = &state.ligand {
-                    lig.mol.common.atom_posits[*i].into()
+                    lig.common.atom_posits[*i].into()
                 } else {
                     Vec3F32::new_zero()
                 }
@@ -761,7 +761,7 @@ pub fn close_mol(state: &mut State, scene: &mut Scene, engine_updates: &mut Engi
             && ent.class != EntityType::SaSurface as u32
     });
 
-    state.to_save.last_opened = None;
+    state.to_save.opened_items = None;
     state.to_save.last_map_opened = None;
     state.volatile.aa_seq_text = String::new();
 
@@ -954,7 +954,7 @@ pub fn move_lig_to_res(lig: &mut Ligand, mol: &MoleculePeptide, res: &Residue) -
     // todo: YOu need to add hydrogens to hetero atoms.
 
     let mut all_found = false;
-    for (lig_i, atom_lig) in lig.mol.common.atoms.iter().enumerate() {
+    for (lig_i, atom_lig) in lig.common.atoms.iter().enumerate() {
         if atom_lig.type_in_res.is_none() {
             continue;
         }
@@ -967,7 +967,7 @@ pub fn move_lig_to_res(lig: &mut Ligand, mol: &MoleculePeptide, res: &Residue) -
             }
 
             if atom_res.type_in_res == atom_lig.type_in_res {
-                lig.mol.common.atom_posits[lig_i] = atom_res.posit;
+                lig.common.atom_posits[lig_i] = atom_res.posit;
                 found = true;
                 break;
             }
@@ -997,7 +997,7 @@ pub fn move_lig_to_res(lig: &mut Ligand, mol: &MoleculePeptide, res: &Residue) -
 }
 
 /// A helper used, for example, for orienting double bonds. Finds an arbitrary neighbor to the bond.
-/// Returns neighbor's index. Return the index instead of posit for flexibility, e.g. with lig.mol.common.atom_posits.
+/// Returns neighbor's index. Return the index instead of posit for flexibility, e.g. with lig.common.atom_posits.
 /// Returns (index, if index is from atom 1). This is important for knowing which side we're working with.
 ///
 /// Note: We don't take Hydrogens into account, because they confuse the situation of aromatic rings.

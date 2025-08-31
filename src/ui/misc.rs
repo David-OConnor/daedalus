@@ -24,7 +24,7 @@ use crate::{
         },
     },
     molecule::{
-        Atom, Ligand, MoleculeGenericRef, MoleculeLigand, MoleculePeptide, PeptideAtomPosits,
+        Atom, Ligand, MoleculeGenericRef, MoleculeSmall, MoleculePeptide, PeptideAtomPosits,
         Residue, aa_color,
     },
     ui::{
@@ -97,7 +97,7 @@ fn disp_atom_data(atom: &Atom, residues: &[Residue], posit_override: Option<Vec3
 /// Display text of the selected atom or residue.
 pub fn selected_data(
     mol: &MoleculePeptide,
-    ligand: &Option<Ligand>,
+    ligand: &Option<MoleculeSmall>,
     selection: &Selection,
     ui: &mut Ui,
 ) {
@@ -117,12 +117,12 @@ pub fn selected_data(
                 let Some(lig) = ligand else {
                     return;
                 };
-                if *sel_i >= lig.mol.common.atoms.len() {
+                if *sel_i >= lig.common.atoms.len() {
                     return;
                 }
 
-                let atom = &lig.mol.common.atoms[*sel_i];
-                let posit = lig.mol.common.atom_posits[*sel_i];
+                let atom = &lig.common.atoms[*sel_i];
+                let posit = lig.common.atom_posits[*sel_i];
                 section_box().show(ui, |ui| {
                     disp_atom_data(atom, &[], Some(posit), ui);
                 });
@@ -564,7 +564,7 @@ pub fn lig_section(
                     {
                         let res_type = res.res_type.clone(); // Avoids dbl-borrow.
 
-                        let mol_fm_res = MoleculeLigand::from_res(
+                        let mol_fm_res = MoleculeSmall::from_res(
                             res,
                             &mol.common.atoms,
                             &mol.common.bonds,

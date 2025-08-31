@@ -2,6 +2,8 @@
 
 use std::{collections::HashMap, path::PathBuf};
 
+use chrono::{DateTime, Utc};
+
 use bincode::{Decode, Encode};
 use bio_apis::rcsb::{FilesAvailable, PdbDataResults};
 use graphics::{
@@ -19,12 +21,28 @@ use crate::{
 
 pub const DEFAULT_PREFS_FILE: &str = "daedalus_prefs.dae";
 
+#[derive(Clone, Copy, PartialEq, Debug, Encode, Decode)]
+enum OpenType {
+    Peptide,
+    Ligand,
+    Map,
+    Frcmod,
+}
+
+#[derive(Debug, Encode, Decode)]
+struct OpenHistory {
+    timestamp: DateTime<Utc>,
+    path: PathBuf,
+    type_: OpenType,
+}
+
 /// We maintain some of the state that is saved in the preferences file here, to keep
 /// the save/load state streamlined, instead of in an intermediate struct between main state, and
 /// saving/loading.
 #[derive(Debug, Encode, Decode)]
 pub struct ToSave {
     pub per_mol: HashMap<String, PerMolToSave>,
+    pub open_history: Vec<OpenHistory>,
     pub last_opened: Option<PathBuf>,
     pub last_ligand_opened: Option<PathBuf>,
     pub last_map_opened: Option<PathBuf>,
@@ -51,7 +69,7 @@ impl Default for ToSave {
     fn default() -> Self {
         Self {
             per_mol: Default::default(),
-            last_opened: Default::default(),
+            open_history: Default::default(),
             last_ligand_opened: Default::default(),
             last_frcmod_opened: Default::default(),
             last_map_opened: Default::default(),
@@ -133,9 +151,9 @@ impl PerMolToSave {
             // todo: If you find a more robust way to handle saving order-dependent data,
             // todo: remove this.
             if !on_init {
-                lig_atom_positions = lig.mol.common.atom_posits.clone();
-                if !lig.mol.common.atom_posits.is_empty() {
-                    println!("\nSaving atom posits: {:?}", lig.mol.common.atom_posits[0]); // todo temp
+                lig_atom_positions = lig.common.atom_posits.clone();
+                if !lig.common.atom_posits.is_empty() {
+                    println!("\nSaving atom posits: {:?}", lig.common.atom_posits[0]); // todo temp
                 }
             }
         }
@@ -224,8 +242,8 @@ impl State {
 
                     // todo: This check is a workaround for overal problems related to how we store molecules
                     // todo and ligands. Without it, we can desync the positions, and cause index-error crashes
-                    if data.lig_atom_positions.len() == lig.mol.common.atom_posits.len() {
-                        lig.mol.common.atom_posits = data.lig_atom_positions.clone();
+                    if data.lig_atom_positions.len() == lig.common.atom_posits.len() {
+                        lig.common.atom_posits = data.lig_atom_positions.clone();
                     } else {
                         eprintln!("Error loading ligand atom positions; look into this.")
                     }

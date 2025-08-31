@@ -770,8 +770,8 @@ pub fn draw_ligand(state: &State, scene: &mut Scene) {
     }
 
     // For determining inside of rings.
-    let mut hydrogen_is = Vec::with_capacity(lig.mol.common.atoms.len());
-    for atom in &lig.mol.common.atoms {
+    let mut hydrogen_is = Vec::with_capacity(lig.common.atoms.len());
+    for atom in &lig.common.atoms {
         hydrogen_is.push(atom.element == Element::Hydrogen);
     }
 
@@ -786,15 +786,15 @@ pub fn draw_ligand(state: &State, scene: &mut Scene) {
             continue;
         }
 
-        let posit_0: Vec3 = lig.mol.common.atom_posits[bond.atom_0].into();
-        let posit_1: Vec3 = lig.mol.common.atom_posits[bond.atom_1].into();
+        let posit_0: Vec3 = lig.common.atom_posits[bond.atom_0].into();
+        let posit_1: Vec3 = lig.common.atom_posits[bond.atom_1].into();
 
         // For determining how to orient multiple-bonds.
         let neighbor_i =
-            find_neighbor_posit(&lig.mol.common, bond.atom_0, bond.atom_1, &hydrogen_is);
+            find_neighbor_posit(&lig.common, bond.atom_0, bond.atom_1, &hydrogen_is);
         let neighbor_posit = match neighbor_i {
-            Some((i, p1)) => (lig.mol.common.atom_posits[i].into(), p1),
-            None => (lig.mol.common.atom_posits[0].into(), false),
+            Some((i, p1)) => (lig.common.atom_posits[i].into(), p1),
+            None => (lig.common.atom_posits[0].into(), false),
         };
 
         let mut color_0 = atom_color(
@@ -1030,7 +1030,7 @@ pub fn draw_nucleic_acid(state: &mut State, scene: &mut Scene) {
         .retain(|ent| ent.class != EntityType::NucleicAcid as u32);
 
     // Atoms
-    for mol in &state.nucleid_acids {
+    for mol in &state.nucleic_acids {
         for (i, atom) in mol.common.atoms.iter().enumerate() {
             let atom_posit = get_atom_posit(
                 state.ui.peptide_atom_posits,
@@ -1268,7 +1268,7 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
             }
             if let Some(lig) = &state.ligand {
                 if ui.show_near_lig_only {
-                    let atom_sel = lig.mol.common.atom_posits[lig.anchor_atom];
+                    let atom_sel = lig.common.atom_posits[lig.anchor_atom];
                     if (*atom_posit - atom_sel).magnitude() as f32 > ui.nearby_dist_thresh as f32 {
                         continue;
                     }
@@ -1369,7 +1369,7 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
         }
         if let Some(lig) = &state.ligand {
             if ui.show_near_lig_only {
-                let atom_sel = lig.mol.common.atom_posits[lig.anchor_atom];
+                let atom_sel = lig.common.atom_posits[lig.anchor_atom];
                 if (*atom_0_posit - atom_sel).magnitude() as f32 > ui.nearby_dist_thresh as f32 {
                     continue;
                 }
@@ -1499,7 +1499,7 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
             }
             if let Some(lig) = &state.ligand {
                 if ui.show_near_lig_only {
-                    let atom_sel = lig.mol.common.atom_posits[lig.anchor_atom];
+                    let atom_sel = lig.common.atom_posits[lig.anchor_atom];
                     if (atom_donor.posit - atom_sel).magnitude() as f32
                         > ui.nearby_dist_thresh as f32
                     {

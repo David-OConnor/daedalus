@@ -110,13 +110,13 @@ pub fn event_dev_handler(
                                 };
 
                                 let mut lig_atoms_temp = Vec::new();
-                                // todo: You must use lig.mol.common.atom_posits!
+                                // todo: You must use lig.common.atom_posits!
                                 let lig_atoms = if let Some(lig) = &state_.ligand {
                                     // Not sure how else to do this.
-                                    for (i, atom) in lig.mol.common.atoms.iter().enumerate() {
+                                    for (i, atom) in lig.common.atoms.iter().enumerate() {
                                         // Just the fields we need.
                                         lig_atoms_temp.push(Atom {
-                                            posit: lig.mol.common.atom_posits[i],
+                                            posit: lig.common.atom_posits[i],
                                             element: atom.element,
                                             ..Default::default()
                                         });

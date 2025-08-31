@@ -98,7 +98,7 @@ impl MoleculeCommon {
 #[derive(Debug)]
 pub enum MoleculeGeneric {
     Peptide(MoleculePeptide),
-    Ligand(MoleculeLigand),
+    Ligand(MoleculeSmall),
     NucleicAcid(MoleculeNucleicAcid),
 }
 
@@ -124,7 +124,7 @@ impl MoleculeGeneric {
 #[derive(Debug)]
 pub enum MoleculeGenericRef<'a> {
     Peptide(&'a MoleculePeptide),
-    Ligand(&'a MoleculeLigand),
+    Ligand(&'a MoleculeSmall),
     NucleicAcid(&'a MoleculeNucleicAcid),
 }
 
@@ -140,13 +140,21 @@ impl<'a> MoleculeGenericRef<'a> {
 
 /// A molecue representing a small organic molecule. Omits mol-generic fields.
 #[derive(Debug, Default, Clone)]
-pub struct MoleculeLigand {
+pub struct MoleculeSmall {
     pub common: MoleculeCommon,
+    pub lig_data: Option<Ligand>,
     pub pubchem_cid: Option<u32>,
     pub drugbank_id: Option<String>,
+    /// FF type and partial charge on all atoms. Quick lookup flag.
+    pub ff_params_loaded: bool,
+    /// E.g., overrides for dihedral angles (part of the *bonded* dynamics calculation) for this
+    /// specific molecule, as provided by Amber. Quick lookup flag.
+    pub frcmod_loaded: bool,
+    /// E.g. loaded proteins from Pubchem.
+    pub associated_structures: Vec<ProteinStructure>,
 }
 
-impl MoleculeLigand {
+impl MoleculeSmall {
     /// This constructor handles assumes details are ingested into a common format upstream. It adds
     /// them to the resulting structure, and augments it with bonds, hydrogen positions, and other things A/R.
     pub fn new(
@@ -440,27 +448,18 @@ impl Display for AtomRole {
     }
 }
 
+/// This data is related specifically to docking.
 #[derive(Debug, Clone, Default)]
 pub struct Ligand {
-    /// Molecule atom positions remain relative.
-    // pub molecule: Molecule,
-    pub mol: MoleculeLigand,
     pub anchor_atom: usize, // Index.
     /// Note: We may deprecate this in favor of our Amber MD-based approach to flexibility.
     pub flexible_bonds: Vec<usize>, // Index
     pub pose: Pose,
     pub docking_site: DockingSite,
-    /// FF type and partial charge on all atoms. Quick lookup flag.
-    pub ff_params_loaded: bool,
-    /// E.g., overrides for dihedral angles for this specific ligand, as provided by Amber.
-    /// Quick lookup flag.
-    pub frcmod_loaded: bool,
-    /// E.g. loaded proteins from Pubchem.
-    pub associated_structures: Vec<ProteinStructure>,
 }
 
 impl Ligand {
-    pub fn new(mol: MoleculeLigand, ff_params: &HashMap<String, ForceFieldParamsKeyed>) -> Self {
+    pub fn new(mol: MoleculeSmall, ff_params: &HashMap<String, ForceFieldParamsKeyed>) -> Self {
         let mut ff_params_loaded = true;
         for atom in &mol.common.atoms {
             if atom.force_field_type.is_none() || atom.partial_charge.is_none() {
@@ -645,83 +644,6 @@ impl Ligand {
         result
     }
 }
-
-// #[allow(unused)]
-// #[derive(Clone, Copy, PartialEq, Debug)]
-// pub enum BondType {
-//     Covalent {
-//         count: BondCount,
-//     },
-//     /// Donor is always `atom0`.`
-//     Hydrogen,
-//     Disulfide,
-//     MetalCoordination,
-//     MisMatchedBasePairs,
-//     SaltBridge,
-//     CovalentModificationResidue,
-//     CovalentModificationNucleotideBase,
-//     CovalentModificationNucleotideSugar,
-//     CovalentModificationNucleotidePhosphate,
-// }
-
-// #[derive(Clone, Copy, PartialEq, Debug, Default)]
-// pub enum BondCount {
-//     #[default]
-//     Single,
-//     SingleDoubleHybrid,
-//     Double,
-//     Triple,
-// }
-//
-// impl BondCount {
-//     pub fn value(&self) -> f64 {
-//         match self {
-//             Self::Single => 1.0,
-//             Self::SingleDoubleHybrid => 1.5,
-//             Self::Double => 2.0,
-//             Self::Triple => 3.0,
-//         }
-//     }
-//
-//     pub fn _from_count(count: u8) -> Self {
-//         match count {
-//             1 => Self::Single,
-//             2 => Self::Double,
-//             3 => Self::Triple,
-//             _ => {
-//                 eprintln!("Error: Invalid count value: {}", count);
-//                 Self::Single
-//             }
-//         }
-//     }
-//
-//     /// E.g. the Mol2 format.
-//     pub fn from_str(val: &str) -> Self {
-//         // 1 = single
-//         // 2 = double
-//         // 3 = triple
-//         // am = amide
-//         // ar = aromatic
-//         // du = dummy
-//         // un = unknown (cannot be determined from the parameter tables)
-//         // nc = not connected
-//         match val {
-//             "1" => Self::Single,
-//             "2" => Self::Double,
-//             "3" => Self::Triple,
-//             // todo: How should we handle these? New types in the enum?
-//             "am" => Self::SingleDoubleHybrid,
-//             "ar" => Self::Triple,
-//             "du" => Self::Single,
-//             "un" => Self::Single,
-//             "nc" => Self::Single,
-//             _ => {
-//                 eprintln!("Error: Invalid count value: {}", val);
-//                 Self::Single
-//             }
-//         }
-//     }
-// }
 
 #[derive(Debug, Clone)]
 pub struct Bond {
@@ -1170,7 +1092,7 @@ impl MoleculePeptide {
     }
 }
 
-impl TryFrom<Mol2> for MoleculeLigand {
+impl TryFrom<Mol2> for MoleculeSmall {
     type Error = io::Error;
     fn try_from(m: Mol2) -> Result<Self, Self::Error> {
         let atoms: Vec<_> = m.atoms.iter().map(|a| a.into()).collect();
@@ -1186,7 +1108,7 @@ impl TryFrom<Mol2> for MoleculeLigand {
     }
 }
 
-impl TryFrom<Sdf> for MoleculeLigand {
+impl TryFrom<Sdf> for MoleculeSmall {
     type Error = io::Error;
     fn try_from(m: Sdf) -> Result<Self, Self::Error> {
         let atoms: Vec<_> = m.atoms.iter().map(|a| a.into()).collect();
@@ -1216,7 +1138,7 @@ impl TryFrom<Sdf> for MoleculeLigand {
     }
 }
 
-impl MoleculeLigand {
+impl MoleculeSmall {
     pub fn to_mol2(&self) -> Mol2 {
         let atoms = self.common.atoms.iter().map(|a| a.to_generic()).collect();
         let bonds = self.common.bonds.iter().map(|b| b.to_generic()).collect();
@@ -1267,7 +1189,7 @@ impl Display for PeptideAtomPosits {
     }
 }
 
-impl MoleculeLigand {
+impl MoleculeSmall {
     /// For example, this can be used to create a ligand from a residue that was loaded with a mmCIF
     /// file from RCSB. It can then be used for docking, or saving to a Mol2 or SDF file.
     ///

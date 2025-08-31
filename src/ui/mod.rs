@@ -48,7 +48,7 @@ use crate::{
 
 pub mod cam;
 pub mod misc;
-mod misc_2;
+// mod misc_2;
 
 pub const ROW_SPACING: f32 = 10.;
 pub const COL_SPACING: f32 = 30.;
@@ -411,6 +411,10 @@ fn docking(
         let mol = state.molecule.as_ref().unwrap();
         let lig = state.ligand.as_mut().unwrap();
 
+        let Some(lig_data) = &mut lig.lig_data else {
+            return;
+        };
+
         if ui.button("Find sites").clicked() {
             let sites = find_docking_sites(mol);
             for site in sites {
@@ -428,7 +432,7 @@ fn docking(
                 lig,
             );
 
-            lig.pose = pose;
+            lig_data.pose = pose;
 
             lig.position_atoms(None);
 
@@ -436,7 +440,7 @@ fn docking(
                 lig.position_atoms(None);
 
                 lig.position_atoms(None);
-                let lig_pos: Vec3 = lig.mol.common.atom_posits[lig.anchor_atom].into();
+                let lig_pos: Vec3 = lig.common.atom_posits[lig_data.anchor_atom].into();
                 let ctr: Vec3 = mol.center.into();
 
                 cam_look_at_outside(&mut scene.camera, lig_pos, ctr);
@@ -454,7 +458,7 @@ fn docking(
         }
 
         if ui.button("Docking energy").clicked() {
-            let poses = vec![lig.pose.clone()];
+            let poses = vec![lig_data.pose.clone()];
             let mut lig_posits = Vec::with_capacity(poses.len());
             // let mut partial_charges_lig = Vec::with_capacity(poses.len());
 
@@ -462,7 +466,7 @@ fn docking(
                 lig.position_atoms(Some(&pose));
 
                 let posits_this_pose: Vec<_> =
-                    lig.mol.common.atom_posits.iter().map(|p| (*p).into()).collect();
+                    lig.common.atom_posits.iter().map(|p| (*p).into()).collect();
 
                 // partial_charges_lig.push(create_partial_charges(
                 //     &ligand.molecule.atoms,
@@ -518,7 +522,7 @@ fn docking(
                 .changed()
             {
                 if let Ok(v) = state.ui.docking_site_x.parse::<f64>() {
-                    lig.docking_site.site_center.x = v;
+                    lig_data.docking_site.site_center.x = v;
                     docking_init_changed = true;
                 }
             }
@@ -527,7 +531,7 @@ fn docking(
                 .changed()
             {
                 if let Ok(v) = state.ui.docking_site_y.parse::<f64>() {
-                    lig.docking_site.site_center.y = v;
+                    lig_data.docking_site.site_center.y = v;
                     docking_init_changed = true;
                 }
             }
@@ -536,7 +540,7 @@ fn docking(
                 .changed()
             {
                 if let Ok(v) = state.ui.docking_site_z.parse::<f64>() {
-                    lig.docking_site.site_center.z = v;
+                    lig_data.docking_site.site_center.z = v;
                     docking_init_changed = true;
                 }
             }
@@ -548,7 +552,7 @@ fn docking(
                 .changed()
             {
                 if let Ok(v) = state.ui.docking_site_size.parse::<f64>() {
-                    lig.docking_site.site_radius = v;
+                    lig_data.docking_site.site_radius = v;
                     docking_init_changed = true;
                 }
             }
@@ -557,7 +561,7 @@ fn docking(
         if let Some(mol) = &state.molecule {
             for res in &mol.het_residues {
                 // Note: This is crude.
-                if (res.atoms.len() - lig.mol.common.atoms.len()) < 5 {
+                if (res.atoms.len() - lig.common.atoms.len()) < 5 {
                     // todo: Don't list multiple; pick teh closest, at least in len.
                     let name = match &res.res_type {
                         ResidueType::Other(name) => name,
@@ -631,8 +635,8 @@ fn docking(
             lig.reset_posits();
             state.mol_dynamics = None;
 
-            if !lig.mol.common.atom_posits.is_empty() {
-                docking_posit_update = Some(lig.mol.common.atom_posits[0].into());
+            if !lig.common.atom_posits.is_empty() {
+                docking_posit_update = Some(lig.common.atom_posits[0].into());
                 docking_init_changed = true;
             }
 
@@ -969,7 +973,7 @@ fn view_settings(
             let water_prev = state.ui.visibility.hide_water;
             misc::vis_check(&mut state.ui.visibility.hide_water, "Water", ui, redraw);
 
-            if !state.nucleid_acids.is_empty() {
+            if !state.nucleic_acids.is_empty() {
                 misc::vis_check(
                     &mut state.ui.visibility.hide_nucleic_acids,
                     "Nucleic acids",
@@ -1031,7 +1035,7 @@ fn view_settings(
             // todo temp
             if ui.button("Load DNA").clicked() {
                 if let Some(mol) = &state.molecule {
-                    state.nucleid_acids = vec![MoleculeNucleicAcid::from_peptide(
+                    state.nucleic_acids = vec![MoleculeNucleicAcid::from_peptide(
                         &mol,
                         NucleicAcidType::Dna,
                         Strands::Single,
@@ -1043,7 +1047,7 @@ fn view_settings(
 
             if ui.button("Load RNA").clicked() {
                 if let Some(mol) = &state.molecule {
-                    state.nucleid_acids = vec![MoleculeNucleicAcid::from_peptide(
+                    state.nucleic_acids = vec![MoleculeNucleicAcid::from_peptide(
                         &mol,
                         NucleicAcidType::Rna,
                         Strands::Single,
@@ -1283,7 +1287,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
             let mut dm_loaded = None; // avoids a double-borrow error.
             if let Some(mol) = &mut state.molecule {
-                let color = if state.to_save.last_opened.is_none() {
+                let color = if state.to_save.opened_items.is_none() {
                     COLOR_ATTENTION
                 } else {
                     Color32::GRAY
@@ -1441,10 +1445,10 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     let extension = "mol2"; // The default; more robust than SDF.
 
                     let filename = {
-                        let name = if lig.mol.common.ident.is_empty() {
+                        let name = if lig.common.ident.is_empty() {
                             "molecule".to_string()
                         } else {
-                            lig.mol.common.ident.clone()
+                            lig.common.ident.clone()
                         };
                         format!("{name}.{extension}")
                     };
@@ -1667,7 +1671,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                         //     return;
                         // };
 
-                        match amber_geostd::find_mols(&lig.mol.common.ident) {
+                        match amber_geostd::find_mols(&lig.common.ident) {
                             Ok(data) => {
                                 state.ui.popup.get_geostd_items = data;
                             }
@@ -1892,13 +1896,13 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         // todo: Move to new_mol_loaded code block?
         if let Some(mol) = &state.molecule {
             if let Some(lig) = &mut state.ligand {
-                if lig.anchor_atom >= lig.mol.common.atoms.len() {
+                if lig.anchor_atom >= lig.common.atoms.len() {
                     let msg = "Error positioning ligand atoms; anchor outside len".to_owned();
                     handle_err(&mut state.ui, msg);
                 } else {
                     lig.position_atoms(None);
 
-                    let lig_pos: Vec3 = lig.mol.common.atom_posits[lig.anchor_atom].into();
+                    let lig_pos: Vec3 = lig.common.atom_posits[lig.anchor_atom].into();
                     let ctr: Vec3 = mol.center.into();
 
                     cam_look_at_outside(&mut scene.camera, lig_pos, ctr);
