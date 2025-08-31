@@ -13,7 +13,6 @@ egui-file-dialog = "0.11.0" #  For file dialogs.
 cfg-if = "1.0.1"
 
 lin_alg = { version = "1.3.5", features = ["encode"] }
-barnes_hut = { version = "1.0.8"}  # enc temp rem
 na_seq = "0.3.1"
 bio_apis = {  version = "0.1.6", features = ["encode"] }
 bio_files = "0.2.8"
@@ -51,7 +50,6 @@ itertools = "0.14.0" # For combinations when matching angles in MD.
 [patch.crates-io]
 #graphics = { path = "../../graphics" }
 #lin_alg = { path = "../../lin_alg" }
-#barnes_hut = { path = "../../barnes_hut" }
 #na_seq = { path = "../na_seq" }
 #bio_apis = { path = "../bio_apis" }
 #mcubes = { path = "../mcubes" }

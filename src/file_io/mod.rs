@@ -14,7 +14,7 @@ use na_seq::{AaIdent, Element};
 
 use crate::{
     AMINO_19, AMINO_CT12, AMINO_NT12, FRCMOD_FF19SB, GAFF2, PARM_19, ProtFFTypeChargeMap, State,
-    molecule::{Ligand, MoleculePeptide},
+    molecule::MoleculePeptide,
 };
 
 pub mod pdbqt;
@@ -25,11 +25,13 @@ use bio_files::{
     sdf::Sdf,
 };
 
+use crate::prefs::{OpenHistory, OpenType};
 use crate::{
-    docking::prep::DockingSetup,
+    // docking::prep::DockingSetup,
     dynamics::prep::{merge_params, populate_ff_and_q},
     file_io::pdbqt::save_pdbqt,
-    molecule::{MoleculeGeneric, MoleculeSmall},
+    mol_lig::{Ligand, MoleculeSmall},
+    molecule::MoleculeGeneric,
     reflection::{DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityRect, ElectronDensity},
     util::{handle_err, handle_success},
 };
@@ -128,14 +130,14 @@ impl State {
                     } else {
                         // Run this to update the ff name and charge data on the set of receptor
                         // atoms near the docking site.
-                        if let Some(lig) = &mut self.ligand {
-                            self.volatile.docking_setup = Some(DockingSetup::new(
-                                &mol,
-                                lig,
-                                &self.volatile.lj_lookup_table,
-                                &self.bh_config,
-                            ));
-                        }
+                        // if let Some(lig) = &mut self.ligand {
+                        // self.volatile.docking_setup = Some(DockingSetup::new(
+                        //     &mol,
+                        //     lig,
+                        //     &self.volatile.lj_lookup_table,
+                        //     &self.bh_config,
+                        // ));
+                        // }
                     }
                 }
 
@@ -151,17 +153,20 @@ impl State {
             Ok(mol_gen) => {
                 match mol_gen {
                     MoleculeGeneric::Ligand(mol) => {
-                        let lig = Ligand::new(mol, &self.ff_params.lig_specific);
+                        // let lig = Ligand::new(mol, &self.ff_params.lig_specific);
                         self.mol_dynamics = None;
 
-                        self.ligand = Some(lig);
+                        self.ligands.push(mol);
+                        self.volatile.active_lig = Some(self.ligands.len() - 1);
+
                         self.to_save.last_ligand_opened = Some(path.to_owned());
+                        self.to_save
+                            .open_history
+                            .push(OpenHistory::new(path, OpenType::Ligand));
 
                         // self.update_docking_site(init_posit);
                     }
                     MoleculeGeneric::Peptide(m) => {
-                        self.to_save.opened_items = Some(path.to_owned());
-
                         self.volatile.aa_seq_text = String::with_capacity(m.common.atoms.len());
                         for aa in &m.aa_seq {
                             self.volatile
@@ -178,8 +183,19 @@ impl State {
                         // Only updating if not loading a ligand.
                         // Update from prefs based on the molecule-specific items.
                         self.update_from_prefs();
+
+                        self.to_save.last_peptide_opened = Some(path.to_owned());
+                        self.to_save
+                            .open_history
+                            .push(OpenHistory::new(path, OpenType::Peptide));
                     }
-                    MoleculeGeneric::NucleicAcid(m) => (), // todo
+                    MoleculeGeneric::NucleicAcid(m) => {
+                        // todo: Fill this in
+                        self.to_save.last_nucleic_acid_opened = Some(path.to_owned());
+                        self.to_save
+                            .open_history
+                            .push(OpenHistory::new(path, OpenType::NucleicAcid))
+                    }
                 }
 
                 if let Some(mol) = &mut self.molecule {
@@ -191,11 +207,11 @@ impl State {
                 // if we update the molecule here, e.g. with docking site posit.
                 self.update_save_prefs_no_mol();
 
-                if self.ligand.is_some() {
-                    if self.get_make_docking_setup().is_none() {
-                        eprintln!("Problem making or getting docking setup.");
-                    }
-                }
+                // if self.ligand.is_some() {
+                //     if self.get_make_docking_setup().is_none() {
+                //         eprintln!("Problem making or getting docking setup.");
+                //     }
+                // }
 
                 self.volatile.flags.new_mol_loaded = true;
             }
@@ -246,6 +262,10 @@ impl State {
         self.load_density(dm);
 
         self.to_save.last_map_opened = Some(path.to_owned());
+        self.to_save
+            .open_history
+            .push(OpenHistory::new(path, OpenType::Map));
+
         self.update_save_prefs(false);
 
         Ok(())
@@ -328,13 +348,17 @@ impl State {
                 );
 
                 // Update the lig's FRCMOD status A/R, if the ligand is opened already.
-                if let Some(lig) = &mut self.ligand {
+                for lig in &mut self.ligangs() {
                     if &lig.common.ident.to_uppercase() == &mol_name.to_uppercase() {
                         lig.frcmod_loaded = true;
                     }
                 }
 
                 self.to_save.last_frcmod_opened = Some(path.to_owned());
+                self.to_save
+                    .open_history
+                    .push(OpenHistory::new(path, OpenType::Frcmod));
+
                 self.update_save_prefs(false);
 
                 println!("Loaded molecule-specific force fields.");
@@ -365,31 +389,34 @@ impl State {
                 // }
                 if let Some(data) = &mut self.cif_pdb_raw {
                     fs::write(path, data)?;
-                    self.to_save.opened_items = Some(path.to_owned());
+
+                    self.to_save.last_peptide_opened = Some(path.to_owned());
                     self.update_save_prefs(false)
                 }
             }
-            "sdf" => match &self.ligand {
+            "sdf" => match self.get_active_lig() {
                 Some(lig) => {
-                    lig.mol.to_sdf().save(path)?;
+                    lig.to_sdf().save(path)?;
 
                     self.to_save.last_ligand_opened = Some(path.to_owned());
                     self.update_save_prefs(false)
                 }
                 None => return Err(io::Error::new(ErrorKind::InvalidData, "No ligand to save")),
             },
-            "mol2" => match &self.ligand {
+            "mol2" => match self.get_active_lig() {
                 Some(lig) => {
-                    lig.mol.to_mol2().save(path)?;
+                    lig.to_mol2().save(path)?;
 
                     self.to_save.last_ligand_opened = Some(path.to_owned());
+
                     self.update_save_prefs(false)
                 }
                 None => return Err(io::Error::new(ErrorKind::InvalidData, "No ligand to save")),
             },
-            "pdbqt" => match &self.ligand {
+            "pdbqt" => match self.get_active_lig() {
                 Some(lig) => {
-                    save_pdbqt(&lig.mol.to_mol2(), path, None)?;
+                    save_pdbqt(&lig.to_mol2(), path, None)?;
+
                     self.to_save.last_ligand_opened = Some(path.to_owned());
                     self.update_save_prefs(false)
                 }
@@ -453,14 +480,14 @@ impl State {
                 );
             } else {
                 // Update ff and charges in the receptor atoms.
-                if let Some(lig) = &mut self.ligand {
-                    self.volatile.docking_setup = Some(DockingSetup::new(
-                        &mol,
-                        lig,
-                        &self.volatile.lj_lookup_table,
-                        &self.bh_config,
-                    ));
-                }
+                // if let Some(lig) = &mut self.ligand {
+                //     self.volatile.docking_setup = Some(DockingSetup::new(
+                //         &mol,
+                //         lig,
+                //         &self.volatile.lj_lookup_table,
+                //         &self.bh_config,
+                //     ));
+                // }
 
                 // todo: You might need to re-init MD here as well.
             }
@@ -573,7 +600,9 @@ impl State {
                     match Mol2::new(&data.mol2) {
                         Ok(mol2) => {
                             let mol: MoleculeSmall = mol2.try_into().unwrap();
-                            self.ligand = Some(Ligand::new(mol, &self.ff_params.lig_specific));
+                            // self.ligand = Some(Ligand::new(mol, &self.ff_params.lig_specific));
+
+                            self.ligands.push(mol);
                             self.mol_dynamics = None;
 
                             // self.update_from_prefs();
@@ -596,8 +625,22 @@ impl State {
 
     /// We run this at init. Loads all relevant files marked as "last opened".
     pub fn load_last_opened(&mut self) {
-        let last_opened = self.to_save.opened_items.clone();
-        if let Some(path) = &last_opened {
+        let last_peptide_opened = self.to_save.last_peptide_opened.clone();
+        if let Some(path) = &last_peptide_opened {
+            if let Err(e) = self.open_molecule(path) {
+                handle_err(&mut self.ui, e.to_string());
+            }
+        }
+
+        let last_ligand_opened = self.to_save.last_ligand_opened.clone();
+        if let Some(path) = &last_ligand_opened {
+            if let Err(e) = self.open_molecule(path) {
+                handle_err(&mut self.ui, e.to_string());
+            }
+        }
+
+        let last_na_opened = self.to_save.last_nucleic_acid_opened.clone();
+        if let Some(path) = &last_na_opened {
             if let Err(e) = self.open_molecule(path) {
                 handle_err(&mut self.ui, e.to_string());
             }
@@ -607,13 +650,6 @@ impl State {
         let last_map_opened = self.to_save.last_map_opened.clone();
         if let Some(path) = &last_map_opened {
             if let Err(e) = self.open(path) {
-                handle_err(&mut self.ui, e.to_string());
-            }
-        }
-
-        let last_ligand_opened = self.to_save.last_ligand_opened.clone();
-        if let Some(path) = &last_ligand_opened {
-            if let Err(e) = self.open_molecule(path) {
                 handle_err(&mut self.ui, e.to_string());
             }
         }

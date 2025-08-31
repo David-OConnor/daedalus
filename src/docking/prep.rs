@@ -8,15 +8,13 @@ use barnes_hut::{BhConfig, Tree};
 use bio_files::BondType;
 use lin_alg::f32::Vec3;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-use lin_alg::f32::{Vec3x8, f32x8, pack_x8};
+use lin_alg::f32::{f32x8, pack_x8};
 use na_seq::{Element, element::LjTable};
 
 use crate::{
     docking::{ATOM_NEAR_SITE_DIST_THRESH, DockingSite, is_hydrophobic},
-    forces::setup_sigma_eps_x8,
-    molecule::{
-        Atom, Bond, Ligand, MoleculeCommon, MoleculeGeneric, MoleculeSmall, MoleculePeptide,
-    },
+    mol_lig::MoleculeSmall,
+    molecule::{Atom, Bond, MoleculeCommon, MoleculePeptide},
 };
 
 // Increase this to take fewer receptor atoms when sampling for some cheap computatoins.

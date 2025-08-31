@@ -23,10 +23,8 @@ use crate::{
             change_snapshot_peptide,
         },
     },
-    molecule::{
-        Atom, Ligand, MoleculeGenericRef, MoleculeSmall, MoleculePeptide, PeptideAtomPosits,
-        Residue, aa_color,
-    },
+    mol_lig::{Ligand, MoleculeSmall},
+    molecule::{Atom, MoleculeGenericRef, MoleculePeptide, PeptideAtomPosits, Residue, aa_color},
     ui::{
         COL_SPACING, COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_INACTIVE, ROW_SPACING,
         cam::move_cam_to_lig, int_field, int_field_u16, mol_descrip,
@@ -234,9 +232,9 @@ pub fn dynamics_player(
 
                 match md.mode {
                     MdMode::Docking => {
-                        let lig = state.ligand.as_mut().unwrap();
-
-                        change_snapshot_docking(lig, snap, &mut state.ui.binding_energy_disp);
+                        if let Some(lig) = state.get_active_lig() {
+                            change_snapshot_docking(lig, snap, &mut state.ui.binding_energy_disp);
+                        }
 
                         draw_ligand(state, scene);
                     }
@@ -324,7 +322,7 @@ pub fn md_setup(
                 let mut ready_to_run = true;
 
                 if run_clicked {
-                    let Some(lig) = state.ligand.as_mut() else {
+                    let Some(lig) = state.get_active_lig_mut() else {
                         return;
                     };
 
@@ -447,9 +445,9 @@ pub fn lig_section(
     close_lig: &mut bool,
     engine_updates: &mut EngineUpdates,
 ) {
-    if let Some(lig) = &mut state.ligand {
+    if let Some(lig) = state.get_active_lig_mut() {
         ui.horizontal(|ui| {
-            mol_descrip(&MoleculeGenericRef::Ligand(&lig.mol), ui);
+            mol_descrip(&MoleculeGenericRef::Ligand(&lig), ui);
 
             if ui.button("Close lig").clicked() {
                 *close_lig = true;
@@ -482,19 +480,19 @@ pub fn lig_section(
                     loaded for this ligand. Required for ligand molecular dynamics and docking.",
                 );
 
-            if let Some(id) = &lig.mol.drugbank_id {
+            if let Some(id) = &lig.drugbank_id {
                 if ui.button("View on Drugbank").clicked() {
                     drugbank::open_overview(id);
                 }
             }
 
-            if let Some(id) = lig.mol.pubchem_cid {
+            if let Some(id) = lig.pubchem_cid {
                 if ui.button("View on PubChem").clicked() {
                     pubchem::open_overview(id);
                 }
             }
 
-            if let Some(cid) = lig.mol.pubchem_cid {
+            if let Some(cid) = lig.pubchem_cid {
                 if ui.button("Find associated structs").clicked() {
                     // todo: Don't block.
                     if lig.associated_structures.is_empty() {
@@ -605,7 +603,7 @@ pub fn lig_section(
 
     // If no ligand, provide convenience functionality for loading one based on hetero residues
     // in the protein.
-    if state.ligand.is_some() {
+    if state.get_active_lig().is_some() {
         return;
     }
 
@@ -673,7 +671,7 @@ pub fn lig_section(
         );
         state.load_geostd_mol_data(&data.ident, true, data.frcmod_avail, redraw_lig);
 
-        if let Some(lig) = &mut state.ligand {
+        if let Some(lig) = state.get_active_lig_mut() {
             if let Some(mol) = &state.molecule {
                 move_cam_to_lig(&mut state.ui, scene, lig, mol.center, engine_updates);
             }

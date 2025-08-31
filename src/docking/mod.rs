@@ -60,9 +60,9 @@ use crate::{
     dynamics::prep::build_dynamics_docking,
     forces,
     forces::{V_lj, V_lj_x8},
-    molecule::{Atom, Ligand},
+    mol_lig::{Ligand, MoleculeSmall},
+    molecule::Atom,
 };
-use crate::molecule::MoleculeSmall;
 
 pub mod find_sites;
 pub mod prep;
@@ -75,11 +75,6 @@ const GRID_SPACING_SITE_FINDING: f64 = 5.0;
 const ATOM_NEAR_SITE_DIST_THRESH: f64 = 1.4;
 
 const HYDROPHOBIC_CUTOFF: f32 = 4.25; // 3.5 - 5 angstrom?
-
-// This must be relatively low (Not much of an approximation): otherwise, the charges
-// will cancel too easily when grouped, due to their nature.
-// todo: Anything about 0 seems to produe no results.
-pub const THETA_BH: f64 = 0.;
 
 // const SOFTENING_FACTOR_SQ_ELECTROSTATIC: f32 = 1e-6;
 const SOFTENING_FACTOR_SQ_ELECTROSTATIC: f32 = 1e-6;

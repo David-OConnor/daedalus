@@ -41,9 +41,9 @@ use crate::{
         ambient::SimBox, neighbors::build_neighbors, non_bonded, non_bonded::LjTableIndices,
         water_init::make_water_mols,
     },
-    molecule::{Atom, Bond, Ligand, MoleculePeptide, Residue, ResidueEnd, build_adjacency_list},
+    mol_lig::MoleculeSmall,
+    molecule::{Atom, Bond, MoleculePeptide, Residue, ResidueEnd, build_adjacency_list},
 };
-use crate::molecule::MoleculeSmall;
 
 // Å. Static atoms must be at least this close to a dynamic atom at the start of MD to count.
 // Set this wide to take into account motion.

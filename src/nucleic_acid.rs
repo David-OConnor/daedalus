@@ -4,9 +4,13 @@
 
 use std::{collections::HashMap, f64::consts::TAU};
 
-use bio_files::{BondType};
+use bio_files::BondType;
 use lin_alg::f64::Vec3;
-use na_seq::{AminoAcid, Element::{self, *}, Nucleotide::{self, *}};
+use na_seq::{
+    AminoAcid,
+    Element::{self, *},
+    Nucleotide::{self, *},
+};
 
 use crate::molecule::{Atom, Bond, MoleculeCommon, MoleculePeptide};
 
@@ -25,10 +29,10 @@ pub enum Strands {
 /// Returns an arbitrary nucleotide combination that codes for the AA in question.
 fn nts_from_aa(aa: AminoAcid) -> [Nucleotide; 3] {
     match aa {
-            AminoAcid::Arg => [A, G, G],
+        AminoAcid::Arg => [A, G, G],
         AminoAcid::His => [C, A, C],
         AminoAcid::Lys => [A, A, G],
-        AminoAcid::Asp =>[G, A, C],
+        AminoAcid::Asp => [G, A, C],
         AminoAcid::Glu => [G, A, G],
         AminoAcid::Ser => [T, C, A],
         AminoAcid::Thr => [A, C, A],
@@ -37,8 +41,8 @@ fn nts_from_aa(aa: AminoAcid) -> [Nucleotide; 3] {
         AminoAcid::Cys => [T, G, C],
         AminoAcid::Sec => [A, A, A], // todo temp. Find it.,
         AminoAcid::Gly => [G, G, A],
-        AminoAcid::Pro => [C, C, A] ,
-        AminoAcid::Ala =>[G, C, A],
+        AminoAcid::Pro => [C, C, A],
+        AminoAcid::Ala => [G, C, A],
         AminoAcid::Val => [G, T, A],
         AminoAcid::Ile => [A, T, A],
         AminoAcid::Leu => [C, T, A],

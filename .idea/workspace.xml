@@ -4,32 +4,28 @@
     <option name="autoReloadType" value="ALL" />
   </component>
   <component name="CargoProjects">
-    <cargoProject FILE="$PROJECT_DIR$/Cargo.toml">
-      <package file="$PROJECT_DIR$">
-        <enabledFeature name="default" />
-      </package>
-    </cargoProject>
+    <cargoProject FILE="$PROJECT_DIR$/Cargo.toml" />
   </component>
   <component name="ChangeListManager">
     <list default="true" id="3d5494f9-2e22-410d-92c8-934bf57df8b1" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/src/mol_lig.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/cuda/cuda.cu" beforeDir="false" afterPath="$PROJECT_DIR$/src/cuda/cuda.cu" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/cuda/spme.cu" beforeDir="false" afterPath="$PROJECT_DIR$/src/cuda/spme.cu" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/docking/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/docking/mod.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/docking/prep.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/docking/prep.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/docking_v2/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/docking_v2/mod.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/download_mols.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/download_mols.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/drawing.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/drawing.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/dynamics/prep.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dynamics/prep.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/file_io/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/file_io/mod.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/file_io/pdbqt.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/file_io/pdbqt.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/inputs.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/inputs.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/main.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/molecule.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/molecule.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/nucleic_acid.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/nucleic_acid.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/prefs.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/prefs.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/ui/cam.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/ui/cam.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/ui/misc.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/ui/misc.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/ui/misc_2.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/ui/misc_2.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/ui/misc_2.rs" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/src/ui/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/ui/mod.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/util.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/util.rs" afterDir="false" />
     </list>
@@ -60,31 +56,31 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "Cargo.Fmt.executor": "Run",
-    "Cargo.Run daedalus.executor": "Run",
-    "ModuleVcsDetector.initialDetectionPerformed": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "RunOnceActivity.rust.reset.selective.auto.import": "true",
-    "git-widget-placeholder": "main",
-    "ignore.virus.scanning.warn.message": "true",
-    "junie.onboarding.icon.badge.shown": "true",
-    "node.js.detected.package.eslint": "true",
-    "node.js.detected.package.tslint": "true",
-    "node.js.selected.package.eslint": "(autodetect)",
-    "node.js.selected.package.tslint": "(autodetect)",
-    "nodejs_package_manager_path": "npm",
-    "org.rust.cargo.project.model.PROJECT_DISCOVERY": "true",
-    "org.rust.cargo.project.model.impl.CargoExternalSystemProjectAware.subscribe.first.balloon": "",
-    "org.rust.first.attach.projects": "true",
-    "settings.editor.selected.configurable": "reference.settings.grazie.pro.style.in.ai.assistant",
-    "to.speed.mode.migration.done": "true",
-    "vue.rearranger.settings.migration": "true"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;Cargo.Fmt.executor&quot;: &quot;Run&quot;,
+    &quot;Cargo.Run daedalus.executor&quot;: &quot;Run&quot;,
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.rust.reset.selective.auto.import&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;ignore.virus.scanning.warn.message&quot;: &quot;true&quot;,
+    &quot;junie.onboarding.icon.badge.shown&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;org.rust.cargo.project.model.PROJECT_DISCOVERY&quot;: &quot;true&quot;,
+    &quot;org.rust.cargo.project.model.impl.CargoExternalSystemProjectAware.subscribe.first.balloon&quot;: &quot;&quot;,
+    &quot;org.rust.first.attach.projects&quot;: &quot;true&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;reference.settings.grazie.pro.style.in.ai.assistant&quot;,
+    &quot;to.speed.mode.migration.done&quot;: &quot;true&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
-}]]></component>
+}</component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
       <recent name="C:\Users\the_a\code\Bio\daedalus\src\ui" />
@@ -134,6 +130,7 @@
   <component name="RustProjectSettings">
     <option name="toolchainHomeDirectory" value="$USER_HOME$/.cargo/bin" />
   </component>
+  <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
   <component name="TaskManager">
     <task active="true" id="Default" summary="Default task">
       <changelist id="3d5494f9-2e22-410d-92c8-934bf57df8b1" name="Changes" comment="" />
@@ -143,6 +140,8 @@
       <updated>1756228026675</updated>
       <workItem from="1756228027817" duration="23761000" />
       <workItem from="1756606790815" duration="7804000" />
+      <workItem from="1756652545177" duration="1365000" />
+      <workItem from="1756659503547" duration="3873000" />
     </task>
     <servers />
   </component>

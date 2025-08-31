@@ -13,7 +13,7 @@ use egui::{
 };
 use graphics::{ControlScheme, EngineUpdates, Scene};
 use lin_alg::f32::Vec3;
-use na_seq::{AaIdent, Nucleotide};
+use na_seq::AaIdent;
 
 static INIT_COMPLETE: AtomicBool = AtomicBool::new(false);
 
@@ -32,7 +32,8 @@ use crate::{
     },
     file_io::gemmi_path,
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
-    molecule::{Ligand, MoleculeGenericRef},
+    mol_lig::Ligand,
+    molecule::MoleculeGenericRef,
     nucleic_acid::{MoleculeNucleicAcid, NucleicAcidType, Strands},
     render::{set_docking_light, set_flashlight, set_static_light},
     ui::{
@@ -40,9 +41,9 @@ use crate::{
         misc::{lig_section, md_setup, section_box},
     },
     util::{
-        cam_look_at_outside, check_prefs_save, close_lig, close_mol, cycle_selected, handle_err,
-        handle_scene_flags, handle_success, load_atom_coords_rcsb, move_lig_to_res, orbit_center,
-        reset_camera, select_from_search,
+        cam_look_at_outside, check_prefs_save, close_lig, close_peptide, cycle_selected,
+        handle_err, handle_scene_flags, handle_success, load_atom_coords_rcsb, move_lig_to_res,
+        orbit_center, reset_camera, select_from_search,
     },
 };
 
@@ -1043,7 +1044,7 @@ fn view_settings(
                 }
                 draw_nucleic_acid(state, scene);
                 engine_updates.entities = true;
-
+            }
 
             if ui.button("Load RNA").clicked() {
                 if let Some(mol) = &state.molecule {
@@ -1268,7 +1269,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 mol_descrip(&MoleculeGenericRef::Peptide(&mol), ui);
 
                 if ui.button("Close").clicked() {
-                    close_mol(state, scene, &mut engine_updates);
+                    close_peptide(state, scene, &mut engine_updates);
                 }
                 ui.add_space(COL_SPACING);
             }
