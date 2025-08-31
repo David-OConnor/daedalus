@@ -10,17 +10,15 @@ use std::{
     str::FromStr,
 };
 
-use bio_files::{AtomGeneric, BondGeneric, ChargeType, Mol2, MolType, ResidueType};
+use bio_files::{AtomGeneric, ChargeType, Mol2, MolType, ResidueType};
 use lin_alg::f64::Vec3;
-use na_seq::{AaIdent, AtomTypeInRes, Element};
+use na_seq::{AtomTypeInRes, Element};
 use regex::Regex;
 
 use crate::{
-    docking::{
-        ConformationType,
-        prep::{DockType, UnitCellDims},
-    },
-    molecule::{Atom, AtomRole, Chain, Ligand, MoleculeSmall, Residue, ResidueEnd},
+    docking::{ConformationType, prep::DockType},
+    mol_lig::Ligand,
+    molecule::{AtomRole, Chain, Residue, ResidueEnd},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]

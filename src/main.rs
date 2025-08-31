@@ -18,7 +18,7 @@
 mod aa_coords;
 mod add_hydrogens;
 mod bond_inference;
-mod docking;
+// mod docking;
 mod docking_v2;
 mod download_mols;
 mod drawing;
@@ -37,6 +37,7 @@ mod cli;
 mod dynamics;
 mod reflection;
 
+mod mol_lig;
 mod nucleic_acid;
 #[cfg(test)]
 mod tests;
@@ -45,7 +46,6 @@ mod tests;
 use std::sync::Arc;
 use std::{collections::HashMap, env, fmt, fmt::Display, path::PathBuf, sync::mpsc::Receiver};
 
-use barnes_hut::BhConfig;
 use bincode::{Decode, Encode};
 use bio_apis::{
     ReqError,
@@ -65,23 +65,20 @@ use lin_alg::{
     f32::{Quaternion, Vec3},
     f64::Vec3 as Vec3F64,
 };
+use mol_lig::{Ligand, MoleculeSmall};
 use molecule::MoleculePeptide;
-use na_seq::{
-    AminoAcidGeneral,
-    element::{LjTable, init_lj_lut},
-};
+use na_seq::AminoAcidGeneral;
 
 use crate::{
     aa_coords::bond_vecs::init_local_bond_vecs,
-    docking::{BindingEnergy, THETA_BH, prep::DockingSetup},
+    // docking::{BindingEnergy, THETA_BH, prep::DockingSetup},
     dynamics::MdState,
-    molecule::{Ligand, PeptideAtomPosits},
+    molecule::PeptideAtomPosits,
     nucleic_acid::MoleculeNucleicAcid,
     prefs::ToSave,
     render::render,
     util::handle_err,
 };
-use crate::molecule::MoleculeSmall;
 // ------Including files into the executable
 
 // Include general Amber forcefield params with our program. See the Reference Manual, section ]
@@ -211,10 +208,8 @@ struct StateVolatile {
     /// We Use this to keep track of key press state for the camera movement, so we can continuously
     /// update the flashlight when moving.
     inputs_commanded: InputsCommanded,
-    /// (Sigma, Epsilon). Initialize once at startup. Not-quite-static.
-    lj_lookup_table: LjTable,
-    // snapshots: Vec<Snapshot>,
-    docking_setup: Option<DockingSetup>,
+    // todo: Replace with the V2 version A/R
+    // docking_setup: Option<DockingSetup>,
     /// e.g. waiting for the data avail thread to return
     mol_pending_data_avail: Option<
         Receiver<(
@@ -232,6 +227,8 @@ struct StateVolatile {
     flags: SceneFlags,
     /// Cached so we don't compute each UI paint. Picoseconds.
     md_runtime: f64,
+    active_peptide: Option<usize>, // Unused for now.
+    active_lig: Option<usize>,
 }
 
 impl Default for StateVolatile {
@@ -240,9 +237,7 @@ impl Default for StateVolatile {
             dialogs: Default::default(),
             ui_height: Default::default(),
             inputs_commanded: Default::default(),
-            lj_lookup_table: init_lj_lut(),
-            // snapshots: Default::default(),
-            docking_setup: Default::default(),
+            // docking_setup: Default::default(),
             mol_pending_data_avail: Default::default(),
             prefs_dir: env::current_dir().unwrap(),
             cli_input_history: Default::default(),
@@ -250,6 +245,8 @@ impl Default for StateVolatile {
             aa_seq_text: Default::default(),
             flags: Default::default(),
             md_runtime: Default::default(),
+            active_peptide: Default::default(),
+            active_lig: Default::default(),
         }
     }
 }
@@ -350,7 +347,8 @@ struct StateUi {
     docking_site_size: String,
     /// For the arc/orbit cam only.
     orbit_around_selection: bool,
-    binding_energy_disp: Option<BindingEnergy>,
+    // todo: Re-implement A/R
+    // binding_energy_disp: Option<BindingEnergy>,
     current_snapshot: usize,
     /// A flag so we know to update the flashlight upon loading a new model; this should be done within
     /// a callback.
@@ -448,7 +446,7 @@ struct State {
     pub to_save: ToSave,
     pub babel_avail: bool,
     pub docking_ready: bool,
-    pub bh_config: BhConfig,
+    // pub bh_config: BhConfig,
     pub dev: ComputationDevice,
     pub mol_dynamics: Option<MdState>,
     // todo: Combine these params in a single struct.
@@ -464,27 +462,57 @@ impl State {
         self.ui.chain_to_pick_res = None;
     }
 
-    /// Gets the docking setup, creating it if it doesn't exist. Returns `None` if molecule
-    /// or ligand are absent.
-    pub fn get_make_docking_setup(&mut self) -> Option<&DockingSetup> {
-        let (Some(mol), Some(lig)) = (&self.molecule, &mut self.ligand) else {
-            return None;
-        };
-
-        Some(self.volatile.docking_setup.get_or_insert_with(|| {
-            DockingSetup::new(mol, lig, &self.volatile.lj_lookup_table, &self.bh_config)
-        }))
-    }
+    // todo: Re-implement with v2 A/R
+    // /// Gets the docking setup, creating it if it doesn't exist. Returns `None` if molecule
+    // /// or ligand are absent.
+    // pub fn get_make_docking_setup(&mut self) -> Option<&DockingSetup> {
+    //     None
+    //     let (Some(mol), Some(lig)) = (&self.molecule, &mut self.ligand) else {
+    //         return None;
+    //     };
+    //
+    //     Some(self.volatile.docking_setup.get_or_insert_with(|| {
+    //         DockingSetup::new(mol, lig, &self.volatile.lj_lookup_table, &self.bh_config)
+    //     }))
+    // }
 
     pub fn update_docking_site(&mut self, posit: Vec3F64) {
-        if let Some(lig) = &mut self.ligand {
-            if let Some(data) = &mut lig.lig_data {
-                data.docking_site.site_center = posit;
+        // if let Some(lig) = &mut self.ligand {
+        //     if let Some(data) = &mut lig.lig_data {
+        //         data.docking_site.site_center = posit;
+        //
+        //         self.ui.docking_site_x = posit.x.to_string();
+        //         self.ui.docking_site_y = posit.y.to_string();
+        //         self.ui.docking_site_z = posit.z.to_string();
+        //     }
+        // }
+    }
 
-                self.ui.docking_site_x = posit.x.to_string();
-                self.ui.docking_site_y = posit.y.to_string();
-                self.ui.docking_site_z = posit.z.to_string();
+    /// Helper
+    pub fn get_active_lig(&self) -> Option<&MoleculeSmall> {
+        match self.volatile.active_lig {
+            Some(i) => {
+                if i < self.ligands.len() {
+                    Some(&self.ligands[i])
+                } else {
+                    None
+                }
             }
+            None => None,
+        }
+    }
+
+    /// Helper
+    pub fn get_active_lig_mut(&mut self) -> Option<&mut MoleculeSmall> {
+        match self.volatile.active_lig {
+            Some(i) => {
+                if i < self.ligands.len() {
+                    Some(&mut self.ligands[i])
+                } else {
+                    None
+                }
+            }
+            None => None,
         }
     }
 }
@@ -549,10 +577,6 @@ fn main() {
     // todo: Consider a custom default impl. This is a substitute.
     let mut state = State {
         dev,
-        bh_config: BhConfig {
-            θ: THETA_BH,
-            ..Default::default()
-        },
         ui: StateUi {
             nearby_dist_thresh: 15,
             density_iso_level: 1.8,
@@ -581,12 +605,12 @@ fn main() {
     state.load_prefs();
 
     // Update ligand positions, e.g. from the docking position site center loaded from prefs.
-    if let Some(lig) = &mut state.ligand {
-        if let Some(data) = &mut lig.lig_data {
-            data.pose.anchor_posit = data.docking_site.site_center;
-            lig.position_atoms(None);
-        }
-    }
+    // if let Some(lig) = &mut state.ligand {
+    //     if let Some(data) = &mut lig.lig_data {
+    //         data.pose.anchor_posit = data.docking_site.site_center;
+    //         lig.position_atoms(None);
+    //     }
+    // }
 
     if let Some(mol) = &state.molecule {
         let posit = state.to_save.per_mol[&mol.common.ident]

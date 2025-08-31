@@ -22,7 +22,8 @@ use crate::{
         EntityType, MoleculeView, draw_density_point_cloud, draw_density_surface, draw_peptide,
     },
     dynamics::prep::populate_ff_and_q,
-    molecule::{Atom, AtomRole, Bond, Chain, Ligand, MoleculeCommon, MoleculePeptide, Residue},
+    mol_lig::Ligand,
+    molecule::{Atom, AtomRole, Bond, Chain, MoleculeCommon, MoleculePeptide, Residue},
     render::{
         CAM_INIT_OFFSET, Color, MESH_DENSITY_SURFACE, MESH_SECONDARY_STRUCTURE,
         MESH_SOLVENT_SURFACE, set_flashlight, set_static_light,
@@ -350,7 +351,9 @@ pub fn cycle_selected(state: &mut State, scene: &mut Scene, reverse: bool) {
                 }
             }
             Selection::AtomLigand(atom_i) => {
-                let Some(lig) = &state.ligand else { return };
+                let Some(lig) = state.get_active_lig() else {
+                    return;
+                };
 
                 // todo: DRY with the above for peptide atoms.
                 let mut new_atom_i = atom_i as isize;
@@ -516,7 +519,7 @@ pub fn orbit_center(state: &State) -> Vec3F32 {
                 }
             }
             Selection::AtomLigand(i) => {
-                if let Some(lig) = &state.ligand {
+                if let Some(lig) = state.get_active_lig() {
                     lig.common.atom_posits[*i].into()
                 } else {
                     Vec3F32::new_zero()
@@ -614,14 +617,14 @@ pub fn load_atom_coords_rcsb(
                 } else {
                     // Run this to update the ff name and charge data on the set of receptor
                     // atoms near the docking site.
-                    if let Some(lig) = &mut state.ligand {
-                        state.volatile.docking_setup = Some(DockingSetup::new(
-                            &mol,
-                            lig,
-                            &state.volatile.lj_lookup_table,
-                            &state.bh_config,
-                        ));
-                    }
+                    // if let Some(lig) = &mut state.ligand {
+                    //     state.volatile.docking_setup = Some(DockingSetup::new(
+                    //         &mol,
+                    //         lig,
+                    //         &state.volatile.lj_lookup_table,
+                    //         &state.bh_config,
+                    //     ));
+                    // }
                 }
             }
 
@@ -650,9 +653,12 @@ pub fn load_atom_coords_rcsb(
             state.cif_pdb_raw = Some(cif_text);
         }
         Err(e) => {
-            handle_err(&mut state.ui, format!("Problem loading molecule from CIF: {e:?}"));
+            handle_err(
+                &mut state.ui,
+                format!("Problem loading molecule from CIF: {e:?}"),
+            );
             return;
-        },
+        }
     }
 
     state.update_from_prefs();
@@ -749,7 +755,7 @@ pub fn handle_success(ui: &mut StateUi, msg: String) {
     ui.cmd_line_out_is_err = false;
 }
 
-pub fn close_mol(state: &mut State, scene: &mut Scene, engine_updates: &mut EngineUpdates) {
+pub fn close_peptide(state: &mut State, scene: &mut Scene, engine_updates: &mut EngineUpdates) {
     state.molecule = None;
     state.mol_dynamics = None;
 
@@ -761,7 +767,7 @@ pub fn close_mol(state: &mut State, scene: &mut Scene, engine_updates: &mut Engi
             && ent.class != EntityType::SaSurface as u32
     });
 
-    state.to_save.opened_items = None;
+    state.to_save.last_peptide_opened = None;
     state.to_save.last_map_opened = None;
     state.volatile.aa_seq_text = String::new();
 
@@ -770,8 +776,21 @@ pub fn close_mol(state: &mut State, scene: &mut Scene, engine_updates: &mut Engi
     engine_updates.entities = true;
 }
 
-pub fn close_lig(state: &mut State, scene: &mut Scene, engine_updates: &mut EngineUpdates) {
-    state.ligand = None;
+pub fn close_lig(
+    i: usize,
+    state: &mut State,
+    scene: &mut Scene,
+    engine_updates: &mut EngineUpdates,
+) {
+    if i >= state.ligands.len() {
+        eprintln!("Error: Invalid lig index");
+        return;
+    }
+
+    state.ligands.remove(i);
+    state.volatile.active_lig = None;
+
+    // todo: Hmm. We only want to remove the current one from the drawing. Fix this.
     scene
         .entities
         .retain(|ent| ent.class != EntityType::Ligand as u32);

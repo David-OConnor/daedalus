@@ -3,8 +3,7 @@
 use bio_apis::{ReqError, drugbank, pubchem, rcsb};
 use bio_files::{MmCif, Mol2};
 
-use crate::molecule::{MoleculeSmall, MoleculePeptide};
-
+use crate::mol_lig::MoleculeSmall;
 /// Download mmCIF file from the RSCB, parse into a struct.
 pub fn load_cif_rcsb(ident: &str) -> Result<(MmCif, String), ReqError> {
     let cif_text = rcsb::load_cif(ident)?;

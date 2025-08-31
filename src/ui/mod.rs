@@ -13,7 +13,7 @@ use egui::{
 };
 use graphics::{ControlScheme, EngineUpdates, Scene};
 use lin_alg::f32::Vec3;
-use na_seq::{AaIdent, Nucleotide};
+use na_seq::AaIdent;
 
 static INIT_COMPLETE: AtomicBool = AtomicBool::new(false);
 
@@ -32,7 +32,8 @@ use crate::{
     },
     file_io::gemmi_path,
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
-    molecule::{Ligand, MoleculeGenericRef},
+    mol_lig::Ligand,
+    molecule::MoleculeGenericRef,
     nucleic_acid::{MoleculeNucleicAcid, NucleicAcidType, Strands},
     render::{set_docking_light, set_flashlight, set_static_light},
     ui::{
@@ -40,9 +41,9 @@ use crate::{
         misc::{lig_section, md_setup, section_box},
     },
     util::{
-        cam_look_at_outside, check_prefs_save, close_lig, close_mol, cycle_selected, handle_err,
-        handle_scene_flags, handle_success, load_atom_coords_rcsb, move_lig_to_res, orbit_center,
-        reset_camera, select_from_search,
+        cam_look_at_outside, check_prefs_save, close_lig, close_peptide, cycle_selected,
+        handle_err, handle_scene_flags, handle_success, load_atom_coords_rcsb, move_lig_to_res,
+        orbit_center, reset_camera, select_from_search,
     },
 };
 
@@ -416,10 +417,10 @@ fn docking(
         };
 
         if ui.button("Find sites").clicked() {
-            let sites = find_docking_sites(mol);
-            for site in sites {
-                println!("Docking site: {:?}", site);
-            }
+            // let sites = find_docking_sites(mol);
+            // for site in sites {
+            //     println!("Docking site: {:?}", site);
+            // }
         }
 
         if ui.button("Dock").clicked() {
@@ -1043,7 +1044,7 @@ fn view_settings(
                 }
                 draw_nucleic_acid(state, scene);
                 engine_updates.entities = true;
-
+            }
 
             if ui.button("Load RNA").clicked() {
                 if let Some(mol) = &state.molecule {
@@ -1268,7 +1269,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 mol_descrip(&MoleculeGenericRef::Peptide(&mol), ui);
 
                 if ui.button("Close").clicked() {
-                    close_mol(state, scene, &mut engine_updates);
+                    close_peptide(state, scene, &mut engine_updates);
                 }
                 ui.add_space(COL_SPACING);
             }
@@ -1553,7 +1554,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 }
             }
 
-            if state.molecule.is_none() && state.ligand.is_none() {
+            if state.molecule.is_none() && state.get_active_lig().is_none() {
                 ui.add_space(COL_SPACING / 2.);
                 if ui
                     .button(RichText::new("I'm feeling lucky 🍀").color(color_open_tools))
@@ -1646,10 +1647,10 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 .gap(4.0)
                 .show(|ui| {
                     // These vars avoid dbl borrow.
-                    let load_ff = !state.ligand.as_ref().unwrap().ff_params_loaded;
-                    let load_frcmod = !state.ligand.as_ref().unwrap().frcmod_loaded;
+                    let load_ff = !state.get_active_lig().as_ref().unwrap().ff_params_loaded;
+                    let load_frcmod = !state.get_active_lig().as_ref().unwrap().frcmod_loaded;
 
-                    let Some(lig) = state.ligand.as_mut() else {
+                    let Some(lig) = state.get_active_lig_mut() else {
                         return;
                     };
                     let mut msg = String::from("Not ready for dynamics: ");
@@ -1716,12 +1717,12 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         if state.ui.popup.show_associated_structures {
             let mut associated_structs = Vec::new();
-            if let Some(lig) = &state.ligand {
+            if let Some(lig) = state.get_active_lig() {
                 // todo: I don't like this clone, but not sure how else to do it.
                 associated_structs = lig.associated_structures.clone();
             }
 
-            if state.ligand.is_some() {
+            if state.get_active_lig().is_some() {
                 let popup_id = ui.make_persistent_id("associated_structs_popup");
                 Popup::new(
                     popup_id,

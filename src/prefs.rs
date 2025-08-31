@@ -1,11 +1,13 @@
 //! Code related to saving user *preferences*. e.g. opened molecules, view configuration etc.
 
-use std::{collections::HashMap, path::PathBuf};
-
-use chrono::{DateTime, Utc};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
 use bincode::{Decode, Encode};
 use bio_apis::rcsb::{FilesAvailable, PdbDataResults};
+use chrono::{DateTime, Utc};
 use graphics::{
     ControlScheme,
     app_utils::{load, save},
@@ -22,18 +24,29 @@ use crate::{
 pub const DEFAULT_PREFS_FILE: &str = "daedalus_prefs.dae";
 
 #[derive(Clone, Copy, PartialEq, Debug, Encode, Decode)]
-enum OpenType {
+pub enum OpenType {
     Peptide,
     Ligand,
+    NucleicAcid,
     Map,
     Frcmod,
 }
 
 #[derive(Debug, Encode, Decode)]
-struct OpenHistory {
+pub struct OpenHistory {
     timestamp: DateTime<Utc>,
     path: PathBuf,
     type_: OpenType,
+}
+
+impl OpenHistory {
+    pub fn new(path: &Path, type_: OpenType) -> Self {
+        Self {
+            timestamp: Utc::now(),
+            path: path.to_owned(),
+            type_,
+        }
+    }
 }
 
 /// We maintain some of the state that is saved in the preferences file here, to keep
@@ -43,8 +56,9 @@ struct OpenHistory {
 pub struct ToSave {
     pub per_mol: HashMap<String, PerMolToSave>,
     pub open_history: Vec<OpenHistory>,
-    pub last_opened: Option<PathBuf>,
+    pub last_peptide_opened: Option<PathBuf>,
     pub last_ligand_opened: Option<PathBuf>,
+    pub last_nucleic_acid_opened: Option<PathBuf>,
     pub last_map_opened: Option<PathBuf>,
     pub last_frcmod_opened: Option<PathBuf>,
     pub control_scheme: ControlScheme,
@@ -70,6 +84,7 @@ impl Default for ToSave {
         Self {
             per_mol: Default::default(),
             open_history: Default::default(),
+            last_peptide_opened: Default::default(),
             last_ligand_opened: Default::default(),
             last_frcmod_opened: Default::default(),
             last_map_opened: Default::default(),
@@ -142,9 +157,9 @@ impl PerMolToSave {
         let mut lig_posit = Vec3::new_zero();
         let mut lig_atom_positions = Vec::new();
 
-        if let Some(lig) = &state.ligand {
-            docking_site = lig.docking_site.clone();
-            lig_posit = lig.pose.anchor_posit;
+        if let Some(lig) = state.get_active_lig() {
+            // docking_site = lig.docking_site.clone();
+            // lig_posit = lig.pose.anchor_posit;
 
             // Don't save this if on init; the data in lig is the default,
             // and we haven't loaded the posits to it yet.
@@ -237,8 +252,8 @@ impl State {
                 self.ui.atom_color_by_charge = data.aatom_color_by_charge;
                 self.ui.show_aa_seq = data.show_aa_seq;
 
-                if let Some(lig) = &mut self.ligand {
-                    lig.docking_site.site_center = data.docking_site_posit; // todo: Or docking site?
+                if let Some(lig) = self.get_active_lig_mut() {
+                    // lig.docking_site.site_center = data.docking_site_posit; // todo: Or docking site?
 
                     // todo: This check is a workaround for overal problems related to how we store molecules
                     // todo and ligands. Without it, we can desync the positions, and cause index-error crashes

@@ -7,7 +7,7 @@ use lin_alg::f32::{Quaternion, Vec3};
 
 use crate::{
     Selection, State, StateUi,
-    molecule::Ligand,
+    mol_lig::MoleculeSmall,
     render::{CAM_INIT_OFFSET, set_flashlight},
     ui::{
         COL_SPACING, COLOR_HIGHLIGHT, get_snap_name,
@@ -16,7 +16,6 @@ use crate::{
     util,
     util::{cam_look_at, cam_look_at_outside, handle_err, orbit_center, reset_camera},
 };
-use crate::molecule::MoleculeSmall;
 
 // This control the clip planes in the camera frustum.
 pub const RENDER_DIST_NEAR: f32 = 0.2;
