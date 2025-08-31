@@ -13,8 +13,8 @@ use lin_alg::f64::Vec3;
 use crate::{
     CamSnapshot, MsaaSetting, Selection, State, ViewSelLevel, Visibility,
     docking::{ConformationType, DockingSite},
+    drawing::MoleculeView,
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
-    mol_drawing::MoleculeView,
 };
 
 pub const DEFAULT_PREFS_FILE: &str = "daedalus_prefs.dae";

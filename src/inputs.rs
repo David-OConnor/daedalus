@@ -1,8 +1,8 @@
 //! Handles user inputs, e.g. from keyboard and mouse.
 
 use graphics::{
-    ControlScheme, DeviceEvent, ElementState, EngineUpdates, Entity, FWD_VEC, RIGHT_VEC, Scene,
-    UP_VEC, WindowEvent,
+    ControlScheme, DeviceEvent, ElementState, EngineUpdates, FWD_VEC, RIGHT_VEC, Scene, UP_VEC,
+    WindowEvent,
     winit::keyboard::{KeyCode, PhysicalKey::Code},
 };
 use lin_alg::{
@@ -12,8 +12,8 @@ use lin_alg::{
 };
 
 use crate::{
-    Selection, State, mol_drawing,
-    mol_drawing::MoleculeView,
+    Selection, State, drawing,
+    drawing::MoleculeView,
     molecule::Atom,
     render::set_flashlight,
     util::{cycle_selected, find_selected_atom, orbit_center, points_along_ray},
@@ -343,7 +343,7 @@ pub fn event_dev_handler(
 
     if redraw_protein {
         // todo:This is overkill for certain keys. Just change the color of the one[s] in question, and set update.entities = true.
-        mol_drawing::draw_molecule(state_, scene);
+        drawing::draw_peptide(state_, scene);
         updates.entities = true;
     }
 
@@ -375,7 +375,7 @@ pub fn event_dev_handler(
             lig.position_atoms(None);
         }
 
-        mol_drawing::draw_ligand(state_, scene);
+        drawing::draw_ligand(state_, scene);
         updates.entities = true;
     }
 

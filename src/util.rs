@@ -18,14 +18,11 @@ use crate::{
     CamSnapshot, PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel,
     docking::{ConformationType, prep::DockingSetup},
     download_mols::load_cif_rcsb,
+    drawing::{
+        EntityType, MoleculeView, draw_density_point_cloud, draw_density_surface, draw_peptide,
+    },
     dynamics::prep::populate_ff_and_q,
-    mol_drawing::{
-        EntityType, MoleculeView, draw_density_point_cloud, draw_density_surface, draw_molecule,
-    },
-    molecule::{
-        Atom, AtomRole, Bond, Chain, Ligand, MoleculeCommon, MoleculeGeneric, MoleculePeptide,
-        Residue,
-    },
+    molecule::{Atom, AtomRole, Bond, Chain, Ligand, MoleculeCommon, MoleculePeptide, Residue},
     render::{
         CAM_INIT_OFFSET, Color, MESH_DENSITY_SURFACE, MESH_SECONDARY_STRUCTURE,
         MESH_SOLVENT_SURFACE, set_flashlight, set_static_light,
@@ -652,7 +649,10 @@ pub fn load_atom_coords_rcsb(
             state.molecule = Some(mol);
             state.cif_pdb_raw = Some(cif_text);
         }
-        Err(e) => eprintln!("Problem loading molecule from CIF: {e:?}"),
+        Err(e) => {
+            handle_err(&mut state.ui, format!("Problem loading molecule from CIF: {e:?}"));
+            return;
+        },
     }
 
     state.update_from_prefs();
@@ -916,7 +916,7 @@ pub fn handle_scene_flags(
                 MoleculeView::Dots | MoleculeView::Surface
             ) {
                 // The dots are drawn from the mesh vertices
-                draw_molecule(state, scene);
+                draw_peptide(state, scene);
                 engine_updates.entities = true;
             }
 

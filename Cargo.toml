@@ -18,7 +18,7 @@ na_seq = "0.3.1"
 bio_apis = {  version = "0.1.6", features = ["encode"] }
 bio_files = "0.2.8"
 mcubes = "0.1.4"
-ewald = { version = "0.1.1", features = ["cuda"] }
+ewald = { version = "0.1.1" }
 
 # For loading and saving config
 bincode = "2.0.1"
@@ -68,7 +68,7 @@ winresource = "0.1.20"
 [features]
 default = ["cuda"]
 
-cuda = ["cuda_setup", "cudarc", "lin_alg/cuda"]
+cuda = ["cuda_setup", "cudarc", "lin_alg/cuda", "ewald/cuda"]
 
 
 [profile.release]

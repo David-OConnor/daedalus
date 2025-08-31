@@ -6,7 +6,7 @@ use std::{
     time::Instant,
 };
 
-use bio_apis::{amber_geostd, drugbank, pubchem, rcsb};
+use bio_apis::{amber_geostd, rcsb};
 use egui::{
     Color32, ComboBox, Context, Key, Popup, PopupAnchor, Pos2, RectAlign, RichText, Slider,
     TextEdit, TopBottomPanel, Ui,
@@ -18,7 +18,6 @@ use na_seq::{AaIdent, Nucleotide};
 static INIT_COMPLETE: AtomicBool = AtomicBool::new(false);
 
 use bio_files::{DensityMap, ResidueType, density_from_2fo_fc_rcsb_gemmi};
-use na_seq::CodingResult::AminoAcid;
 
 use crate::{
     CamSnapshot, MsaaSetting, Selection, State, ViewSelLevel, cli,
@@ -27,14 +26,14 @@ use crate::{
         ConformationType, calc_binding_energy, find_optimal_pose, find_sites::find_docking_sites,
     },
     download_mols::{load_sdf_drugbank, load_sdf_pubchem},
+    drawing::{
+        EntityType, MoleculeView, draw_density_point_cloud, draw_density_surface, draw_ligand,
+        draw_nucleic_acid, draw_peptide, draw_water,
+    },
     file_io::gemmi_path,
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
-    mol_drawing::{
-        EntityType, MoleculeView, draw_density_point_cloud, draw_density_surface, draw_ligand,
-        draw_molecule, draw_nucleic_acid, draw_water,
-    },
-    molecule::{Ligand, MoleculeGeneric, MoleculeGenericRef, MoleculePeptide},
-    nucleic_acid::MoleculeNucleicAcid,
+    molecule::{Ligand, MoleculeGenericRef},
+    nucleic_acid::{MoleculeNucleicAcid, NucleicAcidType, Strands},
     render::{set_docking_light, set_flashlight, set_static_light},
     ui::{
         cam::{cam_controls, cam_snapshots, move_cam_to_lig},
@@ -46,10 +45,10 @@ use crate::{
         reset_camera, select_from_search,
     },
 };
-use crate::nucleic_acid::NucleicAcidType;
 
 pub mod cam;
 pub mod misc;
+mod misc_2;
 
 pub const ROW_SPACING: f32 = 10.;
 pub const COL_SPACING: f32 = 30.;
@@ -653,10 +652,10 @@ fn docking(
         }
     });
 
-    if let Some(posit) = docking_posit_update {
-        // state.update_docking_site(posit);
-        state.update_save_prefs(false);
-    }
+    // if let Some(posit) = docking_posit_update {
+    //     // state.update_docking_site(posit);
+    //     state.update_save_prefs(false);
+    // }
 }
 
 fn residue_search(state: &mut State, scene: &mut Scene, redraw: &mut bool, ui: &mut Ui) {
@@ -726,13 +725,7 @@ fn add_aa_seq(seq_text: &str, ui: &mut Ui) {
     });
 }
 
-fn selection_section(
-    state: &mut State,
-    scene: &mut Scene,
-    redraw: &mut bool,
-    engine_updates: &mut EngineUpdates,
-    ui: &mut Ui,
-) {
+fn selection_section(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
     // todo: DRY with view.
     ui.horizontal_wrapped(|ui| {
         section_box().show(ui, |ui| {
@@ -1037,17 +1030,24 @@ fn view_settings(
 
             // todo temp
             if ui.button("Load DNA").clicked() {
-                // state.nucleid_acids = vec![MoleculeNucleicAcid::from_seq(&[
-                //     Nucleotide::A,
-                //     Nucleotide::C,
-                //     Nucleotide::G,
-                //     Nucleotide::T,
-                //     Nucleotide::G,
-                //     Nucleotide::C,
-                // ])];
-                //
                 if let Some(mol) = &state.molecule {
-                    state.nucleid_acids = vec![MoleculeNucleicAcid::from_peptide(&mol, NucleicAcidType::Dna)];
+                    state.nucleid_acids = vec![MoleculeNucleicAcid::from_peptide(
+                        &mol,
+                        NucleicAcidType::Dna,
+                        Strands::Single,
+                    )];
+                }
+                draw_nucleic_acid(state, scene);
+                engine_updates.entities = true;
+
+
+            if ui.button("Load RNA").clicked() {
+                if let Some(mol) = &state.molecule {
+                    state.nucleid_acids = vec![MoleculeNucleicAcid::from_peptide(
+                        &mol,
+                        NucleicAcidType::Rna,
+                        Strands::Single,
+                    )];
                 }
                 draw_nucleic_acid(state, scene);
                 engine_updates.entities = true;
@@ -1096,7 +1096,6 @@ fn view_settings(
                         }
                     }
 
-                    // todo
                     if redraw_dens_surface {
                         if state.ui.visibility.hide_density_surface {
                             let _ = &mut scene
@@ -1106,7 +1105,6 @@ fn view_settings(
                             draw_density_surface(&mut scene.entities);
                         }
                         engine_updates.entities = true;
-                        redraw_dens_surface = false;
                     }
                 }
             }
@@ -1578,7 +1576,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         lig_section(state, scene, ui, &mut redraw_lig, &mut close_ligand, &mut engine_updates);
 
         ui.add_space(ROW_SPACING);
-        selection_section(state, scene, &mut redraw_mol, &mut engine_updates, ui);
+        selection_section(state, &mut redraw_mol, ui);
 
         ui.add_space(ROW_SPACING);
 
@@ -1840,7 +1838,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         // }
 
         if redraw_mol {
-            draw_molecule(state, scene);
+            draw_peptide(state, scene);
             draw_ligand(state, scene); // todo: Hmm.
 
             if let Some(mol) = &state.molecule {

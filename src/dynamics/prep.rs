@@ -29,9 +29,6 @@ use bio_files::{
         AngleBendingParams, BondStretchingParams, ForceFieldParamsKeyed, MassParams, VdwParams,
     },
 };
-#[cfg(feature = "cuda")]
-use cudarc::driver::HostSlice;
-use ewald::PmeRecip;
 use itertools::Itertools;
 use lin_alg::f64::Vec3;
 use na_seq::{AminoAcid, AminoAcidGeneral, AminoAcidProtenationVariant, AtomTypeInRes, Element};
@@ -729,7 +726,8 @@ impl MdState {
                 continue;
             }
             let mut closest_dist = 99999.;
-            for (i, atom_dy) in atoms.iter().enumerate() {
+
+            for i in 0..atoms.len() {
                 let dist = (atom_posits[i] - atom_st.posit).magnitude();
                 if dist < closest_dist {
                     closest_dist = dist;

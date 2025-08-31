@@ -12,10 +12,34 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="3d5494f9-2e22-410d-92c8-934bf57df8b1" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/daedalus.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/daedalus.iml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/mol_drawing.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/mol_drawing.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/bond_inference.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/bond_inference.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/cli.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/cli.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/drug_like.rs" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/dynamics/bonded.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dynamics/bonded.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/dynamics/bonded_forces.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dynamics/bonded_forces.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/dynamics/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dynamics/mod.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/dynamics/non_bonded.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dynamics/non_bonded.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/dynamics/prep.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dynamics/prep.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/file_io/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/file_io/mod.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/file_io/pdbqt.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/file_io/pdbqt.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/forces.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/forces.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/inputs.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/inputs.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/main.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/mol_drawing.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/drawing.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/molecule.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/molecule.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/nucleic_acid.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/nucleic_acid.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/prefs.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/prefs.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/render.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/save_load.rs" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/ui/cam.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/ui/cam.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/ui/misc.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/ui/misc.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/ui/misc_2.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/ui/misc_2.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/ui/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/ui/mod.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/util.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/util.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -36,9 +60,9 @@
   <component name="MacroExpansionManager">
     <option name="directoryName" value="u2Tw2ZMb" />
   </component>
-  <component name="ProjectColorInfo"><![CDATA[{
-  "associatedIndex": 2
-}]]></component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 2
+}</component>
   <component name="ProjectId" id="31pjhRVbcDbBzpu4DhcVBWBGwWd" />
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
@@ -53,7 +77,7 @@
     "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
     "RunOnceActivity.git.unshallow": "true",
     "RunOnceActivity.rust.reset.selective.auto.import": "true",
-    "git-widget-placeholder": "main",
+    "git-widget-placeholder": "Merging main",
     "ignore.virus.scanning.warn.message": "true",
     "junie.onboarding.icon.badge.shown": "true",
     "node.js.detected.package.eslint": "true",
@@ -62,6 +86,7 @@
     "node.js.selected.package.tslint": "(autodetect)",
     "nodejs_package_manager_path": "npm",
     "org.rust.cargo.project.model.PROJECT_DISCOVERY": "true",
+    "org.rust.cargo.project.model.impl.CargoExternalSystemProjectAware.subscribe.first.balloon": "",
     "org.rust.first.attach.projects": "true",
     "settings.editor.selected.configurable": "reference.settings.grazie.pro.style.in.ai.assistant",
     "to.speed.mode.migration.done": "true",
@@ -110,8 +135,8 @@
       </method>
     </configuration>
     <list>
-      <item itemvalue="Cargo.Run daedalus" />
       <item itemvalue="Cargo.Fmt" />
+      <item itemvalue="Cargo.Run daedalus" />
     </list>
   </component>
   <component name="RustProjectSettings">
@@ -125,6 +150,7 @@
       <option name="presentableId" value="Default" />
       <updated>1756228026675</updated>
       <workItem from="1756228027817" duration="23761000" />
+      <workItem from="1756606790815" duration="75000" />
     </task>
     <servers />
   </component>

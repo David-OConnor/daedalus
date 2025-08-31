@@ -108,11 +108,10 @@ pub fn open_pdbqt(pdb_text: &str) -> io::Result<Mol2> {
 
             let res_name = line[17..21].trim();
             let residue_type = ResidueType::from_str(res_name);
-            let mut role = None;
 
             let type_in_res = AtomTypeInRes::from_str(name)?;
 
-            role = match residue_type {
+            let _role = match residue_type {
                 ResidueType::AminoAcid(_aa) => Some(AtomRole::from_type_in_res(&type_in_res)),
                 ResidueType::Water => Some(AtomRole::Water),
                 _ => None,

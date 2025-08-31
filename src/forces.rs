@@ -20,7 +20,6 @@ use lin_alg::{
     f64::f64x4,
 };
 use na_seq::{Element, element::LjTable};
-use rayon::prelude::*;
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use crate::dynamics::AtomDynamicsx4;

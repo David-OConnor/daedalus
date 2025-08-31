@@ -3,8 +3,6 @@
 //! among four atoms in a hub configuration (Improper dihedrals). Bonds to hydrogen are treated
 //! differently: They have rigid lengths, which is good enough, and allows for a larger timestep.
 
-use na_seq::Element::Hydrogen;
-
 use crate::dynamics::{
     MdState, SHAKE_MAX_IT, SHAKE_TOL, bonded_forces, prep::HydrogenMdType, split2_mut, split3_mut,
     split4_mut,

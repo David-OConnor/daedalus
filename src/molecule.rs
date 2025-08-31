@@ -7,7 +7,6 @@ use std::{
     fmt::{Display, Formatter},
     io,
     io::ErrorKind,
-    str::FromStr,
     sync::mpsc::{self, Receiver},
     thread,
 };
@@ -16,7 +15,7 @@ use bio_apis::{
     ReqError,
     pubchem::ProteinStructure,
     rcsb,
-    rcsb::{FilesAvailable, PdbDataResults, PdbMetaData},
+    rcsb::{FilesAvailable, PdbDataResults},
 };
 use bio_files::{
     AtomGeneric, BackboneSS, BondGeneric, BondType, ChainGeneric, ChargeType, DensityMap,
@@ -52,13 +51,12 @@ pub struct MoleculeCommon {
     pub bonds: Vec<Bond>,
     /// Relating covalent bonds. For each atom, a list of atoms bonded to it.
     pub adjacency_list: Vec<Vec<usize>>,
-    /// For moving atoms around, from dynamics or relative positioning.
+    /// For repositioning atoms, e.g. from dynamics or absolute positioning.
     ///
-    ///     /// Absolute atom positions. For absolute conformation type[s], these positions are set and accessed directly, e.g., by MD
+    /// Absolute atom positions. For absolute conformation type[s], these positions are set and accessed directly, e.g., by MD
     /// simulations. We leave the molecule atom positions as ingested directly from data files. (e.g., relative positions).
     /// For rigid and semi-rigid conformations, these are derivative of the pose, in conjunction with
     /// the molecule atoms' (relative) positions.
-    /// Note: Alternatively, we could make this an option, and use the atom.posit fields directly if None.
     pub atom_posits: Vec<Vec3>,
     pub metadata: HashMap<String, String>,
 }
@@ -160,53 +158,38 @@ impl MoleculeLigand {
     ) -> Self {
         println!("Loading atoms into ligand...");
 
-        let mut result = Self {
+        Self {
             common: MoleculeCommon::new(ident, atoms, Some(bonds)),
             pubchem_cid,
             drugbank_id,
             ..Default::default()
-        };
-
-        // for res in &result.residues {
-        //     if let ResidueType::Other(_) = &res.res_type {
-        //         if res.atoms.len() >= 10 {
-        //             result.het_residues.push(res.clone());
-        //         }
-        //     }
-        // }
-
-        result
+        }
     }
 }
 
-/// A molecule; many fields are specific to polypeptides, but we also use this for ligands.
-/// todo: Consider *not* using this for ligands; most of the fields are N/A.
+/// A polypeptide molecule, e.g. a protein.
 #[derive(Debug, Default, Clone)]
 pub struct MoleculePeptide {
     pub common: MoleculeCommon,
     pub bonds_hydrogen: Vec<HydrogenBond>,
     pub chains: Vec<Chain>,
     pub residues: Vec<Residue>,
-    /// Solvent-accessible surface. Details may evolve.
+    /// We currently use this for aligning ligands to CIF etc data, where they may already be included
+    /// in a protein/ligand complex as hetero atoms.
+    pub het_residues: Vec<Residue>,
+    /// Solvent-accessible surface. Used as one of our visualization methods.
     /// Current structure is a Vec of rings.
     /// Initializes to empty; updated A/R when the appropriate view is selected.
     pub sa_surface_pts: Option<Vec<Vec<Vec3F32>>>,
-    // /// Stored in scene meshes; this variable keeps track if that's populated.
-    // pub mesh_created: bool,
-    // pub eem_charges_assigned: bool,
     pub secondary_structure: Vec<BackboneSS>,
     /// Center and size are used for lighting, and for rotating ligands.
     pub center: Vec3,
     pub size: f32,
-    /// We currently use this for aligning ligands to CIF etc data, where they may already be included
-    /// in a protein/ligand complex as hetero atoms.
-    pub het_residues: Vec<Residue>,
     /// The full (Or partial while WIP) results from the RCSB data api.
     pub rcsb_data: Option<PdbDataResults>,
     pub rcsb_files_avail: Option<FilesAvailable>,
     pub reflections_data: Option<ReflectionsData>,
-    /// E.g. from a MAP file, or 2fo-fc header.
-    /// From reflections
+    /// E.g. from a MAP file, MTX, or 2fo-fc header.
     pub elec_density: Option<Vec<ElectronDensity>>,
     pub density_map: Option<DensityMap>,
     pub density_rect: Option<DensityRect>,
@@ -339,7 +322,6 @@ impl MoleculePeptide {
             let data = rcsb::get_all_data(&ident);
             let files_data = rcsb::get_files_avail(&ident);
 
-            // it’s fine if the send fails (e.g. the app closed)
             let _ = tx.send((data, files_data));
         });
 
@@ -358,9 +340,7 @@ impl MoleculePeptide {
         >,
     ) -> bool {
         if let Some(rx) = pending_data_avail {
-            // `try_recv` returns immediately
             match rx.try_recv() {
-                // both fetches succeeded:
                 Ok((Ok(pdb_data), Ok(files_avail))) => {
                     println!("RCSB data ready for {}", self.common.ident);
                     self.rcsb_data = Some(pdb_data);
