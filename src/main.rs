@@ -88,8 +88,8 @@ use crate::molecule::MoleculeSmall;
 // 3.1.1 for details on which we include. (The recommended ones for Proteins, and ligands).
 
 // Proteins and amino acids:
-const PARM_19: &str = include_str!("../resources/parm19.dat"); // Bonded, and Van der Waals.
-const FRCMOD_FF19SB: &str = include_str!("../resources/frcmod.ff19SB"); // Bonded, and Van der Waals: overrides and new types
+const PARM_19: &str = include_str!("../resources/parm19.dat"); // Bonded, and LJ
+const FRCMOD_FF19SB: &str = include_str!("../resources/frcmod.ff19SB"); // Bonded, and LJ: overrides and new types
 const AMINO_19: &str = include_str!("../resources/amino19.lib"); // Charge; internal residues
 const AMINO_NT12: &str = include_str!("../resources/aminont12.lib"); // Charge; protonated N-terminus residues
 const AMINO_CT12: &str = include_str!("../resources/aminoct12.lib"); // Charge; protonated C-terminus residues

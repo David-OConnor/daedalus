@@ -13,25 +13,7 @@
   <component name="ChangeListManager">
     <list default="true" id="3d5494f9-2e22-410d-92c8-934bf57df8b1" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/cuda/cuda.cu" beforeDir="false" afterPath="$PROJECT_DIR$/src/cuda/cuda.cu" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/cuda/spme.cu" beforeDir="false" afterPath="$PROJECT_DIR$/src/cuda/spme.cu" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/docking/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/docking/mod.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/docking/prep.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/docking/prep.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/download_mols.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/download_mols.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/drawing.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/drawing.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/dynamics/prep.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/dynamics/prep.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/file_io/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/file_io/mod.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/file_io/pdbqt.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/file_io/pdbqt.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/inputs.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/inputs.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/main.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/molecule.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/molecule.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/prefs.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/prefs.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/ui/cam.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/ui/cam.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/ui/misc.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/ui/misc.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/ui/misc_2.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/ui/misc_2.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/ui/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/ui/mod.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/util.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/util.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -142,7 +124,7 @@
       <option name="presentableId" value="Default" />
       <updated>1756228026675</updated>
       <workItem from="1756228027817" duration="23761000" />
-      <workItem from="1756606790815" duration="7804000" />
+      <workItem from="1756606790815" duration="10414000" />
     </task>
     <servers />
   </component>
