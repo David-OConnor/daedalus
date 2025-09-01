@@ -140,6 +140,8 @@ impl Default for DockingSite {
     }
 }
 
+
+
 #[derive(Clone, Debug, Default)]
 pub enum ConformationType {
     #[default]

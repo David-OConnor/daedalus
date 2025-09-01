@@ -740,7 +740,7 @@ pub fn draw_ligand(state: &State, scene: &mut Scene) {
         ent.class != EntityType::Ligand as u32 && ent.class != EntityType::DockingSite as u32
     });
 
-    let Some(lig) = state.ligand.as_ref() else {
+    let Some(lig) = state.active_lig() else {
         set_docking_light(scene, None);
         return;
     };
@@ -749,24 +749,22 @@ pub fn draw_ligand(state: &State, scene: &mut Scene) {
         return;
     }
 
-    let mol = &lig.mol;
-
     // todo: You have problems with transparent objects like the view cube in conjunction
     // todo with the transparent surface; workaround to not draw the cube here.
     if state.ui.show_docking_tools && state.ui.mol_view != MoleculeView::Surface {
         // Add a visual indicator for the docking site.
 
-        scene.entities.push(Entity {
-            class: EntityType::DockingSite as u32,
-            // todo: High-res spheres are blocking bonds inside them. Likely engine problem.
-            mesh: MESH_DOCKING_SITE,
-            position: lig.docking_site.site_center.into(),
-            scale: lig.docking_site.site_radius as f32,
-            color: COLOR_DOCKING_BOX,
-            opacity: DOCKING_SITE_OPACITY,
-            shinyness: ATOM_SHININESS,
-            ..Default::default()
-        });
+        // scene.entities.push(Entity {
+        //     class: EntityType::DockingSite as u32,
+        //     // todo: High-res spheres are blocking bonds inside them. Likely engine problem.
+        //     mesh: MESH_DOCKING_SITE,
+        //     position: lig.docking_site.site_center.into(),
+        //     scale: lig.docking_site.site_radius as f32,
+        //     color: COLOR_DOCKING_BOX,
+        //     opacity: DOCKING_SITE_OPACITY,
+        //     shinyness: ATOM_SHININESS,
+        //     ..Default::default()
+        // });
     }
 
     // For determining inside of rings.
@@ -776,9 +774,9 @@ pub fn draw_ligand(state: &State, scene: &mut Scene) {
     }
 
     // todo: C+P from draw_molecule. With some removed, but a lot of repeated.
-    for (i, bond) in mol.common.bonds.iter().enumerate() {
-        let atom_0 = &mol.common.atoms[bond.atom_0];
-        let atom_1 = &mol.common.atoms[bond.atom_1];
+    for (i, bond) in lig.common.bonds.iter().enumerate() {
+        let atom_0 = &lig.common.atoms[bond.atom_0];
+        let atom_1 = &lig.common.atoms[bond.atom_1];
 
         if state.ui.visibility.hide_hydrogen
             && (atom_0.element == Element::Hydrogen || atom_1.element == Element::Hydrogen)
@@ -826,19 +824,19 @@ pub fn draw_ligand(state: &State, scene: &mut Scene) {
             color_0 = mod_color_for_ligand(&color_0);
             color_1 = mod_color_for_ligand(&color_1);
 
-            if lig.flexible_bonds.contains(&i) {
-                color_0 = LIGAND_COLOR_FLEX;
-                color_1 = LIGAND_COLOR_FLEX;
-            }
+            // if lig.flexible_bonds.contains(&i) {
+            //     color_0 = LIGAND_COLOR_FLEX;
+            //     color_1 = LIGAND_COLOR_FLEX;
+            // }
 
             // Highlight the anchor.
-            if bond.atom_0 == lig.anchor_atom {
-                color_0 = LIGAND_COLOR_ANCHOR;
-            }
-
-            if bond.atom_1 == lig.anchor_atom {
-                color_1 = LIGAND_COLOR_ANCHOR;
-            }
+            // if bond.atom_0 == lig.anchor_atom {
+            //     color_0 = LIGAND_COLOR_ANCHOR;
+            // }
+            //
+            // if bond.atom_1 == lig.anchor_atom {
+            //     color_1 = LIGAND_COLOR_ANCHOR;
+            // }
         }
 
         bond_entities(
@@ -878,7 +876,7 @@ pub fn draw_ligand(state: &State, scene: &mut Scene) {
     //     }
     // }
 
-    set_docking_light(scene, Some(&state.ligand.as_ref().unwrap().docking_site));
+    // set_docking_light(scene, Some(&state.ligand.as_ref().unwrap().docking_site));
 }
 
 /// A visual representation of volumetric electron density,
@@ -1265,9 +1263,9 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
                     }
                 }
             }
-            if let Some(lig) = &state.ligand {
+            if let Some(lig) = state.active_lig() {
                 if ui.show_near_lig_only {
-                    let atom_sel = lig.common.atom_posits[lig.anchor_atom];
+                    let atom_sel = lig.common.atom_posits[0];
                     if (*atom_posit - atom_sel).magnitude() as f32 > ui.nearby_dist_thresh as f32 {
                         continue;
                     }
@@ -1288,7 +1286,7 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
                 }
             }
 
-            let dim_peptide = if state.ligand.is_some() {
+            let dim_peptide = if state.active_lig().is_some() {
                 state.ui.visibility.dim_peptide
             } else {
                 false
@@ -1366,9 +1364,9 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
                 }
             }
         }
-        if let Some(lig) = &state.ligand {
+        if let Some(lig) = state.active_lig() {
             if ui.show_near_lig_only {
-                let atom_sel = lig.common.atom_posits[lig.anchor_atom];
+                let atom_sel = lig.common.atom_posits[0];
                 if (*atom_0_posit - atom_sel).magnitude() as f32 > ui.nearby_dist_thresh as f32 {
                     continue;
                 }
@@ -1419,7 +1417,8 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
             None => (mol.common.atoms[0].posit.into(), false),
         };
 
-        let dim_peptide = if state.ligand.is_some() && !&mol.common.atoms[bond.atom_0].hetero {
+        let dim_peptide = if state.active_lig().is_some() && !&mol.common.atoms[bond.atom_0].hetero
+        {
             state.ui.visibility.dim_peptide
         } else {
             false
@@ -1496,9 +1495,9 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
                     }
                 }
             }
-            if let Some(lig) = &state.ligand {
+            if let Some(lig) = state.active_lig() {
                 if ui.show_near_lig_only {
-                    let atom_sel = lig.common.atom_posits[lig.anchor_atom];
+                    let atom_sel = lig.common.atom_posits[0];
                     if (atom_donor.posit - atom_sel).magnitude() as f32
                         > ui.nearby_dist_thresh as f32
                     {

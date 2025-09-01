@@ -7,8 +7,9 @@ use bio_files::{ChargeType, Mol2, MolType, Sdf, amber_params::ForceFieldParamsKe
 use lin_alg::f64::{Quaternion, Vec3};
 use rayon::prelude::*;
 
+use crate::docking_v2::{ConformationType, DockingSite, Pose};
 use crate::{
-    docking::{ConformationType, DockingSite, Pose, prep::setup_flexibility},
+    // docking::{ConformationType, DockingSite, Pose, prep::setup_flexibility},
     molecule::{Atom, Bond, MoleculeCommon, Residue},
 };
 
@@ -83,7 +84,7 @@ impl Ligand {
         };
 
         // result.set_anchor();
-        result.flexible_bonds = setup_flexibility(&mol.common);
+        // result.flexible_bonds = setup_flexibility(&mol.common);
 
         // result.pose.conformation_type = ConformationType::AssignedTorsions {
         //     torsions: result
@@ -116,7 +117,14 @@ impl TryFrom<Mol2> for MoleculeSmall {
             .collect::<Result<_, _>>()?;
 
         // Note: We don't compute bonds here; we assume they're included in the molecule format.
-        Ok(Self::new(m.ident, atoms, bonds, None, None))
+        Ok(Self::new(
+            m.ident,
+            atoms,
+            bonds,
+            None,
+            None,
+            &HashMap::new(),
+        ))
     }
 }
 
@@ -378,6 +386,13 @@ impl MoleculeSmall {
             ..res.clone()
         };
 
-        Self::new(res.res_type.to_string(), atoms_this, bonds_this, None, None)
+        Self::new(
+            res.res_type.to_string(),
+            atoms_this,
+            bonds_this,
+            None,
+            None,
+            &HashMap::new(),
+        )
     }
 }

@@ -19,7 +19,7 @@ use lin_alg::{
     f32::{Vec3x8, f32x8},
     f64::f64x4,
 };
-use na_seq::{Element, element::LjTable};
+use na_seq::Element;
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use crate::dynamics::AtomDynamicsx4;
@@ -206,44 +206,44 @@ pub fn force_nonbonded_gpu(
 
     (forces_on_dyn, forces_on_water, virial, energy)
 }
-
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-pub fn setup_sigma_eps_x8(
-    // todo: THis param list is onerous.
-    i_src: usize,
-    lj_lut: &LjTable,
-    chunks_src: usize,
-    lanes_tgt: usize,
-    valid_lanes_src_last: usize,
-    el_rec: &[Element],
-    body_source: &AtomDynamicsx4,
-    // ) -> (f32x8, f32x8) {
-) -> (f64x4, f64x4) {
-    let lanes_src = if i_src == chunks_src - 1 {
-        valid_lanes_src_last
-    } else {
-        8
-    };
-
-    let valid_lanes = lanes_src.min(lanes_tgt);
-
-    // Setting sigma and eps to 0 for invalid lanes makes their contribution 0.
-    // let mut sigmas = [0.; 8];
-    // let mut epss = [0.; 8];
-    let mut sigmas = [0.; 4];
-    let mut epss = [0.; 4];
-
-    for lane in 0..valid_lanes {
-        let (sigma, eps) = lj_lut
-            .get(&(body_source.element[lane], el_rec[lane]))
-            .unwrap();
-        sigmas[lane] = *sigma as f64;
-        epss[lane] = *eps as f64;
-    }
-
-    // (f32x8::from_array(sigmas), f32x8::from_array(epss))
-    (f64x4::from_array(sigmas), f64x4::from_array(epss))
-}
+//
+// #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+// pub fn setup_sigma_eps_x8(
+//     // todo: THis param list is onerous.
+//     i_src: usize,
+//     lj_lut: &LjTable,
+//     chunks_src: usize,
+//     lanes_tgt: usize,
+//     valid_lanes_src_last: usize,
+//     el_rec: &[Element],
+//     body_source: &AtomDynamicsx4,
+//     // ) -> (f32x8, f32x8) {
+// ) -> (f64x4, f64x4) {
+//     let lanes_src = if i_src == chunks_src - 1 {
+//         valid_lanes_src_last
+//     } else {
+//         8
+//     };
+//
+//     let valid_lanes = lanes_src.min(lanes_tgt);
+//
+//     // Setting sigma and eps to 0 for invalid lanes makes their contribution 0.
+//     // let mut sigmas = [0.; 8];
+//     // let mut epss = [0.; 8];
+//     let mut sigmas = [0.; 4];
+//     let mut epss = [0.; 4];
+//
+//     for lane in 0..valid_lanes {
+//         let (sigma, eps) = lj_lut
+//             .get(&(body_source.element[lane], el_rec[lane]))
+//             .unwrap();
+//         sigmas[lane] = *sigma as f64;
+//         epss[lane] = *eps as f64;
+//     }
+//
+//     // (f32x8::from_array(sigmas), f32x8::from_array(epss))
+//     (f64x4::from_array(sigmas), f64x4::from_array(epss))
+// }
 
 /// The most fundamental part of Newtonian acceleration calculation.
 /// `acc_dir` is a unit vector.

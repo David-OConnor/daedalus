@@ -17,7 +17,8 @@ use regex::Regex;
 
 use crate::{
     docking::{ConformationType, prep::DockType},
-    mol_lig::Ligand,
+    docking_v2::ConformationType,
+    mol_lig::{Ligand, MoleculeSmall},
     molecule::{AtomRole, Chain, Residue, ResidueEnd},
 };
 
@@ -228,7 +229,7 @@ pub fn open_pdbqt(pdb_text: &str) -> io::Result<Mol2> {
     })
 }
 
-pub fn save_pdbqt(mol: &Mol2, path: &Path, ligand: Option<&Ligand>) -> io::Result<()> {
+pub fn save_pdbqt(mol: &Mol2, path: &Path, ligand: Option<&MoleculeSmall>) -> io::Result<()> {
     let mut file = File::create(path)?;
 
     // Typically you'd end with "END" or "ENDMDL" or so, but not strictly required for many readers.

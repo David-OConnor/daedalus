@@ -95,7 +95,8 @@ fn disp_atom_data(atom: &Atom, residues: &[Residue], posit_override: Option<Vec3
 /// Display text of the selected atom or residue.
 pub fn selected_data(
     mol: &MoleculePeptide,
-    ligand: &Option<MoleculeSmall>,
+    // ligand: &Option<MoleculeSmall>,
+    ligand: Option<&MoleculeSmall>,
     selection: &Selection,
     ui: &mut Ui,
 ) {
@@ -232,8 +233,8 @@ pub fn dynamics_player(
 
                 match md.mode {
                     MdMode::Docking => {
-                        if let Some(lig) = state.get_active_lig() {
-                            change_snapshot_docking(lig, snap, &mut state.ui.binding_energy_disp);
+                        if let Some(lig) = state.active_lig() {
+                            // change_snapshot_docking(lig, snap, &mut state.ui.binding_energy_disp);
                         }
 
                         draw_ligand(state, scene);
@@ -311,7 +312,7 @@ pub fn md_setup(
 
             ui.add_space(COL_SPACING / 2.);
 
-            if state.ligand.is_some() {
+            if state.active_lig().is_some() {
                 let run_clicked = ui
                     .button(RichText::new("Run MD docking").color(Color32::GOLD))
                     .on_hover_text("Run a molecular dynamics simulation on the ligand. The peptide atoms apply\
@@ -322,7 +323,7 @@ pub fn md_setup(
                 let mut ready_to_run = true;
 
                 if run_clicked {
-                    let Some(lig) = state.get_active_lig_mut() else {
+                    let Some(lig) = state.active_lig_mut() else {
                         return;
                     };
 
@@ -335,7 +336,7 @@ pub fn md_setup(
                         let mol = state.molecule.as_mut().unwrap();
 
                         // todo: Set a loading indicator, and trigger the build next GUI frame.
-                        move_cam_to_lig(&mut state.ui, scene, lig, mol.center, engine_updates);
+                        move_cam_to_lig(state, scene, mol.center, engine_updates);
 
                         match build_dynamics_docking(
                             &state.dev,
@@ -445,7 +446,7 @@ pub fn lig_section(
     close_lig: &mut bool,
     engine_updates: &mut EngineUpdates,
 ) {
-    if let Some(lig) = state.get_active_lig_mut() {
+    if let Some(lig) = state.active_lig_mut() {
         ui.horizontal(|ui| {
             mol_descrip(&MoleculeGenericRef::Ligand(&lig), ui);
 
@@ -530,9 +531,9 @@ pub fn lig_section(
 
             ui.add_space(COL_SPACING);
 
-            if let Some(energy) = &state.ui.binding_energy_disp {
-                ui.label(format!("{:.2?}", energy)); // todo placeholder.
-            }
+            // if let Some(energy) = &state.ui.binding_energy_disp {
+            //     ui.label(format!("{:.2?}", energy)); // todo placeholder.
+            // }
 
             if let Some(mol) = &state.molecule {
                 let res_selected = match state.ui.selection {
@@ -567,8 +568,11 @@ pub fn lig_section(
                             &mol.common.atoms,
                             &mol.common.bonds,
                             false,
+                            // &state.ff_params.lig_specific,
                         );
-                        let mut lig_new = Ligand::new(mol_fm_res, &state.ff_params.lig_specific);
+                        // let mut lig_new = Ligand::new(mol_fm_res, &state.ff_params.lig_specific);
+                        let lig_new = mol_fm_res;
+
                         state.mol_dynamics = None;
 
                         let docking_center = move_lig_to_res(&mut lig_new, mol, res);
@@ -603,7 +607,7 @@ pub fn lig_section(
 
     // If no ligand, provide convenience functionality for loading one based on hetero residues
     // in the protein.
-    if state.get_active_lig().is_some() {
+    if state.active_lig().is_some() {
         return;
     }
 
@@ -671,7 +675,7 @@ pub fn lig_section(
         );
         state.load_geostd_mol_data(&data.ident, true, data.frcmod_avail, redraw_lig);
 
-        if let Some(lig) = state.get_active_lig_mut() {
+        if let Some(lig) = state.active_lig_mut() {
             if let Some(mol) = &state.molecule {
                 move_cam_to_lig(&mut state.ui, scene, lig, mol.center, engine_updates);
             }

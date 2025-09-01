@@ -50,7 +50,7 @@ itertools = "0.14.0" # For combinations when matching angles in MD.
 [patch.crates-io]
 #graphics = { path = "../../graphics" }
 #lin_alg = { path = "../../lin_alg" }
-#na_seq = { path = "../na_seq" }
+na_seq = { path = "../na_seq" }
 #bio_apis = { path = "../bio_apis" }
 #mcubes = { path = "../mcubes" }
 bio_files = { path = "../bio_files" }

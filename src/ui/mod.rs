@@ -20,11 +20,16 @@ static INIT_COMPLETE: AtomicBool = AtomicBool::new(false);
 use bio_files::{DensityMap, ResidueType, density_from_2fo_fc_rcsb_gemmi};
 
 use crate::{
-    CamSnapshot, MsaaSetting, Selection, State, ViewSelLevel, cli,
+    CamSnapshot,
+    MsaaSetting,
+    Selection,
+    State,
+    ViewSelLevel,
+    cli,
     cli::autocomplete_cli,
-    docking::{
-        ConformationType, calc_binding_energy, find_optimal_pose, find_sites::find_docking_sites,
-    },
+    // docking::{
+    //     ConformationType, calc_binding_energy, find_optimal_pose, find_sites::find_docking_sites,
+    // },
     download_mols::{load_sdf_drugbank, load_sdf_pubchem},
     drawing::{
         EntityType, MoleculeView, draw_density_point_cloud, draw_density_surface, draw_ligand,
@@ -46,6 +51,7 @@ use crate::{
         orbit_center, reset_camera, select_from_search,
     },
 };
+use crate::{docking_v2::ConformationType, mol_lig::MoleculeSmall};
 
 pub mod cam;
 pub mod misc;
@@ -79,6 +85,19 @@ const MAX_TITLE_LEN: usize = 80;
 fn set_window_title(title: &str, scene: &mut Scene) {
     scene.window_title = title.to_owned();
     // ui.ctx().send_viewport_cmd(ViewportCommand::Title(title.to_string()));
+}
+
+fn open_lig(state: &mut State, mol: MoleculeSmall) {
+    // state.ligand =
+    //     Some(Ligand::new(mol, &state.ff_params.lig_specific));
+
+    state.ligands.push(mol);
+    state.volatile.active_lig = Some(state.ligands.len() - 1);
+
+    state.mol_dynamics = None;
+    state.update_from_prefs();
+
+    state.ui.db_input = String::new();
 }
 
 pub fn load_file(
@@ -402,7 +421,7 @@ fn docking(
     //     return;
     // };
 
-    if state.molecule.is_none() || state.ligand.is_none() {
+    if state.molecule.is_none() || state.active_lig().is_none() {
         return;
     }
 
@@ -410,7 +429,7 @@ fn docking(
 
     ui.horizontal(|ui| {
         let mol = state.molecule.as_ref().unwrap();
-        let lig = state.ligand.as_mut().unwrap();
+        let lig = state.active_lig_mut().unwrap();
 
         let Some(lig_data) = &mut lig.lig_data else {
             return;
@@ -427,13 +446,13 @@ fn docking(
             // todo: Ideally move the camera to the docking site prior to docking. You could do this
             // todo by deferring the docking below to the next frame.
 
-            let (pose, binding_energy) = find_optimal_pose(
-                &state.dev,
-                state.volatile.docking_setup.as_ref().unwrap(),
-                lig,
-            );
+            // let (pose, binding_energy) = find_optimal_pose(
+            //     &state.dev,
+            //     state.volatile.docking_setup.as_ref().unwrap(),
+            //     lig,
+            // );
 
-            lig_data.pose = pose;
+            // lig_data.pose = pose;
 
             lig.position_atoms(None);
 
@@ -476,11 +495,11 @@ fn docking(
                 lig_posits.push(posits_this_pose);
             }
 
-            state.ui.binding_energy_disp = calc_binding_energy(
-                state.volatile.docking_setup.as_ref().unwrap(),
-                lig,
-                &lig_posits[0],
-            );
+            // state.ui.binding_energy_disp = calc_binding_energy(
+            //     state.volatile.docking_setup.as_ref().unwrap(),
+            //     lig,
+            //     &lig_posits[0],
+            // );
         }
 
         ui.add_space(COL_SPACING);
@@ -609,7 +628,7 @@ fn docking(
                 state.mol_dynamics = None;
 
                 if let Some(atom) = atom_sel {
-                    lig.pose.conformation_type = ConformationType::AssignedTorsions {
+                    lig_data.pose.conformation_type = ConformationType::AssignedTorsions {
                         torsions: Vec::new(),
                     };
 
@@ -617,9 +636,8 @@ fn docking(
                     docking_init_changed = true;
 
                     move_cam_to_lig(
-                        &mut state.ui,
+                        state,
                         scene,
-                        lig,
                         mol.center,
                         engine_updates,
                     )
@@ -651,9 +669,9 @@ fn docking(
         }
 
         if docking_init_changed {
-            *redraw_lig = true;
-            set_docking_light(scene, Some(&lig.docking_site));
-            engine_updates.lighting = true;
+            // *redraw_lig = true;
+            // set_docking_light(scene, Some(&lig.docking_site));
+            // engine_updates.lighting = true;
         }
     });
 
@@ -835,7 +853,7 @@ fn selection_section(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
                 }
             }
 
-            if state.ligand.is_some() {
+            if state.active_lig().is_some() {
                 let help = "Hide all atoms not near the ligand";
                 ui.label("Nearby lig only:").on_hover_text(help);
                 if ui.checkbox(&mut state.ui.show_near_lig_only, "")
@@ -867,7 +885,7 @@ fn selection_section(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
         });
 
         if let Some(mol) = &state.molecule {
-            misc::selected_data(mol, &state.ligand, &state.ui.selection, ui);
+            misc::selected_data(mol, &state.active_lig(), &state.ui.selection, ui);
         }
     });
 }
@@ -998,7 +1016,7 @@ fn view_settings(
                 }
             }
 
-            if state.ligand.is_some() {
+            if state.active_lig().is_some() {
                 let color = misc::active_color(!state.ui.visibility.hide_ligand);
                 if ui.button(RichText::new("Lig").color(color)).clicked() {
                     state.ui.visibility.hide_ligand = !state.ui.visibility.hide_ligand;
@@ -1020,7 +1038,7 @@ fn view_settings(
             misc::vis_check(&mut state.ui.visibility.hide_h_bonds, "H bonds", ui, redraw);
             // vis_check(&mut state.ui.visibility.dim_peptide, "Dim peptide", ui, redraw);
 
-            if state.ligand.is_some() {
+            if state.active_lig().is_some() {
                 ui.add_space(COL_SPACING / 2.);
                 // Not using `vis_check` for this because its semantics are inverted.
                 let color = misc::active_color(state.ui.visibility.dim_peptide);
@@ -1288,7 +1306,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
             let mut dm_loaded = None; // avoids a double-borrow error.
             if let Some(mol) = &mut state.molecule {
-                let color = if state.to_save.opened_items.is_none() {
+                let color = if state.to_save.last_peptide_opened.is_none() {
                     COLOR_ATTENTION
                 } else {
                     Color32::GRAY
@@ -1435,7 +1453,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 state.load_density(dm);
             }
 
-            if let Some(lig) = &state.ligand {
+            if let Some(lig) = &state.active_lig() {
                 // Highlight the button if we haven't saved this to file, e.g. if opened from online.
                 let color = if state.to_save.last_ligand_opened.is_none() {
                     COLOR_ATTENTION
@@ -1513,17 +1531,10 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 if state.ui.db_input.to_uppercase().starts_with("DB") {
                     if ui.button("Download from DrugBank").clicked() {
                         match load_sdf_drugbank(&state.ui.db_input) {
-                            // todo: Load as ligand for now.
                             Ok(mol) => {
-                                state.ligand =
-                                    Some(Ligand::new(mol, &state.ff_params.lig_specific));
-                                state.mol_dynamics = None;
-                                state.update_from_prefs();
-
-                                redraw_mol = true;
+                                open_lig(state, mol);
+                                redraw_lig = true;
                                 reset_cam = true;
-
-                                state.ui.db_input = String::new();
                             }
                             Err(_e) => {
                                 let msg = "Error loading SDF file".to_owned();
@@ -1535,16 +1546,10 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
                 if ui.button("Download from PubChem").clicked() {
                     match load_sdf_pubchem(&state.ui.db_input) {
-                        // todo: Load as ligand for now.
                         Ok(mol) => {
-                            state.ligand = Some(Ligand::new(mol, &state.ff_params.lig_specific));
-                            state.mol_dynamics = None;
-                            state.update_from_prefs();
-
-                            redraw_mol = true;
+                            open_lig(state, mol);
+                            redraw_lig = true;
                             reset_cam = true;
-
-                            state.ui.db_input = String::new();
                         }
                         Err(_e) => {
                             let msg = "Error loading SDF file".to_owned();
@@ -1554,7 +1559,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 }
             }
 
-            if state.molecule.is_none() && state.get_active_lig().is_none() {
+            if state.molecule.is_none() && state.active_lig().is_none() {
                 ui.add_space(COL_SPACING / 2.);
                 if ui
                     .button(RichText::new("I'm feeling lucky 🍀").color(color_open_tools))
@@ -1647,10 +1652,10 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 .gap(4.0)
                 .show(|ui| {
                     // These vars avoid dbl borrow.
-                    let load_ff = !state.get_active_lig().as_ref().unwrap().ff_params_loaded;
-                    let load_frcmod = !state.get_active_lig().as_ref().unwrap().frcmod_loaded;
+                    let load_ff = !state.active_lig().as_ref().unwrap().ff_params_loaded;
+                    let load_frcmod = !state.active_lig().as_ref().unwrap().frcmod_loaded;
 
-                    let Some(lig) = state.get_active_lig_mut() else {
+                    let Some(lig) = state.active_lig_mut() else {
                         return;
                     };
                     let mut msg = String::from("Not ready for dynamics: ");
@@ -1717,12 +1722,12 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         if state.ui.popup.show_associated_structures {
             let mut associated_structs = Vec::new();
-            if let Some(lig) = state.get_active_lig() {
+            if let Some(lig) = state.active_lig() {
                 // todo: I don't like this clone, but not sure how else to do it.
                 associated_structs = lig.associated_structures.clone();
             }
 
-            if state.get_active_lig().is_some() {
+            if state.active_lig().is_some() {
                 let popup_id = ui.make_persistent_id("associated_structs_popup");
                 Popup::new(
                     popup_id,
@@ -1785,7 +1790,9 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         // -------UI above; clean-up items (based on flags) below
 
         if close_ligand {
-            close_lig(state, scene, &mut engine_updates);
+            if let Some(i) = state.volatile.active_lig {
+                close_lig(i, state, scene, &mut engine_updates);
+            }
         }
 
         if let Some(path) = &state.volatile.dialogs.load.take_picked() {
@@ -1853,7 +1860,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             engine_updates.entities = true;
 
             // For docking light, but may be overkill here.
-            if state.ligand.is_some() {
+            if state.active_lig().is_some() {
                 engine_updates.lighting = true;
             }
         }
@@ -1864,7 +1871,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             engine_updates.entities = true;
 
             // For docking light, but may be overkill here.
-            if state.ligand.is_some() {
+            if state.active_lig().is_some() {
                 engine_updates.lighting = true;
             }
         }
@@ -1896,20 +1903,22 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         // todo: Move to new_mol_loaded code block?
         if let Some(mol) = &state.molecule {
-            if let Some(lig) = &mut state.ligand {
-                if lig.anchor_atom >= lig.common.atoms.len() {
-                    let msg = "Error positioning ligand atoms; anchor outside len".to_owned();
-                    handle_err(&mut state.ui, msg);
-                } else {
-                    lig.position_atoms(None);
+            if let Some(lig) = state.active_lig_mut() {
+                if let Some(data) = &mut lig.lig_data {
+                    if data.anchor_atom >= lig.common.atoms.len() {
+                        let msg = "Error positioning ligand atoms; anchor outside len".to_owned();
+                        handle_err(&mut state.ui, msg);
+                    } else {
+                        lig.position_atoms(None);
 
-                    let lig_pos: Vec3 = lig.common.atom_posits[lig.anchor_atom].into();
-                    let ctr: Vec3 = mol.center.into();
+                        let lig_pos: Vec3 = lig.common.atom_posits[data.anchor_atom].into();
+                        let ctr: Vec3 = mol.center.into();
 
-                    cam_look_at_outside(&mut scene.camera, lig_pos, ctr);
+                        cam_look_at_outside(&mut scene.camera, lig_pos, ctr);
 
-                    engine_updates.camera = true;
-                    state.ui.cam_snapshot = None;
+                        engine_updates.camera = true;
+                        state.ui.cam_snapshot = None;
+                    }
                 }
             }
             set_static_light(scene, mol.center.into(), mol.size);

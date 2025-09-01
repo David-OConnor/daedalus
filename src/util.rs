@@ -17,12 +17,13 @@ use na_seq::{AaIdent, Element};
 use crate::{
     CamSnapshot, PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel,
     docking::{ConformationType, prep::DockingSetup},
+    docking_v2::ConformationType,
     download_mols::load_cif_rcsb,
     drawing::{
         EntityType, MoleculeView, draw_density_point_cloud, draw_density_surface, draw_peptide,
     },
     dynamics::prep::populate_ff_and_q,
-    mol_lig::Ligand,
+    mol_lig::{Ligand, MoleculeSmall},
     molecule::{Atom, AtomRole, Bond, Chain, MoleculeCommon, MoleculePeptide, Residue},
     render::{
         CAM_INIT_OFFSET, Color, MESH_DENSITY_SURFACE, MESH_SECONDARY_STRUCTURE,
@@ -351,7 +352,7 @@ pub fn cycle_selected(state: &mut State, scene: &mut Scene, reverse: bool) {
                 }
             }
             Selection::AtomLigand(atom_i) => {
-                let Some(lig) = state.get_active_lig() else {
+                let Some(lig) = state.active_lig() else {
                     return;
                 };
 
@@ -519,7 +520,7 @@ pub fn orbit_center(state: &State) -> Vec3F32 {
                 }
             }
             Selection::AtomLigand(i) => {
-                if let Some(lig) = state.get_active_lig() {
+                if let Some(lig) = state.active_lig() {
                     lig.common.atom_posits[*i].into()
                 } else {
                     Vec3F32::new_zero()
@@ -966,7 +967,7 @@ pub fn make_egui_color(color: Color) -> Color32 {
 /// use a flexible conformation, or match partly.
 ///
 /// Return a center suitable for docking.
-pub fn move_lig_to_res(lig: &mut Ligand, mol: &MoleculePeptide, res: &Residue) -> Vec3 {
+pub fn move_lig_to_res(lig: &mut MoleculeSmall, mol: &MoleculePeptide, res: &Residue) -> Vec3 {
     // todo: Pick center-of-mass atom, or better yet, match it to the anchor atom.
     let posit = mol.common.atoms[res.atoms[0]].posit;
 
@@ -1000,17 +1001,17 @@ pub fn move_lig_to_res(lig: &mut Ligand, mol: &MoleculePeptide, res: &Residue) -
         }
     }
 
-    lig.pose.conformation_type = if all_found {
-        println!("Found all atoms required to position ligand to residue.");
-        ConformationType::AbsolutePosits
-    } else {
-        // todo temp abs until we populate het Hydrogens or find a workaround
-        ConformationType::AbsolutePosits
-
-        // ConformationType::Flexible {
-        //     torsions: Vec::new(),
-        // }
-    };
+    // lig.pose.conformation_type = if all_found {
+    //     println!("Found all atoms required to position ligand to residue.");
+    //     ConformationType::AbsolutePosits
+    // } else {
+    //     // todo temp abs until we populate het Hydrogens or find a workaround
+    //     ConformationType::AbsolutePosits
+    //
+    //     // ConformationType::Flexible {
+    //     //     torsions: Vec::new(),
+    //     // }
+    // };
 
     posit
 }

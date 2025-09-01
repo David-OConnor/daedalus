@@ -348,7 +348,7 @@ impl State {
                 );
 
                 // Update the lig's FRCMOD status A/R, if the ligand is opened already.
-                for lig in &mut self.ligangs() {
+                for lig in &mut self.ligands {
                     if &lig.common.ident.to_uppercase() == &mol_name.to_uppercase() {
                         lig.frcmod_loaded = true;
                     }
@@ -394,7 +394,7 @@ impl State {
                     self.update_save_prefs(false)
                 }
             }
-            "sdf" => match self.get_active_lig() {
+            "sdf" => match self.active_lig() {
                 Some(lig) => {
                     lig.to_sdf().save(path)?;
 
@@ -403,7 +403,7 @@ impl State {
                 }
                 None => return Err(io::Error::new(ErrorKind::InvalidData, "No ligand to save")),
             },
-            "mol2" => match self.get_active_lig() {
+            "mol2" => match self.active_lig() {
                 Some(lig) => {
                     lig.to_mol2().save(path)?;
 
@@ -413,7 +413,7 @@ impl State {
                 }
                 None => return Err(io::Error::new(ErrorKind::InvalidData, "No ligand to save")),
             },
-            "pdbqt" => match self.get_active_lig() {
+            "pdbqt" => match self.active_lig() {
                 Some(lig) => {
                     save_pdbqt(&lig.to_mol2(), path, None)?;
 
@@ -586,7 +586,7 @@ impl State {
                             ),
                         );
 
-                        if let Some(lig) = &mut self.ligand {
+                        if let Some(lig) = self.active_lig_mut() {
                             lig.frcmod_loaded = true;
                         }
                     }

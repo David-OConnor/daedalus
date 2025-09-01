@@ -1,13 +1,28 @@
 //! A new approach, leveraging our molecular dynamics state and processes.
 
+use bincode::{Decode, Encode};
 use lin_alg::f64::{Quaternion, Vec3};
 #[derive(Clone, Debug, Default)]
-// todo: Rem if not used.
-#[derive(Clone, Debug)]
 /// Bonds that are marked as flexible, using a semi-rigid conformation.
 pub struct Torsion {
     pub bond: usize, // Index.
     pub dihedral_angle: f32,
+}
+
+#[derive(Debug, Clone, Encode, Decode)]
+/// Area IVO the docking site.
+pub struct DockingSite {
+    pub site_center: Vec3,
+    pub site_radius: f64,
+}
+
+impl Default for DockingSite {
+    fn default() -> Self {
+        Self {
+            site_center: Vec3::new_zero(),
+            site_radius: 8.,
+        }
+    }
 }
 
 // todo: Rem if not used.

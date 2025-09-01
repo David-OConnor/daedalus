@@ -36,6 +36,7 @@ use na_seq::{AminoAcid, AminoAcidGeneral, AminoAcidProtenationVariant, AtomTypeI
 use crate::{
     ComputationDevice, FfParamSet, ProtFFTypeChargeMap,
     docking::{BindingEnergy, ConformationType},
+    docking_v2::ConformationType,
     dynamics::{
         AtomDynamics, ForceFieldParamsIndexed, MdMode, MdState, ParamError, SnapshotDynamics,
         ambient::SimBox, neighbors::build_neighbors, non_bonded, non_bonded::LjTableIndices,
@@ -692,7 +693,8 @@ pub fn build_dynamics_docking(
     for (i, atom) in md_state.atoms.iter().enumerate() {
         lig.common.atom_posits[i] = atom.posit;
     }
-    change_snapshot_docking(lig, &md_state.snapshots[0], &mut None);
+    // change_snapshot_docking(lig, &md_state.snapshots[0], &mut None);
+    change_snapshot_docking(lig, &md_state.snapshots[0]);
 
     Ok(md_state)
 }
@@ -950,7 +952,7 @@ pub fn build_dynamics_peptide(
 pub fn change_snapshot_docking(
     lig: &mut MoleculeSmall,
     snapshot: &SnapshotDynamics,
-    energy_disp: &mut Option<BindingEnergy>,
+    // energy_disp: &mut Option<BindingEnergy>,
 ) {
     let Some(data) = &mut lig.lig_data else {
         return;

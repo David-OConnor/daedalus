@@ -5,7 +5,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use bincode::{Decode, Encode};
+use bincode::{
+    Decode, Encode,
+    error::{DecodeError, EncodeError},
+};
 use bio_apis::rcsb::{FilesAvailable, PdbDataResults};
 use chrono::{DateTime, Utc};
 use graphics::{
@@ -32,11 +35,40 @@ pub enum OpenType {
     Frcmod,
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug)]
 pub struct OpenHistory {
     timestamp: DateTime<Utc>,
     path: PathBuf,
     type_: OpenType,
+}
+
+// Manual bincode impls
+impl Encode for OpenHistory {
+    fn encode<E: bincode::enc::Encoder>(&self, encoder: &mut E) -> Result<(), EncodeError> {
+        // Store timestamp as i64 (seconds since Unix epoch)
+        let ts = self.timestamp.timestamp();
+        ts.encode(encoder)?;
+        self.path.encode(encoder)?;
+        self.type_.encode(encoder)?;
+        Ok(())
+    }
+}
+
+impl<T> Decode<T> for OpenHistory {
+    fn decode<D: bincode::de::Decoder>(decoder: &mut D) -> Result<Self, DecodeError> {
+        let ts = i64::decode(decoder)?;
+        let path = PathBuf::decode(decoder)?;
+        let type_ = OpenType::decode(decoder)?;
+        Ok(OpenHistory {
+            timestamp: DateTime::<Utc>::from_utc(
+                chrono::NaiveDateTime::from_timestamp_opt(ts, 0)
+                    .ok_or_else(|| DecodeError::OtherString("invalid timestamp".to_string()))?,
+                Utc,
+            ),
+            path,
+            type_,
+        })
+    }
 }
 
 impl OpenHistory {
@@ -157,7 +189,7 @@ impl PerMolToSave {
         let mut lig_posit = Vec3::new_zero();
         let mut lig_atom_positions = Vec::new();
 
-        if let Some(lig) = state.get_active_lig() {
+        if let Some(lig) = state.active_lig() {
             // docking_site = lig.docking_site.clone();
             // lig_posit = lig.pose.anchor_posit;
 
@@ -252,7 +284,7 @@ impl State {
                 self.ui.atom_color_by_charge = data.aatom_color_by_charge;
                 self.ui.show_aa_seq = data.show_aa_seq;
 
-                if let Some(lig) = self.get_active_lig_mut() {
+                if let Some(lig) = self.active_lig_mut() {
                     // lig.docking_site.site_center = data.docking_site_posit; // todo: Or docking site?
 
                     // todo: This check is a workaround for overal problems related to how we store molecules

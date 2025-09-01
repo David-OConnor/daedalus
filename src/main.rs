@@ -489,7 +489,7 @@ impl State {
     }
 
     /// Helper
-    pub fn get_active_lig(&self) -> Option<&MoleculeSmall> {
+    pub fn active_lig(&self) -> Option<&MoleculeSmall> {
         match self.volatile.active_lig {
             Some(i) => {
                 if i < self.ligands.len() {
@@ -503,7 +503,7 @@ impl State {
     }
 
     /// Helper
-    pub fn get_active_lig_mut(&mut self) -> Option<&mut MoleculeSmall> {
+    pub fn active_lig_mut(&mut self) -> Option<&mut MoleculeSmall> {
         match self.volatile.active_lig {
             Some(i) => {
                 if i < self.ligands.len() {

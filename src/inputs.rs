@@ -111,7 +111,7 @@ pub fn event_dev_handler(
 
                                 let mut lig_atoms_temp = Vec::new();
                                 // todo: You must use lig.common.atom_posits!
-                                let lig_atoms = if let Some(lig) = &state_.ligand {
+                                let lig_atoms = if let Some(lig) = state_.active_lig() {
                                     // Not sure how else to do this.
                                     for (i, atom) in lig.common.atoms.iter().enumerate() {
                                         // Just the fields we need.
@@ -349,29 +349,34 @@ pub fn event_dev_handler(
 
     // todo: Note that lig movements etc don't currently stack.
     if let Some(dir_) = lig_move_dir {
-        if let Some(lig) = &mut state_.ligand {
+        if let Some(lig) = state_.active_lig_mut() {
             let dir = scene.camera.orientation.rotate_vec(dir_);
             let move_amt: Vec3F64 = (dir * lig_move_amt).into();
-            lig.pose.anchor_posit += move_amt;
+
+            if let Some(data) = &mut lig.lig_data {
+                data.pose.anchor_posit += move_amt;
+            }
 
             redraw_lig = true;
         }
     }
 
     if let Some(dir_) = lig_rot_dir {
-        if let Some(lig) = &mut state_.ligand {
+        if let Some(lig) = state_.active_lig_mut() {
             let dir = scene.camera.orientation.rotate_vec(dir_);
 
-            let rotation: QuaternionF64 =
-                Quaternion::from_axis_angle(dir, lig_rotate_amt * dt).into();
-            lig.pose.orientation = rotation * lig.pose.orientation;
+            if let Some(data) = &mut lig.lig_data {
+                let rotation: QuaternionF64 =
+                    Quaternion::from_axis_angle(dir, lig_rotate_amt * dt).into();
+                data.pose.orientation = rotation * data.pose.orientation;
+            }
 
             redraw_lig = true;
         }
     }
 
     if redraw_lig {
-        if let Some(lig) = &mut state_.ligand {
+        if let Some(lig) = &mut state_.active_lig_mut() {
             lig.position_atoms(None);
         }
 

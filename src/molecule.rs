@@ -23,7 +23,8 @@ use na_seq::{AminoAcid, AtomTypeInRes, Element};
 use rayon::prelude::*;
 
 use crate::{
-    ProtFfMap, Selection,
+    ProtFfMap,
+    Selection,
     aa_coords::Dihedral,
     bond_inference::{create_bonds, create_hydrogen_bonds},
     // docking::prep::DockType,
