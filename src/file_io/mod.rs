@@ -9,28 +9,23 @@ use std::{
 };
 
 use bio_apis::amber_geostd;
-use bio_files::{DensityMap, MmCif, gemmi_sf_to_map};
+use bio_files::{
+    DensityMap, MmCif, Mol2,
+    amber_params::{ForceFieldParams, ForceFieldParamsKeyed, parse_amino_charges},
+    gemmi_sf_to_map,
+    sdf::Sdf,
+};
 use na_seq::{AaIdent, Element};
 
 use crate::{
     AMINO_19, AMINO_CT12, AMINO_NT12, FRCMOD_FF19SB, GAFF2, PARM_19, ProtFFTypeChargeMap, State,
     molecule::MoleculePeptide,
+    prefs::{OpenHistory, OpenType},
 };
-
-pub mod pdbqt;
-
-use bio_files::{
-    Mol2,
-    amber_params::{ForceFieldParams, ForceFieldParamsKeyed, parse_amino_charges},
-    sdf::Sdf,
-};
-
-use crate::prefs::{OpenHistory, OpenType};
 use crate::{
     // docking::prep::DockingSetup,
     dynamics::prep::{merge_params, populate_ff_and_q},
-    file_io::pdbqt::save_pdbqt,
-    mol_lig::{Ligand, MoleculeSmall},
+    mol_lig::MoleculeSmall,
     molecule::MoleculeGeneric,
     reflection::{DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityRect, ElectronDensity},
     util::{handle_err, handle_success},
@@ -408,14 +403,13 @@ impl State {
                     lig.to_mol2().save(path)?;
 
                     self.to_save.last_ligand_opened = Some(path.to_owned());
-
                     self.update_save_prefs(false)
                 }
                 None => return Err(io::Error::new(ErrorKind::InvalidData, "No ligand to save")),
             },
             "pdbqt" => match self.active_lig() {
                 Some(lig) => {
-                    save_pdbqt(&lig.to_mol2(), path, None)?;
+                    lig.to_pdbqt().save(path)?;
 
                     self.to_save.last_ligand_opened = Some(path.to_owned());
                     self.update_save_prefs(false)

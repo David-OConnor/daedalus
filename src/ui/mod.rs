@@ -37,13 +37,12 @@ use crate::{
     },
     file_io::gemmi_path,
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
-    mol_lig::Ligand,
     molecule::MoleculeGenericRef,
     nucleic_acid::{MoleculeNucleicAcid, NucleicAcidType, Strands},
-    render::{set_docking_light, set_flashlight, set_static_light},
+    render::{set_flashlight, set_static_light},
     ui::{
         cam::{cam_controls, cam_snapshots, move_cam_to_lig},
-        misc::{lig_section, md_setup, section_box},
+        misc::{lig_data, md_setup, section_box},
     },
     util::{
         cam_look_at_outside, check_prefs_save, close_lig, close_peptide, cycle_selected,
@@ -477,30 +476,30 @@ fn docking(
             *redraw_lig = true;
         }
 
-        if ui.button("Docking energy").clicked() {
-            let poses = vec![lig_data.pose.clone()];
-            let mut lig_posits = Vec::with_capacity(poses.len());
-            // let mut partial_charges_lig = Vec::with_capacity(poses.len());
-
-            for pose in poses {
-                lig.position_atoms(Some(&pose));
-
-                let posits_this_pose: Vec<_> =
-                    lig.common.atom_posits.iter().map(|p| (*p).into()).collect();
-
-                // partial_charges_lig.push(create_partial_charges(
-                //     &ligand.molecule.atoms,
-                //     Some(&posits_this_pose),
-                // ));
-                lig_posits.push(posits_this_pose);
-            }
-
-            // state.ui.binding_energy_disp = calc_binding_energy(
-            //     state.volatile.docking_setup.as_ref().unwrap(),
-            //     lig,
-            //     &lig_posits[0],
-            // );
-        }
+        // if ui.button("Docking energy").clicked() {
+        //     let poses = vec![lig_data.pose.clone()];
+        //     let mut lig_posits: Vec<Vec3> = Vec::with_capacity(poses.len());
+        //     // let mut partial_charges_lig = Vec::with_capacity(poses.len());
+        //
+        //     for pose in poses {
+        //         lig.position_atoms(Some(&pose));
+        //
+        //         let posits_this_pose: Vec<_> =
+        //             lig.common.atom_posits.iter().map(|p| (*p).into()).collect();
+        //
+        //         // partial_charges_lig.push(create_partial_charges(
+        //         //     &ligand.molecule.atoms,
+        //         //     Some(&posits_this_pose),
+        //         // ));
+        //         lig_posits.push(posits_this_pose);
+        //     }
+        //
+        //     // state.ui.binding_energy_disp = calc_binding_energy(
+        //     //     state.volatile.docking_setup.as_ref().unwrap(),
+        //     //     lig,
+        //     //     &lig_posits[0],
+        //     // );
+        // }
 
         ui.add_space(COL_SPACING);
 
@@ -604,9 +603,8 @@ fn docking(
                         docking_init_changed = true;
 
                         move_cam_to_lig(
-                            &mut state.ui,
+                            state,
                             scene,
-                            lig,
                             mol.center,
                             engine_updates,
                         )
@@ -660,9 +658,8 @@ fn docking(
             }
 
             move_cam_to_lig(
-                &mut state.ui,
+                state,
                 scene,
-                lig,
                 mol.center,
                 engine_updates,
             )
@@ -885,7 +882,7 @@ fn selection_section(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
         });
 
         if let Some(mol) = &state.molecule {
-            misc::selected_data(mol, &state.active_lig(), &state.ui.selection, ui);
+            misc::selected_data(mol, state.active_lig(), &state.ui.selection, ui);
         }
     });
 }
@@ -1583,7 +1580,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         ui.add_space(ROW_SPACING);
 
         let mut close_ligand = false; // to avoid borrow error.
-        lig_section(state, scene, ui, &mut redraw_lig, &mut close_ligand, &mut engine_updates);
+        lig_data(state, scene, ui, &mut redraw_lig, &mut close_ligand, &mut engine_updates);
 
         ui.add_space(ROW_SPACING);
         selection_section(state, &mut redraw_mol, ui);
@@ -1902,7 +1899,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         }
 
         // todo: Move to new_mol_loaded code block?
-        if let Some(mol) = &state.molecule {
+        if state.molecule.is_some() {
+            // if let Some(mol) = &state.molecule {
             if let Some(lig) = state.active_lig_mut() {
                 if let Some(data) = &mut lig.lig_data {
                     if data.anchor_atom >= lig.common.atoms.len() {
@@ -1912,7 +1910,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                         lig.position_atoms(None);
 
                         let lig_pos: Vec3 = lig.common.atom_posits[data.anchor_atom].into();
-                        let ctr: Vec3 = mol.center.into();
+                        let ctr: Vec3 = state.molecule.as_ref().unwrap().center.into();
 
                         cam_look_at_outside(&mut scene.camera, lig_pos, ctr);
 

@@ -654,7 +654,10 @@ pub fn populate_ff_and_q(
 /// non-bonded contributors. (Vdw and coulomb)
 pub fn build_dynamics_docking(
     dev: &ComputationDevice,
-    lig: &mut MoleculeSmall,
+    // lig: &mut MoleculeSmall,
+    // This approach avoids a dbl-borrow
+    ligs: &mut [MoleculeSmall],
+    lig_i: usize,
     mol: &MoleculePeptide,
     // setup: &DockingSetup,
     ff_params: &FfParamSet,
@@ -664,6 +667,8 @@ pub fn build_dynamics_docking(
     dt: f64,
 ) -> Result<MdState, ParamError> {
     println!("Building docking dyanmics...");
+
+    let lig = &mut ligs[lig_i];
 
     if let Some(data) = &mut lig.lig_data {
         data.pose.conformation_type = ConformationType::AbsolutePosits;

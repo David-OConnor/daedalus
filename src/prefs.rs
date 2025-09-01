@@ -17,9 +17,15 @@ use graphics::{
 };
 use lin_alg::f64::Vec3;
 
+use crate::docking_v2::ConformationType;
 use crate::{
-    CamSnapshot, MsaaSetting, Selection, State, ViewSelLevel, Visibility,
-    docking::{ConformationType, DockingSite},
+    CamSnapshot,
+    MsaaSetting,
+    Selection,
+    State,
+    ViewSelLevel,
+    Visibility,
+    // docking::{ConformationType, DockingSite},
     drawing::MoleculeView,
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
 };
@@ -118,8 +124,9 @@ impl Default for ToSave {
             open_history: Default::default(),
             last_peptide_opened: Default::default(),
             last_ligand_opened: Default::default(),
-            last_frcmod_opened: Default::default(),
+            last_nucleic_acid_opened: Default::default(),
             last_map_opened: Default::default(),
+            last_frcmod_opened: Default::default(),
             control_scheme: Default::default(),
             msaa: Default::default(),
             movement_speed: MOVEMENT_SENS as u8,
@@ -295,7 +302,7 @@ impl State {
                         eprintln!("Error loading ligand atom positions; look into this.")
                     }
 
-                    lig.pose.conformation_type = ConformationType::AbsolutePosits;
+                    // lig.pose.conformation_type = ConformationType::AbsolutePosits;
                 }
 
                 // if let Some(title) = mol.common.metadata.get("prim_cit_title") {

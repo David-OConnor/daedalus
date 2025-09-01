@@ -323,9 +323,9 @@ pub fn md_setup(
                 let mut ready_to_run = true;
 
                 if run_clicked {
-                    let Some(lig) = state.active_lig_mut() else {
+                    if state.active_lig().is_none() {
                         return;
-                    };
+                    }
 
                     if !lig.ff_params_loaded || !lig.frcmod_loaded {
                         state.ui.popup.show_get_geostd = true;
@@ -340,7 +340,9 @@ pub fn md_setup(
 
                         match build_dynamics_docking(
                             &state.dev,
-                            lig,
+                            &mut state.ligands,
+                            state.volatile.active_lig.unwrap(),
+                            // lig,
                             mol,
                             // state.volatile.docking_setup.as_ref().unwrap(),
                             &state.ff_params,
@@ -438,7 +440,7 @@ pub fn section_box() -> Frame {
         .outer_margin(Margin::symmetric(0, 0))
 }
 
-pub fn lig_section(
+pub fn lig_data(
     state: &mut State,
     scene: &mut Scene,
     ui: &mut Ui,
@@ -446,164 +448,152 @@ pub fn lig_section(
     close_lig: &mut bool,
     engine_updates: &mut EngineUpdates,
 ) {
-    if let Some(lig) = state.active_lig_mut() {
-        ui.horizontal(|ui| {
-            mol_descrip(&MoleculeGenericRef::Ligand(&lig), ui);
+    if state.active_lig().is_none() {
+        return;
+    }
 
-            if ui.button("Close lig").clicked() {
-                *close_lig = true;
-            }
+    ui.horizontal(|ui| {
+        let lig = &mut state.ligands[state.volatile.active_lig.unwrap()];
+        mol_descrip(&MoleculeGenericRef::Ligand(&lig), ui);
 
-            ui.add_space(COL_SPACING);
+        if ui.button("Close lig").clicked() {
+            *close_lig = true;
+        }
 
-            // todo status color helper?
-            ui.label("Loaded:");
-            let color = if lig.ff_params_loaded {
-                Color32::LIGHT_GREEN
-            } else {
-                Color32::LIGHT_RED
-            };
-            ui.label(RichText::new("FF/q").color(color)).on_hover_text(
-                "Green if force field names, and partial charges are assigned \
+        ui.add_space(COL_SPACING);
+
+        // todo status color helper?
+        ui.label("Loaded:");
+        let color = if lig.ff_params_loaded {
+            Color32::LIGHT_GREEN
+        } else {
+            Color32::LIGHT_RED
+        };
+        ui.label(RichText::new("FF/q").color(color)).on_hover_text(
+            "Green if force field names, and partial charges are assigned \
                     for all ligand atoms. Required for ligand moleculer dynamics and docking.",
+        );
+
+        ui.add_space(COL_SPACING / 4.);
+
+        let color = if lig.frcmod_loaded {
+            Color32::LIGHT_GREEN
+        } else {
+            Color32::LIGHT_RED
+        };
+        ui.label(RichText::new("Frcmod").color(color))
+            .on_hover_text(
+                "Green if molecule-specific Amber force field parameters are \
+                    loaded for this ligand. Required for ligand molecular dynamics and docking.",
             );
 
-            ui.add_space(COL_SPACING / 4.);
-
-            let color = if lig.frcmod_loaded {
-                Color32::LIGHT_GREEN
-            } else {
-                Color32::LIGHT_RED
-            };
-            ui.label(RichText::new("Frcmod").color(color))
-                .on_hover_text(
-                    "Green if molecule-specific Amber force field parameters are \
-                    loaded for this ligand. Required for ligand molecular dynamics and docking.",
-                );
-
-            if let Some(id) = &lig.drugbank_id {
-                if ui.button("View on Drugbank").clicked() {
-                    drugbank::open_overview(id);
-                }
+        if let Some(id) = &lig.drugbank_id {
+            if ui.button("View on Drugbank").clicked() {
+                drugbank::open_overview(id);
             }
+        }
 
-            if let Some(id) = lig.pubchem_cid {
-                if ui.button("View on PubChem").clicked() {
-                    pubchem::open_overview(id);
-                }
+        if let Some(id) = lig.pubchem_cid {
+            if ui.button("View on PubChem").clicked() {
+                pubchem::open_overview(id);
             }
+        }
 
-            if let Some(cid) = lig.pubchem_cid {
-                if ui.button("Find associated structs").clicked() {
-                    // todo: Don't block.
-                    if lig.associated_structures.is_empty() {
-                        match pubchem::load_associated_structures(cid) {
-                            Ok(data) => {
-                                lig.associated_structures = data;
-                                state.ui.popup.show_associated_structures = true;
-                            }
-                            Err(_) => handle_err(
-                                &mut state.ui,
-                                "Unable to find structures for this ligand".to_owned(),
-                            ),
+        if let Some(cid) = lig.pubchem_cid {
+            if ui.button("Find associated structs").clicked() {
+                // todo: Don't block.
+                if lig.associated_structures.is_empty() {
+                    match pubchem::load_associated_structures(cid) {
+                        Ok(data) => {
+                            lig.associated_structures = data;
+                            state.ui.popup.show_associated_structures = true;
                         }
+                        Err(_) => handle_err(
+                            &mut state.ui,
+                            "Unable to find structures for this ligand".to_owned(),
+                        ),
+                    }
+                } else {
+                    state.ui.popup.show_associated_structures = true;
+                }
+            }
+        }
+
+        ui.add_space(COL_SPACING);
+
+        // if let Some(energy) = &state.ui.binding_energy_disp {
+        //     ui.label(format!("{:.2?}", energy)); // todo placeholder.
+        // }
+
+        if let Some(mol) = &state.molecule {
+            let res_selected = match state.ui.selection {
+                Selection::Atom(sel_i) => {
+                    let atom = &mol.common.atoms[sel_i];
+                    if let Some(res_i) = &atom.residue {
+                        Some(&mol.residues[*res_i])
                     } else {
-                        state.ui.popup.show_associated_structures = true;
+                        None
                     }
                 }
-            }
+                Selection::Residue(sel_i) => Some(&mol.residues[sel_i]),
+                _ => None,
+            };
 
-            // ui.label("Rotate bonds:");
-            // for i in 0..ligand.flexible_bonds.len() {
-            //     if let ConformationType::Flexible { torsions } =
-            //         &mut ligand.pose.conformation_type
-            //     {
-            //         if ui.button(format!("{i}")).clicked() {
-            //             torsions[i].dihedral_angle =
-            //                 (torsions[i].dihedral_angle + TAU / 64.) % TAU;
-            //
-            //             ligand.position_atoms(None);
-            //
-            //             redraw_mol = true;
-            //         }
-            //     }
-            // }
-
-            ui.add_space(COL_SPACING);
-
-            // if let Some(energy) = &state.ui.binding_energy_disp {
-            //     ui.label(format!("{:.2?}", energy)); // todo placeholder.
-            // }
-
-            if let Some(mol) = &state.molecule {
-                let res_selected = match state.ui.selection {
-                    Selection::Atom(sel_i) => {
-                        let atom = &mol.common.atoms[sel_i];
-                        if let Some(res_i) = &atom.residue {
-                            Some(&mol.residues[*res_i])
-                        } else {
-                            None
-                        }
-                    }
-                    Selection::Residue(sel_i) => Some(&mol.residues[sel_i]),
-                    _ => None,
-                };
-
-                if let Some(res) = res_selected {
-                    if ui
-                        .button(
-                            RichText::new(format!("Make lig from {}", res.res_type))
-                                .color(Color32::GOLD),
-                        )
-                        .on_hover_text(
-                            "Create a ligand from this residue on the peptide. This can be \
+            if let Some(res) = res_selected {
+                if ui
+                    .button(
+                        RichText::new(format!("Make lig from {}", res.res_type))
+                            .color(Color32::GOLD),
+                    )
+                    .on_hover_text(
+                        "Create a ligand from this residue on the peptide. This can be \
                     saved to a Mol2 or SDF file, and used as a ligand.",
-                        )
-                        .clicked()
-                    {
-                        let res_type = res.res_type.clone(); // Avoids dbl-borrow.
+                    )
+                    .clicked()
+                {
+                    let res_type = res.res_type.clone(); // Avoids dbl-borrow.
 
-                        let mol_fm_res = MoleculeSmall::from_res(
-                            res,
-                            &mol.common.atoms,
-                            &mol.common.bonds,
-                            false,
-                            // &state.ff_params.lig_specific,
-                        );
-                        // let mut lig_new = Ligand::new(mol_fm_res, &state.ff_params.lig_specific);
-                        let lig_new = mol_fm_res;
+                    let mol_fm_res = MoleculeSmall::from_res(
+                        res,
+                        &mol.common.atoms,
+                        &mol.common.bonds,
+                        false,
+                        // &state.ff_params.lig_specific,
+                    );
+                    // let mut lig_new = Ligand::new(mol_fm_res, &state.ff_params.lig_specific);
+                    let mut lig_new = mol_fm_res;
 
-                        state.mol_dynamics = None;
+                    state.mol_dynamics = None;
 
-                        let docking_center = move_lig_to_res(&mut lig_new, mol, res);
+                    let docking_center = move_lig_to_res(&mut lig_new, mol, res);
 
-                        // todo: Put this save back / fix dble-borrow?
-                        // state.update_docking_site(docking_center);
-                        // state.update_save_prefs(false);
-                        // set_docking_light(scene, Some(&lig.docking_site));
-                        // engine_updates.lighting = true;
+                    // todo: Put this save back / fix dble-borrow?
+                    // state.update_docking_site(docking_center);
+                    // state.update_sa
+                    // ve_prefs(false);
+                    // set_docking_light(scene, Some(&lig.docking_site));
+                    // engine_updates.lighting = true;
 
-                        *redraw_lig = true;
+                    *redraw_lig = true;
 
-                        // If creating from an AA, move to the origin (Where we assigned its atom positions).
-                        // If from a hetero atom, leave it in place.
-                        match &res_type {
-                            ResidueType::AminoAcid(_) => {
-                                lig.reset_posits();
-                            }
-                            _ => {
-                                state.ui.visibility.hide_hetero = true;
-                            }
+                    // If creating from an AA, move to the origin (Where we assigned its atom positions).
+                    // If from a hetero atom, leave it in place.
+                    match &res_type {
+                        ResidueType::AminoAcid(_) => {
+                            lig.reset_posits();
                         }
-                        *lig = lig_new;
-
-                        // Make it clear that we've added the ligand by showing it, and hiding hetero (if creating from Hetero)
-                        state.ui.visibility.hide_ligand = false;
+                        _ => {
+                            state.ui.visibility.hide_hetero = true;
+                        }
                     }
+                    *lig = lig_new;
+
+                    // Make it clear that we've added the ligand by showing it, and hiding hetero (if creating from Hetero)
+                    state.ui.visibility.hide_ligand = false;
                 }
             }
-        });
-    }
+        }
+    });
 
     // If no ligand, provide convenience functionality for loading one based on hetero residues
     // in the protein.
@@ -677,7 +667,7 @@ pub fn lig_section(
 
         if let Some(lig) = state.active_lig_mut() {
             if let Some(mol) = &state.molecule {
-                move_cam_to_lig(&mut state.ui, scene, lig, mol.center, engine_updates);
+                move_cam_to_lig(state, scene, mol.center, engine_updates);
             }
         }
     }

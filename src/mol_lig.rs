@@ -3,11 +3,14 @@
 use std::{collections::HashMap, io};
 
 use bio_apis::pubchem::ProteinStructure;
-use bio_files::{ChargeType, Mol2, MolType, Sdf, amber_params::ForceFieldParamsKeyed};
+use bio_files::{ChargeType, Mol2, MolType, Pdbqt, Sdf, amber_params::ForceFieldParamsKeyed};
 use lin_alg::f64::{Quaternion, Vec3};
 use rayon::prelude::*;
 
-use crate::docking_v2::{ConformationType, DockingSite, Pose};
+use crate::{
+    docking_v2::{ConformationType, DockingSite, Pose},
+    molecule::{Chain, ResidueEnd},
+};
 use crate::{
     // docking::{ConformationType, DockingSite, Pose, prep::setup_flexibility},
     molecule::{Atom, Bond, MoleculeCommon, Residue},
@@ -141,6 +144,37 @@ impl TryFrom<Sdf> for MoleculeSmall {
         // for c in &m.chains {
         //     chains.push(Chain::from_generic(c, &atoms, &residues)?);
         // }
+
+        let bonds: Vec<Bond> = m
+            .bonds
+            .iter()
+            .map(|b| Bond::from_generic(b, &atoms))
+            .collect::<Result<_, _>>()?;
+
+        Ok(Self::new(
+            m.ident,
+            atoms,
+            bonds,
+            m.pubchem_cid,
+            m.drugbank_id,
+            &HashMap::new(),
+        ))
+    }
+}
+
+impl TryFrom<Pdbqt> for MoleculeSmall {
+    type Error = io::Error;
+    fn try_from(m: Pdbqt) -> Result<Self, Self::Error> {
+        let atoms: Vec<_> = m.atoms.iter().map(|a| a.into()).collect();
+        let mut residues = Vec::with_capacity(m.residues.len());
+        for res in &m.residues {
+            residues.push(Residue::from_generic(res, &atoms, ResidueEnd::Hetero)?);
+        }
+
+        let mut chains = Vec::with_capacity(m.chains.len());
+        for c in &m.chains {
+            chains.push(Chain::from_generic(c, &atoms, &residues)?);
+        }
 
         let bonds: Vec<Bond> = m
             .bonds
@@ -331,6 +365,20 @@ impl MoleculeSmall {
             metadata: HashMap::new(), // todo?
             pubchem_cid: self.pubchem_cid,
             drugbank_id: self.drugbank_id.clone(),
+        }
+    }
+
+    pub fn to_pdbqt(&self) -> Pdbqt {
+        let atoms = self.common.atoms.iter().map(|a| a.to_generic()).collect();
+        let bonds = self.common.bonds.iter().map(|b| b.to_generic()).collect();
+
+        Pdbqt {
+            ident: self.common.ident.clone(),
+            mol_type: MolType::Small,
+            charge_type: ChargeType::None,
+            comment: None,
+            atoms,
+            bonds,
         }
     }
 }
