@@ -182,7 +182,7 @@ pub fn cam_controls(
                             .on_hover_text("Move camera near the ligand, looking at it.")
                             .clicked()
                         {
-                            move_cam_to_lig(&mut state.ui, scene, lig, mol.center, engine_updates)
+                            move_cam_to_lig(state, scene, mol.center, engine_updates)
                         }
                     }
                 }

@@ -280,7 +280,7 @@ fn push_atom(common: &mut MoleculeCommon, pos: Vec3, element: Element, residue: 
         element,
         type_in_res: None,
         force_field_type: None,
-        dock_type: None,
+        // dock_type: None,
         role: None,
         residue: Some(residue),
         chain: Some(0),

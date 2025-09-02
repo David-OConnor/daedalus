@@ -186,8 +186,8 @@ impl TryFrom<Pdbqt> for MoleculeSmall {
             m.ident,
             atoms,
             bonds,
-            m.pubchem_cid,
-            m.drugbank_id,
+            None,
+            None,
             &HashMap::new(),
         ))
     }
@@ -379,6 +379,8 @@ impl MoleculeSmall {
             comment: None,
             atoms,
             bonds,
+            chains: Vec::new(),
+            residues: Vec::new(),
         }
     }
 }

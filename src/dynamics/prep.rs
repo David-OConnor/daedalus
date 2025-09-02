@@ -34,8 +34,10 @@ use lin_alg::f64::Vec3;
 use na_seq::{AminoAcid, AminoAcidGeneral, AminoAcidProtenationVariant, AtomTypeInRes, Element};
 
 use crate::{
-    ComputationDevice, FfParamSet, ProtFFTypeChargeMap,
-    docking::{BindingEnergy, ConformationType},
+    ComputationDevice,
+    FfParamSet,
+    ProtFFTypeChargeMap,
+    // docking::{BindingEnergy, ConformationType},
     docking_v2::ConformationType,
     dynamics::{
         AtomDynamics, ForceFieldParamsIndexed, MdMode, MdState, ParamError, SnapshotDynamics,

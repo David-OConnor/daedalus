@@ -6,7 +6,8 @@ use std::{
 };
 
 use bincode::{
-    Decode, Encode,
+    BorrowDecode, Decode, Encode,
+    de::BorrowDecoder,
     error::{DecodeError, EncodeError},
 };
 use bio_apis::rcsb::{FilesAvailable, PdbDataResults};
@@ -17,7 +18,7 @@ use graphics::{
 };
 use lin_alg::f64::Vec3;
 
-use crate::docking_v2::ConformationType;
+use crate::docking_v2::DockingSite;
 use crate::{
     CamSnapshot,
     MsaaSetting,
@@ -74,6 +75,15 @@ impl<T> Decode<T> for OpenHistory {
             path,
             type_,
         })
+    }
+}
+
+impl<'de, C> BorrowDecode<'de, C> for OpenHistory {
+    fn borrow_decode<D>(decoder: &mut D) -> Result<Self, DecodeError>
+    where
+        D: BorrowDecoder<'de, Context = C>,
+    {
+        Decode::decode(decoder)
     }
 }
 
@@ -291,20 +301,6 @@ impl State {
                 self.ui.atom_color_by_charge = data.aatom_color_by_charge;
                 self.ui.show_aa_seq = data.show_aa_seq;
 
-                if let Some(lig) = self.active_lig_mut() {
-                    // lig.docking_site.site_center = data.docking_site_posit; // todo: Or docking site?
-
-                    // todo: This check is a workaround for overal problems related to how we store molecules
-                    // todo and ligands. Without it, we can desync the positions, and cause index-error crashes
-                    if data.lig_atom_positions.len() == lig.common.atom_posits.len() {
-                        lig.common.atom_posits = data.lig_atom_positions.clone();
-                    } else {
-                        eprintln!("Error loading ligand atom positions; look into this.")
-                    }
-
-                    // lig.pose.conformation_type = ConformationType::AbsolutePosits;
-                }
-
                 // if let Some(title) = mol.common.metadata.get("prim_cit_title") {
                 //     metadata = Some(MolMetaData {
                 //         prim_cit_title: title.clone(),
@@ -338,6 +334,20 @@ impl State {
             //     }
             // }
         }
+
+        // if let Some(lig) = self.active_lig_mut() {
+        //     // lig.docking_site.site_center = data.docking_site_posit; // todo: Or docking site?
+        //
+        //     // todo: This check is a workaround for overal problems related to how we store molecules
+        //     // todo and ligands. Without it, we can desync the positions, and cause index-error crashes
+        //     if data.lig_atom_positions.len() == lig.common.atom_posits.len() {
+        //         lig.common.atom_posits = data.lig_atom_positions.clone();
+        //     } else {
+        //         eprintln!("Error loading ligand atom positions; look into this.")
+        //     }
+        //
+        //     // lig.pose.conformation_type = ConformationType::AbsolutePosits;
+        // }
 
         self.ui.movement_speed_input = self.to_save.movement_speed.to_string();
         self.ui.rotation_sens_input = self.to_save.rotation_sens.to_string();

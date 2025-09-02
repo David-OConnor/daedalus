@@ -15,8 +15,13 @@ use mcubes::{MarchingCubes, MeshSide};
 use na_seq::{AaIdent, Element};
 
 use crate::{
-    CamSnapshot, PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel,
-    docking::{ConformationType, prep::DockingSetup},
+    CamSnapshot,
+    PREFS_SAVE_INTERVAL,
+    Selection,
+    State,
+    StateUi,
+    ViewSelLevel,
+    // docking::{ConformationType, prep::DockingSetup},
     docking_v2::ConformationType,
     download_mols::load_cif_rcsb,
     drawing::{

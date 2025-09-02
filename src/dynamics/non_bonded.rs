@@ -696,7 +696,6 @@ pub fn f_nonbonded(
 
     let dist = dist_sq.sqrt();
     let inv_dist = 1.0 / dist;
-    let inv_dist_sq = inv_dist * inv_dist;
     let dir = diff * inv_dist;
 
     let (f_lj, energy_lj) = if !calc_lj || dist > CUTOFF_VDW {
@@ -721,7 +720,6 @@ pub fn f_nonbonded(
             dir,
             dist,
             inv_dist,
-            inv_dist_sq,
             tgt.partial_charge,
             src.partial_charge,
             // (LONG_RANGE_SWITCH_START, LONG_RANGE_CUTOFF),

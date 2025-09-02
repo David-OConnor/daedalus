@@ -13,8 +13,8 @@ const COLOR_SECTION_BOX: Color32 = Color32::from_rgb(100, 100, 140);
 use crate::{
     ComputationDevice, Selection, State, drawing,
     drawing::{
-        CHARGE_MAP_MAX, CHARGE_MAP_MIN, COLOR_AA_NON_RESIDUE_EGUI, draw_ligand, draw_peptide,
-        draw_water,
+        CHARGE_MAP_MAX, CHARGE_MAP_MIN, COLOR_AA_NON_RESIDUE_EGUI, draw_all_ligs, draw_ligand,
+        draw_peptide, draw_water,
     },
     dynamics::{
         MdMode,
@@ -237,7 +237,7 @@ pub fn dynamics_player(
                             // change_snapshot_docking(lig, snap, &mut state.ui.binding_energy_disp);
                         }
 
-                        draw_ligand(state, scene);
+                        draw_all_ligs(state, scene);
                     }
                     MdMode::Peptide => {
                         let mol = state.molecule.as_mut().unwrap();
@@ -327,17 +327,21 @@ pub fn md_setup(
                         return;
                     }
 
-                    if !lig.ff_params_loaded || !lig.frcmod_loaded {
-                        state.ui.popup.show_get_geostd = true;
-                        ready_to_run = false;
+                    {
+                        let lig = state.active_lig().unwrap();
+                        if !lig.ff_params_loaded || !lig.frcmod_loaded {
+                            state.ui.popup.show_get_geostd = true;
+                            ready_to_run = false;
+                        }
                     }
 
                     if ready_to_run {
-                        let mol = state.molecule.as_mut().unwrap();
 
                         // todo: Set a loading indicator, and trigger the build next GUI frame.
-                        move_cam_to_lig(state, scene, mol.center, engine_updates);
+                        move_cam_to_lig(state, scene, state.molecule.as_ref().unwrap().center, engine_updates);
 
+
+                        let mol = state.molecule.as_mut().unwrap();
                         match build_dynamics_docking(
                             &state.dev,
                             &mut state.ligands,
@@ -671,4 +675,209 @@ pub fn lig_data(
             }
         }
     }
+}
+
+pub fn handle_docking(
+    state: &mut State,
+    scene: &mut Scene,
+    ui: &mut Ui,
+    engine_updates: &mut EngineUpdates,
+) {
+    // // todo: Ideally move the camera to the docking site prior to docking. You could do this
+    // // todo by deferring the docking below to the next frame.
+    //
+    // // let (pose, binding_energy) = find_optimal_pose(
+    // //     &state.dev,
+    // //     state.volatile.docking_setup.as_ref().unwrap(),
+    // //     lig,
+    // // );
+    //
+    // // lig_data.pose = pose;
+    // {
+    //     // lig.position_atoms(None);
+    //     //
+    //     // lig.position_atoms(None);
+    //     // let lig_pos: Vec3 = lig.common.atom_posits[lig_data.anchor_atom].into();
+    //     // let ctr: Vec3 = state.molecule.unwrap().center.into();
+    //     //
+    //     // cam_look_at_outside(&mut scene.camera, lig_pos, ctr);
+    //     //
+    //     // engine_updates.camera = true;
+    //     // state.ui.cam_snapshot = None;
+    // }
+    //
+    // // Allow the user to select the autodock executable.
+    // // if state.to_save.autodock_vina_path.is_none() {
+    // //     state.volatile.autodock_path_dialog.pick_file();
+    // // }
+    // // dock_with_vina(mol, ligand, &state.to_save.autodock_vina_path);
+    // *redraw_lig = true;
+    //
+    // // if ui.button("Docking energy").clicked() {
+    // //     let poses = vec![lig_data.pose.clone()];
+    // //     let mut lig_posits: Vec<Vec3> = Vec::with_capacity(poses.len());
+    // //     // let mut partial_charges_lig = Vec::with_capacity(poses.len());
+    // //
+    // //     for pose in poses {
+    // //         lig.position_atoms(Some(&pose));
+    // //
+    // //         let posits_this_pose: Vec<_> =
+    // //             lig.common.atom_posits.iter().map(|p| (*p).into()).collect();
+    // //
+    // //         // partial_charges_lig.push(create_partial_charges(
+    // //         //     &ligand.molecule.atoms,
+    // //         //     Some(&posits_this_pose),
+    // //         // ));
+    // //         lig_posits.push(posits_this_pose);
+    // //     }
+    // //
+    // //     // state.ui.binding_energy_disp = calc_binding_energy(
+    // //     //     state.volatile.docking_setup.as_ref().unwrap(),
+    // //     //     lig,
+    // //     //     &lig_posits[0],
+    // //     // );
+    // // }
+    //
+    // ui.add_space(COL_SPACING);
+    //
+    // // todo: Put back A/r.
+    // // if ui.button("Site sfc").clicked() {
+    // //     // let (mesh, edges) = find_docking_site_surface(mol, &ligand.docking_site);
+    // //
+    // //     // scene.meshes[MESH_DOCKING_SURFACE] = mesh;
+    // //
+    // //     // todo: You must remove prev entities of it too! Do you need an entity ID for this? Likely.
+    // //     // todo: Move to the draw module A/R.
+    // //     let mut entity = Entity::new(
+    // //         MESH_DOCKING_SURFACE,
+    // //         Vec3::new_zero(),
+    // //         Quaternion::new_identity(),
+    // //         1.,
+    // //         COLOR_DOCKING_SITE_MESH,
+    // //         0.5,
+    // //     );
+    // //     entity.opacity = 0.8;
+    // //     entity.class = EntityType::DockingSite as u32;
+    // //
+    // //     scene.entities.push(entity);
+    // //
+    // //     engine_updates.meshes = true;
+    // //     engine_updates.entities = true;
+    // // }
+    //
+    // ui.add_space(COL_SPACING);
+    //
+    // // todo: Put back A/R
+    // let mut docking_init_changed = false;
+    // if false {
+    //     ui.label("Docking site setup:");
+    //     ui.label("Center:");
+    //
+    //     if ui
+    //         .add(TextEdit::singleline(&mut state.ui.docking_site_x).desired_width(30.))
+    //         .changed()
+    //     {
+    //         if let Ok(v) = state.ui.docking_site_x.parse::<f64>() {
+    //             // lig_data.docking_site.site_center.x = v;
+    //             docking_init_changed = true;
+    //         }
+    //     }
+    //     if ui
+    //         .add(TextEdit::singleline(&mut state.ui.docking_site_y).desired_width(30.))
+    //         .changed()
+    //     {
+    //         if let Ok(v) = state.ui.docking_site_y.parse::<f64>() {
+    //             // lig_data.docking_site.site_center.y = v;
+    //             docking_init_changed = true;
+    //         }
+    //     }
+    //     if ui
+    //         .add(TextEdit::singleline(&mut state.ui.docking_site_z).desired_width(30.))
+    //         .changed()
+    //     {
+    //         if let Ok(v) = state.ui.docking_site_z.parse::<f64>() {
+    //             // lig_data.docking_site.site_center.z = v;
+    //             docking_init_changed = true;
+    //         }
+    //     }
+    //
+    //     // todo: Consider a slider.
+    //     ui.label("Size:");
+    //     if ui
+    //         .add(TextEdit::singleline(&mut state.ui.docking_site_size).desired_width(30.))
+    //         .changed()
+    //     {
+    //         if let Ok(v) = state.ui.docking_site_size.parse::<f64>() {
+    //             // lig_data.docking_site.site_radius = v;
+    //             docking_init_changed = true;
+    //         }
+    //     }
+    // }
+    //
+    // if let Some(mol) = &state.molecule {
+    //     for res in &mol.het_residues {
+    //         // Note: This is crude.
+    //         if (res.atoms.len() - lig.common.atoms.len()) < 5 {
+    //             // todo: Don't list multiple; pick teh closest, at least in len.
+    //             let name = match &res.res_type {
+    //                 ResidueType::Other(name) => name,
+    //                 _ => "hetero residue",
+    //             };
+    //             ui.add_space(COL_SPACING / 2.);
+    //
+    //             if ui
+    //                 .button(RichText::new(format!("Move lig to {name}")).color(COLOR_HIGHLIGHT))
+    //                 .on_hover_text("Move the ligand to be colocated with this residue. this is intended to \
+    //                     be used to synchronize the ligand with a pre-positioned hetero residue in the protein file, e.g. \
+    //                     prior to docking. In addition to moving \
+    //                     its center, this attempts to align each atom with its equivalent on the residue.")
+    //                 .clicked()
+    //             {
+    //                 let docking_center = move_lig_to_res(lig, mol, res);
+    //                 state.mol_dynamics = None;
+    //
+    //                 docking_posit_update = Some(docking_center);
+    //                 docking_init_changed = true;
+    //
+    //                 move_cam_to_lig(
+    //                     state,
+    //                     scene,
+    //                     mol.center,
+    //                     engine_updates,
+    //                 )
+    //             }
+    //         }
+    //     }
+    // }
+    //
+    // if !matches!(
+    //         state.ui.selection,
+    //         Selection::None | Selection::AtomLigand(_)
+    //     ) {
+    //     if ui
+    //         .button(RichText::new("Move lig to sel").color(COLOR_HIGHLIGHT))
+    //         .on_hover_text("Re-position the ligand to be colacated with the selected atom or residue.")
+    //         .clicked()
+    //     {
+    //         let mol = &state.molecule.unwrap();
+    //         let atom_sel = mol.get_sel_atom(&state.ui.selection);
+    //         state.mol_dynamics = None;
+    //
+    //         if let Some(atom) = atom_sel {
+    //             lig_data.pose.conformation_type = ConformationType::AssignedTorsions {
+    //                 torsions: Vec::new(),
+    //             };
+    //
+    //             docking_posit_update = Some(atom.posit);
+    //             docking_init_changed = true;
+    //
+    //             move_cam_to_lig(
+    //                 state,
+    //                 scene,
+    //                 mol.center,
+    //                 engine_updates,
+    //             )
+    //         }
+    //     }
+    // }
 }

@@ -15,7 +15,8 @@ use lin_alg::{
 use na_seq::Element;
 
 use crate::{
-    Selection, State, ViewSelLevel,
+    Selection, State, StateUi, ViewSelLevel, Visibility,
+    mol_lig::MoleculeSmall,
     molecule::{Atom, AtomRole, Chain, PeptideAtomPosits, Residue, aa_color},
     reflection::ElectronDensity,
     render::{
@@ -732,26 +733,33 @@ pub fn draw_water(
     }
 }
 
-// todo: DRY with/subset of draw_molecule?
-pub fn draw_ligand(state: &State, scene: &mut Scene) {
-    // Hard-coded for sticks for now.
-
+pub fn draw_all_ligs(state: &State, scene: &mut Scene) {
     scene.entities.retain(|ent| {
         ent.class != EntityType::Ligand as u32 && ent.class != EntityType::DockingSite as u32
     });
-
-    let Some(lig) = state.active_lig() else {
-        set_docking_light(scene, None);
-        return;
-    };
 
     if state.ui.visibility.hide_ligand {
         return;
     }
 
+    for lig in &state.ligands {
+        draw_ligand(lig, &state.ui, scene);
+    }
+}
+
+// todo: DRY with/subset of draw_molecule?
+// pub fn draw_ligand(state: &State, scene: &mut Scene) {
+pub fn draw_ligand(lig: &MoleculeSmall, state_ui: &StateUi, scene: &mut Scene) {
+    // Hard-coded for sticks for now.
+
+    // let Some(lig) = state.active_lig() else {
+    //     set_docking_light(scene, None);
+    //     return;
+    // };
+
     // todo: You have problems with transparent objects like the view cube in conjunction
     // todo with the transparent surface; workaround to not draw the cube here.
-    if state.ui.show_docking_tools && state.ui.mol_view != MoleculeView::Surface {
+    if state_ui.show_docking_tools && state_ui.mol_view != MoleculeView::Surface {
         // Add a visual indicator for the docking site.
 
         // scene.entities.push(Entity {
@@ -778,7 +786,7 @@ pub fn draw_ligand(state: &State, scene: &mut Scene) {
         let atom_0 = &lig.common.atoms[bond.atom_0];
         let atom_1 = &lig.common.atoms[bond.atom_1];
 
-        if state.ui.visibility.hide_hydrogen
+        if state_ui.visibility.hide_hydrogen
             && (atom_0.element == Element::Hydrogen || atom_1.element == Element::Hydrogen)
         {
             continue;
@@ -799,7 +807,7 @@ pub fn draw_ligand(state: &State, scene: &mut Scene) {
             bond.atom_0,
             &[],
             0,
-            &state.ui.selection,
+            &state_ui.selection,
             ViewSelLevel::Atom, // Always color ligands by atom.
             false,
             false,
@@ -811,7 +819,7 @@ pub fn draw_ligand(state: &State, scene: &mut Scene) {
             bond.atom_1,
             &[],
             0,
-            &state.ui.selection,
+            &state_ui.selection,
             // state.ui.view_sel_level,
             ViewSelLevel::Atom, // Always color ligands by atom.
             false,

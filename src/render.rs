@@ -203,7 +203,7 @@ pub fn render(mut state: State) {
     };
 
     drawing::draw_peptide(&mut state, &mut scene);
-    drawing::draw_ligand(&mut state, &mut scene);
+    drawing::draw_all_ligs(&mut state, &mut scene);
 
     set_flashlight(&mut scene);
 

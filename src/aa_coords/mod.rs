@@ -671,7 +671,7 @@ pub fn aa_data_from_coords(
         residue: Some(res_i),
         chain: Some(chain_i),
         hetero: false,
-        dock_type: None,
+        // dock_type: None,
         occupancy: None,
         partial_charge: None,
         temperature_factor: None,

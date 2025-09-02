@@ -380,7 +380,7 @@ pub fn event_dev_handler(
             lig.position_atoms(None);
         }
 
-        drawing::draw_ligand(state_, scene);
+        drawing::draw_all_ligs(state_, scene);
         updates.entities = true;
     }
 

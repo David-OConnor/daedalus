@@ -4,7 +4,6 @@ use std::{
     io,
     io::{ErrorKind, Read},
     path::Path,
-    str::FromStr,
     time::Instant,
 };
 

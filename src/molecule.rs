@@ -500,7 +500,11 @@ impl Residue {
 }
 
 impl Residue {
-    fn from_generic(res: &ResidueGeneric, atom_set: &[Atom], end: ResidueEnd) -> io::Result<Self> {
+    pub fn from_generic(
+        res: &ResidueGeneric,
+        atom_set: &[Atom],
+        end: ResidueEnd,
+    ) -> io::Result<Self> {
         let mut atoms = Vec::with_capacity(res.atom_sns.len());
 
         for sn in &res.atom_sns {
@@ -540,7 +544,7 @@ pub struct Chain {
 }
 
 impl Chain {
-    fn from_generic(
+    pub fn from_generic(
         chain: &ChainGeneric,
         atom_set: &[Atom],
         res_set: &[Residue],
@@ -645,7 +649,7 @@ pub struct Atom {
     pub force_field_type: Option<String>,
     // todo: Review what DockType does.
     /// todo: Consider a substruct for docking fields.
-    pub dock_type: Option<DockType>,
+    // pub dock_type: Option<DockType>,
     // todo: Note that `role` is a subset of `type_in_res`.
     pub role: Option<AtomRole>,
     /// We include these references to the residue and chain indices for speed; iterating through

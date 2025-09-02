@@ -11,7 +11,6 @@ cfg_if::cfg_if! {
         use lin_alg::f32::{vec3s_to_dev, vec3s_from_dev};
     }
 }
-use std::time::Instant;
 
 use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -19,10 +18,7 @@ use lin_alg::{
     f32::{Vec3x8, f32x8},
     f64::f64x4,
 };
-use na_seq::Element;
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-use crate::dynamics::AtomDynamicsx4;
 use crate::dynamics::non_bonded::ForcesOnWaterMol;
 
 /// Handles both LJ, and Coulomb (SPME short range) force.
