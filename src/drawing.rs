@@ -743,7 +743,9 @@ pub fn draw_all_ligs(state: &State, scene: &mut Scene) {
     }
 
     for lig in &state.ligands {
-        draw_ligand(lig, &state.ui, scene);
+        if lig.common.visible {
+            draw_ligand(lig, &state.ui, scene);
+        }
     }
 }
 

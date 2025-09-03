@@ -42,11 +42,15 @@ pub enum OpenType {
     Frcmod,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct OpenHistory {
-    timestamp: DateTime<Utc>,
-    path: PathBuf,
-    type_: OpenType,
+    pub timestamp: DateTime<Utc>,
+    pub path: PathBuf,
+    pub type_: OpenType,
+    /// e.g. RCSB, pubchem etc ident. Maches moleculeCommon.
+    pub ident: String,
+    /// For determining which to open at program start.
+    pub last_session: bool
 }
 
 // Manual bincode impls
@@ -55,8 +59,11 @@ impl Encode for OpenHistory {
         // Store timestamp as i64 (seconds since Unix epoch)
         let ts = self.timestamp.timestamp();
         ts.encode(encoder)?;
+
         self.path.encode(encoder)?;
         self.type_.encode(encoder)?;
+        self.last_session.encode(encoder)?;
+
         Ok(())
     }
 }
@@ -66,6 +73,9 @@ impl<T> Decode<T> for OpenHistory {
         let ts = i64::decode(decoder)?;
         let path = PathBuf::decode(decoder)?;
         let type_ = OpenType::decode(decoder)?;
+        let ident = String::decode(decoder)?;
+        let last_session = bool::decode(decoder)?;
+
         Ok(OpenHistory {
             timestamp: DateTime::<Utc>::from_utc(
                 chrono::NaiveDateTime::from_timestamp_opt(ts, 0)
@@ -74,6 +84,8 @@ impl<T> Decode<T> for OpenHistory {
             ),
             path,
             type_,
+            ident,
+            last_session,
         })
     }
 }
@@ -88,11 +100,13 @@ impl<'de, C> BorrowDecode<'de, C> for OpenHistory {
 }
 
 impl OpenHistory {
-    pub fn new(path: &Path, type_: OpenType) -> Self {
+    pub fn new(path: &Path, type_: OpenType, ident: String,) -> Self {
         Self {
             timestamp: Utc::now(),
             path: path.to_owned(),
             type_,
+            ident,
+            last_session: true,
         }
     }
 }
@@ -104,11 +118,11 @@ impl OpenHistory {
 pub struct ToSave {
     pub per_mol: HashMap<String, PerMolToSave>,
     pub open_history: Vec<OpenHistory>,
-    pub last_peptide_opened: Option<PathBuf>,
-    pub last_ligand_opened: Option<PathBuf>,
-    pub last_nucleic_acid_opened: Option<PathBuf>,
-    pub last_map_opened: Option<PathBuf>,
-    pub last_frcmod_opened: Option<PathBuf>,
+    // pub last_peptide_opened: Option<PathBuf>,
+    // pub last_ligand_opened: Option<PathBuf>,
+    // pub last_nucleic_acid_opened: Option<PathBuf>,
+    // pub last_map_opened: Option<PathBuf>,
+    // pub last_frcmod_opened: Option<PathBuf>,
     pub control_scheme: ControlScheme,
     pub msaa: MsaaSetting,
     /// Direct conversion from engine standard
@@ -132,11 +146,11 @@ impl Default for ToSave {
         Self {
             per_mol: Default::default(),
             open_history: Default::default(),
-            last_peptide_opened: Default::default(),
-            last_ligand_opened: Default::default(),
-            last_nucleic_acid_opened: Default::default(),
-            last_map_opened: Default::default(),
-            last_frcmod_opened: Default::default(),
+            // last_peptide_opened: Default::default(),
+            // last_ligand_opened: Default::default(),
+            // last_nucleic_acid_opened: Default::default(),
+            // last_map_opened: Default::default(),
+            // last_frcmod_opened: Default::default(),
             control_scheme: Default::default(),
             msaa: Default::default(),
             movement_speed: MOVEMENT_SENS as u8,

@@ -14,6 +14,7 @@ use crate::{
     ui::{COL_SPACING, COLOR_ACTIVE, COLOR_INACTIVE, cam::move_cam_to_lig, misc, mol_descrip},
     util::{handle_err, handle_success, make_egui_color, move_lig_to_res},
 };
+use crate::ui::COLOR_ACTIVE_RADIO;
 
 /// `posit_override` is for example, relative atom positions, such as a positioned ligand.
 fn disp_atom_data(atom: &Atom, residues: &[Residue], posit_override: Option<Vec3>, ui: &mut Ui) {
@@ -145,27 +146,41 @@ fn lig_picker(
     close_lig: &mut bool,
     engine_updates: &mut EngineUpdates,
 ) {
-    for (i, lig) in state.ligands.iter().enumerate() {
-        let color = if state.volatile.active_lig.unwrap_or(0) == i {
+    for (i, lig) in state.ligands.iter_mut().enumerate() {
+        let active = state.volatile.active_lig.unwrap_or(999) == i;
+
+        let color = if active { COLOR_ACTIVE_RADIO } else { COLOR_INACTIVE };
+
+        if ui
+            .button(RichText::new(&lig.common.ident).color(color))
+            .clicked()
+        {
+            if active && state.volatile.active_lig.is_some() {
+                state.volatile.active_lig = None;
+            } else {
+                state.volatile.active_lig = Some(i);
+            }
+        }
+
+        let color_vis = if lig.common.visible {
             COLOR_ACTIVE
         } else {
             COLOR_INACTIVE
         };
 
         if ui
-            .button(RichText::new(&lig.common.ident).color(color))
+            .button(RichText::new("👁").color(color_vis))
             .clicked()
         {
-            if color == COLOR_ACTIVE && state.volatile.active_lig.is_some() {
-                state.volatile.active_lig = None;
-            } else {
-                state.volatile.active_lig = Some(i);
-            }
+            lig.common.visible = !lig.common.visible;
+
+            *redraw_lig = true; // todo Overkill; only need to redraw (or even just clear) one.
+            engine_updates.entities = true;
         }
     }
 }
 
-pub fn lig_data(
+pub fn disp_lig_data(
     state: &mut State,
     scene: &mut Scene,
     ui: &mut Ui,

@@ -271,6 +271,7 @@ struct Visibility {
     hide_density_point_cloud: bool,
     hide_density_surface: bool,
     hide_nucleic_acids: bool,
+    // lig_vis: Vec<bool>,
 }
 
 impl Default for Visibility {
@@ -287,6 +288,7 @@ impl Default for Visibility {
             hide_density_point_cloud: false,
             hide_density_surface: false,
             hide_nucleic_acids: false,
+            // lig_vis: Vec::new(),
         }
     }
 }

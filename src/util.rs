@@ -40,6 +40,7 @@ use crate::{
         FOG_DIST_DEFAULT, RENDER_DIST_FAR, RENDER_DIST_NEAR, VIEW_DEPTH_NEAR_MIN, calc_fog_dists,
     },
 };
+use crate::prefs::{OpenHistory, OpenType};
 
 const MOVE_TO_TARGET_DIST: f32 = 15.;
 const MOVE_CAM_TO_LIG_DIST: f32 = 30.;
@@ -762,6 +763,11 @@ pub fn handle_success(ui: &mut StateUi, msg: String) {
 }
 
 pub fn close_peptide(state: &mut State, scene: &mut Scene, engine_updates: &mut EngineUpdates) {
+    let mut ident = String::new();
+    if let Some(mol) = &state.molecule {
+        ident = mol.common.ident.clone();
+    }
+
     state.molecule = None;
     state.mol_dynamics = None;
 
@@ -773,8 +779,13 @@ pub fn close_peptide(state: &mut State, scene: &mut Scene, engine_updates: &mut 
             && ent.class != EntityType::SaSurface as u32
     });
 
-    state.to_save.last_peptide_opened = None;
-    state.to_save.last_map_opened = None;
+    for history in &mut state.to_save.open_history {
+        if let OpenType::Peptide = history.type_ {
+            if history.ident == ident {
+                history.last_session = false;
+            }
+        }
+    }
     state.volatile.aa_seq_text = String::new();
 
     state.update_save_prefs(false);
@@ -793,6 +804,8 @@ pub fn close_lig(
         return;
     }
 
+    let ident = state.ligands[i].common.ident.clone();
+
     state.ligands.remove(i);
     state.volatile.active_lig = None;
 
@@ -803,7 +816,14 @@ pub fn close_lig(
 
     engine_updates.entities = true;
 
-    state.to_save.last_ligand_opened = None;
+    for history in &mut state.to_save.open_history {
+        if let OpenType::Ligand = history.type_ {
+            if history.ident == ident {
+                history.last_session = false;
+            }
+        }
+    }
+
     state.update_save_prefs(false);
 }
 

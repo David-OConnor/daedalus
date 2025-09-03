@@ -17,7 +17,7 @@ use na_seq::AaIdent;
 static INIT_COMPLETE: AtomicBool = AtomicBool::new(false);
 
 use bio_files::{DensityMap, ResidueType, density_from_2fo_fc_rcsb_gemmi};
-use mol_data::lig_data;
+use mol_data::disp_lig_data;
 
 use crate::{
     CamSnapshot,
@@ -111,8 +111,6 @@ pub fn load_file(
 
     // Clear last map opened here, vice in `open_molecule`, to prevent it clearing the map
     // on init.
-
-    state.to_save.last_map_opened = None;
 
     *redraw = true;
     *reset_cam = true;
@@ -1104,11 +1102,13 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
             let mut dm_loaded = None; // avoids a double-borrow error.
             if let Some(mol) = &mut state.molecule {
-                let color = if state.to_save.last_peptide_opened.is_none() {
-                    COLOR_ATTENTION
-                } else {
-                    Color32::GRAY
-                };
+                // let color = if state.to_save.last_peptide_opened.is_none() {
+                //     COLOR_ATTENTION
+                // } else {
+                //     Color32::GRAY
+                // };
+                // todo: Put a form of this back.
+                let color = Color32::GRAY;
 
                 if ui.button(RichText::new("Save").color(color)).clicked() {
                     let extension = "cif";
@@ -1253,11 +1253,14 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
             if let Some(lig) = &state.active_lig() {
                 // Highlight the button if we haven't saved this to file, e.g. if opened from online.
-                let color = if state.to_save.last_ligand_opened.is_none() {
-                    COLOR_ATTENTION
-                } else {
-                    Color32::GRAY
-                };
+                // let color = if state.to_save.last_ligand_opened.is_none() {
+                //     COLOR_ATTENTION
+                // } else {
+                //     Color32::GRAY
+                // };
+                // todo: Put a form of this back.
+                let color = Color32::GRAY;
+
                 if ui.button(RichText::new("Save lig").color(color)).clicked() {
                     let extension = "mol2"; // The default; more robust than SDF.
 
@@ -1381,7 +1384,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         ui.add_space(ROW_SPACING);
 
         let mut close_ligand = false; // to avoid borrow error.
-        lig_data(state, scene, ui, &mut redraw_lig, &mut close_ligand, &mut engine_updates);
+        disp_lig_data(state, scene, ui, &mut redraw_lig, &mut close_ligand, &mut engine_updates);
 
         ui.add_space(ROW_SPACING);
         selection_section(state, &mut redraw_mol, ui);

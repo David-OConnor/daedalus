@@ -36,7 +36,7 @@ use crate::{
 };
 
 /// Contains fields shared by all molecule types.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct MoleculeCommon {
     pub ident: String,
     pub atoms: Vec<Atom>,
@@ -51,6 +51,24 @@ pub struct MoleculeCommon {
     /// the molecule atoms' (relative) positions.
     pub atom_posits: Vec<Vec3>,
     pub metadata: HashMap<String, String>,
+    /// This is a bit different, as it's for our UI only. Doesn't fit with the others,
+    /// but is safer and easier than trying to sync Vec indices.
+    pub visible: bool,
+}
+
+impl Default for MoleculeCommon {
+    /// Only so we can set visible: true.
+    fn default() -> Self {
+        Self {
+            ident: String::new(),
+            atoms: Vec::new(),
+            bonds: Vec::new(),
+            adjacency_list: Vec::new(),
+            atom_posits: Vec::new(),
+            metadata: HashMap::new(),
+            visible: true,
+        }
+    }
 }
 
 impl MoleculeCommon {
@@ -68,9 +86,8 @@ impl MoleculeCommon {
             ident,
             atoms,
             bonds,
-            adjacency_list: Vec::new(),
             atom_posits,
-            metadata: HashMap::new(),
+            ..Self::default()
         };
 
         result.build_adjacency_list();
