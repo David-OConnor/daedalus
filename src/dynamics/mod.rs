@@ -344,7 +344,7 @@ pub struct MdState {
     hydrogen_md_type: HydrogenMdType,
     // todo: Hmm... Is this DRY with forces_on_water? Investigate.
     pub water_pme_sites_forces: Vec<[Vec3; 3]>, // todo: A/R
-    pme_recip: PmeRecip,
+    pme_recip: Option<PmeRecip>,
     /// kcal/mol
     pub potential_energy: f64,
 }
@@ -515,26 +515,34 @@ impl MdState {
         }
     }
 
-    // todo: Make work on GPU.
     fn handle_spme_recip(&mut self, dev: &ComputationDevice) {
         const K_COUL: f64 = 1.; // todo: ChatGPT really wants this, but I don't think I need it.
 
         let (pos_all, q_all, map) = self.gather_pme_particles_wrapped();
 
-        // todo: THe CPU versoin is returning 0s, and the GPU one is not??
-        let mut f_recip = match dev {
-            ComputationDevice::Cpu => self.pme_recip.forces(&pos_all, &q_all),
-            #[cfg(feature = "cuda")]
-            ComputationDevice::Gpu((stream, module)) => {
-                // self.pme_recip.forces_gpu(stream, module, &pos_all, &q_all)
-                // todo: GPU isn't improving this, but it should be
-                self.pme_recip.forces(&pos_all, &q_all)
+        let (mut f_recip, e_recip) = match &mut self.pme_recip {
+            Some(pme_recip) => {
+                match dev {
+                    ComputationDevice::Cpu => pme_recip.forces(&pos_all, &q_all),
+                    #[cfg(feature = "cuda")]
+                    ComputationDevice::Gpu((stream, module)) => {
+                        // self.pme_recip.forces_gpu(stream, module, &pos_all, &q_all)
+                        // todo: GPU isn't improving this, but it should be
+                        pme_recip.forces(&pos_all, &q_all)
+                    }
+                }
+            }
+            None => {
+                panic!("No PME recip available; not computing SPME recip.");
             }
         };
 
+        self.potential_energy += e_recip;
+
         // println!("F RECIP: {:?}", &f_recip[0..20]);
 
-        // Scale to Amber force units if your PME returns raw qE:
+        // todo: QC this.
+        // Scale to Amber force units
         for f in f_recip.iter_mut() {
             *f *= K_COUL;
         }
@@ -578,9 +586,12 @@ impl MdState {
             let qi = self.atoms[i].partial_charge;
             let qj = self.atoms[j].partial_charge;
 
-            let df = ewald_comp_force(dir, r, qi, qj, self.pme_recip.alpha)
-                    * (SCALE_COUL_14 - 1.0) // todo: Cache this.
-                    * K_COUL;
+            let Some(pme_recip) = &mut self.pme_recip else {
+                panic!("Missing PME recip; code error");
+            };
+            let df = ewald_comp_force(dir, r, qi, qj, pme_recip.alpha)
+                * (SCALE_COUL_14 - 1.0) // todo: Cache this.
+                * K_COUL;
 
             self.atoms[i].accel += df;
             self.atoms[j].accel -= df;
@@ -649,7 +660,11 @@ impl MdState {
     /// Run this at init, and whenever you update the sim box.
     pub fn regen_pme(&mut self) {
         let [lx, ly, lz] = self.cell.extent.to_arr();
-        self.pme_recip = PmeRecip::new((SPME_N, SPME_N, SPME_N), (lx, ly, lz), EWALD_ALPHA);
+        self.pme_recip = Some(PmeRecip::new(
+            (SPME_N, SPME_N, SPME_N),
+            (lx, ly, lz),
+            EWALD_ALPHA,
+        ));
     }
 
     /// Note: This is currently only for the dynamic atoms; does not take water kinetic energy into account.

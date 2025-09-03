@@ -233,8 +233,11 @@ These are available in [Amber tools](https://ambermd.org/GetAmber.php). Download
 - `parm19.dat`
 - `frcmod.ff19SB`
 - `gaff2.dat`
+- `ff-nucleic-OL24.lib`
+- `ff-nucleic-OL24.frcmod`
+- `RNA.lib`
 
-We provide a [copy of these files](https://github.com/David-OConnor/daedalus/releases/download/0.1.3/amber_params_august_2025.zip)
+We provide a [copy of these files](https://github.com/David-OConnor/daedalus/releases/download/0.1.3/amber_params_sept_2025.zip)
 for convenience; this is a much smaller download than the entire Amber package, and prevents needing to locate the specific files.
 Unpack, and place these under `resources` prior to compiling.
 

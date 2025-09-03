@@ -8,6 +8,7 @@ use lin_alg::f64::{Quaternion, Vec3};
 use rayon::prelude::*;
 
 use crate::{
+    State,
     docking_v2::{ConformationType, DockingSite, Pose},
     molecule::{Chain, ResidueEnd},
 };
@@ -15,6 +16,8 @@ use crate::{
     // docking::{ConformationType, DockingSite, Pose, prep::setup_flexibility},
     molecule::{Atom, Bond, MoleculeCommon, Residue},
 };
+
+const LIGAND_ABS_POSIT_OFFSET: f64 = 15.; // Å
 
 /// A molecue representing a small organic molecule. Omits mol-generic fields.
 #[derive(Debug, Default, Clone)]
@@ -41,16 +44,26 @@ impl MoleculeSmall {
         bonds: Vec<Bond>,
         pubchem_cid: Option<u32>,
         drugbank_id: Option<String>,
-        ff_params: &HashMap<String, ForceFieldParamsKeyed>,
+        // ff_params: &HashMap<String, ForceFieldParamsKeyed>,
+        // lig_i: Option<usize>,
     ) -> Self {
-        println!("Loading atoms into ligand...");
-
         let mut frcmod_loaded = false;
         // If we've already loaded FRCMOD data for this ligand, update the status. Alternatively,
         // this will be updated when we load the FRCMOD file after.
-        if ff_params.keys().any(|k| k.eq_ignore_ascii_case(&ident)) {
-            frcmod_loaded = true;
-        }
+        // if ff_params.keys().any(|k| k.eq_ignore_ascii_case(&ident)) {
+        //     frcmod_loaded = true;
+        // }
+
+        // Handfled elsewhere for now.
+        // Offset its position immediately if it's not the first loaded, to prevent ligands
+        // from overlapping
+        // let mut common = MoleculeCommon::new(ident, atoms, Some(bonds));
+        // if let Some(i) = lig_i {
+        //     let offset = LIGAND_ABS_POSIT_OFFSET * (i as f64);
+        //     for posit in &mut common.atom_posits {
+        //         posit.x += offset; // Arbitrary axis and direction.
+        //     }
+        // }
 
         Self {
             common: MoleculeCommon::new(ident, atoms, Some(bonds)),
@@ -121,12 +134,9 @@ impl TryFrom<Mol2> for MoleculeSmall {
 
         // Note: We don't compute bonds here; we assume they're included in the molecule format.
         Ok(Self::new(
-            m.ident,
-            atoms,
-            bonds,
-            None,
-            None,
-            &HashMap::new(),
+            m.ident, atoms, bonds, None, None,
+            // &HashMap::new(),
+            // None,
         ))
     }
 }
@@ -157,7 +167,8 @@ impl TryFrom<Sdf> for MoleculeSmall {
             bonds,
             m.pubchem_cid,
             m.drugbank_id,
-            &HashMap::new(),
+            // &HashMap::new(),
+            // None,
         ))
     }
 }
@@ -183,12 +194,9 @@ impl TryFrom<Pdbqt> for MoleculeSmall {
             .collect::<Result<_, _>>()?;
 
         Ok(Self::new(
-            m.ident,
-            atoms,
-            bonds,
-            None,
-            None,
-            &HashMap::new(),
+            m.ident, atoms, bonds, None, None,
+            // &HashMap::new(),
+            // None,
         ))
     }
 }
@@ -442,7 +450,35 @@ impl MoleculeSmall {
             bonds_this,
             None,
             None,
-            &HashMap::new(),
+            // &HashMap::new(),
+            // None,
         )
+    }
+
+    /// Updates we wish to do shortly after load, but need access to State for.
+    pub fn update_aux(&mut self, state: &State) {
+        if let Some(i) = &state.volatile.active_lig {
+            let offset = LIGAND_ABS_POSIT_OFFSET * (*i as f64);
+            for posit in &mut self.common.atom_posits {
+                posit.x += offset; // Arbitrary axis and direction.
+            }
+        }
+
+        self.ff_params_loaded = true;
+        for atom in &self.common.atoms {
+            if atom.force_field_type.is_none() || atom.partial_charge.is_none() {
+                self.ff_params_loaded = false;
+                break;
+            }
+        }
+
+        if state
+            .ff_params
+            .lig_specific
+            .keys()
+            .any(|k| k.eq_ignore_ascii_case(&self.common.ident))
+        {
+            self.frcmod_loaded = true;
+        }
     }
 }

@@ -94,6 +94,16 @@ const AMINO_CT12: &str = include_str!("../resources/aminoct12.lib"); // Charge; 
 // Ligands/small organic molecules: *General Amber Force Fields*.
 const GAFF2: &str = include_str!("../resources/gaff2.dat");
 
+// DNA (OL24) and RNA (OL3)
+const OL24_LIB: &str = include_str!("../resources/ff-nucleic-OL24.lib");
+const OL24_FRCMOD: &str = include_str!("../resources/ff-nucleic-OL24.frcmod");
+// todo: frcmod.protonated_nucleic?
+// RNA (I believe this is the OL3 Amber's FF page recommends?)
+const RNA_LIB: &str = include_str!("../resources/RNA.lib");
+// todo: RNA.YIL.lib? RNA_CI.lib? RNA_Shaw.lib? These are, I believe, "alternative" libraries,
+// todo, and not required. YIL: Yildirim torsion refit. CI: Legacy Cornell-style. SHAW: incomplete,
+// todo from a person named Shaw.
+
 // Include the compiled CUDA ptx in the binary.
 // const KERN_PTX: &str = include_str!(concat!(env!("OUT_DIR"), "/my_kernel.ptx"));
 
@@ -149,16 +159,17 @@ impl Default for FileDialogs {
                 "All",
                 vec!["cif", "mol2", "sdf", "pdbqt", "map", "mtz", "frcmod", "dat"],
             )
-            .add_file_filter_extensions("Molecule", vec!["cif", "mol2", "sdf", "pdbqt"])
+            .add_file_filter_extensions("Molecule (small)", vec!["mol2", "sdf", "pdbqt"])
             .add_file_filter_extensions("Protein", vec!["cif"])
-            .add_file_filter_extensions("Small mol", vec!["mol2", "sdf", "pdbqt"])
+            // .add_file_filter_extensions("Small mol", vec!["mol2", "sdf", "pdbqt"])
             .add_file_filter_extensions("Density", vec!["map", "mtz", "cif"])
-            .add_file_filter_extensions("Mol dynamics", vec!["frcmod", "dat"])
+            .add_file_filter_extensions("Mol dynamics", vec!["frcmod", "dat", "lib"])
             .add_save_extension("CIF", "cif")
             .add_save_extension("Mol2", "mol2")
             .add_save_extension("SDF", "sdf")
             .add_save_extension("Pdbqt", "pdbqt")
-            .add_save_extension("Map", "map");
+            .add_save_extension("Map", "map")
+            .add_save_extension("MTZ", "mtz");
 
         let cfg_vina = FileDialogConfig {
             ..Default::default()
@@ -172,13 +183,8 @@ impl Default for FileDialogs {
 
         Self {
             load,
-            // load_ligand,
             save,
-            // save_ligand,
             autodock_path,
-            // save_pdbqt,
-            // load_mdx,
-            // load_crystallography,
         }
     }
 }

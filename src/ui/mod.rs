@@ -12,12 +12,12 @@ use egui::{
     TextEdit, TopBottomPanel, Ui,
 };
 use graphics::{ControlScheme, EngineUpdates, Scene};
-use lin_alg::f32::Vec3;
 use na_seq::AaIdent;
 
 static INIT_COMPLETE: AtomicBool = AtomicBool::new(false);
 
 use bio_files::{DensityMap, ResidueType, density_from_2fo_fc_rcsb_gemmi};
+use mol_data::lig_data;
 
 use crate::{
     CamSnapshot,
@@ -27,37 +27,33 @@ use crate::{
     ViewSelLevel,
     cli,
     cli::autocomplete_cli,
-    // docking::{
-    //     ConformationType, calc_binding_energy, find_optimal_pose, find_sites::find_docking_sites,
-    // },
     download_mols::{load_sdf_drugbank, load_sdf_pubchem},
     drawing::{
-        EntityType, MoleculeView, draw_density_point_cloud, draw_density_surface, draw_ligand,
+        EntityType, MoleculeView, draw_density_point_cloud, draw_density_surface,
         draw_nucleic_acid, draw_peptide, draw_water,
     },
     file_io::gemmi_path,
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
     molecule::MoleculeGenericRef,
+    // docking::{
+    //     ConformationType, calc_binding_energy, find_optimal_pose, find_sites::find_docking_sites,
+    // },
     nucleic_acid::{MoleculeNucleicAcid, NucleicAcidType, Strands},
     render::{set_flashlight, set_static_light},
     ui::{
         cam::{cam_controls, cam_snapshots, move_cam_to_lig},
-        misc::{lig_data, md_setup, section_box},
+        misc::{md_setup, section_box},
     },
     util::{
-        cam_look_at_outside, check_prefs_save, close_lig, close_peptide, cycle_selected,
-        handle_err, handle_scene_flags, handle_success, load_atom_coords_rcsb, move_lig_to_res,
-        orbit_center, reset_camera, select_from_search,
+        check_prefs_save, close_lig, close_peptide, cycle_selected, handle_err, handle_scene_flags,
+        handle_success, load_atom_coords_rcsb, orbit_center, reset_camera, select_from_search,
     },
 };
-use crate::{
-    docking_v2::ConformationType, drawing::draw_all_ligs, mol_lig::MoleculeSmall,
-    ui::misc::handle_docking,
-};
+use crate::{drawing::draw_all_ligs, mol_lig::MoleculeSmall, ui::misc::handle_docking};
 
 pub mod cam;
 pub mod misc;
-// mod misc_2;
+mod mol_data;
 
 pub const ROW_SPACING: f32 = 10.;
 pub const COL_SPACING: f32 = 30.;
@@ -89,11 +85,13 @@ fn set_window_title(title: &str, scene: &mut Scene) {
     // ui.ctx().send_viewport_cmd(ViewportCommand::Title(title.to_string()));
 }
 
-fn open_lig(state: &mut State, mol: MoleculeSmall) {
+fn open_lig(state: &mut State, mut mol: MoleculeSmall) {
     // state.ligand =
     //     Some(Ligand::new(mol, &state.ff_params.lig_specific));
 
+    mol.update_aux(state);
     state.ligands.push(mol);
+
     state.volatile.active_lig = Some(state.ligands.len() - 1);
 
     state.mol_dynamics = None;
@@ -685,7 +683,7 @@ fn selection_section(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
         });
 
         if let Some(mol) = &state.molecule {
-            misc::selected_data(mol, state.active_lig(), &state.ui.selection, ui);
+            mol_data::selected_data(mol, state.active_lig(), &state.ui.selection, ui);
         }
     });
 }

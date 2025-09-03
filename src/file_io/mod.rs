@@ -146,12 +146,13 @@ impl State {
         match molecule {
             Ok(mol_gen) => {
                 match mol_gen {
-                    MoleculeGeneric::Ligand(mol) => {
-                        // let lig = Ligand::new(mol, &self.ff_params.lig_specific);
+                    MoleculeGeneric::Ligand(mut mol) => {
                         self.mol_dynamics = None;
 
+                        self.volatile.active_lig = Some(self.ligands.len()); // Prior to push; no - 1
+                        mol.update_aux(self);
+
                         self.ligands.push(mol);
-                        self.volatile.active_lig = Some(self.ligands.len() - 1);
 
                         self.to_save.last_ligand_opened = Some(path.to_owned());
                         self.to_save

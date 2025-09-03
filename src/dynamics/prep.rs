@@ -1038,6 +1038,7 @@ impl MdState {
 
         result.init_neighbors();
 
+        // Initializes the FFT planner[s], among other things.
         result.regen_pme();
 
         // Set up our LJ cache.
