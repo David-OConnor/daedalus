@@ -61,7 +61,7 @@ use cudarc::{
     nvrtc::Ptx,
 };
 use drawing::MoleculeView;
-use dynamics::{ComputationDevice, FfParamSet, MdState};
+use dynamics::{ComputationDevice, FfParamSet, MdState, params::FfParamSet};
 use egui_file_dialog::{FileDialog, FileDialogConfig};
 use graphics::{Camera, InputsCommanded};
 use lin_alg::{
@@ -429,6 +429,7 @@ struct State {
     pub mol_dynamics: Option<MdState>,
     // todo: Combine these params in a single struct.
     pub ff_params: FfParamSet,
+    pub lig_specific_params: HashMap<String, ForceFieldParamsKeyed>,
 }
 
 impl State {

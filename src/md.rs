@@ -2,10 +2,11 @@
 
 use std::time::Instant;
 
-use bio_files::{ResidueEnd, ResidueType};
+use bio_files::{ResidueEnd, ResidueType, amber_params::ForceFieldParamsKeyed};
 use dynamics::{
-    AtomDynamics, ComputationDevice, FfParamSet, ForceFieldParamsIndexed, HydrogenMdType, MdMode,
-    MdState, ParamError, ProtFFTypeChargeMap, SnapshotDynamics,
+    AtomDynamics, ComputationDevice, FfMolType, HydrogenMdType, MdState, MolDynamics, ParamError,
+    Snapshot,
+    params::{FfParamSet, ProtFFTypeChargeMap},
 };
 use lin_alg::f64::Vec3;
 use na_seq::{AminoAcid, AminoAcidGeneral, AminoAcidProtenationVariant, AtomTypeInRes};
@@ -69,6 +70,7 @@ pub fn build_dynamics_docking(
     mol: &MoleculePeptide,
     // setup: &DockingSetup,
     ff_params: &FfParamSet,
+    lig_specific_params: &ForceFieldParamsKeyed,
     temp_target: f64,
     pressure_target: f64,
     n_steps: u32,
@@ -85,13 +87,13 @@ pub fn build_dynamics_docking(
     let mut md_state = new_md_docking(
         &lig.common.atoms,
         &lig.common.atom_posits,
-        &lig.common.adjacency_list,
         &lig.common.bonds,
+        &lig.common.adjacency_list,
         &mol.common.atoms,
         ff_params,
+        lig_specific_params,
         temp_target,
         pressure_target,
-        &lig.common.ident,
     )?;
 
     let start = Instant::now();
@@ -116,7 +118,7 @@ pub fn build_dynamics_docking(
 /// Body masses are separate from the snapshot, since it's invariant.
 pub fn change_snapshot_docking(
     lig: &mut MoleculeSmall,
-    snapshot: &SnapshotDynamics,
+    snapshot: &Snapshot,
     // energy_disp: &mut Option<BindingEnergy>,
 ) {
     let Some(data) = &mut lig.lig_data else {
@@ -131,7 +133,7 @@ pub fn change_snapshot_docking(
 pub fn change_snapshot_peptide(
     mol: &mut MoleculePeptide,
     atoms_dy: &[AtomDynamics],
-    snapshot: &SnapshotDynamics,
+    snapshot: &Snapshot,
 ) {
     let mut posits = Vec::with_capacity(mol.common.atoms.len());
 
@@ -158,27 +160,18 @@ pub fn change_snapshot_peptide(
 pub fn new_md_docking(
     atoms: &[Atom],
     atom_posits: &[Vec3],
-    adjacency_list: &[Vec<usize>],
     bonds: &[Bond],
+    adjacency_list: &[Vec<usize>],
     // This is the whole set; not just nearby. E.g. all protein atoms.
     atoms_static_all: &[Atom],
     ff_params: &FfParamSet,
+    lig_specific_params: &ForceFieldParamsKeyed,
     temp_target: f64,
     pressure_target: f64, // Bar
-    lig_ident: &str,
-    // todo: Temperature/thermostat.
 ) -> Result<MdState, ParamError> {
-    let mut hydrogen_md_type = HydrogenMdType::Fixed(Vec::new());
+    let hydrogen_md_type = HydrogenMdType::Fixed(Vec::new());
 
-    let Some(ff_params_lig_keyed) = &ff_params.lig_general else {
-        return Err(ParamError::new("MD failure: Missing lig general params"));
-    };
-    let Some(ff_params_prot_keyed) = &ff_params.prot_general else {
-        return Err(ParamError::new(
-            "MD failure: Missing prot params general params",
-        ));
-    };
-
+    // Filter peptide atoms, to only include ones near the docking site.
     let mut atoms_static_near = Vec::new();
     for atom_st in atoms_static_all {
         if atom_st.hetero {
@@ -201,80 +194,45 @@ pub fn new_md_docking(
     // Assign FF type and charge to protein atoms; FF type must be assigned prior to initializing `ForceFieldParamsIndexed`.
     // (Ligand atoms will already have FF type assigned).
 
-    let ff_params_keyed_lig_specific = match ff_params.lig_specific.get(lig_ident) {
-        Some(l) => l,
-        None => {
-            return Err(ParamError::new(&format!(
-                "Missing lig-specific (FRCMOD) parameters for {lig_ident}"
-            )));
-        }
-    };
-
     // Convert FF params from keyed to index-based.
     println!("\nBuilding FF params indexed ligand for docking...");
     let atoms_gen: Vec<_> = atoms.iter().map(|a| a.to_generic()).collect();
     let bonds_gen: Vec<_> = bonds.iter().map(|b| b.to_generic()).collect();
 
-    let ff_params_non_static = ForceFieldParamsIndexed::new(
-        ff_params_lig_keyed,
-        Some(ff_params_keyed_lig_specific),
-        &atoms_gen,
-        &bonds_gen,
-        adjacency_list,
-        &mut hydrogen_md_type,
-    )?;
-
-    // This assumes nonbonded interactions only with external atoms; this is fine for
-    // rigid protein models, and is how this is currently structured.
-    let bonds_static = Vec::new();
-    let adj_list_static = Vec::new();
-
     let atoms_static_near_gen: Vec<_> = atoms_static_near.iter().map(|a| a.to_generic()).collect();
 
-    println!("\nBuilding FF params indexed static for docking...");
-    let ff_params_static = ForceFieldParamsIndexed::new(
-        ff_params_prot_keyed,
-        None,
-        &atoms_static_near_gen,
-        &bonds_static,
-        &adj_list_static,
-        &mut hydrogen_md_type,
-    )?;
+    let mols = vec![
+        MolDynamics {
+            ff_mol_type: FfMolType::SmallOrganic,
+            atoms: &atoms_gen,
+            atom_posits: Some(atom_posits),
+            bonds: &bonds_gen,
+            adjacency_list: Some(adjacency_list),
+            static_: false,
+            mol_specific_params: Some(&lig_specific_params),
+        },
+        MolDynamics {
+            ff_mol_type: FfMolType::Peptide,
+            atoms: &atoms_static_near_gen,
+            atom_posits: None,
+            bonds: &[],
+            adjacency_list: None,
+            static_: true,
+            mol_specific_params: None,
+        },
+    ];
 
-    // We are using this approach instead of `.into`, so we can use the atom_posits from
-    // the positioned ligand. (its atom coords are relative; we need absolute)
-    let mut atoms_dy = Vec::with_capacity(atoms.len());
-    for (i, atom) in atoms.iter().enumerate() {
-        atoms_dy.push(AtomDynamics::new(
-            &atom.to_generic(),
-            atom_posits,
-            &ff_params_non_static,
-            i,
-        )?);
-    }
-
-    let mut atoms_dy_static = Vec::with_capacity(atoms_static_near.len());
-    let atom_posits_static: Vec<_> = atoms_static_near.iter().map(|a| a.posit).collect();
-
-    for (i, atom) in atoms_static_near.iter().enumerate() {
-        atoms_dy_static.push(AtomDynamics::new(
-            &atom.to_generic(),
-            &atom_posits_static,
-            &ff_params_static,
-            i,
-        )?);
-    }
-
-    Ok(MdState::new(
-        MdMode::Docking,
-        atoms_dy,
-        atoms_dy_static,
-        ff_params_non_static,
+    println!("Initialized MD...");
+    let result = MdState::new(
+        &mols,
         temp_target,
         pressure_target,
+        ff_params,
         hydrogen_md_type,
-        adjacency_list.to_vec(),
-    ))
+    );
+    println!("Done.");
+
+    result
 }
 
 /// For a dynamic peptide, and no ligand. There is no need to filter by hetero only
@@ -286,15 +244,8 @@ pub fn new_md_peptide(
     ff_params: &FfParamSet,
     temp_target: f64,
     pressure_target: f64,
-    // todo: Thermostat.
 ) -> Result<MdState, ParamError> {
-    let mut hydrogen_md_type = HydrogenMdType::Fixed(Vec::new());
-
-    let Some(ff_params_prot_keyed) = &ff_params.prot_general else {
-        return Err(ParamError::new(
-            "MD failure: Missing prot params general params",
-        ));
-    };
+    let hydrogen_md_type = HydrogenMdType::Fixed(Vec::new());
 
     // Assign FF type and charge to protein atoms; FF type must be assigned prior to initializing `ForceFieldParamsIndexed`.
     // (Ligand atoms will already have FF type assigned).
@@ -304,6 +255,7 @@ pub fn new_md_peptide(
     // Re-assign bond indices. The original indices no longer work due to the filter above, but we
     // can still use serial numbers to reassign.
     let mut bonds_filtered = Vec::new();
+
     for bond in bonds {
         let mut atom_0 = None;
         let mut atom_1 = None;
@@ -331,43 +283,36 @@ pub fn new_md_peptide(
     let adjacency_list = build_adjacency_list(&bonds_filtered, atoms.len());
 
     // Convert FF params from keyed to index-based.
-    println!("\nBuilding FF params indexed for peptide...");
     let atoms_gen: Vec<_> = atoms.iter().map(|a| a.to_generic()).collect();
     let bonds_gen: Vec<_> = bonds_filtered.iter().map(|b| b.to_generic()).collect();
 
-    let ff_params_non_static = ForceFieldParamsIndexed::new(
-        ff_params_prot_keyed,
-        None,
-        &atoms_gen,
-        &bonds_gen,
-        &adjacency_list,
-        &mut hydrogen_md_type,
-    )?;
+    let mols = vec![MolDynamics {
+        ff_mol_type: FfMolType::Peptide,
+        atoms: &atoms_gen,
+        atom_posits: Some(atom_posits),
+        bonds: &bonds_gen,
+        adjacency_list: Some(&adjacency_list),
+        static_: false,
+        mol_specific_params: None,
+    }];
 
-    let mut atoms_dy = Vec::with_capacity(atoms.len());
-    for (i, atom) in atoms.iter().enumerate() {
-        atoms_dy.push(AtomDynamics::new(
-            &atom.to_generic(),
-            atom_posits,
-            &ff_params_non_static,
-            i,
-        )?);
-    }
-
-    Ok(MdState::new(
-        MdMode::Peptide,
-        atoms_dy,
-        Vec::new(),
-        ff_params_non_static,
+    println!("Initializing MD state...");
+    let result = MdState::new(
+        &mols,
         temp_target,
         pressure_target,
+        ff_params,
         hydrogen_md_type,
-        adjacency_list.to_vec(),
-    ))
+    );
+
+    println!("Done.");
+    result
 }
 
 /// Populate forcefield type, and partial charge.
 /// `residues` must be the full set; this is relevant to how we index it.
+///
+/// todo: Move to dynamics?
 pub fn populate_ff_and_q(
     atoms: &mut [Atom],
     residues: &[Residue],

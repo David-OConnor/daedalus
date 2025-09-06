@@ -18,8 +18,10 @@ use crate::{
     CamSnapshot, PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel,
     download_mols::load_cif_rcsb,
     drawing::{
-        EntityType, MoleculeView, draw_density_point_cloud, draw_density_surface, draw_peptide,
+        EntityType, MoleculeView, draw_all_ligs, draw_density_point_cloud, draw_density_surface,
+        draw_peptide,
     },
+    md::populate_ff_and_q,
     mol_lig::MoleculeSmall,
     molecule::{Atom, Bond, MoleculeCommon, MoleculePeptide, Residue},
     render::{
@@ -32,7 +34,6 @@ use crate::{
         FOG_DIST_DEFAULT, RENDER_DIST_FAR, RENDER_DIST_NEAR, VIEW_DEPTH_NEAR_MIN, calc_fog_dists,
     },
 };
-use crate::md::populate_ff_and_q;
 
 const MOVE_TO_TARGET_DIST: f32 = 15.;
 const MOVE_CAM_TO_LIG_DIST: f32 = 30.;
@@ -603,15 +604,10 @@ pub fn close_lig(
         return;
     }
 
-    let ident = state.ligands[i].common.ident.clone();
-
     state.ligands.remove(i);
     state.volatile.active_lig = None;
 
-    // todo: Hmm. We only want to remove the current one from the drawing. Fix this.
-    scene
-        .entities
-        .retain(|ent| ent.class != EntityType::Ligand as u32);
+    draw_all_ligs(state, scene);
 
     engine_updates.entities = true;
 

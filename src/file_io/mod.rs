@@ -15,8 +15,7 @@ use bio_files::{
     sdf::Sdf,
 };
 use chrono::Utc;
-use dynamics::{ProtFFTypeChargeMap, merge_params};
-// use itertools::Itertools;
+use dynamics::{merge_params, params::ProtFFTypeChargeMap};
 use na_seq::{AaIdent, Element};
 
 use crate::{
@@ -297,12 +296,12 @@ impl State {
 
         match extension.to_str().unwrap() {
             "dat" => {
-                self.ff_params.lig_general = Some(ForceFieldParamsKeyed::new(
+                self.ff_params.small_mol = Some(ForceFieldParamsKeyed::new(
                     &ForceFieldParams::load_dat(path)?,
                 ));
 
                 println!("\nLoaded forcefields:");
-                let v = &self.ff_params.lig_general.as_ref().unwrap();
+                let v = &self.ff_params.small_mol.as_ref().unwrap();
                 println!("Lin");
                 for di in v.bond.values().take(20) {
                     println!("Lin: {:?}, {}, {}", di.atom_types, di.k_b, di.r_0);
@@ -322,7 +321,7 @@ impl State {
                 }
 
                 println!("Dihedral, improper:");
-                for di in v.dihedral_improper.values().take(20) {
+                for di in v.improper.values().take(20) {
                     println!(
                         "Imp: {:?}, {}, {}",
                         di.atom_types, di.barrier_height, di.phase
@@ -331,7 +330,7 @@ impl State {
 
                 // todo: Get VDW loading working.
                 println!("Vdw");
-                for di in v.van_der_waals.values().take(20) {
+                for di in v.lennard_jones.values().take(20) {
                     println!("Vdw: {:?}, {}, {}", di.atom_type, di.sigma, di.eps);
                 }
 
@@ -353,7 +352,7 @@ impl State {
                     })?
                     .to_string();
 
-                self.ff_params.lig_specific.insert(
+                self.lig_specific_params.insert(
                     mol_name.to_uppercase(),
                     ForceFieldParamsKeyed::new(&ForceFieldParams::load_frcmod(path)?),
                 );
@@ -542,11 +541,11 @@ impl State {
     pub fn load_ffs_general(&mut self) {
         let start = Instant::now();
 
-        if self.ff_params.prot_general.is_none() {
+        if self.ff_params.peptide.is_none() {
             // Load general parameters for proteins and AAs.
             match ForceFieldParams::from_dat(PARM_19) {
                 Ok(ff) => {
-                    self.ff_params.prot_general = Some(ForceFieldParamsKeyed::new(&ff));
+                    self.ff_params.peptide = Some(ForceFieldParamsKeyed::new(&ff));
                 }
                 Err(e) => handle_err(
                     &mut self.ui,
@@ -560,9 +559,9 @@ impl State {
                     let ff_keyed = ForceFieldParamsKeyed::new(&ff);
 
                     // We just loaded this above.
-                    if let Some(ffs) = &mut self.ff_params.prot_general {
+                    if let Some(ffs) = &mut self.ff_params.peptide {
                         let params_updated = merge_params(ffs, Some(&ff_keyed));
-                        self.ff_params.prot_general = Some(params_updated);
+                        self.ff_params.peptide = Some(params_updated);
                     }
                 }
                 Err(e) => handle_err(
@@ -583,10 +582,10 @@ impl State {
         }
 
         // Load general organic molecule, e.g. ligand, parameters.
-        if self.ff_params.lig_general.is_none() {
+        if self.ff_params.small_mol.is_none() {
             match ForceFieldParams::from_dat(GAFF2) {
                 Ok(ff) => {
-                    self.ff_params.lig_general = Some(ForceFieldParamsKeyed::new(&ff));
+                    self.ff_params.small_mol = Some(ForceFieldParamsKeyed::new(&ff));
                 }
                 Err(e) => handle_err(
                     &mut self.ui,
@@ -614,7 +613,7 @@ impl State {
                 // Load FRCmod first, then the Ligand constructor will populate that it loaded.
                 if load_frcmod {
                     if let Some(frcmod) = data.frcmod {
-                        self.ff_params.lig_specific.insert(
+                        self.lig_specific_params.insert(
                             ident.to_uppercase(),
                             // todo: Don't unwrap.
                             ForceFieldParamsKeyed::new(

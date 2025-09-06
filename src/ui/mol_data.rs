@@ -98,7 +98,15 @@ pub fn selected_data(
                 });
             }
             Selection::AtomLigand((lig_i, atom_i)) => {
+                if *lig_i >= ligands.len() {
+                    return;
+                }
                 let lig = &ligands[*lig_i];
+
+                if *atom_i >= lig.common.atoms.len() {
+                    return;
+                }
+
                 let atom = &lig.common.atoms[*atom_i];
                 let posit = lig.common.atom_posits[*atom_i];
 
