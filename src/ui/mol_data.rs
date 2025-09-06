@@ -11,10 +11,12 @@ use crate::{
     drawing::{CHARGE_MAP_MAX, CHARGE_MAP_MIN, COLOR_AA_NON_RESIDUE_EGUI},
     mol_lig::MoleculeSmall,
     molecule::{Atom, MoleculeGenericRef, MoleculePeptide, Residue, aa_color},
-    ui::{COL_SPACING, COLOR_ACTIVE, COLOR_INACTIVE, cam::move_cam_to_lig, misc, mol_descrip},
+    ui::{
+        COL_SPACING, COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_INACTIVE, cam::move_cam_to_lig, misc,
+        mol_descrip,
+    },
     util::{handle_err, handle_success, make_egui_color, move_lig_to_res},
 };
-use crate::ui::COLOR_ACTIVE_RADIO;
 
 /// `posit_override` is for example, relative atom positions, such as a positioned ligand.
 fn disp_atom_data(atom: &Atom, residues: &[Residue], posit_override: Option<Vec3>, ui: &mut Ui) {
@@ -79,8 +81,7 @@ fn disp_atom_data(atom: &Atom, residues: &[Residue], posit_override: Option<Vec3
 /// Display text of the selected atom or residue.
 pub fn selected_data(
     mol: &MoleculePeptide,
-    // ligand: &Option<MoleculeSmall>,
-    ligand: Option<&MoleculeSmall>,
+    ligands: &[MoleculeSmall],
     selection: &Selection,
     ui: &mut Ui,
 ) {
@@ -96,16 +97,11 @@ pub fn selected_data(
                     disp_atom_data(atom, &mol.residues, None, ui);
                 });
             }
-            Selection::AtomLigand(sel_i) => {
-                let Some(lig) = ligand else {
-                    return;
-                };
-                if *sel_i >= lig.common.atoms.len() {
-                    return;
-                }
+            Selection::AtomLigand((lig_i, atom_i)) => {
+                let lig = &ligands[*lig_i];
+                let atom = &lig.common.atoms[*atom_i];
+                let posit = lig.common.atom_posits[*atom_i];
 
-                let atom = &lig.common.atoms[*sel_i];
-                let posit = lig.common.atom_posits[*sel_i];
                 misc::section_box().show(ui, |ui| {
                     disp_atom_data(atom, &[], Some(posit), ui);
                 });
@@ -149,7 +145,11 @@ fn lig_picker(
     for (i, lig) in state.ligands.iter_mut().enumerate() {
         let active = state.volatile.active_lig.unwrap_or(999) == i;
 
-        let color = if active { COLOR_ACTIVE_RADIO } else { COLOR_INACTIVE };
+        let color = if active {
+            COLOR_ACTIVE_RADIO
+        } else {
+            COLOR_INACTIVE
+        };
 
         if ui
             .button(RichText::new(&lig.common.ident).color(color))
@@ -168,10 +168,7 @@ fn lig_picker(
             COLOR_INACTIVE
         };
 
-        if ui
-            .button(RichText::new("👁").color(color_vis))
-            .clicked()
-        {
+        if ui.button(RichText::new("👁").color(color_vis)).clicked() {
             lig.common.visible = !lig.common.visible;
 
             *redraw_lig = true; // todo Overkill; only need to redraw (or even just clear) one.
@@ -190,6 +187,7 @@ pub fn disp_lig_data(
 ) {
     ui.horizontal(|ui| {
         lig_picker(state, scene, ui, redraw_lig, close_lig, engine_updates);
+
         if state.active_lig().is_none() {
             return;
         }

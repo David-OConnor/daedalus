@@ -17,7 +17,10 @@ na_seq = "0.3.1"
 bio_apis = {  version = "0.1.6", features = ["encode"] }
 bio_files = "0.2.8"
 mcubes = "0.1.4"
+# todo: Still required with dynamics as separate crate?
 ewald = { version = "0.1.1" }
+#dynamics = "0.1.1"
+dynamics = { path = "../dynamics"}
 
 # For loading and saving config
 bincode = "2.0.1"
@@ -37,13 +40,11 @@ cudarc = { version = "0.17.2", default-features = false, features = ["std", "dri
 [target.'cfg(target_os = "windows")'.dependencies]
 cudarc = { version = "0.17.2", default-features = false, features = ["std", "driver", "dynamic-loading", "cuda-13000"], optional=true }
 
+# todo: YOu may be able to remove this.
 rand = "0.9.2"
-rand_distr  = "0.5.1"
 regex = "1.11.1"
 
 chrono = "0.4.41"
-
-itertools = "0.14.0" # For combinations when matching angles in MD.
 
 
 # We use these when developing locally to reduce friction.
@@ -55,6 +56,7 @@ na_seq = { path = "../na_seq" }
 #mcubes = { path = "../mcubes" }
 bio_files = { path = "../bio_files" }
 ewald = { path = "../ewald" }
+dynamics = { path = "../dynamics" }
 #cuda_setup = { path = "../../cuda_setup" }
 
 
@@ -68,7 +70,8 @@ winresource = "0.1.20"
 [features]
 default = ["cuda"]
 
-cuda = ["cuda_setup", "cudarc", "lin_alg/cuda", "ewald/cuda"]
+#cuda = ["cuda_setup", "cudarc", "lin_alg/cuda", "ewald/cuda"]
+cuda = ["cuda_setup", "cudarc", "lin_alg/cuda", "ewald/cuda", "dynamics/cuda"]
 
 
 [profile.release]

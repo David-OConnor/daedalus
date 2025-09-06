@@ -47,10 +47,10 @@ pub struct OpenHistory {
     pub timestamp: DateTime<Utc>,
     pub path: PathBuf,
     pub type_: OpenType,
-    /// e.g. RCSB, pubchem etc ident. Maches moleculeCommon.
-    pub ident: String,
+    // /// e.g. RCSB, pubchem etc ident. Maches moleculeCommon.
+    // pub ident: String,
     /// For determining which to open at program start.
-    pub last_session: bool
+    pub last_session: bool,
 }
 
 // Manual bincode impls
@@ -62,6 +62,7 @@ impl Encode for OpenHistory {
 
         self.path.encode(encoder)?;
         self.type_.encode(encoder)?;
+        // self.ident.encode(encoder)?;
         self.last_session.encode(encoder)?;
 
         Ok(())
@@ -73,7 +74,7 @@ impl<T> Decode<T> for OpenHistory {
         let ts = i64::decode(decoder)?;
         let path = PathBuf::decode(decoder)?;
         let type_ = OpenType::decode(decoder)?;
-        let ident = String::decode(decoder)?;
+        // let ident = String::decode(decoder)?;
         let last_session = bool::decode(decoder)?;
 
         Ok(OpenHistory {
@@ -84,7 +85,7 @@ impl<T> Decode<T> for OpenHistory {
             ),
             path,
             type_,
-            ident,
+            // ident,
             last_session,
         })
     }
@@ -100,12 +101,12 @@ impl<'de, C> BorrowDecode<'de, C> for OpenHistory {
 }
 
 impl OpenHistory {
-    pub fn new(path: &Path, type_: OpenType, ident: String,) -> Self {
+    pub fn new(path: &Path, type_: OpenType) -> Self {
         Self {
             timestamp: Utc::now(),
             path: path.to_owned(),
             type_,
-            ident,
+            // ident,
             last_session: true,
         }
     }
@@ -205,12 +206,6 @@ impl PerMolToSave {
         if let Some(mol) = &state.molecule {
             chain_vis = mol.chains.iter().map(|c| c.visible).collect();
 
-            // if let Some(title) = mol.common.metadata.get("prim_cit_title") {
-            //     metadata = Some(MolMetaData {
-            //         prim_cit_title: title.clone(),
-            //     });
-            // }
-
             rcsb_data = mol.rcsb_data.clone();
             rcsb_files_avail = mol.rcsb_files_avail.clone();
         }
@@ -282,6 +277,8 @@ impl State {
             self.to_save.per_mol.insert(mol.common.ident.clone(), data);
         }
 
+        println!("Saving history: {:?}", self.to_save.open_history);
+
         if let Err(e) = save(
             &self.volatile.prefs_dir.join(DEFAULT_PREFS_FILE),
             &self.to_save,
@@ -314,18 +311,6 @@ impl State {
                 self.ui.res_color_by_index = data.res_color_by_index;
                 self.ui.atom_color_by_charge = data.aatom_color_by_charge;
                 self.ui.show_aa_seq = data.show_aa_seq;
-
-                // if let Some(title) = mol.common.metadata.get("prim_cit_title") {
-                //     metadata = Some(MolMetaData {
-                //         prim_cit_title: title.clone(),
-                //     });
-                // }
-
-                // if let Some(md) = &data.metadata {
-                //     mol.metadata = Some(PdbMetaData {
-                //         prim_cit_title: md.prim_cit_title.clone(),
-                //     })
-                // }
 
                 for (i, chain) in mol.chains.iter_mut().enumerate() {
                     if i < data.chain_vis.len() {
@@ -374,6 +359,8 @@ impl State {
             Ok(p) => self.to_save = p,
             Err(_) => eprintln!("Unable to load save file; possibly the first time running."),
         }
+
+        println!("Loaded history: {:?}", self.to_save.open_history);
 
         self.update_from_prefs();
     }

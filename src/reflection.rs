@@ -11,16 +11,14 @@ use bio_apis::{ReqError, rcsb};
 use bio_files::{DensityMap, MapHeader, UnitCell};
 #[cfg(feature = "cuda")]
 use cudarc::driver::{CudaModule, CudaStream, LaunchConfig, PushKernelArg};
+use dynamics::ForcesOnWaterMol;
 #[cfg(feature = "cuda")]
 use lin_alg::f32::{vec3s_from_dev, vec3s_to_dev};
 use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 use mcubes::GridPoint;
 use rayon::prelude::*;
 
-use crate::{
-    ComputationDevice, dynamics::non_bonded::ForcesOnWaterMol, molecule::Atom,
-    util::setup_neighbor_pairs,
-};
+use crate::{ComputationDevice, molecule::Atom, util::setup_neighbor_pairs};
 
 pub const DENSITY_CELL_MARGIN: f64 = 2.0;
 

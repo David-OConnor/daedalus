@@ -6,13 +6,12 @@ use egui::{
 use graphics::{EngineUpdates, Scene};
 const COLOR_SECTION_BOX: Color32 = Color32::from_rgb(100, 100, 140);
 
+use dynamics::MdMode;
+
 use crate::{
     ComputationDevice, State,
     drawing::{draw_all_ligs, draw_peptide, draw_water},
-    dynamics::{
-        MdMode,
-        prep::{build_dynamics_docking, build_dynamics_peptide, change_snapshot_peptide},
-    },
+    md::{build_dynamics_docking, build_dynamics_peptide, change_snapshot_peptide},
     molecule::PeptideAtomPosits,
     ui::{
         COL_SPACING, COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_INACTIVE, ROW_SPACING,

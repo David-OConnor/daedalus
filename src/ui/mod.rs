@@ -681,7 +681,7 @@ fn selection_section(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
         });
 
         if let Some(mol) = &state.molecule {
-            mol_data::selected_data(mol, state.active_lig(), &state.ui.selection, ui);
+            mol_data::selected_data(mol, &state.ligands, &state.ui.selection, ui);
         }
     });
 }
@@ -697,7 +697,7 @@ fn mol_descrip(mol: &MoleculeGenericRef, ui: &mut Ui) {
         }
     }
 
-    if let Some(title) = mol.common().metadata.get("prim_cit_title") {
+    if let Some(title) = mol.common().metadata.get("_struct.title") {
         // Limit size to prevent UI problems.
         let mut title_abbrev: String = title.chars().take(MAX_TITLE_LEN).collect();
 

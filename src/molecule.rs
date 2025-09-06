@@ -16,19 +16,18 @@ use bio_apis::{
 };
 use bio_files::{
     AtomGeneric, BackboneSS, BondGeneric, BondType, ChainGeneric, DensityMap, ExperimentalMethod,
-    MmCif, ResidueGeneric, ResidueType,
+    MmCif, ResidueEnd, ResidueGeneric, ResidueType,
 };
+use dynamics::{AtomDynamics, FfParamSet, ForceFieldParamsIndexed, MdMode, ParamError, ProtFfMap};
 use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 use na_seq::{AminoAcid, AtomTypeInRes, Element};
 use rayon::prelude::*;
 
 use crate::{
-    ProtFfMap,
     Selection,
     aa_coords::Dihedral,
     bond_inference::{create_bonds, create_hydrogen_bonds},
     // docking::prep::DockType,
-    dynamics::ForceFieldParamsIndexed,
     mol_lig::MoleculeSmall,
     nucleic_acid::MoleculeNucleicAcid,
     reflection::{DensityRect, ElectronDensity, ReflectionsData},
@@ -61,11 +60,11 @@ impl Default for MoleculeCommon {
     fn default() -> Self {
         Self {
             ident: String::new(),
+            metadata: HashMap::new(),
             atoms: Vec::new(),
             bonds: Vec::new(),
             adjacency_list: Vec::new(),
             atom_posits: Vec::new(),
-            metadata: HashMap::new(),
             visible: true,
         }
     }
@@ -74,7 +73,12 @@ impl Default for MoleculeCommon {
 impl MoleculeCommon {
     /// If `bonds` is none, create it based on atom distances. Useful in the case of mmCIF files,
     /// which usually lack bond information.
-    pub fn new(ident: String, atoms: Vec<Atom>, bonds: Option<Vec<Bond>>) -> Self {
+    pub fn new(
+        ident: String,
+        atoms: Vec<Atom>,
+        bonds: Option<Vec<Bond>>,
+        metadata: HashMap<String, String>,
+    ) -> Self {
         let atom_posits = atoms.iter().map(|a| a.posit).collect();
 
         let bonds = match bonds {
@@ -84,6 +88,7 @@ impl MoleculeCommon {
 
         let mut result = Self {
             ident,
+            metadata,
             atoms,
             bonds,
             atom_posits,
@@ -189,13 +194,14 @@ impl MoleculePeptide {
         // Populate this with the Amino19.lib map, if we wish to add Hydrogens. (e.g. for mmCif protein
         // data, but not for small molecules).
         add_hydrogens: Option<&ProtFfMap>,
+        metadata: HashMap<String, String>,
     ) -> Self {
         let (center, size) = mol_center_size(&atoms);
 
         println!("Loading atoms into mol...");
 
         let mut result = Self {
-            common: MoleculeCommon::new(ident, atoms, None),
+            common: MoleculeCommon::new(ident, atoms, None, metadata),
             chains,
             residues,
             center,
@@ -245,10 +251,11 @@ impl MoleculePeptide {
         result
     }
 
-    /// If a residue, get the alpha C. If multiple, get an arbtirary one.
+    /// If a residue, get the alpha C. If multiple, get an arbitrary one.
     pub fn get_sel_atom(&self, sel: &Selection) -> Option<&Atom> {
         match sel {
-            Selection::Atom(i) | Selection::AtomLigand(i) => self.common.atoms.get(*i),
+            Selection::Atom(i) => self.common.atoms.get(*i),
+            Selection::AtomLigand((lig_i, atom_i)) => None,
             Selection::Residue(i) => {
                 let res = &self.residues[*i];
                 if !res.atoms.is_empty() {
@@ -482,15 +489,6 @@ pub struct HydrogenBond {
     pub donor: usize,
     pub acceptor: usize,
     pub hydrogen: usize,
-}
-
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub enum ResidueEnd {
-    Internal,
-    NTerminus,
-    CTerminus,
-    /// Not part of a protein/polypeptide.
-    Hetero,
 }
 
 #[derive(Debug, Clone)]
@@ -855,14 +853,14 @@ impl MoleculePeptide {
             }
         }
 
-        let mut result = Self::new(m.ident.clone(), atoms, chains, residues, Some(ff_map));
-
-        if let Some(title) = m.metadata.get("_struct.title") {
-            result
-                .common
-                .metadata
-                .insert("prim_cit_title".to_string(), title.to_string());
-        }
+        let mut result = Self::new(
+            m.ident.clone(),
+            atoms,
+            chains,
+            residues,
+            Some(ff_map),
+            m.metadata,
+        );
 
         result.experimental_method = m.experimental_method.clone();
         result.secondary_structure = m.secondary_structure.clone();

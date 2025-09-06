@@ -7,6 +7,7 @@ use std::{
 };
 
 use bio_files::ResidueType;
+use dynamics::ParamError;
 use lin_alg::f64::{Quaternion, Vec3, calc_dihedral_angle, calc_dihedral_angle_v2};
 use na_seq::{
     AminoAcid, AtomTypeInRes,
@@ -22,7 +23,6 @@ use crate::{
         sidechain::Sidechain,
     },
     add_hydrogens::{DigitMap, h_type_in_res_sidechain},
-    dynamics::ParamError,
     molecule::{Atom, AtomRole, Residue},
 };
 

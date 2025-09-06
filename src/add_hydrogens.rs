@@ -23,12 +23,11 @@
 
 use std::collections::HashMap;
 
+use dynamics::{ParamError, ProtFfMap};
 use na_seq::{AminoAcid, AminoAcidGeneral, AminoAcidProtenationVariant, AtomTypeInRes};
 
 use crate::{
-    ProtFfMap,
     aa_coords::aa_data_from_coords,
-    dynamics::ParamError,
     molecule::{Atom, AtomRole, MoleculePeptide},
 };
 

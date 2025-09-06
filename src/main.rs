@@ -34,11 +34,13 @@ mod ui;
 mod util;
 
 mod cli;
-mod dynamics;
+// mod dynamics;
 mod reflection;
 
+mod md;
 mod mol_lig;
 mod nucleic_acid;
+mod selection;
 #[cfg(test)]
 mod tests;
 
@@ -59,6 +61,7 @@ use cudarc::{
     nvrtc::Ptx,
 };
 use drawing::MoleculeView;
+use dynamics::{ComputationDevice, FfParamSet, MdState};
 use egui_file_dialog::{FileDialog, FileDialogConfig};
 use graphics::{Camera, InputsCommanded};
 use lin_alg::{
@@ -72,7 +75,6 @@ use na_seq::AminoAcidGeneral;
 use crate::{
     aa_coords::bond_vecs::init_local_bond_vecs,
     // docking::{BindingEnergy, THETA_BH, prep::DockingSetup},
-    dynamics::MdState,
     molecule::PeptideAtomPosits,
     nucleic_acid::MoleculeNucleicAcid,
     prefs::ToSave,
@@ -119,16 +121,6 @@ const PTX: &str = include_str!("../daedalus.ptx");
 // todo: Eventually, implement a system that automatically checks for changes, and don't
 // todo save to disk if there are no changes.
 const PREFS_SAVE_INTERVAL: u64 = 60; // Save user preferences this often, in seconds.
-
-pub type ProtFfMap = HashMap<AminoAcidGeneral, Vec<ChargeParams>>;
-
-#[derive(Debug, Clone, Default)]
-pub enum ComputationDevice {
-    #[default]
-    Cpu,
-    #[cfg(feature = "cuda")]
-    Gpu((Arc<CudaStream>, Arc<CudaModule>)),
-}
 
 #[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]
 pub enum ViewSelLevel {
@@ -391,7 +383,8 @@ pub enum Selection {
     Residue(usize),
     /// Of the protein
     Atoms(Vec<usize>),
-    AtomLigand(usize),
+    /// Ligand index, atom index
+    AtomLigand((usize, usize)),
 }
 
 #[derive(Clone, Debug, Encode, Decode)]
@@ -413,29 +406,6 @@ impl CamSnapshot {
             name,
         }
     }
-}
-
-/// Maps type-in-residue (found in, e.g. mmCIF and PDB files) to Amber FF type, and partial charge.
-/// We assume that if one of these is loaded, so are the others. So, these aren't `Options`s, but
-/// the field that holds this struct should be one.
-pub struct ProtFFTypeChargeMap {
-    pub internal: ProtFfMap,
-    pub n_terminus: ProtFfMap,
-    pub c_terminus: ProtFfMap,
-}
-
-#[derive(Default)]
-/// Force field parameters (e.g. Amber) for molecular dynamics.
-pub struct FfParamSet {
-    /// E.g. parsed from Amber `gaff2.dat`.
-    pub lig_general: Option<ForceFieldParamsKeyed>,
-    /// E.g. ff19SB. Loaded at init.
-    pub prot_general: Option<ForceFieldParamsKeyed>,
-    /// In addition to charge, this also contains the mapping of res type to FF type; required to map
-    /// other parameters to protein atoms. From `amino19.lib`, and its N and C-terminus variants.
-    pub prot_ff_q_map: Option<ProtFFTypeChargeMap>,
-    /// Key: A unique identifier for the molecule. (e.g. ligand)
-    pub lig_specific: HashMap<String, ForceFieldParamsKeyed>,
 }
 
 #[derive(Default)]

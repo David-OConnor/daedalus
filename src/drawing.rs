@@ -276,6 +276,7 @@ pub fn color_viridis_float(i: f32, min: f32, max: f32) -> Color {
 
 fn atom_color(
     atom: &Atom,
+    mol_i: usize,
     i: usize,
     residues: &[Residue],
     aa_count: usize, // # AA residues; used for color-mapping.
@@ -333,7 +334,7 @@ fn atom_color(
     // If selected, the selected color overrides the element or residue color.
     match selection {
         Selection::Atom(sel_i) => {
-            if mol_type != MolType::Ligand && *sel_i == i {
+            if mol_type == MolType::Peptide && *sel_i == i {
                 result = COLOR_SELECTED;
             }
         }
@@ -349,8 +350,8 @@ fn atom_color(
                 result = COLOR_SELECTED;
             }
         }
-        Selection::AtomLigand(sel_i) => {
-            if mol_type != MolType::Ligand && *sel_i == i {
+        Selection::AtomLigand((lig_i, sel_i)) => {
+            if mol_type == MolType::Ligand && *sel_i == i && *lig_i == mol_i {
                 result = COLOR_SELECTED;
             }
         }
@@ -742,16 +743,16 @@ pub fn draw_all_ligs(state: &State, scene: &mut Scene) {
         return;
     }
 
-    for lig in &state.ligands {
+    for (i, lig) in state.ligands.iter().enumerate() {
         if lig.common.visible {
-            draw_ligand(lig, &state.ui, scene);
+            draw_ligand(lig, i, &state.ui, scene);
         }
     }
 }
 
 // todo: DRY with/subset of draw_molecule?
 // pub fn draw_ligand(state: &State, scene: &mut Scene) {
-pub fn draw_ligand(lig: &MoleculeSmall, state_ui: &StateUi, scene: &mut Scene) {
+pub fn draw_ligand(lig: &MoleculeSmall, lig_i: usize, state_ui: &StateUi, scene: &mut Scene) {
     // Hard-coded for sticks for now.
 
     // let Some(lig) = state.active_lig() else {
@@ -806,6 +807,7 @@ pub fn draw_ligand(lig: &MoleculeSmall, state_ui: &StateUi, scene: &mut Scene) {
 
         let mut color_0 = atom_color(
             atom_0,
+            lig_i,
             bond.atom_0,
             &[],
             0,
@@ -818,6 +820,7 @@ pub fn draw_ligand(lig: &MoleculeSmall, state_ui: &StateUi, scene: &mut Scene) {
         );
         let mut color_1 = atom_color(
             atom_1,
+            lig_i,
             bond.atom_1,
             &[],
             0,
@@ -1180,6 +1183,7 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
                     if role == AtomRole::Water {
                         let color_atom = atom_color(
                             atom,
+                            0,
                             i,
                             &mol.residues,
                             aa_count,
@@ -1304,6 +1308,7 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
 
             let color_atom = atom_color(
                 atom,
+                0,
                 i,
                 &mol.residues,
                 aa_count,
@@ -1436,6 +1441,7 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
 
         let color_0 = atom_color(
             atom_0,
+            0,
             bond.atom_0,
             &mol.residues,
             aa_count,
@@ -1448,6 +1454,7 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
         );
         let color_1 = atom_color(
             atom_1,
+            0,
             bond.atom_1,
             &mol.residues,
             aa_count,

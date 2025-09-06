@@ -3,14 +3,14 @@
 use std::{collections::HashMap, io};
 
 use bio_apis::pubchem::ProteinStructure;
-use bio_files::{ChargeType, Mol2, MolType, Pdbqt, Sdf, amber_params::ForceFieldParamsKeyed};
+use bio_files::{ChargeType, Mol2, MolType, Pdbqt, ResidueEnd, Sdf};
 use lin_alg::f64::{Quaternion, Vec3};
 use rayon::prelude::*;
 
 use crate::{
     State,
     docking_v2::{ConformationType, DockingSite, Pose},
-    molecule::{Chain, ResidueEnd},
+    molecule::Chain,
 };
 use crate::{
     // docking::{ConformationType, DockingSite, Pose, prep::setup_flexibility},
@@ -42,8 +42,7 @@ impl MoleculeSmall {
         ident: String,
         atoms: Vec<Atom>,
         bonds: Vec<Bond>,
-        pubchem_cid: Option<u32>,
-        drugbank_id: Option<String>,
+        metadata: HashMap<String, String>,
         // ff_params: &HashMap<String, ForceFieldParamsKeyed>,
         // lig_i: Option<usize>,
     ) -> Self {
@@ -65,8 +64,23 @@ impl MoleculeSmall {
         //     }
         // }
 
+        let mut pubchem_cid = None;
+        let mut drugbank_id = None;
+
+        if let Some(id) = metadata.get("PUBCHEM_COMPOUND_CID") {
+            pubchem_cid = Some(id.parse::<u32>().unwrap_or_default());
+        }
+
+        if let Some(db_name) = metadata.get("DATABASE_NAME") {
+            if db_name.to_lowercase() == "drugbank" {
+                if let Some(id) = metadata.get("DATABASE_ID") {
+                    drugbank_id = Some(id.clone());
+                }
+            }
+        }
+
         Self {
-            common: MoleculeCommon::new(ident, atoms, Some(bonds)),
+            common: MoleculeCommon::new(ident, atoms, Some(bonds), metadata),
             pubchem_cid,
             drugbank_id,
             frcmod_loaded,
@@ -133,11 +147,7 @@ impl TryFrom<Mol2> for MoleculeSmall {
             .collect::<Result<_, _>>()?;
 
         // Note: We don't compute bonds here; we assume they're included in the molecule format.
-        Ok(Self::new(
-            m.ident, atoms, bonds, None, None,
-            // &HashMap::new(),
-            // None,
-        ))
+        Ok(Self::new(m.ident, atoms, bonds, m.metadata.clone()))
     }
 }
 
@@ -161,15 +171,7 @@ impl TryFrom<Sdf> for MoleculeSmall {
             .map(|b| Bond::from_generic(b, &atoms))
             .collect::<Result<_, _>>()?;
 
-        Ok(Self::new(
-            m.ident,
-            atoms,
-            bonds,
-            m.pubchem_cid,
-            m.drugbank_id,
-            // &HashMap::new(),
-            // None,
-        ))
+        Ok(Self::new(m.ident, atoms, bonds, m.metadata.clone()))
     }
 }
 
@@ -194,9 +196,11 @@ impl TryFrom<Pdbqt> for MoleculeSmall {
             .collect::<Result<_, _>>()?;
 
         Ok(Self::new(
-            m.ident, atoms, bonds, None, None,
-            // &HashMap::new(),
-            // None,
+            // todo: PDBQT metadata?
+            m.ident,
+            atoms,
+            bonds,
+            HashMap::new(),
         ))
     }
 }
@@ -352,6 +356,7 @@ impl MoleculeSmall {
 
         Mol2 {
             ident: self.common.ident.clone(),
+            metadata: self.common.metadata.clone(),
             mol_type: MolType::Small,
             charge_type: ChargeType::None,
             comment: None,
@@ -364,15 +369,25 @@ impl MoleculeSmall {
         let atoms = self.common.atoms.iter().map(|a| a.to_generic()).collect();
         let bonds = self.common.bonds.iter().map(|b| b.to_generic()).collect();
 
+        let mut metadata = self.common.metadata.clone();
+
+        // Note: These may be redundant with metadata already loaded.
+        if let Some(id) = &self.pubchem_cid {
+            metadata.insert("PUBCHEM_COMPOUND_CID".to_string(), id.to_string());
+        }
+
+        if let Some(id) = &self.drugbank_id {
+            metadata.insert("DATABASE_ID".to_string(), id.clone());
+            metadata.insert("DATABASE_NAME".to_string(), "drugbank".to_string());
+        }
+
         Sdf {
             ident: self.common.ident.clone(),
+            metadata,
             atoms,
             bonds,
             chains: Vec::new(),
             residues: Vec::new(),
-            metadata: HashMap::new(), // todo?
-            pubchem_cid: self.pubchem_cid,
-            drugbank_id: self.drugbank_id.clone(),
         }
     }
 
@@ -448,10 +463,7 @@ impl MoleculeSmall {
             res.res_type.to_string(),
             atoms_this,
             bonds_this,
-            None,
-            None,
-            // &HashMap::new(),
-            // None,
+            HashMap::new(),
         )
     }
 

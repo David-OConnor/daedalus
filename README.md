@@ -79,10 +79,10 @@ on CPU capability.
 Integrates the following [Amber parameters](https://ambermd.org/AmberModels.php):
 - Small organic molecules, e.g. ligands: [General Amber Force Fields: GAFF2](https://ambermd.org/antechamber/gaff.html)
 - Protein/AA: [FF19SB](https://pubs.acs.org/doi/10.1021/acs.jctc.9b00591)
+- Nucleic acids: Amber OL3 and RNA libraries
 - Water: [OPC](https://arxiv.org/abs/1408.1679)
 
-Currently, MD only supports polypeptides and small organic molecules. We plan to support carbohydrates, DNA, RNA,
-and lipids later. If you're interested in these, please add a Github Issue.
+We plan to support carbohydrates and lipids later. If you're interested in these, please add a Github Issue.
 
 These general parameters do not need to be loaded externally; they provide the information needed to perform
 MD with any amino acid sequence, and provide a baseline for dynamics of small organic molecules. You may wish to load

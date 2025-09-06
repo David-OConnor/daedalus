@@ -14,16 +14,19 @@ use bio_files::{
     gemmi_sf_to_map,
     sdf::Sdf,
 };
+use chrono::Utc;
+use dynamics::{ProtFFTypeChargeMap, merge_params};
+// use itertools::Itertools;
 use na_seq::{AaIdent, Element};
 
 use crate::{
-    AMINO_19, AMINO_CT12, AMINO_NT12, FRCMOD_FF19SB, GAFF2, PARM_19, ProtFFTypeChargeMap, State,
+    AMINO_19, AMINO_CT12, AMINO_NT12, FRCMOD_FF19SB, GAFF2, PARM_19, State,
+    md::populate_ff_and_q,
     molecule::MoleculePeptide,
     prefs::{OpenHistory, OpenType},
 };
 use crate::{
     // docking::prep::DockingSetup,
-    dynamics::prep::{merge_params, populate_ff_and_q},
     mol_lig::MoleculeSmall,
     molecule::MoleculeGeneric,
     reflection::{DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityRect, ElectronDensity},
@@ -156,9 +159,11 @@ impl State {
                         self.ligands.push(mol);
 
                         // self.to_save.last_ligand_opened = Some(path.to_owned());
-                        self.to_save
-                            .open_history
-                            .push(OpenHistory::new(path, OpenType::Ligand, ident));
+                        // self.update_history(path, OpenType::Ligand, &ident);
+                        self.update_history(path, OpenType::Ligand);
+
+                        // Save the open history.
+                        self.update_save_prefs(false);
 
                         // self.update_docking_site(init_posit);
                     }
@@ -183,16 +188,23 @@ impl State {
                         self.update_from_prefs();
 
                         // self.to_save.last_peptide_opened = Some(path.to_owned());
-                        self.to_save
-                            .open_history
-                            .push(OpenHistory::new(path, OpenType::Peptide, ident));
+                        // self.update_history(path, OpenType::Peptide, &ident);
+                        self.update_history(path, OpenType::Peptide);
+
+                        // Save the open history.
+                        self.update_save_prefs(false);
+
+                        // Save teh open history.
+                        self.update_save_prefs(false);
                     }
                     MoleculeGeneric::NucleicAcid(m) => {
                         // todo: Fill this in
                         // self.to_save.last_nucleic_acid_opened = Some(path.to_owned());
-                        self.to_save
-                            .open_history
-                            .push(OpenHistory::new(path, OpenType::NucleicAcid, String::new())); // todo ident
+                        // self.update_history(path, OpenType::NucleicAcid, ""); // todo ident
+                        self.update_history(path, OpenType::NucleicAcid); // todo ident
+
+                        // Save teh open history.
+                        self.update_save_prefs(false);
                     }
                 }
 
@@ -261,10 +273,10 @@ impl State {
         self.load_density(dm);
 
         // self.to_save.last_map_opened = Some(path.to_owned());
-        self.to_save
-            .open_history
-            .push(OpenHistory::new(path, OpenType::Map, ident));
+        // self.update_history(path, OpenType::Map, &ident);
+        self.update_history(path, OpenType::Map);
 
+        // Save the open history.
         self.update_save_prefs(false);
 
         Ok(())
@@ -354,10 +366,9 @@ impl State {
                 }
 
                 // self.to_save.last_frcmod_opened = Some(path.to_owned());
-                self.to_save
-                    .open_history
-                    .push(OpenHistory::new(path, OpenType::Frcmod, mol_name.clone()));
-
+                // self.update_history(path, OpenType::Frcmod, mol_name.as_str());
+                self.update_history(path, OpenType::Frcmod);
+                // Save the open history.
                 self.update_save_prefs(false);
 
                 println!("Loaded molecule-specific force fields.");
@@ -395,11 +406,11 @@ impl State {
                     };
 
                     // self.to_save.last_peptide_opened = Some(path.to_owned());
-                    self.to_save
-                        .open_history
-                        .push(OpenHistory::new(path, OpenType::Peptide, ident));
+                    // self.update_history(path, OpenType::Peptide, &ident);
+                    self.update_history(path, OpenType::Peptide);
 
-                    self.update_save_prefs(false)
+                    // Save the open history.
+                    self.update_save_prefs(false);
                 }
             }
             "sdf" => match self.active_lig() {
@@ -408,11 +419,10 @@ impl State {
 
                     // self.to_save.last_ligand_opened = Some(path.to_owned());
 
-                    self.to_save
-                        .open_history
-                        .push(OpenHistory::new(path, OpenType::Ligand, lig.common.ident.clone()));
+                    self.update_history(path, OpenType::Ligand);
 
-                    self.update_save_prefs(false)
+                    // Save the open history.
+                    self.update_save_prefs(false);
                 }
                 None => return Err(io::Error::new(ErrorKind::InvalidData, "No ligand to save")),
             },
@@ -422,11 +432,10 @@ impl State {
 
                     // self.to_save.last_ligand_opened = Some(path.to_owned());
 
-                    self.to_save
-                        .open_history
-                        .push(OpenHistory::new(path, OpenType::Ligand, lig.common.ident.clone()));
+                    self.update_history(path, OpenType::Ligand);
 
-                    self.update_save_prefs(false)
+                    // Save the open history.
+                    self.update_save_prefs(false);
                 }
                 None => return Err(io::Error::new(ErrorKind::InvalidData, "No ligand to save")),
             },
@@ -436,11 +445,11 @@ impl State {
 
                     // self.to_save.last_ligand_opened = Some(path.to_owned());
 
-                    self.to_save
-                        .open_history
-                        .push(OpenHistory::new(path, OpenType::Ligand, lig.common.ident.clone()));
+                    // self.update_history(path, OpenType::Ligand, &lig.common.ident);
+                    self.update_history(path, OpenType::Ligand);
 
-                    self.update_save_prefs(false)
+                    // Save the open history.
+                    self.update_save_prefs(false);
                 }
                 None => return Err(io::Error::new(ErrorKind::InvalidData, "No ligand to save")),
             },
@@ -452,11 +461,11 @@ impl State {
                         dm.save(path)?;
                         // self.to_save.last_map_opened = Some(path.to_owned());
 
-                        self.to_save
-                            .open_history
-                            .push(OpenHistory::new(path, OpenType::Map, mol.common.ident.clone()));
+                        // self.update_history(path, OpenType::Map, &mol.common.ident.clone());
+                        self.update_history(path, OpenType::Map);
 
-                        self.update_save_prefs(false)
+                        // Save the open history.
+                        self.update_save_prefs(false);
                     }
                     None => {
                         return Err(io::Error::new(
@@ -652,14 +661,29 @@ impl State {
 
     /// We run this at init. Loads all relevant files marked as "last opened".
     pub fn load_last_opened(&mut self) {
-        let history = self.to_save.open_history.clone(); // todo: I hate this.
-        for history in history {
+        let histories = self.to_save.open_history.clone(); // todo: I hate this.
+
+        // This prevents loading duplicates
+        // todo: When you place paths in mol.common etc, re-implement this.
+        // todo: We must track which files are open.
+        // let open_paths: Vec<_> = histories.iter().map(|h| &h.path).collect();
+
+        for history in &histories {
             if !history.last_session {
-                continue
+                continue;
             }
 
+            // if open_paths.contains(&&history.path) {
+            //     continue
+            // }
+
             match history.type_ {
-                OpenType::Peptide | OpenType::Ligand => {
+                OpenType::Peptide => {
+                    if let Err(e) = self.open_molecule(&history.path) {
+                        handle_err(&mut self.ui, e.to_string());
+                    }
+                }
+                OpenType::Ligand => {
                     if let Err(e) = self.open_molecule(&history.path) {
                         handle_err(&mut self.ui, e.to_string());
                     }
@@ -679,6 +703,21 @@ impl State {
                 }
             }
         }
+    }
+
+    /// Keeps the history tidy.
+    fn update_history(&mut self, path: &Path, type_: OpenType) {
+        for item in &mut self.to_save.open_history {
+            if item.path == *path {
+                item.last_session = true;
+                item.timestamp = Utc::now();
+                return;
+            }
+        }
+
+        self.to_save
+            .open_history
+            .push(OpenHistory::new(path, type_));
     }
 }
 

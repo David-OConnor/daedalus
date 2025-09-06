@@ -16,7 +16,8 @@ use crate::{
     drawing::MoleculeView,
     molecule::Atom,
     render::set_flashlight,
-    util::{cycle_selected, find_selected_atom, orbit_center, points_along_ray},
+    selection::{find_selected_atom, points_along_ray},
+    util::{cycle_selected, orbit_center},
 };
 
 // These are defaults; overridden by the user A/R, and saved to prefs.
@@ -109,27 +110,28 @@ pub fn event_dev_handler(
                                     _ => SELECTION_DIST_THRESH_SMALL,
                                 };
 
-                                let mut lig_atoms_temp = Vec::new();
-                                // todo: You must use lig.common.atom_posits!
-                                let lig_atoms = if let Some(lig) = state_.active_lig() {
-                                    // Not sure how else to do this.
-                                    for (i, atom) in lig.common.atoms.iter().enumerate() {
-                                        // Just the fields we need.
-                                        lig_atoms_temp.push(Atom {
+                                let mut lig_atoms = Vec::new();
+                                for lig in &state_.ligands {
+                                    // todo: I don't like cloning all the atoms here. Not sure how else to do this for now.
+                                    // todo not too many for ligs, but still.
+                                    let atoms_this: Vec<_> = lig
+                                        .common
+                                        .atoms
+                                        .iter()
+                                        .enumerate()
+                                        .map(|(i, a)| Atom {
                                             posit: lig.common.atom_posits[i],
-                                            element: atom.element,
+                                            element: a.element,
                                             ..Default::default()
-                                        });
-                                    }
-                                    &lig_atoms_temp
-                                } else {
-                                    &lig_atoms_temp
-                                };
+                                        })
+                                        .collect();
+                                    lig_atoms.push(atoms_this);
+                                }
 
                                 let (atoms_along_ray, atoms_along_ray_lig) = points_along_ray(
                                     selected_ray,
                                     &mol.common.atoms,
-                                    lig_atoms,
+                                    &lig_atoms,
                                     dist_thresh,
                                 );
 
@@ -138,7 +140,7 @@ pub fn event_dev_handler(
                                     &atoms_along_ray_lig,
                                     &mol.common.atoms,
                                     &mol.residues,
-                                    lig_atoms,
+                                    &lig_atoms,
                                     &selected_ray,
                                     &state_.ui,
                                     &mol.chains,

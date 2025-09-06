@@ -158,12 +158,10 @@ pub fn cam_controls(
                             .on_hover_text("Move camera near the selected atom or residue, looking at it.")
                             .clicked()
                         {
-                            if let Selection::AtomLigand(i) = &state.ui.selection {
-                                if let Some(lig) = &state.active_lig() {
-                                    cam_look_at(&mut scene.camera, lig.common.atom_posits[*i]);
-                                    engine_updates.camera = true;
-                                    state.ui.cam_snapshot = None;
-                                }
+                            if let Selection::AtomLigand((i_mol, i_atom)) = &state.ui.selection {
+                                cam_look_at(&mut scene.camera, state.ligands[*i_mol].common.atom_posits[*i_atom]);
+                                engine_updates.camera = true;
+                                state.ui.cam_snapshot = None;
                             } else {
                                 let atom_sel = mol.get_sel_atom(&state.ui.selection);
 
