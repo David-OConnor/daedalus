@@ -18,7 +18,8 @@ use bio_files::{
     AtomGeneric, BackboneSS, BondGeneric, BondType, ChainGeneric, DensityMap, ExperimentalMethod,
     MmCif, ResidueEnd, ResidueGeneric, ResidueType,
 };
-use dynamics::{AtomDynamics, FfParamSet, ForceFieldParamsIndexed, MdMode, ParamError, ProtFfMap};
+use dynamics::{AtomDynamics, ProtFFTypeChargeMap};
+use dynamics::params::populate_peptide_ff_and_q;
 use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 use na_seq::{AminoAcid, AtomTypeInRes, Element};
 use rayon::prelude::*;
@@ -180,7 +181,7 @@ pub struct MoleculePeptide {
     pub density_rect: Option<DensityRect>,
     pub aa_seq: Vec<AminoAcid>,
     pub experimental_method: Option<ExperimentalMethod>,
-    pub ff_params: Option<ForceFieldParamsIndexed>,
+    // pub ff_params: Option<ForceFieldParamsIndexed>,
 }
 
 impl MoleculePeptide {
@@ -193,7 +194,7 @@ impl MoleculePeptide {
         residues: Vec<Residue>,
         // Populate this with the Amino19.lib map, if we wish to add Hydrogens. (e.g. for mmCif protein
         // data, but not for small molecules).
-        add_hydrogens: Option<&ProtFfMap>,
+        add_hydrogens: Option<&ProtFFTypeChargeMap>,
         metadata: HashMap<String, String>,
     ) -> Self {
         let (center, size) = mol_center_size(&atoms);
@@ -510,6 +511,7 @@ impl Residue {
             serial_number: self.serial_number,
             res_type: self.res_type.clone(),
             atom_sns: self.atom_sns.clone(),
+            end: self.end,
         }
     }
 }
@@ -518,7 +520,6 @@ impl Residue {
     pub fn from_generic(
         res: &ResidueGeneric,
         atom_set: &[Atom],
-        end: ResidueEnd,
     ) -> io::Result<Self> {
         let mut atoms = Vec::with_capacity(res.atom_sns.len());
 
@@ -540,7 +541,7 @@ impl Residue {
             atom_sns: res.atom_sns.clone(),
             atoms,
             dihedral: None,
-            end,
+            end: res.end,
         })
     }
 }
@@ -787,12 +788,11 @@ pub const fn aa_color(aa: AminoAcid) -> (f32, f32, f32) {
 }
 
 impl MoleculePeptide {
-    pub fn from_mmcif(m: MmCif, ff_map: &ProtFfMap) -> Result<Self, io::Error> {
+    pub fn from_mmcif(mut m: MmCif, ff_map: &ProtFFTypeChargeMap) -> Result<Self, io::Error> {
+        populate_peptide_ff_and_q(&mut m.atoms, &m.residues, ff_map).map_err(|_| io::Error::new(ErrorKind::InvalidData, "Unable to  populate FF and Q data"))?;
+
         let mut atoms: Vec<_> = m.atoms.iter().map(|a| a.into()).collect();
 
-        // todo: Crude logic for finding the C terminus. Relies on atom position,
-        // todo, and dodens't take chains into account. (Which we may need to?)
-        // todo: Also assumes all non-het are listed prior to het.
         let mut last_non_het = 0;
         for (i, res) in m.residues.iter().enumerate() {
             match res.res_type {
@@ -801,29 +801,10 @@ impl MoleculePeptide {
             }
         }
 
-        // todo: Check out the below logic; RustRover is greying out the last_non_het arm,
-        // todo and saing the _ arm is unreachable.
-
         let mut residues = Vec::with_capacity(m.residues.len());
         for (i, res) in m.residues.iter().enumerate() {
-            let mut end = ResidueEnd::Internal;
-
-            // Match arm won't work due to non-constant arms, e.g. non_hetero?
-            if i == 0 {
-                end = ResidueEnd::NTerminus;
-            } else if i == last_non_het {
-                end = ResidueEnd::CTerminus;
-            }
-
-            match res.res_type {
-                ResidueType::AminoAcid(_) => (),
-                _ => end = ResidueEnd::Hetero,
-            }
-
-            residues.push(Residue::from_generic(res, &atoms, end)?);
+            residues.push(Residue::from_generic(res, &atoms)?);
         }
-
-        // Populate the residue end.
 
         let mut chains = Vec::with_capacity(m.chains.len());
         for c in &m.chains {

@@ -23,7 +23,7 @@
 
 use std::collections::HashMap;
 
-use dynamics::{ParamError, ProtFfMap};
+use dynamics::{ParamError, ProtFFTypeChargeMap, ProtFfMap};
 use na_seq::{AminoAcid, AminoAcidGeneral, AminoAcidProtenationVariant, AtomTypeInRes};
 
 use crate::{
@@ -345,7 +345,7 @@ pub fn h_type_in_res_sidechain(
 
 impl MoleculePeptide {
     /// Adds hydrogens, and populdates residue dihedral angles.
-    pub fn populate_hydrogens_angles(&mut self, ff_map: &ProtFfMap) -> Result<(), ParamError> {
+    pub fn populate_hydrogens_angles(&mut self, ff_map: &ProtFFTypeChargeMap) -> Result<(), ParamError> {
         println!("Populating hydrogens and measuring dihedrals...");
         // todo: Move this fn to this module? Split this and its diehdral component, or not?
 
@@ -356,7 +356,8 @@ impl MoleculePeptide {
         // todo: The Clone avoids a double-borrow error below. Come back to /avoid if possible.
         let res_clone = self.residues.clone();
 
-        let digit_map = make_h_digit_map(ff_map);
+        // todo: Handle the N and C term A/R.
+        let digit_map = make_h_digit_map(&ff_map.internal);
 
         // Increment H serial number, starting with the final atom present prior to adding H + 1)
         let mut highest_sn = 0;

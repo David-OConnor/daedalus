@@ -277,7 +277,7 @@ impl State {
             self.to_save.per_mol.insert(mol.common.ident.clone(), data);
         }
 
-        println!("Saving history: {:?}", self.to_save.open_history);
+        // println!("Saving history: {:?}", self.to_save.open_history);
 
         if let Err(e) = save(
             &self.volatile.prefs_dir.join(DEFAULT_PREFS_FILE),

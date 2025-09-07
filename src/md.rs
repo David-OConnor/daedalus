@@ -2,7 +2,7 @@
 
 use std::time::Instant;
 
-use bio_files::{ResidueEnd, ResidueType, amber_params::ForceFieldParamsKeyed};
+use bio_files::{ResidueEnd, ResidueType, amber_params::ForceFieldParamsKeyed, ResidueGeneric};
 use dynamics::{
     AtomDynamics, ComputationDevice, FfMolType, HydrogenMdType, MdState, MolDynamics, ParamError,
     Snapshot,
@@ -20,6 +20,8 @@ use crate::{
 // Å. Static atoms must be at least this close to a dynamic atom at the start of MD to count.
 // Set this wide to take into account motion.
 const STATIC_ATOM_DIST_THRESH: f64 = 8.; // todo: Increase (?) A/R.
+
+const SNAPSHOT_RATIO: usize = 1;
 
 /// Perform MD on the peptide (protein) only. Can be very computationally intensive due to the large
 /// number of atoms.
@@ -63,13 +65,11 @@ pub fn build_dynamics_peptide(
 /// non-bonded contributors. (Vdw and coulomb)
 pub fn build_dynamics_docking(
     dev: &ComputationDevice,
-    // lig: &mut MoleculeSmall,
-    // This approach avoids a dbl-borrow
+    // This approach of passing the whole set + index avoids a dbl-borrow
     ligs: &mut [MoleculeSmall],
     lig_i: usize,
     mol: &MoleculePeptide,
-    // setup: &DockingSetup,
-    ff_params: &FfParamSet,
+    param_set: &FfParamSet,
     lig_specific_params: &ForceFieldParamsKeyed,
     temp_target: f64,
     pressure_target: f64,
@@ -90,7 +90,7 @@ pub fn build_dynamics_docking(
         &lig.common.bonds,
         &lig.common.adjacency_list,
         &mol.common.atoms,
-        ff_params,
+        param_set,
         lig_specific_params,
         temp_target,
         pressure_target,
@@ -169,8 +169,6 @@ pub fn new_md_docking(
     temp_target: f64,
     pressure_target: f64, // Bar
 ) -> Result<MdState, ParamError> {
-    let hydrogen_md_type = HydrogenMdType::Fixed(Vec::new());
-
     // Filter peptide atoms, to only include ones near the docking site.
     let mut atoms_static_near = Vec::new();
     for atom_st in atoms_static_all {
@@ -228,7 +226,8 @@ pub fn new_md_docking(
         temp_target,
         pressure_target,
         ff_params,
-        hydrogen_md_type,
+        HydrogenMdType::Fixed(Vec::new()),
+        SNAPSHOT_RATIO,
     );
     println!("Done.");
 
@@ -245,8 +244,6 @@ pub fn new_md_peptide(
     temp_target: f64,
     pressure_target: f64,
 ) -> Result<MdState, ParamError> {
-    let hydrogen_md_type = HydrogenMdType::Fixed(Vec::new());
-
     // Assign FF type and charge to protein atoms; FF type must be assigned prior to initializing `ForceFieldParamsIndexed`.
     // (Ligand atoms will already have FF type assigned).
 
@@ -302,139 +299,10 @@ pub fn new_md_peptide(
         temp_target,
         pressure_target,
         ff_params,
-        hydrogen_md_type,
+        HydrogenMdType::Fixed(Vec::new()),
+        SNAPSHOT_RATIO,
     );
 
     println!("Done.");
     result
-}
-
-/// Populate forcefield type, and partial charge.
-/// `residues` must be the full set; this is relevant to how we index it.
-///
-/// todo: Move to dynamics?
-pub fn populate_ff_and_q(
-    atoms: &mut [Atom],
-    residues: &[Residue],
-    ff_type_charge: &ProtFFTypeChargeMap,
-) -> Result<(), ParamError> {
-    for atom in atoms {
-        if atom.hetero {
-            continue;
-        }
-
-        let Some(res_i) = atom.residue else {
-            return Err(ParamError::new(&format!(
-                "MD failure: Missing residue when populating ff name and q: {atom}"
-            )));
-        };
-
-        let Some(type_in_res) = &atom.type_in_res else {
-            return Err(ParamError::new(&format!(
-                "MD failure: Missing type in residue for atom: {atom}"
-            )));
-        };
-
-        let atom_res_type = &residues[res_i].res_type;
-
-        let ResidueType::AminoAcid(aa) = atom_res_type else {
-            // e.g. water or other hetero atoms; skip.
-            continue;
-        };
-
-        // todo: Eventually, determine how to load non-standard AA variants from files; set up your
-        // todo state to use those labels. They are available in the params.
-        let aa_gen = AminoAcidGeneral::Standard(*aa);
-
-        let charge_map = match residues[res_i].end {
-            ResidueEnd::Internal => &ff_type_charge.internal,
-            ResidueEnd::NTerminus => &ff_type_charge.n_terminus,
-            ResidueEnd::CTerminus => &ff_type_charge.c_terminus,
-            ResidueEnd::Hetero => {
-                return Err(ParamError::new(&format!(
-                    "Error: Encountered hetero atom when parsing amino acid FF types: {atom}"
-                )));
-            }
-        };
-
-        let charges = match charge_map.get(&aa_gen) {
-            Some(c) => c,
-            // A specific workaround to plain "HIS" being absent from amino19.lib (2025.
-            // Choose one of "HID", "HIE", "HIP arbitrarily.
-            // todo: Re-evaluate this, e.g. which one of the three to load.
-            None if aa_gen == AminoAcidGeneral::Standard(AminoAcid::His) => charge_map
-                .get(&AminoAcidGeneral::Variant(AminoAcidProtenationVariant::Hid))
-                .ok_or_else(|| ParamError::new("Unable to find AA mapping"))?,
-            None => return Err(ParamError::new("Unable to find AA mapping")),
-        };
-
-        let mut found = false;
-
-        for charge in charges {
-            // todo: Note that we have multiple branches in some case, due to Amber names like
-            // todo: "HYP" for variants on AAs for different protenation states. Handle this.
-            if &charge.type_in_res == type_in_res {
-                atom.force_field_type = Some(charge.ff_type.clone());
-                atom.partial_charge = Some(charge.charge);
-
-                found = true;
-                break;
-            }
-        }
-
-        // Code below is mainly for the case of missing data; otherwise, the logic for this operation
-        // is complete.
-
-        if !found {
-            match type_in_res {
-                // todo: This is a workaround for having trouble with H types. LIkely
-                // todo when we create them. For now, this meets the intent.
-                AtomTypeInRes::H(_) => {
-                    // Note: We've witnessed this due to errors in the mmCIF file, e.g. on ASP #88 on 9GLS.
-                    eprintln!(
-                        "Error assigning FF type and q based on atom type in res: Failed to match H type. #{}, {type_in_res}, {aa_gen:?}. \
-                         Falling back to a generic H",
-                        &residues[res_i].serial_number
-                    );
-
-                    for charge in charges {
-                        if &charge.type_in_res == &AtomTypeInRes::H("H".to_string())
-                            || &charge.type_in_res == &AtomTypeInRes::H("HA".to_string())
-                        {
-                            atom.force_field_type = Some("HB2".to_string());
-                            atom.partial_charge = Some(charge.charge);
-
-                            found = true;
-                            break;
-                        }
-                    }
-                }
-                // // This is an N-terminal oxygen of a C-terminal carboxyl group.
-                // // todo: You should parse `aminoct12.lib`, and `aminont12.lib`, then delete this.
-                // AtomTypeInRes::OXT => {
-                //     match atom_res_type {
-                //         // todo: QC that it's the N-terminal Met too, or return an error.
-                //         ResidueType::AminoAcid(AminoAcid::Met) => {
-                //             atom.force_field_type = Some("O2".to_owned());
-                //             // Fm amino12ct.lib
-                //             atom.partial_charge = Some(-0.804100);
-                //             found = true;
-                //         }
-                //         _ => return Err(ParamError::new("Error populating FF type: OXT atom-in-res type,\
-                //         not at the C terminal")),
-                //     }
-                // }
-                _ => (),
-            }
-
-            // i.e. if still not found after our specific workarounds above.
-            if !found {
-                return Err(ParamError::new(&format!(
-                    "Error assigning FF type and q based on atom type in res: {atom}",
-                )));
-            }
-        }
-    }
-
-    Ok(())
 }

@@ -47,7 +47,7 @@ mod tests;
 #[cfg(feature = "cuda")]
 use std::sync::Arc;
 use std::{collections::HashMap, env, fmt, fmt::Display, path::PathBuf, sync::mpsc::Receiver};
-
+use std::time::Instant;
 use bincode::{Decode, Encode};
 use bio_apis::{
     ReqError,
@@ -61,7 +61,7 @@ use cudarc::{
     nvrtc::Ptx,
 };
 use drawing::MoleculeView;
-use dynamics::{ComputationDevice, FfParamSet, MdState, params::FfParamSet};
+use dynamics::{ComputationDevice, MdState, params::FfParamSet};
 use egui_file_dialog::{FileDialog, FileDialogConfig};
 use graphics::{Camera, InputsCommanded};
 use lin_alg::{
@@ -70,7 +70,6 @@ use lin_alg::{
 };
 use mol_lig::{Ligand, MoleculeSmall};
 use molecule::MoleculePeptide;
-use na_seq::AminoAcidGeneral;
 
 use crate::{
     aa_coords::bond_vecs::init_local_bond_vecs,
@@ -81,30 +80,32 @@ use crate::{
     render::render,
     util::handle_err,
 };
+// use crate::file_io::load_ffs_general;
+use crate::ui::misc::MdMode;
 // ------Including files into the executable
 
 // Include general Amber forcefield params with our program. See the Reference Manual, section ]
 // 3.1.1 for details on which we include. (The recommended ones for Proteins, and ligands).
 
-// Proteins and amino acids:
-const PARM_19: &str = include_str!("../resources/parm19.dat"); // Bonded, and LJ
-const FRCMOD_FF19SB: &str = include_str!("../resources/frcmod.ff19SB"); // Bonded, and LJ: overrides and new types
-const AMINO_19: &str = include_str!("../resources/amino19.lib"); // Charge; internal residues
-const AMINO_NT12: &str = include_str!("../resources/aminont12.lib"); // Charge; protonated N-terminus residues
-const AMINO_CT12: &str = include_str!("../resources/aminoct12.lib"); // Charge; protonated C-terminus residues
-
-// Ligands/small organic molecules: *General Amber Force Fields*.
-const GAFF2: &str = include_str!("../resources/gaff2.dat");
-
-// DNA (OL24) and RNA (OL3)
-const OL24_LIB: &str = include_str!("../resources/ff-nucleic-OL24.lib");
-const OL24_FRCMOD: &str = include_str!("../resources/ff-nucleic-OL24.frcmod");
-// todo: frcmod.protonated_nucleic?
-// RNA (I believe this is the OL3 Amber's FF page recommends?)
-const RNA_LIB: &str = include_str!("../resources/RNA.lib");
-// todo: RNA.YIL.lib? RNA_CI.lib? RNA_Shaw.lib? These are, I believe, "alternative" libraries,
-// todo, and not required. YIL: Yildirim torsion refit. CI: Legacy Cornell-style. SHAW: incomplete,
-// todo from a person named Shaw.
+// // Proteins and amino acids:
+// const PARM_19: &str = include_str!("../resources/parm19.dat"); // Bonded, and LJ
+// const FRCMOD_FF19SB: &str = include_str!("../resources/frcmod.ff19SB"); // Bonded, and LJ: overrides and new types
+// const AMINO_19: &str = include_str!("../resources/amino19.lib"); // Charge; internal residues
+// const AMINO_NT12: &str = include_str!("../resources/aminont12.lib"); // Charge; protonated N-terminus residues
+// const AMINO_CT12: &str = include_str!("../resources/aminoct12.lib"); // Charge; protonated C-terminus residues
+//
+// // Ligands/small organic molecules: *General Amber Force Fields*.
+// const GAFF2: &str = include_str!("../resources/gaff2.dat");
+//
+// // DNA (OL24) and RNA (OL3)
+// const OL24_LIB: &str = include_str!("../resources/ff-nucleic-OL24.lib");
+// const OL24_FRCMOD: &str = include_str!("../resources/ff-nucleic-OL24.frcmod");
+// // todo: frcmod.protonated_nucleic?
+// // RNA (I believe this is the OL3 Amber's FF page recommends?)
+// const RNA_LIB: &str = include_str!("../resources/RNA.lib");
+// // todo: RNA.YIL.lib? RNA_CI.lib? RNA_Shaw.lib? These are, I believe, "alternative" libraries,
+// // todo, and not required. YIL: Yildirim torsion refit. CI: Legacy Cornell-style. SHAW: incomplete,
+// // todo from a person named Shaw.
 
 // Include the compiled CUDA ptx in the binary.
 // const KERN_PTX: &str = include_str!(concat!(env!("OUT_DIR"), "/my_kernel.ptx"));
@@ -227,6 +228,7 @@ struct StateVolatile {
     md_runtime: f64,
     active_peptide: Option<usize>, // Unused for now.
     active_lig: Option<usize>,
+    md_mode: MdMode,
 }
 
 impl Default for StateVolatile {
@@ -245,6 +247,7 @@ impl Default for StateVolatile {
             md_runtime: Default::default(),
             active_peptide: Default::default(),
             active_lig: Default::default(),
+            md_mode: MdMode::Peptide,
         }
     }
 }
@@ -428,7 +431,7 @@ struct State {
     pub dev: ComputationDevice,
     pub mol_dynamics: Option<MdState>,
     // todo: Combine these params in a single struct.
-    pub ff_params: FfParamSet,
+    pub ff_param_set: FfParamSet,
     pub lig_specific_params: HashMap<String, ForceFieldParamsKeyed>,
 }
 
@@ -566,7 +569,18 @@ fn main() {
 
     // todo: Consider if you want this here. Currently required when adding H to a molecule.
     // In release mode, takes 20ms on a fast CPU. (todo: Test on a slow CPU.)
-    state.load_ffs_general();
+    let start = Instant::now();
+    match FfParamSet::new_amber() {
+        Ok(f) => {
+            state.ff_param_set = f;
+            let elapsed = start.elapsed().as_millis();
+            println!("Loaded static FF data in {elapsed}ms");
+        },
+        Err(e) => {
+            handle_err(&mut state.ui,format!("Unable to load general FF params: {e:?}"));
+        }
+    }
+
     state.load_prefs();
 
     // Set these up after loading prefs
@@ -598,12 +612,12 @@ fn main() {
         state.update_docking_site(posit);
     }
 
-    if let Err(e) = state.load_aa_charges_ff() {
-        handle_err(
-            &mut state.ui,
-            format!("Unable to load protein charges (static): {e}"),
-        );
-    }
+    // if let Err(e) = state.load_aa_charges_ff() {
+    //     handle_err(
+    //         &mut state.ui,
+    //         format!("Unable to load protein charges (static): {e}"),
+    //     );
+    // }
 
     render(state);
 }

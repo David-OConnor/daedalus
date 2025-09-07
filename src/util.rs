@@ -5,6 +5,7 @@
 use std::{collections::HashMap, time::Instant};
 
 use bio_files::ResidueType;
+use dynamics::params::populate_peptide_ff_and_q;
 use egui::Color32;
 use graphics::{Camera, ControlScheme, EngineUpdates, FWD_VEC, Mesh, Scene, Vertex};
 use lin_alg::{
@@ -21,7 +22,6 @@ use crate::{
         EntityType, MoleculeView, draw_all_ligs, draw_density_point_cloud, draw_density_surface,
         draw_peptide,
     },
-    md::populate_ff_and_q,
     mol_lig::MoleculeSmall,
     molecule::{Atom, Bond, MoleculeCommon, MoleculePeptide, Residue},
     render::{
@@ -400,7 +400,7 @@ pub fn load_atom_coords_rcsb(
         Ok((cif, cif_text)) => {
             // let mol: Molecule = match cif.try_into() {
 
-            let ff_map = &state.ff_params.prot_ff_q_map.as_ref().unwrap().internal;
+            let ff_map = &state.ff_param_set.peptide_ff_q_map.as_ref().unwrap();
 
             let mut mol: MoleculePeptide = match MoleculePeptide::from_mmcif(cif, ff_map) {
                 Ok(m) => m,
@@ -409,30 +409,6 @@ pub fn load_atom_coords_rcsb(
                     return;
                 }
             };
-
-            // todo: This block is a direct C+P from file_io/mod.rs. Refactor into shared code.
-            // If we've loaded general FF params, apply them to get FF type and charge.
-            if let Some(charge_ff_data) = &state.ff_params.prot_ff_q_map {
-                if let Err(e) =
-                    populate_ff_and_q(&mut mol.common.atoms, &mol.residues, &charge_ff_data)
-                {
-                    eprintln!(
-                        "Unable to populate FF charge and FF type for protein atoms: {:?}",
-                        e
-                    );
-                } else {
-                    // Run this to update the ff name and charge data on the set of receptor
-                    // atoms near the docking site.
-                    // if let Some(lig) = &mut state.ligand {
-                    //     state.volatile.docking_setup = Some(DockingSetup::new(
-                    //         &mol,
-                    //         lig,
-                    //         &state.volatile.lj_lookup_table,
-                    //         &state.bh_config,
-                    //     ));
-                    // }
-                }
-            }
 
             state.volatile.aa_seq_text = String::with_capacity(mol.common.atoms.len());
             for aa in &mol.aa_seq {

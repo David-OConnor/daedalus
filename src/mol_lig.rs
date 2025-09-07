@@ -181,7 +181,7 @@ impl TryFrom<Pdbqt> for MoleculeSmall {
         let atoms: Vec<_> = m.atoms.iter().map(|a| a.into()).collect();
         let mut residues = Vec::with_capacity(m.residues.len());
         for res in &m.residues {
-            residues.push(Residue::from_generic(res, &atoms, ResidueEnd::Hetero)?);
+            residues.push(Residue::from_generic(res, &atoms)?);
         }
 
         let mut chains = Vec::with_capacity(m.chains.len());
@@ -485,8 +485,7 @@ impl MoleculeSmall {
         }
 
         if state
-            .ff_params
-            .lig_specific
+            .lig_specific_params
             .keys()
             .any(|k| k.eq_ignore_ascii_case(&self.common.ident))
         {

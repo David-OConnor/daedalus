@@ -6,8 +6,6 @@ use egui::{
 use graphics::{EngineUpdates, Scene};
 const COLOR_SECTION_BOX: Color32 = Color32::from_rgb(100, 100, 140);
 
-use dynamics::MdMode;
-
 use crate::{
     ComputationDevice, State,
     drawing::{draw_all_ligs, draw_peptide, draw_water},
@@ -27,6 +25,12 @@ pub fn vis_check(val: &mut bool, text: &str, ui: &mut Ui, redraw: &mut bool) {
         *val = !*val;
         *redraw = true;
     }
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum MdMode {
+    Docking,
+    Peptide,
 }
 
 pub fn active_color(val: bool) -> Color32 {
@@ -97,7 +101,7 @@ pub fn dynamics_player(
                 changed = true;
                 let snap = &md.snapshots[state.ui.current_snapshot];
 
-                match md.mode {
+                match state.volatile.md_mode {
                     MdMode::Docking => {
                         if let Some(lig) = state.active_lig() {
                             // change_snapshot_docking(lig, snap, &mut state.ui.binding_energy_disp);
@@ -147,11 +151,12 @@ pub fn md_setup(
                 .button(RichText::new("Run MD on peptide").color(Color32::GOLD))
                 .clicked() {
                 let mol = state.molecule.as_mut().unwrap();
+                state.volatile.md_mode = MdMode::Peptide;
 
                 match build_dynamics_peptide(
                     &state.dev,
                     mol,
-                    &state.ff_params,
+                    &state.ff_param_set,
                     state.to_save.md_temperature as f64,
                     state.to_save.md_pressure as f64 / 100., // Convert kPa to bar.
                     state.to_save.num_md_steps,
@@ -186,6 +191,8 @@ pub fn md_setup(
             with the ligand positioned near a receptor site.")
                     .clicked();
 
+                state.volatile.md_mode = MdMode::Docking;
+
                 let mut ready_to_run = true;
 
                 if run_clicked {
@@ -206,16 +213,24 @@ pub fn md_setup(
                         // todo: Set a loading indicator, and trigger the build next GUI frame.
                         move_cam_to_lig(state, scene, state.molecule.as_ref().unwrap().center, engine_updates);
 
+                        let lig_ident = &state.ligands[state.volatile.active_lig.unwrap()].common.ident;
+
+                        let lig_specific_params = match state.lig_specific_params.get(lig_ident) {
+                            Some(p) => p,
+                            None => {
+                                handle_err(&mut state.ui, "Missing ligand-specific docking parameters; aborting.".to_string());
+                                return;
+                            }
+                        };
 
                         let mol = state.molecule.as_mut().unwrap();
                         match build_dynamics_docking(
                             &state.dev,
                             &mut state.ligands,
                             state.volatile.active_lig.unwrap(),
-                            // lig,
                             mol,
-                            // state.volatile.docking_setup.as_ref().unwrap(),
-                            &state.ff_params,
+                            &state.ff_param_set,
+                            lig_specific_params,
                             state.to_save.md_temperature as f64,
                             state.to_save.md_pressure as f64 / 100., // Convert kPa to bar.
                             state.to_save.num_md_steps,

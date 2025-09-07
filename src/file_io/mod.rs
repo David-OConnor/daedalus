@@ -15,15 +15,12 @@ use bio_files::{
     sdf::Sdf,
 };
 use chrono::Utc;
-use dynamics::{merge_params, params::ProtFFTypeChargeMap};
+use dynamics::{merge_params, params::ProtFFTypeChargeMap, ParamError};
+use dynamics::params::{populate_peptide_ff_and_q, FfParamSet};
 use na_seq::{AaIdent, Element};
 
-use crate::{
-    AMINO_19, AMINO_CT12, AMINO_NT12, FRCMOD_FF19SB, GAFF2, PARM_19, State,
-    md::populate_ff_and_q,
-    molecule::MoleculePeptide,
-    prefs::{OpenHistory, OpenType},
-};
+// use crate::{AMINO_19, AMINO_CT12, AMINO_NT12, FRCMOD_FF19SB, GAFF2, PARM_19, State, molecule::MoleculePeptide, prefs::{OpenHistory, OpenType}, OL24_LIB, OL24_FRCMOD, RNA_LIB};
+use crate::{State, molecule::MoleculePeptide, prefs::{OpenHistory, OpenType}};
 use crate::{
     // docking::prep::DockingSetup,
     mol_lig::MoleculeSmall,
@@ -104,38 +101,15 @@ impl State {
                 let cif_data = MmCif::new(&data_str)?;
                 // let mut mol: Molecule = cif_data.try_into()?;
 
-                let Some(ff_map) = &self.ff_params.prot_ff_q_map else {
+                let Some(ff_map) = &self.ff_param_set.peptide_ff_q_map else {
                     return Err(io::Error::new(
                         ErrorKind::Other,
                         "Missing FF map when opening a protein; can't validate H",
                     ));
                 };
-                let mut mol = MoleculePeptide::from_mmcif(cif_data, &ff_map.internal)?;
 
+                let mol = MoleculePeptide::from_mmcif(cif_data, &ff_map)?;
                 self.cif_pdb_raw = Some(data_str);
-
-                // If we've loaded general FF params, apply them to get FF type and charge.
-                if let Some(charge_ff_data) = &self.ff_params.prot_ff_q_map {
-                    if let Err(e) =
-                        populate_ff_and_q(&mut mol.common.atoms, &mol.residues, &charge_ff_data)
-                    {
-                        eprintln!(
-                            "Unable to populate FF charge and FF type for protein atoms: {:?}",
-                            e
-                        );
-                    } else {
-                        // Run this to update the ff name and charge data on the set of receptor
-                        // atoms near the docking site.
-                        // if let Some(lig) = &mut self.ligand {
-                        // self.volatile.docking_setup = Some(DockingSetup::new(
-                        //     &mol,
-                        //     lig,
-                        //     &self.volatile.lj_lookup_table,
-                        //     &self.bh_config,
-                        // ));
-                        // }
-                    }
-                }
 
                 Ok(MoleculeGeneric::Peptide(mol))
             }
@@ -296,12 +270,12 @@ impl State {
 
         match extension.to_str().unwrap() {
             "dat" => {
-                self.ff_params.small_mol = Some(ForceFieldParamsKeyed::new(
+                self.ff_param_set.small_mol = Some(ForceFieldParamsKeyed::new(
                     &ForceFieldParams::load_dat(path)?,
                 ));
 
                 println!("\nLoaded forcefields:");
-                let v = &self.ff_params.small_mol.as_ref().unwrap();
+                let v = &self.ff_param_set.small_mol.as_ref().unwrap();
                 println!("Lin");
                 for di in v.bond.values().take(20) {
                     println!("Lin: {:?}, {}, {}", di.atom_types, di.k_b, di.r_0);
@@ -491,113 +465,6 @@ impl State {
         Ok(())
     }
 
-    /// Load amimo acid partial charges and forcefields from our built-in string. This is fast and
-    /// light; do it at init. If we have a molecule loaded, populate its force field and Q data
-    /// using it. We load normal values, C-terminal values, and N-terminal values to different
-    /// fields
-    pub fn load_aa_charges_ff(&mut self) -> io::Result<()> {
-        let internal = parse_amino_charges(AMINO_19)?;
-        let n_terminus = parse_amino_charges(AMINO_NT12)?;
-        let c_terminus = parse_amino_charges(AMINO_CT12)?;
-
-        let ff_charge_data = ProtFFTypeChargeMap {
-            internal,
-            n_terminus,
-            c_terminus,
-        };
-
-        if let Some(mol) = &mut self.molecule {
-            if let Err(e) = populate_ff_and_q(&mut mol.common.atoms, &mol.residues, &ff_charge_data)
-            {
-                eprintln!(
-                    "Unable to populate FF charge and FF type for protein atoms: {:?}",
-                    e
-                );
-            } else {
-                // Update ff and charges in the receptor atoms.
-                // if let Some(lig) = &mut self.ligand {
-                //     self.volatile.docking_setup = Some(DockingSetup::new(
-                //         &mol,
-                //         lig,
-                //         &self.volatile.lj_lookup_table,
-                //         &self.bh_config,
-                //     ));
-                // }
-
-                // todo: You might need to re-init MD here as well.
-            }
-        }
-
-        self.ff_params.prot_ff_q_map = Some(ff_charge_data);
-
-        Ok(())
-    }
-
-    /// Load parameter files for general organic molecules (GAFF2), and proteins/amino acids (PARM19).
-    /// This also populates ff type and charge on our protein atoms. These are built into the application
-    /// as static strings.
-    ///
-    /// This only loads params that haven't already been loaded.
-    pub fn load_ffs_general(&mut self) {
-        let start = Instant::now();
-
-        if self.ff_params.peptide.is_none() {
-            // Load general parameters for proteins and AAs.
-            match ForceFieldParams::from_dat(PARM_19) {
-                Ok(ff) => {
-                    self.ff_params.peptide = Some(ForceFieldParamsKeyed::new(&ff));
-                }
-                Err(e) => handle_err(
-                    &mut self.ui,
-                    format!("Unable to load protein FF params (static): {e}"),
-                ),
-            }
-
-            // Load (updated/patched) general parameters for proteins and AAs.
-            match ForceFieldParams::from_frcmod(FRCMOD_FF19SB) {
-                Ok(ff) => {
-                    let ff_keyed = ForceFieldParamsKeyed::new(&ff);
-
-                    // We just loaded this above.
-                    if let Some(ffs) = &mut self.ff_params.peptide {
-                        let params_updated = merge_params(ffs, Some(&ff_keyed));
-                        self.ff_params.peptide = Some(params_updated);
-                    }
-                }
-                Err(e) => handle_err(
-                    &mut self.ui,
-                    format!("Unable to load protein FF params (static): {e}"),
-                ),
-            }
-        }
-
-        // Note: We may load this at program init
-        if self.ff_params.prot_ff_q_map.is_none() {
-            if let Err(e) = self.load_aa_charges_ff() {
-                handle_err(
-                    &mut self.ui,
-                    format!("Unable to load protein charges (static): {e}"),
-                );
-            }
-        }
-
-        // Load general organic molecule, e.g. ligand, parameters.
-        if self.ff_params.small_mol.is_none() {
-            match ForceFieldParams::from_dat(GAFF2) {
-                Ok(ff) => {
-                    self.ff_params.small_mol = Some(ForceFieldParamsKeyed::new(&ff));
-                }
-                Err(e) => handle_err(
-                    &mut self.ui,
-                    format!("Unable to load ligand FF params (static): {e}"),
-                ),
-            }
-        }
-
-        let elapsed = start.elapsed().as_millis();
-        println!("Loaded static FF data in {elapsed}ms");
-    }
-
     /// Load Mol2 and optionally, FRCMOD data from our Amber Geostd database into state.
     pub fn load_geostd_mol_data(
         &mut self,
@@ -732,3 +599,39 @@ pub fn gemmi_path() -> Option<&'static Path> {
         None
     }
 }
+
+
+
+// // todo:
+// /// Load general parameter files for proteins, and small organic molecules.
+// /// This also populates ff type and charge for protein atoms. These are built into the application
+// /// as static strings.
+// ///
+// /// This is similar to `FfParamSet::new()`, but using static strings.
+// pub fn load_ffs_general() -> io::Result<FfParamSet> {
+//     let mut result = FfParamSet::default();
+//
+//     let peptide = ForceFieldParamsKeyed::new(&ForceFieldParams::from_dat(PARM_19)?);
+//     let peptide_frcmod = ForceFieldParamsKeyed::new(&ForceFieldParams::from_frcmod(FRCMOD_FF19SB)?);
+//     result.peptide = Some(merge_params(&peptide, Some(&peptide_frcmod)));
+//
+//     let internal = parse_amino_charges(AMINO_19)?;
+//     let n_terminus = parse_amino_charges(AMINO_NT12)?;
+//     let c_terminus = parse_amino_charges(AMINO_CT12)?;
+//
+//     result.peptide_ff_q_map = Some(ProtFFTypeChargeMap {
+//         internal,
+//         n_terminus,
+//         c_terminus,
+//     });
+//
+//     result.small_mol = Some(ForceFieldParamsKeyed::new(&ForceFieldParams::from_dat(GAFF2)?));
+//
+//     let dna = ForceFieldParamsKeyed::new(&ForceFieldParams::from_dat(OL24_LIB)?);
+//     let dna_frcmod = ForceFieldParamsKeyed::new(&ForceFieldParams::from_frcmod(OL24_FRCMOD)?);
+//     result.dna = Some(merge_params(&dna, Some(&dna_frcmod)));
+//
+//     result.rna = Some(ForceFieldParamsKeyed::new(&ForceFieldParams::from_dat(RNA_LIB)?));
+//
+//     Ok(result)
+// }
