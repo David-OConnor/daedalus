@@ -9,7 +9,10 @@ const COLOR_SECTION_BOX: Color32 = Color32::from_rgb(100, 100, 140);
 use crate::{
     ComputationDevice, State,
     drawing::{draw_all_ligs, draw_peptide, draw_water},
-    md::{build_dynamics_docking, build_dynamics_peptide, change_snapshot_peptide},
+    md::{
+        build_dynamics_docking, build_dynamics_peptide, change_snapshot_docking,
+        change_snapshot_peptide,
+    },
     molecule::PeptideAtomPosits,
     ui::{
         COL_SPACING, COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_INACTIVE, ROW_SPACING,
@@ -103,10 +106,10 @@ pub fn dynamics_player(
 
                 match state.volatile.md_mode {
                     MdMode::Docking => {
-                        if let Some(lig) = state.active_lig() {
-                            // change_snapshot_docking(lig, snap, &mut state.ui.binding_energy_disp);
-                        }
-
+                        change_snapshot_docking(
+                            &mut state.ligands[state.volatile.active_lig.unwrap()],
+                            snap,
+                        );
                         draw_all_ligs(state, scene);
                     }
                     MdMode::Peptide => {

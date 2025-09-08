@@ -108,7 +108,6 @@ pub fn build_dynamics_docking(
     for (i, atom) in md_state.atoms.iter().enumerate() {
         lig.common.atom_posits[i] = atom.posit;
     }
-    // change_snapshot_docking(lig, &md_state.snapshots[0], &mut None);
     change_snapshot_docking(lig, &md_state.snapshots[0]);
 
     Ok(md_state)
@@ -116,18 +115,12 @@ pub fn build_dynamics_docking(
 
 /// Set ligand atom positions to that of a snapshot. We assume a rigid receptor.
 /// Body masses are separate from the snapshot, since it's invariant.
-pub fn change_snapshot_docking(
-    lig: &mut MoleculeSmall,
-    snapshot: &Snapshot,
-    // energy_disp: &mut Option<BindingEnergy>,
-) {
-    let Some(data) = &mut lig.lig_data else {
-        return;
-    };
+pub fn change_snapshot_docking(lig: &mut MoleculeSmall, snapshot: &Snapshot) {
+    if let Some(data) = &mut lig.lig_data {
+        data.pose.conformation_type = ConformationType::AbsolutePosits;
+    }
 
-    data.pose.conformation_type = ConformationType::AbsolutePosits;
     lig.common.atom_posits = snapshot.atom_posits.iter().map(|p| (*p).into()).collect();
-    // *energy_disp = snapshot.energy.clone();
 }
 
 pub fn change_snapshot_peptide(

@@ -24,6 +24,7 @@ use crate::{
     },
     mol_lig::MoleculeSmall,
     molecule::{Atom, Bond, MoleculeCommon, MoleculePeptide, Residue},
+    prefs::OpenType,
     render::{
         CAM_INIT_OFFSET, Color, MESH_DENSITY_SURFACE, MESH_SECONDARY_STRUCTURE,
         MESH_SOLVENT_SURFACE, set_flashlight, set_static_light,
@@ -402,7 +403,7 @@ pub fn load_atom_coords_rcsb(
 
             let ff_map = &state.ff_param_set.peptide_ff_q_map.as_ref().unwrap();
 
-            let mut mol: MoleculePeptide = match MoleculePeptide::from_mmcif(cif, ff_map) {
+            let mut mol: MoleculePeptide = match MoleculePeptide::from_mmcif(cif, ff_map, None) {
                 Ok(m) => m,
                 Err(e) => {
                     eprintln!("Problem parsing mmCif data into molecule: {e:?}");
@@ -539,7 +540,9 @@ pub fn handle_success(ui: &mut StateUi, msg: String) {
 
 pub fn close_peptide(state: &mut State, scene: &mut Scene, engine_updates: &mut EngineUpdates) {
     let mut ident = String::new();
+    let mut path = None;
     if let Some(mol) = &state.molecule {
+        path = mol.common.path.clone();
         ident = mol.common.ident.clone();
     }
 
@@ -554,15 +557,17 @@ pub fn close_peptide(state: &mut State, scene: &mut Scene, engine_updates: &mut 
             && ent.class != EntityType::SaSurface as u32
     });
 
-    for history in &mut state.to_save.open_history {
-        // todo: Sort this out.
-        // if let OpenType::Peptide = history.type_ {
-        //     if history.path == ident {
-        //         history.last_session = false;
-        //     }
-        // }
-    }
     state.volatile.aa_seq_text = String::new();
+
+    if let Some(path) = path {
+        for history in &mut state.to_save.open_history {
+            if let OpenType::Ligand = history.type_ {
+                if history.path == path {
+                    history.last_session = false;
+                }
+            }
+        }
+    }
 
     state.update_save_prefs(false);
 
@@ -580,6 +585,8 @@ pub fn close_lig(
         return;
     }
 
+    let path = state.ligands[i].common.path.clone();
+
     state.ligands.remove(i);
     state.volatile.active_lig = None;
 
@@ -587,14 +594,15 @@ pub fn close_lig(
 
     engine_updates.entities = true;
 
-    // todo: Sort this out. May need Path arg in mol common.
-    // for history in &mut state.to_save.open_history {
-    //     if let OpenType::Ligand = history.type_ {
-    //         if history.ident.to_lowercase() == ident.to_lowercase() {
-    //             history.last_session = false;
-    //         }
-    //     }
-    // }
+    if let Some(path) = path {
+        for history in &mut state.to_save.open_history {
+            if let OpenType::Ligand = history.type_ {
+                if history.path == path {
+                    history.last_session = false;
+                }
+            }
+        }
+    }
 
     state.update_save_prefs(false);
 }

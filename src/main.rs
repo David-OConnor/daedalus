@@ -110,9 +110,6 @@ use crate::{
 // // todo, and not required. YIL: Yildirim torsion refit. CI: Legacy Cornell-style. SHAW: incomplete,
 // // todo from a person named Shaw.
 
-// Include the compiled CUDA ptx in the binary.
-// const KERN_PTX: &str = include_str!(concat!(env!("OUT_DIR"), "/my_kernel.ptx"));
-
 // Note: If you haven't generated this file yet when compiling (e.g. from a freshly-cloned repo),
 // make an edit to one of the CUDA files (e.g. add a newline), then run, to create this file.
 #[cfg(feature = "cuda")]
@@ -517,9 +514,12 @@ fn main() {
             let ctx = CudaContext::new(0).unwrap();
             let stream = ctx.default_stream();
 
+            // todo: Figure out how to handle multiple modules, given you've moved the ComputationDevice
+            // todo struct to dynamics. Your reflections GPU code will be broken until this is solved.
             let module = ctx.load_module(Ptx::from_src(PTX));
+            let module_dynamics = ctx.load_module(Ptx::from_src(dynamics::PTX));
 
-            match module {
+            match module_dynamics {
                 Ok(m) => {
                     // todo: Store/cache these, likely.
                     // let func_coulomb = module.load_function("coulomb_kernel").unwrap();
@@ -529,7 +529,10 @@ fn main() {
                     ComputationDevice::Gpu((stream, m))
                 }
                 Err(e) => {
-                    eprintln!("Error loading CUDA module: {PTX}; not using CUDA. Error: {e}");
+                    eprintln!(
+                        "Error loading CUDA module: {}; not using CUDA. Error: {e}",
+                        dynamics::PTX
+                    );
                     ComputationDevice::Cpu
                 }
             }

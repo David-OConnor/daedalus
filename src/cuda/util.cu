@@ -70,39 +70,6 @@ __device__ inline float3 min_image(float3 ext, float3 dv) {
     return dv;
 }
 
-// These params includes inv_r due to it being shared with LJ.
-__device__
-ForceEnergy coulomb_force_spme_short_range(
-    float r,
-    float inv_r,
-    float3 dir,
-    float q_0,
-    float q_1,
-    float cutoff_dist,
-    float alpha
-) {
-    ForceEnergy result;
-
-    // Outside cutoff: no short-range contribution
-    if (r >= cutoff_dist) {
-        result.force  = make_float3(0.f, 0.f, 0.f);
-        result.energy = 0.f;
-        return result;
-    }
-
-    const float alpha_r = alpha * r;
-    const float erfc_term = erfcf(alpha_r);
-    const float charge_term = q_0 * q_1;
-
-    const float exp_term  = __expf(-(alpha_r * alpha_r));
-
-    const float force_mag = charge_term * (erfc_term * inv_r * inv_r + 2.0f * alpha * exp_term * INV_SQRT_PI * inv_r);
-
-    result.force = dir * force_mag;
-    result.energy = charge_term * inv_r * erfc_term;
-    return result;
-}
-
 __device__
 float lj_V(
     float3 posit_0,

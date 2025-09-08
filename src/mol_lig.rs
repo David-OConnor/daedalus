@@ -1,6 +1,6 @@
 //! Fundamental data structures for small organic molecules / ligands
 
-use std::{collections::HashMap, io};
+use std::{collections::HashMap, io, path::PathBuf};
 
 use bio_apis::pubchem::ProteinStructure;
 use bio_files::{ChargeType, Mol2, MolType, Pdbqt, ResidueEnd, Sdf};
@@ -43,8 +43,7 @@ impl MoleculeSmall {
         atoms: Vec<Atom>,
         bonds: Vec<Bond>,
         metadata: HashMap<String, String>,
-        // ff_params: &HashMap<String, ForceFieldParamsKeyed>,
-        // lig_i: Option<usize>,
+        path: Option<PathBuf>,
     ) -> Self {
         let mut frcmod_loaded = false;
         // If we've already loaded FRCMOD data for this ligand, update the status. Alternatively,
@@ -80,7 +79,7 @@ impl MoleculeSmall {
         }
 
         Self {
-            common: MoleculeCommon::new(ident, atoms, Some(bonds), metadata),
+            common: MoleculeCommon::new(ident, atoms, Some(bonds), metadata, path),
             pubchem_cid,
             drugbank_id,
             frcmod_loaded,
@@ -147,7 +146,8 @@ impl TryFrom<Mol2> for MoleculeSmall {
             .collect::<Result<_, _>>()?;
 
         // Note: We don't compute bonds here; we assume they're included in the molecule format.
-        Ok(Self::new(m.ident, atoms, bonds, m.metadata.clone()))
+        // Handle path after; not supported by TryFrom.
+        Ok(Self::new(m.ident, atoms, bonds, m.metadata.clone(), None))
     }
 }
 
@@ -171,7 +171,8 @@ impl TryFrom<Sdf> for MoleculeSmall {
             .map(|b| Bond::from_generic(b, &atoms))
             .collect::<Result<_, _>>()?;
 
-        Ok(Self::new(m.ident, atoms, bonds, m.metadata.clone()))
+        // Handle path after; not supported by TryFrom.
+        Ok(Self::new(m.ident, atoms, bonds, m.metadata.clone(), None))
     }
 }
 
@@ -195,12 +196,13 @@ impl TryFrom<Pdbqt> for MoleculeSmall {
             .map(|b| Bond::from_generic(b, &atoms))
             .collect::<Result<_, _>>()?;
 
+        // Handle path after; not supported by TryFrom.
         Ok(Self::new(
-            // todo: PDBQT metadata?
             m.ident,
             atoms,
             bonds,
-            HashMap::new(),
+            HashMap::new(), // todo: Metadata?
+            None,
         ))
     }
 }
@@ -464,6 +466,7 @@ impl MoleculeSmall {
             atoms_this,
             bonds_this,
             HashMap::new(),
+            None,
         )
     }
 

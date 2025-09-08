@@ -17,10 +17,7 @@ na_seq = "0.3.6"
 bio_apis = {  version = "0.1.6", features = ["encode"] }
 bio_files = "0.2.12"
 mcubes = "0.1.4"
-# todo: Still required with dynamics as separate crate?
-ewald = { version = "0.1.4" }
-#dynamics = "0.1.1"
-dynamics = { path = "../dynamics"}
+dynamics = "0.1.0"
 
 # For loading and saving config
 bincode = "2.0.1"
@@ -70,7 +67,7 @@ winresource = "0.1.20"
 default = ["cuda"]
 
 #cuda = ["cuda_setup", "cudarc", "lin_alg/cuda", "ewald/cuda"]
-cuda = ["cuda_setup", "cudarc", "lin_alg/cuda", "ewald/cuda", "dynamics/cuda"]
+cuda = ["cuda_setup", "cudarc", "lin_alg/cuda", "dynamics/cuda"]
 
 
 [profile.release]

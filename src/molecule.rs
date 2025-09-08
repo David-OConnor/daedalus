@@ -6,6 +6,7 @@ use std::{
     fmt::{self, Display, Formatter},
     io,
     io::ErrorKind,
+    path::PathBuf,
     sync::mpsc::{self, Receiver},
     thread,
 };
@@ -18,7 +19,7 @@ use bio_files::{
     AtomGeneric, BackboneSS, BondGeneric, BondType, ChainGeneric, DensityMap, ExperimentalMethod,
     MmCif, ResidueEnd, ResidueGeneric, ResidueType,
 };
-use dynamics::{AtomDynamics, ProtFFTypeChargeMap, params::populate_peptide_ff_and_q, ParamError};
+use dynamics::{AtomDynamics, ParamError, ProtFFTypeChargeMap, params::populate_peptide_ff_and_q};
 use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 use na_seq::{AminoAcid, AminoAcidGeneral, AminoAcidProtenationVariant, AtomTypeInRes, Element};
 use rayon::prelude::*;
@@ -53,6 +54,7 @@ pub struct MoleculeCommon {
     /// This is a bit different, as it's for our UI only. Doesn't fit with the others,
     /// but is safer and easier than trying to sync Vec indices.
     pub visible: bool,
+    pub path: Option<PathBuf>,
 }
 
 impl Default for MoleculeCommon {
@@ -66,6 +68,7 @@ impl Default for MoleculeCommon {
             adjacency_list: Vec::new(),
             atom_posits: Vec::new(),
             visible: true,
+            path: None,
         }
     }
 }
@@ -78,6 +81,7 @@ impl MoleculeCommon {
         atoms: Vec<Atom>,
         bonds: Option<Vec<Bond>>,
         metadata: HashMap<String, String>,
+        path: Option<PathBuf>,
     ) -> Self {
         let atom_posits = atoms.iter().map(|a| a.posit).collect();
 
@@ -93,6 +97,7 @@ impl MoleculeCommon {
             atoms,
             bonds,
             atom_posits,
+            path,
             ..Self::default()
         };
 
@@ -196,13 +201,14 @@ impl MoleculePeptide {
         // data, but not for small molecules).
         add_hydrogens: Option<&ProtFFTypeChargeMap>,
         metadata: HashMap<String, String>,
+        path: Option<PathBuf>,
     ) -> Self {
         let (center, size) = mol_center_size(&atoms);
 
         println!("Loading atoms into mol...");
 
         let mut result = Self {
-            common: MoleculeCommon::new(ident, atoms, None, metadata),
+            common: MoleculeCommon::new(ident, atoms, None, metadata, path),
             chains,
             residues,
             center,
@@ -231,9 +237,11 @@ impl MoleculePeptide {
 
             // Populate FF, q, and bonds only after adding hydrogens.
             // populate_peptide_ff_and_q(&mut m.atoms, &m.residues, ff_map).map_err(|_| {
-            populate_ff_and_q(&mut result.common.atoms, &result.residues, ff_map).map_err(|_| {
-                io::Error::new(ErrorKind::InvalidData, "Unable to  populate FF and Q data")
-            }).unwrap();
+            populate_ff_and_q(&mut result.common.atoms, &result.residues, ff_map)
+                .map_err(|_| {
+                    io::Error::new(ErrorKind::InvalidData, "Unable to  populate FF and Q data")
+                })
+                .unwrap();
         }
 
         // todo: THis is currently run twice: Once here, and once in atom commons.
@@ -788,7 +796,11 @@ pub const fn aa_color(aa: AminoAcid) -> (f32, f32, f32) {
 }
 
 impl MoleculePeptide {
-    pub fn from_mmcif(mut m: MmCif, ff_map: &ProtFFTypeChargeMap) -> Result<Self, io::Error> {
+    pub fn from_mmcif(
+        mut m: MmCif,
+        ff_map: &ProtFFTypeChargeMap,
+        path: Option<PathBuf>,
+    ) -> Result<Self, io::Error> {
         let mut atoms: Vec<_> = m.atoms.iter().map(|a| a.into()).collect();
 
         let mut last_non_het = 0;
@@ -839,6 +851,7 @@ impl MoleculePeptide {
             residues,
             Some(ff_map),
             m.metadata,
+            path,
         );
 
         result.experimental_method = m.experimental_method.clone();
@@ -878,7 +891,6 @@ pub fn build_adjacency_list(bonds: &Vec<Bond>, atoms_len: usize) -> Vec<Vec<usiz
 
     result
 }
-
 
 // todo! This is a C+P from that in dynamics, but using our native types. Sort this, and how
 // todo you populate H, FF type, and Q in ggeneral between here and the lib.
