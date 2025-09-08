@@ -40,37 +40,6 @@ void coulomb_force_kernel(
     }
 }
 
-// extern "C" __global__
-// void coulomb_force_spme_short_range_kernel_pairwise(
-//     float3* out,
-//     const float3* posits_tgt,
-//     const float3* posits_src,
-//     const float* charges_tgt,
-//     const float* charges_src,
-//     size_t N,
-//     float cutoff,
-//     float alpha,
-//     float3 cell     // {Lx, Ly, Lz}; set zeros to disable PBC
-// ) {
-//     // todo: Ensure you're handling periodic boundary condition correctly.
-//     // DRY with the non-short range version for this block/thread/grid setup adn loop.
-//
-//     size_t index = blockIdx.x * blockDim.x + threadIdx.x;
-//     size_t stride = blockDim.x * gridDim.x;
-//
-//     for (size_t i = index; i < N; i += stride) {
-//         const float3 pt  = posits_tgt[i];
-//         const float qt  = charges_tgt[i];
-//
-//         const float3 ps = posits_src[i];
-//         const float qs  = charges_src[i];
-//
-//         const float3 force = coulomb_force_spme_short_range(ps, pt, qs, qt, alpha, cutoff, cell);
-//
-//         out[i] = out[i] + force;
-//     }
-// }
-
 // Currently  unused
 extern "C" __global__
 void lj_V_kernel(

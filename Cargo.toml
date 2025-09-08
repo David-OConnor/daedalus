@@ -13,12 +13,12 @@ egui-file-dialog = "0.11.0" #  For file dialogs.
 cfg-if = "1.0.1"
 
 lin_alg = { version = "1.3.5", features = ["encode"] }
-na_seq = "0.3.1"
+na_seq = "0.3.6"
 bio_apis = {  version = "0.1.6", features = ["encode"] }
-bio_files = "0.2.11"
+bio_files = "0.2.12"
 mcubes = "0.1.4"
 # todo: Still required with dynamics as separate crate?
-ewald = { version = "0.1.1" }
+ewald = { version = "0.1.4" }
 #dynamics = "0.1.1"
 dynamics = { path = "../dynamics"}
 
@@ -51,13 +51,12 @@ chrono = "0.4.41"
 [patch.crates-io]
 #graphics = { path = "../../graphics" }
 #lin_alg = { path = "../../lin_alg" }
-na_seq = { path = "../na_seq" }
+#na_seq = { path = "../na_seq" }
 #bio_apis = { path = "../bio_apis" }
 #mcubes = { path = "../mcubes" }
 #bio_files = { path = "../bio_files" }
-ewald = { path = "../ewald" }
+#ewald = { path = "../ewald" }
 dynamics = { path = "../dynamics" }
-#cuda_setup = { path = "../../cuda_setup" }
 
 
 [build-dependencies]

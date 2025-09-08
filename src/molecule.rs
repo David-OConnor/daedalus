@@ -18,10 +18,9 @@ use bio_files::{
     AtomGeneric, BackboneSS, BondGeneric, BondType, ChainGeneric, DensityMap, ExperimentalMethod,
     MmCif, ResidueEnd, ResidueGeneric, ResidueType,
 };
-use dynamics::{AtomDynamics, ProtFFTypeChargeMap};
-use dynamics::params::populate_peptide_ff_and_q;
+use dynamics::{AtomDynamics, ProtFFTypeChargeMap, params::populate_peptide_ff_and_q, ParamError};
 use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
-use na_seq::{AminoAcid, AtomTypeInRes, Element};
+use na_seq::{AminoAcid, AminoAcidGeneral, AminoAcidProtenationVariant, AtomTypeInRes, Element};
 use rayon::prelude::*;
 
 use crate::{
@@ -82,6 +81,7 @@ impl MoleculeCommon {
     ) -> Self {
         let atom_posits = atoms.iter().map(|a| a.posit).collect();
 
+        // todo: Skip for mmCif etc, since we replace this after adding H?
         let bonds = match bonds {
             Some(b) => b,
             None => create_bonds(&atoms),
@@ -222,13 +222,22 @@ impl MoleculePeptide {
                 .iter()
                 .filter(|a| a.element == Element::Hydrogen)
                 .count()
-                < 4
+                < 10
             {
                 if let Err(e) = result.populate_hydrogens_angles(ff_map) {
                     eprintln!("Unable to populate Hydrogens and residue dihedral angles: {e:?}");
                 };
             }
+
+            // Populate FF, q, and bonds only after adding hydrogens.
+            // populate_peptide_ff_and_q(&mut m.atoms, &m.residues, ff_map).map_err(|_| {
+            populate_ff_and_q(&mut result.common.atoms, &result.residues, ff_map).map_err(|_| {
+                io::Error::new(ErrorKind::InvalidData, "Unable to  populate FF and Q data")
+            }).unwrap();
         }
+
+        // todo: THis is currently run twice: Once here, and once in atom commons.
+        result.common.bonds = create_bonds(&result.common.atoms);
 
         result.bonds_hydrogen = create_hydrogen_bonds(&result.common.atoms, &result.common.bonds);
 
@@ -241,12 +250,6 @@ impl MoleculePeptide {
                     result.het_residues.push(res.clone());
                 }
             }
-        }
-
-        // todo: Don't like this clone.
-        let atoms_clone = result.common.atoms.clone();
-        for atom in &mut result.common.atoms {
-            // atom.dock_type = Some(DockType::infer(atom, &result.common.bonds, &atoms_clone));
         }
 
         result
@@ -517,10 +520,7 @@ impl Residue {
 }
 
 impl Residue {
-    pub fn from_generic(
-        res: &ResidueGeneric,
-        atom_set: &[Atom],
-    ) -> io::Result<Self> {
+    pub fn from_generic(res: &ResidueGeneric, atom_set: &[Atom]) -> io::Result<Self> {
         let mut atoms = Vec::with_capacity(res.atom_sns.len());
 
         for sn in &res.atom_sns {
@@ -789,8 +789,6 @@ pub const fn aa_color(aa: AminoAcid) -> (f32, f32, f32) {
 
 impl MoleculePeptide {
     pub fn from_mmcif(mut m: MmCif, ff_map: &ProtFFTypeChargeMap) -> Result<Self, io::Error> {
-        populate_peptide_ff_and_q(&mut m.atoms, &m.residues, ff_map).map_err(|_| io::Error::new(ErrorKind::InvalidData, "Unable to  populate FF and Q data"))?;
-
         let mut atoms: Vec<_> = m.atoms.iter().map(|a| a.into()).collect();
 
         let mut last_non_het = 0;
@@ -802,7 +800,7 @@ impl MoleculePeptide {
         }
 
         let mut residues = Vec::with_capacity(m.residues.len());
-        for (i, res) in m.residues.iter().enumerate() {
+        for res in &m.residues {
             residues.push(Residue::from_generic(res, &atoms)?);
         }
 
@@ -879,4 +877,140 @@ pub fn build_adjacency_list(bonds: &Vec<Bond>, atoms_len: usize) -> Vec<Vec<usiz
     }
 
     result
+}
+
+
+// todo! This is a C+P from that in dynamics, but using our native types. Sort this, and how
+// todo you populate H, FF type, and Q in ggeneral between here and the lib.
+/// Populate forcefield type, and partial charge on atoms. This should be run on mmCIF
+/// files prior to running molecular dynamics on them. These files from RCSB PDB do not
+/// natively have this data.
+///
+/// `residues` must be the full set; this is relevant to how we index it.
+/// Populate forcefield type, and partial charge.
+/// `residues` must be the full set; this is relevant to how we index it.
+pub fn populate_ff_and_q(
+    atoms: &mut [Atom],
+    residues: &[Residue],
+    ff_type_charge: &ProtFFTypeChargeMap,
+) -> Result<(), ParamError> {
+    for atom in atoms {
+        if atom.hetero {
+            continue;
+        }
+
+        let Some(res_i) = atom.residue else {
+            return Err(ParamError::new(&format!(
+                "MD failure: Missing residue when populating ff name and q: {atom}"
+            )));
+        };
+
+        let Some(type_in_res) = &atom.type_in_res else {
+            return Err(ParamError::new(&format!(
+                "MD failure: Missing type in residue for atom: {atom}"
+            )));
+        };
+
+        let atom_res_type = &residues[res_i].res_type;
+
+        let ResidueType::AminoAcid(aa) = atom_res_type else {
+            // e.g. water or other hetero atoms; skip.
+            continue;
+        };
+
+        // todo: Eventually, determine how to load non-standard AA variants from files; set up your
+        // todo state to use those labels. They are available in the params.
+        let aa_gen = AminoAcidGeneral::Standard(*aa);
+
+        let charge_map = match residues[res_i].end {
+            ResidueEnd::Internal => &ff_type_charge.internal,
+            ResidueEnd::NTerminus => &ff_type_charge.n_terminus,
+            ResidueEnd::CTerminus => &ff_type_charge.c_terminus,
+            ResidueEnd::Hetero => {
+                return Err(ParamError::new(&format!(
+                    "Error: Encountered hetero atom when parsing amino acid FF types: {atom}"
+                )));
+            }
+        };
+
+        let charges = match charge_map.get(&aa_gen) {
+            Some(c) => c,
+            // A specific workaround to plain "HIS" being absent from amino19.lib (2025.
+            // Choose one of "HID", "HIE", "HIP arbitrarily.
+            // todo: Re-evaluate this, e.g. which one of the three to load.
+            None if aa_gen == AminoAcidGeneral::Standard(AminoAcid::His) => charge_map
+                .get(&AminoAcidGeneral::Variant(AminoAcidProtenationVariant::Hid))
+                .ok_or_else(|| ParamError::new("Unable to find AA mapping"))?,
+            None => return Err(ParamError::new("Unable to find AA mapping")),
+        };
+
+        let mut found = false;
+
+        for charge in charges {
+            // todo: Note that we have multiple branches in some case, due to Amber names like
+            // todo: "HYP" for variants on AAs for different protenation states. Handle this.
+            if &charge.type_in_res == type_in_res {
+                atom.force_field_type = Some(charge.ff_type.clone());
+                atom.partial_charge = Some(charge.charge);
+
+                found = true;
+                break;
+            }
+        }
+
+        // Code below is mainly for the case of missing data; otherwise, the logic for this operation
+        // is complete.
+
+        if !found {
+            match type_in_res {
+                // todo: This is a workaround for having trouble with H types. LIkely
+                // todo when we create them. For now, this meets the intent.
+                AtomTypeInRes::H(_) => {
+                    // Note: We've witnessed this due to errors in the mmCIF file, e.g. on ASP #88 on 9GLS.
+                    eprintln!(
+                        "Error assigning FF type and q based on atom type in res: Failed to match H type. #{}, {type_in_res}, {aa_gen:?}. \
+                         Falling back to a generic H",
+                        &residues[res_i].serial_number
+                    );
+
+                    for charge in charges {
+                        if &charge.type_in_res == &AtomTypeInRes::H("H".to_string())
+                            || &charge.type_in_res == &AtomTypeInRes::H("HA".to_string())
+                        {
+                            atom.force_field_type = Some("HB2".to_string());
+                            atom.partial_charge = Some(charge.charge);
+
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+                // // This is an N-terminal oxygen of a C-terminal carboxyl group.
+                // // todo: You should parse `aminoct12.lib`, and `aminont12.lib`, then delete this.
+                // AtomTypeInRes::OXT => {
+                //     match atom_res_type {
+                //         // todo: QC that it's the N-terminal Met too, or return an error.
+                //         ResidueType::AminoAcid(AminoAcid::Met) => {
+                //             atom.force_field_type = Some("O2".to_owned());
+                //             // Fm amino12ct.lib
+                //             atom.partial_charge = Some(-0.804100);
+                //             found = true;
+                //         }
+                //         _ => return Err(ParamError::new("Error populating FF type: OXT atom-in-res type,\
+                //         not at the C terminal")),
+                //     }
+                // }
+                _ => (),
+            }
+
+            // i.e. if still not found after our specific workarounds above.
+            if !found {
+                return Err(ParamError::new(&format!(
+                    "Error assigning FF type and q based on atom type in res: {atom}",
+                )));
+            }
+        }
+    }
+
+    Ok(())
 }

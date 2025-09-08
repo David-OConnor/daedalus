@@ -46,8 +46,11 @@ mod tests;
 
 #[cfg(feature = "cuda")]
 use std::sync::Arc;
-use std::{collections::HashMap, env, fmt, fmt::Display, path::PathBuf, sync::mpsc::Receiver};
-use std::time::Instant;
+use std::{
+    collections::HashMap, env, fmt, fmt::Display, path::PathBuf, sync::mpsc::Receiver,
+    time::Instant,
+};
+
 use bincode::{Decode, Encode};
 use bio_apis::{
     ReqError,
@@ -71,6 +74,8 @@ use lin_alg::{
 use mol_lig::{Ligand, MoleculeSmall};
 use molecule::MoleculePeptide;
 
+// use crate::file_io::load_ffs_general;
+use crate::ui::misc::MdMode;
 use crate::{
     aa_coords::bond_vecs::init_local_bond_vecs,
     // docking::{BindingEnergy, THETA_BH, prep::DockingSetup},
@@ -80,8 +85,6 @@ use crate::{
     render::render,
     util::handle_err,
 };
-// use crate::file_io::load_ffs_general;
-use crate::ui::misc::MdMode;
 // ------Including files into the executable
 
 // Include general Amber forcefield params with our program. See the Reference Manual, section ]
@@ -575,9 +578,12 @@ fn main() {
             state.ff_param_set = f;
             let elapsed = start.elapsed().as_millis();
             println!("Loaded static FF data in {elapsed}ms");
-        },
+        }
         Err(e) => {
-            handle_err(&mut state.ui,format!("Unable to load general FF params: {e:?}"));
+            handle_err(
+                &mut state.ui,
+                format!("Unable to load general FF params: {e:?}"),
+            );
         }
     }
 

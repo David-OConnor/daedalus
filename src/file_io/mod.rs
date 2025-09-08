@@ -15,14 +15,19 @@ use bio_files::{
     sdf::Sdf,
 };
 use chrono::Utc;
-use dynamics::{merge_params, params::ProtFFTypeChargeMap, ParamError};
-use dynamics::params::{populate_peptide_ff_and_q, FfParamSet};
+use dynamics::{
+    ParamError, merge_params,
+    params::{FfParamSet, ProtFFTypeChargeMap, populate_peptide_ff_and_q},
+};
 use na_seq::{AaIdent, Element};
 
 // use crate::{AMINO_19, AMINO_CT12, AMINO_NT12, FRCMOD_FF19SB, GAFF2, PARM_19, State, molecule::MoleculePeptide, prefs::{OpenHistory, OpenType}, OL24_LIB, OL24_FRCMOD, RNA_LIB};
-use crate::{State, molecule::MoleculePeptide, prefs::{OpenHistory, OpenType}};
 use crate::{
-    // docking::prep::DockingSetup,
+    State,
+    molecule::MoleculePeptide,
+    prefs::{OpenHistory, OpenType},
+};
+use crate::{
     mol_lig::MoleculeSmall,
     molecule::MoleculeGeneric,
     reflection::{DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityRect, ElectronDensity},
@@ -270,9 +275,7 @@ impl State {
 
         match extension.to_str().unwrap() {
             "dat" => {
-                self.ff_param_set.small_mol = Some(ForceFieldParamsKeyed::new(
-                    &ForceFieldParams::load_dat(path)?,
-                ));
+                self.ff_param_set.small_mol = Some(ForceFieldParamsKeyed::load_dat(path)?);
 
                 println!("\nLoaded forcefields:");
                 let v = &self.ff_param_set.small_mol.as_ref().unwrap();
@@ -328,7 +331,7 @@ impl State {
 
                 self.lig_specific_params.insert(
                     mol_name.to_uppercase(),
-                    ForceFieldParamsKeyed::new(&ForceFieldParams::load_frcmod(path)?),
+                    ForceFieldParamsKeyed::load_frcmod(path)?,
                 );
 
                 // Update the lig's FRCMOD status A/R, if the ligand is opened already.
@@ -483,9 +486,7 @@ impl State {
                         self.lig_specific_params.insert(
                             ident.to_uppercase(),
                             // todo: Don't unwrap.
-                            ForceFieldParamsKeyed::new(
-                                &ForceFieldParams::from_frcmod(&frcmod).unwrap(),
-                            ),
+                            ForceFieldParamsKeyed::from_frcmod(&frcmod).unwrap(),
                         );
 
                         if let Some(lig) = self.active_lig_mut() {
@@ -599,8 +600,6 @@ pub fn gemmi_path() -> Option<&'static Path> {
         None
     }
 }
-
-
 
 // // todo:
 // /// Load general parameter files for proteins, and small organic molecules.

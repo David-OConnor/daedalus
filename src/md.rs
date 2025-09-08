@@ -2,7 +2,7 @@
 
 use std::time::Instant;
 
-use bio_files::{ResidueEnd, ResidueType, amber_params::ForceFieldParamsKeyed, ResidueGeneric};
+use bio_files::{ResidueEnd, ResidueGeneric, ResidueType, amber_params::ForceFieldParamsKeyed};
 use dynamics::{
     AtomDynamics, ComputationDevice, FfMolType, HydrogenMdType, MdState, MolDynamics, ParamError,
     Snapshot,
@@ -172,6 +172,8 @@ pub fn new_md_docking(
     // Filter peptide atoms, to only include ones near the docking site.
     let mut atoms_static_near = Vec::new();
     for atom_st in atoms_static_all {
+        // Note: We also filter out hetero atoms in the dynamics lib, but pre-filtering
+        // prevents errors if passing atom posits or an adjacency list.
         if atom_st.hetero {
             continue;
         }

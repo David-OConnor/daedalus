@@ -223,26 +223,10 @@ settings. Deleting it is harmless, other than resetting these conveniences.
 
 ### Compiling
 This application is pure rust, so compiles normally using `cargo build --release`, which produces a standalone executable.
-It requires these 6 Amber parameter files to be present under the project's `resources` folder at compile time.
-These are available in [Amber tools](https://ambermd.org/GetAmber.php). Download, unpack, then copy these files from
-`dat/leap/parm` and `dat/leap/lib`:
-
-- `amino19.lib`
-- `aminoct12.lib`
-- `aminont12.lib`
-- `parm19.dat`
-- `frcmod.ff19SB`
-- `gaff2.dat`
-- `ff-nucleic-OL24.lib`
-- `ff-nucleic-OL24.frcmod`
-- `RNA.lib`
-
-We provide a [copy of these files](https://github.com/David-OConnor/daedalus/releases/download/0.1.3/amber_params_sept_2025.zip)
-for convenience; this is a much smaller download than the entire Amber package, and prevents needing to locate the specific files.
-Unpack, and place these under `resources` prior to compiling.
 
 If you're not running on a machine with an nVidia GPU or without the CUDA toolkit installed, append the 
 `--no-default-features` to the build command. This will disable GPU support.
+
 
 #### Compiling with GPU support
 If compiling with GPU support, you must set the environment var `LD_LIBARARY_PATH` (Linux) or `Path` (Windows) to your CUDA bin

@@ -345,7 +345,10 @@ pub fn h_type_in_res_sidechain(
 
 impl MoleculePeptide {
     /// Adds hydrogens, and populdates residue dihedral angles.
-    pub fn populate_hydrogens_angles(&mut self, ff_map: &ProtFFTypeChargeMap) -> Result<(), ParamError> {
+    pub fn populate_hydrogens_angles(
+        &mut self,
+        ff_map: &ProtFFTypeChargeMap,
+    ) -> Result<(), ParamError> {
         println!("Populating hydrogens and measuring dihedrals...");
         // todo: Move this fn to this module? Split this and its diehdral component, or not?
 
