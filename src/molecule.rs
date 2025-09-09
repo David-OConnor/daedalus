@@ -24,6 +24,7 @@ use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 use na_seq::{AminoAcid, AminoAcidGeneral, AminoAcidProtenationVariant, AtomTypeInRes, Element};
 use rayon::prelude::*;
 
+use crate::add_hydrogens::populate_hydrogens_angles;
 use crate::{
     Selection,
     aa_coords::Dihedral,
@@ -230,18 +231,24 @@ impl MoleculePeptide {
                 .count()
                 < 10
             {
-                if let Err(e) = result.populate_hydrogens_angles(ff_map) {
+                // if let Err(e) = result.populate_hydrogens_angles(ff_map, 7.0) {
+                if let Err(e) = populate_hydrogens_angles(
+                    &mut result.common.atoms,
+                    &mut result.residues,
+                    ff_map,
+                    7.0,
+                ) {
                     eprintln!("Unable to populate Hydrogens and residue dihedral angles: {e:?}");
                 };
             }
 
             // Populate FF, q, and bonds only after adding hydrogens.
             // populate_peptide_ff_and_q(&mut m.atoms, &m.residues, ff_map).map_err(|_| {
-            populate_ff_and_q(&mut result.common.atoms, &result.residues, ff_map)
-                .map_err(|_| {
-                    io::Error::new(ErrorKind::InvalidData, "Unable to  populate FF and Q data")
-                })
-                .unwrap();
+            // populate_ff_and_q(&mut result.common.atoms, &result.residues, ff_map)
+            //     .map_err(|_| {
+            //         io::Error::new(ErrorKind::InvalidData, "Unable to  populate FF and Q data")
+            //     })
+            //     .unwrap();
         }
 
         // todo: THis is currently run twice: Once here, and once in atom commons.
@@ -901,7 +908,7 @@ pub fn build_adjacency_list(bonds: &Vec<Bond>, atoms_len: usize) -> Vec<Vec<usiz
 /// `residues` must be the full set; this is relevant to how we index it.
 /// Populate forcefield type, and partial charge.
 /// `residues` must be the full set; this is relevant to how we index it.
-pub fn populate_ff_and_q(
+pub fn __populate_ff_and_q(
     atoms: &mut [Atom],
     residues: &[Residue],
     ff_type_charge: &ProtFFTypeChargeMap,

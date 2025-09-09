@@ -8,7 +8,12 @@ use std::{
 };
 
 use bio_apis::amber_geostd;
-use bio_files::{DensityMap, MmCif, Mol2, amber_params::{ForceFieldParams, ForceFieldParamsKeyed, parse_amino_charges}, gemmi_sf_to_map, sdf::Sdf, Pdbqt};
+use bio_files::{
+    DensityMap, MmCif, Mol2, Pdbqt,
+    amber_params::{ForceFieldParams, ForceFieldParamsKeyed, parse_amino_charges},
+    gemmi_sf_to_map,
+    sdf::Sdf,
+};
 use chrono::Utc;
 use dynamics::{
     ParamError, merge_params,
@@ -68,7 +73,6 @@ impl State {
         Ok(())
     }
 
-    // todo: See notes eleswhere on `on_init`.
     pub fn open_molecule(&mut self, path: &Path) -> io::Result<()> {
         let binding = path.extension().unwrap_or_default().to_ascii_lowercase();
         let extension = binding;
@@ -80,18 +84,16 @@ impl State {
                 Ok(MoleculeGeneric::Ligand(m))
             }
             "mol2" => {
-                let mut m: MoleculeSmall = Pdbqt::load(path)?.try_into()?;
-                m.common.path = Some(path.to_owned());
-                Ok(MoleculeGeneric::Ligand(m))
-            }
-
-            "pdbqt" => {
                 let mut m: MoleculeSmall = Mol2::load(path)?.try_into()?;
                 m.common.path = Some(path.to_owned());
                 Ok(MoleculeGeneric::Ligand(m))
             }
-            // "pdbqt" => Ok(MoleculeGeneric::Ligand(load_pdbqt(path)?.try_into()?)),
-            "pdb" | "cif" => {
+            "pdbqt" => {
+                let mut m: MoleculeSmall = Pdbqt::load(path)?.try_into()?;
+                m.common.path = Some(path.to_owned());
+                Ok(MoleculeGeneric::Ligand(m))
+            }
+            "cif" => {
                 // If a 2fo-fc CIF, use gemmi to convert it to Map data.
                 // Using the filename to determine if this is a 2fo-fc file, vice atom coordinates,
                 // is rough here, but good enough for now.

@@ -6,7 +6,7 @@ use std::{
     fmt::{Display, Formatter},
 };
 
-use bio_files::ResidueType;
+use bio_files::{AtomGeneric, ResidueGeneric, ResidueType};
 use dynamics::ParamError;
 use lin_alg::f64::{Quaternion, Vec3, calc_dihedral_angle, calc_dihedral_angle_v2};
 use na_seq::{
@@ -505,12 +505,15 @@ fn add_h_sc_het(
 /// Add hydrogens to AA backbone atoms, and update the dihedral angles.
 /// Returns (Dihedral, (this c', this ca).
 fn handle_backbone(
-    hydrogens: &mut Vec<Atom>,
-    atoms: &[&Atom],
+    hydrogens: &mut Vec<AtomGeneric>,
+    // hydrogens: &mut Vec<Atom>,
+    atoms: &[&AtomGeneric],
+    // atoms: &[&Atom],
     posits_sc: &[Vec3],
     prev_cp_ca: Option<(Vec3, Vec3)>,
     next_n: Option<Vec3>,
-    h_default: &Atom,
+    // h_default: &Atom,
+    h_default: &AtomGeneric,
     aa: &AminoAcid,
 ) -> Result<(Dihedral, Option<(Vec3, Vec3)>), ParamError> {
     let mut dihedral = Dihedral::default();
@@ -521,20 +524,36 @@ fn handle_backbone(
     let mut c_p_posit = None;
 
     for atom in atoms {
-        let Some(role) = atom.role else { continue };
+        // let Some(role) = atom.role else { continue };
+        let Some(tir) = &atom.type_in_res else {
+            continue;
+        };
 
-        match role {
-            AtomRole::N_Backbone => {
+        match tir {
+            AtomTypeInRes::N => {
                 n_posit = Some(atom.posit);
             }
-            AtomRole::C_Alpha => {
+            AtomTypeInRes::CA => {
                 c_alpha_posit = Some(atom.posit);
             }
-            AtomRole::C_Prime => {
+            AtomTypeInRes::C => {
                 c_p_posit = Some(atom.posit);
             }
             _ => (),
         }
+
+        // match role {
+        //     AtomRole::N_Backbone => {
+        //         n_posit = Some(atom.posit);
+        //     }
+        //     AtomRole::C_Alpha => {
+        //         c_alpha_posit = Some(atom.posit);
+        //     }
+        //     AtomRole::C_Prime => {
+        //         c_p_posit = Some(atom.posit);
+        //     }
+        //     _ => (),
+        // }
     }
 
     let (Some(c_alpha_posit), Some(c_p_posit), Some(n_posit)) = (c_alpha_posit, c_p_posit, n_posit)
@@ -597,13 +616,15 @@ fn handle_backbone(
         // Add 2 H in a tetrahedral config.
         let (h_0, h_1) = tetra_atoms_2(c_alpha_posit, c_p_posit, n_posit, LEN_CALPHA_H);
 
-        hydrogens.push(Atom {
+        // hydrogens.push(Atom {
+        hydrogens.push(AtomGeneric {
             posit: h_0,
             type_in_res: Some(AtomTypeInRes::H("HA2".to_string())),
             ..h_default.clone()
         });
 
-        hydrogens.push(Atom {
+        // hydrogens.push(Atom {
+        hydrogens.push(AtomGeneric {
             posit: h_1,
             type_in_res: Some(AtomTypeInRes::H("HA3".to_string())),
             ..h_default.clone()
@@ -632,7 +653,13 @@ fn handle_backbone(
         ) * LEN_CALPHA_H;
 
     // H attached to the α carbon.
-    hydrogens.push(Atom {
+    // hydrogens.push(Atom {
+    //     posit: posit_ha,
+    //     type_in_res: Some(AtomTypeInRes::H("HA".to_string())),
+    //     ..h_default.clone()
+    // });
+
+    hydrogens.push(AtomGeneric {
         posit: posit_ha,
         type_in_res: Some(AtomTypeInRes::H("HA".to_string())),
         ..h_default.clone()
@@ -646,13 +673,15 @@ fn handle_backbone(
 /// Returns (dihedral angles, H atoms, (c'_pos, ca_pos)). The parameter and output carbon positions
 /// are for use in calculating dihedral angles associated with other  chains.
 pub fn aa_data_from_coords(
-    atoms: &[&Atom],
+    // atoms: &[&Atom],
+    atoms: &[&AtomGeneric],
+    // residues: &[Residue],
+    residues: &[ResidueGeneric],
     residue_type: &ResidueType,
     res_i: usize,
     chain_i: usize,
     prev_cp_ca: Option<(Vec3, Vec3)>,
     next_n: Option<Vec3>,
-    residues: &[Residue],
     digit_map: &DigitMap,
 ) -> Result<(Dihedral, Vec<Atom>, Option<(Vec3, Vec3)>), ParamError> {
     // todo: With_capacity based on aa?
@@ -695,10 +724,22 @@ pub fn aa_data_from_coords(
         // todo: Another step required using sidechain carbon?
         let mut posits_sc = Vec::new();
         for atom_sc in atoms {
-            let Some(role) = atom_sc.role else {
+            // let Some(role) = atom_sc.role else {
+            //     continue;
+            // };
+            // if role == AtomRole::Sidechain && atom_sc.element == Carbon {
+            //     posits_sc.push(atom_sc.posit);
+            // }
+
+            let Some(tir) = atom_sc.type_in_res else {
                 continue;
             };
-            if role == AtomRole::Sidechain && atom_sc.element == Carbon {
+            let sc = matches!(
+                tir,
+                AtomTypeInRes::C | AtomTypeInRes::CA | AtomTypeInRes::N | AtomTypeInRes::O
+            );
+
+            if sc && atom_sc.element == Carbon {
                 posits_sc.push(atom_sc.posit);
             }
         }

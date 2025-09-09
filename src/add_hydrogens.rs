@@ -21,14 +21,15 @@
 // - Cys missing H on S. ("HS")
 // - Leucine sometimes missing one of its Methyl groups
 
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Instant};
 
+use bio_files::{AtomGeneric, ChainGeneric, ResidueGeneric};
 use dynamics::{ParamError, ProtFFTypeChargeMap, ProtFfMap};
 use na_seq::{AminoAcid, AminoAcidGeneral, AminoAcidProtenationVariant, AtomTypeInRes};
 
 use crate::{
-    aa_coords::aa_data_from_coords,
-    molecule::{Atom, AtomRole, MoleculePeptide},
+    aa_coords::{Dihedral, aa_data_from_coords},
+    molecule::{Atom, AtomRole, MoleculePeptide, Residue},
 };
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -343,85 +344,132 @@ pub fn h_type_in_res_sidechain(
     Ok(result)
 }
 
-impl MoleculePeptide {
-    /// Adds hydrogens, and populdates residue dihedral angles.
-    pub fn populate_hydrogens_angles(
-        &mut self,
-        ff_map: &ProtFFTypeChargeMap,
-    ) -> Result<(), ParamError> {
-        println!("Populating hydrogens and measuring dihedrals...");
-        // todo: Move this fn to this module? Split this and its diehdral component, or not?
+// impl MoleculePeptide {
+/// Adds hydrogens to a molecule, and populdates residue dihedral angles.
+/// This is useful in particular for mmCIF files from RCSB PDB, as they don't have these.
+/// Uses Amber (or similar)-provided parameters as a guide.
+///
+/// Returns dihedrals.
+pub fn populate_hydrogens_angles(
+    // &mut self,
+    // atoms: &mut Vec<Atom>,
+    // residues: &mut Vec<Residue>,
+    atoms: &mut Vec<AtomGeneric>,
+    residues: &mut Vec<ResidueGeneric>,
+    chains: &[ChainGeneric],
+    ff_map: &ProtFFTypeChargeMap,
+    ph: f32, // todo: Implement.
+             // ) -> Result<(), ParamError> {
+) -> Result<Vec<Dihedral>, ParamError> {
+    println!("Populating hydrogens and measuring dihedrals...");
+    // todo: Move this fn to this module? Split this and its diehdral component, or not?
 
-        let mut prev_cp_ca = None;
+    let mut index_map = HashMap::new();
+    for (i, atom) in atoms.iter().enumerate() {
+        index_map.insert(atom.serial_number, i);
+    }
 
-        let res_len = self.residues.len();
+    let mut start = Instant::now();
 
-        // todo: The Clone avoids a double-borrow error below. Come back to /avoid if possible.
-        let res_clone = self.residues.clone();
+    let mut dihedrals = Vec::with_capacity(residues.len());
 
-        // todo: Handle the N and C term A/R.
-        let digit_map = make_h_digit_map(&ff_map.internal);
+    let mut prev_cp_ca = None;
 
-        // Increment H serial number, starting with the final atom present prior to adding H + 1)
-        let mut highest_sn = 0;
-        for atom in &self.common.atoms {
-            if atom.serial_number > highest_sn {
-                highest_sn = atom.serial_number;
+    let res_len = residues.len();
+
+    // todo: The Clone avoids a double-borrow error below. Come back to /avoid if possible.
+    let res_clone = residues.clone();
+
+    // todo: Handle the N and C term A/R.
+    let digit_map = make_h_digit_map(&ff_map.internal);
+
+    // Increment H serial number, starting with the final atom present prior to adding H + 1)
+    let mut highest_sn = 0;
+    for atom in atoms.iter() {
+        if atom.serial_number > highest_sn {
+            highest_sn = atom.serial_number;
+        }
+    }
+    let mut next_sn = highest_sn + 1;
+
+    for (res_i, res) in residues.iter_mut().enumerate() {
+        let mut n_next_pos = None;
+        // todo: Messy DRY from the aa_data_from_coords fn.
+        if res_i < res_len - 1 {
+            let res_next = &res_clone[res_i + 1];
+
+            let n_next = res_next.atom_sns.iter().find(|i| {
+                if let Some(tir) = &atoms[index_map[*i]].type_in_res {
+                    *tir == AtomTypeInRes::N
+                } else {
+                    false
+                }
+            });
+
+            // let n_next = res_next.atoms.iter().find(|i| {
+            //     if let Some(role) = &atoms[**i].role {
+            //         *role == AtomRole::N_Backbone
+            //     } else {
+            //         false
+            //     }
+            // });
+
+            if let Some(n_next) = n_next {
+                n_next_pos = Some(atoms[index_map[n_next]].posit);
             }
         }
-        let mut next_sn = highest_sn + 1;
 
-        for (res_i, res) in self.residues.iter_mut().enumerate() {
-            let atoms: Vec<&Atom> = res.atoms.iter().map(|i| &self.common.atoms[*i]).collect();
+        let mut atoms_this_res = Vec::with_capacity(res.atom_sns.len());
+        for atom in atoms {
+            if res.atom_sns.contains(&atom.serial_number) {
+                atoms_this_res.push(atom);
+            }
+        }
+        // let atoms_this_res: Vec<&Atom> = res.atoms.iter().map(|i| &atoms[*i]).collect();
 
-            let mut n_next_pos = None;
-            // todo: Messy DRY from the aa_data_from_coords fn.
-            if res_i < res_len - 1 {
-                let res_next = &res_clone[res_i + 1];
-                let n_next = res_next.atoms.iter().find(|i| {
-                    if let Some(role) = &self.common.atoms[**i].role {
-                        *role == AtomRole::N_Backbone
-                    } else {
-                        false
-                    }
-                });
-                if let Some(n_next) = n_next {
-                    n_next_pos = Some(self.common.atoms[*n_next].posit);
+        // Get the first atom's chain; probably OK for assigning a chain to H.
+        let mut chain_i = 0;
+        if !atoms_this_res.is_empty() {
+            for (i, chain) in chains.iter().enumerate() {
+                if chain.atom_sns.contains(&atoms_this_res[0].serial_number) {
+                    chain_i = i;
+                    break;
                 }
             }
-
-            // Get the first atom's chain; probably OK for assigning a chain to H.
-            let chain_i = if !atoms.is_empty() {
-                atoms[0].chain.unwrap_or_default()
-            } else {
-                0
-            };
-
-            // todo: Handle the N term and C term cases; pass those params in.
-            let (dihedral, h_added_this_res, this_cp_ca) = aa_data_from_coords(
-                &atoms,
-                &res.res_type,
-                res_i,
-                chain_i,
-                prev_cp_ca,
-                n_next_pos,
-                &res_clone,
-                &digit_map,
-            )?;
-
-            for mut h in h_added_this_res {
-                h.serial_number = next_sn;
-                self.common.atoms.push(h);
-                res.atoms.push(self.common.atoms.len() - 1);
-
-                // todo: Add to the chains
-                next_sn += 1;
-            }
-
-            prev_cp_ca = this_cp_ca;
-            res.dihedral = Some(dihedral);
         }
 
-        Ok(())
+        // todo: Handle the N term and C term cases; pass those params in.
+        let (dihedral, h_added_this_res, this_cp_ca) = aa_data_from_coords(
+            &atoms_this_res,
+            &res_clone,
+            &res.res_type,
+            res_i,
+            chain_i,
+            prev_cp_ca,
+            n_next_pos,
+            &digit_map,
+        )?;
+
+        for mut h in h_added_this_res {
+            h.serial_number = next_sn;
+            atoms.push(h);
+
+            res.atom_sns.push(next_sn);
+            // res.atoms.push(atoms.len() - 1);
+
+            // todo: Add to the chains
+            next_sn += 1;
+        }
+
+        prev_cp_ca = this_cp_ca;
+        // res.dihedral = Some(dihedral);
+        dihedrals.push(dihedral);
     }
+
+    // original with indices etc: 2.4ms.
+    let end = start.elapsed();
+    println!("TIME: {:?}", end.as_micros());
+
+    Ok(dihedrals)
 }
+// }

@@ -2,14 +2,12 @@
 
 use std::time::Instant;
 
-use bio_files::{ResidueEnd, ResidueGeneric, ResidueType, amber_params::ForceFieldParamsKeyed};
+use bio_files::amber_params::ForceFieldParamsKeyed;
 use dynamics::{
-    AtomDynamics, ComputationDevice, FfMolType, HydrogenMdType, MdState, MolDynamics, ParamError,
-    Snapshot,
-    params::{FfParamSet, ProtFFTypeChargeMap},
+    AtomDynamics, ComputationDevice, FfMolType, HydrogenConstraint, MdConfig, MdState, MolDynamics,
+    ParamError, Snapshot, params::FfParamSet,
 };
 use lin_alg::f64::Vec3;
-use na_seq::{AminoAcid, AminoAcidGeneral, AminoAcidProtenationVariant, AtomTypeInRes};
 
 use crate::{
     docking_v2::ConformationType,
@@ -215,15 +213,17 @@ pub fn new_md_docking(
         },
     ];
 
+    let cfg = MdConfig {
+        zero_com_drift: true, // todo: A/R. Not implemented yet
+        temp_target: temp_target as f32,
+        pressure_target: pressure_target as f32,
+        snapshot_ratio_memory: 1,
+        snapshot_ratio_file: 1,
+        ..Default::default()
+    };
+
     println!("Initialized MD...");
-    let result = MdState::new(
-        &mols,
-        temp_target,
-        pressure_target,
-        ff_params,
-        HydrogenMdType::Fixed(Vec::new()),
-        SNAPSHOT_RATIO,
-    );
+    let result = MdState::new(&cfg, &mols, ff_params);
     println!("Done.");
 
     result
@@ -288,15 +288,17 @@ pub fn new_md_peptide(
         mol_specific_params: None,
     }];
 
+    let cfg = MdConfig {
+        zero_com_drift: true, // todo: A/R. Not implemented yet
+        temp_target: temp_target as f32,
+        pressure_target: pressure_target as f32,
+        snapshot_ratio_memory: 1,
+        snapshot_ratio_file: 1,
+        ..Default::default()
+    };
+
     println!("Initializing MD state...");
-    let result = MdState::new(
-        &mols,
-        temp_target,
-        pressure_target,
-        ff_params,
-        HydrogenMdType::Fixed(Vec::new()),
-        SNAPSHOT_RATIO,
-    );
+    let result = MdState::new(&cfg, &mols, ff_params);
 
     println!("Done.");
     result
