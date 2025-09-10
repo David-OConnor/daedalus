@@ -2,7 +2,7 @@
 
 use std::time::Instant;
 
-use bio_files::amber_params::ForceFieldParamsKeyed;
+use bio_files::md_params::ForceFieldParams;
 use dynamics::{
     AtomDynamics, ComputationDevice, FfMolType, HydrogenConstraint, MdConfig, MdState, MolDynamics,
     ParamError, Snapshot, params::FfParamSet,
@@ -68,7 +68,7 @@ pub fn build_dynamics_docking(
     lig_i: usize,
     mol: &MoleculePeptide,
     param_set: &FfParamSet,
-    lig_specific_params: &ForceFieldParamsKeyed,
+    lig_specific_params: &ForceFieldParams,
     temp_target: f64,
     pressure_target: f64,
     n_steps: u32,
@@ -156,7 +156,7 @@ pub fn new_md_docking(
     // This is the whole set; not just nearby. E.g. all protein atoms.
     atoms_static_all: &[Atom],
     ff_params: &FfParamSet,
-    lig_specific_params: &ForceFieldParamsKeyed,
+    lig_specific_params: &ForceFieldParams,
     temp_target: f64,
     pressure_target: f64, // Bar
 ) -> Result<MdState, ParamError> {

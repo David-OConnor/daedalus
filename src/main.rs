@@ -15,8 +15,6 @@
 //! [S3 Gemmi link](https://daedalus-mols.s3.us-east-1.amazonaws.com/gemmi.exe)
 //! [S3 Geostd link](https://daedalus-mols.s3.us-east-1.amazonaws.com/amber_geostd)
 
-mod aa_coords;
-mod add_hydrogens;
 mod bond_inference;
 // mod docking;
 mod docking_v2;
@@ -57,7 +55,7 @@ use bio_apis::{
     amber_geostd::GeostdItem,
     rcsb::{FilesAvailable, PdbDataResults},
 };
-use bio_files::amber_params::{ChargeParams, ForceFieldParamsKeyed};
+use bio_files::md_params::{ChargeParams, ForceFieldParams};
 #[cfg(feature = "cuda")]
 use cudarc::{
     driver::{CudaContext, CudaModule, CudaStream},
@@ -77,7 +75,6 @@ use molecule::MoleculePeptide;
 // use crate::file_io::load_ffs_general;
 use crate::ui::misc::MdMode;
 use crate::{
-    aa_coords::bond_vecs::init_local_bond_vecs,
     // docking::{BindingEnergy, THETA_BH, prep::DockingSetup},
     molecule::PeptideAtomPosits,
     nucleic_acid::MoleculeNucleicAcid,
@@ -432,7 +429,7 @@ struct State {
     pub mol_dynamics: Option<MdState>,
     // todo: Combine these params in a single struct.
     pub ff_param_set: FfParamSet,
-    pub lig_specific_params: HashMap<String, ForceFieldParamsKeyed>,
+    pub lig_specific_params: HashMap<String, ForceFieldParams>,
 }
 
 impl State {
@@ -558,9 +555,6 @@ fn main() {
     }
 
     println!("Using computing device: {:?}\n", dev);
-
-    // Sets up write-once static muts.
-    init_local_bond_vecs();
 
     // todo: Consider a custom default impl. This is a substitute.
     let mut state = State {

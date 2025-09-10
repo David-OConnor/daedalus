@@ -10,7 +10,7 @@ use std::{
 use bio_apis::amber_geostd;
 use bio_files::{
     DensityMap, MmCif, Mol2, Pdbqt,
-    amber_params::{ForceFieldParams, ForceFieldParamsKeyed, parse_amino_charges},
+    md_params::{ForceFieldParams, parse_amino_charges},
     gemmi_sf_to_map,
     sdf::Sdf,
 };
@@ -286,7 +286,7 @@ impl State {
 
         match extension.to_str().unwrap() {
             "dat" => {
-                self.ff_param_set.small_mol = Some(ForceFieldParamsKeyed::load_dat(path)?);
+                self.ff_param_set.small_mol = Some(ForceFieldParams::load_dat(path)?);
 
                 println!("\nLoaded forcefields:");
                 let v = &self.ff_param_set.small_mol.as_ref().unwrap();
@@ -342,7 +342,7 @@ impl State {
 
                 self.lig_specific_params.insert(
                     mol_name.to_uppercase(),
-                    ForceFieldParamsKeyed::load_frcmod(path)?,
+                    ForceFieldParams::load_frcmod(path)?,
                 );
 
                 // Update the lig's FRCMOD status A/R, if the ligand is opened already.
@@ -497,7 +497,7 @@ impl State {
                         self.lig_specific_params.insert(
                             ident.to_uppercase(),
                             // todo: Don't unwrap.
-                            ForceFieldParamsKeyed::from_frcmod(&frcmod).unwrap(),
+                            ForceFieldParams::from_frcmod(&frcmod).unwrap(),
                         );
 
                         if let Some(lig) = self.active_lig_mut() {

@@ -19,17 +19,17 @@ use bio_files::{
     AtomGeneric, BackboneSS, BondGeneric, BondType, ChainGeneric, DensityMap, ExperimentalMethod,
     MmCif, ResidueEnd, ResidueGeneric, ResidueType,
 };
-use dynamics::{AtomDynamics, ParamError, ProtFFTypeChargeMap, params::populate_peptide_ff_and_q};
+use dynamics::{
+    Dihedral, ParamError, ProtFFTypeChargeMap, params::populate_peptide_ff_and_q,
+    populate_hydrogens_dihedrals,
+};
 use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 use na_seq::{AminoAcid, AminoAcidGeneral, AminoAcidProtenationVariant, AtomTypeInRes, Element};
 use rayon::prelude::*;
 
-use crate::add_hydrogens::populate_hydrogens_angles;
 use crate::{
     Selection,
-    aa_coords::Dihedral,
     bond_inference::{create_bonds, create_hydrogen_bonds},
-    // docking::prep::DockType,
     mol_lig::MoleculeSmall,
     nucleic_acid::MoleculeNucleicAcid,
     reflection::{DensityRect, ElectronDensity, ReflectionsData},
@@ -218,38 +218,6 @@ impl MoleculePeptide {
         };
 
         result.aa_seq = result.get_seq();
-
-        if let Some(ff_map) = add_hydrogens {
-            // todo: Perhaps you still want to calculate dihedral angles if hydrogens are populated already.
-            // todo; For now, you are skipping both. Example when this comes up: Ligands.
-            // Attempt to only populate Hydrogens if there aren't many.
-            if result
-                .common
-                .atoms
-                .iter()
-                .filter(|a| a.element == Element::Hydrogen)
-                .count()
-                < 10
-            {
-                // if let Err(e) = result.populate_hydrogens_angles(ff_map, 7.0) {
-                if let Err(e) = populate_hydrogens_angles(
-                    &mut result.common.atoms,
-                    &mut result.residues,
-                    ff_map,
-                    7.0,
-                ) {
-                    eprintln!("Unable to populate Hydrogens and residue dihedral angles: {e:?}");
-                };
-            }
-
-            // Populate FF, q, and bonds only after adding hydrogens.
-            // populate_peptide_ff_and_q(&mut m.atoms, &m.residues, ff_map).map_err(|_| {
-            // populate_ff_and_q(&mut result.common.atoms, &result.residues, ff_map)
-            //     .map_err(|_| {
-            //         io::Error::new(ErrorKind::InvalidData, "Unable to  populate FF and Q data")
-            //     })
-            //     .unwrap();
-        }
 
         // todo: THis is currently run twice: Once here, and once in atom commons.
         result.common.bonds = create_bonds(&result.common.atoms);
@@ -692,7 +660,6 @@ pub struct Atom {
     pub occupancy: Option<f32>,
     /// Elementary charge. (Charge of a proton)
     pub partial_charge: Option<f32>,
-    pub temperature_factor: Option<f32>,
 }
 
 impl Atom {
@@ -808,19 +775,46 @@ impl MoleculePeptide {
         ff_map: &ProtFFTypeChargeMap,
         path: Option<PathBuf>,
     ) -> Result<Self, io::Error> {
-        let mut atoms: Vec<_> = m.atoms.iter().map(|a| a.into()).collect();
+        // todo: Perhaps you still want to calculate dihedral angles if hydrogens are populated already.
+        // todo; For now, you are skipping both. Example when this comes up: Ligands.
+        // Attempt to only populate Hydrogens if there aren't many.
 
-        let mut last_non_het = 0;
-        for (i, res) in m.residues.iter().enumerate() {
-            match res.res_type {
-                ResidueType::AminoAcid(_) => last_non_het = i,
-                _ => break,
-            }
+        let mut dihedrals = Vec::new();
+        if m.atoms
+            .iter()
+            .filter(|a| a.element == Element::Hydrogen)
+            .count()
+            < 10
+        {
+            dihedrals = populate_hydrogens_dihedrals(
+                &mut m.atoms,
+                &mut m.residues,
+                &mut m.chains,
+                ff_map,
+                7.0,
+            )
+            .unwrap_or_else(|e| {
+                eprintln!("Unable to populate Hydrogens and residue dihedral angles: {e:?}");
+                // todo: Not ideal handling. Should populate with None.
+                vec![Default::default(); m.residues.len()]
+            });
         }
 
+        // Populate FF, q, and bonds only after adding hydrogens, and re-assigning serial numbers.
+        if populate_peptide_ff_and_q(&mut m.atoms, &m.residues, ff_map).is_err() {
+            return Err(io::Error::new(
+                ErrorKind::InvalidData,
+                "Unable to populate FF and Q data",
+            ));
+        }
+
+        let mut atoms: Vec<_> = m.atoms.iter().map(|a| a.into()).collect();
+
         let mut residues = Vec::with_capacity(m.residues.len());
-        for res in &m.residues {
-            residues.push(Residue::from_generic(res, &atoms)?);
+        for (i, res) in m.residues.iter().enumerate() {
+            let mut res = Residue::from_generic(res, &atoms)?;
+            res.dihedral = Some(dihedrals[i].clone());
+            residues.push(res);
         }
 
         let mut chains = Vec::with_capacity(m.chains.len());
