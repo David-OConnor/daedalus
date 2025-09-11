@@ -20,7 +20,8 @@ use bio_files::{
     MmCif, ResidueEnd, ResidueGeneric, ResidueType,
 };
 use dynamics::{
-    Dihedral, ParamError, ProtFFTypeChargeMap, params::populate_peptide_ff_and_q,
+    Dihedral, ParamError, ProtFFTypeChargeMap,
+    params::{populate_peptide_ff_and_q, prepare_peptide},
     populate_hydrogens_dihedrals,
 };
 use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
@@ -786,26 +787,13 @@ impl MoleculePeptide {
             .count()
             < 10
         {
-            dihedrals = populate_hydrogens_dihedrals(
-                &mut m.atoms,
-                &mut m.residues,
-                &mut m.chains,
-                ff_map,
-                7.0,
-            )
-            .unwrap_or_else(|e| {
-                eprintln!("Unable to populate Hydrogens and residue dihedral angles: {e:?}");
-                // todo: Not ideal handling. Should populate with None.
-                vec![Default::default(); m.residues.len()]
-            });
-        }
-
-        // Populate FF, q, and bonds only after adding hydrogens, and re-assigning serial numbers.
-        if populate_peptide_ff_and_q(&mut m.atoms, &m.residues, ff_map).is_err() {
-            return Err(io::Error::new(
-                ErrorKind::InvalidData,
-                "Unable to populate FF and Q data",
-            ));
+            // Add hydrogens, FF types, and partial charge.
+            dihedrals = prepare_peptide(&mut m.atoms, &mut m.residues, &mut m.chains, ff_map, 7.0)
+                .unwrap_or_else(|e| {
+                    eprintln!("Unable to populate Hydrogens and residue dihedral angles: {e:?}");
+                    // todo: Not ideal handling. Should populate with None.
+                    vec![Default::default(); m.residues.len()]
+                });
         }
 
         let mut atoms: Vec<_> = m.atoms.iter().map(|a| a.into()).collect();

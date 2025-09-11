@@ -27,8 +27,7 @@ pub fn build_dynamics_peptide(
     dev: &ComputationDevice,
     mol: &mut MoleculePeptide,
     ff_params: &FfParamSet,
-    temp_target: f64,
-    pressure_target: f64,
+    cfg: &MdConfig,
     n_steps: u32,
     dt: f64,
 ) -> Result<MdState, ParamError> {
@@ -41,8 +40,7 @@ pub fn build_dynamics_peptide(
         &posits,
         &mol.common.bonds,
         ff_params,
-        temp_target,
-        pressure_target,
+        cfg,
     )?;
 
     let start = Instant::now();
@@ -69,8 +67,7 @@ pub fn build_dynamics_docking(
     mol: &MoleculePeptide,
     param_set: &FfParamSet,
     lig_specific_params: &ForceFieldParams,
-    temp_target: f64,
-    pressure_target: f64,
+    cfg: &MdConfig,
     n_steps: u32,
     dt: f64,
 ) -> Result<MdState, ParamError> {
@@ -90,8 +87,7 @@ pub fn build_dynamics_docking(
         &mol.common.atoms,
         param_set,
         lig_specific_params,
-        temp_target,
-        pressure_target,
+        cfg,
     )?;
 
     let start = Instant::now();
@@ -157,8 +153,7 @@ pub fn new_md_docking(
     atoms_static_all: &[Atom],
     ff_params: &FfParamSet,
     lig_specific_params: &ForceFieldParams,
-    temp_target: f64,
-    pressure_target: f64, // Bar
+    cfg: &MdConfig,
 ) -> Result<MdState, ParamError> {
     // Filter peptide atoms, to only include ones near the docking site.
     let mut atoms_static_near = Vec::new();
@@ -213,17 +208,8 @@ pub fn new_md_docking(
         },
     ];
 
-    let cfg = MdConfig {
-        zero_com_drift: true, // todo: A/R. Not implemented yet
-        temp_target: temp_target as f32,
-        pressure_target: pressure_target as f32,
-        snapshot_ratio_memory: 1,
-        snapshot_ratio_file: 1,
-        ..Default::default()
-    };
-
     println!("Initialized MD...");
-    let result = MdState::new(&cfg, &mols, ff_params);
+    let result = MdState::new(cfg, &mols, ff_params);
     println!("Done.");
 
     result
@@ -236,8 +222,7 @@ pub fn new_md_peptide(
     atom_posits: &[Vec3],
     bonds: &[Bond],
     ff_params: &FfParamSet,
-    temp_target: f64,
-    pressure_target: f64,
+    cfg: &MdConfig,
 ) -> Result<MdState, ParamError> {
     // Assign FF type and charge to protein atoms; FF type must be assigned prior to initializing `ForceFieldParamsIndexed`.
     // (Ligand atoms will already have FF type assigned).
@@ -288,17 +273,8 @@ pub fn new_md_peptide(
         mol_specific_params: None,
     }];
 
-    let cfg = MdConfig {
-        zero_com_drift: true, // todo: A/R. Not implemented yet
-        temp_target: temp_target as f32,
-        pressure_target: pressure_target as f32,
-        snapshot_ratio_memory: 1,
-        snapshot_ratio_file: 1,
-        ..Default::default()
-    };
-
     println!("Initializing MD state...");
-    let result = MdState::new(&cfg, &mols, ff_params);
+    let result = MdState::new(cfg, &mols, ff_params);
 
     println!("Done.");
     result

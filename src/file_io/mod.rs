@@ -9,9 +9,8 @@ use std::{
 
 use bio_apis::amber_geostd;
 use bio_files::{
-    DensityMap, MmCif, Mol2, Pdbqt,
+    DensityMap, MmCif, Mol2, Pdbqt, gemmi_sf_to_map,
     md_params::{ForceFieldParams, parse_amino_charges},
-    gemmi_sf_to_map,
     sdf::Sdf,
 };
 use chrono::Utc;

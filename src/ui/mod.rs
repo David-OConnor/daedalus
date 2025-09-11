@@ -17,10 +17,14 @@ use na_seq::AaIdent;
 static INIT_COMPLETE: AtomicBool = AtomicBool::new(false);
 
 use bio_files::{DensityMap, ResidueType, density_from_2fo_fc_rcsb_gemmi};
+use md::md_setup;
 use mol_data::disp_lig_data;
 
 use crate::{
     CamSnapshot,
+    // docking::{
+    //     ConformationType, calc_binding_energy, find_optimal_pose, find_sites::find_docking_sites,
+    // },
     MsaaSetting,
     Selection,
     State,
@@ -35,14 +39,11 @@ use crate::{
     file_io::gemmi_path,
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
     molecule::MoleculeGenericRef,
-    // docking::{
-    //     ConformationType, calc_binding_energy, find_optimal_pose, find_sites::find_docking_sites,
-    // },
     nucleic_acid::{MoleculeNucleicAcid, NucleicAcidType, Strands},
     render::{set_flashlight, set_static_light},
     ui::{
         cam::{cam_controls, cam_snapshots, move_cam_to_lig},
-        misc::{md_setup, section_box},
+        misc::section_box,
     },
     util::{
         check_prefs_save, close_lig, close_peptide, cycle_selected, handle_err, handle_scene_flags,
@@ -52,6 +53,7 @@ use crate::{
 use crate::{drawing::draw_all_ligs, mol_lig::MoleculeSmall, ui::misc::handle_docking};
 
 pub mod cam;
+mod md;
 pub mod misc;
 mod mol_data;
 
@@ -119,40 +121,40 @@ pub fn load_file(
     Ok(())
 }
 
-pub fn int_field(val: &mut u32, label: &str, redraw: &mut bool, ui: &mut Ui) {
+// pub fn int_field_w_redraw(val: &mut u32, label: &str, redraw: &mut bool, ui: &mut Ui) {
+//     ui.label(label);
+//     let mut val_str = val.to_string();
+//
+//     if ui
+//         .add_sized(
+//             [70., Ui::available_height(ui)],
+//             TextEdit::singleline(&mut val_str),
+//         )
+//         .changed()
+//     {
+//         if let Ok(v) = val_str.parse::<u32>() {
+//             *val = v;
+//             *redraw = true;
+//         }
+//     }
+// }
+
+pub fn num_field<T>(val: &mut T, label: &str, width: u16, ui: &mut Ui)
+where
+    T: std::fmt::Display + std::str::FromStr,
+{
     ui.label(label);
     let mut val_str = val.to_string();
 
     if ui
         .add_sized(
-            [70., Ui::available_height(ui)],
+            [width as f32, Ui::available_height(ui)],
             TextEdit::singleline(&mut val_str),
         )
         .changed()
     {
-        if let Ok(v) = val_str.parse::<u32>() {
+        if let Ok(v) = val_str.parse::<T>() {
             *val = v;
-            *redraw = true;
-        }
-    }
-}
-
-// todo: DRY! In general, these int fields seem important for clarity, but are not
-// todo flexible. E.g. need flexible widths too.
-pub fn int_field_u16(val: &mut u16, label: &str, redraw: &mut bool, ui: &mut Ui) {
-    ui.label(label);
-    let mut val_str = val.to_string();
-
-    if ui
-        .add_sized(
-            [40., Ui::available_height(ui)],
-            TextEdit::singleline(&mut val_str),
-        )
-        .changed()
-    {
-        if let Ok(v) = val_str.parse::<u16>() {
-            *val = v;
-            *redraw = true;
         }
     }
 }

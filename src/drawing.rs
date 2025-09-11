@@ -15,7 +15,7 @@ use lin_alg::{
 use na_seq::Element;
 
 use crate::{
-    Selection, State, StateUi, ViewSelLevel, Visibility,
+    Selection, State, StateUi, ViewSelLevel,
     mol_lig::MoleculeSmall,
     molecule::{Atom, AtomRole, Chain, PeptideAtomPosits, Residue, aa_color},
     reflection::ElectronDensity,
@@ -44,8 +44,10 @@ const RADIUS_H_BOND: f32 = 0.2; // A scaler relative to covalent sticks.
 const COLOR_WATER_BOND: Color = (0.5, 0.5, 0.8);
 
 const COLOR_SFC_DOT: Color = (0.7, 0.7, 0.7);
+
 const COLOR_DOCKING_BOX: Color = (0.3, 0.3, 0.9);
 pub const COLOR_DOCKING_SITE_MESH: Color = (0.5, 0.5, 0.9);
+const DOCKING_SITE_OPACITY: f32 = 0.1;
 
 const COLOR_SA_SURFACE: Color = (0.3, 0.2, 1.);
 
@@ -61,8 +63,6 @@ const TRIPLE_BOND_OFFSET: f32 = 0.07; // Two of these is the separation.
 
 pub const SIZE_SFC_DOT: f32 = 0.03;
 
-const DOCKING_SITE_OPACITY: f32 = 0.1;
-
 const DIMMED_PEPTIDE_AMT: f32 = 0.92; // Higher value means more dim.
 
 pub const DENSITY_ISO_OPACITY: f32 = 0.5;
@@ -75,9 +75,6 @@ pub const SAS_ISO_OPACITY: f32 = 0.75;
 pub const CHARGE_MAP_MIN: f32 = -0.9;
 pub const CHARGE_MAP_MAX: f32 = 0.65;
 
-// pub const DENSITY_ISO_OPACITY: f32 = 1.0; // todo temp
-// pub const SAS_ISO_OPACITY: f32 = 1.0; // todo temp
-
 // This allows us to more easily customize sphere mesh resolution.
 const MESH_BALL_STICK_SPHERE: usize = MESH_SPHERE_MEDRES;
 // todo: I believe this causes performance problems on many machines. But looks
@@ -85,9 +82,9 @@ const MESH_BALL_STICK_SPHERE: usize = MESH_SPHERE_MEDRES;
 const MESH_SPACEFILL_SPHERE: usize = MESH_SPHERE_HIGHRES;
 const MESH_WATER_SPHERE: usize = MESH_SPHERE_MEDRES;
 const MESH_BOND_CAP: usize = MESH_SPHERE_LOWRES;
+
 // This should ideally be high res, but we experience anomolies on viewing items inside it, while
 // the cam is outside.
-// const MESH_DOCKING_SITE: usize = MESH_SPHERE_HIGHRES;
 const MESH_DOCKING_SITE: usize = MESH_DOCKING_BOX;
 
 // Spheres look slightly better when close, but even our coarsest one leads to performance problems.

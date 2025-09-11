@@ -12,6 +12,7 @@ use bincode::{
 };
 use bio_apis::rcsb::{FilesAvailable, PdbDataResults};
 use chrono::{DateTime, Utc};
+use dynamics::MdConfig;
 use graphics::{
     ControlScheme,
     app_utils::{load, save},
@@ -119,11 +120,6 @@ impl OpenHistory {
 pub struct ToSave {
     pub per_mol: HashMap<String, PerMolToSave>,
     pub open_history: Vec<OpenHistory>,
-    // pub last_peptide_opened: Option<PathBuf>,
-    // pub last_ligand_opened: Option<PathBuf>,
-    // pub last_nucleic_acid_opened: Option<PathBuf>,
-    // pub last_map_opened: Option<PathBuf>,
-    // pub last_frcmod_opened: Option<PathBuf>,
     pub control_scheme: ControlScheme,
     pub msaa: MsaaSetting,
     /// Direct conversion from engine standard
@@ -133,13 +129,10 @@ pub struct ToSave {
     /// Solvent-accessible surface (and dots) precion. Lower is higher precision. A value of 0.5 - 0.6
     /// is a good default. Too low will cause crashes and very poor performance. Higher is too coarse.
     pub sa_surface_precision: f32,
+    pub md_config: MdConfig,
     pub num_md_steps: u32,
     /// ps (10^-12). Typical values are 0.001 or 0.002.
     pub md_dt: f64,
-    /// K
-    pub md_temperature: u16,
-    /// kPa. (Note in MD state, we use bar, as a floating point)
-    pub md_pressure: u16,
 }
 
 impl Default for ToSave {
@@ -147,20 +140,14 @@ impl Default for ToSave {
         Self {
             per_mol: Default::default(),
             open_history: Default::default(),
-            // last_peptide_opened: Default::default(),
-            // last_ligand_opened: Default::default(),
-            // last_nucleic_acid_opened: Default::default(),
-            // last_map_opened: Default::default(),
-            // last_frcmod_opened: Default::default(),
             control_scheme: Default::default(),
             msaa: Default::default(),
             movement_speed: MOVEMENT_SENS as u8,
             rotation_sens: (ROTATE_SENS * 100.) as u8,
             sa_surface_precision: 0.55,
+            md_config: Default::default(),
             num_md_steps: 100,
             md_dt: 0.002,
-            md_temperature: 310,
-            md_pressure: 100,
         }
     }
 }

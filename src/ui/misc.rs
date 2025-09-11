@@ -1,24 +1,15 @@
 //! Misc utility-related UI functionality.
 
-use egui::{
-    Color32, ComboBox, CornerRadius, Frame, Margin, RichText, Slider, Stroke, TextEdit, Ui,
-};
+use egui::{Color32, ComboBox, CornerRadius, Frame, Margin, RichText, Slider, Stroke, Ui};
 use graphics::{EngineUpdates, Scene};
 const COLOR_SECTION_BOX: Color32 = Color32::from_rgb(100, 100, 140);
 
 use crate::{
-    ComputationDevice, State,
+    State,
     drawing::{draw_all_ligs, draw_peptide, draw_water},
-    md::{
-        build_dynamics_docking, build_dynamics_peptide, change_snapshot_docking,
-        change_snapshot_peptide,
-    },
+    md::{change_snapshot_docking, change_snapshot_peptide},
     molecule::PeptideAtomPosits,
-    ui::{
-        COL_SPACING, COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_INACTIVE, ROW_SPACING,
-        cam::move_cam_to_lig, int_field, int_field_u16,
-    },
-    util::handle_err,
+    ui::{COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_INACTIVE, ROW_SPACING},
 };
 
 /// A checkbox to show or hide a category.
@@ -139,184 +130,6 @@ pub fn dynamics_player(
             }
         }
     });
-}
-
-pub fn md_setup(
-    state: &mut State,
-    scene: &mut Scene,
-    engine_updates: &mut EngineUpdates,
-    redraw_lig: &mut bool,
-    ui: &mut Ui,
-) {
-    section_box().show(ui, |ui| {
-        ui.horizontal(|ui| {
-            if ui
-                .button(RichText::new("Run MD on peptide").color(Color32::GOLD))
-                .clicked() {
-                let mol = state.molecule.as_mut().unwrap();
-                state.volatile.md_mode = MdMode::Peptide;
-
-                match build_dynamics_peptide(
-                    &state.dev,
-                    mol,
-                    &state.ff_param_set,
-                    state.to_save.md_temperature as f64,
-                    state.to_save.md_pressure as f64 / 100., // Convert kPa to bar.
-                    state.to_save.num_md_steps,
-                    state.to_save.md_dt,
-                ) {
-                    Ok(md) => {
-                        let snap = &md.snapshots[0];
-                        draw_peptide(state, scene);
-
-                        draw_water(
-                            scene,
-                            &snap.water_o_posits,
-                            &snap.water_h0_posits,
-                            &snap.water_h1_posits,
-                            state.ui.visibility.hide_water
-                        );
-
-                        state.mol_dynamics = Some(md);
-                        state.ui.current_snapshot = 0;
-                    }
-                    Err(e) => handle_err(&mut state.ui, e.descrip),
-                }
-            }
-
-            ui.add_space(COL_SPACING / 2.);
-
-            if state.active_lig().is_some() {
-                let run_clicked = ui
-                    .button(RichText::new("Run MD docking").color(Color32::GOLD))
-                    .on_hover_text("Run a molecular dynamics simulation on the ligand. The peptide atoms apply\
-            Coulomb and Van der Waals forces, but do not move themselves. This is intended to be run\
-            with the ligand positioned near a receptor site.")
-                    .clicked();
-
-                state.volatile.md_mode = MdMode::Docking;
-
-                let mut ready_to_run = true;
-
-                if run_clicked {
-                    if state.active_lig().is_none() {
-                        return;
-                    }
-
-                    {
-                        let lig = state.active_lig().unwrap();
-                        if !lig.ff_params_loaded || !lig.frcmod_loaded {
-                            state.ui.popup.show_get_geostd = true;
-                            ready_to_run = false;
-                        }
-                    }
-
-                    if ready_to_run {
-
-                        // todo: Set a loading indicator, and trigger the build next GUI frame.
-                        move_cam_to_lig(state, scene, state.molecule.as_ref().unwrap().center, engine_updates);
-
-                        let lig_ident = &state.ligands[state.volatile.active_lig.unwrap()].common.ident;
-
-                        let lig_specific_params = match state.lig_specific_params.get(lig_ident) {
-                            Some(p) => p,
-                            None => {
-                                handle_err(&mut state.ui, "Missing ligand-specific docking parameters; aborting.".to_string());
-                                return;
-                            }
-                        };
-
-                        let mol = state.molecule.as_mut().unwrap();
-                        match build_dynamics_docking(
-                            &state.dev,
-                            &mut state.ligands,
-                            state.volatile.active_lig.unwrap(),
-                            mol,
-                            &state.ff_param_set,
-                            lig_specific_params,
-                            state.to_save.md_temperature as f64,
-                            state.to_save.md_pressure as f64 / 100., // Convert kPa to bar.
-                            state.to_save.num_md_steps,
-                            state.to_save.md_dt,
-                        ) {
-                            Ok(md) => {
-                                let snap = &md.snapshots[0];
-
-                                draw_peptide(state, scene);
-                                draw_water(
-                                    scene,
-                                    &snap.water_o_posits,
-                                    &snap.water_h0_posits,
-                                    &snap.water_h1_posits,
-                                    state.ui.visibility.hide_water
-                                );
-
-                                state.ui.current_snapshot = 0;
-                                engine_updates.entities = true;
-                                state.mol_dynamics = Some(md);
-                            }
-                            Err(e) => handle_err(&mut state.ui, e.descrip),
-                        }
-                    }
-                }
-            }
-
-            match &state.dev {
-                ComputationDevice::Cpu => {
-                    ui.label(RichText::new("CPU"));
-                }
-                #[cfg(feature = "cuda")]
-                ComputationDevice::Gpu(_) => {
-                    ui.label(RichText::new("GPU").color(Color32::LIGHT_GREEN));
-                }
-            }
-
-            ui.add_space(COL_SPACING);
-            let num_steps_prev = state.to_save.num_md_steps;
-            int_field(&mut state.to_save.num_md_steps, "Steps:", &mut false, ui);
-            if state.to_save.num_md_steps != num_steps_prev {
-                state.volatile.md_runtime = state.to_save.num_md_steps as f64 * state.to_save.md_dt;
-            }
-
-            ui.label("dt (ps):");
-            if ui
-                .add_sized(
-                    [60., Ui::available_height(ui)],
-                    TextEdit::singleline(&mut state.ui.md_dt_input),
-                )
-                .changed()
-            {
-                if let Ok(v) = state.ui.md_dt_input.parse::<f64>() {
-                    state.to_save.md_dt = v;
-                    state.volatile.md_runtime = state.to_save.num_md_steps as f64 * v;
-                }
-            }
-
-            // ui.label(format!("Temp: {:.1} K", state.to_save.md_pressure));
-            int_field_u16(&mut state.to_save.md_temperature, "Temp (K):", &mut false, ui);
-            int_field_u16(&mut state.to_save.md_pressure, "Pressure (kPa):", &mut false, ui);
-
-            // ui.label(format!("Temp: {:.1} kPa", state.to_save.md_temperature));
-            // int_field(&mut state.to_save.num_md_steps, "Steps:", &mut false, ui);
-
-            ui.add_space(COL_SPACING);
-            ui.label(format!("Runtime: {:.1} ps", state.volatile.md_runtime));
-
-            if let Some(md) = &state.mol_dynamics {
-                let snap = &md.snapshots[state.ui.current_snapshot];
-
-                ui.add_space(COL_SPACING);
-                ui.label("E (kcal/mol) KE: ");
-                ui.label(RichText::new(format!("{:.1}", snap.energy_kinetic)).color(Color32::GOLD));
-
-                ui.label("PE: ");
-                ui.label(RichText::new(format!("{:.1}", snap.energy_potential)).color(Color32::GOLD));
-            }
-
-        });
-    });
-
-    dynamics_player(state, scene, engine_updates, ui);
 }
 
 // A container that highlights a section of UI code, to make it visually distinct from neighboring areas.

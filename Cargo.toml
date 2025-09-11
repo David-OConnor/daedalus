@@ -17,7 +17,7 @@ na_seq = "0.3.6"
 bio_apis = {  version = "0.1.6", features = ["encode"] }
 bio_files = "0.2.12"
 mcubes = "0.1.4"
-dynamics = "0.1.0"
+dynamics = { version = "0.1.0", features = ["encode"] }
 
 # For loading and saving config
 bincode = "2.0.1"

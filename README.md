@@ -69,10 +69,12 @@ from the [RCSB PDB](https://www.rcsb.org/).
 
 
 ## Parallel computing
-If an nVidia GPU of at least RTX 3 series is available, molecular dynamics, docking, and electron density calculations
+If an Nvidia GPU of at least RTX 3 series is available, molecular dynamics, docking, and electron density calculations
 will be performed using the GPU (via CUDA kernels). If not, the CPU will be used, leveraging thread pools
 and SIMD instructions. It uses all cores available, and either 512-bit, or 256-bit, SIMD instructions, depending
 on CPU capability.
+
+GPU use currently requires CUDA 13 support, which requires Nvidia driver version 580 or higher.
 
 
 ## Molecular dynamics
@@ -224,7 +226,7 @@ settings. Deleting it is harmless, other than resetting these conveniences.
 ### Compiling
 This application is pure rust, so compiles normally using `cargo build --release`, which produces a standalone executable.
 
-If you're not running on a machine with an nVidia GPU or without the CUDA toolkit installed, append the 
+If you're not running on a machine with an Nvidia GPU or without the CUDA toolkit installed, append the 
 `--no-default-features` to the build command. This will disable GPU support.
 
 
@@ -244,7 +246,7 @@ on RCSB, vice created from 2fo-fc) may crash the program.
 last shut down with electron density data open.
 - The GUI doesn't handle proteins with many chains well.
 - Electron density isosurfaces are currently broken
-- GPU on Linux is finicky at the moment. You might get an error on launch if not on an nvidia GPU with drivers installed,
+- GPU on Linux is finicky at the moment. You might get an error on launch if not on an Nvidia GPU with drivers installed,
 instead of falling back to the CPU. The latest linux drivers available on Ubuntu's official tool don't support CUDA 13, 
 which is currently required. We provide CUDA and non-CUDA linux downloads until this is resolved.
 - On some displays, dragging the MD time slider may also move the camera. To workaround, click the slider instead of dragging.

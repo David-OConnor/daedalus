@@ -62,7 +62,7 @@ use cudarc::{
     nvrtc::Ptx,
 };
 use drawing::MoleculeView;
-use dynamics::{ComputationDevice, MdState, params::FfParamSet};
+use dynamics::{ComputationDevice, MdState, SimBoxInit, params::FfParamSet};
 use egui_file_dialog::{FileDialog, FileDialogConfig};
 use graphics::{Camera, InputsCommanded};
 use lin_alg::{
@@ -371,6 +371,9 @@ struct StateUi {
     popup: PopupState,
     /// The state we store for this is a float, so we need to store state text too.
     md_dt_input: String,
+    md_temp_input: String,
+    md_pressure_input: String,
+    md_simbox_pad_input: String,
 }
 
 #[derive(Clone, PartialEq, Debug, Default, Encode, Decode)]
@@ -586,9 +589,15 @@ fn main() {
 
     state.load_prefs();
 
-    // Set these up after loading prefs
-    state.ui.md_dt_input = state.to_save.md_dt.to_string();
+    // Set these UI strings for numerical values up after loading prefs
     state.volatile.md_runtime = state.to_save.num_md_steps as f64 * state.to_save.md_dt;
+    state.ui.md_dt_input = state.to_save.md_dt.to_string();
+    state.ui.md_pressure_input = (state.to_save.md_config.pressure_target as u16).to_string();
+    state.ui.md_temp_input = (state.to_save.md_config.temp_target as u16).to_string();
+    state.ui.md_simbox_pad_input = match state.to_save.md_config.sim_box {
+        SimBoxInit::Pad(p) => (p as u16).to_string(),
+        SimBoxInit::Fixed(_) => "0".to_string(), // We currently don't use this.
+    };
 
     // We must have loaded prefs prior to this, so we know which file to open.
     state.load_last_opened();
