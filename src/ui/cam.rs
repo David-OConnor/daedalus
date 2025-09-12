@@ -30,7 +30,7 @@ pub const VIEW_DEPTH_NEAR_MAX: u16 = 300;
 pub const FOG_HALF_DEPTH: u16 = 40;
 
 // The range to start fading distance objects, and when the fade is complete.
-pub const FOG_DIST_DEFAULT: u16 = 60;
+pub const FOG_DIST_DEFAULT: u16 = 70;
 
 // Affects the user-setting far property.
 // Sets the fog center point in its fade.
@@ -158,7 +158,7 @@ pub fn cam_controls(
                             .on_hover_text("Move camera near the selected atom or residue, looking at it.")
                             .clicked()
                         {
-                            if let Selection::AtomLigand((i_mol, i_atom)) = &state.ui.selection {
+                            if let Selection::AtomLig((i_mol, i_atom)) = &state.ui.selection {
                                 cam_look_at(&mut scene.camera, state.ligands[*i_mol].common.atom_posits[*i_atom]);
                                 engine_updates.camera = true;
                                 state.ui.cam_snapshot = None;

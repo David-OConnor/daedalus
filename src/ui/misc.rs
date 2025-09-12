@@ -87,7 +87,7 @@ pub fn dynamics_player(
                 ));
                 ui.label(format!(
                     "{:.2} ps",
-                    state.ui.current_snapshot as f64 * state.to_save.md_dt
+                    state.ui.current_snapshot as f32 * state.to_save.md_dt
                 ));
             }
 

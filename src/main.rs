@@ -64,7 +64,7 @@ use cudarc::{
 use drawing::MoleculeView;
 use dynamics::{ComputationDevice, MdState, SimBoxInit, params::FfParamSet};
 use egui_file_dialog::{FileDialog, FileDialogConfig};
-use graphics::{Camera, InputsCommanded};
+use graphics::{Camera, ControlScheme, InputsCommanded};
 use lin_alg::{
     f32::{Quaternion, Vec3},
     f64::Vec3 as Vec3F64,
@@ -222,10 +222,18 @@ struct StateVolatile {
     aa_seq_text: String,
     flags: SceneFlags,
     /// Cached so we don't compute each UI paint. Picoseconds.
-    md_runtime: f64,
+    md_runtime: f32,
     active_peptide: Option<usize>, // Unused for now.
     active_lig: Option<usize>,
+    /// Allows the user to move a molecule around with mouse or keyboard.
+    move_mol: Option<usize>,
+    /// For maintaining the screen plane when dragging the mol.
+    drag_pivot0: Option<Vec3>,
+    drag_norm: Option<Vec3>,
+    drag_offset: Vec3,
     md_mode: MdMode,
+    /// For restoring after temprarily disabling mouse look.
+    control_scheme_prev: ControlScheme,
 }
 
 impl Default for StateVolatile {
@@ -244,7 +252,9 @@ impl Default for StateVolatile {
             md_runtime: Default::default(),
             active_peptide: Default::default(),
             active_lig: Default::default(),
+            move_mol: Default::default(),
             md_mode: MdMode::Peptide,
+            control_scheme_prev: Default::default(),
         }
     }
 }
@@ -311,6 +321,7 @@ struct PopupState {
     show_associated_structures: bool,
     show_settings: bool,
     get_geostd_items: Vec<GeostdItem>,
+    residue_selector: bool,
 }
 
 /// Ui text fields and similar.
@@ -387,7 +398,7 @@ pub enum Selection {
     /// Of the protein
     Atoms(Vec<usize>),
     /// Ligand index, atom index
-    AtomLigand((usize, usize)),
+    AtomLig((usize, usize)),
 }
 
 #[derive(Clone, Debug, Encode, Decode)]
@@ -590,7 +601,7 @@ fn main() {
     state.load_prefs();
 
     // Set these UI strings for numerical values up after loading prefs
-    state.volatile.md_runtime = state.to_save.num_md_steps as f64 * state.to_save.md_dt;
+    state.volatile.md_runtime = state.to_save.num_md_steps as f32 * state.to_save.md_dt;
     state.ui.md_dt_input = state.to_save.md_dt.to_string();
     state.ui.md_pressure_input = (state.to_save.md_config.pressure_target as u16).to_string();
     state.ui.md_temp_input = (state.to_save.md_config.temp_target as u16).to_string();

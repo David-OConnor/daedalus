@@ -132,7 +132,7 @@ pub struct ToSave {
     pub md_config: MdConfig,
     pub num_md_steps: u32,
     /// ps (10^-12). Typical values are 0.001 or 0.002.
-    pub md_dt: f64,
+    pub md_dt: f32,
 }
 
 impl Default for ToSave {

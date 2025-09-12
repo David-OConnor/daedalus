@@ -186,72 +186,6 @@ fn get_snap_name(snap: Option<usize>, snaps: &[CamSnapshot]) -> String {
     }
 }
 
-fn residue_selector(state: &mut State, scene: &mut Scene, redraw: &mut bool, ui: &mut Ui) {
-    // This is a bit fuzzy, as the size varies by residue name (Not always 1 for non-AAs), and index digits.
-
-    let mut update_arc_center = false;
-
-    if let Some(mol) = &state.molecule {
-        if let Some(chain_i) = state.ui.chain_to_pick_res {
-            if chain_i >= mol.chains.len() {
-                return;
-            }
-            let chain = &mol.chains[chain_i];
-
-            ui.add_space(ROW_SPACING);
-            ui.horizontal_wrapped(|ui| {
-                ui.spacing_mut().item_spacing.x = 8.0;
-
-                for (i, res) in mol.residues.iter().enumerate() {
-                    // For now, peptide residues only.
-                    if let ResidueType::Water = res.res_type {
-                        continue;
-                    }
-
-                    // Only let the user select residue from the selected chain. This should keep
-                    // it more organized, and keep UI space used down.
-                    if !chain.residues.contains(&i) {
-                        continue;
-                    }
-
-                    let name = match &res.res_type {
-                        ResidueType::AminoAcid(aa) => aa.to_str(AaIdent::OneLetter),
-                        ResidueType::Water => "Water".to_owned(),
-                        ResidueType::Other(name) => name.clone(),
-                    };
-
-                    let mut color = Color32::GRAY;
-                    if let Selection::Residue(sel_i) = state.ui.selection {
-                        if sel_i == i {
-                            color = COLOR_ACTIVE;
-                        }
-                    }
-                    if ui
-                        .button(
-                            RichText::new(format!("{} {name}", res.serial_number))
-                                .size(10.)
-                                .color(color),
-                        )
-                        .clicked()
-                    {
-                        state.ui.view_sel_level = ViewSelLevel::Residue;
-                        state.ui.selection = Selection::Residue(i);
-
-                        update_arc_center = true; // Avoids borrow error.
-
-                        *redraw = true;
-                    }
-                }
-            });
-        }
-    }
-
-    if update_arc_center {
-        if let ControlScheme::Arc { center } = &mut scene.input_settings.control_scheme {
-            *center = orbit_center(state);
-        }
-    }
-}
 
 /// Toggles chain visibility
 fn chain_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
@@ -299,7 +233,8 @@ fn chain_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
                 } else {
                     state.ui.chain_to_pick_res = Some(i);
                 }
-                state.volatile.ui_height = ui.ctx().used_size().y;
+
+                state.ui.popup.residue_selector = !state.ui.popup.residue_selector;
             }
         }
 
@@ -1031,6 +966,96 @@ fn settings(state: &mut State, scene: &mut Scene, ui: &mut Ui) {
     });
 }
 
+fn residue_selector(state: &mut State, scene: &mut Scene, ui: &mut Ui, redraw: &mut bool) {
+    let popup_id = ui.make_persistent_id("res_popup");
+    Popup::new(
+        popup_id,
+        ui.ctx().clone(),
+        PopupAnchor::Position(Pos2::new(60., 60.)),
+        ui.layer_id(),
+    )
+        .align(RectAlign::TOP)
+        .open(true)
+        .gap(4.0)
+        .show(|ui| {
+            // This is a bit fuzzy, as the size varies by residue name (Not always 1 for non-AAs), and index digits.
+
+            let mut update_arc_center = false;
+
+            if let Some(mol) = &state.molecule {
+                if let Some(chain_i) = state.ui.chain_to_pick_res {
+                    if chain_i >= mol.chains.len() {
+                        return;
+                    }
+                    let chain = &mol.chains[chain_i];
+
+                    ui.add_space(ROW_SPACING);
+
+                    // todo: Wrap not working in popup?
+                    ui.horizontal_wrapped(|ui| {
+                        ui.spacing_mut().item_spacing.x = 8.0;
+
+                        for (i, res) in mol.residues.iter().enumerate() {
+                            // For now, peptide residues only.
+                            if let ResidueType::Water = res.res_type {
+                                continue;
+                            }
+
+                            // Only let the user select residue from the selected chain. This should keep
+                            // it more organized, and keep UI space used down.
+                            if !chain.residues.contains(&i) {
+                                continue;
+                            }
+
+                            let name = match &res.res_type {
+                                ResidueType::AminoAcid(aa) => aa.to_str(AaIdent::OneLetter),
+                                ResidueType::Water => "Water".to_owned(),
+                                ResidueType::Other(name) => name.clone(),
+                            };
+
+                            let mut color = Color32::GRAY;
+                            if let Selection::Residue(sel_i) = state.ui.selection {
+                                if sel_i == i {
+                                    color = COLOR_ACTIVE;
+                                }
+                            }
+                            if ui
+                                .button(
+                                    RichText::new(format!("{} {name}", res.serial_number))
+                                        .size(10.)
+                                        .color(color),
+                                )
+                                .clicked()
+                            {
+                                state.ui.view_sel_level = ViewSelLevel::Residue;
+                                state.ui.selection = Selection::Residue(i);
+
+                                update_arc_center = true; // Avoids borrow error.
+
+                                *redraw = true;
+                            }
+                        }
+                    });
+                }
+            }
+
+            if update_arc_center {
+                if let ControlScheme::Arc { center } = &mut scene.input_settings.control_scheme {
+                    *center = orbit_center(state);
+                }
+            }
+
+            ui.add_space(ROW_SPACING);
+
+            if ui
+                .button(RichText::new("Close").color(Color32::LIGHT_RED))
+                .clicked()
+            {
+                state.ui.popup.residue_selector = false;
+            }
+        });
+}
+
 /// This function draws the (immediate-mode) GUI.
 /// [UI items](https://docs.rs/egui/latest/egui/struct.Ui.html)
 pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> EngineUpdates {
@@ -1065,6 +1090,11 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         if state.ui.popup.show_settings {
             settings(state, scene, ui);
+        }
+
+        if state.ui.popup.residue_selector {
+            // todo: Show hide based on AaCategory? i.e. residue.amino_acid.category(). Hydrophilic, acidic etc.
+            residue_selector(state, scene, ui, &mut redraw_mol);
         }
 
         ui.horizontal(|ui| {
@@ -1403,9 +1433,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             ui.vertical(|ui| {
                 view_settings(state, scene, &mut engine_updates, &mut redraw_mol, ui);
                 chain_selector(state, &mut redraw_mol, ui);
-                // todo: Show hide based on AaCategory? i.e. residue.amino_acid.category(). Hydrophilic, acidic etc.
-
-                residue_selector(state, scene, &mut redraw_mol, ui);
             });
         });
 

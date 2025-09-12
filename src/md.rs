@@ -4,8 +4,8 @@ use std::time::Instant;
 
 use bio_files::md_params::ForceFieldParams;
 use dynamics::{
-    AtomDynamics, ComputationDevice, FfMolType, HydrogenConstraint, MdConfig, MdState, MolDynamics,
-    ParamError, Snapshot, params::FfParamSet,
+    AtomDynamics, ComputationDevice, FfMolType, MdConfig, MdState, MolDynamics,
+    ParamError, snapshot::Snapshot, params::FfParamSet,
 };
 use lin_alg::f64::Vec3;
 
@@ -29,7 +29,7 @@ pub fn build_dynamics_peptide(
     ff_params: &FfParamSet,
     cfg: &MdConfig,
     n_steps: u32,
-    dt: f64,
+    dt: f32,
 ) -> Result<MdState, ParamError> {
     println!("Building peptide dynamics...");
 
@@ -69,7 +69,7 @@ pub fn build_dynamics_docking(
     lig_specific_params: &ForceFieldParams,
     cfg: &MdConfig,
     n_steps: u32,
-    dt: f64,
+    dt: f32,
 ) -> Result<MdState, ParamError> {
     println!("Building docking dyanmics...");
 
@@ -100,7 +100,7 @@ pub fn build_dynamics_docking(
     println!("MD complete in {:.2} s", elapsed.as_secs());
 
     for (i, atom) in md_state.atoms.iter().enumerate() {
-        lig.common.atom_posits[i] = atom.posit;
+        lig.common.atom_posits[i] = atom.posit.into();
     }
     change_snapshot_docking(lig, &md_state.snapshots[0]);
 
@@ -136,11 +136,11 @@ pub fn change_snapshot_peptide(
             }
         }
         if !found {
-            posits.push(atom.posit); // Fallback to the orig.
+            posits.push(atom.posit.into()); // Fallback to the orig.
         }
     }
 
-    mol.common.atom_posits = posits;
+    mol.common.atom_posits = posits.iter().map(|p| (*p).into()).collect();
 }
 
 /// For a dynamic ligand, and static (set of a) peptide.

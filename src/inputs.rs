@@ -146,6 +146,11 @@ pub fn event_dev_handler(
                                     &mol.chains,
                                 );
 
+                                // Change the active molecule to the one of the selected atom.
+                                if let Selection::AtomLig((mol_i, _)) = selection {
+                                    state_.volatile.active_lig = Some(mol_i);
+                                }
+
                                 if selection == state_.ui.selection {
                                     // Toggle.
                                     state_.ui.selection = Selection::None;
@@ -183,7 +188,7 @@ pub fn event_dev_handler(
                         if matches!(state_.ui.selection, Selection::Atom(_)) {
                             redraw_protein = true;
                         }
-                        if matches!(state_.ui.selection, Selection::AtomLigand(_)) {
+                        if matches!(state_.ui.selection, Selection::AtomLig(_)) {
                             redraw_lig = true;
                         }
                     }
@@ -192,13 +197,17 @@ pub fn event_dev_handler(
                         if matches!(state_.ui.selection, Selection::Atom(_)) {
                             redraw_protein = true;
                         }
-                        if matches!(state_.ui.selection, Selection::AtomLigand(_)) {
+                        if matches!(state_.ui.selection, Selection::AtomLig(_)) {
                             redraw_lig = true;
                         }
                     }
                     Code(KeyCode::Escape) => {
                         state_.ui.selection = Selection::None;
+                        state_.volatile.move_mol = None;
+                        scene.input_settings.control_scheme = state_.volatile.control_scheme_prev;
+
                         redraw_protein = true;
+                        redraw_lig = true;
                     }
                     // These lig rotations are temporary.
                     Code(KeyCode::KeyU) => {
@@ -336,6 +345,49 @@ pub fn event_dev_handler(
             }
 
             if state_.ui.left_click_down {
+                if let Some(mol_i) = state_.volatile.move_mol {
+                    let mol = &mut state_.ligands[mol_i];
+
+                    if let Some(mut cursor) = state_.ui.cursor_pos {
+                        // your existing UI offset fix
+                        cursor.1 -= map_linear(
+                            cursor.1,
+                            (scene.window_size.1, state_.volatile.ui_height),
+                            (0., state_.volatile.ui_height),
+                        );
+
+                        // -- cached at drag start --
+                        let pivot0: Vec3 = state_.volatile.drag_pivot0.unwrap();
+                        let n: Vec3 = state_.volatile.drag_norm.unwrap();            // normalized
+                        let prev_offset: Vec3 = state_.volatile.drag_offset;      // starts at ZERO
+
+                        // Ray from screen
+                        let (ray_origin, ray_point) = scene.screen_to_render(cursor);
+                        let rd = (ray_point - ray_origin).to_normalized();
+
+                        let denom = rd.dot(n);
+                        if denom.abs() > 1e-6 {
+                            // Fixed plane: n · (X - pivot0) = 0
+                            let t = n.dot(pivot0 - ray_origin) / denom;
+                            let hit = ray_origin + rd * t;
+
+                            let offset = hit - pivot0;                 // desired total offset this frame
+                            let delta = offset - prev_offset;           // move only by the change
+
+                            // Apply delta (convert types if needed)
+                            let movement_vec: Vec3F64 = delta.into();
+                            for p in &mut mol.common.atom_posits {
+                                *p += movement_vec;
+                            }
+
+                            state_.volatile.drag_offset = offset;       // remember for next frame
+                            redraw_lig = true;
+                        }
+                    }
+                }
+            }
+
+            if state_.ui.left_click_down {
                 set_flashlight(scene);
                 updates.lighting = true;
             }
@@ -406,7 +458,6 @@ pub fn event_win_handler(
             device_id: _,
             position,
         } => {
-            // state.ui.cursor_pos = Some((position.x as f32, position.y as f32 + state.ui.ui_height))
             state.ui.cursor_pos = Some((position.x as f32, position.y as f32))
         }
         WindowEvent::CursorEntered { device_id: _ } => {

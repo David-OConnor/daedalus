@@ -161,7 +161,7 @@ pub fn cycle_selected(state: &mut State, scene: &mut Scene, reverse: bool) {
                     }
                 }
             }
-            Selection::AtomLigand((lig_i, atom_i)) => {
+            Selection::AtomLig((lig_i, atom_i)) => {
                 let Some(lig) = state.active_lig() else {
                     return;
                 };
@@ -172,7 +172,7 @@ pub fn cycle_selected(state: &mut State, scene: &mut Scene, reverse: bool) {
                 while new_atom_i < (lig.common.atoms.len() as isize) - 1 && new_atom_i >= 0 {
                     new_atom_i += dir;
                     let na_i = new_atom_i as usize;
-                    state.ui.selection = Selection::AtomLigand((lig_i, na_i));
+                    state.ui.selection = Selection::AtomLig((lig_i, na_i));
                     break;
                 }
             }
@@ -329,7 +329,7 @@ pub fn orbit_center(state: &State) -> Vec3F32 {
                     Vec3F32::new_zero()
                 }
             }
-            Selection::AtomLigand((i_lig, i_atom)) => {
+            Selection::AtomLig((i_lig, i_atom)) => {
                 state.ligands[*i_lig].common.atom_posits[*i_atom].into()
             }
             Selection::Residue(i) => {
@@ -855,3 +855,10 @@ pub fn find_neighbor_posit(
 
     None
 }
+
+// /// We use this when moving molecules. We use the same movement logic as Blender, where moving an object
+// /// in 2d with the cursor reflects a 3D movement dependent on camera position.
+// pub fn transform_to_3d(pos_2d: (f32, f32), cam_posit: Vec3F32, cam_or: Quaternion) -> Vec3 {
+//     // todo placeholder!
+//     Vec3::new(motion.0 as f64, 0., motion.1 as f64)
+// }

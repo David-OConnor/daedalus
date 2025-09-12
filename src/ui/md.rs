@@ -142,7 +142,7 @@ pub fn md_setup(
             num_field(&mut state.to_save.num_md_steps, "Steps:", 50, ui);
 
             if state.to_save.num_md_steps != num_steps_prev {
-                state.volatile.md_runtime = state.to_save.num_md_steps as f64 * state.to_save.md_dt;
+                state.volatile.md_runtime = state.to_save.num_md_steps as f32 * state.to_save.md_dt;
             }
 
             ui.label("dt (ps):");
@@ -153,9 +153,9 @@ pub fn md_setup(
                 )
                 .changed()
             {
-                if let Ok(v) = state.ui.md_dt_input.parse::<f64>() {
+                if let Ok(v) = state.ui.md_dt_input.parse::<f32>() {
                     state.to_save.md_dt = v;
-                    state.volatile.md_runtime = state.to_save.num_md_steps as f64 * v;
+                    state.volatile.md_runtime = state.to_save.num_md_steps as f32 * v;
                 }
             }
             ui.add_space(COL_SPACING/2.);
@@ -218,7 +218,8 @@ pub fn md_setup(
             }
             ui.add_space(COL_SPACING/2.);
 
-            num_field(&mut state.to_save.md_config.snapshot_ratio_memory, "Snapshot ratio:", 22, ui);
+            // todo: Add snapshot cfg
+            // num_field(&mut state.to_save.md_config.snapshot_ratio_memory, "Snapshot ratio:", 22, ui);
 
             // int_field_usize(&mut state.to_save.md_config.snapshot_ratio_file, "Snapshot ratio:", ui);
 

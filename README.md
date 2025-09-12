@@ -78,6 +78,9 @@ GPU use currently requires CUDA 13 support, which requires Nvidia driver version
 
 
 ## Molecular dynamics
+We use the [Dynamics rust library](https://github.com/david-oconnor/dynamics) for molecular dynamics. See
+that library's readme for details and assumptions.
+
 Integrates the following [Amber parameters](https://ambermd.org/AmberModels.php):
 - Small organic molecules, e.g. ligands: [General Amber Force Fields: GAFF2](https://ambermd.org/antechamber/gaff.html)
 - Protein/AA: [FF19SB](https://pubs.acs.org/doi/10.1021/acs.jctc.9b00591)

@@ -243,7 +243,7 @@ impl MoleculePeptide {
     pub fn get_sel_atom(&self, sel: &Selection) -> Option<&Atom> {
         match sel {
             Selection::Atom(i) => self.common.atoms.get(*i),
-            Selection::AtomLigand((lig_i, atom_i)) => None,
+            Selection::AtomLig((lig_i, atom_i)) => None,
             Selection::Residue(i) => {
                 let res = &self.residues[*i];
                 if !res.atoms.is_empty() {

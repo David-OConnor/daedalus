@@ -134,7 +134,7 @@ pub fn find_selected_atom(
     }
 
     if near_dist_lig < near_dist {
-        return Selection::AtomLigand((near_i_lig_num, near_i_lig_atom));
+        return Selection::AtomLig((near_i_lig_num, near_i_lig_atom));
     }
 
     match ui.view_sel_level {

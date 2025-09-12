@@ -99,14 +99,17 @@ ForceEnergy lj_force_v2(
     float eps
 ) {
     const float sr = sigma * inv_r;
-    const float sr6 = powf(sr, 6.);
+    const float sr2 = sr * sr;
+    const float sr4 = sr2 * sr2;
+    const float sr6 = sr4 * sr2;
     const float sr12 = sr6 * sr6;
 
-    const float mag = 24.0f * eps * (2. * sr12 - sr6) * inv_r;
+    // Optimized mul_add.
+    const float mag = 24.0f * eps * fmaf(2.f, sr12, -sr6) * inv_r;
 
     ForceEnergy result;
     result.force = dir * mag;
-    result.energy = 4. * eps * (sr12 - sr6);
+    result.energy = 4.f * eps * (sr12 - sr6);
 
     return result;
 }

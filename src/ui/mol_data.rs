@@ -3,7 +3,7 @@
 use bio_apis::{amber_geostd, drugbank, pubchem};
 use bio_files::ResidueType;
 use egui::{Color32, RichText, Ui};
-use graphics::{EngineUpdates, Scene};
+use graphics::{ControlScheme, EngineUpdates, Scene};
 use lin_alg::f64::Vec3;
 
 use crate::{
@@ -97,7 +97,7 @@ pub fn selected_data(
                     disp_atom_data(atom, &mol.residues, None, ui);
                 });
             }
-            Selection::AtomLigand((lig_i, atom_i)) => {
+            Selection::AtomLig((lig_i, atom_i)) => {
                 if *lig_i >= ligands.len() {
                     return;
                 }
@@ -199,10 +199,32 @@ pub fn disp_lig_data(
         if state.active_lig().is_none() {
             return;
         }
+        let active_lig_i = state.volatile.active_lig.unwrap();
         ui.add_space(COL_SPACING);
 
-        let lig = &mut state.ligands[state.volatile.active_lig.unwrap()];
+        let lig = &mut state.ligands[active_lig_i];
         mol_descrip(&MoleculeGenericRef::Ligand(&lig), ui);
+
+        let mut color = COLOR_INACTIVE;
+        let mut move_active = false;
+        if let Some(m) = state.volatile.move_mol {
+            if m == active_lig_i {
+                move_active = true;
+                color = COLOR_ACTIVE;
+            }
+        }
+        if ui.button(RichText::new("Move lig").color(color))
+            .on_hover_text("If active, move the ligand by clicking and dragging with the mouse. (Hotkey: M)")
+            .clicked() {
+            state.volatile.move_mol = if move_active {
+                scene.input_settings.control_scheme = state.volatile.control_scheme_prev;
+                None
+            } else {
+                state.volatile.control_scheme_prev = scene.input_settings.control_scheme;
+                scene.input_settings.control_scheme = ControlScheme::None;
+                Some(active_lig_i)
+            };
+        }
 
         if ui.button("Close lig").clicked() {
             *close_lig = true;

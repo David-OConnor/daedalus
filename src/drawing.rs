@@ -347,7 +347,7 @@ fn atom_color(
                 result = COLOR_SELECTED;
             }
         }
-        Selection::AtomLigand((lig_i, sel_i)) => {
+        Selection::AtomLig((lig_i, sel_i)) => {
             if mol_type == MolType::Ligand && *sel_i == i && *lig_i == mol_i {
                 result = COLOR_SELECTED;
             }
@@ -658,9 +658,9 @@ fn bond_entities(
 /// Water from a MD sim; not from atoms in experimental data.
 pub fn draw_water(
     scene: &mut Scene,
-    o_pos: &[Vec3F64],
-    h0_pos: &[Vec3F64],
-    h1_pos: &[Vec3F64],
+    o_pos: &[Vec3],
+    h0_pos: &[Vec3],
+    h1_pos: &[Vec3],
     hide_water: bool,
 ) {
     scene
@@ -747,16 +747,9 @@ pub fn draw_all_ligs(state: &State, scene: &mut Scene) {
     }
 }
 
+/// Hard-coded visuals as "sticks".
 // todo: DRY with/subset of draw_molecule?
-// pub fn draw_ligand(state: &State, scene: &mut Scene) {
 pub fn draw_ligand(lig: &MoleculeSmall, lig_i: usize, state_ui: &StateUi, scene: &mut Scene) {
-    // Hard-coded for sticks for now.
-
-    // let Some(lig) = state.active_lig() else {
-    //     set_docking_light(scene, None);
-    //     return;
-    // };
-
     // todo: You have problems with transparent objects like the view cube in conjunction
     // todo with the transparent surface; workaround to not draw the cube here.
     if state_ui.show_docking_tools && state_ui.mol_view != MoleculeView::Surface {
@@ -781,8 +774,8 @@ pub fn draw_ligand(lig: &MoleculeSmall, lig_i: usize, state_ui: &StateUi, scene:
         hydrogen_is.push(atom.element == Element::Hydrogen);
     }
 
-    // todo: C+P from draw_molecule. With some removed, but a lot of repeated.
-    for (i, bond) in lig.common.bonds.iter().enumerate() {
+    // todo: C+P from draw_molecule. With some removed, but much repeated.
+    for bond in &lig.common.bonds {
         let atom_0 = &lig.common.atoms[bond.atom_0];
         let atom_1 = &lig.common.atoms[bond.atom_1];
 
@@ -830,8 +823,10 @@ pub fn draw_ligand(lig: &MoleculeSmall, lig_i: usize, state_ui: &StateUi, scene:
             MolType::Ligand,
         );
 
-        if color_0 != COLOR_SELECTED && color_1 != COLOR_SELECTED {
+        if color_0 != COLOR_SELECTED {
             color_0 = mod_color_for_ligand(&color_0);
+        }
+        if color_1 != COLOR_SELECTED {
             color_1 = mod_color_for_ligand(&color_1);
 
             // if lig.flexible_bonds.contains(&i) {

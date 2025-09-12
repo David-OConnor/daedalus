@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-graphics = { version = "0.4.5", features = ["app_utils"] }
+graphics = { version = "0.4.6", features = ["app_utils"] }
 egui = "0.32.0"
 
 #egui_tiles = "0.12.0" # For layouts etc. Experimenting
@@ -17,7 +17,8 @@ na_seq = "0.3.6"
 bio_apis = {  version = "0.1.6", features = ["encode"] }
 bio_files = "0.2.12"
 mcubes = "0.1.4"
-dynamics = { version = "0.1.0", features = ["encode"] }
+#dynamics = { version = "0.1.0", features = ["encode"] }
+dynamics = { path = "../dynamics", features = ["encode"] }
 
 # For loading and saving config
 bincode = "2.0.1"
@@ -52,7 +53,7 @@ chrono = "0.4.41"
 #bio_apis = { path = "../bio_apis" }
 #mcubes = { path = "../mcubes" }
 bio_files = { path = "../bio_files" }
-#ewald = { path = "../ewald" }
+ewald = { path = "../ewald" }
 dynamics = { path = "../dynamics" }
 
 
