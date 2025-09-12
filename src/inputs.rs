@@ -19,6 +19,7 @@ use crate::{
     selection::{find_selected_atom, points_along_ray},
     util::{cycle_selected, orbit_center},
 };
+use crate::ui::COLOR_ACTIVE;
 
 // These are defaults; overridden by the user A/R, and saved to prefs.
 pub const MOVEMENT_SENS: f32 = 12.;
@@ -74,7 +75,11 @@ pub fn event_dev_handler(
             if button == left_click {
                 state_.ui.left_click_down = match state {
                     ElementState::Pressed => true,
-                    ElementState::Released => false,
+                    ElementState::Released => {
+                        // Part of our move logic.
+                        state_.volatile.drag_pivot0 = None;
+                        false
+                    },
                 }
             }
             if button == right_click {
@@ -204,6 +209,7 @@ pub fn event_dev_handler(
                     Code(KeyCode::Escape) => {
                         state_.ui.selection = Selection::None;
                         state_.volatile.move_mol = None;
+                        state_.volatile.drag_pivot0 = None;
                         scene.input_settings.control_scheme = state_.volatile.control_scheme_prev;
 
                         redraw_protein = true;
@@ -251,6 +257,25 @@ pub fn event_dev_handler(
                     }
                     Code(KeyCode::AltRight) => {
                         lig_move_dir = Some(UP_VEC);
+                    }
+                    Code(KeyCode::KeyM) => {
+                        if let Some(i) = state_.volatile.active_lig {
+                            let mut move_active = false;
+                            if let Some(m) = state_.volatile.move_mol {
+                                if m == i {
+                                    move_active = true;
+                                }
+                                // DRY with the UI button.
+                                state_.volatile.move_mol = if move_active {
+                                    scene.input_settings.control_scheme = state_.volatile.control_scheme_prev;
+                                    None
+                                } else {
+                                    state_.volatile.control_scheme_prev = scene.input_settings.control_scheme;
+                                    scene.input_settings.control_scheme = ControlScheme::None;
+                                    Some(i)
+                                };
+                            }
+                        }
                     }
                     _ => (),
                 },
@@ -356,14 +381,36 @@ pub fn event_dev_handler(
                             (0., state_.volatile.ui_height),
                         );
 
-                        // -- cached at drag start --
-                        let pivot0: Vec3 = state_.volatile.drag_pivot0.unwrap();
-                        let n: Vec3 = state_.volatile.drag_norm.unwrap();            // normalized
-                        let prev_offset: Vec3 = state_.volatile.drag_offset;      // starts at ZERO
+                        if state_.volatile.drag_pivot0.is_none() {
+                            // let pivot0: Vec3 = mol.common.atom_posits[0].into();
+
+                            // Use the centroid as the pivot.
+                            let pivot0: Vec3F64 = {
+                                let n = mol.common.atom_posits.len() as f64;
+                                let sum = mol.common.atom_posits.iter().copied().fold(Vec3F64::new_zero(), |a, b| a + b);
+                                sum / n
+                            };
+
+                            let n = scene.camera
+                                .orientation
+                                .rotate_vec(FWD_VEC)         // e.g. FWD_VEC = Vec3::new(0., 0., -1.)
+                                .to_normalized().into();
+
+                            state_.volatile.drag_pivot0 = Some(pivot0);
+                            state_.volatile.drag_norm   = Some(n);
+                            state_.volatile.drag_offset = Vec3F64::new_zero();
+                        }
+
+                        // Cached at drag start
+                        let pivot0 = state_.volatile.drag_pivot0.unwrap();
+                        let n= state_.volatile.drag_norm.unwrap();            // normalized
+                        let prev_offset = state_.volatile.drag_offset;      // starts at ZERO
 
                         // Ray from screen
                         let (ray_origin, ray_point) = scene.screen_to_render(cursor);
-                        let rd = (ray_point - ray_origin).to_normalized();
+                        let rd: Vec3F64 = (ray_point - ray_origin).to_normalized().into();
+
+                        let ray_origin: Vec3F64 = ray_origin.into();
 
                         let denom = rd.dot(n);
                         if denom.abs() > 1e-6 {
@@ -381,7 +428,16 @@ pub fn event_dev_handler(
                             }
 
                             state_.volatile.drag_offset = offset;       // remember for next frame
-                            redraw_lig = true;
+
+                            // todo experimenting
+                            static mut I: u16 = 0;
+                            unsafe {
+                                I += 1;
+                                // todo hacky. Get the mol drawing code faster.
+                                if I % 40 == 0 {
+                                    redraw_lig = true;
+                                }
+                            }
                         }
                     }
                 }

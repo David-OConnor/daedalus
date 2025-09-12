@@ -788,12 +788,19 @@ pub fn draw_ligand(lig: &MoleculeSmall, lig_i: usize, state_ui: &StateUi, scene:
         let posit_0: Vec3 = lig.common.atom_posits[bond.atom_0].into();
         let posit_1: Vec3 = lig.common.atom_posits[bond.atom_1].into();
 
-        // For determining how to orient multiple-bonds.
-        let neighbor_i = find_neighbor_posit(&lig.common, bond.atom_0, bond.atom_1, &hydrogen_is);
-        let neighbor_posit = match neighbor_i {
-            Some((i, p1)) => (lig.common.atom_posits[i].into(), p1),
-            None => (lig.common.atom_posits[0].into(), false),
+        // For determining how to orient multiple-bonds. Only run for relevant bonds to save
+        // computation.
+        let neighbor_posit = match bond.bond_type {
+            BondType::Aromatic | BondType::Double | BondType::Triple => {
+                let neighbor_i = find_neighbor_posit(&lig.common, bond.atom_0, bond.atom_1, &hydrogen_is);
+                match neighbor_i {
+                    Some((i, p1)) => (lig.common.atom_posits[i].into(), p1),
+                    None => (lig.common.atom_posits[0].into(), false),
+                }
+            }
+            _ => (Vec3::new_zero(), false)
         };
+
 
         let mut color_0 = atom_color(
             atom_0,

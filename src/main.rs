@@ -228,9 +228,9 @@ struct StateVolatile {
     /// Allows the user to move a molecule around with mouse or keyboard.
     move_mol: Option<usize>,
     /// For maintaining the screen plane when dragging the mol.
-    drag_pivot0: Option<Vec3>,
-    drag_norm: Option<Vec3>,
-    drag_offset: Vec3,
+    drag_pivot0: Option<Vec3F64>,
+    drag_norm: Option<Vec3F64>,
+    drag_offset: Vec3F64,
     md_mode: MdMode,
     /// For restoring after temprarily disabling mouse look.
     control_scheme_prev: ControlScheme,
@@ -253,6 +253,9 @@ impl Default for StateVolatile {
             active_peptide: Default::default(),
             active_lig: Default::default(),
             move_mol: Default::default(),
+            drag_pivot0: Default::default(),
+            drag_norm: Default::default(),
+            drag_offset: Default::default(),
             md_mode: MdMode::Peptide,
             control_scheme_prev: Default::default(),
         }
