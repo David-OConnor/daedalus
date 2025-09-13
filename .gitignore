@@ -27,6 +27,7 @@ Cargo.lock
 *.opc
 *.OL24
 *.dcd
+*.prmtop
 
 # Our prefs format.
 *.dae

@@ -234,6 +234,14 @@ impl MoleculePeptide {
             }
         }
 
+        for atom in &mut result.common.atoms {
+            // todo: Fill/fix the roles.
+            // println!("ROLE: {:?}", atom.role);
+            // if atom.is_backbone() {
+            //     atom.is_backbone() = true;
+            // }
+        }
+
         result
     }
 
@@ -773,6 +781,7 @@ impl MoleculePeptide {
         mut m: MmCif,
         ff_map: &ProtFFTypeChargeMap,
         path: Option<PathBuf>,
+        ph: f32,
     ) -> Result<Self, io::Error> {
         // todo: Perhaps you still want to calculate dihedral angles if hydrogens are populated already.
         // todo; For now, you are skipping both. Example when this comes up: Ligands.
@@ -787,7 +796,7 @@ impl MoleculePeptide {
             &mut m.residues,
             &mut m.chains,
             ff_map,
-            7.0,
+            ph,
         )
         .unwrap_or_else(|e| {
             eprintln!("Unable to populate Hydrogens and residue dihedral angles: {e:?}");

@@ -115,7 +115,12 @@ impl State {
                     ));
                 };
 
-                let mol = MoleculePeptide::from_mmcif(cif_data, &ff_map, Some(path.to_owned()))?;
+                let mol = MoleculePeptide::from_mmcif(
+                    cif_data,
+                    &ff_map,
+                    Some(path.to_owned()),
+                    self.to_save.ph,
+                )?;
                 self.cif_pdb_raw = Some(data_str);
 
                 Ok(MoleculeGeneric::Peptide(mol))

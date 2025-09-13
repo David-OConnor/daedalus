@@ -671,5 +671,15 @@ fn main() {
     //     );
     // }
 
+    // todo temp
+    // let (atoms, params) = bio_files::prmtop::load_prmtop(std::path::Path::new("./molecules/str1.prmtop")).unwrap();
+    //
+    // println!("Loaded atoms:");
+    // for at in atoms {
+    //     println!("{at}");
+    // }
+    //
+    // println!("\n\n\n params: {:?}", params);
+
     render(state);
 }

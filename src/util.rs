@@ -354,13 +354,14 @@ pub fn load_atom_coords_rcsb(
 
             let ff_map = &state.ff_param_set.peptide_ff_q_map.as_ref().unwrap();
 
-            let mut mol: MoleculePeptide = match MoleculePeptide::from_mmcif(cif, ff_map, None) {
-                Ok(m) => m,
-                Err(e) => {
-                    eprintln!("Problem parsing mmCif data into molecule: {e:?}");
-                    return;
-                }
-            };
+            let mut mol: MoleculePeptide =
+                match MoleculePeptide::from_mmcif(cif, ff_map, None, state.to_save.ph) {
+                    Ok(m) => m,
+                    Err(e) => {
+                        eprintln!("Problem parsing mmCif data into molecule: {e:?}");
+                        return;
+                    }
+                };
 
             state.volatile.aa_seq_text = String::with_capacity(mol.common.atoms.len());
             for aa in &mol.aa_seq {
