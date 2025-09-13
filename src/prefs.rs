@@ -347,8 +347,6 @@ impl State {
             Err(_) => eprintln!("Unable to load save file; possibly the first time running."),
         }
 
-        println!("Loaded history: {:?}", self.to_save.open_history);
-
         self.update_from_prefs();
     }
 }

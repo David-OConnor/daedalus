@@ -30,7 +30,7 @@ use rayon::prelude::*;
 
 use crate::{
     Selection,
-    bond_inference::{create_bonds, create_hydrogen_bonds},
+    bond_inference::create_hydrogen_bonds,
     mol_lig::MoleculeSmall,
     nucleic_acid::MoleculeNucleicAcid,
     reflection::{DensityRect, ElectronDensity, ReflectionsData},
@@ -78,20 +78,23 @@ impl Default for MoleculeCommon {
 impl MoleculeCommon {
     /// If `bonds` is none, create it based on atom distances. Useful in the case of mmCIF files,
     /// which usually lack bond information.
+    ///
+    /// Hydrogens should have been added to the atom set, if required, prior to running this,
+    /// so bonds are created.
     pub fn new(
         ident: String,
         atoms: Vec<Atom>,
-        bonds: Option<Vec<Bond>>,
+        // bonds: Option<Vec<Bond>>,
+        bonds: Vec<Bond>,
         metadata: HashMap<String, String>,
         path: Option<PathBuf>,
     ) -> Self {
         let atom_posits = atoms.iter().map(|a| a.posit).collect();
 
-        // todo: Skip for mmCif etc, since we replace this after adding H?
-        let bonds = match bonds {
-            Some(b) => b,
-            None => create_bonds(&atoms),
-        };
+        // let bonds = match bonds {
+        //     Some(b) => b,
+        //     None =>create_bonds(&atoms),
+        // };
 
         let mut result = Self {
             ident,
@@ -125,7 +128,7 @@ pub enum MoleculeGeneric {
 }
 
 impl MoleculeGeneric {
-    pub fn common(&self) -> &MoleculeCommon {
+    pub fn _common(&self) -> &MoleculeCommon {
         match self {
             Self::Peptide(m) => &m.common,
             Self::Ligand(m) => &m.common,
@@ -197,11 +200,9 @@ impl MoleculePeptide {
     pub fn new(
         ident: String,
         atoms: Vec<Atom>,
+        bonds: Vec<Bond>,
         chains: Vec<Chain>,
         residues: Vec<Residue>,
-        // Populate this with the Amino19.lib map, if we wish to add Hydrogens. (e.g. for mmCif protein
-        // data, but not for small molecules).
-        add_hydrogens: Option<&ProtFFTypeChargeMap>,
         metadata: HashMap<String, String>,
         path: Option<PathBuf>,
     ) -> Self {
@@ -210,7 +211,8 @@ impl MoleculePeptide {
         println!("Loading atoms into mol...");
 
         let mut result = Self {
-            common: MoleculeCommon::new(ident, atoms, None, metadata, path),
+            // We create bonds only after
+            common: MoleculeCommon::new(ident, atoms, bonds, metadata, path),
             chains,
             residues,
             center,
@@ -219,10 +221,6 @@ impl MoleculePeptide {
         };
 
         result.aa_seq = result.get_seq();
-
-        // todo: THis is currently run twice: Once here, and once in atom commons.
-        result.common.bonds = create_bonds(&result.common.atoms);
-
         result.bonds_hydrogen = create_hydrogen_bonds(&result.common.atoms, &result.common.bonds);
 
         // Override the one set in Common::new(), now that we've added hydrogens.
@@ -780,23 +778,29 @@ impl MoleculePeptide {
         // todo; For now, you are skipping both. Example when this comes up: Ligands.
         // Attempt to only populate Hydrogens if there aren't many.
 
-        let mut dihedrals = Vec::new();
-        if m.atoms
-            .iter()
-            .filter(|a| a.element == Element::Hydrogen)
-            .count()
-            < 10
-        {
-            // Add hydrogens, FF types, and partial charge.
-            dihedrals = prepare_peptide(&mut m.atoms, &mut m.residues, &mut m.chains, ff_map, 7.0)
-                .unwrap_or_else(|e| {
-                    eprintln!("Unable to populate Hydrogens and residue dihedral angles: {e:?}");
-                    // todo: Not ideal handling. Should populate with None.
-                    vec![Default::default(); m.residues.len()]
-                });
-        }
+        let mut bonds_ = Vec::new();
+
+        // Add hydrogens, FF types, partial charge, and bonds.
+        let dihedrals = prepare_peptide(
+            &mut m.atoms,
+            &mut bonds_,
+            &mut m.residues,
+            &mut m.chains,
+            ff_map,
+            7.0,
+        )
+        .unwrap_or_else(|e| {
+            eprintln!("Unable to populate Hydrogens and residue dihedral angles: {e:?}");
+            // todo: Not ideal handling. Should populate with None.
+            vec![Default::default(); m.residues.len()]
+        });
 
         let mut atoms: Vec<_> = m.atoms.iter().map(|a| a.into()).collect();
+
+        let mut bonds = Vec::with_capacity(bonds_.len());
+        for bond in &bonds_ {
+            bonds.push(Bond::from_generic(bond, &atoms)?);
+        }
 
         let mut residues = Vec::with_capacity(m.residues.len());
         for (i, res) in m.residues.iter().enumerate() {
@@ -836,9 +840,9 @@ impl MoleculePeptide {
         let mut result = Self::new(
             m.ident.clone(),
             atoms,
+            bonds,
             chains,
             residues,
-            Some(ff_map),
             m.metadata,
             path,
         );

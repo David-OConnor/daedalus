@@ -75,6 +75,7 @@ fn disp_atom_data(atom: &Atom, residues: &[Residue], posit_override: Option<Vec3
             CHARGE_MAP_MAX,
         ));
 
+        // todo: In some cases, this is getting rendered over the initial text? EGUI error?
         ui.label(RichText::new(format!("{plus}q: {q:.2}")).color(color));
     }
 }

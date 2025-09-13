@@ -13,7 +13,7 @@ use lin_alg::{
 };
 
 use crate::{
-    ManipMode, MolManip, Selection, State, StateVolatile, drawing,
+    ManipMode, Selection, State, StateVolatile, drawing,
     drawing::MoleculeView,
     molecule::Atom,
     render::set_flashlight,
@@ -629,11 +629,7 @@ fn handle_mol_manip_in_out(
             if state.volatile.mol_manip.pivot.is_none() {
                 let pivot: Vec3 = mol.centroid().into();
 
-                let fwd = scene
-                    .camera
-                    .orientation
-                    .rotate_vec(FWD_VEC)
-                    .to_normalized();
+                let fwd = scene.camera.orientation.rotate_vec(FWD_VEC).to_normalized();
 
                 state.volatile.mol_manip.pivot = Some(pivot);
                 state.volatile.mol_manip.pivot_norm = Some(fwd);

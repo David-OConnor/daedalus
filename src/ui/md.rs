@@ -1,6 +1,9 @@
 use std::path::PathBuf;
-use dynamics::{ComputationDevice, HydrogenConstraint, Integrator, SimBoxInit};
-use dynamics::snapshot::{SaveType, SnapshotHandler};
+
+use dynamics::{
+    ComputationDevice, HydrogenConstraint, Integrator, SimBoxInit,
+    snapshot::{SaveType, SnapshotHandler},
+};
 use egui::{Color32, ComboBox, RichText, TextEdit, Ui};
 use graphics::{EngineUpdates, Scene};
 
@@ -260,13 +263,13 @@ pub fn md_setup(
             }
 
 
-            ui.add_space(COL_SPACING);
+            ui.add_space(COL_SPACING/2.);
             ui.label(format!("Runtime: {:.1} ps", state.volatile.md_runtime));
 
             if let Some(md) = &state.mol_dynamics {
                 let snap = &md.snapshots[state.ui.current_snapshot];
 
-                ui.add_space(COL_SPACING);
+                ui.add_space(COL_SPACING/2.);
                 ui.label("E (kcal/mol) KE: ");
                 ui.label(RichText::new(format!("{:.1}", snap.energy_kinetic)).color(Color32::GOLD));
 

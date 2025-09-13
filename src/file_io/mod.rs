@@ -4,31 +4,20 @@ use std::{
     io,
     io::{ErrorKind, Read},
     path::Path,
-    time::Instant,
 };
 
 use bio_apis::amber_geostd;
 use bio_files::{
-    DensityMap, MmCif, Mol2, Pdbqt, gemmi_sf_to_map,
-    md_params::{ForceFieldParams, parse_amino_charges},
-    sdf::Sdf,
+    DensityMap, MmCif, Mol2, Pdbqt, gemmi_sf_to_map, md_params::ForceFieldParams, sdf::Sdf,
 };
 use chrono::Utc;
-use dynamics::{
-    ParamError, merge_params,
-    params::{FfParamSet, ProtFFTypeChargeMap, populate_peptide_ff_and_q},
-};
 use na_seq::{AaIdent, Element};
 
-// use crate::{AMINO_19, AMINO_CT12, AMINO_NT12, FRCMOD_FF19SB, GAFF2, PARM_19, State, molecule::MoleculePeptide, prefs::{OpenHistory, OpenType}, OL24_LIB, OL24_FRCMOD, RNA_LIB};
 use crate::{
     State,
-    molecule::MoleculePeptide,
-    prefs::{OpenHistory, OpenType},
-};
-use crate::{
     mol_lig::MoleculeSmall,
-    molecule::MoleculeGeneric,
+    molecule::{MoleculeGeneric, MoleculePeptide},
+    prefs::{OpenHistory, OpenType},
     reflection::{DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityRect, ElectronDensity},
     util::{handle_err, handle_success},
 };
@@ -45,6 +34,9 @@ impl State {
         {
             // The cif branch here handles 2fo-fc mmCIF files.
             "sdf" | "mol2" | "pdbqt" | "pdb" | "cif" => self.open_molecule(path)?,
+            "prmtop" => {
+                // todo
+            }
             "map" => self.open_map(path)?,
             "mtz" => self.open_mtz(path)?,
             // todo: lib, .dat etc as required. Using Amber force fields and its format
@@ -425,6 +417,7 @@ impl State {
                 }
                 None => return Err(io::Error::new(ErrorKind::InvalidData, "No ligand to save")),
             },
+            "prmtop" => (), // todo
             "pdbqt" => match self.active_lig() {
                 Some(lig) => {
                     lig.to_pdbqt().save(path)?;

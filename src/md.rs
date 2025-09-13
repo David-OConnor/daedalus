@@ -112,7 +112,7 @@ pub fn change_snapshot_docking(lig: &mut MoleculeSmall, snapshot: &Snapshot) {
     // Unflatten. We can ignore the (static) peptide atoms.
     for (i, posit) in snapshot.atom_posits.iter().enumerate() {
         if i >= lig.common.atom_posits.len() {
-            continue
+            continue;
         }
         lig.common.atom_posits[i] = (*posit).into();
     }

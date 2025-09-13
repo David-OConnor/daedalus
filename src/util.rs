@@ -266,55 +266,6 @@ pub fn bond_angle(atoms: &[Atom], bond_0: &Bond, bond_1: &Bond) -> f64 {
     }
 }
 
-/// Creates pairs of all *nearby* positions. Much faster than comparing every combination, if only nearly
-/// ones are relevant.
-/// The separate `indexes` parameter allows `posits` to be a subset of the array we're indexing into,
-/// e.g. a filtered set of atoms.
-pub fn setup_neighbor_pairs(
-    posits: &[&Vec3],
-    indexes: &[usize],
-    grid_size: f64,
-) -> Vec<(usize, usize)> {
-    // Build a spatial grid for atom indices.
-    let mut grid: HashMap<(i32, i32, i32), Vec<usize>> = HashMap::new();
-
-    for (i, posit) in posits.iter().enumerate() {
-        let grid_pos = (
-            (posit.x / grid_size).floor() as i32,
-            (posit.y / grid_size).floor() as i32,
-            (posit.z / grid_size).floor() as i32,
-        );
-
-        grid.entry(grid_pos).or_default().push(indexes[i]);
-    }
-
-    // Collect candidate atom pairs based on neighboring grid cells.
-    let mut result = Vec::new();
-    for (&cell, indices) in &grid {
-        // Look at this cell and its neighbors.
-        for dx in -1..=1 {
-            for dy in -1..=1 {
-                for dz in -1..=1 {
-                    let neighbor_cell = (cell.0 + dx, cell.1 + dy, cell.2 + dz);
-                    if let Some(neighbor_indices) = grid.get(&neighbor_cell) {
-                        // Attempt to prevent duplicates as we iterate. Note working.
-                        for &i in indices {
-                            for &j in neighbor_indices {
-                                // The ordering prevents duplicates.
-                                if i < j {
-                                    result.push((i, j));
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    result
-}
-
 /// Based on selection status and if a molecule is open, find the center for the orbit camera.
 pub fn orbit_center(state: &State) -> Vec3F32 {
     if state.ui.orbit_around_selection {

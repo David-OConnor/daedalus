@@ -46,22 +46,6 @@ impl MoleculeSmall {
         path: Option<PathBuf>,
     ) -> Self {
         let mut frcmod_loaded = false;
-        // If we've already loaded FRCMOD data for this ligand, update the status. Alternatively,
-        // this will be updated when we load the FRCMOD file after.
-        // if ff_params.keys().any(|k| k.eq_ignore_ascii_case(&ident)) {
-        //     frcmod_loaded = true;
-        // }
-
-        // Handfled elsewhere for now.
-        // Offset its position immediately if it's not the first loaded, to prevent ligands
-        // from overlapping
-        // let mut common = MoleculeCommon::new(ident, atoms, Some(bonds));
-        // if let Some(i) = lig_i {
-        //     let offset = LIGAND_ABS_POSIT_OFFSET * (i as f64);
-        //     for posit in &mut common.atom_posits {
-        //         posit.x += offset; // Arbitrary axis and direction.
-        //     }
-        // }
 
         let mut pubchem_cid = None;
         let mut drugbank_id = None;
@@ -79,7 +63,7 @@ impl MoleculeSmall {
         }
 
         Self {
-            common: MoleculeCommon::new(ident, atoms, Some(bonds), metadata, path),
+            common: MoleculeCommon::new(ident, atoms, bonds, metadata, path),
             pubchem_cid,
             drugbank_id,
             frcmod_loaded,

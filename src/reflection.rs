@@ -18,7 +18,7 @@ use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 use mcubes::GridPoint;
 use rayon::prelude::*;
 
-use crate::{ComputationDevice, molecule::Atom, util::setup_neighbor_pairs};
+use crate::{ComputationDevice, molecule::Atom};
 
 pub const DENSITY_CELL_MARGIN: f64 = 2.0;
 

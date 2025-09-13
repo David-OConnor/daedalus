@@ -62,7 +62,7 @@ use cudarc::{
     nvrtc::Ptx,
 };
 use drawing::MoleculeView;
-use dynamics::{ComputationDevice, MdState, SimBoxInit, params::FfParamSet, Integrator};
+use dynamics::{ComputationDevice, Integrator, MdState, SimBoxInit, params::FfParamSet};
 use egui_file_dialog::{FileDialog, FileDialogConfig};
 use graphics::{Camera, ControlScheme, InputsCommanded};
 use lin_alg::{
@@ -147,19 +147,22 @@ impl Default for FileDialogs {
         let cfg_all = FileDialogConfig::default()
             .add_file_filter_extensions(
                 "All",
-                vec!["cif", "mol2", "sdf", "pdbqt", "map", "mtz", "frcmod", "dat"],
+                vec![
+                    "cif", "mol2", "sdf", "pdbqt", "map", "mtz", "frcmod", "dat", "prmtop",
+                ],
             )
-            .add_file_filter_extensions("Molecule (small)", vec!["mol2", "sdf", "pdbqt"])
+            .add_file_filter_extensions("Molecule (small)", vec!["mol2", "sdf", "pdbqt", "prmtop"])
             .add_file_filter_extensions("Protein", vec!["cif"])
             // .add_file_filter_extensions("Small mol", vec!["mol2", "sdf", "pdbqt"])
             .add_file_filter_extensions("Density", vec!["map", "mtz", "cif"])
-            .add_file_filter_extensions("Mol dynamics", vec!["frcmod", "dat", "lib"])
+            .add_file_filter_extensions("Mol dynamics", vec!["frcmod", "dat", "lib", "prmtop"])
             .add_save_extension("CIF", "cif")
             .add_save_extension("Mol2", "mol2")
             .add_save_extension("SDF", "sdf")
             .add_save_extension("Pdbqt", "pdbqt")
             .add_save_extension("Map", "map")
-            .add_save_extension("MTZ", "mtz");
+            .add_save_extension("MTZ", "mtz")
+            .add_save_extension("Prmtop", "prmtop");
 
         let cfg_vina = FileDialogConfig {
             ..Default::default()
@@ -407,7 +410,6 @@ struct StateUi {
     peptide_atom_posits: PeptideAtomPosits,
     popup: PopupState,
     md: StateUiMd,
-
 }
 
 #[derive(Clone, PartialEq, Debug, Default, Encode, Decode)]
