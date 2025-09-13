@@ -7,13 +7,14 @@ use graphics::{ControlScheme, EngineUpdates, Scene};
 use lin_alg::f64::Vec3;
 
 use crate::{
-    Selection, State, drawing,
+    ManipMode, Selection, State, drawing,
     drawing::{CHARGE_MAP_MAX, CHARGE_MAP_MIN, COLOR_AA_NON_RESIDUE_EGUI},
+    inputs::set_manip,
     mol_lig::MoleculeSmall,
     molecule::{Atom, MoleculeGenericRef, MoleculePeptide, Residue, aa_color},
     ui::{
-        COL_SPACING, COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_INACTIVE, cam::move_cam_to_lig, misc,
-        mol_descrip,
+        COL_SPACING, COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_HIGHLIGHT, COLOR_INACTIVE,
+        cam::move_cam_to_lig, misc, mol_descrip,
     },
     util::{handle_err, handle_success, make_egui_color, move_lig_to_res},
 };
@@ -205,28 +206,57 @@ pub fn disp_lig_data(
         let lig = &mut state.ligands[active_lig_i];
         mol_descrip(&MoleculeGenericRef::Ligand(&lig), ui);
 
-        let mut color = COLOR_INACTIVE;
-        let mut move_active = false;
-        if let Some(m) = state.volatile.move_mol {
-            if m == active_lig_i {
-                move_active = true;
-                color = COLOR_ACTIVE;
+        {
+            let mut color_move = COLOR_INACTIVE;
+            let mut color_rotate = COLOR_INACTIVE;
+
+            match state.volatile.mol_manip.mol {
+                ManipMode::Move(m) => {
+                    if m == active_lig_i {
+                        color_move = COLOR_ACTIVE;
+                    }
+                }
+                ManipMode::Rotate(m) => {
+                    if m == active_lig_i {
+                        color_rotate = COLOR_ACTIVE;
+                    }
+                }
+                ManipMode::None => (),
+            }
+
+            // ✥ doesn't work in EGUI.
+            if ui.button(RichText::new("↔").color(color_move))
+                .on_hover_text("Move the active molecule by clicking and dragging with the mouse. Scroll to move it forward and back. (Hotkey: M)")
+                .clicked() {
+
+                set_manip(&mut state.volatile, scene, redraw_lig, ManipMode::Move(0));
+            }
+
+            if ui.button(RichText::new("⟳").color(color_rotate))
+                .on_hover_text("Rotate the active molecule by clicking and dragging with the mouse. Scroll to roll. (Hotkey: R)")
+                .clicked() {
+
+                set_manip(&mut state.volatile, scene, redraw_lig, ManipMode::Rotate(0));
             }
         }
-        if ui.button(RichText::new("Move lig").color(color))
-            .on_hover_text("If active, move the ligand by clicking and dragging with the mouse. (Hotkey: M)")
-            .clicked() {
-            state.volatile.move_mol = if move_active {
-                scene.input_settings.control_scheme = state.volatile.control_scheme_prev;
-                None
-            } else {
-                state.volatile.control_scheme_prev = scene.input_settings.control_scheme;
-                scene.input_settings.control_scheme = ControlScheme::None;
-                Some(active_lig_i)
-            };
+
+        if ui
+            .button(RichText::new("Reset posit").color(COLOR_HIGHLIGHT))
+            .on_hover_text(
+                "Move the ligand to its absolute coordinates, e.g. as defined in \
+                    its source Mol2 or SDF file.",
+            )
+            .clicked()
+        {
+            lig.reset_posits();
+
+            *redraw_lig = true;
+
+            // let center = state.molecule.as_ref().unwrap().center;
+            // move_cam_to_lig(state, scene, center, engine_updates)
         }
 
-        if ui.button("Close lig").clicked() {
+        if ui.button("Close").clicked() {
             *close_lig = true;
         }
 

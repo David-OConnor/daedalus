@@ -135,7 +135,7 @@ in 6 degrees of freedom, allowing you to easily view the molecule from any persp
 - **Right click** to select the atom or residue under the cursor.
 
 
-#### Camera and other Hotkeys
+#### Camera hotkeys
 - **W**: Move forward
 - **A**: Move right
 - **A**: Move left
@@ -148,12 +148,6 @@ in 6 degrees of freedom, allowing you to easily view the molecule from any persp
 - **Shift** (left): Hold to increase camera movement and rotation speed.
 - **Scroll whlie holding left mouse**: Roll (Alternative to Q/R)
 
-- **Left arrow**: Select previous residue
-- **Right arrow**: Select next residue
-
-- **Left backet**: Previous view mode (sticks, surface mesh etc)
-- **Right bracket**: Next view mode
-
 
 ### Arc camera
 Similar to traditional molecular viewing software. The camera arcs (or orbits) around the molecule, when holding the left
@@ -162,10 +156,20 @@ If *orbit sel* is set in the GUI, the orbit center will be the selected atom or 
 
 
 ### Non-camera hotkeys
-- **Esc**: Clear selection
+- **Esc**: Clear selection, molecule manipulation modes etc.
+- 
 - **Left arrow**: select previous residue
 - **Right arrow**: select next residue
 
+- **Left arrow**: Select previous residue
+- **Right arrow**: Select next residue
+
+- **Left backet**: Previous view mode (sticks, surface mesh etc)
+- **Right bracket**: Next view mode
+
+- **M**: Move a molecule with the mouse and scroll wheel
+- **R**: Rotate a molecule with the mouse and scroll wheel
+- 
 
 ![Protein B](screenshots/protein_b.png)
 

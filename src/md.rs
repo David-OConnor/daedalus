@@ -4,8 +4,8 @@ use std::time::Instant;
 
 use bio_files::md_params::ForceFieldParams;
 use dynamics::{
-    AtomDynamics, ComputationDevice, FfMolType, MdConfig, MdState, MolDynamics,
-    ParamError, snapshot::Snapshot, params::FfParamSet,
+    AtomDynamics, ComputationDevice, FfMolType, MdConfig, MdState, MolDynamics, ParamError,
+    params::FfParamSet, snapshot::Snapshot,
 };
 use lin_alg::f64::Vec3;
 
@@ -18,8 +18,6 @@ use crate::{
 // Å. Static atoms must be at least this close to a dynamic atom at the start of MD to count.
 // Set this wide to take into account motion.
 const STATIC_ATOM_DIST_THRESH: f64 = 8.; // todo: Increase (?) A/R.
-
-const SNAPSHOT_RATIO: usize = 1;
 
 /// Perform MD on the peptide (protein) only. Can be very computationally intensive due to the large
 /// number of atoms.
@@ -99,9 +97,6 @@ pub fn build_dynamics_docking(
     let elapsed = start.elapsed();
     println!("MD complete in {:.2} s", elapsed.as_secs());
 
-    for (i, atom) in md_state.atoms.iter().enumerate() {
-        lig.common.atom_posits[i] = atom.posit.into();
-    }
     change_snapshot_docking(lig, &md_state.snapshots[0]);
 
     Ok(md_state)
@@ -114,7 +109,13 @@ pub fn change_snapshot_docking(lig: &mut MoleculeSmall, snapshot: &Snapshot) {
         data.pose.conformation_type = ConformationType::AbsolutePosits;
     }
 
-    lig.common.atom_posits = snapshot.atom_posits.iter().map(|p| (*p).into()).collect();
+    // Unflatten. We can ignore the (static) peptide atoms.
+    for (i, posit) in snapshot.atom_posits.iter().enumerate() {
+        if i >= lig.common.atom_posits.len() {
+            continue
+        }
+        lig.common.atom_posits[i] = (*posit).into();
+    }
 }
 
 pub fn change_snapshot_peptide(

@@ -1,4 +1,6 @@
+use std::path::PathBuf;
 use dynamics::{ComputationDevice, HydrogenConstraint, Integrator, SimBoxInit};
+use dynamics::snapshot::{SaveType, SnapshotHandler};
 use egui::{Color32, ComboBox, RichText, TextEdit, Ui};
 use graphics::{EngineUpdates, Scene};
 
@@ -94,6 +96,12 @@ pub fn md_setup(
                             }
                         };
 
+                        // todo temp
+                        state.to_save.md_config.snapshot_handlers.push(SnapshotHandler {
+                            ratio: 1,
+                            save_type: SaveType::Dcd(PathBuf::from("test.dcd")),
+                        });
+
                         let mol = state.molecule.as_mut().unwrap();
                         match build_dynamics_docking(
                             &state.dev,
@@ -149,11 +157,11 @@ pub fn md_setup(
             if ui
                 .add_sized(
                     [46., Ui::available_height(ui)],
-                    TextEdit::singleline(&mut state.ui.md_dt_input),
+                    TextEdit::singleline(&mut state.ui.md.dt_input),
                 )
                 .changed()
             {
-                if let Ok(v) = state.ui.md_dt_input.parse::<f32>() {
+                if let Ok(v) = state.ui.md.dt_input.parse::<f32>() {
                     state.to_save.md_dt = v;
                     state.volatile.md_runtime = state.to_save.num_md_steps as f32 * v;
                 }
@@ -168,13 +176,30 @@ pub fn md_setup(
                     .selected_text(state.to_save.md_config.integrator.to_string())
                     .show_ui(ui, |ui| {
                         // todo: More A/R
-                        for v in &[Integrator::VerletVelocity] {
-                            ui.selectable_value(&mut state.to_save.md_config.integrator, *v, v.to_string());
+                        // todo: What should gamma be? And make it customizable in UI and state.
+                        for v in &[Integrator::LangevinMiddle { gamma: 0. }, Integrator::VerletVelocity, Integrator::Langevin { gamma: 0. }] {
+                            ui.selectable_value(&mut state.to_save.md_config.integrator, v.clone(), v.to_string());
                         }
                     })
                     .response
                     .on_hover_text(help_text);
             }
+            if matches!(state.to_save.md_config.integrator, Integrator::Langevin { gamma } | Integrator::LangevinMiddle { gamma }) {
+                ui.label("γ:");
+                if ui
+                    .add_sized([22., Ui::available_height(ui)], TextEdit::singleline(&mut state.ui.md.langevin_γ))
+                    .changed()
+                {
+                    if let Ok(v) = &mut state.ui.md.langevin_γ.parse::<f32>() {
+                        match state.to_save.md_config.integrator {
+                            Integrator::Langevin { gamma: _ } => state.to_save.md_config.integrator = Integrator::Langevin { gamma: *v},
+                            Integrator::LangevinMiddle { gamma: _} => state.to_save.md_config.integrator = Integrator::Langevin { gamma: *v},
+                            _ => ()
+                        }
+                    }
+                }
+            }
+
             ui.add_space(COL_SPACING/2.);
 
             // todo: A/R
@@ -183,20 +208,20 @@ pub fn md_setup(
 
             ui.label("Pres (kPa):");
             if ui
-                .add_sized([30., Ui::available_height(ui)], TextEdit::singleline(&mut state.ui.md_pressure_input))
+                .add_sized([30., Ui::available_height(ui)], TextEdit::singleline(&mut state.ui.md.pressure_input))
                 .changed()
             {
-                if let Ok(v) =&mut state.ui.md_pressure_input.parse::<f32>() {
+                if let Ok(v) =&mut state.ui.md.pressure_input.parse::<f32>() {
                     state.to_save.md_config.pressure_target = *v;
                 }
             }
 
             ui.label("Temp (K):");
             if ui
-                .add_sized([30., Ui::available_height(ui)], TextEdit::singleline(&mut state.ui.md_temp_input))
+                .add_sized([30., Ui::available_height(ui)], TextEdit::singleline(&mut state.ui.md.temp_input))
                 .changed()
             {
-                if let Ok(v) =&mut state.ui.md_temp_input.parse::<f32>() {
+                if let Ok(v) =&mut state.ui.md.temp_input.parse::<f32>() {
                     state.to_save.md_config.temp_target = *v;
                 }
             }
@@ -226,10 +251,10 @@ pub fn md_setup(
 
             ui.label("Solvent pad (Å):");
             if ui
-                .add_sized([22., Ui::available_height(ui)], TextEdit::singleline(&mut state.ui.md_simbox_pad_input))
+                .add_sized([22., Ui::available_height(ui)], TextEdit::singleline(&mut state.ui.md.simbox_pad_input))
                 .changed()
             {
-                if let Ok(v) = &mut state.ui.md_simbox_pad_input.parse::<f32>() {
+                if let Ok(v) = &mut state.ui.md.simbox_pad_input.parse::<f32>() {
                     state.to_save.md_config.sim_box = SimBoxInit::Pad(*v);
                 }
             }

@@ -16,7 +16,7 @@ use mcubes::{MarchingCubes, MeshSide};
 use na_seq::AaIdent;
 
 use crate::{
-    CamSnapshot, PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel,
+    CamSnapshot, ManipMode, PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel,
     download_mols::load_cif_rcsb,
     drawing::{
         EntityType, MoleculeView, draw_all_ligs, draw_density_point_cloud, draw_density_surface,
@@ -588,7 +588,13 @@ pub fn close_lig(
     let path = state.ligands[i].common.path.clone();
 
     state.ligands.remove(i);
-    state.volatile.active_lig = None;
+
+    if let Some(active) = state.volatile.active_lig {
+        if active == i {
+            state.volatile.active_lig = None;
+            state.volatile.mol_manip.mol = ManipMode::None;
+        }
+    }
 
     draw_all_ligs(state, scene);
 

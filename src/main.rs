@@ -62,7 +62,7 @@ use cudarc::{
     nvrtc::Ptx,
 };
 use drawing::MoleculeView;
-use dynamics::{ComputationDevice, MdState, SimBoxInit, params::FfParamSet};
+use dynamics::{ComputationDevice, MdState, SimBoxInit, params::FfParamSet, Integrator};
 use egui_file_dialog::{FileDialog, FileDialogConfig};
 use graphics::{Camera, ControlScheme, InputsCommanded};
 use lin_alg::{
@@ -193,6 +193,27 @@ struct SceneFlags {
     pub new_density_loaded: bool,
     pub new_mol_loaded: bool,
 }
+
+#[derive(Clone, Copy, Default, PartialEq)]
+pub enum ManipMode {
+    #[default]
+    None,
+    Move(usize), // Index of mol
+    Rotate(usize),
+}
+
+/// State for dragging and rotating molecules.
+#[derive(Default)]
+struct MolManip {
+    /// Allows the user to move a molecule around with mouse or keyboard.
+    mol: ManipMode,
+    /// For maintaining the screen plane when dragging the mol.
+    pivot: Option<Vec3>,
+    pivot_norm: Option<Vec3>,
+    offset: Vec3,
+    depth_bias: f32,
+}
+
 /// Temporary, and generated state.
 struct StateVolatile {
     dialogs: FileDialogs,
@@ -225,12 +246,7 @@ struct StateVolatile {
     md_runtime: f32,
     active_peptide: Option<usize>, // Unused for now.
     active_lig: Option<usize>,
-    /// Allows the user to move a molecule around with mouse or keyboard.
-    move_mol: Option<usize>,
-    /// For maintaining the screen plane when dragging the mol.
-    drag_pivot0: Option<Vec3F64>,
-    drag_norm: Option<Vec3F64>,
-    drag_offset: Vec3F64,
+    mol_manip: MolManip,
     md_mode: MdMode,
     /// For restoring after temprarily disabling mouse look.
     control_scheme_prev: ControlScheme,
@@ -252,10 +268,7 @@ impl Default for StateVolatile {
             md_runtime: Default::default(),
             active_peptide: Default::default(),
             active_lig: Default::default(),
-            move_mol: Default::default(),
-            drag_pivot0: Default::default(),
-            drag_norm: Default::default(),
-            drag_offset: Default::default(),
+            mol_manip: Default::default(),
             md_mode: MdMode::Peptide,
             control_scheme_prev: Default::default(),
         }
@@ -327,6 +340,16 @@ struct PopupState {
     residue_selector: bool,
 }
 
+#[derive(Default)]
+struct StateUiMd {
+    /// The state we store for this is a float, so we need to store state text too.
+    dt_input: String,
+    temp_input: String,
+    pressure_input: String,
+    simbox_pad_input: String,
+    langevin_γ: String,
+}
+
 /// Ui text fields and similar.
 #[derive(Default)]
 struct StateUi {
@@ -383,11 +406,8 @@ struct StateUi {
     /// E.g. set to original for from the mmCIF file, or Dynamics to view it after MD.
     peptide_atom_posits: PeptideAtomPosits,
     popup: PopupState,
-    /// The state we store for this is a float, so we need to store state text too.
-    md_dt_input: String,
-    md_temp_input: String,
-    md_pressure_input: String,
-    md_simbox_pad_input: String,
+    md: StateUiMd,
+
 }
 
 #[derive(Clone, PartialEq, Debug, Default, Encode, Decode)]
@@ -605,12 +625,16 @@ fn main() {
 
     // Set these UI strings for numerical values up after loading prefs
     state.volatile.md_runtime = state.to_save.num_md_steps as f32 * state.to_save.md_dt;
-    state.ui.md_dt_input = state.to_save.md_dt.to_string();
-    state.ui.md_pressure_input = (state.to_save.md_config.pressure_target as u16).to_string();
-    state.ui.md_temp_input = (state.to_save.md_config.temp_target as u16).to_string();
-    state.ui.md_simbox_pad_input = match state.to_save.md_config.sim_box {
+    state.ui.md.dt_input = state.to_save.md_dt.to_string();
+    state.ui.md.pressure_input = (state.to_save.md_config.pressure_target as u16).to_string();
+    state.ui.md.temp_input = (state.to_save.md_config.temp_target as u16).to_string();
+    state.ui.md.simbox_pad_input = match state.to_save.md_config.sim_box {
         SimBoxInit::Pad(p) => (p as u16).to_string(),
         SimBoxInit::Fixed(_) => "0".to_string(), // We currently don't use this.
+    };
+    state.ui.md.langevin_γ = match state.to_save.md_config.integrator {
+        Integrator::Langevin { gamma } | Integrator::LangevinMiddle { gamma } => gamma.to_string(),
+        _ => "0.".to_string(),
     };
 
     // We must have loaded prefs prior to this, so we know which file to open.

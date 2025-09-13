@@ -186,7 +186,6 @@ fn get_snap_name(snap: Option<usize>, snaps: &[CamSnapshot]) -> String {
     }
 }
 
-
 /// Toggles chain visibility
 fn chain_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
     // todo: For now, DRY with res selec
@@ -378,27 +377,6 @@ fn docking(
 
         if ui.button("Dock").clicked() {
             handle_docking(state, scene, ui, engine_updates);
-        }
-
-        if ui
-            .button(RichText::new("Reset lig posit").color(COLOR_HIGHLIGHT))
-            .on_hover_text(
-                "Move the ligand to its absolute coordinates, e.g. as defined in \
-                    its source Mol2 or SDF file.",
-            )
-            .clicked()
-        {
-            let lig = state.active_lig_mut().unwrap();
-            lig.reset_posits();
-            // state.mol_dynamics = None;
-
-            if !lig.common.atom_posits.is_empty() {
-                // docking_posit_update = Some(lig.common.atom_posits[0].into());
-                // docking_init_changed = true;
-            }
-
-            let center = state.molecule.as_ref().unwrap().center;
-            move_cam_to_lig(state, scene, center, engine_updates)
         }
 
         // if docking_init_changed {
@@ -974,86 +952,86 @@ fn residue_selector(state: &mut State, scene: &mut Scene, ui: &mut Ui, redraw: &
         PopupAnchor::Position(Pos2::new(60., 60.)),
         ui.layer_id(),
     )
-        .align(RectAlign::TOP)
-        .open(true)
-        .gap(4.0)
-        .show(|ui| {
-            // This is a bit fuzzy, as the size varies by residue name (Not always 1 for non-AAs), and index digits.
+    .align(RectAlign::TOP)
+    .open(true)
+    .gap(4.0)
+    .show(|ui| {
+        // This is a bit fuzzy, as the size varies by residue name (Not always 1 for non-AAs), and index digits.
 
-            let mut update_arc_center = false;
+        let mut update_arc_center = false;
 
-            if let Some(mol) = &state.molecule {
-                if let Some(chain_i) = state.ui.chain_to_pick_res {
-                    if chain_i >= mol.chains.len() {
-                        return;
-                    }
-                    let chain = &mol.chains[chain_i];
+        if let Some(mol) = &state.molecule {
+            if let Some(chain_i) = state.ui.chain_to_pick_res {
+                if chain_i >= mol.chains.len() {
+                    return;
+                }
+                let chain = &mol.chains[chain_i];
 
-                    ui.add_space(ROW_SPACING);
+                ui.add_space(ROW_SPACING);
 
-                    // todo: Wrap not working in popup?
-                    ui.horizontal_wrapped(|ui| {
-                        ui.spacing_mut().item_spacing.x = 8.0;
+                // todo: Wrap not working in popup?
+                ui.horizontal_wrapped(|ui| {
+                    ui.spacing_mut().item_spacing.x = 8.0;
 
-                        for (i, res) in mol.residues.iter().enumerate() {
-                            // For now, peptide residues only.
-                            if let ResidueType::Water = res.res_type {
-                                continue;
-                            }
+                    for (i, res) in mol.residues.iter().enumerate() {
+                        // For now, peptide residues only.
+                        if let ResidueType::Water = res.res_type {
+                            continue;
+                        }
 
-                            // Only let the user select residue from the selected chain. This should keep
-                            // it more organized, and keep UI space used down.
-                            if !chain.residues.contains(&i) {
-                                continue;
-                            }
+                        // Only let the user select residue from the selected chain. This should keep
+                        // it more organized, and keep UI space used down.
+                        if !chain.residues.contains(&i) {
+                            continue;
+                        }
 
-                            let name = match &res.res_type {
-                                ResidueType::AminoAcid(aa) => aa.to_str(AaIdent::OneLetter),
-                                ResidueType::Water => "Water".to_owned(),
-                                ResidueType::Other(name) => name.clone(),
-                            };
+                        let name = match &res.res_type {
+                            ResidueType::AminoAcid(aa) => aa.to_str(AaIdent::OneLetter),
+                            ResidueType::Water => "Water".to_owned(),
+                            ResidueType::Other(name) => name.clone(),
+                        };
 
-                            let mut color = Color32::GRAY;
-                            if let Selection::Residue(sel_i) = state.ui.selection {
-                                if sel_i == i {
-                                    color = COLOR_ACTIVE;
-                                }
-                            }
-                            if ui
-                                .button(
-                                    RichText::new(format!("{} {name}", res.serial_number))
-                                        .size(10.)
-                                        .color(color),
-                                )
-                                .clicked()
-                            {
-                                state.ui.view_sel_level = ViewSelLevel::Residue;
-                                state.ui.selection = Selection::Residue(i);
-
-                                update_arc_center = true; // Avoids borrow error.
-
-                                *redraw = true;
+                        let mut color = Color32::GRAY;
+                        if let Selection::Residue(sel_i) = state.ui.selection {
+                            if sel_i == i {
+                                color = COLOR_ACTIVE;
                             }
                         }
-                    });
-                }
-            }
+                        if ui
+                            .button(
+                                RichText::new(format!("{} {name}", res.serial_number))
+                                    .size(10.)
+                                    .color(color),
+                            )
+                            .clicked()
+                        {
+                            state.ui.view_sel_level = ViewSelLevel::Residue;
+                            state.ui.selection = Selection::Residue(i);
 
-            if update_arc_center {
-                if let ControlScheme::Arc { center } = &mut scene.input_settings.control_scheme {
-                    *center = orbit_center(state);
-                }
-            }
+                            update_arc_center = true; // Avoids borrow error.
 
-            ui.add_space(ROW_SPACING);
-
-            if ui
-                .button(RichText::new("Close").color(Color32::LIGHT_RED))
-                .clicked()
-            {
-                state.ui.popup.residue_selector = false;
+                            *redraw = true;
+                        }
+                    }
+                });
             }
-        });
+        }
+
+        if update_arc_center {
+            if let ControlScheme::Arc { center } = &mut scene.input_settings.control_scheme {
+                *center = orbit_center(state);
+            }
+        }
+
+        ui.add_space(ROW_SPACING);
+
+        if ui
+            .button(RichText::new("Close").color(Color32::LIGHT_RED))
+            .clicked()
+        {
+            state.ui.popup.residue_selector = false;
+        }
+    });
 }
 
 /// This function draws the (immediate-mode) GUI.

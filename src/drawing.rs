@@ -1,7 +1,7 @@
 //! Handles drawing molecules, atoms, bonds, and other items of interest. This
 //! adds entities to the scene based on structs.
 
-use std::{fmt, fmt::Display, io, io::ErrorKind, str::FromStr};
+use std::{fmt, fmt::Display, io, io::ErrorKind, str::FromStr, sync::OnceLock};
 
 use bincode::{Decode, Encode};
 use bio_files::{BondType, ResidueType};
@@ -15,7 +15,7 @@ use lin_alg::{
 use na_seq::Element;
 
 use crate::{
-    Selection, State, StateUi, ViewSelLevel,
+    ManipMode, Selection, State, StateUi, ViewSelLevel,
     mol_lig::MoleculeSmall,
     molecule::{Atom, AtomRole, Chain, PeptideAtomPosits, Residue, aa_color},
     reflection::ElectronDensity,
@@ -31,6 +31,9 @@ use crate::{
 
 const LIGAND_COLOR: Color = (0., 0.4, 1.);
 const LIGAND_COLOR_ANCHOR: Color = (1., 0., 1.);
+
+const COLOR_MOL_MOVING: Color = (1., 1., 1.);
+const COLOR_MOL_ROTATE: Color = (0.65, 1., 0.65);
 
 // i.e a flexible bond.
 const LIGAND_COLOR_FLEX: Color = (1., 1., 0.);
@@ -90,6 +93,12 @@ const MESH_DOCKING_SITE: usize = MESH_DOCKING_BOX;
 // Spheres look slightly better when close, but even our coarsest one leads to performance problems.
 const MESH_SURFACE_DOT: usize = MESH_CUBE;
 
+// Cache blend results.
+static LIG_C: OnceLock<Color> = OnceLock::new();
+static LIG_O: OnceLock<Color> = OnceLock::new();
+static LIG_H: OnceLock<Color> = OnceLock::new();
+static LIG_N: OnceLock<Color> = OnceLock::new();
+
 /// We use the Entity's class field to determine which entities to retain and remove.
 #[derive(Clone, Copy, PartialEq)]
 #[repr(u32)]
@@ -135,10 +144,27 @@ fn blend_color(color_0: Color, color_1: Color, portion: f32) -> Color {
     )
 }
 
+fn cache_lig_color(el: Element) -> Option<&'static OnceLock<Color>> {
+    match el {
+        Element::Carbon => Some(&LIG_C),
+        Element::Oxygen => Some(&LIG_O),
+        Element::Hydrogen => Some(&LIG_H),
+        Element::Nitrogen => Some(&LIG_N),
+        _ => None,
+    }
+}
+
 /// Make ligands stand out visually, when colored by atom.
-fn mod_color_for_ligand(color: &Color) -> Color {
+fn mod_color_for_ligand(color: &Color, el: Element) -> Color {
     let blend = (0., 0.3, 1.);
-    blend_color(*color, blend, 0.5)
+    let alpha = 0.5;
+
+    if let Some(slot) = cache_lig_color(el) {
+        slot.get_or_init(|| blend_color(*color, blend, alpha))
+            .clone()
+    } else {
+        blend_color(*color, blend, alpha)
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]
@@ -453,8 +479,6 @@ fn bond_entities(
     // vice posit 0.
     neighbor: (Vec3, bool),
 ) {
-    // todo: YOur multibond plane logic is off.
-
     let center: Vec3 = (posit_0 + posit_1) / 2.;
 
     let diff = posit_0 - posit_1;
@@ -462,7 +486,7 @@ fn bond_entities(
     let orientation = Quaternion::from_unit_vecs(UP_VEC, diff_unit);
     let dist_half = diff.magnitude() / 2.;
 
-    // Dummy not ideal.
+    // Dummy not ideal for H bonds semantically.
     if bond_type == BondType::Dummy {
         color_0 = COLOR_H_BOND;
         color_1 = COLOR_H_BOND;
@@ -742,14 +766,20 @@ pub fn draw_all_ligs(state: &State, scene: &mut Scene) {
 
     for (i, lig) in state.ligands.iter().enumerate() {
         if lig.common.visible {
-            draw_ligand(lig, i, &state.ui, scene);
+            draw_ligand(lig, i, &state.ui, state.volatile.mol_manip.mol, scene);
         }
     }
 }
 
 /// Hard-coded visuals as "sticks".
 // todo: DRY with/subset of draw_molecule?
-pub fn draw_ligand(lig: &MoleculeSmall, lig_i: usize, state_ui: &StateUi, scene: &mut Scene) {
+pub fn draw_ligand(
+    lig: &MoleculeSmall,
+    lig_i: usize,
+    state_ui: &StateUi,
+    move_mol: ManipMode,
+    scene: &mut Scene,
+) {
     // todo: You have problems with transparent objects like the view cube in conjunction
     // todo with the transparent surface; workaround to not draw the cube here.
     if state_ui.show_docking_tools && state_ui.mol_view != MoleculeView::Surface {
@@ -766,12 +796,6 @@ pub fn draw_ligand(lig: &MoleculeSmall, lig_i: usize, state_ui: &StateUi, scene:
         //     shinyness: ATOM_SHININESS,
         //     ..Default::default()
         // });
-    }
-
-    // For determining inside of rings.
-    let mut hydrogen_is = Vec::with_capacity(lig.common.atoms.len());
-    for atom in &lig.common.atoms {
-        hydrogen_is.push(atom.element == Element::Hydrogen);
     }
 
     // todo: C+P from draw_molecule. With some removed, but much repeated.
@@ -792,63 +816,92 @@ pub fn draw_ligand(lig: &MoleculeSmall, lig_i: usize, state_ui: &StateUi, scene:
         // computation.
         let neighbor_posit = match bond.bond_type {
             BondType::Aromatic | BondType::Double | BondType::Triple => {
-                let neighbor_i = find_neighbor_posit(&lig.common, bond.atom_0, bond.atom_1, &hydrogen_is);
+                let mut hydrogen_is = Vec::with_capacity(lig.common.atoms.len());
+                for atom in &lig.common.atoms {
+                    hydrogen_is.push(atom.element == Element::Hydrogen);
+                }
+
+                let neighbor_i =
+                    find_neighbor_posit(&lig.common, bond.atom_0, bond.atom_1, &hydrogen_is);
                 match neighbor_i {
                     Some((i, p1)) => (lig.common.atom_posits[i].into(), p1),
                     None => (lig.common.atom_posits[0].into(), false),
                 }
             }
-            _ => (Vec3::new_zero(), false)
+            _ => (Vec3::new_zero(), false),
         };
 
+        let mut color_0 = (0., 0., 0.);
+        let mut color_1 = (0., 0., 0.);
+        let mut manip_active = false;
 
-        let mut color_0 = atom_color(
-            atom_0,
-            lig_i,
-            bond.atom_0,
-            &[],
-            0,
-            &state_ui.selection,
-            ViewSelLevel::Atom, // Always color ligands by atom.
-            false,
-            false,
-            false,
-            MolType::Ligand,
-        );
-        let mut color_1 = atom_color(
-            atom_1,
-            lig_i,
-            bond.atom_1,
-            &[],
-            0,
-            &state_ui.selection,
-            // state.ui.view_sel_level,
-            ViewSelLevel::Atom, // Always color ligands by atom.
-            false,
-            false,
-            false,
-            MolType::Ligand,
-        );
-
-        if color_0 != COLOR_SELECTED {
-            color_0 = mod_color_for_ligand(&color_0);
+        match move_mol {
+            ManipMode::Move(i) => {
+                if i == lig_i {
+                    color_0 = COLOR_MOL_MOVING;
+                    color_1 = COLOR_MOL_MOVING;
+                    manip_active = true;
+                }
+            }
+            ManipMode::Rotate(i) => {
+                if i == lig_i {
+                    color_0 = COLOR_MOL_ROTATE;
+                    color_1 = COLOR_MOL_ROTATE;
+                    manip_active = true;
+                }
+            }
+            ManipMode::None => (),
         }
-        if color_1 != COLOR_SELECTED {
-            color_1 = mod_color_for_ligand(&color_1);
 
-            // if lig.flexible_bonds.contains(&i) {
-            //     color_0 = LIGAND_COLOR_FLEX;
-            //     color_1 = LIGAND_COLOR_FLEX;
-            // }
+        if !manip_active {
+            color_0 = atom_color(
+                atom_0,
+                lig_i,
+                bond.atom_0,
+                &[],
+                0,
+                &state_ui.selection,
+                ViewSelLevel::Atom, // Always color ligands by atom.
+                false,
+                false,
+                false,
+                MolType::Ligand,
+            );
+            color_1 = atom_color(
+                atom_1,
+                lig_i,
+                bond.atom_1,
+                &[],
+                0,
+                &state_ui.selection,
+                // state.ui.view_sel_level,
+                ViewSelLevel::Atom, // Always color ligands by atom.
+                false,
+                false,
+                false,
+                MolType::Ligand,
+            );
 
-            // Highlight the anchor.
-            // if bond.atom_0 == lig.anchor_atom {
-            //     color_0 = LIGAND_COLOR_ANCHOR;
-            // }
-            //
-            // if bond.atom_1 == lig.anchor_atom {
-            //     color_1 = LIGAND_COLOR_ANCHOR;
-            // }
+            if color_0 != COLOR_SELECTED {
+                color_0 = mod_color_for_ligand(&color_0, atom_0.element);
+            }
+            if color_1 != COLOR_SELECTED {
+                color_1 = mod_color_for_ligand(&color_1, atom_1.element);
+
+                // if lig.flexible_bonds.contains(&i) {
+                //     color_0 = LIGAND_COLOR_FLEX;
+                //     color_1 = LIGAND_COLOR_FLEX;
+                // }
+
+                // Highlight the anchor.
+                // if bond.atom_0 == lig.anchor_atom {
+                //     color_0 = LIGAND_COLOR_ANCHOR;
+                // }
+                //
+                // if bond.atom_1 == lig.anchor_atom {
+                //     color_1 = LIGAND_COLOR_ANCHOR;
+                // }
+            }
         }
 
         bond_entities(
