@@ -252,6 +252,7 @@ fn draw_cli(
     scene: &mut Scene,
     engine_updates: &mut EngineUpdates,
     redraw_mol: &mut bool,
+    redraw_lig: &mut bool,
     reset_cam: &mut bool,
     ui: &mut Ui,
 ) {
@@ -339,7 +340,7 @@ fn draw_cli(
         }
 
         ui.add_space(COL_SPACING);
-        residue_search(state, scene, redraw_mol, ui);
+        residue_search(state, scene, redraw_mol, redraw_lig, ui);
     });
 }
 
@@ -392,7 +393,13 @@ fn docking(
     // }
 }
 
-fn residue_search(state: &mut State, scene: &mut Scene, redraw: &mut bool, ui: &mut Ui) {
+fn residue_search(
+    state: &mut State,
+    scene: &mut Scene,
+    redraw: &mut bool,
+    redraw_lig: &mut bool,
+    ui: &mut Ui,
+) {
     let (btn_text_p, btn_text_n, search_text) = match state.ui.view_sel_level {
         ViewSelLevel::Atom => ("Prev atom", "Next atom", "Find atom:"),
         ViewSelLevel::Residue => ("Prev AA", "Next AA", "Find res:"),
@@ -407,14 +414,22 @@ fn residue_search(state: &mut State, scene: &mut Scene, redraw: &mut bool, ui: &
         *redraw = true;
     }
 
-    if state.molecule.is_some() {
+    if state.molecule.is_some() || !state.ligands.is_empty() {
         if ui
             .button(btn_text_p)
             .on_hover_text("Hotkey: Left arrow")
             .clicked()
         {
             cycle_selected(state, scene, true);
-            *redraw = true;
+            if matches!(
+                state.ui.selection,
+                Selection::Atom(_) | Selection::Residue(_)
+            ) {
+                *redraw = true;
+            }
+            if matches!(state.ui.selection, Selection::AtomLig(_)) {
+                *redraw_lig = true;
+            }
         }
         // todo: DRY
 
@@ -424,7 +439,15 @@ fn residue_search(state: &mut State, scene: &mut Scene, redraw: &mut bool, ui: &
             .clicked()
         {
             cycle_selected(state, scene, false);
-            *redraw = true;
+            if matches!(
+                state.ui.selection,
+                Selection::Atom(_) | Selection::Residue(_)
+            ) {
+                *redraw = true;
+            }
+            if matches!(state.ui.selection, Selection::AtomLig(_)) {
+                *redraw_lig = true;
+            }
         }
 
         ui.add_space(COL_SPACING * 2.);
@@ -1096,6 +1119,17 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     close_peptide(state, scene, &mut engine_updates);
                 }
                 ui.add_space(COL_SPACING);
+
+                // todo: Change the location of this
+                ui.label("pH:");
+                if ui
+                    .add_sized([20., Ui::available_height(ui)], TextEdit::singleline(&mut state.ui.ph_input))
+                    .changed()
+                {
+                    if let Ok(v) =&mut state.ui.ph_input.parse::<f32>() {
+                        state.to_save.ph = *v;
+                    }
+                }
             }
 
             let color_open_tools = if state.molecule.is_none() {
@@ -1440,6 +1474,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             scene,
             &mut engine_updates,
             &mut redraw_mol,
+            &mut redraw_lig,
             &mut reset_cam,
             ui,
         );

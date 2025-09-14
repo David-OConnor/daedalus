@@ -21,7 +21,7 @@ use bio_files::{
 };
 use dynamics::{
     Dihedral, ParamError, ProtFFTypeChargeMap,
-    params::{populate_peptide_ff_and_q, prepare_peptide},
+    params::{populate_peptide_ff_and_q, prepare_peptide_mmcif},
     populate_hydrogens_dihedrals,
 };
 use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
@@ -57,6 +57,7 @@ pub struct MoleculeCommon {
     /// but is safer and easier than trying to sync Vec indices.
     pub visible: bool,
     pub path: Option<PathBuf>,
+    pub selected_for_md: bool,
 }
 
 impl Default for MoleculeCommon {
@@ -71,6 +72,7 @@ impl Default for MoleculeCommon {
             atom_posits: Vec::new(),
             visible: true,
             path: None,
+            selected_for_md: false,
         }
     }
 }
@@ -787,22 +789,9 @@ impl MoleculePeptide {
         // todo; For now, you are skipping both. Example when this comes up: Ligands.
         // Attempt to only populate Hydrogens if there aren't many.
 
-        let mut bonds_ = Vec::new();
-
         // Add hydrogens, FF types, partial charge, and bonds.
-        let dihedrals = prepare_peptide(
-            &mut m.atoms,
-            &mut bonds_,
-            &mut m.residues,
-            &mut m.chains,
-            ff_map,
-            ph,
-        )
-        .unwrap_or_else(|e| {
-            eprintln!("Unable to populate Hydrogens and residue dihedral angles: {e:?}");
-            // todo: Not ideal handling. Should populate with None.
-            vec![Default::default(); m.residues.len()]
-        });
+        let (bonds_, dihedrals) = prepare_peptide_mmcif(&mut m, ff_map, ph)
+            .map_err(|e| io::Error::new(ErrorKind::InvalidData, e.descrip))?;
 
         let mut atoms: Vec<_> = m.atoms.iter().map(|a| a.into()).collect();
 

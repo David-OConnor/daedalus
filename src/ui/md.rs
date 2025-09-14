@@ -10,8 +10,11 @@ use graphics::{EngineUpdates, Scene};
 use crate::{
     State,
     drawing::{draw_peptide, draw_water},
-    md::{build_dynamics_docking, build_dynamics_peptide},
-    ui::{COL_SPACING, cam::move_cam_to_lig, misc, misc::MdMode, num_field},
+    md::build_dynamics,
+    ui::{
+        COL_SPACING, COLOR_ACTIVE, COLOR_INACTIVE, cam::move_cam_to_lig, misc, misc::MdMode,
+        num_field,
+    },
     util::handle_err,
 };
 
@@ -24,117 +27,120 @@ pub fn md_setup(
 ) {
     misc::section_box().show(ui, |ui| {
         ui.horizontal(|ui| {
-            if ui
-                .button(RichText::new("Run MD on peptide").color(Color32::GOLD))
-                .clicked() {
-                let mol = state.molecule.as_mut().unwrap();
-                state.volatile.md_mode = MdMode::Peptide;
-
-                match build_dynamics_peptide(
-                    &state.dev,
-                    mol,
-                    &state.ff_param_set,
-                    &state.to_save.md_config,
-                    state.to_save.num_md_steps,
-                    state.to_save.md_dt,
-                ) {
-                    Ok(md) => {
-                        let snap = &md.snapshots[0];
-                        draw_peptide(state, scene);
-
-                        draw_water(
-                            scene,
-                            &snap.water_o_posits,
-                            &snap.water_h0_posits,
-                            &snap.water_h1_posits,
-                            state.ui.visibility.hide_water
-                        );
-
-                        state.mol_dynamics = Some(md);
-                        state.ui.current_snapshot = 0;
-                    }
-                    Err(e) => handle_err(&mut state.ui, e.descrip),
+            ui.label("Select for MD:");
+            if let Some(mol) = &state.molecule {
+                let color = if mol.common.selected_for_md { COLOR_ACTIVE } else {COLOR_INACTIVE };
+                if ui.button(RichText::new(&mol.common.ident).color(color)).clicked() {
                 }
             }
 
-            if state.active_lig().is_some() {
-                ui.add_space(COL_SPACING / 2.);
+            for mol in &state.ligands {
+                let color = if mol.common.selected_for_md { COLOR_ACTIVE } else {COLOR_INACTIVE };
+                if ui.button(RichText::new(&mol.common.ident).color(color)).clicked() {
+                }
+            }
 
-                let run_clicked = ui
-                    .button(RichText::new("Run MD docking").color(Color32::GOLD))
-                    .on_hover_text("Run a molecular dynamics simulation on the ligand. The peptide atoms apply\
-            Coulomb and Van der Waals forces, but do not move themselves. This is intended to be run\
-            with the ligand positioned near a receptor site.")
-                    .clicked();
+            // if ui
+            //     .button(RichText::new("Run MD").color(Color32::GOLD))
+            //     .clicked() {
+            //     let mol = state.molecule.as_mut().unwrap();
+            //     state.volatile.md_mode = MdMode::Peptide;
+            //
+            //     match build_dynamics(
+            //         &state.dev,
+            //         mol,
+            //         &state.ff_param_set,
+            //         &state.to_save.md_config,
+            //         state.to_save.num_md_steps,
+            //         state.to_save.md_dt,
+            //     ) {
+            //         Ok(md) => {
+            //             let snap = &md.snapshots[0];
+            //             draw_peptide(state, scene);
+            //
+            //             draw_water(
+            //                 scene,
+            //                 &snap.water_o_posits,
+            //                 &snap.water_h0_posits,
+            //                 &snap.water_h1_posits,
+            //                 state.ui.visibility.hide_water
+            //             );
+            //
+            //             state.mol_dynamics = Some(md);
+            //             state.ui.current_snapshot = 0;
+            //         }
+            //         Err(e) => handle_err(&mut state.ui, e.descrip),
+            //     }
+            // }
 
-                state.volatile.md_mode = MdMode::Docking;
+            ui.add_space(COL_SPACING / 2.);
 
+            let run_clicked = ui
+                .button(RichText::new("Run MD docking").color(Color32::GOLD))
+                .on_hover_text("Run a molecular dynamics simulation on the ligand. The peptide atoms apply\
+        Coulomb and Van der Waals forces, but do not move themselves. This is intended to be run\
+        with the ligand positioned near a receptor site.")
+                .clicked();
+
+            if run_clicked {
                 let mut ready_to_run = true;
 
-                if run_clicked {
-                    if state.active_lig().is_none() {
-                        return;
+                // Check that we have FF params and mol-specific parameters.
+                for lig in &state.ligands {
+                    if !lig.common.selected_for_md {
+                        continue
                     }
-
-                    {
-                        let lig = state.active_lig().unwrap();
-                        if !lig.ff_params_loaded || !lig.frcmod_loaded {
-                            state.ui.popup.show_get_geostd = true;
-                            ready_to_run = false;
-                        }
+                    if !lig.ff_params_loaded || !lig.frcmod_loaded {
+                        state.ui.popup.show_get_geostd = true;
+                        ready_to_run = false;
                     }
+                }
 
-                    if ready_to_run {
+                if ready_to_run {
+                    // todo: Set a loading indicator, and trigger the build next GUI frame.
+                    move_cam_to_lig(state, scene, state.molecule.as_ref().unwrap().center, engine_updates);
 
-                        // todo: Set a loading indicator, and trigger the build next GUI frame.
-                        move_cam_to_lig(state, scene, state.molecule.as_ref().unwrap().center, engine_updates);
+                    // todo temp
+                    state.to_save.md_config.snapshot_handlers.push(SnapshotHandler {
+                        ratio: 1,
+                        save_type: SaveType::Dcd(PathBuf::from("test.dcd")),
+                    });
 
-                        let lig_ident = &state.ligands[state.volatile.active_lig.unwrap()].common.ident;
+                    // Filter molecules for docking by if they're selected.
+                    // mut so we can move their posits in the initial snapshot change.
+                    let ligs: Vec<_> = state.ligands.iter_mut().filter(|l| l.common.selected_for_md).collect();
 
-                        let lig_specific_params = match state.lig_specific_params.get(lig_ident) {
-                            Some(p) => p,
-                            None => {
-                                handle_err(&mut state.ui, "Missing ligand-specific docking parameters; aborting.".to_string());
-                                return;
-                            }
-                        };
+                    let mol = match &state.molecule {
+                        Some(m) => if m.common.selected_for_md { Some(m) } else { None },
+                        None => None,
+                    };
+                    match build_dynamics(
+                        &state.dev,
+                        ligs,
+                        mol,
+                        &state.ff_param_set,
+                        &state.lig_specific_params,
+                        &state.to_save.md_config,
+                        state.to_save.num_md_steps,
+                        state.to_save.md_dt,
+                    ) {
+                        Ok(md) => {
+                            let snap = &md.snapshots[0];
 
-                        // todo temp
-                        state.to_save.md_config.snapshot_handlers.push(SnapshotHandler {
-                            ratio: 1,
-                            save_type: SaveType::Dcd(PathBuf::from("test.dcd")),
-                        });
+                            draw_peptide(state, scene);
+                            draw_water(
+                                scene,
+                                &snap.water_o_posits,
+                                &snap.water_h0_posits,
+                                &snap.water_h1_posits,
+                                state.ui.visibility.hide_water
+                            );
 
-                        let mol = state.molecule.as_mut().unwrap();
-                        match build_dynamics_docking(
-                            &state.dev,
-                            &mut state.ligands,
-                            state.volatile.active_lig.unwrap(),
-                            mol,
-                            &state.ff_param_set,
-                            lig_specific_params,
-                            &state.to_save.md_config,
-                            state.to_save.num_md_steps,
-                            state.to_save.md_dt,
-                        ) {
-                            Ok(md) => {
-                                let snap = &md.snapshots[0];
-
-                                draw_peptide(state, scene);
-                                draw_water(
-                                    scene,
-                                    &snap.water_o_posits,
-                                    &snap.water_h0_posits,
-                                    &snap.water_h1_posits,
-                                    state.ui.visibility.hide_water
-                                );
-
-                                state.ui.current_snapshot = 0;
-                                engine_updates.entities = true;
-                                state.mol_dynamics = Some(md);
-                            }
-                            Err(e) => handle_err(&mut state.ui, e.descrip),
+                            state.ui.current_snapshot = 0;
+                            engine_updates.entities = true;
+                            state.mol_dynamics = Some(md);
                         }
+                        Err(e) => handle_err(&mut state.ui, e.descrip),
                     }
                 }
             }

@@ -410,6 +410,7 @@ struct StateUi {
     peptide_atom_posits: PeptideAtomPosits,
     popup: PopupState,
     md: StateUiMd,
+    ph_input: String,
 }
 
 #[derive(Clone, PartialEq, Debug, Default, Encode, Decode)]
@@ -627,6 +628,7 @@ fn main() {
 
     // Set these UI strings for numerical values up after loading prefs
     state.volatile.md_runtime = state.to_save.num_md_steps as f32 * state.to_save.md_dt;
+    state.ui.ph_input = state.to_save.ph.to_string();
     state.ui.md.dt_input = state.to_save.md_dt.to_string();
     state.ui.md.pressure_input = (state.to_save.md_config.pressure_target as u16).to_string();
     state.ui.md.temp_input = (state.to_save.md_config.temp_target as u16).to_string();
