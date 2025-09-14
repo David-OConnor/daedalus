@@ -275,7 +275,7 @@ impl DensityRect {
     /// We assume `atom_posits` has been filtered to not include Hydrogens, for performance reasons.
     pub fn make_densities(
         &self,
-        dev: &ComputationDevice,
+        dev: &(ComputationDevice, Option<Arc<CudaModule>>),
         atom_posits: &[Vec3],
         cell: &UnitCell,
         dist_thresh: f64,
@@ -317,7 +317,7 @@ impl DensityRect {
         // CPU without rayon: 20,000ms
         // CPU, with rayon (No SIMD): 780ms
         // GPU: 54ms
-        let out = match dev {
+        let out = match &dev.0 {
             ComputationDevice::Cpu => self.make_densities_inner(
                 triplets,
                 &atom_posits_sample,
@@ -327,9 +327,9 @@ impl DensityRect {
                 ny,
             ),
             #[cfg(feature = "cuda")]
-            ComputationDevice::Gpu((stream, module)) => self.make_densities_inner_gpu(
+            ComputationDevice::Gpu((stream, _mod_dynamics)) => self.make_densities_inner_gpu(
                 stream,
-                module,
+                dev.1.as_ref().unwrap(),
                 triplets,
                 &atom_posits_sample,
                 step_vecs,

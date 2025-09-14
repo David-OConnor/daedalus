@@ -465,7 +465,8 @@ struct State {
     pub babel_avail: bool,
     pub docking_ready: bool,
     // pub bh_config: BhConfig,
-    pub dev: ComputationDevice,
+    // todo: Until you find a more elegant way, this will work.
+    pub dev: (ComputationDevice, Option<Arc<CudaModule>>),
     pub mol_dynamics: Option<MdState>,
     // todo: Combine these params in a single struct.
     pub ff_param_set: FfParamSet,
@@ -539,14 +540,7 @@ impl State {
 fn main() {
     #[cfg(feature = "cuda")]
     let dev = {
-        // We're compiling without the cuda runtime requirement for now.
-
-        // let runtime_v = cudarc::runtime::result::version::get_runtime_version();
-        // let driver_v = cudarc::runtime::result::version::get_driver_version();
-        // println!("CUDA runtime: {runtime_v:?}. Driver: {driver_v:?}");
-
         if cudarc::driver::result::init().is_ok() {
-            // if runtime_v.is_ok() && driver_v.is_ok() {
             // This is compiled in `build_`.
             let ctx = CudaContext::new(0).unwrap();
             let stream = ctx.default_stream();
@@ -563,25 +557,25 @@ fn main() {
                     // let func_lj_V = module.load_function("lj_V_kernel").unwrap();
                     // let func_lj_force = module.load_function("lj_force_kernel").unwrap();
 
-                    ComputationDevice::Gpu((stream, m))
+                    (ComputationDevice::Gpu((stream, m)), Some(module.unwrap()))
                 }
                 Err(e) => {
                     eprintln!(
                         "Error loading CUDA module: {}; not using CUDA. Error: {e}",
                         dynamics::PTX
                     );
-                    ComputationDevice::Cpu
+                    (ComputationDevice::Cpu, None)
                 }
             }
         } else {
-            ComputationDevice::Cpu
+            (ComputationDevice::Cpu, None)
         }
     };
 
     #[cfg(not(feature = "cuda"))]
-    let dev = ComputationDevice::Cpu;
+    let dev = (ComputationDevice::Cpu, None);
 
-    // let dev = ComputationDevice::Cpu; // todo temp.
+    // let dev = (ComputationDevice::Cpu, None);
 
     #[cfg(target_arch = "x86_64")]
     {

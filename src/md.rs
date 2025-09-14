@@ -1,29 +1,24 @@
 //! An interface to dynamics library.
 
-use std::{collections::HashMap, time::Instant};
+use std::{collections::HashMap, sync::Arc, time::Instant};
 
 use bio_files::{create_bonds, md_params::ForceFieldParams};
+use cudarc::driver::CudaModule;
 use dynamics::{
-    AtomDynamics, ComputationDevice, FfMolType, MdConfig, MdState, MolDynamics, ParamError,
-    params::FfParamSet, snapshot::Snapshot,
+    ComputationDevice, FfMolType, MdConfig, MdState, MolDynamics, ParamError, params::FfParamSet,
+    snapshot::Snapshot,
 };
 
-use crate::{docking_v2::ConformationType, mol_lig::MoleculeSmall, molecule::MoleculePeptide};
+use crate::{mol_lig::MoleculeSmall, molecule::MoleculePeptide};
 
 // Å. Static atoms must be at least this close to a dynamic atom at the start of MD to be counted.
 // Set this wide to take into account motion.
 const STATIC_ATOM_DIST_THRESH: f64 = 8.; // todo: Increase (?) A/R.
 
-/// Exclude hetero atoms from the peptide, and optionally only include ones near
-/// a ligand.
-fn process_peptide() -> Vec<AtomDynamics> {
-    Vec::new()
-}
-
 /// Perform MD on the ligand, with nearby protein (receptor) atoms, from the docking setup as static
 /// non-bonded contributors. (Vdw and coulomb)
 pub fn build_dynamics(
-    dev: &ComputationDevice,
+    dev: &(ComputationDevice, Option<Arc<CudaModule>>),
     ligs: Vec<&mut MoleculeSmall>,
     peptide: Option<&MoleculePeptide>,
     param_set: &FfParamSet,
@@ -96,13 +91,13 @@ pub fn build_dynamics(
     }
 
     println!("Initializing MD state...");
-    let mut md_state = MdState::new(cfg, &mols, param_set)?;
+    let mut md_state = MdState::new(&dev.0, cfg, &mols, param_set)?;
     println!("Done.");
 
     let start = Instant::now();
 
     for _ in 0..n_steps {
-        md_state.step(dev, dt);
+        md_state.step(&dev.0, dt);
     }
 
     let elapsed = start.elapsed();

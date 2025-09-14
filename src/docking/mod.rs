@@ -40,7 +40,7 @@
 // 4MZI/160355 docking example: https://www.youtube.com/watch?v=vU2aNuP3Y8I
 
 use std::{f32::consts::TAU, time::Instant};
-
+use std::sync::Arc;
 use bincode::{Decode, Encode};
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use lin_alg::f32::{f32x8, pack_vec3x8, pack_x8};
@@ -692,7 +692,7 @@ fn vary_pose(pose: &Pose) -> Vec<Pose> {
 /// Note: We use the term `receptor` here vice `target`, as `target` is also used in terms of
 /// calculating forces between pairs. (These targets may or may not align!)
 pub fn find_optimal_pose(
-    dev: &ComputationDevice,
+    dev: &(ComputationDevice, Option<Arc<CudaModule>>),
     setup: &DockingSetup,
     lig: &mut MoleculeSmall,
 ) -> (Pose, BindingEnergy) {

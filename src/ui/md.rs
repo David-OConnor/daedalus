@@ -28,58 +28,29 @@ pub fn md_setup(
     misc::section_box().show(ui, |ui| {
         ui.horizontal(|ui| {
             ui.label("Select for MD:");
-            if let Some(mol) = &state.molecule {
+            if let Some(mol) = &mut state.molecule {
                 let color = if mol.common.selected_for_md { COLOR_ACTIVE } else {COLOR_INACTIVE };
-                if ui.button(RichText::new(&mol.common.ident).color(color)).clicked() {
+                if ui.button(RichText::new(&mol.common.ident).color(color))
+                    .on_hover_text("Toggle if we use this molecule for MD.")
+                    .clicked() {
+                    mol.common.selected_for_md = !mol.common.selected_for_md;
                 }
             }
 
-            for mol in &state.ligands {
+            for mol in &mut state.ligands {
                 let color = if mol.common.selected_for_md { COLOR_ACTIVE } else {COLOR_INACTIVE };
-                if ui.button(RichText::new(&mol.common.ident).color(color)).clicked() {
+                if ui.button(RichText::new(&mol.common.ident).color(color))
+                    .on_hover_text("Toggle if we use this molecule for MD.")
+                    .clicked() {
+                    mol.common.selected_for_md = !mol.common.selected_for_md;
                 }
             }
-
-            // if ui
-            //     .button(RichText::new("Run MD").color(Color32::GOLD))
-            //     .clicked() {
-            //     let mol = state.molecule.as_mut().unwrap();
-            //     state.volatile.md_mode = MdMode::Peptide;
-            //
-            //     match build_dynamics(
-            //         &state.dev,
-            //         mol,
-            //         &state.ff_param_set,
-            //         &state.to_save.md_config,
-            //         state.to_save.num_md_steps,
-            //         state.to_save.md_dt,
-            //     ) {
-            //         Ok(md) => {
-            //             let snap = &md.snapshots[0];
-            //             draw_peptide(state, scene);
-            //
-            //             draw_water(
-            //                 scene,
-            //                 &snap.water_o_posits,
-            //                 &snap.water_h0_posits,
-            //                 &snap.water_h1_posits,
-            //                 state.ui.visibility.hide_water
-            //             );
-            //
-            //             state.mol_dynamics = Some(md);
-            //             state.ui.current_snapshot = 0;
-            //         }
-            //         Err(e) => handle_err(&mut state.ui, e.descrip),
-            //     }
-            // }
 
             ui.add_space(COL_SPACING / 2.);
 
             let run_clicked = ui
-                .button(RichText::new("Run MD docking").color(Color32::GOLD))
-                .on_hover_text("Run a molecular dynamics simulation on the ligand. The peptide atoms apply\
-        Coulomb and Van der Waals forces, but do not move themselves. This is intended to be run\
-        with the ligand positioned near a receptor site.")
+                .button(RichText::new("Run MD").color(Color32::GOLD))
+                .on_hover_text("Run a molecular dynamics simulation on all molecules selected.")
                 .clicked();
 
             if run_clicked {
@@ -145,7 +116,7 @@ pub fn md_setup(
                 }
             }
 
-            match &state.dev {
+            match &state.dev.0 {
                 ComputationDevice::Cpu => {
                     ui.label(RichText::new("CPU"));
                 }
