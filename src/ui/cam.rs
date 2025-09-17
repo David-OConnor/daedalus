@@ -312,25 +312,16 @@ pub fn cam_snapshots(
 pub fn move_cam_to_lig(
     // state_ui: &mut StateUi,
     state: &mut State,
-    // snap: &mut  Option<usize>,
     scene: &mut Scene,
-    // lig: &MoleculeSmall,
     mol_center: lin_alg::f64::Vec3,
     engine_updates: &mut EngineUpdates,
 ) {
     let Some(lig) = state.active_lig_mut() else {
         return;
     };
-    // if lig.anchor_atom >= lig.common.atoms.len() {
-    //     handle_err(
-    //         state_ui,
-    //         "Problem positioning ligand atoms. Len shorter than anchor.".to_owned(),
-    //     );
-    // } else {
 
-    // lig.position_atoms(None);
-
-    let lig_pos: Vec3 = lig.common.atom_posits[0].into();
+    // todo: Cache centroid.
+    let lig_pos: Vec3 = lig.centroid().into();
     let ctr: Vec3 = mol_center.into();
 
     cam_look_at_outside(&mut scene.camera, lig_pos, ctr);
@@ -341,6 +332,26 @@ pub fn move_cam_to_lig(
     engine_updates.lighting = true;
 
     state.ui.cam_snapshot = None;
-    // *snap = None;
-    // }
+}
+
+/// DRY with above. Can be more amenable to the borrow checker in some cases.
+pub fn move_cam_to_lig2(
+    lig: &MoleculeSmall,
+    cam_snapshot: &mut Option<usize>,
+    scene: &mut Scene,
+    mol_center: lin_alg::f64::Vec3,
+    engine_updates: &mut EngineUpdates,
+) {
+    // todo: Cache centroid.
+    let lig_pos: Vec3 = lig.centroid().into();
+    let ctr: Vec3 = mol_center.into();
+
+    cam_look_at_outside(&mut scene.camera, lig_pos, ctr);
+
+    engine_updates.camera = true;
+
+    set_flashlight(scene);
+    engine_updates.lighting = true;
+
+    *cam_snapshot = None;
 }

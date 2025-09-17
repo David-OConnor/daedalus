@@ -245,7 +245,7 @@ impl Display for MoleculeView {
 }
 
 /// A linear color map using the viridis scheme.
-fn color_viridis(i: usize, min: usize, max: usize) -> Color {
+pub fn color_viridis(i: usize, min: usize, max: usize) -> Color {
     // Normalize i to [0.0, 1.0]
     let t = if max > min {
         // Compute as f32 and clamp to [0,1]

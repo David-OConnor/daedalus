@@ -34,7 +34,7 @@ use crate::{
     mol_lig::MoleculeSmall,
     nucleic_acid::MoleculeNucleicAcid,
     reflection::{DensityRect, ElectronDensity, ReflectionsData},
-    util::mol_center_size,
+    util::{handle_err, mol_center_size},
 };
 
 /// Contains fields shared by all molecule types.
@@ -801,10 +801,15 @@ impl MoleculePeptide {
         }
 
         let mut residues = Vec::with_capacity(m.residues.len());
-        for (i, res) in m.residues.iter().enumerate() {
-            let mut res = Residue::from_generic(res, &atoms)?;
-            res.dihedral = Some(dihedrals[i].clone());
-            residues.push(res);
+
+        if dihedrals.len() == m.residues.len() {
+            for (i, res) in m.residues.iter().enumerate() {
+                let mut res = Residue::from_generic(res, &atoms)?;
+                res.dihedral = Some(dihedrals[i].clone());
+                residues.push(res);
+            }
+        } else {
+            eprintln!("Error: Problem generating dihedrals.");
         }
 
         let mut chains = Vec::with_capacity(m.chains.len());

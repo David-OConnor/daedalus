@@ -14,7 +14,8 @@ use crate::{
     molecule::{Atom, MoleculeGenericRef, MoleculePeptide, Residue, aa_color},
     ui::{
         COL_SPACING, COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_HIGHLIGHT, COLOR_INACTIVE,
-        cam::move_cam_to_lig, misc, mol_descrip,
+        cam::{move_cam_to_lig, move_cam_to_lig2},
+        misc, mol_descrip,
     },
     util::{handle_err, handle_success, make_egui_color, move_lig_to_res},
 };
@@ -339,6 +340,81 @@ pub fn disp_lig_data(
                 Selection::Residue(sel_i) => Some(&mol.residues[sel_i]),
                 _ => None,
             };
+
+            let Some(mol) = &state.molecule else {
+                return;
+            };
+
+            // let mut lig_atom_count = 0;
+            // if let Some(lig) = &state.active_lig() {
+            //     lig_atom_count = lig.common.atoms.len();
+            // }
+
+            for res in &mol.het_residues {
+                // Note: This is crude.
+                if (res.atoms.len() - lig.common.atoms.len()) < 5 {
+                    // todo: Don't list multiple; pick teh closest, at least in len.
+                    let name = match &res.res_type {
+                        ResidueType::Other(name) => name,
+                        _ => "hetero residue",
+                    };
+                    ui.add_space(COL_SPACING / 2.);
+
+                    if ui
+                        .button(RichText::new(format!("Move lig to {name}")).color(COLOR_HIGHLIGHT))
+                        .on_hover_text("Move the ligand to be colocated with this residue. this is intended to \
+                    be used to synchronize the ligand with a pre-positioned hetero residue in the protein file, e.g. \
+                    prior to docking. In addition to moving \
+                    its center, this attempts to align each atom with its equivalent on the residue.")
+                        .clicked()
+                    {
+                        let _docking_center = move_lig_to_res(lig, mol, res);
+
+                        move_cam_to_lig2(
+                            lig,
+                            &mut state.ui.cam_snapshot,
+                            scene,
+                            mol.center,
+                            engine_updates,
+                        );
+
+                        *redraw_lig = true;
+                    }
+                }
+            }
+
+            if !matches!(
+            state.ui.selection,
+            Selection::None | Selection::AtomLig(_)
+        ) {
+                if ui
+                    .button(RichText::new("Move lig to sel").color(COLOR_HIGHLIGHT))
+                    .on_hover_text("Re-position the ligand to be colacated with the selected atom or residue.")
+                    .clicked()
+                {
+                    let peptide = &state.molecule.as_ref().unwrap();
+                    let atom_sel = peptide.get_sel_atom(&state.ui.selection);
+                    state.mol_dynamics = None;
+
+                    if let Some(sel_atom) = atom_sel {
+
+                        let diff = sel_atom.posit - lig.centroid();
+                        for p in &mut lig.common.atom_posits{
+                            *p += diff;
+                        }
+
+                        move_cam_to_lig2(
+                            lig,
+                            &mut state.ui.cam_snapshot,
+                            scene,
+                            mol.center,
+                            engine_updates,
+                        );
+
+                        *redraw_lig = true;
+                    }
+                }
+            }
 
             if let Some(res) = res_selected {
                 if ui

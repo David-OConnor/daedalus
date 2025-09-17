@@ -1,15 +1,21 @@
 //! Misc utility-related UI functionality.
 
+use bio_files::ResidueType;
 use egui::{Color32, ComboBox, CornerRadius, Frame, Margin, RichText, Slider, Stroke, Ui};
 use graphics::{EngineUpdates, Scene};
 const COLOR_SECTION_BOX: Color32 = Color32::from_rgb(100, 100, 140);
 
 use crate::{
-    State,
+    Selection, State,
+    docking_v2::ConformationType,
     drawing::{draw_all_ligs, draw_peptide, draw_water},
     md::{change_snapshot, change_snapshot_form2},
     molecule::PeptideAtomPosits,
-    ui::{COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_INACTIVE, ROW_SPACING},
+    ui::{
+        COL_SPACING, COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_HIGHLIGHT, COLOR_INACTIVE,
+        ROW_SPACING, cam::move_cam_to_lig,
+    },
+    util::move_lig_to_res,
 };
 
 /// A checkbox to show or hide a category.
@@ -272,70 +278,4 @@ pub fn handle_docking(
     //     }
     // }
     //
-    // if let Some(mol) = &state.molecule {
-    //     for res in &mol.het_residues {
-    //         // Note: This is crude.
-    //         if (res.atoms.len() - lig.common.atoms.len()) < 5 {
-    //             // todo: Don't list multiple; pick teh closest, at least in len.
-    //             let name = match &res.res_type {
-    //                 ResidueType::Other(name) => name,
-    //                 _ => "hetero residue",
-    //             };
-    //             ui.add_space(COL_SPACING / 2.);
-    //
-    //             if ui
-    //                 .button(RichText::new(format!("Move lig to {name}")).color(COLOR_HIGHLIGHT))
-    //                 .on_hover_text("Move the ligand to be colocated with this residue. this is intended to \
-    //                     be used to synchronize the ligand with a pre-positioned hetero residue in the protein file, e.g. \
-    //                     prior to docking. In addition to moving \
-    //                     its center, this attempts to align each atom with its equivalent on the residue.")
-    //                 .clicked()
-    //             {
-    //                 let docking_center = move_lig_to_res(lig, mol, res);
-    //                 state.mol_dynamics = None;
-    //
-    //                 docking_posit_update = Some(docking_center);
-    //                 docking_init_changed = true;
-    //
-    //                 move_cam_to_lig(
-    //                     state,
-    //                     scene,
-    //                     mol.center,
-    //                     engine_updates,
-    //                 )
-    //             }
-    //         }
-    //     }
-    // }
-    //
-    // if !matches!(
-    //         state.ui.selection,
-    //         Selection::None | Selection::AtomLigand(_)
-    //     ) {
-    //     if ui
-    //         .button(RichText::new("Move lig to sel").color(COLOR_HIGHLIGHT))
-    //         .on_hover_text("Re-position the ligand to be colacated with the selected atom or residue.")
-    //         .clicked()
-    //     {
-    //         let mol = &state.molecule.unwrap();
-    //         let atom_sel = mol.get_sel_atom(&state.ui.selection);
-    //         state.mol_dynamics = None;
-    //
-    //         if let Some(atom) = atom_sel {
-    //             lig_data.pose.conformation_type = ConformationType::AssignedTorsions {
-    //                 torsions: Vec::new(),
-    //             };
-    //
-    //             docking_posit_update = Some(atom.posit);
-    //             docking_init_changed = true;
-    //
-    //             move_cam_to_lig(
-    //                 state,
-    //                 scene,
-    //                 mol.center,
-    //                 engine_updates,
-    //             )
-    //         }
-    //     }
-    // }
 }

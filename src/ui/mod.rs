@@ -50,7 +50,11 @@ use crate::{
         handle_success, load_atom_coords_rcsb, orbit_center, reset_camera, select_from_search,
     },
 };
-use crate::{drawing::draw_all_ligs, mol_lig::MoleculeSmall, ui::misc::handle_docking};
+use crate::{
+    drawing::{color_viridis, draw_all_ligs},
+    mol_lig::MoleculeSmall,
+    ui::misc::handle_docking,
+};
 
 pub mod cam;
 mod md;
@@ -461,24 +465,32 @@ fn residue_search(
         if ui.button(RichText::new(dock_tools_text)).clicked() {
             state.ui.show_docking_tools = !state.ui.show_docking_tools;
         }
-
-        ui.add_space(COL_SPACING / 2.);
-
-        let dock_seq_text = if state.ui.show_aa_seq {
-            "Hide seq"
-        } else {
-            "Show seq"
-        };
-
-        if ui.button(RichText::new(dock_seq_text)).clicked() {
-            state.ui.show_aa_seq = !state.ui.show_aa_seq;
-        }
     }
 }
 
-fn add_aa_seq(seq_text: &str, ui: &mut Ui) {
+fn add_aa_seq(selection: &mut Selection, seq_text: &str, ui: &mut Ui, redraw: &mut bool) {
+    let len = seq_text.len(); // One char per res.
     ui.horizontal_wrapped(|ui| {
-        ui.label(RichText::new(seq_text).color(Color32::LIGHT_BLUE));
+        for (i, aa) in seq_text.chars().enumerate() {
+            let color = color_viridis(i, 0, len);
+            // todo: Find a cheaper way.
+            let mut color = Color32::from_rgb(
+                (color.0 * 255.) as u8,
+                (color.1 * 255.) as u8,
+                (color.2 * 255.) as u8,
+            );
+
+            if let Selection::Residue(sel) = selection {
+                if i == *sel {
+                    color = Color32::from_rgb(255, 0, 0); // cheaper, but more maintenance than calling the const.
+                }
+            }
+
+            if ui.label(RichText::new(aa).color(color)).clicked() {
+                *selection = Selection::Residue(i);
+                *redraw = true;
+            }
+        }
     });
 }
 
@@ -778,6 +790,7 @@ fn view_settings(
                 let color = misc::active_color(state.ui.visibility.dim_peptide);
                 if ui
                     .button(RichText::new("Dim peptide").color(color))
+                    .on_hover_text("Dim the peptide, so that it's easier to see small molecules.")
                     .clicked()
                 {
                     state.ui.visibility.dim_peptide = !state.ui.visibility.dim_peptide;
@@ -785,6 +798,18 @@ fn view_settings(
                 }
             }
 
+            ui.add_space(COL_SPACING / 2.);
+            let seq_text = if state.ui.show_aa_seq {
+                "Hide seq"
+            } else {
+                "Show seq"
+            };
+
+            if ui.button(RichText::new(seq_text)).clicked() {
+                state.ui.show_aa_seq = !state.ui.show_aa_seq;
+            }
+
+            ui.add_space(COL_SPACING);
             // todo temp
             if ui.button("Load DNA").clicked() {
                 if let Some(mol) = &state.molecule {
@@ -1464,7 +1489,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         if state.ui.show_aa_seq {
             if state.molecule.is_some() {
-                add_aa_seq(&state.volatile.aa_seq_text, ui);
+                add_aa_seq(&mut state.ui.selection, &state.volatile.aa_seq_text, ui, &mut redraw_mol);
             }
         }
 
@@ -1481,6 +1506,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         if state.ui.popup.show_get_geostd {
             let popup_id = ui.make_persistent_id("no_ff_params_popup");
+
             Popup::new(
                 popup_id,
                 ui.ctx().clone(), // todo clone???
@@ -1495,60 +1521,66 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 .gap(4.0)
                 .show(|ui| {
                     // These vars avoid dbl borrow.
-                    let load_ff = !state.active_lig().as_ref().unwrap().ff_params_loaded;
-                    let load_frcmod = !state.active_lig().as_ref().unwrap().frcmod_loaded;
+                    // todo: Is this always the lig you want?
+                    if let Some(lig) = &state.active_lig() {
+                        let load_ff = !lig.ff_params_loaded;
+                        let load_frcmod = !lig.frcmod_loaded;
 
-                    let Some(lig) = state.active_lig_mut() else {
-                        return;
-                    };
-                    let mut msg = String::from("Not ready for dynamics: ");
+                        let Some(lig) = state.active_lig_mut() else {
+                            return;
+                        };
+                        let mut msg = String::from("Not ready for dynamics: ");
 
-                    if !lig.ff_params_loaded {
-                        msg += "No FF params or partial charges are present on this ligand."
-                    }
-                    if !lig.frcmod_loaded {
-                        msg += "No FRCMOD parameters loaded for this ligand."
-                    }
-
-                    ui.label(RichText::new(msg).color(Color32::LIGHT_RED));
-
-                    ui.add_space(ROW_SPACING);
-
-                    // todo: What about cases where a SDF from pubchem or drugbank doesn't include teh name used by Amber?
-                    if ui.button("Check online").clicked() {
-                        // let Some(lig) = state.ligand.as_mut() else {
-                        //     return;
-                        // };
-
-                        match amber_geostd::find_mols(&lig.common.ident) {
-                            Ok(data) => {
-                                state.ui.popup.get_geostd_items = data;
-                            }
-                            Err(e) => handle_err(
-                                &mut state.ui,
-                                format!("Problem loading mol data online: {e:?}"),
-                            ),
+                        if !lig.ff_params_loaded {
+                            msg += "No FF params or partial charges are present on this ligand."
                         }
-                    }
+                        if !lig.frcmod_loaded {
+                            msg += "No FRCMOD parameters loaded for this ligand."
+                        }
 
-                    // This clone is annoying; db borrow.
-                    let items = state.ui.popup.get_geostd_items.clone();
-                    for mol_data in items {
-                        if ui
-                            .button(
-                                RichText::new(format!("Load params for {}", mol_data.ident))
-                                    .color(COLOR_HIGHLIGHT),
-                            )
-                            .clicked()
-                        {
-                            state.load_geostd_mol_data(
-                                &mol_data.ident,
-                                load_ff,
-                                load_frcmod,
-                                &mut redraw_lig,
-                            );
 
-                            state.ui.popup.show_get_geostd = false;
+                        ui.label(RichText::new(msg).color(Color32::LIGHT_RED));
+
+
+                        ui.add_space(ROW_SPACING);
+
+                        // todo: What about cases where a SDF from pubchem or drugbank doesn't include teh name used by Amber?
+                        if ui.button("Check online").clicked() {
+                            // let Some(lig) = state.ligand.as_mut() else {
+                            //     return;
+                            // };
+
+                            match amber_geostd::find_mols(&lig.common.ident) {
+                                Ok(data) => {
+                                    state.ui.popup.get_geostd_items = data;
+                                }
+                                Err(e) => handle_err(
+                                    &mut state.ui,
+                                    format!("Problem loading mol data online: {e:?}"),
+                                ),
+                            }
+                        }
+
+
+                        // This clone is annoying; db borrow.
+                        let items = state.ui.popup.get_geostd_items.clone();
+                        for mol_data in items {
+                            if ui
+                                .button(
+                                    RichText::new(format!("Load params for {}", mol_data.ident))
+                                        .color(COLOR_HIGHLIGHT),
+                                )
+                                .clicked()
+                            {
+                                state.load_geostd_mol_data(
+                                    &mol_data.ident,
+                                    load_ff,
+                                    load_frcmod,
+                                    &mut redraw_lig,
+                                );
+
+                                state.ui.popup.show_get_geostd = false;
+                            }
                         }
                     }
 

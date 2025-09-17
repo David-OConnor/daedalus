@@ -45,11 +45,11 @@ pub fn build_dynamics(
         mols.push(MolDynamics {
             ff_mol_type: FfMolType::SmallOrganic,
             atoms: atoms_gen,
-            atom_posits: Some(&lig.common.atom_posits),
+            atom_posits: Some(lig.common.atom_posits.clone()),
             bonds: bonds_gen,
-            adjacency_list: Some(&lig.common.adjacency_list),
+            adjacency_list: Some(lig.common.adjacency_list.clone()),
             static_: false,
-            mol_specific_params: Some(msp),
+            mol_specific_params: Some(msp.clone()),
         })
     }
 
@@ -101,7 +101,16 @@ pub fn build_dynamics(
     }
 
     let elapsed = start.elapsed();
-    println!("MD complete in {:.2} s", elapsed.as_secs());
+    println!(
+        "MD complete in {:.2} s",
+        elapsed.as_millis() as f32 / 1_000.
+    );
+
+    println!(
+        "Neighbor rebuild count: {} time: {}ms",
+        md_state.neighbor_rebuild_count,
+        md_state.neighbor_rebuild_us / 1_000
+    );
 
     change_snapshot(ligs, &md_state.snapshots[0]);
 
@@ -140,13 +149,11 @@ pub fn change_snapshot(ligs: Vec<&mut MoleculeSmall>, snapshot: &Snapshot) {
     // Unflatten.
     let mut start_i_this_mol = 0;
     for lig in ligs {
-        for (i_snap, posit) in snapshot.atom_posits.iter().enumerate() {
-            if i_snap < start_i_this_mol
-                || i_snap >= lig.common.atom_posits.len() + start_i_this_mol
-            {
+        for (i, posit) in snapshot.atom_posits.iter().enumerate() {
+            if i < start_i_this_mol || i >= lig.common.atom_posits.len() + start_i_this_mol {
                 continue;
             }
-            lig.common.atom_posits[i_snap - start_i_this_mol] = (*posit).into();
+            lig.common.atom_posits[i - start_i_this_mol] = (*posit).into();
         }
 
         start_i_this_mol += lig.common.atom_posits.len();
