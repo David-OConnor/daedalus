@@ -7,14 +7,12 @@ use dynamics::{
 use egui::{Color32, ComboBox, RichText, TextEdit, Ui};
 use graphics::{EngineUpdates, Scene};
 use lin_alg::f64::Vec3;
+
 use crate::{
     State,
     drawing::{draw_peptide, draw_water},
     md::build_dynamics,
-    ui::{
-        COL_SPACING, COLOR_ACTIVE, COLOR_INACTIVE, cam::move_cam_to_lig, misc,
-        num_field,
-    },
+    ui::{COL_SPACING, COLOR_ACTIVE, COLOR_INACTIVE, cam::move_cam_to_lig, misc, num_field},
     util::handle_err,
 };
 

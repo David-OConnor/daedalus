@@ -72,6 +72,7 @@ use lin_alg::{
 use mol_lig::{Ligand, MoleculeSmall};
 use molecule::MoleculePeptide;
 
+use crate::ui::cam::{FOG_DIST_MAX, FOG_DIST_MIN};
 // use crate::file_io::load_ffs_general;
 use crate::ui::misc::MdMode;
 use crate::{
@@ -82,7 +83,6 @@ use crate::{
     render::render,
     util::handle_err,
 };
-use crate::ui::cam::{FOG_DIST_MAX, FOG_DIST_MIN};
 // ------Including files into the executable
 
 // Include general Amber forcefield params with our program. See the Reference Manual, section ]

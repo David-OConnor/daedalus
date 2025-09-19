@@ -630,9 +630,8 @@ fn selection_section(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
             }
         });
 
-        if let Some(mol) = &state.molecule {
-            mol_data::selected_data(mol, &state.ligands, &state.ui.selection, ui);
-        }
+
+        mol_data::selected_data(&state, &state.ligands, &state.ui.selection, ui);
     });
 }
 

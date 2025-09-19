@@ -83,7 +83,7 @@ fn disp_atom_data(atom: &Atom, residues: &[Residue], posit_override: Option<Vec3
 
 /// Display text of the selected atom or residue.
 pub fn selected_data(
-    mol: &MoleculePeptide,
+    state: &State,
     ligands: &[MoleculeSmall],
     selection: &Selection,
     ui: &mut Ui,
@@ -91,14 +91,16 @@ pub fn selected_data(
     ui.horizontal_wrapped(|ui| {
         match selection {
             Selection::Atom(sel_i) => {
-                if *sel_i >= mol.common.atoms.len() {
-                    return;
-                }
+                if let Some(mol) = &state.molecule {
+                    if *sel_i >= mol.common.atoms.len() {
+                        return;
+                    }
 
-                let atom = &mol.common.atoms[*sel_i];
-                misc::section_box().show(ui, |ui| {
-                    disp_atom_data(atom, &mol.residues, None, ui);
-                });
+                    let atom = &mol.common.atoms[*sel_i];
+                    misc::section_box().show(ui, |ui| {
+                        disp_atom_data(atom, &mol.residues, None, ui);
+                    });
+                }
             }
             Selection::AtomLig((lig_i, atom_i)) => {
                 if *lig_i >= ligands.len() {
@@ -118,21 +120,23 @@ pub fn selected_data(
                 });
             }
             Selection::Residue(sel_i) => {
-                if *sel_i >= mol.residues.len() {
-                    return;
+                if let Some(mol) = &state.molecule {
+                    if *sel_i >= mol.residues.len() {
+                        return;
+                    }
+
+                    let res = &mol.residues[*sel_i];
+                    // todo: Color-coding by part like atom, to make easier to view.
+
+                    let mut res_color = COLOR_AA_NON_RESIDUE_EGUI;
+
+                    if let ResidueType::AminoAcid(aa) = res.res_type {
+                        res_color = make_egui_color(aa_color(aa));
+                    }
+                    misc::section_box().show(ui, |ui| {
+                        ui.label(RichText::new(res.to_string()).color(res_color));
+                    });
                 }
-
-                let res = &mol.residues[*sel_i];
-                // todo: Color-coding by part like atom, to make easier to view.
-
-                let mut res_color = COLOR_AA_NON_RESIDUE_EGUI;
-
-                if let ResidueType::AminoAcid(aa) = res.res_type {
-                    res_color = make_egui_color(aa_color(aa));
-                }
-                misc::section_box().show(ui, |ui| {
-                    ui.label(RichText::new(res.to_string()).color(res_color));
-                });
             }
             Selection::Atoms(is) => {
                 // todo: A/R
@@ -323,10 +327,6 @@ pub fn disp_lig_data(
 
         ui.add_space(COL_SPACING);
 
-        // if let Some(energy) = &state.ui.binding_energy_disp {
-        //     ui.label(format!("{:.2?}", energy)); // todo placeholder.
-        // }
-
         if let Some(mol) = &state.molecule {
             let res_selected = match state.ui.selection {
                 Selection::Atom(sel_i) => {
@@ -382,40 +382,6 @@ pub fn disp_lig_data(
                     }
                 }
             }
-
-            if !matches!(
-            state.ui.selection,
-            Selection::None | Selection::AtomLig(_)
-        ) {
-                if ui
-                    .button(RichText::new("Move lig to sel").color(COLOR_HIGHLIGHT))
-                    .on_hover_text("Re-position the ligand to be colacated with the selected atom or residue.")
-                    .clicked()
-                {
-                    let peptide = &state.molecule.as_ref().unwrap();
-                    let atom_sel = peptide.get_sel_atom(&state.ui.selection);
-                    state.mol_dynamics = None;
-
-                    if let Some(sel_atom) = atom_sel {
-
-                        let diff = sel_atom.posit - lig.centroid();
-                        for p in &mut lig.common.atom_posits{
-                            *p += diff;
-                        }
-
-                        move_cam_to_lig2(
-                            lig,
-                            &mut state.ui.cam_snapshot,
-                            scene,
-                            mol.center,
-                            engine_updates,
-                        );
-
-                        *redraw_lig = true;
-                    }
-                }
-            }
-
             if let Some(res) = res_selected {
                 if ui
                     .button(
@@ -470,6 +436,43 @@ pub fn disp_lig_data(
                 }
             }
         }
+
+        if !matches!(
+            state.ui.selection,
+            Selection::None | Selection::AtomLig(_)
+        ) {
+                if ui
+                    .button(RichText::new("Move lig to sel").color(COLOR_HIGHLIGHT))
+                    .on_hover_text("Re-position the ligand to be colacated with the selected atom or residue.")
+                    .clicked()
+                {
+                    let peptide = &state.molecule.as_ref().unwrap();
+                    let atom_sel = peptide.get_sel_atom(&state.ui.selection);
+                    state.mol_dynamics = None;
+
+                    if let Some(sel_atom) = atom_sel {
+
+                        let diff = sel_atom.posit - lig.centroid();
+                        for p in &mut lig.common.atom_posits{
+                            *p += diff;
+                        }
+
+                        let center = match &state.molecule {
+                            Some(m) => m.center,
+                            None => Vec3::new_zero()
+                        };
+                        move_cam_to_lig2(
+                            lig,
+                            &mut state.ui.cam_snapshot,
+                            scene,
+                            center,
+                            engine_updates,
+                        );
+
+                        *redraw_lig = true;
+                    }
+                }
+            }
     });
 
     // If no ligand, provide convenience functionality for loading one based on hetero residues

@@ -113,7 +113,6 @@ pub fn event_dev_handler(
 
                             selected_ray.0 += diff.to_normalized() * SEL_NEAR_PAD;
 
-
                             // If we don't scale the selection distance appropriately, an atom etc
                             // behind the desired one, but closer to the ray, may be selected; likely
                             // this is undesired.
@@ -168,7 +167,7 @@ pub fn event_dev_handler(
                                         dist_thresh,
                                     );
 
-                                   find_selected_atom(
+                                    find_selected_atom(
                                         &atoms_along_ray,
                                         &atoms_along_ray_lig,
                                         &Vec::new(),
@@ -180,8 +179,6 @@ pub fn event_dev_handler(
                                     )
                                 }
                             };
-
-
 
                             // Change the active molecule to the one of the selected atom.
                             if let Selection::AtomLig((mol_i, _)) = selection {
