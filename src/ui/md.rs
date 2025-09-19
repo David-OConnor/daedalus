@@ -6,13 +6,13 @@ use dynamics::{
 };
 use egui::{Color32, ComboBox, RichText, TextEdit, Ui};
 use graphics::{EngineUpdates, Scene};
-
+use lin_alg::f64::Vec3;
 use crate::{
     State,
     drawing::{draw_peptide, draw_water},
     md::build_dynamics,
     ui::{
-        COL_SPACING, COLOR_ACTIVE, COLOR_INACTIVE, cam::move_cam_to_lig, misc, misc::MdMode,
+        COL_SPACING, COLOR_ACTIVE, COLOR_INACTIVE, cam::move_cam_to_lig, misc,
         num_field,
     },
     util::handle_err,
@@ -68,8 +68,14 @@ pub fn md_setup(
                 }
 
                 if ready_to_run {
-                    // todo: Set a loading indicator, and trigger the build next GUI frame.
-                    move_cam_to_lig(state, scene, state.molecule.as_ref().unwrap().center, engine_updates);
+                    {
+                        let center = match &state.molecule {
+                            Some(m) => m.center,
+                            None => Vec3::new(0., 0., 0.),
+                        };
+                        // todo: Set a loading indicator, and trigger the build next GUI frame.
+                        move_cam_to_lig(state, scene, center, engine_updates);
+                    }
 
                     // todo temp
                     state.to_save.md_config.snapshot_handlers.push(SnapshotHandler {
@@ -85,6 +91,7 @@ pub fn md_setup(
                         Some(m) => if m.common.selected_for_md { Some(m) } else { None },
                         None => None,
                     };
+
                     match build_dynamics(
                         &state.dev,
                         ligs,

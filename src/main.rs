@@ -82,6 +82,7 @@ use crate::{
     render::render,
     util::handle_err,
 };
+use crate::ui::cam::{FOG_DIST_MAX, FOG_DIST_MIN};
 // ------Including files into the executable
 
 // Include general Amber forcefield params with our program. See the Reference Manual, section ]
@@ -630,6 +631,8 @@ fn main() {
         SimBoxInit::Pad(p) => (p as u16).to_string(),
         SimBoxInit::Fixed(_) => "0".to_string(), // We currently don't use this.
     };
+    state.ui.view_depth = (FOG_DIST_MIN, FOG_DIST_MAX);
+
     state.ui.md.langevin_γ = match state.to_save.md_config.integrator {
         Integrator::Langevin { gamma } | Integrator::LangevinMiddle { gamma } => gamma.to_string(),
         _ => "0.".to_string(),

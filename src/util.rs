@@ -457,15 +457,15 @@ pub fn reset_camera(
         lin_alg::f32::Vec3::new(center.x, center.y, center.z - (mol.size + CAM_INIT_OFFSET));
     scene.camera.orientation = Quaternion::new_identity();
 
-    scene.camera.near = RENDER_DIST_NEAR;
-    scene.camera.far = RENDER_DIST_FAR;
+    // scene.camera.near = RENDER_DIST_NEAR;
+    // scene.camera.far = RENDER_DIST_FAR;
 
-    let (start, end) = calc_fog_dists(FOG_DIST_DEFAULT);
+    // let (start, end) = calc_fog_dists(FOG_DIST_DEFAULT);
+    //
+    // scene.camera.fog_start = start;
+    // scene.camera.fog_end = end;
 
-    scene.camera.fog_start = start;
-    scene.camera.fog_end = end;
-
-    scene.camera.update_proj_mat();
+    // scene.camera.update_proj_mat();
 
     set_static_light(scene, center, mol.size);
     set_flashlight(scene);
@@ -513,7 +513,7 @@ pub fn close_peptide(state: &mut State, scene: &mut Scene, engine_updates: &mut 
 
     if let Some(path) = path {
         for history in &mut state.to_save.open_history {
-            if let OpenType::Ligand = history.type_ {
+            if let OpenType::Peptide = history.type_ {
                 if history.path == path {
                     history.last_session = false;
                 }

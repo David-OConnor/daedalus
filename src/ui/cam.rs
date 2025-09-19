@@ -173,15 +173,20 @@ pub fn cam_controls(
                             }
                         }
                     }
+                }
 
-                    if let Some(lig) = state.active_lig() {
-                        if ui
-                            .button(RichText::new("Cam to lig").color(COLOR_HIGHLIGHT))
-                            .on_hover_text("Move camera near the ligand, looking at it.")
-                            .clicked()
-                        {
-                            move_cam_to_lig(state, scene, mol.center, engine_updates)
-                        }
+                if let Some(lig) = state.active_lig() {
+                    if ui
+                        .button(RichText::new("Cam to lig").color(COLOR_HIGHLIGHT))
+                        .on_hover_text("Move camera near the ligand, looking at it.")
+                        .clicked()
+                    {
+                        let pep_center = match &state.molecule {
+                            Some(mol) => mol.center,
+                            None => lin_alg::f64::Vec3::new_zero(),
+                        };
+                        // Setting mol center to 0 if no mol.
+                        move_cam_to_lig(state, scene, pep_center, engine_updates)
                     }
                 }
 

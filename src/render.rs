@@ -150,7 +150,7 @@ pub fn render(mut state: State) {
         entities: Vec::new(),
         gaussians: Vec::new(),
         camera,
-        // Lighting is set when drawing mwolecules; placeholder here.
+        // Lighting is set when drawing molecules; placeholder here.
         lighting: Lighting {
             ambient_color: white,
             ambient_intensity: 0.005,

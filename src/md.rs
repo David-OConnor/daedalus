@@ -1,8 +1,10 @@
 //! An interface to dynamics library.
 
-use std::{collections::HashMap, sync::Arc, time::Instant};
+use std::{collections::HashMap, sync::Arc, time::Instant, thread};
+use std::sync::mpsc::{self, Receiver};
 
 use bio_files::{create_bonds, md_params::ForceFieldParams};
+#[cfg(feature = "cuda")]
 use cudarc::driver::CudaModule;
 use dynamics::{
     ComputationDevice, FfMolType, MdConfig, MdState, MolDynamics, ParamError, params::FfParamSet,
@@ -18,7 +20,10 @@ const STATIC_ATOM_DIST_THRESH: f64 = 8.; // todo: Increase (?) A/R.
 /// Perform MD on the ligand, with nearby protein (receptor) atoms, from the docking setup as static
 /// non-bonded contributors. (Vdw and coulomb)
 pub fn build_dynamics(
+    #[cfg(feature = "cuda")]
     dev: &(ComputationDevice, Option<Arc<CudaModule>>),
+    #[cfg(not(feature = "cuda"))]
+    dev: &ComputationDevice,
     ligs: Vec<&mut MoleculeSmall>,
     peptide: Option<&MoleculePeptide>,
     param_set: &FfParamSet,

@@ -1805,6 +1805,13 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 state.molecule.as_ref().unwrap().center.into(),
                 state.molecule.as_ref().unwrap().size,
             );
+        } else if !state.ligands.is_empty() {
+            let lig = &state.ligands[0];
+            set_static_light(
+                scene,
+                lig.centroid().into(),
+                3., // todo good enough?
+            );
         }
     }
 

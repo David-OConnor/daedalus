@@ -113,72 +113,96 @@ pub fn event_dev_handler(
 
                             selected_ray.0 += diff.to_normalized() * SEL_NEAR_PAD;
 
-                            if let Some(mol) = &state_.molecule {
-                                // If we don't scale the selection distance appropriately, an atom etc
-                                // behind the desired one, but closer to the ray, may be selected; likely
-                                // this is undesired.
-                                let dist_thresh = match state_.ui.mol_view {
-                                    MoleculeView::SpaceFill => SELECTION_DIST_THRESH_LARGE,
-                                    _ => SELECTION_DIST_THRESH_SMALL,
-                                };
 
-                                let mut lig_atoms = Vec::new();
-                                for lig in &state_.ligands {
-                                    // todo: I don't like cloning all the atoms here. Not sure how else to do this for now.
-                                    // todo not too many for ligs, but still.
-                                    let atoms_this: Vec<_> = lig
-                                        .common
-                                        .atoms
-                                        .iter()
-                                        .enumerate()
-                                        .map(|(i, a)| Atom {
-                                            posit: lig.common.atom_posits[i],
-                                            element: a.element,
-                                            ..Default::default()
-                                        })
-                                        .collect();
-                                    lig_atoms.push(atoms_this);
-                                }
+                            // If we don't scale the selection distance appropriately, an atom etc
+                            // behind the desired one, but closer to the ray, may be selected; likely
+                            // this is undesired.
+                            let dist_thresh = match state_.ui.mol_view {
+                                MoleculeView::SpaceFill => SELECTION_DIST_THRESH_LARGE,
+                                _ => SELECTION_DIST_THRESH_SMALL,
+                            };
 
-                                let (atoms_along_ray, atoms_along_ray_lig) = points_along_ray(
-                                    selected_ray,
-                                    &mol.common.atoms,
-                                    &lig_atoms,
-                                    dist_thresh,
-                                );
-
-                                let selection = find_selected_atom(
-                                    &atoms_along_ray,
-                                    &atoms_along_ray_lig,
-                                    &mol.common.atoms,
-                                    &mol.residues,
-                                    &lig_atoms,
-                                    &selected_ray,
-                                    &state_.ui,
-                                    &mol.chains,
-                                );
-
-                                // Change the active molecule to the one of the selected atom.
-                                if let Selection::AtomLig((mol_i, _)) = selection {
-                                    state_.volatile.active_lig = Some(mol_i);
-                                }
-
-                                if selection == state_.ui.selection {
-                                    // Toggle.
-                                    state_.ui.selection = Selection::None;
-                                } else {
-                                    state_.ui.selection = selection;
-                                }
-
-                                if let ControlScheme::Arc { center } =
-                                    &mut scene.input_settings.control_scheme
-                                {
-                                    *center = orbit_center(state_);
-                                }
-
-                                redraw_protein = true;
-                                redraw_lig = true;
+                            let mut lig_atoms = Vec::new();
+                            for lig in &state_.ligands {
+                                // todo: I don't like cloning all the atoms here. Not sure how else to do this for now.
+                                // todo not too many for ligs, but still.
+                                let atoms_this: Vec<_> = lig
+                                    .common
+                                    .atoms
+                                    .iter()
+                                    .enumerate()
+                                    .map(|(i, a)| Atom {
+                                        posit: lig.common.atom_posits[i],
+                                        element: a.element,
+                                        ..Default::default()
+                                    })
+                                    .collect();
+                                lig_atoms.push(atoms_this);
                             }
+
+                            let selection = match &state_.molecule {
+                                Some(mol) => {
+                                    let (atoms_along_ray, atoms_along_ray_lig) = points_along_ray(
+                                        selected_ray,
+                                        &mol.common.atoms,
+                                        &lig_atoms,
+                                        dist_thresh,
+                                    );
+
+                                    find_selected_atom(
+                                        &atoms_along_ray,
+                                        &atoms_along_ray_lig,
+                                        &mol.common.atoms,
+                                        &mol.residues,
+                                        &lig_atoms,
+                                        &selected_ray,
+                                        &state_.ui,
+                                        &mol.chains,
+                                    )
+                                }
+                                None => {
+                                    let (atoms_along_ray, atoms_along_ray_lig) = points_along_ray(
+                                        selected_ray,
+                                        &Vec::new(),
+                                        &lig_atoms,
+                                        dist_thresh,
+                                    );
+
+                                   find_selected_atom(
+                                        &atoms_along_ray,
+                                        &atoms_along_ray_lig,
+                                        &Vec::new(),
+                                        &Vec::new(),
+                                        &lig_atoms,
+                                        &selected_ray,
+                                        &state_.ui,
+                                        &Vec::new(),
+                                    )
+                                }
+                            };
+
+
+
+                            // Change the active molecule to the one of the selected atom.
+                            if let Selection::AtomLig((mol_i, _)) = selection {
+                                state_.volatile.active_lig = Some(mol_i);
+                            }
+
+                            if selection == state_.ui.selection {
+                                // Toggle.
+                                state_.ui.selection = Selection::None;
+                            } else {
+                                state_.ui.selection = selection;
+                            }
+
+                            if let ControlScheme::Arc { center } =
+                                &mut scene.input_settings.control_scheme
+                            {
+                                *center = orbit_center(state_);
+                            }
+
+                            redraw_protein = true;
+                            redraw_lig = true;
                         }
                     }
                     ElementState::Released => (),
