@@ -74,7 +74,9 @@ will be performed using the GPU (via CUDA kernels). If not, the CPU will be used
 and SIMD instructions. It uses all cores available, and either 512-bit, or 256-bit, SIMD instructions, depending
 on CPU capability.
 
-GPU use currently requires CUDA 13 support, which requires Nvidia driver version 580 or higher.
+GPU use requires CUDA 13 support, which requires Nvidia driver version 580 or higher.
+
+We recommend running molecular dynamics on the GPU; it's much faster.
 
 
 ## Molecular dynamics
