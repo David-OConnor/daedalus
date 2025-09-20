@@ -352,6 +352,10 @@ struct StateUiMd {
     pressure_input: String,
     simbox_pad_input: String,
     langevin_γ: String,
+    /// Only perform MD on peptide atoms near a ligand.
+    peptide_only_near_ligs: bool,
+    /// Peptide atoms don't move, but exert forces.
+    peptide_static: bool,
 }
 
 /// Ui text fields and similar.

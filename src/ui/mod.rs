@@ -1807,3 +1807,14 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
     engine_updates
 }
+
+pub fn flag_btn(val: &mut bool, label: &str, hover_text: &str, ui: &mut Ui) {
+    let color = if *val { COLOR_ACTIVE } else { COLOR_INACTIVE };
+    if ui
+        .button(RichText::new(label).color(color))
+        .on_hover_text(hover_text)
+        .clicked()
+    {
+        *val = !(*val);
+    }
+}

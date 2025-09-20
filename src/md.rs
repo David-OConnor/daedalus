@@ -35,6 +35,8 @@ pub fn build_dynamics(
     mol_specific_params: &HashMap<String, ForceFieldParams>,
     cfg: &MdConfig,
     n_steps: u32,
+    static_peptide: bool,
+    peptide_only_near_lig: bool,
     dt: f32,
 ) -> Result<MdState, ParamError> {
     println!("Setting up dynamics...");
@@ -70,6 +72,10 @@ pub fn build_dynamics(
             .atoms
             .iter()
             .filter(|a| {
+                if !peptide_only_near_lig {
+                    return !a.hetero;
+                }
+
                 let mut closest_dist = f64::MAX;
                 for lig in &ligs {
                     // todo: Use protein atom.posits A/R.
@@ -95,7 +101,7 @@ pub fn build_dynamics(
             atom_posits: None,
             bonds,
             adjacency_list: None,
-            static_: true,
+            static_: static_peptide,
             mol_specific_params: None,
         })
     }

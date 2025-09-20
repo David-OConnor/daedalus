@@ -12,7 +12,7 @@ use crate::{
     State,
     drawing::{draw_peptide, draw_water},
     md::build_dynamics,
-    ui::{COL_SPACING, COLOR_ACTIVE, COLOR_INACTIVE, cam::move_cam_to_lig, misc, num_field},
+    ui::{COL_SPACING, cam::move_cam_to_lig, flag_btn, misc, num_field},
     util::handle_err,
 };
 
@@ -27,21 +27,16 @@ pub fn md_setup(
         ui.horizontal(|ui| {
             ui.label("Select for MD:");
             if let Some(mol) = &mut state.molecule {
-                let color = if mol.common.selected_for_md { COLOR_ACTIVE } else {COLOR_INACTIVE };
-                if ui.button(RichText::new(&mol.common.ident).color(color))
-                    .on_hover_text("Toggle if we use this molecule for MD.")
-                    .clicked() {
-                    mol.common.selected_for_md = !mol.common.selected_for_md;
+                flag_btn(&mut mol.common.selected_for_md, &mol.common.ident, "Toggle if we use this molecule for MD.", ui);
+
+                if mol.common.selected_for_md {
+                    flag_btn(&mut state.ui.md.peptide_only_near_ligs, "Pep only near lig", "Only model the subset of peptide atoms near a small molecule", ui);
+                    flag_btn(&mut state.ui.md.peptide_static, "Pep static", "Let peptide (protein) atoms affect other molecules, but they don't move themselves", ui);
                 }
             }
 
             for mol in &mut state.ligands {
-                let color = if mol.common.selected_for_md { COLOR_ACTIVE } else {COLOR_INACTIVE };
-                if ui.button(RichText::new(&mol.common.ident).color(color))
-                    .on_hover_text("Toggle if we use this molecule for MD.")
-                    .clicked() {
-                    mol.common.selected_for_md = !mol.common.selected_for_md;
-                }
+                flag_btn(&mut mol.common.selected_for_md, &mol.common.ident, "Toggle if we use this molecule for MD.", ui);
             }
 
             ui.add_space(COL_SPACING / 2.);
@@ -98,6 +93,8 @@ pub fn md_setup(
                         &state.lig_specific_params,
                         &state.to_save.md_config,
                         state.to_save.num_md_steps,
+                        state.ui.md.peptide_static,
+                        state.ui.md.peptide_only_near_ligs,
                         state.to_save.md_dt,
                     ) {
                         Ok(md) => {

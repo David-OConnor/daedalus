@@ -541,12 +541,11 @@ pub fn close_lig(
 
     state.ligands.remove(i);
 
-    if let Some(active) = state.volatile.active_lig {
-        if active == i {
-            state.volatile.active_lig = None;
-            state.volatile.mol_manip.mol = ManipMode::None;
-        }
+    if !state.ligands.is_empty() {
+        state.volatile.active_lig = Some(state.ligands.len() - 1);
     }
+
+    state.volatile.mol_manip.mol = ManipMode::None;
 
     draw_all_ligs(state, scene);
 
