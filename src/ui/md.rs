@@ -29,7 +29,8 @@ pub fn md_setup(
             if let Some(mol) = &mut state.molecule {
                 flag_btn(&mut mol.common.selected_for_md, &mol.common.ident, "Toggle if we use this molecule for MD.", ui);
 
-                if mol.common.selected_for_md {
+                let num_ligs = state.ligands.iter().filter(|l| l.common.selected_for_md).count();
+                if mol.common.selected_for_md && num_ligs > 0 {
                     flag_btn(&mut state.ui.md.peptide_only_near_ligs, "Pep only near lig", "Only model the subset of peptide atoms near a small molecule", ui);
                     flag_btn(&mut state.ui.md.peptide_static, "Pep static", "Let peptide (protein) atoms affect other molecules, but they don't move themselves", ui);
                 }

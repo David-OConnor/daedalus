@@ -44,6 +44,9 @@ pub fn build_dynamics(
     let mut mols = Vec::new();
 
     for lig in &ligs {
+        if !lig.common.selected_for_md {
+            continue;
+        }
         let atoms_gen: Vec<_> = lig.common.atoms.iter().map(|a| a.to_generic()).collect();
         let bonds_gen: Vec<_> = lig.common.bonds.iter().map(|b| b.to_generic()).collect();
 

@@ -237,11 +237,14 @@ impl MoleculePeptide {
         }
 
         for atom in &mut result.common.atoms {
-            // todo: Fill/fix the roles.
-            // println!("ROLE: {:?}", atom.role);
-            // if atom.is_backbone() {
-            //     atom.is_backbone() = true;
-            // }
+            // println!("{:?}", atom.role);
+        //     // This is redundant; but can serve as a cache.
+        //     if let Some(role) = &atom.role {
+        //         if matches!(role, AtomRole::C_Alpha | AtomRole::C_Prime | AtomRole::N_Backbone | AtomRole::O_Backbone) {
+        //             println!("HET");
+        //             atom.is = true;
+        //         }
+        //     }
         }
 
         result
@@ -573,14 +576,17 @@ impl Chain {
             }
         }
 
-        for sn in &chain.residue_sns {
-            match res_sns_to_indices(*sn, res_set) {
-                Some(i) => residues.push(i),
-                None => {
-                    return Err(io::Error::new(
-                        ErrorKind::InvalidData,
-                        "Unable to find res SN when loading from generic res",
-                    ));
+        // We get this empty set with some small (or old?) residues from PDB, e.g. 1BOM.
+        if !res_set.is_empty() {
+            for sn in &chain.residue_sns {
+                match res_sns_to_indices(*sn, res_set) {
+                    Some(i) => residues.push(i),
+                    None => {
+                        return Err(io::Error::new(
+                            ErrorKind::InvalidData,
+                            "Unable to find res SN when loading from generic res",
+                        ));
+                    }
                 }
             }
         }
@@ -681,7 +687,7 @@ impl Atom {
                 AtomRole::C_Prime,
                 AtomRole::O_Backbone,
             ]
-            .contains(&r),
+                .contains(&r),
             None => false,
         }
     }
@@ -852,6 +858,12 @@ impl MoleculePeptide {
 
         result.experimental_method = m.experimental_method.clone();
         result.secondary_structure = m.secondary_structure.clone();
+
+        for bond in &mut result.common.bonds {
+            if result.common.atoms[bond.atom_0].is_backbone() && result.common.atoms[bond.atom_1].is_backbone() {
+                bond.is_backbone = true;
+            }
+        }
 
         Ok(result)
     }
