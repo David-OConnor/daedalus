@@ -86,17 +86,11 @@ impl MoleculeCommon {
     pub fn new(
         ident: String,
         atoms: Vec<Atom>,
-        // bonds: Option<Vec<Bond>>,
         bonds: Vec<Bond>,
         metadata: HashMap<String, String>,
         path: Option<PathBuf>,
     ) -> Self {
         let atom_posits = atoms.iter().map(|a| a.posit).collect();
-
-        // let bonds = match bonds {
-        //     Some(b) => b,
-        //     None =>create_bonds(&atoms),
-        // };
 
         let mut result = Self {
             ident,
@@ -238,13 +232,13 @@ impl MoleculePeptide {
 
         for atom in &mut result.common.atoms {
             // println!("{:?}", atom.role);
-        //     // This is redundant; but can serve as a cache.
-        //     if let Some(role) = &atom.role {
-        //         if matches!(role, AtomRole::C_Alpha | AtomRole::C_Prime | AtomRole::N_Backbone | AtomRole::O_Backbone) {
-        //             println!("HET");
-        //             atom.is = true;
-        //         }
-        //     }
+            //     // This is redundant; but can serve as a cache.
+            //     if let Some(role) = &atom.role {
+            //         if matches!(role, AtomRole::C_Alpha | AtomRole::C_Prime | AtomRole::N_Backbone | AtomRole::O_Backbone) {
+            //             println!("HET");
+            //             atom.is = true;
+            //         }
+            //     }
         }
 
         result
@@ -687,7 +681,7 @@ impl Atom {
                 AtomRole::C_Prime,
                 AtomRole::O_Backbone,
             ]
-                .contains(&r),
+            .contains(&r),
             None => false,
         }
     }
@@ -860,7 +854,9 @@ impl MoleculePeptide {
         result.secondary_structure = m.secondary_structure.clone();
 
         for bond in &mut result.common.bonds {
-            if result.common.atoms[bond.atom_0].is_backbone() && result.common.atoms[bond.atom_1].is_backbone() {
+            if result.common.atoms[bond.atom_0].is_backbone()
+                && result.common.atoms[bond.atom_1].is_backbone()
+            {
                 bond.is_backbone = true;
             }
         }

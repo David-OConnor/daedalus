@@ -2,19 +2,20 @@
 
 use std::{collections::HashMap, io, path::PathBuf};
 
-use bio_apis::pubchem::ProteinStructure;
-use bio_files::{ChargeType, Mol2, MolType, Pdbqt, ResidueEnd, Sdf};
+use bio_apis::{amber_geostd, pubchem::ProteinStructure};
+use bio_files::{
+    ChargeType, Mol2, MolType, Pdbqt, Sdf,
+    md_params::{ForceFieldParams, ForceFieldParamsVec},
+};
 use lin_alg::f64::{Quaternion, Vec3};
+use na_seq::Element;
 use rayon::prelude::*;
 
 use crate::{
     State,
     docking_v2::{ConformationType, DockingSite, Pose},
-    molecule::Chain,
-};
-use crate::{
-    // docking::{ConformationType, DockingSite, Pose, prep::setup_flexibility},
-    molecule::{Atom, Bond, MoleculeCommon, Residue},
+    molecule::{Atom, Bond, Chain, MoleculeCommon, Residue},
+    util::handle_err,
 };
 
 const LIGAND_ABS_POSIT_OFFSET: f64 = 15.; // Å
@@ -47,8 +48,6 @@ impl MoleculeSmall {
         metadata: HashMap<String, String>,
         path: Option<PathBuf>,
     ) -> Self {
-        let mut frcmod_loaded = false;
-
         let mut pdbe_id = None;
         let mut pubchem_cid = None;
         let mut drugbank_id = None;
@@ -61,6 +60,10 @@ impl MoleculeSmall {
             if db_name.to_lowercase() == "drugbank" {
                 if let Some(id) = metadata.get("DATABASE_ID") {
                     drugbank_id = Some(id.clone());
+                }
+                // This seems to be valid for Drugbank-sourced molecules.
+                if let Ok(id) = ident.parse::<u32>() {
+                    pubchem_cid = Some(id);
                 }
             }
         }
@@ -75,7 +78,6 @@ impl MoleculeSmall {
             pdbe_id,
             pubchem_cid,
             drugbank_id,
-            frcmod_loaded,
             ..Default::default()
         }
     }
@@ -115,24 +117,6 @@ impl Ligand {
         let mut result = Self {
             ..Default::default()
         };
-
-        // result.set_anchor();
-        // result.flexible_bonds = setup_flexibility(&mol.common);
-
-        // result.pose.conformation_type = ConformationType::AssignedTorsions {
-        //     torsions: result
-        //         .flexible_bonds
-        //         .iter()
-        //         .map(|b| Torsion {
-        //             bond: *b,
-        //             dihedral_angle: 0.,
-        //         })
-        //         .collect(),
-        // };
-
-        // result.position_atoms(None);
-
-        // result.reset_posits();
 
         result
     }
@@ -175,7 +159,7 @@ impl TryFrom<Sdf> for MoleculeSmall {
             .map(|b| Bond::from_generic(b, &atoms))
             .collect::<Result<_, _>>()?;
 
-        // Handle path after; not supported by TryFrom.
+        // Handle path and state-specific items after; not supported by TryFrom.
         Ok(Self::new(m.ident, atoms, bonds, m.metadata.clone(), None))
     }
 }
@@ -474,9 +458,102 @@ impl MoleculeSmall {
         )
     }
 
+    /// Unfortunately, we can't directly map atoms from our original molecule to
+    /// the Geostd one. We could do this with coordinates, but that might be complicated.
+    /// For now, we perform a sanity check about atom count by element. If it passes,
+    /// we replace molecule atom and bond data with that loaded from the mol2.
+    fn replace_with_geostd(
+        &mut self,
+        ident: &str,
+        lig_specific: &mut HashMap<String, ForceFieldParams>,
+    ) {
+        let Ok(data) = amber_geostd::load_mol_files(&ident) else {
+            return;
+        };
+
+        if !self.ff_params_loaded {
+            let Ok(mol2) = Mol2::new(&data.mol2) else {
+                return;
+            };
+
+            let mut count_c_orig: u32 = 0;
+            let mut count_n_orig: u32 = 0;
+            let mut count_o_orig: u32 = 0;
+            let mut count_h_orig: u32 = 0;
+            //
+            let mut count_c_amber: u32 = 0;
+            let mut count_n_amber: u32 = 0;
+            let mut count_o_amber: u32 = 0;
+            let mut count_h_amber: u32 = 0;
+
+            for atom in &self.common.atoms {
+                match atom.element {
+                    Element::Carbon => count_c_orig += 1,
+                    Element::Nitrogen => count_n_orig += 1,
+                    Element::Oxygen => count_o_orig += 1,
+                    Element::Hydrogen => count_h_orig += 1,
+                    _ => {}
+                }
+            }
+            for atom in &mol2.atoms {
+                match atom.element {
+                    Element::Carbon => count_c_amber += 1,
+                    Element::Nitrogen => count_n_amber += 1,
+                    Element::Oxygen => count_o_amber += 1,
+                    Element::Hydrogen => count_h_amber += 1,
+                    _ => {}
+                }
+            }
+
+            if count_c_orig != count_c_amber
+                || count_n_orig != count_n_amber
+                || count_o_orig != count_o_amber
+                || count_h_orig != count_h_amber
+            {
+                eprintln!(
+                    "Unable to load Amber Geostd data for this molecule; atom count mismatch."
+                );
+
+                println!("Counts. C: {:?}, Geostd: {:?}", count_c_orig, count_c_amber);
+                println!("Counts. N: {:?}, Geostd: {:?}", count_n_orig, count_n_amber);
+                println!("Counts. O: {:?}, Geostd: {:?}", count_o_orig, count_o_amber);
+                println!("Counts. H: {:?}, Geostd: {:?}", count_h_orig, count_h_amber);
+                return;
+            }
+
+            let mol: Self = match mol2.try_into() {
+                Ok(m) => m,
+                Err(e) => {
+                    eprintln!("Problem loading Mol2 from geostd: {e}");
+                    return; // OK only if this fn returns ()
+                }
+            };
+
+            self.common.atoms = mol.common.atoms;
+            self.common.bonds = mol.common.bonds;
+            self.common.atom_posits = mol.common.atom_posits;
+            self.common.adjacency_list = mol.common.adjacency_list;
+
+            self.ff_params_loaded = true;
+        }
+
+        if !self.frcmod_loaded {
+            if let Some(f) = data.frcmod {
+                if let Ok(frcmod) = ForceFieldParamsVec::from_frcmod(&f) {
+                    lig_specific.insert(self.common.ident.clone(), ForceFieldParams::new(&frcmod));
+                    self.frcmod_loaded = true;
+                }
+            }
+        }
+    }
+
     /// Updates we wish to do shortly after load, but need access to State for.
-    pub fn update_aux(&mut self, state: &State) {
-        if let Some(i) = &state.volatile.active_lig {
+    pub fn update_aux(
+        &mut self,
+        active_lig: &Option<usize>,
+        lig_specific: &mut HashMap<String, ForceFieldParams>,
+    ) {
+        if let Some(i) = active_lig {
             let offset = LIGAND_ABS_POSIT_OFFSET * (*i as f64);
             for posit in &mut self.common.atom_posits {
                 posit.x += offset; // Arbitrary axis and direction.
@@ -492,12 +569,27 @@ impl MoleculeSmall {
             }
         }
 
-        if state
-            .lig_specific_params
+        if lig_specific
             .keys()
             .any(|k| k.eq_ignore_ascii_case(&self.common.ident))
         {
             self.frcmod_loaded = true;
+        }
+
+        // Attempt to load Amber GeoStd force field names and partial charges.
+        // Note: For now at least, we override any existing partial charges.
+        // This is probably OK, as we assume Amber parameters elsewhere for now.
+        if !self.ff_params_loaded || !self.frcmod_loaded {
+            // todo: This lacks nuance. We wish to handle the case of Geostd Mol2 to load frcmod,
+            // todo or the case of Drugbank/Pubchem SDF that need both, and have a pubchem id.
+            // The reason for our current approach is that a pubchem ID is always valid, but the ident
+            // may not be. (e.g. in the case of DrugBank). For Geostd, the Ident is valid.
+            let mut ident = self.common.ident.clone();
+            if let Some(cid) = &self.pubchem_cid {
+                ident = cid.to_string();
+            }
+
+            self.replace_with_geostd(&ident, lig_specific);
         }
     }
 }

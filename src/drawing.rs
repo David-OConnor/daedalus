@@ -95,6 +95,7 @@ const MESH_SURFACE_DOT: usize = MESH_CUBE;
 
 // Cache blend results.
 static LIG_C: OnceLock<Color> = OnceLock::new();
+static LIG_CL: OnceLock<Color> = OnceLock::new();
 static LIG_O: OnceLock<Color> = OnceLock::new();
 static LIG_H: OnceLock<Color> = OnceLock::new();
 static LIG_N: OnceLock<Color> = OnceLock::new();
@@ -150,6 +151,7 @@ fn cache_lig_color(el: Element) -> Option<&'static OnceLock<Color>> {
         Element::Oxygen => Some(&LIG_O),
         Element::Hydrogen => Some(&LIG_H),
         Element::Nitrogen => Some(&LIG_N),
+        Element::Chlorine => Some(&LIG_CL),
         _ => None,
     }
 }

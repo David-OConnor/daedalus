@@ -80,7 +80,7 @@ fn set_window_title(title: &str, scene: &mut Scene) {
 }
 
 fn open_lig(state: &mut State, mut mol: MoleculeSmall) {
-    mol.update_aux(state);
+    mol.update_aux(&state.volatile.active_lig, &mut state.lig_specific_params);
     state.ligands.push(mol);
     state.volatile.active_lig = Some(state.ligands.len() - 1);
 

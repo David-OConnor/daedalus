@@ -63,6 +63,13 @@ from the [RCSB PDB](https://www.rcsb.org/).
 - Force field parameters: dat, and frcmod (Amber)
 
 
+## A note on internet connectivity
+This application can run smoothly without internet connectivity. If you do have internet, it has some API integrations
+which may help. For example, loading molecules automatically from PubChem, drugbank, and RCSB PDB. It can also
+download associated ligands for a protein, automatically download molecule-specific force-field parameters, and 
+other party tricks.
+
+
 ![ELectron density](screenshots/iso_a.png)
 
 ![Docking A](screenshots/docking_a.png)

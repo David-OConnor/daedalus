@@ -138,7 +138,7 @@ impl State {
                         self.mol_dynamics = None;
 
                         self.volatile.active_lig = Some(self.ligands.len()); // Prior to push; no - 1
-                        mol.update_aux(self);
+                        mol.update_aux(&self.volatile.active_lig, &mut self.lig_specific_params);
 
                         self.ligands.push(mol);
                         self.volatile.active_lig = Some(self.ligands.len() - 1);
@@ -511,7 +511,10 @@ impl State {
                     match Mol2::new(&data.mol2) {
                         Ok(mol2) => {
                             let mut mol: MoleculeSmall = mol2.try_into().unwrap();
-                            mol.update_aux(&self);
+                            mol.update_aux(
+                                &self.volatile.active_lig,
+                                &mut self.lig_specific_params,
+                            );
 
                             self.ligands.push(mol);
                             self.volatile.active_lig = Some(self.ligands.len() - 1);

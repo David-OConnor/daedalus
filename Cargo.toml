@@ -13,9 +13,10 @@ egui-file-dialog = "0.11.0" #  For file dialogs.
 cfg-if = "1.0.1"
 
 lin_alg = { version = "1.3.5", features = ["encode"] }
-na_seq = "0.3.6"
-bio_apis = {  version = "0.1.6", features = ["encode"] }
-bio_files = "0.2.16"
+na_seq = "0.3.7"
+#na_seq = { path = "../na_seq"}
+bio_apis = {  version = "0.1.7", features = ["encode"] }
+bio_files = "0.3.0"
 mcubes = "0.1.4"
 #dynamics = { version = "0.1.0", features = ["encode"] }
 dynamics = { path = "../dynamics", features = ["encode"] }
@@ -50,7 +51,7 @@ chrono = "0.4.41"
 #graphics = { path = "../../graphics" }
 #lin_alg = { path = "../../lin_alg" }
 #na_seq = { path = "../na_seq" }
-bio_apis = { path = "../bio_apis" }
+#bio_apis = { path = "../bio_apis" }
 #mcubes = { path = "../mcubes" }
 bio_files = { path = "../bio_files" }
 dynamics = { path = "../dynamics" }
