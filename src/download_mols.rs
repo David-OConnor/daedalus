@@ -1,7 +1,7 @@
 //! Allows downloading PDB files from various APIs.
 
 use bio_apis::{ReqError, drugbank, pubchem, rcsb};
-use bio_files::{MmCif, Mol2};
+use bio_files::{MmCif, Mol2, Sdf};
 
 use crate::mol_lig::MoleculeSmall;
 /// Download mmCIF file from the RSCB, parse into a struct.
@@ -20,7 +20,7 @@ pub fn load_cif_rcsb(ident: &str) -> Result<(MmCif, String), ReqError> {
 pub fn load_sdf_drugbank(ident: &str) -> Result<MoleculeSmall, ReqError> {
     let sdf_data = drugbank::load_sdf(ident)?;
 
-    match Mol2::new(&sdf_data) {
+    match Sdf::new(&sdf_data) {
         Ok(m) => Ok(m.try_into().map_err(|e| ReqError::from(e))?),
         Err(_) => Err(ReqError::Http),
     }
@@ -30,7 +30,7 @@ pub fn load_sdf_drugbank(ident: &str) -> Result<MoleculeSmall, ReqError> {
 pub fn load_sdf_pubchem(ident: &str) -> Result<MoleculeSmall, ReqError> {
     let sdf_data = pubchem::load_sdf(ident)?;
 
-    match Mol2::new(&sdf_data) {
+    match Sdf::new(&sdf_data) {
         Ok(m) => Ok(m.try_into().map_err(|e| ReqError::from(e))?),
         Err(_) => Err(ReqError::Http),
     }

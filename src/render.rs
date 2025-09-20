@@ -165,6 +165,8 @@ pub fn render(mut state: State) {
                 },
                 // A fixed light, from *above*
                 PointLight {
+                    // A safe default we override when opening molecules.
+                    position: Vec3::new(40., 5. + OUTSIDE_LIGHTING_OFFSET, 0.),
                     diffuse_color: white,
                     specular_color: white,
                     diffuse_intensity: 30_000.,

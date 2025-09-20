@@ -1,21 +1,15 @@
 //! Misc utility-related UI functionality.
 
-use bio_files::ResidueType;
 use egui::{Color32, ComboBox, CornerRadius, Frame, Margin, RichText, Slider, Stroke, Ui};
 use graphics::{EngineUpdates, Scene};
 const COLOR_SECTION_BOX: Color32 = Color32::from_rgb(100, 100, 140);
 
 use crate::{
-    Selection, State,
-    docking_v2::ConformationType,
+    State,
     drawing::{draw_all_ligs, draw_peptide, draw_water},
-    md::{change_snapshot, change_snapshot_form2},
+    md::change_snapshot_form2,
     molecule::PeptideAtomPosits,
-    ui::{
-        COL_SPACING, COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_HIGHLIGHT, COLOR_INACTIVE,
-        ROW_SPACING, cam::move_cam_to_lig,
-    },
-    util::move_lig_to_res,
+    ui::{COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_INACTIVE, ROW_SPACING},
 };
 
 /// A checkbox to show or hide a category.

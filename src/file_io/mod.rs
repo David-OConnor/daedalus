@@ -140,8 +140,8 @@ impl State {
                         self.volatile.active_lig = Some(self.ligands.len()); // Prior to push; no - 1
                         mol.update_aux(self);
 
-                        let ident = mol.common.ident.clone();
                         self.ligands.push(mol);
+                        self.volatile.active_lig = Some(self.ligands.len() - 1);
 
                         // self.to_save.last_ligand_opened = Some(path.to_owned());
                         // self.update_history(path, OpenType::Ligand, &ident);
@@ -510,13 +510,12 @@ impl State {
                 if load_mol2 {
                     match Mol2::new(&data.mol2) {
                         Ok(mol2) => {
-                            let mol: MoleculeSmall = mol2.try_into().unwrap();
-                            // self.ligand = Some(Ligand::new(mol, &self.ff_params.lig_specific));
+                            let mut mol: MoleculeSmall = mol2.try_into().unwrap();
+                            mol.update_aux(&self);
 
                             self.ligands.push(mol);
+                            self.volatile.active_lig = Some(self.ligands.len() - 1);
                             self.mol_dynamics = None;
-
-                            // self.update_from_prefs();
 
                             *redraw_lig = true;
                         }
@@ -541,16 +540,11 @@ impl State {
         // This prevents loading duplicates
         // todo: When you place paths in mol.common etc, re-implement this.
         // todo: We must track which files are open.
-        // let open_paths: Vec<_> = histories.iter().map(|h| &h.path).collect();
 
         for history in &histories {
             if !history.last_session {
                 continue;
             }
-
-            // if open_paths.contains(&&history.path) {
-            //     continue
-            // }
 
             match history.type_ {
                 OpenType::Peptide => {

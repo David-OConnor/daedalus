@@ -663,6 +663,10 @@ fn main() {
         state.update_docking_site(posit);
     }
 
+    if !state.ligands.is_empty() {
+        state.volatile.active_lig = Some(0);
+    }
+
     // if let Err(e) = state.load_aa_charges_ff() {
     //     handle_err(
     //         &mut state.ui,

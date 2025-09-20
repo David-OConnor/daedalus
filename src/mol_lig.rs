@@ -24,6 +24,8 @@ const LIGAND_ABS_POSIT_OFFSET: f64 = 15.; // Å
 pub struct MoleculeSmall {
     pub common: MoleculeCommon,
     pub lig_data: Option<Ligand>,
+    /// Also used for Amber Geostd.
+    pub pdbe_id: Option<String>,
     pub pubchem_cid: Option<u32>,
     pub drugbank_id: Option<String>,
     /// FF type and partial charge on all atoms. Quick lookup flag.
@@ -47,6 +49,7 @@ impl MoleculeSmall {
     ) -> Self {
         let mut frcmod_loaded = false;
 
+        let mut pdbe_id = None;
         let mut pubchem_cid = None;
         let mut drugbank_id = None;
 
@@ -62,8 +65,14 @@ impl MoleculeSmall {
             }
         }
 
+        if ident.len() <= 4 {
+            // This is a guess
+            pdbe_id = Some(ident.clone());
+        }
+
         Self {
             common: MoleculeCommon::new(ident, atoms, bonds, metadata, path),
+            pdbe_id,
             pubchem_cid,
             drugbank_id,
             frcmod_loaded,
@@ -478,6 +487,7 @@ impl MoleculeSmall {
         for atom in &self.common.atoms {
             if atom.force_field_type.is_none() || atom.partial_charge.is_none() {
                 self.ff_params_loaded = false;
+                println!("ATOM WITH MISSING PARAMS: {}", atom);
                 break;
             }
         }

@@ -9,7 +9,7 @@ Conceptually similar to [PyMol](https://www.pymol.org/), [Chimera](https://www.c
 [Coot](https://www2.mrc-lmb.cam.ac.uk/personal/pemsley/coot/)
 and [VMD](https://www.ks.uiuc.edu/Research/vmd/) as well.
 
-Designed to be as easy to use, and fast as possible. Has tight integration with RSCB, Pubchem, drugbank,
+Designed to be as easy to use, and fast as possible. Has tight integration with RSCB, Pubchem, drugbank, PDBe.
 and Amber. Uses parallel computing to accelerate calculations. (GPU, SIMD, and thread pools.)
 
 

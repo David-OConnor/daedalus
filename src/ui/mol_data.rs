@@ -1,9 +1,9 @@
 //! Information and settings for the opened, or to-be opened molecules.
 
-use bio_apis::{amber_geostd, drugbank, pubchem};
+use bio_apis::{amber_geostd, drugbank, pdbe, pubchem};
 use bio_files::ResidueType;
 use egui::{Color32, RichText, Ui};
-use graphics::{ControlScheme, EngineUpdates, Scene};
+use graphics::{EngineUpdates, Scene};
 use lin_alg::f64::Vec3;
 
 use crate::{
@@ -11,7 +11,7 @@ use crate::{
     drawing::{CHARGE_MAP_MAX, CHARGE_MAP_MIN, COLOR_AA_NON_RESIDUE_EGUI},
     inputs::set_manip,
     mol_lig::MoleculeSmall,
-    molecule::{Atom, MoleculeGenericRef, MoleculePeptide, Residue, aa_color},
+    molecule::{Atom, MoleculeGenericRef, Residue, aa_color},
     ui::{
         COL_SPACING, COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_HIGHLIGHT, COLOR_INACTIVE,
         cam::{move_cam_to_lig, move_cam_to_lig2},
@@ -82,71 +82,57 @@ fn disp_atom_data(atom: &Atom, residues: &[Residue], posit_override: Option<Vec3
 }
 
 /// Display text of the selected atom or residue.
-pub fn selected_data(
-    state: &State,
-    ligands: &[MoleculeSmall],
-    selection: &Selection,
-    ui: &mut Ui,
-) {
-    ui.horizontal_wrapped(|ui| {
-        match selection {
-            Selection::Atom(sel_i) => {
-                if let Some(mol) = &state.molecule {
-                    if *sel_i >= mol.common.atoms.len() {
-                        return;
-                    }
-
-                    let atom = &mol.common.atoms[*sel_i];
-                    misc::section_box().show(ui, |ui| {
-                        disp_atom_data(atom, &mol.residues, None, ui);
-                    });
-                }
-            }
-            Selection::AtomLig((lig_i, atom_i)) => {
-                if *lig_i >= ligands.len() {
-                    return;
-                }
-                let lig = &ligands[*lig_i];
-
-                if *atom_i >= lig.common.atoms.len() {
+pub fn selected_data(state: &State, ligands: &[MoleculeSmall], selection: &Selection, ui: &mut Ui) {
+    // ui.horizontal_wrapped(|ui| {
+    match selection {
+        Selection::Atom(sel_i) => {
+            if let Some(mol) = &state.molecule {
+                if *sel_i >= mol.common.atoms.len() {
                     return;
                 }
 
-                let atom = &lig.common.atoms[*atom_i];
-                let posit = lig.common.atom_posits[*atom_i];
-
-                misc::section_box().show(ui, |ui| {
-                    disp_atom_data(atom, &[], Some(posit), ui);
-                });
+                let atom = &mol.common.atoms[*sel_i];
+                disp_atom_data(atom, &mol.residues, None, ui);
             }
-            Selection::Residue(sel_i) => {
-                if let Some(mol) = &state.molecule {
-                    if *sel_i >= mol.residues.len() {
-                        return;
-                    }
-
-                    let res = &mol.residues[*sel_i];
-                    // todo: Color-coding by part like atom, to make easier to view.
-
-                    let mut res_color = COLOR_AA_NON_RESIDUE_EGUI;
-
-                    if let ResidueType::AminoAcid(aa) = res.res_type {
-                        res_color = make_egui_color(aa_color(aa));
-                    }
-                    misc::section_box().show(ui, |ui| {
-                        ui.label(RichText::new(res.to_string()).color(res_color));
-                    });
-                }
-            }
-            Selection::Atoms(is) => {
-                // todo: A/R
-                misc::section_box().show(ui, |ui| {
-                    ui.label(RichText::new(format!("{} atoms", is.len())).color(Color32::GOLD));
-                });
-            }
-            Selection::None => (),
         }
-    });
+        Selection::AtomLig((lig_i, atom_i)) => {
+            if *lig_i >= ligands.len() {
+                return;
+            }
+            let lig = &ligands[*lig_i];
+
+            if *atom_i >= lig.common.atoms.len() {
+                return;
+            }
+
+            let atom = &lig.common.atoms[*atom_i];
+            let posit = lig.common.atom_posits[*atom_i];
+
+            disp_atom_data(atom, &[], Some(posit), ui);
+        }
+        Selection::Residue(sel_i) => {
+            if let Some(mol) = &state.molecule {
+                if *sel_i >= mol.residues.len() {
+                    return;
+                }
+
+                let res = &mol.residues[*sel_i];
+                // todo: Color-coding by part like atom, to make easier to view.
+
+                let mut res_color = COLOR_AA_NON_RESIDUE_EGUI;
+
+                if let ResidueType::AminoAcid(aa) = res.res_type {
+                    res_color = make_egui_color(aa_color(aa));
+                }
+                ui.label(RichText::new(res.to_string()).color(res_color));
+            }
+        }
+        Selection::Atoms(is) => {
+            ui.label(RichText::new(format!("{} atoms", is.len())).color(Color32::GOLD));
+        }
+        Selection::None => (),
+    }
+    // });
 }
 
 fn lig_picker(
@@ -305,6 +291,12 @@ pub fn disp_lig_data(
             }
         }
 
+        if let Some(id) = &lig.pdbe_id{
+            if ui.button("View on PDBe").clicked() {
+                pdbe::open_overview(id);
+            }
+        }
+
         if let Some(cid) = lig.pubchem_cid {
             if ui.button("Find associated structs").clicked() {
                 // todo: Don't block.
@@ -396,13 +388,16 @@ pub fn disp_lig_data(
                 {
                     let res_type = res.res_type.clone(); // Avoids dbl-borrow.
 
-                    let mol_fm_res = MoleculeSmall::from_res(
+                    let mut mol_fm_res = MoleculeSmall::from_res(
                         res,
                         &mol.common.atoms,
                         &mol.common.bonds,
                         false,
                         // &state.ff_params.lig_specific,
                     );
+                    // todo: Borrow prob.
+                    // mol_fm_res.update_aux(&state);
+
                     // let mut lig_new = Ligand::new(mol_fm_res, &state.ff_params.lig_specific);
                     let mut lig_new = mol_fm_res;
 
@@ -441,38 +436,38 @@ pub fn disp_lig_data(
             state.ui.selection,
             Selection::None | Selection::AtomLig(_)
         ) {
-                if ui
-                    .button(RichText::new("Move lig to sel").color(COLOR_HIGHLIGHT))
-                    .on_hover_text("Re-position the ligand to be colacated with the selected atom or residue.")
-                    .clicked()
-                {
-                    let peptide = &state.molecule.as_ref().unwrap();
-                    let atom_sel = peptide.get_sel_atom(&state.ui.selection);
-                    state.mol_dynamics = None;
+            if ui
+                .button(RichText::new("Move lig to sel").color(COLOR_HIGHLIGHT))
+                .on_hover_text("Re-position the ligand to be colacated with the selected atom or residue.")
+                .clicked()
+            {
+                let peptide = &state.molecule.as_ref().unwrap();
+                let atom_sel = peptide.get_sel_atom(&state.ui.selection);
+                state.mol_dynamics = None;
 
-                    if let Some(sel_atom) = atom_sel {
+                if let Some(sel_atom) = atom_sel {
 
-                        let diff = sel_atom.posit - lig.centroid();
-                        for p in &mut lig.common.atom_posits{
-                            *p += diff;
-                        }
-
-                        let center = match &state.molecule {
-                            Some(m) => m.center,
-                            None => Vec3::new_zero()
-                        };
-                        move_cam_to_lig2(
-                            lig,
-                            &mut state.ui.cam_snapshot,
-                            scene,
-                            center,
-                            engine_updates,
-                        );
-
-                        *redraw_lig = true;
+                    let diff = sel_atom.posit - lig.centroid();
+                    for p in &mut lig.common.atom_posits{
+                        *p += diff;
                     }
+
+                    let center = match &state.molecule {
+                        Some(m) => m.center,
+                        None => Vec3::new_zero()
+                    };
+                    move_cam_to_lig2(
+                        lig,
+                        &mut state.ui.cam_snapshot,
+                        scene,
+                        center,
+                        engine_updates,
+                    );
+
+                    *redraw_lig = true;
                 }
             }
+        }
     });
 
     // If no ligand, provide convenience functionality for loading one based on hetero residues
@@ -545,7 +540,7 @@ pub fn disp_lig_data(
         );
         state.load_geostd_mol_data(&data.ident, true, data.frcmod_avail, redraw_lig);
 
-        if let Some(lig) = state.active_lig_mut() {
+        if state.active_lig().is_some() {
             if let Some(mol) = &state.molecule {
                 move_cam_to_lig(state, scene, mol.center, engine_updates);
             }

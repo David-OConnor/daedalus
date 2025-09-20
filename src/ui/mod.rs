@@ -21,39 +21,27 @@ use md::md_setup;
 use mol_data::disp_lig_data;
 
 use crate::{
-    CamSnapshot,
-    // docking::{
-    //     ConformationType, calc_binding_energy, find_optimal_pose, find_sites::find_docking_sites,
-    // },
-    MsaaSetting,
-    Selection,
-    State,
-    ViewSelLevel,
-    cli,
+    CamSnapshot, MsaaSetting, Selection, State, ViewSelLevel, cli,
     cli::autocomplete_cli,
     download_mols::{load_sdf_drugbank, load_sdf_pubchem},
     drawing::{
-        EntityType, MoleculeView, draw_density_point_cloud, draw_density_surface,
-        draw_nucleic_acid, draw_peptide, draw_water,
+        EntityType, MoleculeView, color_viridis, draw_all_ligs, draw_density_point_cloud,
+        draw_density_surface, draw_nucleic_acid, draw_peptide, draw_water,
     },
     file_io::gemmi_path,
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
+    mol_lig::MoleculeSmall,
     molecule::MoleculeGenericRef,
     nucleic_acid::{MoleculeNucleicAcid, NucleicAcidType, Strands},
     render::{set_flashlight, set_static_light},
     ui::{
         cam::{cam_controls, cam_snapshots, move_cam_to_lig},
-        misc::section_box,
+        misc::{handle_docking, section_box},
     },
     util::{
         check_prefs_save, close_lig, close_peptide, cycle_selected, handle_err, handle_scene_flags,
         handle_success, load_atom_coords_rcsb, orbit_center, reset_camera, select_from_search,
     },
-};
-use crate::{
-    drawing::{color_viridis, draw_all_ligs},
-    mol_lig::MoleculeSmall,
-    ui::misc::handle_docking,
 };
 
 pub mod cam;
@@ -92,12 +80,8 @@ fn set_window_title(title: &str, scene: &mut Scene) {
 }
 
 fn open_lig(state: &mut State, mut mol: MoleculeSmall) {
-    // state.ligand =
-    //     Some(Ligand::new(mol, &state.ff_params.lig_specific));
-
     mol.update_aux(state);
     state.ligands.push(mol);
-
     state.volatile.active_lig = Some(state.ligands.len() - 1);
 
     state.mol_dynamics = None;
@@ -630,8 +614,14 @@ fn selection_section(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
             }
         });
 
+        if state.ui.selection != Selection::None {
+            section_box().show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    mol_data::selected_data(&state, &state.ligands, &state.ui.selection, ui);
+                });
+            });
+        }
 
-        mol_data::selected_data(&state, &state.ligands, &state.ui.selection, ui);
     });
 }
 
@@ -1359,7 +1349,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 .on_hover_text(query_help);
 
             let edit_resp = ui
-                .add(TextEdit::singleline(&mut state.ui.db_input).desired_width(40.))
+                .add(TextEdit::singleline(&mut state.ui.db_input).desired_width(60.))
                 .on_hover_text(query_help);
 
             if state.ui.db_input.len() >= 4 {
@@ -1367,7 +1357,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     edit_resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
                 let button_clicked = ui.button("Download from RCSB").clicked();
 
-                // if response.lost_focus() && (button_clicked || enter_pressed)
                 if (button_clicked || enter_pressed) && state.ui.db_input.trim().len() == 4 {
                     let ident = state.ui.db_input.clone().trim().to_owned();
 
@@ -1405,8 +1394,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                                 redraw_lig = true;
                                 reset_cam = true;
                             }
-                            Err(_e) => {
-                                let msg = "Error loading SDF file".to_owned();
+                            Err(e) => {
+                                let msg = format!("Error loading SDF file: {e:?}");
                                 handle_err(&mut state.ui, msg);
                             }
                         }
@@ -1420,8 +1409,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                             redraw_lig = true;
                             reset_cam = true;
                         }
-                        Err(_e) => {
-                            let msg = "Error loading SDF file".to_owned();
+                        Err(e) => {
+                            let msg = format!("Error loading SDF file: {e:?}");
                             handle_err(&mut state.ui, msg);
                         }
                     }
@@ -1533,10 +1522,10 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                         if !lig.ff_params_loaded {
                             msg += "No FF params or partial charges are present on this ligand."
                         }
-                        if !lig.frcmod_loaded {
-                            msg += "No FRCMOD parameters loaded for this ligand."
-                        }
 
+                        // if !lig.frcmod_loaded {
+                        //     msg += "No FRCMOD parameters loaded for this ligand."
+                        // }
 
                         ui.label(RichText::new(msg).color(Color32::LIGHT_RED));
 
