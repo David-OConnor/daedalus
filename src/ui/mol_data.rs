@@ -161,6 +161,8 @@ fn lig_picker(
             } else {
                 state.volatile.active_lig = Some(i);
             }
+
+            *redraw_lig = true; // To reflect the change in thickness, color etc.
         }
 
         let color_vis = if lig.common.visible {

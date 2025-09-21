@@ -348,11 +348,16 @@ pub fn load_atom_coords_rcsb(
     reset_cam: &mut bool,
 ) {
     match load_cif_rcsb(ident) {
-        // tood: For organization purposes, move thi scode out of the UI.
+        // todo: For organization purposes, move this code out of the UI.
         Ok((cif, cif_text)) => {
-            // let mol: Molecule = match cif.try_into() {
-
-            let ff_map = &state.ff_param_set.peptide_ff_q_map.as_ref().unwrap();
+            let Some(ff_map) = &state.ff_param_set.peptide_ff_q_map else {
+                handle_err(
+                    &mut state.ui,
+                    "Unable to find the peptide FF Q map in parameters; can't load the molecule"
+                        .to_owned(),
+                );
+                return;
+            };
 
             let mut mol: MoleculePeptide =
                 match MoleculePeptide::from_mmcif(cif, ff_map, None, state.to_save.ph) {
@@ -487,6 +492,11 @@ pub fn handle_err(ui: &mut StateUi, msg: String) {
 pub fn handle_success(ui: &mut StateUi, msg: String) {
     println!("{msg}");
     ui.cmd_line_output = msg;
+    ui.cmd_line_out_is_err = false;
+}
+
+pub fn clear_cli_out(ui: &mut StateUi) {
+    ui.cmd_line_output = String::new();
     ui.cmd_line_out_is_err = false;
 }
 

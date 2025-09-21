@@ -13,7 +13,7 @@ use crate::{
     drawing::{draw_peptide, draw_water},
     md::build_dynamics,
     ui::{COL_SPACING, cam::move_cam_to_lig, flag_btn, misc, num_field},
-    util::handle_err,
+    util::{clear_cli_out, handle_err, handle_success},
 };
 
 pub fn md_setup(
@@ -48,6 +48,7 @@ pub fn md_setup(
                 .clicked();
 
             if run_clicked {
+                clear_cli_out(&mut state.ui); // todo: Not working; not loaded until next frame.
                 let mut ready_to_run = true;
 
                 // Check that we have FF params and mol-specific parameters.
@@ -99,6 +100,7 @@ pub fn md_setup(
                         state.to_save.md_dt,
                     ) {
                         Ok(md) => {
+                            handle_success(&mut state.ui, "MD complete".to_string());
                             let snap = &md.snapshots[0];
 
                             draw_peptide(state, scene);

@@ -12,7 +12,7 @@ use crate::{
     State,
     docking_v2::DockingSite,
     drawing,
-    drawing::BOND_RADIUS,
+    drawing::BOND_RADIUS_PEP,
     inputs,
     inputs::{RUN_FACTOR, SCROLL_MOVE_AMT, SCROLL_ROTATE_AMT},
     ui::{
@@ -138,7 +138,7 @@ pub fn render(mut state: State) {
         meshes: vec![
             Mesh::new_sphere(1., 3),
             Mesh::new_box(1., 1., 1.),
-            Mesh::new_cylinder(1., BOND_RADIUS, 14),
+            Mesh::new_cylinder(1., BOND_RADIUS_PEP, 14),
             Mesh::new_sphere(1., 1), // low-res sphere
             Mesh::new_sphere(1., 2), // med-res sphere
             Mesh::new_box(1., 1., 1.),

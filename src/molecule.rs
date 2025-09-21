@@ -17,7 +17,7 @@ use bio_apis::{
 };
 use bio_files::{
     AtomGeneric, BackboneSS, BondGeneric, BondType, ChainGeneric, DensityMap, ExperimentalMethod,
-    MmCif, ResidueEnd, ResidueGeneric, ResidueType,
+    MmCif, ResidueEnd, ResidueGeneric, ResidueType, create_bonds,
 };
 use dynamics::{
     Dihedral, ParamError, ProtFFTypeChargeMap,
@@ -793,52 +793,8 @@ impl MoleculePeptide {
         let (bonds_, dihedrals) = prepare_peptide_mmcif(&mut m, ff_map, ph)
             .map_err(|e| io::Error::new(ErrorKind::InvalidData, e.descrip))?;
 
-        let mut atoms: Vec<_> = m.atoms.iter().map(|a| a.into()).collect();
-
-        let mut bonds = Vec::with_capacity(bonds_.len());
-        for bond in &bonds_ {
-            bonds.push(Bond::from_generic(bond, &atoms)?);
-        }
-
-        let mut residues = Vec::with_capacity(m.residues.len());
-
-        if dihedrals.len() == m.residues.len() {
-            for (i, res) in m.residues.iter().enumerate() {
-                let mut res = Residue::from_generic(res, &atoms)?;
-                res.dihedral = Some(dihedrals[i].clone());
-                residues.push(res);
-            }
-        } else {
-            eprintln!("Error: Problem generating dihedrals.");
-        }
-
-        let mut chains = Vec::with_capacity(m.chains.len());
-        for c in &m.chains {
-            chains.push(Chain::from_generic(c, &atoms, &residues)?);
-        }
-
-        // Now that chains and residues are loaded, update atoms with their back-ref index.
-        for atom in &mut atoms {
-            for (i, res) in residues.iter().enumerate() {
-                if res.atom_sns.contains(&atom.serial_number) {
-                    atom.residue = Some(i);
-
-                    // Update which atoms are waters.
-                    if residues[i].res_type == ResidueType::Water {
-                        atom.role = Some(AtomRole::Water);
-                    }
-
-                    break;
-                }
-            }
-
-            for (i, chain) in chains.iter().enumerate() {
-                if chain.atom_sns.contains(&atom.serial_number) {
-                    atom.chain = Some(i);
-                    break;
-                }
-            }
-        }
+        let (atoms, bonds, residues, chains) =
+            init_bonds_chains_res(&m.atoms, &bonds_, &m.residues, &m.chains, &dihedrals)?;
 
         let mut result = Self::new(
             m.ident.clone(),
@@ -853,15 +809,41 @@ impl MoleculePeptide {
         result.experimental_method = m.experimental_method.clone();
         result.secondary_structure = m.secondary_structure.clone();
 
-        for bond in &mut result.common.bonds {
-            if result.common.atoms[bond.atom_0].is_backbone()
-                && result.common.atoms[bond.atom_1].is_backbone()
-            {
-                bond.is_backbone = true;
-            }
-        }
-
         Ok(result)
+    }
+
+    /// E.g. run this when pH changes. Removes all hydrogens, and re-adds per the pH. Rebuilds
+    /// bonds.
+    pub fn reassign_hydrogens(&mut self, ph: f32, ff_map: &ProtFFTypeChargeMap) -> io::Result<()> {
+        let mut atoms_gen = self
+            .common
+            .atoms
+            .iter()
+            .filter(|a| a.element != Element::Hydrogen)
+            .map(|a| a.to_generic())
+            .collect();
+
+        let mut res_gen = self.residues.iter().map(|a| a.to_generic()).collect();
+        let mut chains_gen: Vec<_> = self.chains.iter().map(|a| a.to_generic()).collect();
+
+        // Note: These don't change here, but htis function populates them anyway, so why not.
+        let dihedrals =
+            populate_hydrogens_dihedrals(&mut atoms_gen, &mut res_gen, &mut chains_gen, ff_map, ph)
+                .map_err(|e| io::Error::new(ErrorKind::InvalidData, e.descrip))?;
+
+        let bonds_gen = create_bonds(&atoms_gen);
+
+        let (atoms, bonds, residues, chains) =
+            init_bonds_chains_res(&atoms_gen, &bonds_gen, &res_gen, &chains_gen, &dihedrals)?;
+
+        self.common.atoms = atoms;
+        self.common.bonds = bonds;
+        self.residues = residues;
+        self.chains = chains;
+
+        self.common.build_adjacency_list();
+
+        Ok(())
     }
 }
 
@@ -896,137 +878,66 @@ pub fn build_adjacency_list(bonds: &Vec<Bond>, atoms_len: usize) -> Vec<Vec<usiz
     result
 }
 
-// todo! This is a C+P from that in dynamics, but using our native types. Sort this, and how
-// todo you populate H, FF type, and Q in ggeneral between here and the lib.
-/// Populate forcefield type, and partial charge on atoms. This should be run on mmCIF
-/// files prior to running molecular dynamics on them. These files from RCSB PDB do not
-/// natively have this data.
-///
-/// `residues` must be the full set; this is relevant to how we index it.
-/// Populate forcefield type, and partial charge.
-/// `residues` must be the full set; this is relevant to how we index it.
-pub fn __populate_ff_and_q(
-    atoms: &mut [Atom],
-    residues: &[Residue],
-    ff_type_charge: &ProtFFTypeChargeMap,
-) -> Result<(), ParamError> {
-    for atom in atoms {
-        if atom.hetero {
-            continue;
+/// A helper, shared between mmCIF parsing, and H regenerating from changed pH.
+fn init_bonds_chains_res(
+    atoms_: &[AtomGeneric],
+    bonds_: &[BondGeneric],
+    residues_: &[ResidueGeneric],
+    chains_: &[ChainGeneric],
+    dihedrals: &[Dihedral],
+) -> io::Result<(Vec<Atom>, Vec<Bond>, Vec<Residue>, Vec<Chain>)> {
+    let mut atoms: Vec<_> = atoms_.iter().map(|a| a.into()).collect();
+
+    let mut bonds = Vec::with_capacity(bonds_.len());
+    for bond in bonds_ {
+        bonds.push(Bond::from_generic(bond, &atoms)?);
+    }
+
+    let mut residues = Vec::with_capacity(residues_.len());
+
+    if dihedrals.len() == residues_.len() {
+        for (i, res) in residues_.iter().enumerate() {
+            let mut res = Residue::from_generic(res, &atoms)?;
+            res.dihedral = Some(dihedrals[i].clone());
+            residues.push(res);
         }
+    } else {
+        eprintln!("Error: Problem generating dihedrals.");
+    }
 
-        let Some(res_i) = atom.residue else {
-            return Err(ParamError::new(&format!(
-                "MD failure: Missing residue when populating ff name and q: {atom}"
-            )));
-        };
+    let mut chains = Vec::with_capacity(chains_.len());
+    for c in chains_ {
+        chains.push(Chain::from_generic(c, &atoms, &residues)?);
+    }
 
-        let Some(type_in_res) = &atom.type_in_res else {
-            return Err(ParamError::new(&format!(
-                "MD failure: Missing type in residue for atom: {atom}"
-            )));
-        };
+    // Now that chains and residues are loaded, update atoms with their back-ref index.
+    for atom in &mut atoms {
+        for (i, res) in residues.iter().enumerate() {
+            if res.atom_sns.contains(&atom.serial_number) {
+                atom.residue = Some(i);
 
-        let atom_res_type = &residues[res_i].res_type;
+                // Update which atoms are waters.
+                if residues[i].res_type == ResidueType::Water {
+                    atom.role = Some(AtomRole::Water);
+                }
 
-        let ResidueType::AminoAcid(aa) = atom_res_type else {
-            // e.g. water or other hetero atoms; skip.
-            continue;
-        };
-
-        // todo: Eventually, determine how to load non-standard AA variants from files; set up your
-        // todo state to use those labels. They are available in the params.
-        let aa_gen = AminoAcidGeneral::Standard(*aa);
-
-        let charge_map = match residues[res_i].end {
-            ResidueEnd::Internal => &ff_type_charge.internal,
-            ResidueEnd::NTerminus => &ff_type_charge.n_terminus,
-            ResidueEnd::CTerminus => &ff_type_charge.c_terminus,
-            ResidueEnd::Hetero => {
-                return Err(ParamError::new(&format!(
-                    "Error: Encountered hetero atom when parsing amino acid FF types: {atom}"
-                )));
-            }
-        };
-
-        let charges = match charge_map.get(&aa_gen) {
-            Some(c) => c,
-            // A specific workaround to plain "HIS" being absent from amino19.lib (2025.
-            // Choose one of "HID", "HIE", "HIP arbitrarily.
-            // todo: Re-evaluate this, e.g. which one of the three to load.
-            None if aa_gen == AminoAcidGeneral::Standard(AminoAcid::His) => charge_map
-                .get(&AminoAcidGeneral::Variant(AminoAcidProtenationVariant::Hid))
-                .ok_or_else(|| ParamError::new("Unable to find AA mapping"))?,
-            None => return Err(ParamError::new("Unable to find AA mapping")),
-        };
-
-        let mut found = false;
-
-        for charge in charges {
-            // todo: Note that we have multiple branches in some case, due to Amber names like
-            // todo: "HYP" for variants on AAs for different protenation states. Handle this.
-            if &charge.type_in_res == type_in_res {
-                atom.force_field_type = Some(charge.ff_type.clone());
-                atom.partial_charge = Some(charge.charge);
-
-                found = true;
                 break;
             }
         }
 
-        // Code below is mainly for the case of missing data; otherwise, the logic for this operation
-        // is complete.
-
-        if !found {
-            match type_in_res {
-                // todo: This is a workaround for having trouble with H types. LIkely
-                // todo when we create them. For now, this meets the intent.
-                AtomTypeInRes::H(_) => {
-                    // Note: We've witnessed this due to errors in the mmCIF file, e.g. on ASP #88 on 9GLS.
-                    eprintln!(
-                        "Error assigning FF type and q based on atom type in res: Failed to match H type. #{}, {type_in_res}, {aa_gen:?}. \
-                         Falling back to a generic H",
-                        &residues[res_i].serial_number
-                    );
-
-                    for charge in charges {
-                        if &charge.type_in_res == &AtomTypeInRes::H("H".to_string())
-                            || &charge.type_in_res == &AtomTypeInRes::H("HA".to_string())
-                        {
-                            atom.force_field_type = Some("HB2".to_string());
-                            atom.partial_charge = Some(charge.charge);
-
-                            found = true;
-                            break;
-                        }
-                    }
-                }
-                // // This is an N-terminal oxygen of a C-terminal carboxyl group.
-                // // todo: You should parse `aminoct12.lib`, and `aminont12.lib`, then delete this.
-                // AtomTypeInRes::OXT => {
-                //     match atom_res_type {
-                //         // todo: QC that it's the N-terminal Met too, or return an error.
-                //         ResidueType::AminoAcid(AminoAcid::Met) => {
-                //             atom.force_field_type = Some("O2".to_owned());
-                //             // Fm amino12ct.lib
-                //             atom.partial_charge = Some(-0.804100);
-                //             found = true;
-                //         }
-                //         _ => return Err(ParamError::new("Error populating FF type: OXT atom-in-res type,\
-                //         not at the C terminal")),
-                //     }
-                // }
-                _ => (),
-            }
-
-            // i.e. if still not found after our specific workarounds above.
-            if !found {
-                return Err(ParamError::new(&format!(
-                    "Error assigning FF type and q based on atom type in res: {atom}",
-                )));
+        for (i, chain) in chains.iter().enumerate() {
+            if chain.atom_sns.contains(&atom.serial_number) {
+                atom.chain = Some(i);
+                break;
             }
         }
     }
 
-    Ok(())
+    for bond in &mut bonds {
+        if atoms[bond.atom_0].is_backbone() && atoms[bond.atom_1].is_backbone() {
+            bond.is_backbone = true;
+        }
+    }
+
+    Ok((atoms, bonds, residues, chains))
 }

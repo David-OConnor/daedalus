@@ -35,8 +35,8 @@ use crate::{
     nucleic_acid::{MoleculeNucleicAcid, NucleicAcidType, Strands},
     render::{set_flashlight, set_static_light},
     ui::{
-        cam::{cam_controls, cam_snapshots, move_cam_to_lig},
-        misc::{handle_docking, section_box},
+        cam::{cam_controls, cam_snapshots},
+        misc::section_box,
     },
     util::{
         check_prefs_save, close_lig, close_peptide, cycle_selected, handle_err, handle_scene_flags,
@@ -357,16 +357,16 @@ fn docking(
         //     return;
         // };
 
-        if ui.button("Find sites").clicked() {
-            // let sites = find_docking_sites(mol);
-            // for site in sites {
-            //     println!("Docking site: {:?}", site);
-            // }
-        }
+        // if ui.button("Find sites").clicked() {
+        //     // let sites = find_docking_sites(mol);
+        //     // for site in sites {
+        //     //     println!("Docking site: {:?}", site);
+        //     // }
+        // }
 
-        if ui.button("Dock").clicked() {
-            handle_docking(state, scene, ui, engine_updates);
-        }
+        // if ui.button("Dock").clicked() {
+        //     handle_docking(state, scene, ui, engine_updates);
+        // }
 
         // if docking_init_changed {
         // *redraw_lig = true;
@@ -438,17 +438,17 @@ fn residue_search(
             }
         }
 
-        ui.add_space(COL_SPACING * 2.);
-
-        let dock_tools_text = if state.ui.show_docking_tools {
-            "Hide docking tools"
-        } else {
-            "Show docking tools (Broken/WIP)"
-        };
-
-        if ui.button(RichText::new(dock_tools_text)).clicked() {
-            state.ui.show_docking_tools = !state.ui.show_docking_tools;
-        }
+        // ui.add_space(COL_SPACING * 2.);
+        //
+        // let dock_tools_text = if state.ui.show_docking_tools {
+        //     "Hide docking tools"
+        // } else {
+        //     "Show docking tools (Broken/WIP)"
+        // };
+        //
+        // if ui.button(RichText::new(dock_tools_text)).clicked() {
+        //     state.ui.show_docking_tools = !state.ui.show_docking_tools;
+        // }
     }
 }
 
@@ -594,6 +594,29 @@ fn selection_section(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
                     // todo: For now, only allow one of near sel/lig
                     if state.ui.show_near_lig_only {
                         state.ui.show_near_sel_only = false
+                    }
+                }
+            }
+
+            ui.label("pH:");
+            if ui
+                .add_sized([20., Ui::available_height(ui)], TextEdit::singleline(&mut state.ui.ph_input))
+                .changed()
+            {
+                if let Ok(v) =&mut state.ui.ph_input.parse::<f32>() {
+                    state.to_save.ph = *v;
+
+                    // Re-assign hydrogens, and redraw
+                    if let Some(mol) = &mut state.molecule {
+                        if let Some(ff_map) = &state.ff_param_set.peptide_ff_q_map {
+                            match mol.reassign_hydrogens(state.to_save.ph, ff_map) {
+                                Ok(_) => *redraw = true,
+                                Err(e) => {
+                                    let msg = format!("Error reassigning hydrogens: {e:?}");
+                                    handle_err(&mut state.ui, msg);
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1133,17 +1156,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     close_peptide(state, scene, &mut engine_updates);
                 }
                 ui.add_space(COL_SPACING);
-
-                // todo: Change the location of this
-                ui.label("pH:");
-                if ui
-                    .add_sized([20., Ui::available_height(ui)], TextEdit::singleline(&mut state.ui.ph_input))
-                    .changed()
-                {
-                    if let Ok(v) =&mut state.ui.ph_input.parse::<f32>() {
-                        state.to_save.ph = *v;
-                    }
-                }
             }
 
             let color_open_tools = if state.molecule.is_none() {
@@ -1481,7 +1493,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             }
         }
 
-        // todo: Move A/r.
         draw_cli(
             state,
             scene,

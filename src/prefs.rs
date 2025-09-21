@@ -126,7 +126,7 @@ pub struct ToSave {
     pub movement_speed: u8,
     /// Divide this by 100 to get engine standard.
     pub rotation_sens: u8,
-    /// Solvent-accessible surface (and dots) precion. Lower is higher precision. A value of 0.5 - 0.6
+    /// Solvent-accessible surface (and dots) precision. Lower is higher precision. A value of 0.5 - 0.6
     /// is a good default. Too low will cause crashes and very poor performance. Higher is too coarse.
     pub sa_surface_precision: f32,
     pub md_config: MdConfig,

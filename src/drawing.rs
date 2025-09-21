@@ -54,8 +54,9 @@ const DOCKING_SITE_OPACITY: f32 = 0.1;
 
 const COLOR_SA_SURFACE: Color = (0.3, 0.2, 1.);
 
-pub const BOND_RADIUS: f32 = 0.10;
+pub const BOND_RADIUS_PEP: f32 = 0.10;
 pub const BOND_RADIUS_LIG_RATIO: f32 = 1.3; // Of bond radius.
+pub const BOND_RADIUS_LIG_RATIO_SEL: f32 = 1.6; // Of bond radius.
 // Aromatic inner radius, relative to bond radius.
 const BOND_RADIUS_AR_INNER_RATIO: f32 = 0.4; // Of bond radius.
 const AR_INNER_OFFSET: f32 = 0.3; // Å
@@ -439,7 +440,7 @@ fn add_bond(
             MESH_BOND_CAP,
             posits.0,
             Quaternion::new_identity(),
-            BOND_RADIUS * thickness,
+            BOND_RADIUS_PEP * thickness,
             colors.0,
             BODY_SHINYNESS,
         );
@@ -447,7 +448,7 @@ fn add_bond(
             MESH_BOND_CAP,
             posits.1,
             Quaternion::new_identity(),
-            BOND_RADIUS * thickness,
+            BOND_RADIUS_PEP * thickness,
             colors.1,
             BODY_SHINYNESS,
         );
@@ -480,6 +481,7 @@ fn bond_entities(
     // to orient the bond meshes, e.g. in plane with a ring. Second pararm is if the bond is from posit 1,
     // vice posit 0.
     neighbor: (Vec3, bool),
+    active: bool, // i.e. selected
 ) {
     let center: Vec3 = (posit_0 + posit_1) / 2.;
 
@@ -493,6 +495,12 @@ fn bond_entities(
         color_0 = COLOR_H_BOND;
         color_1 = COLOR_H_BOND;
     }
+
+    let base_radius = if active {
+        BOND_RADIUS_LIG_RATIO_SEL
+    } else {
+        BOND_RADIUS_LIG_RATIO
+    };
 
     match bond_type {
         // Draw a normal mesh, the same as a single, and a second thinner and shorter inner one.
@@ -530,12 +538,12 @@ fn bond_entities(
             };
 
             let thickness_outer = if mol_type == MolType::Ligand {
-                BOND_RADIUS_LIG_RATIO
+                base_radius
             } else {
                 1.
             };
             let thickness_inner = if mol_type == MolType::Ligand {
-                BOND_RADIUS_LIG_RATIO * BOND_RADIUS_AR_INNER_RATIO
+                base_radius * BOND_RADIUS_AR_INNER_RATIO
             } else {
                 BOND_RADIUS_AR_INNER_RATIO
             };
@@ -660,7 +668,7 @@ fn bond_entities(
                 RADIUS_H_BOND
             } else {
                 if mol_type == MolType::Ligand {
-                    BOND_RADIUS_LIG_RATIO
+                    base_radius
                 } else {
                     1.
                 }
@@ -768,7 +776,20 @@ pub fn draw_all_ligs(state: &State, scene: &mut Scene) {
 
     for (i, lig) in state.ligands.iter().enumerate() {
         if lig.common.visible {
-            draw_ligand(lig, i, &state.ui, state.volatile.mol_manip.mol, scene);
+            let active = if let Some(active_i) = &state.volatile.active_lig {
+                i == *active_i
+            } else {
+                false
+            };
+
+            draw_ligand(
+                lig,
+                i,
+                &state.ui,
+                state.volatile.mol_manip.mol,
+                scene,
+                active,
+            );
         }
     }
 }
@@ -781,6 +802,7 @@ pub fn draw_ligand(
     state_ui: &StateUi,
     move_mol: ManipMode,
     scene: &mut Scene,
+    active: bool,
 ) {
     // todo: You have problems with transparent objects like the view cube in conjunction
     // todo with the transparent surface; workaround to not draw the cube here.
@@ -889,20 +911,6 @@ pub fn draw_ligand(
             }
             if color_1 != COLOR_SELECTED {
                 color_1 = mod_color_for_ligand(&color_1, atom_1.element);
-
-                // if lig.flexible_bonds.contains(&i) {
-                //     color_0 = LIGAND_COLOR_FLEX;
-                //     color_1 = LIGAND_COLOR_FLEX;
-                // }
-
-                // Highlight the anchor.
-                // if bond.atom_0 == lig.anchor_atom {
-                //     color_0 = LIGAND_COLOR_ANCHOR;
-                // }
-                //
-                // if bond.atom_1 == lig.anchor_atom {
-                //     color_1 = LIGAND_COLOR_ANCHOR;
-                // }
             }
         }
 
@@ -916,6 +924,7 @@ pub fn draw_ligand(
             MolType::Ligand,
             true,
             neighbor_posit,
+            active,
         );
     }
 
@@ -1164,6 +1173,7 @@ pub fn draw_nucleic_acid(state: &mut State, scene: &mut Scene) {
                 MolType::NucleicAcid,
                 state.ui.mol_view != MoleculeView::BallAndStick,
                 (neighbor_posit, false),
+                false,
             );
         }
     }
@@ -1530,6 +1540,7 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
             MolType::Peptide,
             state.ui.mol_view != MoleculeView::BallAndStick,
             neighbor_posit,
+            false,
         );
     }
 
@@ -1611,6 +1622,7 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
                 MolType::Peptide,
                 state.ui.mol_view != MoleculeView::BallAndStick,
                 (Vec3::new_zero(), false), // N/A
+                false,
             );
         }
     }
