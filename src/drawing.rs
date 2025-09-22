@@ -9,7 +9,6 @@ use egui::Color32;
 use graphics::{ControlScheme, Entity, Scene, UP_VEC};
 use lin_alg::{
     f32::{Quaternion, Vec3},
-    f64::Vec3 as Vec3F64,
     map_linear,
 };
 use na_seq::Element;
@@ -17,14 +16,14 @@ use na_seq::Element;
 use crate::{
     ManipMode, Selection, State, StateUi, ViewSelLevel,
     mol_lig::MoleculeSmall,
-    molecule::{Atom, AtomRole, Chain, PeptideAtomPosits, Residue, aa_color},
+    molecule::{Atom, AtomRole, Chain, Residue, aa_color},
     reflection::ElectronDensity,
     render::{
         ATOM_SHININESS, BACKGROUND_COLOR, BALL_RADIUS_WATER_H, BALL_RADIUS_WATER_O,
         BALL_STICK_RADIUS, BALL_STICK_RADIUS_H, BODY_SHINYNESS, Color, MESH_BOND, MESH_CUBE,
         MESH_DENSITY_SURFACE, MESH_DOCKING_BOX, MESH_SECONDARY_STRUCTURE, MESH_SOLVENT_SURFACE,
         MESH_SPHERE_HIGHRES, MESH_SPHERE_LOWRES, MESH_SPHERE_MEDRES, WATER_BOND_THICKNESS,
-        WATER_OPACITY, set_docking_light,
+        WATER_OPACITY,
     },
     util::{find_neighbor_posit, orbit_center},
 };
@@ -1080,21 +1079,21 @@ pub fn draw_secondary_structure(update_mesh: &mut bool, mesh_created: bool, scen
     scene.entities.push(ent);
 }
 
-/// Helper
-fn get_atom_posit<'a>(
-    mode: PeptideAtomPosits,
-    posits: Option<&'a Vec<Vec3F64>>,
-    i: usize,
-    atom: &'a Atom,
-) -> &'a Vec3F64 {
-    match mode {
-        PeptideAtomPosits::Original => &atom.posit,
-        PeptideAtomPosits::Dynamics => match posits {
-            Some(p) => &p[i],
-            None => &atom.posit,
-        },
-    }
-}
+// /// Helper
+// fn get_atom_posit<'a>(
+//     mode: PeptideAtomPosits,
+//     posits: Option<&'a Vec<Vec3F64>>,
+//     i: usize,
+//     atom: &'a Atom,
+// ) -> &'a Vec3F64 {
+//     match mode {
+//         PeptideAtomPosits::Original => &atom.posit,
+//         PeptideAtomPosits::Dynamics => match posits {
+//             Some(p) => &p[i],
+//             None => &atom.posit,
+//         },
+//     }
+// }
 
 // todo: You need to generalize your drawing code so you have less repetition, and it's more consistent.
 pub fn draw_nucleic_acid(state: &mut State, scene: &mut Scene) {
@@ -1105,12 +1104,12 @@ pub fn draw_nucleic_acid(state: &mut State, scene: &mut Scene) {
     // Atoms
     for mol in &state.nucleic_acids {
         for (i, atom) in mol.common.atoms.iter().enumerate() {
-            let atom_posit = get_atom_posit(
-                state.ui.peptide_atom_posits,
-                Some(&mol.common.atom_posits),
-                i,
-                atom,
-            );
+            // let atom_posit = get_atom_posit(
+            //     state.ui.peptide_atom_posits,
+            //     Some(&mol.common.atom_posits),
+            //     i,
+            //     atom,
+            // );
 
             let (radius, mesh) = match atom.element {
                 Element::Hydrogen => (BALL_STICK_RADIUS_H, MESH_BALL_STICK_SPHERE),
@@ -1119,7 +1118,8 @@ pub fn draw_nucleic_acid(state: &mut State, scene: &mut Scene) {
 
             let mut entity = Entity::new(
                 mesh,
-                (*atom_posit).into(),
+                // (*atom_posit).into(),
+                mol.common.atom_posits[i].into(),
                 Quaternion::new_identity(),
                 radius,
                 atom.element.color(),
@@ -1134,21 +1134,24 @@ pub fn draw_nucleic_acid(state: &mut State, scene: &mut Scene) {
             let atom_0 = &mol.common.atoms[bond.atom_0];
             let atom_1 = &mol.common.atoms[bond.atom_1];
 
-            let atom_0_posit = get_atom_posit(
-                state.ui.peptide_atom_posits,
-                Some(&mol.common.atom_posits),
-                bond.atom_0,
-                atom_0,
-            );
-            let atom_1_posit = get_atom_posit(
-                state.ui.peptide_atom_posits,
-                Some(&mol.common.atom_posits),
-                bond.atom_1,
-                atom_1,
-            );
+            let atom_0_posit = mol.common.atom_posits[bond.atom_0];
+            let atom_1_posit = mol.common.atom_posits[bond.atom_1];
 
-            let posit_0: Vec3 = (*atom_0_posit).into();
-            let posit_1: Vec3 = (*atom_1_posit).into();
+            // let atom_0_posit = get_atom_posit(
+            //     state.ui.peptide_atom_posits,
+            //     Some(&mol.common.atom_posits),
+            //     bond.atom_0,
+            //     atom_0,
+            // );
+            // let atom_1_posit = get_atom_posit(
+            //     state.ui.peptide_atom_posits,
+            //     Some(&mol.common.atom_posits),
+            //     bond.atom_1,
+            //     atom_1,
+            // );
+
+            let posit_0: Vec3 = atom_0_posit.into();
+            let posit_1: Vec3 = atom_1_posit.into();
 
             // // For determining how to orient multiple-bonds.
             // let hydrogen_is = Vec::new(); // todo A/R
@@ -1261,7 +1264,8 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
 
                         let mut entity = Entity::new(
                             MESH_WATER_SPHERE,
-                            atom.posit.into(),
+                            // atom.posit.into(),
+                            mol.common.atom_posits[i].into(),
                             Quaternion::new_identity(),
                             BALL_RADIUS_WATER_O,
                             color_atom,
@@ -1278,12 +1282,12 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
     // Draw atoms.
     if [MoleculeView::BallAndStick, MoleculeView::SpaceFill].contains(&ui.mol_view) {
         for (i, atom) in mol.common.atoms.iter().enumerate() {
-            let atom_posit = get_atom_posit(
-                state.ui.peptide_atom_posits,
-                Some(&mol.common.atom_posits),
-                i,
-                atom,
-            );
+            // let atom_posit = get_atom_posit(
+            //     state.ui.peptide_atom_posits,
+            //     Some(&mol.common.atom_posits),
+            //     i,
+            //     atom,
+            // );
 
             if atom.hetero {
                 let mut water = false;
@@ -1332,11 +1336,16 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
                 continue;
             }
 
+            let atom_posit = mol.common.atom_posits[i];
+
             // We assume only one of near sel, near lig is selectable at a time.
             if ui.show_near_sel_only {
                 let atom_sel = mol.get_sel_atom(&state.ui.selection);
                 if let Some(a) = atom_sel {
-                    if (*atom_posit - a.posit).magnitude() as f32 > ui.nearby_dist_thresh as f32 {
+                    // todo: This will fail after moves and dynamics. You mmust pick the selected atom
+                    // todo posit correctly!
+
+                    if (atom_posit - a.posit).magnitude() as f32 > ui.nearby_dist_thresh as f32 {
                         continue;
                     }
                 }
@@ -1344,7 +1353,7 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
             if let Some(lig) = state.active_lig() {
                 if ui.show_near_lig_only {
                     let atom_sel = lig.common.atom_posits[0];
-                    if (*atom_posit - atom_sel).magnitude() as f32 > ui.nearby_dist_thresh as f32 {
+                    if (atom_posit - atom_sel).magnitude() as f32 > ui.nearby_dist_thresh as f32 {
                         continue;
                     }
                 }
@@ -1386,7 +1395,7 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
 
             let mut entity = Entity::new(
                 mesh,
-                (*atom_posit).into(),
+                atom_posit.into(),
                 Quaternion::new_identity(),
                 radius,
                 color_atom,
@@ -1417,18 +1426,21 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
         let atom_0 = &mol.common.atoms[bond.atom_0];
         let atom_1 = &mol.common.atoms[bond.atom_1];
 
-        let atom_0_posit = get_atom_posit(
-            state.ui.peptide_atom_posits,
-            Some(&mol.common.atom_posits),
-            bond.atom_0,
-            atom_0,
-        );
-        let atom_1_posit = get_atom_posit(
-            state.ui.peptide_atom_posits,
-            Some(&mol.common.atom_posits),
-            bond.atom_1,
-            atom_1,
-        );
+        let atom_0_posit = mol.common.atom_posits[bond.atom_0];
+        let atom_1_posit = mol.common.atom_posits[bond.atom_1];
+
+        // let atom_0_posit = get_atom_posit(
+        //     state.ui.peptide_atom_posits,
+        //     Some(&mol.common.atom_posits),
+        //     bond.atom_0,
+        //     atom_0,
+        // );
+        // let atom_1_posit = get_atom_posit(
+        //     state.ui.peptide_atom_posits,
+        //     Some(&mol.common.atom_posits),
+        //     bond.atom_1,
+        //     atom_1,
+        // );
 
         // Don't draw bonds if on the spacefill view, and the atoms aren't hetero.
         if ui.mol_view == MoleculeView::SpaceFill && !atom_0.hetero && !atom_1.hetero {
@@ -1438,7 +1450,8 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
         if ui.show_near_sel_only {
             let atom_sel = mol.get_sel_atom(&state.ui.selection);
             if let Some(a) = atom_sel {
-                if (*atom_0_posit - a.posit).magnitude() as f32 > ui.nearby_dist_thresh as f32 {
+                // todo: See note above: You must get teh selected atom posit correctly.
+                if (atom_0_posit - a.posit).magnitude() as f32 > ui.nearby_dist_thresh as f32 {
                     continue;
                 }
             }
@@ -1446,7 +1459,7 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
         if let Some(lig) = state.active_lig() {
             if ui.show_near_lig_only {
                 let atom_sel = lig.common.atom_posits[0];
-                if (*atom_0_posit - atom_sel).magnitude() as f32 > ui.nearby_dist_thresh as f32 {
+                if (atom_0_posit - atom_sel).magnitude() as f32 > ui.nearby_dist_thresh as f32 {
                     continue;
                 }
             }
@@ -1486,8 +1499,8 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
             continue;
         }
 
-        let posit_0: Vec3 = (*atom_0_posit).into();
-        let posit_1: Vec3 = (*atom_1_posit).into();
+        let posit_0: Vec3 = atom_0_posit.into();
+        let posit_1: Vec3 = atom_1_posit.into();
 
         // For determining how to orient multiple-bonds.
         let neighbor_i = find_neighbor_posit(&mol.common, bond.atom_0, bond.atom_1, &hydrogen_is);

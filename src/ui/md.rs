@@ -73,10 +73,10 @@ pub fn md_setup(
                     }
 
                     // todo temp
-                    state.to_save.md_config.snapshot_handlers.push(SnapshotHandler {
-                        ratio: 1,
-                        save_type: SaveType::Dcd(PathBuf::from("test.dcd")),
-                    });
+                    // state.to_save.md_config.snapshot_handlers.push(SnapshotHandler {
+                    //     ratio: 1,
+                    //     save_type: SaveType::Dcd(PathBuf::from("test.dcd")),
+                    // });
 
                     // Filter molecules for docking by if they're selected.
                     // mut so we can move their posits in the initial snapshot change.
@@ -253,10 +253,15 @@ pub fn md_setup(
 
                 ui.add_space(COL_SPACING/2.);
                 ui.label("E (kcal/mol) KE: ");
-                ui.label(RichText::new(format!("{:.1}", snap.energy_kinetic)).color(Color32::GOLD));
+                ui.label(RichText::new(format!("{:.1}", snap.energy_kinetic as u32)).color(Color32::GOLD));
+
+                ui.label("E / atom: ");
+                // todo: Don't continuosly run this!
+                let e_per_atom = (snap.energy_kinetic / ((snap.water_o_posits.len() * 3) as f32 + snap.atom_posits.len() as f32)) as u16;
+                ui.label(RichText::new(format!("{:.1}", e_per_atom)).color(Color32::GOLD));
 
                 ui.label("PE: ");
-                ui.label(RichText::new(format!("{:.1}", snap.energy_potential)).color(Color32::GOLD));
+                ui.label(RichText::new(format!("{:.1}", snap.energy_potential as u32)).color(Color32::GOLD));
             }
 
         });

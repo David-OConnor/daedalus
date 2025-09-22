@@ -17,8 +17,12 @@ use dynamics::{
     ComputationDevice, FfMolType, MdConfig, MdState, MolDynamics, ParamError, params::FfParamSet,
     snapshot::Snapshot,
 };
+use lin_alg::f64::Vec3;
 
-use crate::{mol_lig::MoleculeSmall, molecule::MoleculePeptide};
+use crate::{
+    mol_lig::MoleculeSmall,
+    molecule::{MoleculeCommon, MoleculePeptide},
+};
 
 // Å. Static atoms must be at least this close to a dynamic atom at the start of MD to be counted.
 // Set this wide to take into account motion.
@@ -131,50 +135,38 @@ pub fn build_dynamics(
         md_state.neighbor_rebuild_us / 1_000
     );
 
-    change_snapshot(ligs, &md_state.snapshots[0]);
+    // change_snapshot(peptide, ligs, &md_state.snapshots[0]);
 
     Ok(md_state)
 }
 
-/// Set atom positions for molecules involve in dynamics to that of a snapshot.
-pub fn change_snapshot_form2(ligs: &mut [MoleculeSmall], snapshot: &Snapshot) {
-    // todo: Handle peptide too!
-
-    // todo: QC this logic.
-
+fn change_snapshot_helper(posits: &mut [Vec3], start_i_this_mol: &mut usize, snapshot: &Snapshot) {
     // Unflatten.
-    let mut start_i_this_mol = 0;
-    for lig in ligs {
-        for (i_snap, posit) in snapshot.atom_posits.iter().enumerate() {
-            if i_snap < start_i_this_mol
-                || i_snap >= lig.common.atom_posits.len() + start_i_this_mol
-            {
-                continue;
-            }
-            lig.common.atom_posits[i_snap - start_i_this_mol] = (*posit).into();
+    for (i_snap, posit) in snapshot.atom_posits.iter().enumerate() {
+        if i_snap < *start_i_this_mol || i_snap >= posits.len() + *start_i_this_mol {
+            continue;
         }
-
-        start_i_this_mol += lig.common.atom_posits.len();
+        posits[i_snap - *start_i_this_mol] = (*posit).into();
     }
+
+    *start_i_this_mol += posits.len();
 }
 
-// todo: This is so annoying. &[T] vs [&T].
-/// Set atom positions for molecules involve in dynamics to that of a snapshot.
-pub fn change_snapshot(ligs: Vec<&mut MoleculeSmall>, snapshot: &Snapshot) {
-    // todo: Handle peptide too!
-
-    // todo: QC this logic.
-
-    // Unflatten.
+/// Set atom positions for molecules involve in dynamics to that of a snapshot. Ligs are only ones included
+/// in dynamics.
+// pub fn change_snapshot(peptide: &mut Option<MoleculePeptide>, ligs: Vec<&mut MoleculeSmall>, snapshot: &Snapshot) {
+pub fn change_snapshot(
+    peptide: Option<&mut MoleculePeptide>,
+    ligs: Vec<&mut MoleculeSmall>,
+    snapshot: &Snapshot,
+) {
     let mut start_i_this_mol = 0;
-    for lig in ligs {
-        for (i, posit) in snapshot.atom_posits.iter().enumerate() {
-            if i < start_i_this_mol || i >= lig.common.atom_posits.len() + start_i_this_mol {
-                continue;
-            }
-            lig.common.atom_posits[i - start_i_this_mol] = (*posit).into();
-        }
 
-        start_i_this_mol += lig.common.atom_posits.len();
+    for lig in ligs {
+        change_snapshot_helper(&mut lig.common.atom_posits, &mut start_i_this_mol, snapshot);
+    }
+
+    if let Some(mol) = peptide {
+        change_snapshot_helper(&mut mol.common.atom_posits, &mut start_i_this_mol, snapshot);
     }
 }

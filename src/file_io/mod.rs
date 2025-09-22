@@ -298,18 +298,16 @@ impl State {
 
                 println!("Dihe:");
                 for di in v.dihedral.values().take(20) {
-                    println!(
-                        "DH: {:?}, {}, {}",
-                        di.atom_types, di.barrier_height, di.phase
-                    );
+                    for d in di {
+                        println!("DH: {:?}, {}, {}", d.atom_types, d.barrier_height, d.phase);
+                    }
                 }
 
                 println!("Dihedral, improper:");
                 for di in v.improper.values().take(20) {
-                    println!(
-                        "Imp: {:?}, {}, {}",
-                        di.atom_types, di.barrier_height, di.phase
-                    );
+                    for d in di {
+                        println!("Imp: {:?}, {}, {}", d.atom_types, d.barrier_height, d.phase);
+                    }
                 }
 
                 // todo: Get VDW loading working.

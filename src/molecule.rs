@@ -847,24 +847,24 @@ impl MoleculePeptide {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Default)]
-pub enum PeptideAtomPosits {
-    #[default]
-    /// E.g. as imported from a mmCIF file, from experimental data
-    Original,
-    /// As calculated in a snapshot from a MD sim
-    Dynamics,
-}
+// #[derive(Clone, Copy, PartialEq, Default)]
+// pub enum PeptideAtomPosits {
+//     #[default]
+//     /// E.g. as imported from a mmCIF file, from experimental data
+//     Original,
+//     /// As calculated in a snapshot from a MD sim
+//     Dynamics,
+// }
 
-impl Display for PeptideAtomPosits {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let val = match self {
-            Self::Original => "Original",
-            Self::Dynamics => "Dynamics",
-        };
-        write!(f, "{val}")
-    }
-}
+// impl Display for PeptideAtomPosits {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         let val = match self {
+//             Self::Original => "Original",
+//             Self::Dynamics => "Dynamics",
+//         };
+//         write!(f, "{val}")
+//     }
+// }
 
 pub fn build_adjacency_list(bonds: &Vec<Bond>, atoms_len: usize) -> Vec<Vec<usize>> {
     let mut result = vec![Vec::new(); atoms_len];

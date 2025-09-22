@@ -4,11 +4,11 @@ use egui::{Color32, ComboBox, CornerRadius, Frame, Margin, RichText, Slider, Str
 use graphics::{EngineUpdates, Scene};
 const COLOR_SECTION_BOX: Color32 = Color32::from_rgb(100, 100, 140);
 
+use crate::md::change_snapshot;
 use crate::{
     State,
     drawing::{draw_all_ligs, draw_peptide, draw_water},
-    md::change_snapshot_form2,
-    molecule::PeptideAtomPosits,
+    // molecule::PeptideAtomPosits,
     ui::{COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_INACTIVE, ROW_SPACING},
 };
 
@@ -51,26 +51,26 @@ pub fn dynamics_player(
     }
 
     ui.horizontal(|ui| {
-        let prev = state.ui.peptide_atom_posits;
+        // let prev = state.ui.peptide_atom_posits;
 
         let help_text = "Toggle between viewing the original (pre-dynamics) atom positions, and \
         ones at the selected dynamics snapshot.";
         ui.label("Show atoms:").on_hover_text(help_text);
-        ComboBox::from_id_salt(3)
-            .width(80.)
-            .selected_text(state.ui.peptide_atom_posits.to_string())
-            .show_ui(ui, |ui| {
-                for view in &[PeptideAtomPosits::Original, PeptideAtomPosits::Dynamics] {
-                    ui.selectable_value(&mut state.ui.peptide_atom_posits, *view, view.to_string());
-                }
-            })
-            .response
-            .on_hover_text(help_text);
+        // ComboBox::from_id_salt(3)
+        //     .width(80.)
+        //     .selected_text(state.ui.peptide_atom_posits.to_string())
+        //     .show_ui(ui, |ui| {
+        //         for view in &[PeptideAtomPosits::Original, PeptideAtomPosits::Dynamics] {
+        //             ui.selectable_value(&mut state.ui.peptide_atom_posits, *view, view.to_string());
+        //         }
+        //     })
+        //     .response
+        //     .on_hover_text(help_text);
 
-        if state.ui.peptide_atom_posits != prev {
-            draw_peptide(state, scene);
-            engine_updates.entities = true;
-        }
+        // if state.ui.peptide_atom_posits != prev {
+        //     draw_peptide(state, scene);
+        //     engine_updates.entities = true;
+        // }
 
         let snapshot_prev = state.ui.current_snapshot;
 
@@ -95,12 +95,34 @@ pub fn dynamics_player(
                 changed = true;
                 let snap = &md.snapshots[state.ui.current_snapshot];
 
-                change_snapshot_form2(&mut state.ligands, snap);
+                // todo note: This will break if you change selected ligs prior to re-reunning docking.
+                let ligs_md: Vec<_> = state
+                    .ligands
+                    .iter_mut()
+                    .filter(|l| l.common.selected_for_md)
+                    .collect();
+                let ligs_len = ligs_md.len();
+
+                let peptide_md = match &mut state.molecule {
+                    Some(m) => {
+                        if m.common.selected_for_md {
+                            Some(m)
+                        } else {
+                            None
+                        }
+                    }
+                    None => None,
+                };
+
+                change_snapshot(peptide_md, ligs_md, snap);
                 // todo: Only if at least one lig is involved.
-                draw_all_ligs(state, scene);
+                if ligs_len > 0 {
+                    draw_all_ligs(state, scene);
+                }
 
                 if let Some(mol) = &state.molecule {
-                    if mol.common.atoms.len() > 0 {
+                    // if mol.common.atoms.len() > 0 {
+                    if mol.common.selected_for_md {
                         draw_peptide(state, scene);
                     }
                 }

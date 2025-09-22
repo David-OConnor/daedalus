@@ -77,7 +77,7 @@ use crate::ui::cam::{FOG_DIST_MAX, FOG_DIST_MIN};
 use crate::ui::misc::MdMode;
 use crate::{
     // docking::{BindingEnergy, THETA_BH, prep::DockingSetup},
-    molecule::PeptideAtomPosits,
+    // molecule::PeptideAtomPosits,
     nucleic_acid::MoleculeNucleicAcid,
     prefs::ToSave,
     render::render,
@@ -411,8 +411,8 @@ struct StateUi {
     atom_color_by_charge: bool,
     /// Affects the electron density mesh.
     density_iso_level: f32,
-    /// E.g. set to original for from the mmCIF file, or Dynamics to view it after MD.
-    peptide_atom_posits: PeptideAtomPosits,
+    // /// E.g. set to original for from the mmCIF file, or Dynamics to view it after MD.
+    // peptide_atom_posits: PeptideAtomPosits,
     popup: PopupState,
     md: StateUiMd,
     ph_input: String,
