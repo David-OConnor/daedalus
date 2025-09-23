@@ -1152,6 +1152,19 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             if let Some(mol) = &mut state.molecule {
                 mol_descrip(&MoleculeGenericRef::Peptide(&mol), ui);
 
+                ui.add_space(COL_SPACING);
+                if ui
+                    .button(RichText::new("Reset posit").color(COLOR_HIGHLIGHT))
+                    .on_hover_text(
+                        "Move the peptide to its absolute coordinates, e.g. as defined in \
+                    its source mmCIF file.",
+                    )
+                    .clicked()
+                {
+                    mol.common.reset_posits();
+                    redraw_mol = true;
+                }
+
                 if ui.button("Close").clicked() {
                     close_peptide(state, scene, &mut engine_updates);
                 }

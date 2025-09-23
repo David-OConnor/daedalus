@@ -111,8 +111,9 @@ pub enum EntityType {
     DensitySurface = 4,
     SecondaryStructure = 5,
     SaSurface = 6,
-    DockingSite = 7,
-    WaterModel = 8,
+    SaSurfaceDots = 7,
+    DockingSite = 8,
+    WaterModel = 9,
     Other = 10,
 }
 
@@ -1029,7 +1030,7 @@ fn draw_dots(update_mesh: &mut bool, mesh_created: bool, scene: &mut Scene) {
             COLOR_SFC_DOT,
             ATOM_SHININESS,
         );
-        entity.class = EntityType::Protein as u32;
+        entity.class = EntityType::SaSurfaceDots as u32;
         scene.entities.push(entity);
     }
 }
@@ -1204,7 +1205,9 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
 
     // todo: You may wish to integrate Cartoon into this workflow.
     scene.entities.retain(|ent| {
-        ent.class != EntityType::Protein as u32 && ent.class != EntityType::SaSurface as u32
+        ent.class != EntityType::Protein as u32
+            && ent.class != EntityType::SaSurface as u32
+            && ent.class != EntityType::SaSurfaceDots as u32
     });
 
     let ui = &state.ui;

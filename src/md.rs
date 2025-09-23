@@ -28,8 +28,7 @@ use crate::{
 // Set this wide to take into account motion.
 const STATIC_ATOM_DIST_THRESH: f64 = 8.; // todo: Increase (?) A/R.
 
-/// Perform MD on the ligand, with nearby protein (receptor) atoms, from the docking setup as static
-/// non-bonded contributors. (Vdw and coulomb)
+/// Perform MD on selected molecules.
 pub fn build_dynamics(
     #[cfg(feature = "cuda")] dev: &(ComputationDevice, Option<Arc<CudaModule>>),
     #[cfg(not(feature = "cuda"))] dev: &ComputationDevice,
@@ -134,6 +133,91 @@ pub fn build_dynamics(
         md_state.neighbor_rebuild_count,
         md_state.neighbor_rebuild_us / 1_000
     );
+
+    // We filtered peptide hetero atoms out above. Adjust snapshot indices and atom positions so they
+    // are properly synchronized.
+    // todo: Set this up to handle the case of excluding molecules not near the lig as well,
+    // todo if that's set.
+    // todo: Delegat this to its own fn A/R.
+    {
+        println!("Re-assigning snapshot indices to match atoms excluded for MD...");
+        if let Some(p) = peptide {
+            // Which peptide atoms were included in MD (same logic as when building `atoms` above)
+            let included: Vec<bool> = p
+                .common
+                .atoms
+                .iter()
+                .map(|a| {
+                    if !peptide_only_near_lig {
+                        !a.hetero
+                    } else {
+                        let mut closest_dist = f64::MAX;
+                        for lig in &ligs {
+                            for lp in &lig.common.atom_posits {
+                                let d = (*lp - a.posit).magnitude();
+                                if d < closest_dist {
+                                    closest_dist = d;
+                                }
+                            }
+                        }
+                        !a.hetero && closest_dist < STATIC_ATOM_DIST_THRESH
+                    }
+                })
+                .collect();
+
+            let n_included = included.iter().filter(|&&b| b).count();
+
+            // Count how many ligand atoms precede the peptide in the snapshot ordering.
+            let lig_atom_count: usize = ligs
+                .iter()
+                .filter(|l| l.common.selected_for_md)
+                .map(|l| l.common.atoms.len())
+                .sum();
+
+            // Rebuild each snapshot's atom_posits: [ligands as-is] + [full peptide with holes filled]
+            for snap in &mut md_state.snapshots {
+                // Iterator over the peptide positions that actually participated in MD
+                let mut pept_md_posits = snap.atom_posits
+                    [lig_atom_count..lig_atom_count + n_included]
+                    .iter()
+                    .cloned();
+                let mut pept_md_vels = snap.atom_velocities
+                    [lig_atom_count..lig_atom_count + n_included]
+                    .iter()
+                    .cloned();
+
+                let mut new_posits = Vec::with_capacity(lig_atom_count + p.common.atoms.len());
+                let mut new_vels = Vec::with_capacity(lig_atom_count + p.common.atoms.len());
+
+                // Keep ligand portion unchanged
+                new_posits.extend_from_slice(&snap.atom_posits[..lig_atom_count]);
+                new_vels.extend_from_slice(&snap.atom_velocities[..lig_atom_count]);
+
+                // Insert peptide atoms in original index order; use MD-updated posits if included,
+                // otherwise the original (excluded) atom position.
+                // todo: Do velocities too A/R.
+                for (a, inc) in p.common.atoms.iter().zip(included.iter()) {
+                    if *inc {
+                        new_posits
+                            .push(pept_md_posits.next().expect("peptide MD posits exhausted"));
+                        new_vels.push(
+                            pept_md_vels
+                                .next()
+                                .expect("peptide MD velocities exhausted"),
+                        );
+                    } else {
+                        new_posits.push(a.posit.into());
+                        new_vels.push(lin_alg::f32::Vec3::new_zero());
+                    }
+                }
+
+                // Replace the snapshot's positions with the reindexed set
+                snap.atom_posits = new_posits;
+                snap.atom_velocities = new_vels;
+            }
+        }
+        println!("Done.");
+    }
 
     // change_snapshot(peptide, ligs, &md_state.snapshots[0]);
 

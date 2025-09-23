@@ -242,12 +242,9 @@ pub fn disp_lig_data(
             )
             .clicked()
         {
-            lig.reset_posits();
+            lig.common.reset_posits();
 
             *redraw_lig = true;
-
-            // let center = state.molecule.as_ref().unwrap().center;
-            // move_cam_to_lig(state, scene, center, engine_updates)
         }
 
         if ui.button("Close").clicked() {
@@ -420,7 +417,7 @@ pub fn disp_lig_data(
                     // If from a hetero atom, leave it in place.
                     match &res_type {
                         ResidueType::AminoAcid(_) => {
-                            lig.reset_posits();
+                            lig.common.reset_posits();
                         }
                         _ => {
                             state.ui.visibility.hide_hetero = true;

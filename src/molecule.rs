@@ -114,6 +114,11 @@ impl MoleculeCommon {
     pub fn build_adjacency_list(&mut self) {
         self.adjacency_list = build_adjacency_list(&self.bonds, self.atoms.len());
     }
+
+    /// Reset atom positions to be at their internal values, e.g. as present in the Mol2 or SDF files.
+    pub fn reset_posits(&mut self) {
+        self.atom_posits = self.atoms.iter().map(|a| a.posit).collect();
+    }
 }
 
 #[derive(Debug)]

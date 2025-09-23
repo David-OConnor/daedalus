@@ -280,11 +280,6 @@ impl MoleculeSmall {
         }
     }
 
-    /// Reset atom positions to be at their internal values, e.g. as present in the Mol2 or SDF files.
-    pub fn reset_posits(&mut self) {
-        self.common.atom_posits = self.common.atoms.iter().map(|a| a.posit).collect();
-    }
-
     /// Separate from constructor; run when the pose changes, for now.
     pub fn set_anchor(&mut self) {
         let Some(data) = &mut self.lig_data else {
