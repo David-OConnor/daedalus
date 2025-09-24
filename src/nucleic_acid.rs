@@ -287,6 +287,7 @@ fn push_atom(common: &mut MoleculeCommon, pos: Vec3, element: Element, residue: 
         hetero: false,
         occupancy: None,
         partial_charge: None,
+        alt_conformation_id: None,
     });
     idx
 }

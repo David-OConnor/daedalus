@@ -18,7 +18,7 @@ use crate::{
     molecule::Atom,
     render::set_flashlight,
     selection::{find_selected_atom, points_along_ray},
-    util::{cycle_selected, orbit_center},
+    util::{cycle_selected, move_cam_to_sel, orbit_center},
 };
 
 // These are defaults; overridden by the user A/R, and saved to prefs.
@@ -248,6 +248,15 @@ pub fn event_dev_handler(
 
                         redraw_protein = true;
                         redraw_lig = true;
+                    }
+                    Code(KeyCode::Enter) => {
+                        move_cam_to_sel(
+                            &mut state_.ui,
+                            &state_.molecule,
+                            &state_.ligands,
+                            &mut scene.camera,
+                            &mut updates,
+                        );
                     }
                     // These lig rotations are temporary.
                     Code(KeyCode::KeyU) => {

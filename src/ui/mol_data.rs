@@ -328,7 +328,14 @@ pub fn disp_lig_data(
                         None
                     }
                 }
-                Selection::Residue(sel_i) => Some(&mol.residues[sel_i]),
+                Selection::Residue(sel_i) => {
+                    if sel_i >= mol.residues.len() {
+                        handle_err(&mut state.ui, "Residue selection is out of bounds.".to_owned());
+                        None
+                    } else {
+                        Some(&mol.residues[sel_i])
+                    }
+                },
                 _ => None,
             };
 

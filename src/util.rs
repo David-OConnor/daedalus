@@ -829,3 +829,28 @@ pub fn find_neighbor_posit(
 //     // todo placeholder!
 //     Vec3::new(motion.0 as f64, 0., motion.1 as f64)
 // }
+
+pub fn move_cam_to_sel(
+    state_ui: &mut StateUi,
+    mol_: &Option<MoleculePeptide>,
+    ligs: &[MoleculeSmall],
+    cam: &mut Camera,
+    engine_updates: &mut EngineUpdates,
+) {
+    if let Selection::AtomLig((i_mol, i_atom)) = &state_ui.selection {
+        cam_look_at(cam, ligs[*i_mol].common.atom_posits[*i_atom]);
+        engine_updates.camera = true;
+        state_ui.cam_snapshot = None;
+    } else {
+        let Some(mol) = mol_ else {
+            return;
+        };
+        let atom_sel = mol.get_sel_atom(&state_ui.selection);
+
+        if let Some(atom) = atom_sel {
+            cam_look_at(cam, atom.posit);
+            engine_updates.camera = true;
+            state_ui.cam_snapshot = None;
+        }
+    }
+}

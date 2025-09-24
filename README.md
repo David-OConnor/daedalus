@@ -178,7 +178,8 @@ If *orbit sel* is set in the GUI, the orbit center will be the selected atom or 
 
 - **M**: Move a molecule with the mouse and scroll wheel
 - **R**: Rotate a molecule with the mouse and scroll wheel
-- 
+
+- **Enter**: Move the camera to the selected atom or residue. 
 
 ![Protein B](screenshots/protein_b.png)
 

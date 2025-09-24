@@ -6,7 +6,7 @@ use std::{
     time::Instant,
 };
 
-use bio_apis::{amber_geostd, rcsb};
+use bio_apis::{amber_geostd, pubchem, rcsb};
 use egui::{
     Color32, ComboBox, Context, Key, Popup, PopupAnchor, Pos2, RectAlign, RichText, Slider,
     TextEdit, TopBottomPanel, Ui,
@@ -515,10 +515,15 @@ fn selection_section(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
                             state.ui.selection = match state.ui.selection {
                                 // It seems [0] is often N, and [1] is Cα
                                 Selection::Residue(i) => {
-                                    if mol.residues[i].atoms.len() <= 2 {
-                                        Selection::Atom(mol.residues[i].atoms[1])
-                                    } else {
+                                    if i >= mol.residues.len() {
+                                        handle_err(&mut state.ui, "Residue bounds problem".to_string());
                                         Selection::None
+                                    } else {
+                                        if mol.residues[i].atoms.len() <= 2 {
+                                            Selection::Atom(mol.residues[i].atoms[1])
+                                        } else {
+                                            Selection::None
+                                        }
                                     }
                                 }
 
@@ -674,15 +679,20 @@ fn mol_descrip(mol: &MoleculeGenericRef, ui: &mut Ui) {
         }
     }
 
-    if mol.common().ident.len() <= 5 {
-        // todo: You likely need a better approach.
-        if ui
-            .button("View on RCSB")
-            .on_hover_text("Open a web browser to the RCSB PDB page for this molecule.")
-            .clicked()
-        {
-            rcsb::open_overview(&mol.common().ident);
+    match mol {
+        MoleculeGenericRef::Peptide(m) => {
+            if mol.common().ident.len() <= 5 {
+                // todo: You likely need a better approach.
+                if ui
+                    .button("View on RCSB")
+                    .on_hover_text("Open a web browser to the RCSB PDB page for this molecule.")
+                    .clicked()
+                {
+                    rcsb::open_overview(&mol.common().ident);
+                }
+            }
         }
+        _ => (), // We handle ligand links in the lig-specific section.
     }
 }
 

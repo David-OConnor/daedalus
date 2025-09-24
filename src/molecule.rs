@@ -192,6 +192,8 @@ pub struct MoleculePeptide {
     pub density_rect: Option<DensityRect>,
     pub aa_seq: Vec<AminoAcid>,
     pub experimental_method: Option<ExperimentalMethod>,
+    /// E.g: ["A", "B"]. Inferred from atoms.
+    pub alternate_conformations: Option<Vec<String>>,
     // pub ff_params: Option<ForceFieldParamsIndexed>,
 }
 
@@ -235,21 +237,14 @@ impl MoleculePeptide {
             }
         }
 
-        for atom in &mut result.common.atoms {
-            // println!("{:?}", atom.role);
-            //     // This is redundant; but can serve as a cache.
-            //     if let Some(role) = &atom.role {
-            //         if matches!(role, AtomRole::C_Alpha | AtomRole::C_Prime | AtomRole::N_Backbone | AtomRole::O_Backbone) {
-            //             println!("HET");
-            //             atom.is = true;
-            //         }
-            //     }
-        }
+        // Ideally, alternate conformations should go here, but we place them in from_mmcif
+        // so they can be added prior to Hydrogens.
 
         result
     }
 
     /// If a residue, get the alpha C. If multiple, get an arbitrary one.
+    /// todo: Make this work for non-peptides.
     pub fn get_sel_atom(&self, sel: &Selection) -> Option<&Atom> {
         match sel {
             Selection::Atom(i) => self.common.atoms.get(*i),
@@ -674,6 +669,7 @@ pub struct Atom {
     pub occupancy: Option<f32>,
     /// Elementary charge. (Charge of a proton)
     pub partial_charge: Option<f32>,
+    pub alt_conformation_id: Option<String>,
 }
 
 impl Atom {
@@ -722,6 +718,7 @@ impl From<&AtomGeneric> for Atom {
             partial_charge: atom.partial_charge,
             force_field_type: atom.force_field_type.clone(),
             hetero: atom.hetero,
+            alt_conformation_id: atom.alt_conformation_id.clone(),
             ..Default::default()
         }
     }
@@ -790,16 +787,46 @@ impl MoleculePeptide {
         path: Option<PathBuf>,
         ph: f32,
     ) -> Result<Self, io::Error> {
-        // todo: Perhaps you still want to calculate dihedral angles if hydrogens are populated already.
-        // todo; For now, you are skipping both. Example when this comes up: Ligands.
-        // Attempt to only populate Hydrogens if there aren't many.
-
         // Add hydrogens, FF types, partial charge, and bonds.
+        // Sort out alternate conformations prior to adding hydrogens.
+        let mut alternate_conformations: Vec<String> = Vec::new();
+        for atom in &mut m.atoms {
+            if let Some(alt) = &atom.alt_conformation_id {
+                if !alternate_conformations.contains(&alt) {
+                    alternate_conformations.push(alt.to_owned());
+                }
+            }
+        }
+
+        println!("CONFS: {:?}", alternate_conformations);
+
+        // todo: Handle alternate conformations!
+        // todo: For now, we force the first one. This is crude, and ignores alt conformations.
+        let mut atoms_ = Vec::new();
+        if alternate_conformations.is_empty() {
+            atoms_ = m.atoms.clone();
+        } else {
+            for atom in &m.atoms {
+                if let Some(alt) = &atom.alt_conformation_id {
+                    if alt == &alternate_conformations[0] {
+                        atoms_.push(atom.clone());
+                    }
+                } else {
+                    println!("PUSHING");
+                    atoms_.push(atom.clone());
+                }
+            }
+        }
+
+        // if !alternate_conformations.is_empty() {
+        //     result.alternate_conformations = Some(alternate_conformations);
+        // }
+
         let (bonds_, dihedrals) = prepare_peptide_mmcif(&mut m, ff_map, ph)
             .map_err(|e| io::Error::new(ErrorKind::InvalidData, e.descrip))?;
 
         let (atoms, bonds, residues, chains) =
-            init_bonds_chains_res(&m.atoms, &bonds_, &m.residues, &m.chains, &dihedrals)?;
+            init_bonds_chains_res(&atoms_, &bonds_, &m.residues, &m.chains, &dihedrals)?;
 
         let mut result = Self::new(
             m.ident.clone(),
@@ -900,14 +927,21 @@ fn init_bonds_chains_res(
 
     let mut residues = Vec::with_capacity(residues_.len());
 
-    if dihedrals.len() == residues_.len() {
-        for (i, res) in residues_.iter().enumerate() {
-            let mut res = Residue::from_generic(res, &atoms)?;
+    let len_matches = residues_.len() == dihedrals.len();
+    if !len_matches {
+        eprintln!(
+            "Error: Diehedral, residue len mismatch. Dihedrals: {}, residues: {}",
+            dihedrals.len(),
+            residues_.len()
+        );
+    }
+
+    for (i, res) in residues_.iter().enumerate() {
+        let mut res = Residue::from_generic(res, &atoms)?;
+        if len_matches {
             res.dihedral = Some(dihedrals[i].clone());
-            residues.push(res);
         }
-    } else {
-        eprintln!("Error: Problem generating dihedrals.");
+        residues.push(res);
     }
 
     let mut chains = Vec::with_capacity(chains_.len());

@@ -14,7 +14,9 @@ use crate::{
         misc::{self, section_box},
     },
     util,
-    util::{cam_look_at, cam_look_at_outside, handle_err, orbit_center, reset_camera},
+    util::{
+        cam_look_at, cam_look_at_outside, handle_err, move_cam_to_sel, orbit_center, reset_camera,
+    },
 };
 
 // This control the clip planes in the camera frustum.
@@ -149,29 +151,15 @@ pub fn cam_controls(
                     }
                 }
 
-                if let Some(mol) = &state.molecule {
                     ui.add_space(COL_SPACING);
 
-                    if state.ui.selection != Selection::None {
-                        if ui
-                            .button(RichText::new("Cam to sel").color(COLOR_HIGHLIGHT))
-                            .on_hover_text("Move camera near the selected atom or residue, looking at it.")
-                            .clicked()
-                        {
-                            if let Selection::AtomLig((i_mol, i_atom)) = &state.ui.selection {
-                                cam_look_at(&mut scene.camera, state.ligands[*i_mol].common.atom_posits[*i_atom]);
-                                engine_updates.camera = true;
-                                state.ui.cam_snapshot = None;
-                            } else {
-                                let atom_sel = mol.get_sel_atom(&state.ui.selection);
-
-                                if let Some(atom) = atom_sel {
-                                    cam_look_at(&mut scene.camera, atom.posit);
-                                    engine_updates.camera = true;
-                                    state.ui.cam_snapshot = None;
-                                }
-                            }
-                        }
+                if state.ui.selection != Selection::None {
+                    if ui
+                        .button(RichText::new("Cam to sel").color(COLOR_HIGHLIGHT))
+                        .on_hover_text("(Hotkey: Enter) Move camera near the selected atom or residue, looking at it.")
+                        .clicked()
+                    {
+                        move_cam_to_sel(&mut state.ui, &state.molecule, &state.ligands, &mut scene.camera, engine_updates);
                     }
                 }
 
