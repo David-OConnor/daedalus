@@ -802,19 +802,31 @@ impl MoleculePeptide {
 
         // todo: Handle alternate conformations!
         // todo: For now, we force the first one. This is crude, and ignores alt conformations.
-        let mut atoms_ = Vec::new();
-        if alternate_conformations.is_empty() {
-            atoms_ = m.atoms.clone();
-        } else {
+        if !alternate_conformations.is_empty() {
+            let mut atoms_ = Vec::new();
+
             for atom in &m.atoms {
                 if let Some(alt) = &atom.alt_conformation_id {
                     if alt == &alternate_conformations[0] {
                         atoms_.push(atom.clone());
+                    } else {
+                        for res in &mut m.residues {
+                            res.atom_sns.retain(|sn| *sn != atom.serial_number);
+                        }
+                        for chain in &mut m.chains {
+                            chain.atom_sns.retain(|sn| *sn != atom.serial_number);
+                        }
                     }
                 } else {
-                    println!("PUSHING");
                     atoms_.push(atom.clone());
                 }
+            }
+
+            m.atoms = atoms_;
+        }
+        for a in &m.atoms {
+            if !a.hetero && a.serial_number < 200 {
+                // println!("A: {a:?}");
             }
         }
 
@@ -826,7 +838,7 @@ impl MoleculePeptide {
             .map_err(|e| io::Error::new(ErrorKind::InvalidData, e.descrip))?;
 
         let (atoms, bonds, residues, chains) =
-            init_bonds_chains_res(&atoms_, &bonds_, &m.residues, &m.chains, &dihedrals)?;
+            init_bonds_chains_res(&m.atoms, &bonds_, &m.residues, &m.chains, &dihedrals)?;
 
         let mut result = Self::new(
             m.ident.clone(),
@@ -840,6 +852,10 @@ impl MoleculePeptide {
 
         result.experimental_method = m.experimental_method.clone();
         result.secondary_structure = m.secondary_structure.clone();
+
+        if !alternate_conformations.is_empty() {
+            result.alternate_conformations = Some(alternate_conformations);
+        }
 
         Ok(result)
     }
