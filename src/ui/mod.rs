@@ -6,7 +6,7 @@ use std::{
     time::Instant,
 };
 
-use bio_apis::{amber_geostd, pubchem, rcsb};
+use bio_apis::{amber_geostd, rcsb};
 use egui::{
     Color32, ComboBox, Context, Key, Popup, PopupAnchor, Pos2, RectAlign, RichText, Slider,
     TextEdit, TopBottomPanel, Ui,
@@ -17,6 +17,7 @@ use na_seq::AaIdent;
 static INIT_COMPLETE: AtomicBool = AtomicBool::new(false);
 
 use bio_files::{DensityMap, ResidueType, density_from_2fo_fc_rcsb_gemmi};
+use lin_alg::f64::Vec3;
 use md::md_setup;
 use mol_data::disp_lig_data;
 
@@ -26,7 +27,7 @@ use crate::{
     download_mols::{load_sdf_drugbank, load_sdf_pubchem},
     drawing::{
         EntityType, MoleculeView, color_viridis, draw_all_ligs, draw_density_point_cloud,
-        draw_density_surface, draw_nucleic_acids, draw_peptide, draw_water,
+        draw_density_surface, draw_lipids, draw_nucleic_acids, draw_peptide, draw_water,
     },
     file_io::gemmi_path,
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
@@ -645,7 +646,7 @@ fn selection_section(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
         if state.ui.selection != Selection::None {
             section_box().show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    mol_data::selected_data(&state, &state.ligands, &state.ui.selection, ui);
+                    mol_data::selected_data(&state, &state.ligands, &state.nucleic_acids, &state.lipids, &state.ui.selection, ui);
                 });
             });
         }
@@ -1498,13 +1499,17 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         // ui.add_space(ROW_SPACING);
 
-        md_setup(state, scene, &mut engine_updates, &mut redraw_lig, ui);
+        let mut redraw_lipids = false;
+        lipid_section(state, scene, &mut engine_updates, ui);
 
-        if state.ui.show_docking_tools {
-            ui.add_space(ROW_SPACING);
+        md_setup(state, scene, &mut engine_updates, ui);
 
-            docking(state, scene, &mut redraw_lig, &mut engine_updates, ui);
-        }
+
+        // if state.ui.show_docking_tools {
+        //     ui.add_space(ROW_SPACING);
+        //
+        //     docking(state, scene, &mut redraw_lig, &mut engine_updates, ui);
+        // }
 
         // todo: Allow switching between chains and secondary-structure features here.
 
@@ -1831,7 +1836,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             let lig = &state.ligands[0];
             set_static_light(
                 scene,
-                lig.centroid().into(),
+                lig.common.centroid().into(),
                 3., // todo good enough?
             );
         }
@@ -1851,4 +1856,51 @@ pub fn flag_btn(val: &mut bool, label: &str, hover_text: &str, ui: &mut Ui) {
     {
         *val = !(*val);
     }
+}
+
+/// Add and manage lipids
+pub fn lipid_section(
+    state: &mut State,
+    scene: &mut Scene,
+    engine_updates: &mut EngineUpdates,
+    ui: &mut Ui,
+) {
+    ui.horizontal(|ui| {
+        ui.label("Add lipids:");
+
+        let mut add_standard_text = String::new();
+        if state.lipid_templates.len() > state.ui.lipid_to_add {
+            add_standard_text = state.lipid_templates[state.ui.lipid_to_add]
+                .common
+                .ident
+                .clone();
+        }
+
+        // Ideally hover text here too, but I'm not sure how.
+        ComboBox::from_id_salt(101)
+            .width(30.)
+            .selected_text(add_standard_text)
+            .show_ui(ui, |ui| {
+                for (i, mol) in state.lipid_templates.iter().enumerate() {
+                    ui.selectable_value(&mut state.ui.lipid_to_add, i, &mol.common.ident);
+                }
+            })
+            .response
+            .on_hover_text("Add this lipid to the scene.");
+
+        // todo: Multiple and sets once this is validated
+        if ui.button("+").clicked() {
+            let mut mol = state.lipid_templates[state.ui.lipid_to_add].clone();
+            for p in &mut mol.common.atom_posits {
+                *p = *p + Vec3::new_zero();
+            }
+
+            state.lipids.push(mol);
+
+            draw_lipids(state, scene);
+            engine_updates.entities = true;
+        }
+
+        ui.add_space(COL_SPACING);
+    });
 }

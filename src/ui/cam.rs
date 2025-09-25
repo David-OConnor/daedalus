@@ -314,7 +314,7 @@ pub fn move_cam_to_lig(
     };
 
     // todo: Cache centroid.
-    let lig_pos: Vec3 = lig.centroid().into();
+    let lig_pos: Vec3 = lig.common.centroid().into();
     let ctr: Vec3 = mol_center.into();
 
     cam_look_at_outside(&mut scene.camera, lig_pos, ctr);
@@ -336,7 +336,7 @@ pub fn move_cam_to_lig2(
     engine_updates: &mut EngineUpdates,
 ) {
     // todo: Cache centroid.
-    let lig_pos: Vec3 = lig.centroid().into();
+    let lig_pos: Vec3 = lig.common.centroid().into();
     let ctr: Vec3 = mol_center.into();
 
     cam_look_at_outside(&mut scene.camera, lig_pos, ctr);

@@ -16,7 +16,7 @@ use na_seq::Element;
 use crate::{
     ManipMode, Selection, State, StateUi, ViewSelLevel,
     mol_lig::MoleculeSmall,
-    molecule::{Atom, AtomRole, Chain, Residue, aa_color},
+    molecule::{Atom, AtomRole, Chain, MolType, Residue, aa_color},
     reflection::ElectronDensity,
     render::{
         ATOM_SHININESS, BACKGROUND_COLOR, BALL_RADIUS_WATER_H, BALL_RADIUS_WATER_O,
@@ -116,15 +116,6 @@ pub enum EntityType {
     DockingSite = 9,
     WaterModel = 10,
     Other = 11,
-}
-
-#[derive(Clone, Copy, PartialEq)]
-enum MolType {
-    Peptide,
-    Ligand,
-    NucleicAcid,
-    Lipid,
-    Water,
 }
 
 impl MolType {
@@ -384,6 +375,17 @@ fn atom_color(
                 result = COLOR_SELECTED;
             }
         }
+        Selection::AtomNucleicAcid((lig_i, sel_i)) => {
+            if mol_type == MolType::NucleicAcid && *sel_i == i && *lig_i == mol_i {
+                result = COLOR_SELECTED;
+            }
+        }
+        Selection::AtomLipid((lig_i, sel_i)) => {
+            if mol_type == MolType::Lipid && *sel_i == i && *lig_i == mol_i {
+                result = COLOR_SELECTED;
+            }
+        }
+
         Selection::None => (),
     }
 
@@ -863,15 +865,15 @@ pub fn draw_ligand(
         let mut manip_active = false;
 
         match move_mol {
-            ManipMode::Move(i) => {
-                if i == lig_i {
+            ManipMode::Move((mol_type, i)) => {
+                if mol_type == MolType::Ligand && i == lig_i {
                     color_0 = COLOR_MOL_MOVING;
                     color_1 = COLOR_MOL_MOVING;
                     manip_active = true;
                 }
             }
-            ManipMode::Rotate(i) => {
-                if i == lig_i {
+            ManipMode::Rotate((mol_type, i)) => {
+                if mol_type == MolType::Ligand && i == lig_i {
                     color_0 = COLOR_MOL_ROTATE;
                     color_1 = COLOR_MOL_ROTATE;
                     manip_active = true;

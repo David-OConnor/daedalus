@@ -278,16 +278,10 @@ fn push_atom(common: &mut MoleculeCommon, pos: Vec3, element: Element, residue: 
         serial_number: (idx as u32) + 1,
         posit: pos,
         element,
-        type_in_res: None,
-        force_field_type: None,
-        // dock_type: None,
-        role: None,
         residue: Some(residue),
         chain: Some(0),
         hetero: false,
-        occupancy: None,
-        partial_charge: None,
-        alt_conformation_id: None,
+        ..Default::default()
     });
     idx
 }

@@ -34,13 +34,13 @@ mod util;
 mod cli;
 mod reflection;
 
+mod lipid;
 mod md;
 mod mol_lig;
 mod nucleic_acid;
 mod selection;
 #[cfg(test)]
 mod tests;
-mod lipid;
 
 #[cfg(feature = "cuda")]
 use std::sync::Arc;
@@ -55,14 +55,17 @@ use bio_apis::{
     amber_geostd::GeostdItem,
     rcsb::{FilesAvailable, PdbDataResults},
 };
-use bio_files::md_params::{ChargeParams, ForceFieldParams};
+use bio_files::md_params::{ChargeParams, ForceFieldParams, load_lipid_templates};
 #[cfg(feature = "cuda")]
 use cudarc::{
     driver::{CudaContext, CudaModule, CudaStream},
     nvrtc::Ptx,
 };
 use drawing::MoleculeView;
-use dynamics::{ComputationDevice, Integrator, MdState, SimBoxInit, params::FfParamSet};
+use dynamics::{
+    ComputationDevice, Integrator, MdState, SimBoxInit,
+    params::{FfParamSet, LIPID_21_LIB},
+};
 use egui_file_dialog::{FileDialog, FileDialogConfig};
 use graphics::{Camera, ControlScheme, InputsCommanded};
 use lin_alg::{
@@ -72,15 +75,18 @@ use lin_alg::{
 use mol_lig::{Ligand, MoleculeSmall};
 use molecule::MoleculePeptide;
 
-use crate::ui::cam::{FOG_DIST_MAX, FOG_DIST_MIN};
-use crate::ui::misc::MdMode;
 use crate::{
+    lipid::MoleculeLipid,
+    molecule::{Atom, Bond, MolType, MoleculeCommon},
     nucleic_acid::MoleculeNucleicAcid,
     prefs::ToSave,
     render::render,
+    ui::{
+        cam::{FOG_DIST_MAX, FOG_DIST_MIN},
+        misc::MdMode,
+    },
     util::handle_err,
 };
-use crate::lipid::MoleculeLipid;
 // ------Including files into the executable
 
 // Note: If you haven't generated this file yet when compiling (e.g. from a freshly-cloned repo),
@@ -177,8 +183,8 @@ struct SceneFlags {
 pub enum ManipMode {
     #[default]
     None,
-    Move(usize), // Index of mol
-    Rotate(usize),
+    Move((MolType, usize)), // Index of mol
+    Rotate((MolType, usize)),
 }
 
 /// State for dragging and rotating molecules.
@@ -391,6 +397,8 @@ struct StateUi {
     popup: PopupState,
     md: StateUiMd,
     ph_input: String,
+    /// For the combo box. Stays at 0 if none loaded.
+    lipid_to_add: usize,
 }
 
 #[derive(Clone, PartialEq, Debug, Default, Encode, Decode)]
@@ -403,8 +411,12 @@ pub enum Selection {
     Residue(usize),
     /// Of the protein
     Atoms(Vec<usize>),
-    /// Ligand index, atom index
+    /// Molecule index, atom index
     AtomLig((usize, usize)),
+    /// Molecule index, atom index
+    AtomNucleicAcid((usize, usize)),
+    /// Molecule index, atom index
+    AtomLipid((usize, usize)),
 }
 
 #[derive(Clone, Debug, Encode, Decode)]
@@ -452,6 +464,9 @@ struct State {
     // todo: Combine these params in a single struct.
     pub ff_param_set: FfParamSet,
     pub lig_specific_params: HashMap<String, ForceFieldParams>,
+    /// Common lipid types, e.g. as derived from Amber's `lipids21.lib`, but perhaps not exclusively.
+    /// These are loaded at init; there will be one of each type.
+    pub lipid_templates: Vec<MoleculeLipid>,
 }
 
 impl State {
@@ -515,6 +530,51 @@ impl State {
             }
             None => None,
         }
+    }
+
+    /// Create lipid molecules from Amber's Lipids21.lib, which is included in the binary.
+    pub fn load_lipid_templates(&mut self) {
+        println!("Loading lipid templates...");
+        match load_lipid_templates(LIPID_21_LIB) {
+            Ok(l) => {
+                self.lipid_templates = Vec::new();
+                for (ident, (atoms, bonds)) in l {
+                    // todo: Move this to molecule mod A/R, e.g. lipid mod.
+                    let mut mol = MoleculeLipid {
+                        // t
+                        common: MoleculeCommon {
+                            ident,
+                            ..Default::default()
+                        },
+                        lmsd_id: String::new(),
+                        hmdb_id: String::new(),
+                        kegg_id: String::new(),
+                        common_name: String::new(),
+                    };
+                    for atom in atoms {
+                        mol.common.atoms.push((&atom).try_into().unwrap());
+                    }
+
+                    for bond in bonds {
+                        mol.common
+                            .bonds
+                            .push(Bond::from_generic(&bond, &mol.common.atoms).unwrap());
+                    }
+
+                    mol.common.build_adjacency_list();
+                    mol.common.atom_posits = mol.common.atoms.iter().map(|a| a.posit).collect();
+
+                    mol.populate_db_ids();
+
+                    self.lipid_templates.push(mol);
+                }
+            }
+            Err(e) => {
+                handle_err(&mut self.ui, format!("Unable to load lipid templates: {e}"));
+            }
+        };
+
+        println!("Done.");
     }
 }
 
@@ -663,6 +723,8 @@ fn main() {
     // }
     //
     // println!("\n\n\n params: {:?}", params);
+
+    state.load_lipid_templates();
 
     render(state);
 }

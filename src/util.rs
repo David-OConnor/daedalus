@@ -283,6 +283,13 @@ pub fn orbit_center(state: &State) -> Vec3F32 {
             Selection::AtomLig((i_lig, i_atom)) => {
                 state.ligands[*i_lig].common.atom_posits[*i_atom].into()
             }
+            Selection::AtomNucleicAcid((i_lig, i_atom)) => {
+                state.nucleic_acids[*i_lig].common.atom_posits[*i_atom].into()
+            }
+            Selection::AtomLipid((i_lig, i_atom)) => {
+                state.lipids[*i_lig].common.atom_posits[*i_atom].into()
+            }
+
             Selection::Residue(i) => {
                 if let Some(mol) = &state.molecule {
                     match mol.residues.get(*i) {

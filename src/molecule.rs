@@ -11,6 +11,8 @@ use std::{
     thread,
 };
 
+// todo: TO simplify various APIs, we may need a wrapped Molecule Enum that
+// todo has a variant for each molecule type.
 use bio_apis::{
     ReqError, rcsb,
     rcsb::{FilesAvailable, PdbDataResults},
@@ -21,10 +23,9 @@ use bio_files::{
 };
 use dynamics::{
     Dihedral,
-    params::{prepare_peptide_mmcif},
+    params::{ProtFfChargeMapSet, prepare_peptide_mmcif},
     populate_hydrogens_dihedrals,
 };
-use dynamics::params::ProtFfChargeMapSet;
 use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 use na_seq::{AminoAcid, AtomTypeInRes, Element};
 use rayon::prelude::*;
@@ -35,8 +36,17 @@ use crate::{
     mol_lig::MoleculeSmall,
     nucleic_acid::MoleculeNucleicAcid,
     reflection::{DensityRect, ElectronDensity, ReflectionsData},
-    util::{handle_err, mol_center_size},
+    util::mol_center_size,
 };
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum MolType {
+    Peptide,
+    Ligand,
+    NucleicAcid,
+    Lipid,
+    Water,
+}
 
 /// Contains fields shared by all molecule types.
 #[derive(Debug, Clone)]
@@ -119,6 +129,16 @@ impl MoleculeCommon {
     /// Reset atom positions to be at their internal values, e.g. as present in the Mol2 or SDF files.
     pub fn reset_posits(&mut self) {
         self.atom_posits = self.atoms.iter().map(|a| a.posit).collect();
+    }
+
+    /// Used for rotation and motion; the rough center of the molecule.
+    pub fn centroid(&self) -> Vec3 {
+        let n = self.atom_posits.len() as f64;
+        let sum = self
+            .atom_posits
+            .iter()
+            .fold(Vec3::new_zero(), |a, b| a + *b);
+        sum / n
     }
 }
 
@@ -249,7 +269,9 @@ impl MoleculePeptide {
     pub fn get_sel_atom(&self, sel: &Selection) -> Option<&Atom> {
         match sel {
             Selection::Atom(i) => self.common.atoms.get(*i),
-            Selection::AtomLig((lig_i, atom_i)) => None,
+            Selection::AtomLig((mol_i, atom_i)) => None,
+            Selection::AtomNucleicAcid((mol_i, atom_i)) => None,
+            Selection::AtomLipid((mol_i, atom_i)) => None,
             Selection::Residue(i) => {
                 let res = &self.residues[*i];
                 if !res.atoms.is_empty() {
@@ -652,6 +674,8 @@ pub struct Atom {
     pub element: Element,
     /// e.g. "HA", "C", "N", "HB3" etc.
     pub type_in_res: Option<AtomTypeInRes>,
+    /// There are too many variants of this (with different numbers) to use an enum effectively
+    pub type_in_res_lipid: Option<String>,
     /// "Type 2" for proteins/AA. For ligands and small molecules, this
     /// is a "Type 3".
     /// E.g. "c6", "ca", "n3", "ha", "h0" etc, as seen in Mol2 files from AMBER.

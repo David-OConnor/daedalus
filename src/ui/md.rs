@@ -20,7 +20,6 @@ pub fn md_setup(
     state: &mut State,
     scene: &mut Scene,
     engine_updates: &mut EngineUpdates,
-    redraw_lig: &mut bool,
     ui: &mut Ui,
 ) {
     misc::section_box().show(ui, |ui| {

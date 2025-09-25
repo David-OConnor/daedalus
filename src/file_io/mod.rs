@@ -185,7 +185,6 @@ impl State {
 
                         // Save the open history.
                         self.update_save_prefs(false);
-
                     }
                     MoleculeGeneric::NucleicAcid(m) => {
                         // todo: Fill this in

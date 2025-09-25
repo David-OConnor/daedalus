@@ -15,7 +15,7 @@ use lin_alg::{
 use crate::{
     ManipMode, Selection, State, StateVolatile, drawing,
     drawing::MoleculeView,
-    molecule::Atom,
+    molecule::{Atom, MolType},
     render::set_flashlight,
     selection::{find_selected_atom, points_along_ray},
     util::{cycle_selected, move_cam_to_sel, orbit_center},
@@ -305,13 +305,15 @@ pub fn event_dev_handler(
                         &mut state_.volatile,
                         scene,
                         &mut redraw_lig,
-                        ManipMode::Move(0),
+                        // todo: Not just lig
+                        ManipMode::Move((MolType::Ligand, 0)),
                     ),
                     Code(KeyCode::KeyR) => set_manip(
                         &mut state_.volatile,
                         scene,
                         &mut redraw_lig,
-                        ManipMode::Rotate(0),
+                        // todo: Not just lig
+                        ManipMode::Rotate((MolType::Ligand, 0)),
                     ),
                     _ => (),
                 },
@@ -548,8 +550,12 @@ fn handle_mol_manip_horizontal(
     );
 
     match state.volatile.mol_manip.mol {
-        ManipMode::Move(mol_i) => {
-            let mol = &mut state.ligands[mol_i];
+        ManipMode::Move((mol_type, mol_i)) => {
+            let mol = match mol_type {
+                MolType::Ligand => &mut state.ligands[mol_i].common,
+                MolType::Lipid => &mut state.lipids[mol_i].common,
+                _ => unimplemented!(),
+            };
 
             if state.volatile.mol_manip.pivot.is_none() {
                 let pivot: Vec3 = mol.centroid().into();
@@ -587,7 +593,7 @@ fn handle_mol_manip_horizontal(
 
                 // Apply delta (convert types if needed)
                 let movement_vec: Vec3F64 = delta_.into();
-                for p in &mut mol.common.atom_posits {
+                for p in &mut mol.atom_posits {
                     *p += movement_vec;
                 }
 
@@ -602,8 +608,12 @@ fn handle_mol_manip_horizontal(
                 }
             }
         }
-        ManipMode::Rotate(mol_i) => {
-            let mol = &mut state.ligands[mol_i];
+        ManipMode::Rotate((mol_type, mol_i)) => {
+            let mol = match mol_type {
+                MolType::Ligand => &mut state.ligands[mol_i].common,
+                MolType::Lipid => &mut state.lipids[mol_i].common,
+                _ => unimplemented!(),
+            };
 
             // We handle rotation around the fwd/z axis using the scroll wheel.
             // let fwd = scene.camera.orientation.rotate_vec(FWD_VEC);
@@ -620,7 +630,7 @@ fn handle_mol_manip_horizontal(
             let rot = rot_y * rot_x; // Note: Can swap the order for a slightly different affect.
             let pivot: Vec3 = mol.centroid().into();
 
-            for posit in &mut mol.common.atom_posits {
+            for posit in &mut mol.atom_posits {
                 let p32: Vec3 = (*posit).into();
                 let local = p32 - pivot;
                 let rotated = rot.rotate_vec(local);
@@ -649,8 +659,12 @@ fn handle_mol_manip_in_out(
 ) {
     // Move the molecule forward and backwards relative to the camera on scroll.
     match state.volatile.mol_manip.mol {
-        ManipMode::Move(i_mol) => {
-            let mol = &mut state.ligands[i_mol];
+        ManipMode::Move((mol_type, mol_i)) => {
+            let mol = match mol_type {
+                MolType::Ligand => &mut state.ligands[mol_i].common,
+                MolType::Lipid => &mut state.lipids[mol_i].common,
+                _ => unimplemented!(),
+            };
 
             let scroll: f32 = match delta {
                 MouseScrollDelta::LineDelta(_, y) => y,
@@ -685,7 +699,7 @@ fn handle_mol_manip_in_out(
 
                 {
                     let dv64: Vec3F64 = dv.into();
-                    for p in &mut mol.common.atom_posits {
+                    for p in &mut mol.atom_posits {
                         *p += dv64;
                     }
                 }
@@ -719,7 +733,7 @@ fn handle_mol_manip_in_out(
                 }
             }
         }
-        ManipMode::Rotate(i_mol) => {
+        ManipMode::Rotate((mol_type, mol_i)) => {
             let scroll: f32 = match delta {
                 MouseScrollDelta::LineDelta(_, y) => y,
                 MouseScrollDelta::PixelDelta(p) => p.y as f32 / 120.0,
@@ -729,7 +743,11 @@ fn handle_mol_manip_in_out(
             }
 
             // todo: C+P with slight changes from the mouse-move variant.
-            let mol = &mut state.ligands[i_mol];
+            let mol = match mol_type {
+                MolType::Ligand => &mut state.ligands[mol_i].common,
+                MolType::Lipid => &mut state.lipids[mol_i].common,
+                _ => unimplemented!(),
+            };
 
             let fwd = scene.camera.orientation.rotate_vec(FWD_VEC).to_normalized();
 
@@ -737,7 +755,7 @@ fn handle_mol_manip_in_out(
 
             let pivot: Vec3 = mol.centroid().into();
 
-            for posit in &mut mol.common.atom_posits {
+            for posit in &mut mol.atom_posits {
                 let p32: Vec3 = (*posit).into();
                 let local = p32 - pivot;
                 let rotated = rot.rotate_vec(local);
@@ -764,13 +782,13 @@ pub fn set_manip(
 
         match vol.mol_manip.mol {
             ManipMode::None => (),
-            ManipMode::Move(m) => {
-                if m == i {
+            ManipMode::Move((mol_type, mol_i)) => {
+                if mol_type == MolType::Ligand && mol_i == i {
                     move_active = true;
                 }
             }
-            ManipMode::Rotate(m) => {
-                if m == i {
+            ManipMode::Rotate((mol_type, mol_i)) => {
+                if mol_type == MolType::Ligand && mol_i == i {
                     rotate_active = true;
                 }
             }
@@ -782,13 +800,13 @@ pub fn set_manip(
                     scene.input_settings.control_scheme = vol.control_scheme_prev;
                     vol.mol_manip.mol = ManipMode::None;
                 } else if rotate_active {
-                    vol.mol_manip.mol = ManipMode::Move(i);
+                    vol.mol_manip.mol = ManipMode::Move((MolType::Ligand, i));
                 } else {
                     if scene.input_settings.control_scheme != ControlScheme::None {
                         vol.control_scheme_prev = scene.input_settings.control_scheme;
                     }
                     scene.input_settings.control_scheme = ControlScheme::None;
-                    vol.mol_manip.mol = ManipMode::Move(i);
+                    vol.mol_manip.mol = ManipMode::Move((MolType::Ligand, i));
                 };
             }
             ManipMode::Rotate(_) => {
@@ -796,13 +814,13 @@ pub fn set_manip(
                     scene.input_settings.control_scheme = vol.control_scheme_prev;
                     vol.mol_manip.mol = ManipMode::None;
                 } else if move_active {
-                    vol.mol_manip.mol = ManipMode::Rotate(i);
+                    vol.mol_manip.mol = ManipMode::Rotate((MolType::Ligand, i));
                 } else {
                     if scene.input_settings.control_scheme != ControlScheme::None {
                         vol.control_scheme_prev = scene.input_settings.control_scheme;
                     }
                     scene.input_settings.control_scheme = ControlScheme::None;
-                    vol.mol_manip.mol = ManipMode::Rotate(i);
+                    vol.mol_manip.mol = ManipMode::Rotate((MolType::Ligand, i));
                 };
             }
             ManipMode::None => unreachable!(),

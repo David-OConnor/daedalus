@@ -10,8 +10,10 @@ use crate::{
     ManipMode, Selection, State, drawing,
     drawing::{CHARGE_MAP_MAX, CHARGE_MAP_MIN, COLOR_AA_NON_RESIDUE_EGUI},
     inputs::set_manip,
+    lipid::MoleculeLipid,
     mol_lig::MoleculeSmall,
-    molecule::{Atom, MoleculeGenericRef, Residue, aa_color},
+    molecule::{Atom, MolType, MoleculeGenericRef, Residue, aa_color},
+    nucleic_acid::MoleculeNucleicAcid,
     ui::{
         COL_SPACING, COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_HIGHLIGHT, COLOR_INACTIVE,
         cam::{move_cam_to_lig, move_cam_to_lig2},
@@ -82,7 +84,14 @@ fn disp_atom_data(atom: &Atom, residues: &[Residue], posit_override: Option<Vec3
 }
 
 /// Display text of the selected atom or residue.
-pub fn selected_data(state: &State, ligands: &[MoleculeSmall], selection: &Selection, ui: &mut Ui) {
+pub fn selected_data(
+    state: &State,
+    ligands: &[MoleculeSmall],
+    nucleic_acids: &[MoleculeNucleicAcid],
+    lipids: &[MoleculeLipid],
+    selection: &Selection,
+    ui: &mut Ui,
+) {
     // ui.horizontal_wrapped(|ui| {
     match selection {
         Selection::Atom(sel_i) => {
@@ -99,14 +108,46 @@ pub fn selected_data(state: &State, ligands: &[MoleculeSmall], selection: &Selec
             if *lig_i >= ligands.len() {
                 return;
             }
-            let lig = &ligands[*lig_i];
+            let mol = &ligands[*lig_i];
 
-            if *atom_i >= lig.common.atoms.len() {
+            if *atom_i >= mol.common.atoms.len() {
                 return;
             }
 
-            let atom = &lig.common.atoms[*atom_i];
-            let posit = lig.common.atom_posits[*atom_i];
+            let atom = &mol.common.atoms[*atom_i];
+            let posit = mol.common.atom_posits[*atom_i];
+
+            disp_atom_data(atom, &[], Some(posit), ui);
+        }
+        // todo DRY
+        Selection::AtomNucleicAcid((mol_i, atom_i)) => {
+            if *mol_i >= nucleic_acids.len() {
+                return;
+            }
+            let mol = &nucleic_acids[*mol_i];
+
+            if *atom_i >= mol.common.atoms.len() {
+                return;
+            }
+
+            let atom = &mol.common.atoms[*atom_i];
+            let posit = mol.common.atom_posits[*atom_i];
+
+            disp_atom_data(atom, &[], Some(posit), ui);
+        }
+        // todo DRY
+        Selection::AtomLipid((mol_i, atom_i)) => {
+            if *mol_i >= lipids.len() {
+                return;
+            }
+            let mol = &lipids[*mol_i];
+
+            if *atom_i >= mol.common.atoms.len() {
+                return;
+            }
+
+            let atom = &mol.common.atoms[*atom_i];
+            let posit = mol.common.atom_posits[*atom_i];
 
             disp_atom_data(atom, &[], Some(posit), ui);
         }
@@ -205,13 +246,13 @@ pub fn disp_lig_data(
             let mut color_rotate = COLOR_INACTIVE;
 
             match state.volatile.mol_manip.mol {
-                ManipMode::Move(m) => {
-                    if m == active_lig_i {
+                ManipMode::Move((mol_type, mol_i)) => {
+                    if mol_type == MolType::Ligand && mol_i == active_lig_i {
                         color_move = COLOR_ACTIVE;
                     }
                 }
-                ManipMode::Rotate(m) => {
-                    if m == active_lig_i {
+                ManipMode::Rotate((mol_type, mol_i)) => {
+                    if mol_type == MolType::Ligand && mol_i == active_lig_i {
                         color_rotate = COLOR_ACTIVE;
                     }
                 }
@@ -223,14 +264,14 @@ pub fn disp_lig_data(
                 .on_hover_text("Move the active molecule by clicking and dragging with the mouse. Scroll to move it forward and back. (Hotkey: M)")
                 .clicked() {
 
-                set_manip(&mut state.volatile, scene, redraw_lig, ManipMode::Move(0));
+                set_manip(&mut state.volatile, scene, redraw_lig, ManipMode::Move((MolType::Ligand, 0)));
             }
 
             if ui.button(RichText::new("⟳").color(color_rotate))
                 .on_hover_text("Rotate the active molecule by clicking and dragging with the mouse. Scroll to roll. (Hotkey: R)")
                 .clicked() {
 
-                set_manip(&mut state.volatile, scene, redraw_lig, ManipMode::Rotate(0));
+                set_manip(&mut state.volatile, scene, redraw_lig, ManipMode::Rotate((MolType::Ligand, 0)));
             }
         }
 
@@ -453,7 +494,7 @@ pub fn disp_lig_data(
 
                 if let Some(sel_atom) = atom_sel {
 
-                    let diff = sel_atom.posit - lig.centroid();
+                    let diff = sel_atom.posit - lig.common.centroid();
                     for p in &mut lig.common.atom_posits{
                         *p += diff;
                     }

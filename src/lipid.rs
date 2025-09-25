@@ -3,13 +3,16 @@
 //! [LIPID MAPS Structure Database (LMSD)](https://www.lipidmaps.org/databases/lmsd/overview?utm_source=chatgpt.com)
 
 use std::collections::HashMap;
-use bio_files::BondType::{self, *};
-use bio_files::LipidStandard;
+
+use bio_files::{
+    BondType::{self, *},
+    LipidStandard,
+};
 use lin_alg::f64::Vec3;
 use na_seq::Element::{self, *};
-use rand::distr::Uniform;
-use rand::Rng;
-use crate::molecule::{build_adjacency_list, Atom, Bond, MoleculeCommon};
+use rand::{Rng, distr::Uniform};
+
+use crate::molecule::{Atom, Bond, MoleculeCommon, build_adjacency_list};
 
 // todo: These are the fields after posit. Sometimes seem to be filled in. Should we use them?
 // todo: Charge code and atom stero parity seem to be filled out.
@@ -26,7 +29,7 @@ use crate::molecule::{build_adjacency_list, Atom, Bond, MoleculeCommon};
 pub enum LipidShape {
     Free,
     Membrane,
-    Lnp
+    Lnp,
 }
 
 /// todo: Hard-coded for E. coli for now.
@@ -35,7 +38,6 @@ pub fn make_bacterial_lipids(n_mols: usize, center: Vec3, shape: LipidShape) -> 
     let mut result = Vec::new();
     // todo: Do we need this?
     let uni = Uniform::<f32>::new(0.0, 1.0).unwrap();
-
 
     match shape {
         LipidShape::Free => {
@@ -80,14 +82,25 @@ pub struct Lipid {
 
 /// Cleans up syntax
 fn new_atom(serial_number: u32, posit: Vec3, element: Element) -> Atom {
-    Atom { serial_number, posit, element, ..Default::default() }
+    Atom {
+        serial_number,
+        posit,
+        element,
+        ..Default::default()
+    }
 }
 
 /// Cleans up syntax
 fn new_bond(bond_type: BondType, atom_0: usize, atom_1: usize) -> Bond {
-    Bond { bond_type, atom_0_sn: atom_0 as u32 + 1,  atom_1_sn: atom_1 as u32 + 1,  atom_0,  atom_1,  is_backbone: false }
+    Bond {
+        bond_type,
+        atom_0_sn: atom_0 as u32 + 1,
+        atom_1_sn: atom_1 as u32 + 1,
+        atom_0,
+        atom_1,
+        is_backbone: false,
+    }
 }
-
 
 pub fn make(standard: LipidStandard) -> MoleculeLipid {
     match standard {
@@ -99,10 +112,11 @@ pub fn make(standard: LipidStandard) -> MoleculeLipid {
         // todo: Diff between these?
         LipidStandard::Pgs => MoleculeLipid::make_pg(),
         LipidStandard::Cardiolipin => MoleculeLipid::make_cl(),
-        _ => unimplemented!()
+        _ => unimplemented!(),
     }
 }
 
+#[derive(Clone, Debug)]
 /// Note: Ident under common name is the LMSD id".
 pub struct MoleculeLipid {
     // todo: If we have no other fields, use MoleculeCommon only
@@ -114,6 +128,7 @@ pub struct MoleculeLipid {
     pub common_name: String,
 }
 
+// todo: Deprecate these A/R. We switched to amber templates.
 // `ForceFieldParams` should be loaded from lipid21 or similar.
 impl MoleculeLipid {
     /// https://www.lipidmaps.org/databases/lmsd/LMGP01010000
@@ -121,15 +136,15 @@ impl MoleculeLipid {
         let lmsd_id = "LMGP01010000".to_owned();
 
         let atoms = vec![
-            new_atom(1,  Vec3::new(8.1477, 7.1972, 0.0000), Carbon),
-            new_atom(2,  Vec3::new(7.4380, 7.6058, 0.0000), Carbon),
-            new_atom(3,  Vec3::new(6.7285, 7.1972, 0.0000), Oxygen),
-            new_atom(4,  Vec3::new(6.0185, 7.6058, 0.0000), Carbon),
-            new_atom(5,  Vec3::new(6.0185, 8.4262, 0.0000), Oxygen),
-            new_atom(6,  Vec3::new(8.5578, 6.4876, 0.0000), Hydrogen),
-            new_atom(7,  Vec3::new(7.7375, 6.4876, 0.0000), Oxygen),
-            new_atom(8,  Vec3::new(8.8576, 7.6072, 0.0000), Carbon),
-            new_atom(9,  Vec3::new(9.5673, 7.1972, 0.0000), Oxygen),
+            new_atom(1, Vec3::new(8.1477, 7.1972, 0.0000), Carbon),
+            new_atom(2, Vec3::new(7.4380, 7.6058, 0.0000), Carbon),
+            new_atom(3, Vec3::new(6.7285, 7.1972, 0.0000), Oxygen),
+            new_atom(4, Vec3::new(6.0185, 7.6058, 0.0000), Carbon),
+            new_atom(5, Vec3::new(6.0185, 8.4262, 0.0000), Oxygen),
+            new_atom(6, Vec3::new(8.5578, 6.4876, 0.0000), Hydrogen),
+            new_atom(7, Vec3::new(7.7375, 6.4876, 0.0000), Oxygen),
+            new_atom(8, Vec3::new(8.8576, 7.6072, 0.0000), Carbon),
+            new_atom(9, Vec3::new(9.5673, 7.1972, 0.0000), Oxygen),
             new_atom(10, Vec3::new(11.3522, 7.2141, 0.0000), Oxygen),
             new_atom(11, Vec3::new(12.0618, 6.8043, 0.0000), Carbon),
             new_atom(12, Vec3::new(12.7715, 7.2141, 0.0000), Carbon),
@@ -176,7 +191,10 @@ impl MoleculeLipid {
         let adjacency_list = build_adjacency_list(&bonds, atoms.len());
 
         let mut metadata = HashMap::new();
-        metadata.insert("SYSTEMATIC_NAME".to_owned(), "1,2-diacyl-sn-glycero-3-phosphocholine".to_owned());
+        metadata.insert(
+            "SYSTEMATIC_NAME".to_owned(),
+            "1,2-diacyl-sn-glycero-3-phosphocholine".to_owned(),
+        );
         metadata.insert("M_CHG".to_owned(), "13:+1;18:-1".to_owned()); // from SDF M  CHG
         metadata.insert("R_GROUPS".to_owned(), "22:R2;23:R1".to_owned()); // from SDF M  RGP
 
@@ -199,7 +217,6 @@ impl MoleculeLipid {
             kegg_id: "C00157".to_owned(),
             common_name: "PC".to_owned(),
         }
-
     }
 
     /// https://www.lipidmaps.org/databases/lmsd/LMGP02010000
@@ -207,15 +224,15 @@ impl MoleculeLipid {
         let lmsd_id = "LMGP02010000".to_owned();
 
         let atoms = vec![
-            new_atom(1,  Vec3::new(8.1517, 7.1998, 0.0000), Carbon),
-            new_atom(2,  Vec3::new(7.4412, 7.6089, 0.0000), Carbon),
-            new_atom(3,  Vec3::new(6.7303, 7.1998, 0.0000), Oxygen),
-            new_atom(4,  Vec3::new(6.0199, 7.6089, 0.0000), Carbon),
-            new_atom(5,  Vec3::new(6.0199, 8.4302, 0.0000), Oxygen),
-            new_atom(6,  Vec3::new(8.5625, 6.4892, 0.0000), Hydrogen),
-            new_atom(7,  Vec3::new(7.7410, 6.4892, 0.0000), Oxygen),
-            new_atom(8,  Vec3::new(5.3094, 7.1998, 0.0000), Carbon), // R1
-            new_atom(9,  Vec3::new(8.8625, 7.6102, 0.0000), Carbon),
+            new_atom(1, Vec3::new(8.1517, 7.1998, 0.0000), Carbon),
+            new_atom(2, Vec3::new(7.4412, 7.6089, 0.0000), Carbon),
+            new_atom(3, Vec3::new(6.7303, 7.1998, 0.0000), Oxygen),
+            new_atom(4, Vec3::new(6.0199, 7.6089, 0.0000), Carbon),
+            new_atom(5, Vec3::new(6.0199, 8.4302, 0.0000), Oxygen),
+            new_atom(6, Vec3::new(8.5625, 6.4892, 0.0000), Hydrogen),
+            new_atom(7, Vec3::new(7.7410, 6.4892, 0.0000), Oxygen),
+            new_atom(8, Vec3::new(5.3094, 7.1998, 0.0000), Carbon), // R1
+            new_atom(9, Vec3::new(8.8625, 7.6102, 0.0000), Carbon),
             new_atom(10, Vec3::new(9.5731, 7.1998, 0.0000), Oxygen),
             new_atom(11, Vec3::new(11.3326, 7.1827, 0.0000), Oxygen),
             new_atom(12, Vec3::new(12.0432, 6.7723, 0.0000), Carbon),
@@ -256,7 +273,10 @@ impl MoleculeLipid {
         let adjacency_list = build_adjacency_list(&bonds, atoms.len());
 
         let mut metadata = HashMap::new();
-        metadata.insert("SYSTEMATIC_NAME".to_owned(), "1,2-diacyl-sn-glycero-3-phosphoethanolamine".to_owned());
+        metadata.insert(
+            "SYSTEMATIC_NAME".to_owned(),
+            "1,2-diacyl-sn-glycero-3-phosphoethanolamine".to_owned(),
+        );
         metadata.insert("R_LABELS".to_owned(), "8:R1;20:R2".to_owned());
 
         let common = MoleculeCommon {
@@ -285,17 +305,17 @@ impl MoleculeLipid {
         let lmsd_id = "LMGP04010000".to_owned();
 
         let atoms = vec![
-            new_atom(1,  Vec3::new(13.3845, 7.8228, 0.0000), Hydrogen),
-            new_atom(2,  Vec3::new(8.1739,  7.2151, 0.0000), Carbon),
-            new_atom(3,  Vec3::new(7.4579,  7.6273, 0.0000), Carbon),
-            new_atom(4,  Vec3::new(6.7415,  7.2151, 0.0000), Oxygen),
-            new_atom(5,  Vec3::new(6.0255,  7.6273, 0.0000), Carbon),
-            new_atom(6,  Vec3::new(6.0255,  8.4550, 0.0000), Oxygen),
-            new_atom(7,  Vec3::new(8.5878,  6.4989, 0.0000), Hydrogen),
-            new_atom(8,  Vec3::new(7.7599,  6.4989, 0.0000), Oxygen),
-            new_atom(9,  Vec3::new(5.3094,  7.2151, 0.0000), Carbon),   // R1
-            new_atom(10, Vec3::new(8.8901,  7.6286, 0.0000), Carbon),
-            new_atom(11, Vec3::new(9.6064,  7.2151, 0.0000), Oxygen),
+            new_atom(1, Vec3::new(13.3845, 7.8228, 0.0000), Hydrogen),
+            new_atom(2, Vec3::new(8.1739, 7.2151, 0.0000), Carbon),
+            new_atom(3, Vec3::new(7.4579, 7.6273, 0.0000), Carbon),
+            new_atom(4, Vec3::new(6.7415, 7.2151, 0.0000), Oxygen),
+            new_atom(5, Vec3::new(6.0255, 7.6273, 0.0000), Carbon),
+            new_atom(6, Vec3::new(6.0255, 8.4550, 0.0000), Oxygen),
+            new_atom(7, Vec3::new(8.5878, 6.4989, 0.0000), Hydrogen),
+            new_atom(8, Vec3::new(7.7599, 6.4989, 0.0000), Oxygen),
+            new_atom(9, Vec3::new(5.3094, 7.2151, 0.0000), Carbon), // R1
+            new_atom(10, Vec3::new(8.8901, 7.6286, 0.0000), Carbon),
+            new_atom(11, Vec3::new(9.6064, 7.2151, 0.0000), Oxygen),
             new_atom(12, Vec3::new(11.3794, 7.1978, 0.0000), Oxygen),
             new_atom(13, Vec3::new(12.0958, 6.7842, 0.0000), Carbon),
             new_atom(14, Vec3::new(12.8120, 7.1978, 0.0000), Carbon),
@@ -303,9 +323,9 @@ impl MoleculeLipid {
             new_atom(16, Vec3::new(10.6256, 7.5047, 0.0000), Phosphorus),
             new_atom(17, Vec3::new(10.2607, 6.8724, 0.0000), Oxygen),
             new_atom(18, Vec3::new(10.6256, 8.2589, 0.0000), Oxygen),
-            new_atom(19, Vec3::new(7.0098,  6.0757, 0.0000), Carbon),
-            new_atom(20, Vec3::new(7.0098,  5.2475, 0.0000), Oxygen),
-            new_atom(21, Vec3::new(6.2936,  6.4894, 0.0000), Carbon),   // R2
+            new_atom(19, Vec3::new(7.0098, 6.0757, 0.0000), Carbon),
+            new_atom(20, Vec3::new(7.0098, 5.2475, 0.0000), Oxygen),
+            new_atom(21, Vec3::new(6.2936, 6.4894, 0.0000), Carbon), // R2
             new_atom(22, Vec3::new(12.4729, 7.7854, 0.0000), Oxygen),
             new_atom(23, Vec3::new(14.2447, 7.1977, 0.0000), Oxygen),
         ];
@@ -340,7 +360,10 @@ impl MoleculeLipid {
         let adjacency_list = build_adjacency_list(&bonds, atoms.len());
 
         let mut metadata = HashMap::new();
-        metadata.insert("SYSTEMATIC_NAME".to_owned(), "1,2-diacyl-sn-glycero-3-phospho-(1'-sn-glycerol)".to_owned());
+        metadata.insert(
+            "SYSTEMATIC_NAME".to_owned(),
+            "1,2-diacyl-sn-glycero-3-phospho-(1'-sn-glycerol)".to_owned(),
+        );
         metadata.insert("R_LABELS".to_owned(), "9:R1;21:R2".to_owned());
 
         let common = MoleculeCommon {
@@ -369,15 +392,15 @@ impl MoleculeLipid {
         let lmsd_id = "LMGP06010000".to_owned();
 
         let atoms = vec![
-            new_atom(1,  Vec3::new(7.7658, 6.9347, 0.0000), Carbon),
-            new_atom(2,  Vec3::new(7.1518, 7.2883, 0.0000), Carbon),
-            new_atom(3,  Vec3::new(6.5375, 6.9347, 0.0000), Oxygen),
-            new_atom(4,  Vec3::new(5.9234, 7.2883, 0.0000), Carbon),
-            new_atom(5,  Vec3::new(5.9234, 7.9981, 0.0000), Oxygen),
-            new_atom(6,  Vec3::new(8.1207, 6.3206, 0.0000), Hydrogen),
-            new_atom(7,  Vec3::new(7.4109, 6.3206, 0.0000), Oxygen),
-            new_atom(8,  Vec3::new(5.3094, 6.9347, 0.0000), Carbon),   // R1
-            new_atom(9,  Vec3::new(8.3801, 7.2894, 0.0000), Carbon),
+            new_atom(1, Vec3::new(7.7658, 6.9347, 0.0000), Carbon),
+            new_atom(2, Vec3::new(7.1518, 7.2883, 0.0000), Carbon),
+            new_atom(3, Vec3::new(6.5375, 6.9347, 0.0000), Oxygen),
+            new_atom(4, Vec3::new(5.9234, 7.2883, 0.0000), Carbon),
+            new_atom(5, Vec3::new(5.9234, 7.9981, 0.0000), Oxygen),
+            new_atom(6, Vec3::new(8.1207, 6.3206, 0.0000), Hydrogen),
+            new_atom(7, Vec3::new(7.4109, 6.3206, 0.0000), Oxygen),
+            new_atom(8, Vec3::new(5.3094, 6.9347, 0.0000), Carbon), // R1
+            new_atom(9, Vec3::new(8.3801, 7.2894, 0.0000), Carbon),
             new_atom(10, Vec3::new(8.9943, 6.9347, 0.0000), Oxygen),
             new_atom(11, Vec3::new(10.6697, 6.9163, 0.0000), Oxygen),
             new_atom(12, Vec3::new(10.0233, 7.1796, 0.0000), Phosphorus),
@@ -385,7 +408,7 @@ impl MoleculeLipid {
             new_atom(14, Vec3::new(10.0233, 7.8262, 0.0000), Oxygen),
             new_atom(15, Vec3::new(6.7676, 5.9576, 0.0000), Carbon),
             new_atom(16, Vec3::new(6.7676, 5.2475, 0.0000), Oxygen),
-            new_atom(17, Vec3::new(6.1535, 6.3124, 0.0000), Carbon),   // R2
+            new_atom(17, Vec3::new(6.1535, 6.3124, 0.0000), Carbon), // R2
             new_atom(18, Vec3::new(13.0570, 7.1949, 0.0000), Carbon),
             new_atom(19, Vec3::new(11.9299, 7.4959, 0.0000), Carbon),
             new_atom(20, Vec3::new(11.3444, 6.4771, 0.0000), Carbon),
@@ -435,7 +458,10 @@ impl MoleculeLipid {
         let adjacency_list = build_adjacency_list(&bonds, atoms.len());
 
         let mut metadata = HashMap::new();
-        metadata.insert("SYSTEMATIC_NAME".to_owned(), "1,2-diacyl-sn-glycero-3-phospho-(1'-myo-inositol)".to_owned());
+        metadata.insert(
+            "SYSTEMATIC_NAME".to_owned(),
+            "1,2-diacyl-sn-glycero-3-phospho-(1'-myo-inositol)".to_owned(),
+        );
         metadata.insert("R_LABELS".to_owned(), "8:R1;17:R2".to_owned());
 
         let common = MoleculeCommon {
@@ -464,17 +490,17 @@ impl MoleculeLipid {
         let lmsd_id = "LMGP03010000".to_owned();
 
         let atoms = vec![
-            new_atom(1,  Vec3::new(13.4696, 7.8498, 0.0000), Carbon),
-            new_atom(2,  Vec3::new(8.2042,  7.2358, 0.0000), Carbon),
-            new_atom(3,  Vec3::new(7.4805,  7.6523, 0.0000), Carbon),
-            new_atom(4,  Vec3::new(6.7566,  7.2358, 0.0000), Oxygen),
-            new_atom(5,  Vec3::new(6.0330,  7.6523, 0.0000), Carbon),
-            new_atom(6,  Vec3::new(6.0330,  8.4888, 0.0000), Oxygen),
-            new_atom(7,  Vec3::new(8.6224,  6.5121, 0.0000), Hydrogen),
-            new_atom(8,  Vec3::new(7.7857,  6.5121, 0.0000), Oxygen),
-            new_atom(9,  Vec3::new(5.3094,  7.2358, 0.0000), Carbon), // R1
-            new_atom(10, Vec3::new(8.9280,  7.6536, 0.0000), Carbon),
-            new_atom(11, Vec3::new(9.6518,  7.2358, 0.0000), Oxygen),
+            new_atom(1, Vec3::new(13.4696, 7.8498, 0.0000), Carbon),
+            new_atom(2, Vec3::new(8.2042, 7.2358, 0.0000), Carbon),
+            new_atom(3, Vec3::new(7.4805, 7.6523, 0.0000), Carbon),
+            new_atom(4, Vec3::new(6.7566, 7.2358, 0.0000), Oxygen),
+            new_atom(5, Vec3::new(6.0330, 7.6523, 0.0000), Carbon),
+            new_atom(6, Vec3::new(6.0330, 8.4888, 0.0000), Oxygen),
+            new_atom(7, Vec3::new(8.6224, 6.5121, 0.0000), Hydrogen),
+            new_atom(8, Vec3::new(7.7857, 6.5121, 0.0000), Oxygen),
+            new_atom(9, Vec3::new(5.3094, 7.2358, 0.0000), Carbon), // R1
+            new_atom(10, Vec3::new(8.9280, 7.6536, 0.0000), Carbon),
+            new_atom(11, Vec3::new(9.6518, 7.2358, 0.0000), Oxygen),
             new_atom(12, Vec3::new(11.4435, 7.2184, 0.0000), Oxygen),
             new_atom(13, Vec3::new(12.1674, 6.8004, 0.0000), Carbon),
             new_atom(14, Vec3::new(12.8912, 7.2184, 0.0000), Carbon),
@@ -482,9 +508,9 @@ impl MoleculeLipid {
             new_atom(16, Vec3::new(10.6816, 7.5285, 0.0000), Phosphorus),
             new_atom(17, Vec3::new(10.3128, 6.8894, 0.0000), Oxygen),
             new_atom(18, Vec3::new(10.6816, 8.2905, 0.0000), Oxygen),
-            new_atom(19, Vec3::new(7.0277,  6.0844, 0.0000), Carbon),
-            new_atom(20, Vec3::new(7.0277,  5.2475, 0.0000), Oxygen),
-            new_atom(21, Vec3::new(6.3040,  6.5024, 0.0000), Carbon), // R2
+            new_atom(19, Vec3::new(7.0277, 6.0844, 0.0000), Carbon),
+            new_atom(20, Vec3::new(7.0277, 5.2475, 0.0000), Oxygen),
+            new_atom(21, Vec3::new(6.3040, 6.5024, 0.0000), Carbon), // R2
             new_atom(22, Vec3::new(12.5484, 7.8120, 0.0000), Hydrogen),
             new_atom(23, Vec3::new(13.4696, 8.5911, 0.0000), Oxygen),
             new_atom(24, Vec3::new(14.1004, 7.4856, 0.0000), Oxygen),
@@ -521,7 +547,10 @@ impl MoleculeLipid {
         let adjacency_list = build_adjacency_list(&bonds, atoms.len());
 
         let mut metadata = HashMap::new();
-        metadata.insert("SYSTEMATIC_NAME".to_owned(), "1,2-diacyl-sn-glycero-3-phosphoserine".to_owned());
+        metadata.insert(
+            "SYSTEMATIC_NAME".to_owned(),
+            "1,2-diacyl-sn-glycero-3-phosphoserine".to_owned(),
+        );
         metadata.insert("R_LABELS".to_owned(), "9:R1;21:R2".to_owned());
 
         let common = MoleculeCommon {
@@ -550,45 +579,45 @@ impl MoleculeLipid {
         let lmsd_id = "LMGP12010000".to_owned();
 
         let atoms = vec![
-            new_atom(1,  Vec3::new(11.1934, 10.7168, 0.0000), Phosphorus),
-            new_atom(2,  Vec3::new(11.1934, 11.5221, 0.0000), Oxygen),
-            new_atom(3,  Vec3::new(10.9855,  9.9383, 0.0000), Oxygen),
-            new_atom(4,  Vec3::new(11.9716, 10.5089, 0.0000), Oxygen),
-            new_atom(5,  Vec3::new(11.5528,  9.3697, 0.0000), Carbon),
-            new_atom(6,  Vec3::new(11.3467,  8.5930, 0.0000), Carbon),
-            new_atom(7,  Vec3::new(11.7494,  7.8963, 0.0000), Carbon),
-            new_atom(8,  Vec3::new(6.3098,   6.4509, 0.0000), Carbon), // R4
-            new_atom(9,  Vec3::new(7.0081,   5.2475, 0.0000), Oxygen),
-            new_atom(10, Vec3::new(7.0081,   6.0481, 0.0000), Carbon),
-            new_atom(11, Vec3::new(7.7159,   6.4509, 0.0000), Oxygen),
-            new_atom(12, Vec3::new(5.3094,   7.1476, 0.0000), Carbon), // R3
-            new_atom(13, Vec3::new(6.0078,   8.3541, 0.0000), Oxygen),
-            new_atom(14, Vec3::new(6.0078,   7.5471, 0.0000), Carbon),
-            new_atom(15, Vec3::new(6.7252,   7.1476, 0.0000), Oxygen),
-            new_atom(16, Vec3::new(8.1219,   7.1476, 0.0000), Carbon),
-            new_atom(17, Vec3::new(7.4235,   7.5471, 0.0000), Carbon),
-            new_atom(18, Vec3::new(8.8170,   7.5471, 0.0000), Carbon),
-            new_atom(19, Vec3::new(8.5245,   6.4509, 0.0000), Hydrogen),
-            new_atom(20, Vec3::new(6.8663,   9.8279, 0.0000), Carbon), // R2
-            new_atom(21, Vec3::new(7.5742,   8.6245, 0.0000), Oxygen),
-            new_atom(22, Vec3::new(7.5742,   9.4252, 0.0000), Carbon),
-            new_atom(23, Vec3::new(8.2772,   9.8279, 0.0000), Oxygen),
-            new_atom(24, Vec3::new(5.8658,  10.5247, 0.0000), Carbon), // R1
-            new_atom(25, Vec3::new(6.5690,  11.7312, 0.0000), Oxygen),
-            new_atom(26, Vec3::new(6.5690,  10.9274, 0.0000), Carbon),
-            new_atom(27, Vec3::new(7.2818,  10.5247, 0.0000), Oxygen),
-            new_atom(28, Vec3::new(8.6752,  10.5247, 0.0000), Carbon),
-            new_atom(29, Vec3::new(7.9801,  10.9274, 0.0000), Carbon),
-            new_atom(30, Vec3::new(9.0858,   9.8279, 0.0000), Hydrogen),
-            new_atom(31, Vec3::new(12.1249,  8.8008, 0.0000), Hydrogen),
-            new_atom(32, Vec3::new(10.5685,  8.8008, 0.0000), Oxygen),
-            new_atom(33, Vec3::new(11.2661,  6.9930, 0.0000), Oxygen),
-            new_atom(34, Vec3::new(10.5085,  7.3402, 0.0000), Phosphorus),
-            new_atom(35, Vec3::new(10.5085,  8.1295, 0.0000), Oxygen),
-            new_atom(36, Vec3::new(9.3618,  10.8815, 0.0000), Carbon),
-            new_atom(37, Vec3::new(10.2244,  6.6141, 0.0000), Oxygen),
+            new_atom(1, Vec3::new(11.1934, 10.7168, 0.0000), Phosphorus),
+            new_atom(2, Vec3::new(11.1934, 11.5221, 0.0000), Oxygen),
+            new_atom(3, Vec3::new(10.9855, 9.9383, 0.0000), Oxygen),
+            new_atom(4, Vec3::new(11.9716, 10.5089, 0.0000), Oxygen),
+            new_atom(5, Vec3::new(11.5528, 9.3697, 0.0000), Carbon),
+            new_atom(6, Vec3::new(11.3467, 8.5930, 0.0000), Carbon),
+            new_atom(7, Vec3::new(11.7494, 7.8963, 0.0000), Carbon),
+            new_atom(8, Vec3::new(6.3098, 6.4509, 0.0000), Carbon), // R4
+            new_atom(9, Vec3::new(7.0081, 5.2475, 0.0000), Oxygen),
+            new_atom(10, Vec3::new(7.0081, 6.0481, 0.0000), Carbon),
+            new_atom(11, Vec3::new(7.7159, 6.4509, 0.0000), Oxygen),
+            new_atom(12, Vec3::new(5.3094, 7.1476, 0.0000), Carbon), // R3
+            new_atom(13, Vec3::new(6.0078, 8.3541, 0.0000), Oxygen),
+            new_atom(14, Vec3::new(6.0078, 7.5471, 0.0000), Carbon),
+            new_atom(15, Vec3::new(6.7252, 7.1476, 0.0000), Oxygen),
+            new_atom(16, Vec3::new(8.1219, 7.1476, 0.0000), Carbon),
+            new_atom(17, Vec3::new(7.4235, 7.5471, 0.0000), Carbon),
+            new_atom(18, Vec3::new(8.8170, 7.5471, 0.0000), Carbon),
+            new_atom(19, Vec3::new(8.5245, 6.4509, 0.0000), Hydrogen),
+            new_atom(20, Vec3::new(6.8663, 9.8279, 0.0000), Carbon), // R2
+            new_atom(21, Vec3::new(7.5742, 8.6245, 0.0000), Oxygen),
+            new_atom(22, Vec3::new(7.5742, 9.4252, 0.0000), Carbon),
+            new_atom(23, Vec3::new(8.2772, 9.8279, 0.0000), Oxygen),
+            new_atom(24, Vec3::new(5.8658, 10.5247, 0.0000), Carbon), // R1
+            new_atom(25, Vec3::new(6.5690, 11.7312, 0.0000), Oxygen),
+            new_atom(26, Vec3::new(6.5690, 10.9274, 0.0000), Carbon),
+            new_atom(27, Vec3::new(7.2818, 10.5247, 0.0000), Oxygen),
+            new_atom(28, Vec3::new(8.6752, 10.5247, 0.0000), Carbon),
+            new_atom(29, Vec3::new(7.9801, 10.9274, 0.0000), Carbon),
+            new_atom(30, Vec3::new(9.0858, 9.8279, 0.0000), Hydrogen),
+            new_atom(31, Vec3::new(12.1249, 8.8008, 0.0000), Hydrogen),
+            new_atom(32, Vec3::new(10.5685, 8.8008, 0.0000), Oxygen),
+            new_atom(33, Vec3::new(11.2661, 6.9930, 0.0000), Oxygen),
+            new_atom(34, Vec3::new(10.5085, 7.3402, 0.0000), Phosphorus),
+            new_atom(35, Vec3::new(10.5085, 8.1295, 0.0000), Oxygen),
+            new_atom(36, Vec3::new(9.3618, 10.8815, 0.0000), Carbon),
+            new_atom(37, Vec3::new(10.2244, 6.6141, 0.0000), Oxygen),
             new_atom(38, Vec3::new(10.0442, 10.4875, 0.0000), Oxygen),
-            new_atom(39, Vec3::new(9.4294,   7.1936, 0.0000), Oxygen),
+            new_atom(39, Vec3::new(9.4294, 7.1936, 0.0000), Oxygen),
         ];
 
         let atom_posits = atoms.iter().map(|a| a.posit).collect();
@@ -637,7 +666,10 @@ impl MoleculeLipid {
         let adjacency_list = build_adjacency_list(&bonds, atoms.len());
 
         let mut metadata = HashMap::new();
-        metadata.insert("SYSTEMATIC_NAME".to_owned(), "1',3'-Bis-(1,2-diacyl-sn-glycero-3-phospho)-sn-glycerol".to_owned());
+        metadata.insert(
+            "SYSTEMATIC_NAME".to_owned(),
+            "1',3'-Bis-(1,2-diacyl-sn-glycero-3-phospho)-sn-glycerol".to_owned(),
+        );
         metadata.insert("R_LABELS".to_owned(), "24:R1;20:R2;12:R3;8:R4".to_owned());
 
         let common = MoleculeCommon {
@@ -658,6 +690,112 @@ impl MoleculeLipid {
             hmdb_id: "".to_owned(),
             kegg_id: "C05980".to_owned(),
             common_name: "Cardiolipin (CL)".to_owned(),
+        }
+    }
+
+    /// We assume common.ident is the Amber lipid21 mol ID.
+    pub fn populate_db_ids(&mut self) {
+        // todo: QC this all.
+        match self.common.ident.as_str() {
+            // todo: Cardiolipin and PI missing from amber?
+            "AR" => {
+                self.lmsd_id = "".to_owned();
+                self.hmdb_id = "".to_owned();
+                self.kegg_id = "".to_owned();
+                self.common_name = "".to_owned();
+            }
+            "CHL" => {
+                self.lmsd_id = "".to_owned();
+                self.hmdb_id = "".to_owned();
+                self.kegg_id = "".to_owned();
+                self.common_name = "".to_owned();
+            }
+            "DHA" => {
+                self.lmsd_id = "".to_owned();
+                self.hmdb_id = "".to_owned();
+                self.kegg_id = "".to_owned();
+                self.common_name = "".to_owned();
+            }
+            "LAL" => {
+                self.lmsd_id = "".to_owned();
+                self.hmdb_id = "".to_owned();
+                self.kegg_id = "".to_owned();
+                self.common_name = "".to_owned();
+            }
+            "MY" => {
+                self.lmsd_id = "".to_owned();
+                self.hmdb_id = "".to_owned();
+                self.kegg_id = "".to_owned();
+                self.common_name = "".to_owned();
+            }
+            "OL" => {
+                self.lmsd_id = "".to_owned();
+                self.hmdb_id = "".to_owned();
+                self.kegg_id = "".to_owned();
+                self.common_name = "".to_owned();
+            }
+            "PA" => {
+                self.lmsd_id = "".to_owned();
+                self.hmdb_id = "".to_owned();
+                self.kegg_id = "".to_owned();
+                self.common_name = "".to_owned();
+            }
+            "PC" => {
+                self.lmsd_id = "LMGP01010000".to_owned();
+                self.hmdb_id = "HMDB00564".to_owned();
+                self.kegg_id = "C00157".to_owned();
+                self.common_name = "PC".to_owned();
+            }
+            "PE" => {
+                self.lmsd_id = "LMGP02010000".to_owned();
+                self.hmdb_id = "HMDB05779".to_owned();
+                self.kegg_id = "C00350".to_owned();
+                self.common_name = "PE".to_owned();
+            }
+            "PGR" => {
+                self.lmsd_id = "LMGP04010000".to_owned();
+                self.hmdb_id = "".to_owned();
+                self.kegg_id = "C00344".to_owned();
+                self.common_name = "PG".to_owned();
+            }
+            "PGS" => {
+                self.lmsd_id = "".to_owned();
+                self.hmdb_id = "".to_owned();
+                self.kegg_id = "".to_owned();
+                self.common_name = "".to_owned();
+                // todo: QC this: Amber has pgs adn pgr; we just have PG so far.
+            }
+            "PH-" => {
+                self.lmsd_id = "".to_owned();
+                self.hmdb_id = "".to_owned();
+                self.kegg_id = "".to_owned();
+                self.common_name = "".to_owned();
+            }
+            "PS" => {
+                self.lmsd_id = "LMGP03010000".to_owned();
+                self.hmdb_id = "HMDB00614".to_owned();
+                self.kegg_id = "C02737".to_owned();
+                self.common_name = "PS".to_owned();
+            }
+            "SA" => {
+                self.lmsd_id = "".to_owned();
+                self.hmdb_id = "".to_owned();
+                self.kegg_id = "".to_owned();
+                self.common_name = "".to_owned();
+            }
+            "SPM" => {
+                self.lmsd_id = "".to_owned();
+                self.hmdb_id = "".to_owned();
+                self.kegg_id = "".to_owned();
+                self.common_name = "".to_owned();
+            }
+            "ST" => {
+                self.lmsd_id = "".to_owned();
+                self.hmdb_id = "".to_owned();
+                self.kegg_id = "".to_owned();
+                self.common_name = "".to_owned();
+            }
+            _ => (),
         }
     }
 }

@@ -81,17 +81,6 @@ impl MoleculeSmall {
             ..Default::default()
         }
     }
-
-    /// Used for rotation and motion; the rough center of the molecule.
-    pub fn centroid(&self) -> Vec3 {
-        let n = self.common.atom_posits.len() as f64;
-        let sum = self
-            .common
-            .atom_posits
-            .iter()
-            .fold(Vec3::new_zero(), |a, b| a + *b);
-        sum / n
-    }
 }
 
 /// This data is related specifically to docking.
