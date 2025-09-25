@@ -26,7 +26,7 @@ use crate::{
     download_mols::{load_sdf_drugbank, load_sdf_pubchem},
     drawing::{
         EntityType, MoleculeView, color_viridis, draw_all_ligs, draw_density_point_cloud,
-        draw_density_surface, draw_nucleic_acid, draw_peptide, draw_water,
+        draw_density_surface, draw_nucleic_acids, draw_peptide, draw_water,
     },
     file_io::gemmi_path,
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
@@ -841,7 +841,7 @@ fn view_settings(
                         Strands::Single,
                     )];
                 }
-                draw_nucleic_acid(state, scene);
+                draw_nucleic_acids(state, scene);
                 engine_updates.entities = true;
             }
 
@@ -853,7 +853,7 @@ fn view_settings(
                         Strands::Single,
                     )];
                 }
-                draw_nucleic_acid(state, scene);
+                draw_nucleic_acids(state, scene);
                 engine_updates.entities = true;
             }
 

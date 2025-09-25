@@ -123,6 +123,13 @@ impl State {
                 )?;
                 self.cif_pdb_raw = Some(data_str);
 
+                // Mark all other peptides as not last session.
+                for history in &mut self.to_save.open_history {
+                    if let OpenType::Peptide = history.type_ {
+                        history.last_session = false;
+                    }
+                }
+
                 Ok(MoleculeGeneric::Peptide(mol))
             }
             _ => Err(io::Error::new(
@@ -179,8 +186,6 @@ impl State {
                         // Save the open history.
                         self.update_save_prefs(false);
 
-                        // Save teh open history.
-                        self.update_save_prefs(false);
                     }
                     MoleculeGeneric::NucleicAcid(m) => {
                         // todo: Fill this in

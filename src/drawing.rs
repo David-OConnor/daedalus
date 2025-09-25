@@ -107,14 +107,15 @@ pub enum EntityType {
     Protein = 0,
     Ligand = 1,
     NucleicAcid = 2,
-    DensityPoint = 3,
-    DensitySurface = 4,
-    SecondaryStructure = 5,
-    SaSurface = 6,
-    SaSurfaceDots = 7,
-    DockingSite = 8,
-    WaterModel = 9,
-    Other = 10,
+    Lipid = 3,
+    DensityPoint = 4,
+    DensitySurface = 5,
+    SecondaryStructure = 6,
+    SaSurface = 7,
+    SaSurfaceDots = 8,
+    DockingSite = 9,
+    WaterModel = 10,
+    Other = 11,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -122,6 +123,7 @@ enum MolType {
     Peptide,
     Ligand,
     NucleicAcid,
+    Lipid,
     Water,
 }
 
@@ -131,6 +133,7 @@ impl MolType {
             Self::Peptide => EntityType::Protein,
             Self::Ligand => EntityType::Ligand,
             Self::NucleicAcid => EntityType::NucleicAcid,
+            Self::Lipid => EntityType::Lipid,
             Self::Water => EntityType::Protein, // todo for now
         }
     }
@@ -1097,7 +1100,7 @@ pub fn draw_secondary_structure(update_mesh: &mut bool, mesh_created: bool, scen
 // }
 
 // todo: You need to generalize your drawing code so you have less repetition, and it's more consistent.
-pub fn draw_nucleic_acid(state: &mut State, scene: &mut Scene) {
+pub fn draw_nucleic_acids(state: &mut State, scene: &mut Scene) {
     scene
         .entities
         .retain(|ent| ent.class != EntityType::NucleicAcid as u32);
@@ -1175,6 +1178,72 @@ pub fn draw_nucleic_acid(state: &mut State, scene: &mut Scene) {
                 color_1,
                 bond.bond_type,
                 MolType::NucleicAcid,
+                state.ui.mol_view != MoleculeView::BallAndStick,
+                (neighbor_posit, false),
+                false,
+            );
+        }
+    }
+}
+
+// todo: You need to generalize your drawing code so you have less repetition, and it's more consistent.
+pub fn draw_lipids(state: &mut State, scene: &mut Scene) {
+    scene
+        .entities
+        .retain(|ent| ent.class != EntityType::Lipid as u32);
+
+    // Atoms
+    for mol in &state.lipids {
+        for (i, atom) in mol.common.atoms.iter().enumerate() {
+            let (radius, mesh) = match atom.element {
+                Element::Hydrogen => (BALL_STICK_RADIUS_H, MESH_BALL_STICK_SPHERE),
+                _ => (BALL_STICK_RADIUS, MESH_BALL_STICK_SPHERE),
+            };
+
+            let mut entity = Entity::new(
+                mesh,
+                mol.common.atom_posits[i].into(),
+                Quaternion::new_identity(),
+                radius,
+                atom.element.color(),
+                ATOM_SHININESS,
+            );
+            entity.class = EntityType::NucleicAcid as u32;
+            scene.entities.push(entity);
+        }
+
+        // Bonds
+        for bond in &mol.common.bonds {
+            let atom_0 = &mol.common.atoms[bond.atom_0];
+            let atom_1 = &mol.common.atoms[bond.atom_1];
+
+            let atom_0_posit = mol.common.atom_posits[bond.atom_0];
+            let atom_1_posit = mol.common.atom_posits[bond.atom_1];
+
+            let posit_0: Vec3 = atom_0_posit.into();
+            let posit_1: Vec3 = atom_1_posit.into();
+
+            // // For determining how to orient multiple-bonds.
+            // let hydrogen_is = Vec::new(); // todo A/R
+            // let neighbor_i = find_neighbor_posit(&mol.common, bond.atom_0, bond.atom_1, &hydrogen_is);
+            //
+            // let neighbor_posit = match neighbor_i {
+            //     Some((i, p1)) => (mol.common.atoms[i].posit.into(), p1),
+            //     None => (mol.common.atoms[0].posit.into(), false),
+            // };
+            let neighbor_posit = Vec3::new_zero(); // todo: A/R
+
+            let color_0 = atom_0.element.color();
+            let color_1 = atom_1.element.color();
+
+            bond_entities(
+                &mut scene.entities,
+                posit_0,
+                posit_1,
+                color_0,
+                color_1,
+                bond.bond_type,
+                MolType::Lipid,
                 state.ui.mol_view != MoleculeView::BallAndStick,
                 (neighbor_posit, false),
                 false,
@@ -1267,7 +1336,6 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
 
                         let mut entity = Entity::new(
                             MESH_WATER_SPHERE,
-                            // atom.posit.into(),
                             mol.common.atom_posits[i].into(),
                             Quaternion::new_identity(),
                             BALL_RADIUS_WATER_O,

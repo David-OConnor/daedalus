@@ -32,7 +32,6 @@ mod ui;
 mod util;
 
 mod cli;
-// mod dynamics;
 mod reflection;
 
 mod md;
@@ -41,6 +40,7 @@ mod nucleic_acid;
 mod selection;
 #[cfg(test)]
 mod tests;
+mod lipid;
 
 #[cfg(feature = "cuda")]
 use std::sync::Arc;
@@ -73,40 +73,15 @@ use mol_lig::{Ligand, MoleculeSmall};
 use molecule::MoleculePeptide;
 
 use crate::ui::cam::{FOG_DIST_MAX, FOG_DIST_MIN};
-// use crate::file_io::load_ffs_general;
 use crate::ui::misc::MdMode;
 use crate::{
-    // docking::{BindingEnergy, THETA_BH, prep::DockingSetup},
-    // molecule::PeptideAtomPosits,
     nucleic_acid::MoleculeNucleicAcid,
     prefs::ToSave,
     render::render,
     util::handle_err,
 };
+use crate::lipid::MoleculeLipid;
 // ------Including files into the executable
-
-// Include general Amber forcefield params with our program. See the Reference Manual, section ]
-// 3.1.1 for details on which we include. (The recommended ones for Proteins, and ligands).
-
-// // Proteins and amino acids:
-// const PARM_19: &str = include_str!("../resources/parm19.dat"); // Bonded, and LJ
-// const FRCMOD_FF19SB: &str = include_str!("../resources/frcmod.ff19SB"); // Bonded, and LJ: overrides and new types
-// const AMINO_19: &str = include_str!("../resources/amino19.lib"); // Charge; internal residues
-// const AMINO_NT12: &str = include_str!("../resources/aminont12.lib"); // Charge; protonated N-terminus residues
-// const AMINO_CT12: &str = include_str!("../resources/aminoct12.lib"); // Charge; protonated C-terminus residues
-//
-// // Ligands/small organic molecules: *General Amber Force Fields*.
-// const GAFF2: &str = include_str!("../resources/gaff2.dat");
-//
-// // DNA (OL24) and RNA (OL3)
-// const OL24_LIB: &str = include_str!("../resources/ff-nucleic-OL24.lib");
-// const OL24_FRCMOD: &str = include_str!("../resources/ff-nucleic-OL24.frcmod");
-// // todo: frcmod.protonated_nucleic?
-// // RNA (I believe this is the OL3 Amber's FF page recommends?)
-// const RNA_LIB: &str = include_str!("../resources/RNA.lib");
-// // todo: RNA.YIL.lib? RNA_CI.lib? RNA_Shaw.lib? These are, I believe, "alternative" libraries,
-// // todo, and not required. YIL: Yildirim torsion refit. CI: Legacy Cornell-style. SHAW: incomplete,
-// // todo from a person named Shaw.
 
 // Note: If you haven't generated this file yet when compiling (e.g. from a freshly-cloned repo),
 // make an edit to one of the CUDA files (e.g. add a newline), then run, to create this file.
@@ -464,6 +439,7 @@ struct State {
     // pub ligand: Option<MoleculeSmall>,
     pub ligands: Vec<MoleculeSmall>,
     pub nucleic_acids: Vec<MoleculeNucleicAcid>,
+    pub lipids: Vec<MoleculeLipid>,
     pub cam_snapshots: Vec<CamSnapshot>,
     /// This allows us to keep in-memory data for other molecules.
     pub to_save: ToSave,

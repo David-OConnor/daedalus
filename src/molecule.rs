@@ -20,12 +20,13 @@ use bio_files::{
     MmCif, ResidueEnd, ResidueGeneric, ResidueType, create_bonds,
 };
 use dynamics::{
-    Dihedral, ParamError, ProtFFTypeChargeMap,
-    params::{populate_peptide_ff_and_q, prepare_peptide_mmcif},
+    Dihedral,
+    params::{prepare_peptide_mmcif},
     populate_hydrogens_dihedrals,
 };
+use dynamics::params::ProtFfChargeMapSet;
 use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
-use na_seq::{AminoAcid, AminoAcidGeneral, AminoAcidProtenationVariant, AtomTypeInRes, Element};
+use na_seq::{AminoAcid, AtomTypeInRes, Element};
 use rayon::prelude::*;
 
 use crate::{
@@ -783,7 +784,7 @@ pub const fn aa_color(aa: AminoAcid) -> (f32, f32, f32) {
 impl MoleculePeptide {
     pub fn from_mmcif(
         mut m: MmCif,
-        ff_map: &ProtFFTypeChargeMap,
+        ff_map: &ProtFfChargeMapSet,
         path: Option<PathBuf>,
         ph: f32,
     ) -> Result<Self, io::Error> {
@@ -862,7 +863,7 @@ impl MoleculePeptide {
 
     /// E.g. run this when pH changes. Removes all hydrogens, and re-adds per the pH. Rebuilds
     /// bonds.
-    pub fn reassign_hydrogens(&mut self, ph: f32, ff_map: &ProtFFTypeChargeMap) -> io::Result<()> {
+    pub fn reassign_hydrogens(&mut self, ph: f32, ff_map: &ProtFfChargeMapSet) -> io::Result<()> {
         let mut atoms_gen = self
             .common
             .atoms

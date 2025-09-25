@@ -67,6 +67,7 @@ pub fn build_dynamics(
             bonds: bonds_gen,
             adjacency_list: Some(lig.common.adjacency_list.clone()),
             static_: false,
+            bonded_only: false,
             mol_specific_params: Some(msp.clone()),
         })
     }
@@ -108,6 +109,7 @@ pub fn build_dynamics(
             bonds,
             adjacency_list: None,
             static_: static_peptide,
+            bonded_only: false,
             mol_specific_params: None,
         })
     }

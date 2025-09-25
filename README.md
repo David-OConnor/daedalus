@@ -32,13 +32,20 @@ and disabling CUDA.
 
 
 ## Functionality
-
 - View the 3D structure of proteins and small molecules
-- Visualize ligand docking
 - Molecular dynamics, using Amber force fields, and the OPC water model
+- Visualize ligand docking
+- Visualize electron density from crystallography and Cryo-Em data
 - WIP: This software is a platform for ab-initio simulations of electron density.
 
 ![Ligand dynamics](screenshots/daedalus_md_2025-08-03.png)
+
+
+## Molecule types supported for viewing and dynamics
+- Proteins
+- Small organic molecules (e.g. ligands)
+- DNA and RNA; double and single stranded
+- Lipids
 
 
 ## Getting started
@@ -58,9 +65,9 @@ from the [RCSB PDB](https://www.rcsb.org/).
 
 ## File formats
 - Proteins: mmCIF (.pdb supported removed; use mmCIF instead)
-- Small molecules: SDF, Mol2, and PDBQT
+- Small molecules: SDF, Mol2, GRO, and PDBQT
 - Electron density: 2fo-fc mmCIF, Map, and MTZ
-- Force field parameters: dat, and frcmod (Amber)
+- Force field parameters: dat, lib, frcmod, prmtop (Amber), and top (GROMACS)
 
 
 ## A note on internet connectivity
@@ -94,6 +101,7 @@ Integrates the following [Amber parameters](https://ambermd.org/AmberModels.php)
 - Small organic molecules, e.g. ligands: [General Amber Force Fields: GAFF2](https://ambermd.org/antechamber/gaff.html)
 - Protein/AA: [FF19SB](https://pubs.acs.org/doi/10.1021/acs.jctc.9b00591)
 - Nucleic acids: Amber OL3 and RNA libraries
+- Lipids: Lipid21
 - Water: [OPC](https://arxiv.org/abs/1408.1679)
 
 We plan to support carbohydrates and lipids later. If you're interested in these, please add a Github Issue.
@@ -231,6 +239,12 @@ Daedalus supports a very limited subset of PyMol's CLI interface. Supported comm
 - `reset`
 
 ![Protein A](screenshots/protein_a.png)
+
+
+### Adding nucleic acids and lipids
+You can add DNA, RNA, and lipids in various configurations without loading files; this program can create
+them procedurally using the GUI. It can create DNA and RNA from a given nucleic acid or amino acid sequence. It 
+can create lipids arranged freely, as membrances, or as lipid nanoparticles (LNPs).
 
 
 ### The preferences file
