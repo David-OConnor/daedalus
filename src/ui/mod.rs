@@ -19,20 +19,22 @@ static INIT_COMPLETE: AtomicBool = AtomicBool::new(false);
 use bio_files::{DensityMap, ResidueType, density_from_2fo_fc_rcsb_gemmi};
 use lin_alg::f64::Vec3;
 use md::md_setup;
-use mol_data::disp_lig_data;
+use mol_data::display_small_mol_data;
 
 use crate::{
     CamSnapshot, MsaaSetting, Selection, State, ViewSelLevel, cli,
     cli::autocomplete_cli,
     download_mols::{load_sdf_drugbank, load_sdf_pubchem},
     drawing::{
-        EntityType, MoleculeView, color_viridis, draw_all_ligs, draw_density_point_cloud,
-        draw_density_surface, draw_lipids, draw_nucleic_acids, draw_peptide, draw_water,
+        EntityType, MoleculeView, color_viridis, draw_all_ligs, draw_all_lipids,
+        draw_all_nucleic_acids, draw_density_point_cloud, draw_density_surface, draw_peptide,
+        draw_water,
     },
     file_io::gemmi_path,
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
+    lipid::{LipidShape, make_bacterial_lipids},
     mol_lig::MoleculeSmall,
-    molecule::MoleculeGenericRef,
+    molecule::{MolType, MoleculeGenericRef},
     nucleic_acid::{MoleculeNucleicAcid, NucleicAcidType, Strands},
     render::{set_flashlight, set_static_light},
     ui::{
@@ -40,7 +42,7 @@ use crate::{
         misc::section_box,
     },
     util::{
-        check_prefs_save, close_lig, close_peptide, cycle_selected, handle_err, handle_scene_flags,
+        check_prefs_save, close_mol, close_peptide, cycle_selected, handle_err, handle_scene_flags,
         handle_success, load_atom_coords_rcsb, orbit_center, reset_camera, select_from_search,
     },
 };
@@ -81,9 +83,9 @@ fn set_window_title(title: &str, scene: &mut Scene) {
 }
 
 fn open_lig(state: &mut State, mut mol: MoleculeSmall) {
-    mol.update_aux(&state.volatile.active_lig, &mut state.lig_specific_params);
+    mol.update_aux(&state.volatile.active_mol, &mut state.lig_specific_params);
     state.ligands.push(mol);
-    state.volatile.active_lig = Some(state.ligands.len() - 1);
+    state.volatile.active_mol = Some((MolType::Ligand, state.ligands.len() - 1));
 
     state.mol_dynamics = None;
     state.update_from_prefs();
@@ -345,7 +347,7 @@ fn docking(
     //     return;
     // };
 
-    if state.molecule.is_none() || state.active_lig().is_none() {
+    if state.molecule.is_none() || state.active_mol().is_none() {
         return;
     }
 
@@ -589,7 +591,7 @@ fn selection_section(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
                 }
             }
 
-            if state.active_lig().is_some() {
+            if state.active_mol().is_some() {
                 let help = "Hide all atoms not near the ligand";
                 ui.label("Nearby lig only:").on_hover_text(help);
                 if ui.checkbox(&mut state.ui.show_near_lig_only, "")
@@ -701,7 +703,7 @@ fn view_settings(
     state: &mut State,
     scene: &mut Scene,
     engine_updates: &mut EngineUpdates,
-    redraw: &mut bool,
+    redraw_peptide: &mut bool,
     ui: &mut Ui,
 ) {
     section_box().show(ui, |ui| {
@@ -726,7 +728,7 @@ fn view_settings(
                 });
 
             if state.ui.mol_view != prev_view {
-                *redraw = true;
+                *redraw_peptide = true;
             }
 
             ui.add_space(COL_SPACING);
@@ -737,9 +739,14 @@ fn view_settings(
                 &mut state.ui.visibility.hide_non_hetero,
                 "Peptide",
                 ui,
-                redraw,
+                redraw_peptide,
             );
-            misc::vis_check(&mut state.ui.visibility.hide_hetero, "Hetero", ui, redraw);
+            misc::vis_check(
+                &mut state.ui.visibility.hide_hetero,
+                "Hetero",
+                ui,
+                redraw_peptide,
+            );
 
             ui.add_space(COL_SPACING / 2.);
 
@@ -749,24 +756,34 @@ fn view_settings(
                     &mut state.ui.visibility.hide_sidechains,
                     "Sidechains",
                     ui,
-                    redraw,
+                    redraw_peptide,
                 );
             }
 
-            misc::vis_check(&mut state.ui.visibility.hide_hydrogen, "H", ui, redraw);
+            misc::vis_check(
+                &mut state.ui.visibility.hide_hydrogen,
+                "H",
+                ui,
+                redraw_peptide,
+            );
 
             // We allow toggling water now regardless of hide hetero, as it's part of our MD sim.
             // if !state.ui.visibility.hide_hetero {
             // Subset of hetero.
             let water_prev = state.ui.visibility.hide_water;
-            misc::vis_check(&mut state.ui.visibility.hide_water, "Water", ui, redraw);
+            misc::vis_check(
+                &mut state.ui.visibility.hide_water,
+                "Water",
+                ui,
+                redraw_peptide,
+            );
 
             if !state.nucleic_acids.is_empty() {
                 misc::vis_check(
                     &mut state.ui.visibility.hide_nucleic_acids,
                     "Nucleic acids",
                     ui,
-                    redraw,
+                    redraw_peptide,
                 );
             }
             // }
@@ -785,7 +802,7 @@ fn view_settings(
                 }
             }
 
-            if state.active_lig().is_some() {
+            if state.active_mol().is_some() {
                 let color = misc::active_color(!state.ui.visibility.hide_ligand);
                 if ui.button(RichText::new("Lig").color(color)).clicked() {
                     state.ui.visibility.hide_ligand = !state.ui.visibility.hide_ligand;
@@ -804,10 +821,15 @@ fn view_settings(
                 }
             }
 
-            misc::vis_check(&mut state.ui.visibility.hide_h_bonds, "H bonds", ui, redraw);
+            misc::vis_check(
+                &mut state.ui.visibility.hide_h_bonds,
+                "H bonds",
+                ui,
+                redraw_peptide,
+            );
             // vis_check(&mut state.ui.visibility.dim_peptide, "Dim peptide", ui, redraw);
 
-            if state.active_lig().is_some() {
+            if state.active_mol().is_some() {
                 ui.add_space(COL_SPACING / 2.);
                 // Not using `vis_check` for this because its semantics are inverted.
                 let color = misc::active_color(state.ui.visibility.dim_peptide);
@@ -817,7 +839,7 @@ fn view_settings(
                     .clicked()
                 {
                     state.ui.visibility.dim_peptide = !state.ui.visibility.dim_peptide;
-                    *redraw = true;
+                    *redraw_peptide = true;
                 }
             }
 
@@ -842,7 +864,7 @@ fn view_settings(
                         Strands::Single,
                     )];
                 }
-                draw_nucleic_acids(state, scene);
+                draw_all_nucleic_acids(state, scene);
                 engine_updates.entities = true;
             }
 
@@ -854,7 +876,7 @@ fn view_settings(
                         Strands::Single,
                     )];
                 }
-                draw_nucleic_acids(state, scene);
+                draw_all_nucleic_acids(state, scene);
                 engine_updates.entities = true;
             }
 
@@ -1121,6 +1143,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
     // return  engine_updates;
     let mut redraw_mol = false;
     let mut redraw_lig = false;
+    let mut redraw_na = false;
+    let mut redraw_lipid = false;
     let mut reset_cam = false;
 
     // For getting DT for certain buttons when held. Does not seem to be the same as the 3D render DT.
@@ -1345,7 +1369,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 state.load_density(dm);
             }
 
-            if let Some(lig) = &state.active_lig() {
+            if let Some(lig) = &state.active_mol() {
                 // Highlight the button if we haven't saved this to file, e.g. if opened from online.
                 // let color = if state.to_save.last_ligand_opened.is_none() {
                 //     COLOR_ATTENTION
@@ -1359,10 +1383,10 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     let extension = "mol2"; // The default; more robust than SDF.
 
                     let filename = {
-                        let name = if lig.common.ident.is_empty() {
+                        let name = if lig.common().ident.is_empty() {
                             "molecule".to_string()
                         } else {
-                            lig.common.ident.clone()
+                            lig.common().ident.clone()
                         };
                         format!("{name}.{extension}")
                     };
@@ -1453,7 +1477,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 }
             }
 
-            if state.molecule.is_none() && state.active_lig().is_none() {
+            if state.molecule.is_none() && state.active_mol().is_none() {
                 ui.add_space(COL_SPACING / 2.);
                 if ui
                     .button(RichText::new("I'm feeling lucky 🍀").color(color_open_tools))
@@ -1477,7 +1501,15 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         ui.add_space(ROW_SPACING);
 
         let mut close_ligand = false; // to avoid borrow error.
-        disp_lig_data(state, scene, ui, &mut redraw_lig, &mut close_ligand, &mut engine_updates);
+        let mut close_na = false; // to avoid borrow error.
+        let mut close_lipid = false; // to avoid borrow error.
+
+        // display_small_mol_data(state, scene, ui, &mut redraw_lig, &mut close_ligand, &mut engine_updates);
+        display_small_mol_data(state, scene, ui, MolType::Ligand, &mut redraw_lig,
+                               &mut close_ligand,&mut engine_updates);
+
+        display_small_mol_data(state, scene, ui, MolType::Lipid, &mut redraw_lipid,
+                               &mut close_lipid,&mut engine_updates);
 
         ui.add_space(ROW_SPACING);
         selection_section(state, &mut redraw_mol, ui);
@@ -1547,27 +1579,30 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 .open(true)
                 .gap(4.0)
                 .show(|ui| {
+                    let mut load_ff = false;
+                    let mut load_frcmod = false;
                     // These vars avoid dbl borrow.
                     // todo: Is this always the lig you want?
-                    if let Some(lig) = &state.active_lig() {
-                        let load_ff = !lig.ff_params_loaded;
-                        let load_frcmod = !lig.frcmod_loaded;
+                    if let Some(lig) = &state.active_mol() {
+                        if let MoleculeGenericRef::Ligand(l) = lig {
+                            load_ff = !l.ff_params_loaded;
+                            load_frcmod = !l.frcmod_loaded;
 
-                        let Some(lig) = state.active_lig_mut() else {
-                            return;
-                        };
-                        let mut msg = String::from("Not ready for dynamics: ");
+                            // let Some(lig) = state.active_mol_mut() else {
+                            //     return;
+                            // };
+                            let mut msg = String::from("Not ready for dynamics: ");
 
-                        if !lig.ff_params_loaded {
-                            msg += "No FF params or partial charges are present on this ligand."
+                            if !l.ff_params_loaded {
+                                msg += "No FF params or partial charges are present on this ligand."
+                            }
+
+                            // if !lig.frcmod_loaded {
+                            //     msg += "No FRCMOD parameters loaded for this ligand."
+                            // }
+
+                            ui.label(RichText::new(msg).color(Color32::LIGHT_RED));
                         }
-
-                        // if !lig.frcmod_loaded {
-                        //     msg += "No FRCMOD parameters loaded for this ligand."
-                        // }
-
-                        ui.label(RichText::new(msg).color(Color32::LIGHT_RED));
-
 
                         ui.add_space(ROW_SPACING);
 
@@ -1577,7 +1612,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                             //     return;
                             // };
 
-                            match amber_geostd::find_mols(&lig.common.ident) {
+                            match amber_geostd::find_mols(&lig.common().ident) {
                                 Ok(data) => {
                                     state.ui.popup.get_geostd_items = data;
                                 }
@@ -1624,12 +1659,14 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         if state.ui.popup.show_associated_structures {
             let mut associated_structs = Vec::new();
-            if let Some(lig) = state.active_lig() {
-                // todo: I don't like this clone, but not sure how else to do it.
-                associated_structs = lig.associated_structures.clone();
+            if let Some(lig) = state.active_mol() {
+                if let MoleculeGenericRef::Ligand(l) = lig {
+                    // todo: I don't like this clone, but not sure how else to do it.
+                    associated_structs = l.associated_structures.clone();
+                }
             }
 
-            if state.active_lig().is_some() {
+            if state.active_mol().is_some() {
                 let popup_id = ui.make_persistent_id("associated_structs_popup");
                 Popup::new(
                     popup_id,
@@ -1692,8 +1729,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         // -------UI above; clean-up items (based on flags) below
 
         if close_ligand {
-            if let Some(i) = state.volatile.active_lig {
-                close_lig(i, state, scene, &mut engine_updates);
+            if let Some((mol_type, i)) = state.volatile.active_mol {
+                close_mol(mol_type, i, state, scene, &mut engine_updates);
             }
         }
 
@@ -1762,7 +1799,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             engine_updates.entities = true;
 
             // For docking light, but may be overkill here.
-            if state.active_lig().is_some() {
+            if state.active_mol().is_some() {
                 engine_updates.lighting = true;
             }
         }
@@ -1773,7 +1810,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             engine_updates.entities = true;
 
             // For docking light, but may be overkill here.
-            if state.active_lig().is_some() {
+            if state.active_mol().is_some() {
                 engine_updates.lighting = true;
             }
         }
@@ -1888,16 +1925,37 @@ pub fn lipid_section(
             .response
             .on_hover_text("Add this lipid to the scene.");
 
+        ComboBox::from_id_salt(102)
+            .width(90.)
+            .selected_text(state.ui.lipid_shape.to_string())
+            .show_ui(ui, |ui| {
+                for shape in [LipidShape::Free, LipidShape::Membrane, LipidShape::Lnp] {
+                    ui.selectable_value(&mut state.ui.lipid_shape, shape, shape.to_string());
+                }
+            })
+            .response
+            .on_hover_text("Add lipids in this pattern");
+
+        num_field(&mut state.ui.lipid_mol_count, "# mols", 36, ui);
+
         // todo: Multiple and sets once this is validated
         if ui.button("+").clicked() {
-            let mut mol = state.lipid_templates[state.ui.lipid_to_add].clone();
-            for p in &mut mol.common.atom_posits {
-                *p = *p + Vec3::new_zero();
-            }
+            let center = Vec3::new_zero();
+            state.lipids.extend(make_bacterial_lipids(
+                state.ui.lipid_mol_count as usize,
+                center,
+                state.ui.lipid_shape,
+                &state.lipid_templates,
+            ));
+            //
+            // let mut mol = state.lipid_templates[state.ui.lipid_to_add].clone();
+            // for p in &mut mol.common.atom_posits {
+            //     *p = *p + Vec3::new_zero();
+            // }
+            //
+            // state.lipids.push(mol);
 
-            state.lipids.push(mol);
-
-            draw_lipids(state, scene);
+            draw_all_lipids(state, scene);
             engine_updates.entities = true;
         }
 

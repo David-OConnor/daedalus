@@ -16,7 +16,7 @@ use na_seq::{AaIdent, Element};
 use crate::{
     State,
     mol_lig::MoleculeSmall,
-    molecule::{MoleculeGeneric, MoleculePeptide},
+    molecule::{MolType, MoleculeGeneric, MoleculeGenericRefMut, MoleculePeptide},
     prefs::{OpenHistory, OpenType},
     reflection::{DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityRect, ElectronDensity},
     util::{handle_err, handle_success},
@@ -144,11 +144,11 @@ impl State {
                     MoleculeGeneric::Ligand(mut mol) => {
                         self.mol_dynamics = None;
 
-                        self.volatile.active_lig = Some(self.ligands.len()); // Prior to push; no - 1
-                        mol.update_aux(&self.volatile.active_lig, &mut self.lig_specific_params);
+                        self.volatile.active_mol = Some((MolType::Ligand, self.ligands.len())); // Prior to push; no - 1
+                        mol.update_aux(&self.volatile.active_mol, &mut self.lig_specific_params);
 
                         self.ligands.push(mol);
-                        self.volatile.active_lig = Some(self.ligands.len() - 1);
+                        self.volatile.active_mol = Some((MolType::Ligand, self.ligands.len() - 1));
 
                         // self.to_save.last_ligand_opened = Some(path.to_owned());
                         // self.update_history(path, OpenType::Ligand, &ident);
@@ -191,6 +191,14 @@ impl State {
                         // self.to_save.last_nucleic_acid_opened = Some(path.to_owned());
                         // self.update_history(path, OpenType::NucleicAcid, ""); // todo ident
                         self.update_history(path, OpenType::NucleicAcid); // todo ident
+
+                        // Save teh open history.
+                        self.update_save_prefs(false);
+                    }
+                    MoleculeGeneric::Lipid(m) => {
+                        // todo: Fill this in
+                        // self.to_save.last_lipid_opened = Some(path.to_owned());
+                        // self.update_history(path, OpenType::Lipid); // todo ident
 
                         // Save teh open history.
                         self.update_save_prefs(false);
@@ -398,7 +406,7 @@ impl State {
                     self.update_save_prefs(false);
                 }
             }
-            "sdf" => match self.active_lig() {
+            "sdf" => match self.active_mol() {
                 Some(lig) => {
                     lig.to_sdf().save(path)?;
 
@@ -411,7 +419,7 @@ impl State {
                 }
                 None => return Err(io::Error::new(ErrorKind::InvalidData, "No ligand to save")),
             },
-            "mol2" => match self.active_lig() {
+            "mol2" => match self.active_mol() {
                 Some(lig) => {
                     lig.to_mol2().save(path)?;
 
@@ -425,7 +433,7 @@ impl State {
                 None => return Err(io::Error::new(ErrorKind::InvalidData, "No ligand to save")),
             },
             "prmtop" => (), // todo
-            "pdbqt" => match self.active_lig() {
+            "pdbqt" => match self.active_mol() {
                 Some(lig) => {
                     lig.to_pdbqt().save(path)?;
 
@@ -499,8 +507,10 @@ impl State {
                             ForceFieldParams::from_frcmod(&frcmod).unwrap(),
                         );
 
-                        if let Some(lig) = self.active_lig_mut() {
-                            lig.frcmod_loaded = true;
+                        if let Some(lig) = self.active_mol_mut() {
+                            if let MoleculeGenericRefMut::Ligand(l) = lig {
+                                l.frcmod_loaded = true;
+                            }
                         }
                     }
                 }
@@ -514,12 +524,13 @@ impl State {
                         Ok(mol2) => {
                             let mut mol: MoleculeSmall = mol2.try_into().unwrap();
                             mol.update_aux(
-                                &self.volatile.active_lig,
+                                &self.volatile.active_mol,
                                 &mut self.lig_specific_params,
                             );
 
                             self.ligands.push(mol);
-                            self.volatile.active_lig = Some(self.ligands.len() - 1);
+                            self.volatile.active_mol =
+                                Some((MolType::Ligand, self.ligands.len() - 1));
                             self.mol_dynamics = None;
 
                             *redraw_lig = true;

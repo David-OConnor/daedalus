@@ -204,7 +204,7 @@ impl PerMolToSave {
         let mut lig_posit = Vec3::new_zero();
         let mut lig_atom_positions = Vec::new();
 
-        if let Some(lig) = state.active_lig() {
+        if let Some(mol) = state.active_mol() {
             // docking_site = lig.docking_site.clone();
             // lig_posit = lig.pose.anchor_posit;
 
@@ -213,9 +213,9 @@ impl PerMolToSave {
             // todo: If you find a more robust way to handle saving order-dependent data,
             // todo: remove this.
             if !on_init {
-                lig_atom_positions = lig.common.atom_posits.clone();
-                if !lig.common.atom_posits.is_empty() {
-                    println!("\nSaving atom posits: {:?}", lig.common.atom_posits[0]); // todo temp
+                lig_atom_positions = mol.common().atom_posits.clone();
+                if !mol.common().atom_posits.is_empty() {
+                    println!("\nSaving atom posits: {:?}", mol.common().atom_posits[0]); // todo temp
                 }
             }
         }

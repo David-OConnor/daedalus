@@ -12,14 +12,14 @@ use crate::{
     inputs::set_manip,
     lipid::MoleculeLipid,
     mol_lig::MoleculeSmall,
-    molecule::{Atom, MolType, MoleculeGenericRef, Residue, aa_color},
+    molecule::{Atom, MolType, MoleculeGenericRef, MoleculeGenericRefMut, Residue, aa_color},
     nucleic_acid::MoleculeNucleicAcid,
     ui::{
         COL_SPACING, COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_HIGHLIGHT, COLOR_INACTIVE,
         cam::{move_cam_to_lig, move_cam_to_lig2},
         mol_descrip,
     },
-    util::{handle_err, handle_success, make_egui_color, move_lig_to_res},
+    util::{handle_err, handle_success, make_egui_color, move_mol_to_res},
 };
 
 /// `posit_override` is for example, relative atom positions, such as a positioned ligand.
@@ -176,7 +176,7 @@ pub fn selected_data(
     // });
 }
 
-fn lig_picker(
+fn mol_picker(
     state: &mut State,
     scene: &mut Scene,
     ui: &mut Ui,
@@ -184,8 +184,12 @@ fn lig_picker(
     close_lig: &mut bool,
     engine_updates: &mut EngineUpdates,
 ) {
-    for (i, lig) in state.ligands.iter_mut().enumerate() {
-        let active = state.volatile.active_lig.unwrap_or(999) == i;
+    // todo: Make this support other types.
+    for (i_mol, mol) in state.ligands.iter_mut().enumerate() {
+        let active = match state.volatile.active_mol {
+            Some((MolType::Ligand, i_)) => i_ == i_mol,
+            _ => false,
+        };
 
         let color = if active {
             COLOR_ACTIVE_RADIO
@@ -194,26 +198,26 @@ fn lig_picker(
         };
 
         if ui
-            .button(RichText::new(&lig.common.ident).color(color))
+            .button(RichText::new(&mol.common.ident).color(color))
             .clicked()
         {
-            if active && state.volatile.active_lig.is_some() {
-                state.volatile.active_lig = None;
+            if active && state.volatile.active_mol.is_some() {
+                state.volatile.active_mol = None;
             } else {
-                state.volatile.active_lig = Some(i);
+                state.volatile.active_mol = Some((MolType::Ligand, i_mol));
             }
 
             *redraw_lig = true; // To reflect the change in thickness, color etc.
         }
 
-        let color_vis = if lig.common.visible {
+        let color_vis = if mol.common.visible {
             COLOR_ACTIVE
         } else {
             COLOR_INACTIVE
         };
 
         if ui.button(RichText::new("👁").color(color_vis)).clicked() {
-            lig.common.visible = !lig.common.visible;
+            mol.common.visible = !mol.common.visible;
 
             *redraw_lig = true; // todo Overkill; only need to redraw (or even just clear) one.
             engine_updates.entities = true;
@@ -221,25 +225,26 @@ fn lig_picker(
     }
 }
 
-pub fn disp_lig_data(
+pub fn display_small_mol_data(
     state: &mut State,
     scene: &mut Scene,
     ui: &mut Ui,
-    redraw_lig: &mut bool,
-    close_lig: &mut bool,
+    mol_type: MolType,
+    redraw: &mut bool,
+    close: &mut bool,
     engine_updates: &mut EngineUpdates,
 ) {
     ui.horizontal(|ui| {
-        lig_picker(state, scene, ui, redraw_lig, close_lig, engine_updates);
+        mol_picker(state, scene, ui, redraw, close, engine_updates);
 
-        if state.active_lig().is_none() {
+        let Some(mol) = state.active_mol_mut() else {
             return;
-        }
-        let active_lig_i = state.volatile.active_lig.unwrap();
+        };
+
+        let (active_mol_type, active_mol_i) = state.volatile.active_mol.unwrap();
         ui.add_space(COL_SPACING);
 
-        let lig = &mut state.ligands[active_lig_i];
-        mol_descrip(&MoleculeGenericRef::Ligand(&lig), ui);
+        mol_descrip(&mol, ui);
 
         {
             let mut color_move = COLOR_INACTIVE;
@@ -247,12 +252,12 @@ pub fn disp_lig_data(
 
             match state.volatile.mol_manip.mol {
                 ManipMode::Move((mol_type, mol_i)) => {
-                    if mol_type == MolType::Ligand && mol_i == active_lig_i {
+                    if mol_type == active_mol_type && mol_i == active_mol_i {
                         color_move = COLOR_ACTIVE;
                     }
                 }
                 ManipMode::Rotate((mol_type, mol_i)) => {
-                    if mol_type == MolType::Ligand && mol_i == active_lig_i {
+                    if mol_type == active_mol_type && mol_i == active_mol_i {
                         color_rotate = COLOR_ACTIVE;
                     }
                 }
@@ -264,14 +269,14 @@ pub fn disp_lig_data(
                 .on_hover_text("Move the active molecule by clicking and dragging with the mouse. Scroll to move it forward and back. (Hotkey: M)")
                 .clicked() {
 
-                set_manip(&mut state.volatile, scene, redraw_lig, ManipMode::Move((MolType::Ligand, 0)));
+                set_manip(&mut state.volatile, scene, redraw, ManipMode::Move((active_mol_type, active_mol_i)));
             }
 
             if ui.button(RichText::new("⟳").color(color_rotate))
                 .on_hover_text("Rotate the active molecule by clicking and dragging with the mouse. Scroll to roll. (Hotkey: R)")
                 .clicked() {
 
-                set_manip(&mut state.volatile, scene, redraw_lig, ManipMode::Rotate((MolType::Ligand, 0)));
+                set_manip(&mut state.volatile, scene, redraw, ManipMode::Rotate((active_mol_type, active_mol_i)));
             }
         }
 
@@ -283,104 +288,106 @@ pub fn disp_lig_data(
             )
             .clicked()
         {
-            lig.common.reset_posits();
+            mol.common().reset_posits();
 
-            *redraw_lig = true;
+            *redraw = true;
         }
 
         if ui.button("Close").clicked() {
-            *close_lig = true;
+            *close = true;
         }
 
-        ui.add_space(COL_SPACING);
+        if let MoleculeGenericRefMut::Ligand(l) = mol {
+            ui.add_space(COL_SPACING);
 
-        // todo status color helper?
-        ui.label("Loaded:");
-        let color = if lig.ff_params_loaded {
-            Color32::LIGHT_GREEN
-        } else {
-            Color32::LIGHT_RED
-        };
-        ui.label(RichText::new("FF/q").color(color)).on_hover_text(
-            "Green if force field names, and partial charges are assigned \
+            // todo status color helper?
+            ui.label("Loaded:");
+            let color = if l.ff_params_loaded {
+                Color32::LIGHT_GREEN
+            } else {
+                Color32::LIGHT_RED
+            };
+            ui.label(RichText::new("FF/q").color(color)).on_hover_text(
+                "Green if force field names, and partial charges are assigned \
                     for all ligand atoms. Required for ligand moleculer dynamics and docking.",
-        );
-
-        ui.add_space(COL_SPACING / 4.);
-
-        let color = if lig.frcmod_loaded {
-            Color32::LIGHT_GREEN
-        } else {
-            Color32::LIGHT_RED
-        };
-        ui.label(RichText::new("Frcmod").color(color))
-            .on_hover_text(
-                "Green if molecule-specific Amber force field parameters are \
-                    loaded for this ligand. Required for ligand molecular dynamics and docking.",
             );
 
-        if let Some(id) = &lig.drugbank_id {
-            if ui.button("View on Drugbank").clicked() {
-                drugbank::open_overview(id);
-            }
-        }
+            ui.add_space(COL_SPACING / 4.);
 
-        if let Some(id) = lig.pubchem_cid {
-            if ui.button("View on PubChem").clicked() {
-                pubchem::open_overview(id);
-            }
-        }
+            let color = if l.frcmod_loaded {
+                Color32::LIGHT_GREEN
+            } else {
+                Color32::LIGHT_RED
+            };
+            ui.label(RichText::new("Frcmod").color(color))
+                .on_hover_text(
+                    "Green if molecule-specific Amber force field parameters are \
+                    loaded for this ligand. Required for ligand molecular dynamics and docking.",
+                );
 
-        if let Some(id) = &lig.pdbe_id{
-            if ui.button("View on PDBe").clicked() {
-                pdbe::open_overview(id);
+            if let Some(id) = &l.drugbank_id {
+                if ui.button("View on Drugbank").clicked() {
+                    drugbank::open_overview(id);
+                }
             }
-        }
 
-        if let Some(cid) = lig.pubchem_cid {
-            if ui.button("Find associated structs").clicked() {
-                // todo: Don't block.
-                if lig.associated_structures.is_empty() {
-                    match pubchem::load_associated_structures(cid) {
-                        Ok(data) => {
-                            lig.associated_structures = data;
-                            state.ui.popup.show_associated_structures = true;
+            if let Some(id) = l.pubchem_cid {
+                if ui.button("View on PubChem").clicked() {
+                    pubchem::open_overview(id);
+                }
+            }
+
+            if let Some(id) = &l.pdbe_id {
+                if ui.button("View on PDBe").clicked() {
+                    pdbe::open_overview(id);
+                }
+            }
+
+            if let Some(cid) = l.pubchem_cid {
+                if ui.button("Find associated structs").clicked() {
+                    // todo: Don't block.
+                    if l.associated_structures.is_empty() {
+                        match pubchem::load_associated_structures(cid) {
+                            Ok(data) => {
+                                l.associated_structures = data;
+                                state.ui.popup.show_associated_structures = true;
+                            }
+                            Err(_) => handle_err(
+                                &mut state.ui,
+                                "Unable to find structures for this ligand".to_owned(),
+                            ),
                         }
-                        Err(_) => handle_err(
-                            &mut state.ui,
-                            "Unable to find structures for this ligand".to_owned(),
-                        ),
+                    } else {
+                        state.ui.popup.show_associated_structures = true;
                     }
-                } else {
-                    state.ui.popup.show_associated_structures = true;
                 }
             }
         }
 
         ui.add_space(COL_SPACING);
 
-        if let Some(mol) = &state.molecule {
+        if let Some(peptide) = &state.molecule {
             let res_selected = match state.ui.selection {
                 Selection::Atom(sel_i) => {
-                    let atom = &mol.common.atoms[sel_i];
+                    let atom = &peptide.common.atoms[sel_i];
                     if let Some(res_i) = &atom.residue {
-                        Some(&mol.residues[*res_i])
+                        Some(&peptide.residues[*res_i])
                     } else {
                         None
                     }
                 }
                 Selection::Residue(sel_i) => {
-                    if sel_i >= mol.residues.len() {
+                    if sel_i >= peptide.residues.len() {
                         handle_err(&mut state.ui, "Residue selection is out of bounds.".to_owned());
                         None
                     } else {
-                        Some(&mol.residues[sel_i])
+                        Some(&peptide.residues[sel_i])
                     }
                 },
                 _ => None,
             };
 
-            let Some(mol) = &state.molecule else {
+            let Some(mol__) = &state.molecule else {
                 return;
             };
 
@@ -389,9 +396,9 @@ pub fn disp_lig_data(
             //     lig_atom_count = lig.common.atoms.len();
             // }
 
-            for res in &mol.het_residues {
+            for res in &mol__.het_residues {
                 // Note: This is crude.
-                if (res.atoms.len() - lig.common.atoms.len()) < 5 {
+                if (res.atoms.len() - mol__.common.atoms.len()) < 5 {
                     // todo: Don't list multiple; pick teh closest, at least in len.
                     let name = match &res.res_type {
                         ResidueType::Other(name) => name,
@@ -407,17 +414,17 @@ pub fn disp_lig_data(
                     its center, this attempts to align each atom with its equivalent on the residue.")
                         .clicked()
                     {
-                        let _docking_center = move_lig_to_res(lig, mol, res);
+                        let _docking_center = move_mol_to_res(&mol, mol__, res);
 
                         move_cam_to_lig2(
-                            lig,
+                            &mol,
                             &mut state.ui.cam_snapshot,
                             scene,
-                            mol.center,
+                            mol__.center,
                             engine_updates,
                         );
 
-                        *redraw_lig = true;
+                        *redraw = true;
                     }
                 }
             }
@@ -437,8 +444,8 @@ pub fn disp_lig_data(
 
                     let mut mol_fm_res = MoleculeSmall::from_res(
                         res,
-                        &mol.common.atoms,
-                        &mol.common.bonds,
+                        &mol__.common.atoms,
+                        &mol__.common.bonds,
                         false,
                         // &state.ff_params.lig_specific,
                     );
@@ -450,7 +457,7 @@ pub fn disp_lig_data(
 
                     state.mol_dynamics = None;
 
-                    let docking_center = move_lig_to_res(&mut lig_new, mol, res);
+                    let docking_center = move_mol_to_res(&mut lig_new, mol__, res);
 
                     // todo: Put this save back / fix dble-borrow?
                     // state.update_docking_site(docking_center);
@@ -459,19 +466,19 @@ pub fn disp_lig_data(
                     // set_docking_light(scene, Some(&lig.docking_site));
                     // engine_updates.lighting = true;
 
-                    *redraw_lig = true;
+                    *redraw = true;
 
                     // If creating from an AA, move to the origin (Where we assigned its atom positions).
                     // If from a hetero atom, leave it in place.
                     match &res_type {
                         ResidueType::AminoAcid(_) => {
-                            lig.common.reset_posits();
+                            mol__.common.reset_posits();
                         }
                         _ => {
                             state.ui.visibility.hide_hetero = true;
                         }
                     }
-                    *lig = lig_new;
+                    *mol__ = lig_new;
 
                     // Make it clear that we've added the ligand by showing it, and hiding hetero (if creating from Hetero)
                     state.ui.visibility.hide_ligand = false;
@@ -494,8 +501,8 @@ pub fn disp_lig_data(
 
                 if let Some(sel_atom) = atom_sel {
 
-                    let diff = sel_atom.posit - lig.common.centroid();
-                    for p in &mut lig.common.atom_posits{
+                    let diff = sel_atom.posit - mol.common.centroid();
+                    for p in &mut mol.common.atom_posits{
                         *p += diff;
                     }
 
@@ -504,14 +511,14 @@ pub fn disp_lig_data(
                         None => Vec3::new_zero()
                     };
                     move_cam_to_lig2(
-                        lig,
+                        mol,
                         &mut state.ui.cam_snapshot,
                         scene,
                         center,
                         engine_updates,
                     );
 
-                    *redraw_lig = true;
+                    *redraw = true;
                 }
             }
         }
@@ -519,7 +526,7 @@ pub fn disp_lig_data(
 
     // If no ligand, provide convenience functionality for loading one based on hetero residues
     // in the protein.
-    if state.active_lig().is_some() {
+    if state.active_mol().is_some() {
         return;
     }
 
@@ -585,9 +592,9 @@ pub fn disp_lig_data(
             &mut state.ui,
             format!("Loaded {} from Amber Geostd", data.ident),
         );
-        state.load_geostd_mol_data(&data.ident, true, data.frcmod_avail, redraw_lig);
+        state.load_geostd_mol_data(&data.ident, true, data.frcmod_avail, redraw);
 
-        if state.active_lig().is_some() {
+        if state.active_mol().is_some() {
             if let Some(mol) = &state.molecule {
                 move_cam_to_lig(state, scene, mol.center, engine_updates);
             }

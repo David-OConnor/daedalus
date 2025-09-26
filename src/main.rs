@@ -76,15 +76,12 @@ use mol_lig::{Ligand, MoleculeSmall};
 use molecule::MoleculePeptide;
 
 use crate::{
-    lipid::MoleculeLipid,
-    molecule::{Atom, Bond, MolType, MoleculeCommon},
+    lipid::{LipidShape, MoleculeLipid},
+    molecule::{Atom, Bond, MolType, MoleculeCommon, MoleculeGenericRef, MoleculeGenericRefMut},
     nucleic_acid::MoleculeNucleicAcid,
     prefs::ToSave,
     render::render,
-    ui::{
-        cam::{FOG_DIST_MAX, FOG_DIST_MIN},
-        misc::MdMode,
-    },
+    ui::cam::{FOG_DIST_MAX, FOG_DIST_MIN},
     util::handle_err,
 };
 // ------Including files into the executable
@@ -229,10 +226,8 @@ struct StateVolatile {
     flags: SceneFlags,
     /// Cached so we don't compute each UI paint. Picoseconds.
     md_runtime: f32,
-    active_peptide: Option<usize>, // Unused for now.
-    active_lig: Option<usize>,
+    active_mol: Option<(MolType, usize)>,
     mol_manip: MolManip,
-    md_mode: MdMode,
     /// For restoring after temprarily disabling mouse look.
     control_scheme_prev: ControlScheme,
 }
@@ -251,10 +246,8 @@ impl Default for StateVolatile {
             aa_seq_text: Default::default(),
             flags: Default::default(),
             md_runtime: Default::default(),
-            active_peptide: Default::default(),
-            active_lig: Default::default(),
+            active_mol: Default::default(),
             mol_manip: Default::default(),
-            md_mode: MdMode::Peptide,
             control_scheme_prev: Default::default(),
         }
     }
@@ -399,6 +392,8 @@ struct StateUi {
     ph_input: String,
     /// For the combo box. Stays at 0 if none loaded.
     lipid_to_add: usize,
+    lipid_shape: LipidShape,
+    lipid_mol_count: u16,
 }
 
 #[derive(Clone, PartialEq, Debug, Default, Encode, Decode)]
@@ -505,29 +500,68 @@ impl State {
     }
 
     /// Helper
-    pub fn active_lig(&self) -> Option<&MoleculeSmall> {
-        match self.volatile.active_lig {
-            Some(i) => {
-                if i < self.ligands.len() {
-                    Some(&self.ligands[i])
-                } else {
-                    None
+    pub fn active_mol(&self) -> Option<MoleculeGenericRef> {
+        match self.volatile.active_mol {
+            Some((mol_type, i)) => match mol_type {
+                MolType::Peptide => None,
+                MolType::Ligand => {
+                    if i < self.ligands.len() {
+                        Some(MoleculeGenericRef::Ligand(&self.ligands[i]))
+                    } else {
+                        None
+                    }
                 }
-            }
+                MolType::NucleicAcid => {
+                    if i < self.nucleic_acids.len() {
+                        Some(MoleculeGenericRef::NucleicAcid(&self.nucleic_acids[i]))
+                    } else {
+                        None
+                    }
+                }
+                MolType::Lipid => {
+                    if i < self.ligands.len() {
+                        Some(MoleculeGenericRef::Lipid(&self.lipids[i]))
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            },
             None => None,
         }
     }
 
     /// Helper
-    pub fn active_lig_mut(&mut self) -> Option<&mut MoleculeSmall> {
-        match self.volatile.active_lig {
-            Some(i) => {
-                if i < self.ligands.len() {
-                    Some(&mut self.ligands[i])
-                } else {
-                    None
+    /// todo: DRy with the non-mutable variant.
+    pub fn active_mol_mut(&mut self) -> Option<MoleculeGenericRefMut> {
+        match self.volatile.active_mol {
+            Some((mol_type, i)) => match mol_type {
+                MolType::Peptide => None,
+                MolType::Ligand => {
+                    if i < self.ligands.len() {
+                        Some(MoleculeGenericRefMut::Ligand(&mut self.ligands[i]))
+                    } else {
+                        None
+                    }
                 }
-            }
+                MolType::NucleicAcid => {
+                    if i < self.nucleic_acids.len() {
+                        Some(MoleculeGenericRefMut::NucleicAcid(
+                            &mut self.nucleic_acids[i],
+                        ))
+                    } else {
+                        None
+                    }
+                }
+                MolType::Lipid => {
+                    if i < self.ligands.len() {
+                        Some(MoleculeGenericRefMut::Lipid(&mut self.lipids[i]))
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            },
             None => None,
         }
     }
@@ -703,8 +737,9 @@ fn main() {
         state.update_docking_site(posit);
     }
 
+    // todo: Consider if you want this default, and if you also want to add default Lipids etc.
     if !state.ligands.is_empty() {
-        state.volatile.active_lig = Some(0);
+        state.volatile.active_mol = Some((MolType::Ligand, 0));
     }
 
     // if let Err(e) = state.load_aa_charges_ff() {

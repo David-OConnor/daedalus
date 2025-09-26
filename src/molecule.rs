@@ -19,20 +19,24 @@ use bio_apis::{
 };
 use bio_files::{
     AtomGeneric, BackboneSS, BondGeneric, BondType, ChainGeneric, DensityMap, ExperimentalMethod,
-    MmCif, ResidueEnd, ResidueGeneric, ResidueType, create_bonds,
+    MmCif, Mol2, Pdbqt, ResidueEnd, ResidueGeneric, ResidueType, Sdf, create_bonds,
 };
 use dynamics::{
     Dihedral,
     params::{ProtFfChargeMapSet, prepare_peptide_mmcif},
     populate_hydrogens_dihedrals,
 };
-use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
+use lin_alg::{
+    f32::Vec3 as Vec3F32,
+    f64::{Quaternion, Vec3},
+};
 use na_seq::{AminoAcid, AtomTypeInRes, Element};
 use rayon::prelude::*;
 
 use crate::{
     Selection,
     bond_inference::create_hydrogen_bonds,
+    lipid::MoleculeLipid,
     mol_lig::MoleculeSmall,
     nucleic_acid::MoleculeNucleicAcid,
     reflection::{DensityRect, ElectronDensity, ReflectionsData},
@@ -140,6 +144,18 @@ impl MoleculeCommon {
             .fold(Vec3::new_zero(), |a, b| a + *b);
         sum / n
     }
+
+    pub fn rotate(&mut self, rot: Quaternion) {
+        let pivot: Vec3 = self.centroid();
+
+        for posit in &mut self.atom_posits {
+            let local = *posit - pivot;
+            let rotated = rot.rotate_vec(local);
+            let out = rotated + pivot;
+
+            *posit = out;
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -147,6 +163,7 @@ pub enum MoleculeGeneric {
     Peptide(MoleculePeptide),
     Ligand(MoleculeSmall),
     NucleicAcid(MoleculeNucleicAcid),
+    Lipid(MoleculeLipid),
 }
 
 impl MoleculeGeneric {
@@ -155,6 +172,7 @@ impl MoleculeGeneric {
             Self::Peptide(m) => &m.common,
             Self::Ligand(m) => &m.common,
             Self::NucleicAcid(m) => &m.common,
+            Self::Lipid(m) => &m.common,
         }
     }
 
@@ -163,6 +181,7 @@ impl MoleculeGeneric {
             Self::Peptide(m) => &mut m.common,
             Self::Ligand(m) => &mut m.common,
             Self::NucleicAcid(m) => &mut m.common,
+            Self::Lipid(m) => &mut m.common,
         }
     }
 }
@@ -173,6 +192,7 @@ pub enum MoleculeGenericRef<'a> {
     Peptide(&'a MoleculePeptide),
     Ligand(&'a MoleculeSmall),
     NucleicAcid(&'a MoleculeNucleicAcid),
+    Lipid(&'a MoleculeLipid),
 }
 
 impl<'a> MoleculeGenericRef<'a> {
@@ -181,6 +201,66 @@ impl<'a> MoleculeGenericRef<'a> {
             Self::Peptide(m) => &m.common,
             Self::Ligand(m) => &m.common,
             Self::NucleicAcid(m) => &m.common,
+            Self::Lipid(m) => &m.common,
+        }
+    }
+
+    pub fn mol_type(&self) -> MolType {
+        match self {
+            Self::Peptide(_) => MolType::Peptide,
+            Self::Ligand(_) => MolType::Ligand,
+            Self::NucleicAcid(_) => MolType::NucleicAcid,
+            Self::Lipid(_) => MolType::Lipid,
+        }
+    }
+
+    pub fn to_sdf(&self) -> Sdf {
+        match self {
+            Self::Ligand(l) => l.to_sdf(),
+            _ => unimplemented!(),
+        }
+    }
+
+    pub fn to_mol2(&self) -> Mol2 {
+        match self {
+            Self::Ligand(l) => l.to_mol2(),
+            _ => unimplemented!(),
+        }
+    }
+
+    pub fn to_pdbqt(&self) -> Pdbqt {
+        match self {
+            Self::Ligand(l) => l.to_pdbqt(),
+            _ => unimplemented!(),
+        }
+    }
+}
+
+/// We currently use this for mol description.
+#[derive(Debug)]
+pub enum MoleculeGenericRefMut<'a> {
+    Peptide(&'a mut MoleculePeptide),
+    Ligand(&'a mut MoleculeSmall),
+    NucleicAcid(&'a mut MoleculeNucleicAcid),
+    Lipid(&'a mut MoleculeLipid),
+}
+
+impl<'a> MoleculeGenericRefMut<'a> {
+    pub fn common(&mut self) -> &mut MoleculeCommon {
+        match self {
+            Self::Peptide(m) => &mut m.common,
+            Self::Ligand(m) => &mut m.common,
+            Self::NucleicAcid(m) => &mut m.common,
+            Self::Lipid(m) => &mut m.common,
+        }
+    }
+
+    pub fn mol_type(&self) -> MolType {
+        match self {
+            Self::Peptide(_) => MolType::Peptide,
+            Self::Ligand(_) => MolType::Ligand,
+            Self::NucleicAcid(_) => MolType::NucleicAcid,
+            Self::Lipid(_) => MolType::Lipid,
         }
     }
 }

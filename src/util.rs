@@ -23,7 +23,9 @@ use crate::{
         draw_peptide,
     },
     mol_lig::MoleculeSmall,
-    molecule::{Atom, Bond, MoleculeCommon, MoleculePeptide, Residue},
+    molecule::{
+        Atom, Bond, MolType, MoleculeCommon, MoleculeGenericRefMut, MoleculePeptide, Residue,
+    },
     prefs::OpenType,
     render::{
         CAM_INIT_OFFSET, Color, MESH_DENSITY_SURFACE, MESH_SECONDARY_STRUCTURE,
@@ -162,14 +164,14 @@ pub fn cycle_selected(state: &mut State, scene: &mut Scene, reverse: bool) {
                 }
             }
             Selection::AtomLig((lig_i, atom_i)) => {
-                let Some(lig) = state.active_lig() else {
+                let Some(mol_) = state.active_mol() else {
                     return;
                 };
 
                 // todo: DRY with the above for peptide atoms.
                 let mut new_atom_i = atom_i as isize;
 
-                while new_atom_i < (lig.common.atoms.len() as isize) - 1 && new_atom_i >= 0 {
+                while new_atom_i < (mol_.common().atoms.len() as isize) - 1 && new_atom_i >= 0 {
                     new_atom_i += dir;
                     let na_i = new_atom_i as usize;
                     state.ui.selection = Selection::AtomLig((lig_i, na_i));
@@ -543,7 +545,8 @@ pub fn close_peptide(state: &mut State, scene: &mut Scene, engine_updates: &mut 
     engine_updates.entities = true;
 }
 
-pub fn close_lig(
+pub fn close_mol(
+    mol_type: MolType,
     i: usize,
     state: &mut State,
     scene: &mut Scene,
@@ -559,7 +562,7 @@ pub fn close_lig(
     state.ligands.remove(i);
 
     if !state.ligands.is_empty() {
-        state.volatile.active_lig = Some(state.ligands.len() - 1);
+        state.volatile.active_mol = Some((MolType::Ligand, state.ligands.len() - 1));
     }
 
     state.volatile.mol_manip.mol = ManipMode::None;
@@ -746,27 +749,32 @@ pub fn make_egui_color(color: Color) -> Color32 {
 /// use a flexible conformation, or match partly.
 ///
 /// Return a center suitable for docking.
-pub fn move_lig_to_res(lig: &mut MoleculeSmall, mol: &MoleculePeptide, res: &Residue) -> Vec3 {
+// pub fn move_mol_to_res(lig: &mut MoleculeSmall, mol: &MoleculePeptide, res: &Residue) -> Vec3 {
+pub fn move_mol_to_res(
+    mol: &mut MoleculeGenericRefMut,
+    peptide: &MoleculePeptide,
+    res: &Residue,
+) -> Vec3 {
     // todo: Pick center-of-mass atom, or better yet, match it to the anchor atom.
-    let posit = mol.common.atoms[res.atoms[0]].posit;
+    let posit = peptide.common.atoms[res.atoms[0]].posit;
 
     // todo: YOu need to add hydrogens to hetero atoms.
 
     let mut all_found = false;
-    for (lig_i, atom_lig) in lig.common.atoms.iter().enumerate() {
+    for (lig_i, atom_lig) in mol.common().atoms.iter().enumerate() {
         if atom_lig.type_in_res.is_none() {
             continue;
         }
         let mut found = false;
 
         for i in &res.atoms {
-            let atom_res = &mol.common.atoms[*i];
+            let atom_res = &peptide.common.atoms[*i];
             if atom_res.type_in_res.is_none() {
                 continue;
             }
 
             if atom_res.type_in_res == atom_lig.type_in_res {
-                lig.common.atom_posits[lig_i] = atom_res.posit;
+                mol.common().atom_posits[lig_i] = atom_res.posit;
                 found = true;
                 break;
             }

@@ -15,7 +15,7 @@ use lin_alg::{
 use crate::{
     ManipMode, Selection, State, StateVolatile, drawing,
     drawing::MoleculeView,
-    molecule::{Atom, MolType},
+    molecule::{Atom, MolType, MoleculeCommon},
     render::set_flashlight,
     selection::{find_selected_atom, points_along_ray},
     util::{cycle_selected, move_cam_to_sel, orbit_center},
@@ -56,6 +56,8 @@ pub fn event_dev_handler(
 
     let mut redraw_protein = false;
     let mut redraw_lig = false;
+    let mut redraw_na = false;
+    let mut redraw_lipid = false;
 
     let mut lig_move_dir = None;
     let mut lig_rot_dir = None;
@@ -121,58 +123,91 @@ pub fn event_dev_handler(
                                 _ => SELECTION_DIST_THRESH_SMALL,
                             };
 
-                            let mut lig_atoms = Vec::new();
-                            for lig in &state_.ligands {
-                                // todo: I don't like cloning all the atoms here. Not sure how else to do this for now.
-                                // todo not too many for ligs, but still.
-                                let atoms_this: Vec<_> = lig
-                                    .common
-                                    .atoms
+                            // todo: Lots of DRY here!
+
+                            fn get_atoms(mol: &MoleculeCommon) -> Vec<Atom> {
+                                // todo: I don't like this clone!
+                                mol.atoms
                                     .iter()
                                     .enumerate()
                                     .map(|(i, a)| Atom {
-                                        posit: lig.common.atom_posits[i],
+                                        posit: mol.atom_posits[i],
                                         element: a.element,
                                         ..Default::default()
                                     })
-                                    .collect();
-                                lig_atoms.push(atoms_this);
+                                    .collect()
+                            }
+
+                            let mut lig_atoms = Vec::new();
+                            for mol in &state_.ligands {
+                                lig_atoms.push(get_atoms(&mol.common));
+                            }
+
+                            let mut na_atoms = Vec::new();
+                            for mol in &state_.nucleic_acids {
+                                na_atoms.push(get_atoms(&mol.common));
+                            }
+                            let mut lipid_atoms = Vec::new();
+                            for mol in &state_.lipids {
+                                lipid_atoms.push(get_atoms(&mol.common));
                             }
 
                             let selection = match &state_.molecule {
                                 Some(mol) => {
-                                    let (atoms_along_ray, atoms_along_ray_lig) = points_along_ray(
+                                    let (
+                                        atoms_along_ray,
+                                        atoms_along_ray_lig,
+                                        atoms_along_ray_na,
+                                        atoms_along_ray_lipid,
+                                    ) = points_along_ray(
                                         selected_ray,
                                         &mol.common.atoms,
                                         &lig_atoms,
+                                        &na_atoms,
+                                        &lipid_atoms,
                                         dist_thresh,
                                     );
 
                                     find_selected_atom(
                                         &atoms_along_ray,
                                         &atoms_along_ray_lig,
+                                        &atoms_along_ray_na,
+                                        &atoms_along_ray_lipid,
                                         &mol.common.atoms,
                                         &mol.residues,
                                         &lig_atoms,
+                                        &na_atoms,
+                                        &lipid_atoms,
                                         &selected_ray,
                                         &state_.ui,
                                         &mol.chains,
                                     )
                                 }
                                 None => {
-                                    let (atoms_along_ray, atoms_along_ray_lig) = points_along_ray(
+                                    let (
+                                        atoms_along_ray,
+                                        atoms_along_ray_lig,
+                                        atoms_along_ray_na,
+                                        atoms_along_ray_lipid,
+                                    ) = points_along_ray(
                                         selected_ray,
                                         &Vec::new(),
                                         &lig_atoms,
+                                        &na_atoms,
+                                        &lipid_atoms,
                                         dist_thresh,
                                     );
 
                                     find_selected_atom(
                                         &atoms_along_ray,
                                         &atoms_along_ray_lig,
+                                        &atoms_along_ray_na,
+                                        &atoms_along_ray_lipid,
                                         &Vec::new(),
                                         &Vec::new(),
                                         &lig_atoms,
+                                        &na_atoms,
+                                        &lipid_atoms,
                                         &selected_ray,
                                         &state_.ui,
                                         &Vec::new(),
@@ -180,9 +215,18 @@ pub fn event_dev_handler(
                                 }
                             };
 
-                            // Change the active molecule to the one of the selected atom.
-                            if let Selection::AtomLig((mol_i, _)) = selection {
-                                state_.volatile.active_lig = Some(mol_i);
+                            match selection {
+                                Selection::AtomLig((mol_i, _)) => {
+                                    state_.volatile.active_mol = Some((MolType::Ligand, mol_i));
+                                }
+                                Selection::AtomNucleicAcid((mol_i, _)) => {
+                                    state_.volatile.active_mol =
+                                        Some((MolType::NucleicAcid, mol_i));
+                                }
+                                Selection::AtomLipid((mol_i, _)) => {
+                                    state_.volatile.active_mol = Some((MolType::Lipid, mol_i));
+                                }
+                                _ => (),
                             }
 
                             if selection == state_.ui.selection {
@@ -200,6 +244,8 @@ pub fn event_dev_handler(
 
                             redraw_protein = true;
                             redraw_lig = true;
+                            redraw_na = true;
+                            redraw_lipid = true;
                         }
                     }
                     ElementState::Released => (),
@@ -427,38 +473,48 @@ pub fn event_dev_handler(
 
     // todo: Note that lig movements etc don't currently stack.
     if let Some(dir_) = lig_move_dir {
-        if let Some(lig) = state_.active_lig_mut() {
+        if let Some(lig) = state_.active_mol_mut() {
             let dir = scene.camera.orientation.rotate_vec(dir_);
             let move_amt: Vec3F64 = (dir * lig_move_amt).into();
-
-            if let Some(data) = &mut lig.lig_data {
-                data.pose.anchor_posit += move_amt;
-            }
+            //
+            // if let Some(data) = &mut lig.lig_data {
+            //     data.pose.anchor_posit += move_amt;
+            // }
 
             redraw_lig = true;
         }
     }
 
     if let Some(dir_) = lig_rot_dir {
-        if let Some(lig) = state_.active_lig_mut() {
+        if let Some(lig) = state_.active_mol_mut() {
             let dir = scene.camera.orientation.rotate_vec(dir_);
 
-            if let Some(data) = &mut lig.lig_data {
-                let rotation: QuaternionF64 =
-                    Quaternion::from_axis_angle(dir, lig_rotate_amt * dt).into();
-                data.pose.orientation = rotation * data.pose.orientation;
-            }
+            // if let Some(data) = &mut lig.lig_data {
+            //     let rotation: QuaternionF64 =
+            //         Quaternion::from_axis_angle(dir, lig_rotate_amt * dt).into();
+            //     data.pose.orientation = rotation * data.pose.orientation;
+            // }
 
             redraw_lig = true;
         }
     }
 
     if redraw_lig {
-        if let Some(lig) = &mut state_.active_lig_mut() {
-            lig.position_atoms(None);
-        }
+        // if let Some(lig) = &mut state_.active_lig_mut() {
+        //     lig.position_atoms(None);
+        // }
 
         drawing::draw_all_ligs(state_, scene);
+        updates.entities = true;
+    }
+
+    if redraw_na {
+        // drawing::draw_all_ligs(state_, scene);
+        updates.entities = true;
+    }
+
+    if redraw_lipid {
+        drawing::draw_all_lipids(state_, scene);
         updates.entities = true;
     }
 
@@ -627,17 +683,8 @@ fn handle_mol_manip_horizontal(
             let rot_x = Quaternion::from_axis_angle(right, -delta.1 as f32 * SENS_MOL_ROT_MOUSE);
             let rot_y = Quaternion::from_axis_angle(up, -delta.0 as f32 * SENS_MOL_ROT_MOUSE);
 
-            let rot = rot_y * rot_x; // Note: Can swap the order for a slightly different affect.
-            let pivot: Vec3 = mol.centroid().into();
-
-            for posit in &mut mol.atom_posits {
-                let p32: Vec3 = (*posit).into();
-                let local = p32 - pivot;
-                let rotated = rot.rotate_vec(local);
-                let out = rotated + pivot;
-
-                *posit = out.into();
-            }
+            let rot = rot_y * rot_x; // Note: Can swap the order for a slightly different effect.
+            mol.rotate(rot.into());
 
             let ratio = 20;
             unsafe {
@@ -752,17 +799,8 @@ fn handle_mol_manip_in_out(
             let fwd = scene.camera.orientation.rotate_vec(FWD_VEC).to_normalized();
 
             let rot = Quaternion::from_axis_angle(fwd, scroll * SENS_MOL_ROT_SCROLL);
+            mol.rotate(rot.into());
 
-            let pivot: Vec3 = mol.centroid().into();
-
-            for posit in &mut mol.atom_posits {
-                let p32: Vec3 = (*posit).into();
-                let local = p32 - pivot;
-                let rotated = rot.rotate_vec(local);
-                let out = rotated + pivot;
-
-                *posit = out.into();
-            }
             *redraw_lig = true;
         }
         ManipMode::None => (),
@@ -776,19 +814,19 @@ pub fn set_manip(
     redraw_lig: &mut bool,
     mode: ManipMode,
 ) {
-    if let Some(i) = vol.active_lig {
+    if let Some((mol_type_active, i_active)) = vol.active_mol {
         let mut move_active = false;
         let mut rotate_active = false;
 
         match vol.mol_manip.mol {
             ManipMode::None => (),
             ManipMode::Move((mol_type, mol_i)) => {
-                if mol_type == MolType::Ligand && mol_i == i {
+                if mol_type == MolType::Ligand && mol_i == i_active {
                     move_active = true;
                 }
             }
             ManipMode::Rotate((mol_type, mol_i)) => {
-                if mol_type == MolType::Ligand && mol_i == i {
+                if mol_type == MolType::Ligand && mol_i == i_active {
                     rotate_active = true;
                 }
             }

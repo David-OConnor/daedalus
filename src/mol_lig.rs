@@ -14,7 +14,7 @@ use rayon::prelude::*;
 use crate::{
     State,
     docking_v2::{ConformationType, DockingSite, Pose},
-    molecule::{Atom, Bond, Chain, MoleculeCommon, Residue},
+    molecule::{Atom, Bond, Chain, MolType as Mt, MoleculeCommon, Residue},
     util::handle_err,
 };
 
@@ -534,10 +534,10 @@ impl MoleculeSmall {
     /// Updates we wish to do shortly after load, but need access to State for.
     pub fn update_aux(
         &mut self,
-        active_lig: &Option<usize>,
+        active_mol: &Option<(Mt, usize)>,
         lig_specific: &mut HashMap<String, ForceFieldParams>,
     ) {
-        if let Some(i) = active_lig {
+        if let Some((mol_type, i)) = active_mol {
             let offset = LIGAND_ABS_POSIT_OFFSET * (*i as f64);
             for posit in &mut self.common.atom_posits {
                 posit.x += offset; // Arbitrary axis and direction.

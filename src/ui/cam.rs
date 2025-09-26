@@ -8,6 +8,7 @@ use lin_alg::f32::{Quaternion, Vec3};
 use crate::{
     Selection, State, StateUi,
     mol_lig::MoleculeSmall,
+    molecule::MoleculeGenericRef,
     render::{CAM_INIT_OFFSET, set_flashlight},
     ui::{
         COL_SPACING, COLOR_HIGHLIGHT, get_snap_name,
@@ -163,7 +164,7 @@ pub fn cam_controls(
                     }
                 }
 
-                if let Some(lig) = state.active_lig() {
+                if let Some(lig) = state.active_mol() {
                     if ui
                         .button(RichText::new("Cam to lig").color(COLOR_HIGHLIGHT))
                         .on_hover_text("Move camera near the ligand, looking at it.")
@@ -309,12 +310,12 @@ pub fn move_cam_to_lig(
     mol_center: lin_alg::f64::Vec3,
     engine_updates: &mut EngineUpdates,
 ) {
-    let Some(lig) = state.active_lig_mut() else {
+    let Some(mol) = &mut state.active_mol_mut() else {
         return;
     };
 
     // todo: Cache centroid.
-    let lig_pos: Vec3 = lig.common.centroid().into();
+    let lig_pos: Vec3 = mol.common().centroid().into();
     let ctr: Vec3 = mol_center.into();
 
     cam_look_at_outside(&mut scene.camera, lig_pos, ctr);
@@ -329,14 +330,14 @@ pub fn move_cam_to_lig(
 
 /// DRY with above. Can be more amenable to the borrow checker in some cases.
 pub fn move_cam_to_lig2(
-    lig: &MoleculeSmall,
+    mol: &MoleculeGenericRef,
     cam_snapshot: &mut Option<usize>,
     scene: &mut Scene,
     mol_center: lin_alg::f64::Vec3,
     engine_updates: &mut EngineUpdates,
 ) {
     // todo: Cache centroid.
-    let lig_pos: Vec3 = lig.common.centroid().into();
+    let lig_pos: Vec3 = mol.common().centroid().into();
     let ctr: Vec3 = mol_center.into();
 
     cam_look_at_outside(&mut scene.camera, lig_pos, ctr);

@@ -21,11 +21,11 @@ pub fn vis_check(val: &mut bool, text: &str, ui: &mut Ui, redraw: &mut bool) {
     }
 }
 
-#[derive(Clone, Copy, PartialEq)]
-pub enum MdMode {
-    Docking,
-    Peptide,
-}
+// #[derive(Clone, Copy, PartialEq)]
+// pub enum MdMode {
+//     Docking,
+//     Peptide,
+// }
 
 pub fn active_color(val: bool) -> Color32 {
     if val { COLOR_ACTIVE } else { COLOR_INACTIVE }
