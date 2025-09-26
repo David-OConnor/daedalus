@@ -173,7 +173,7 @@ impl State {
                         self.volatile.flags.clear_density_drawing = true;
 
                         let ident = m.common.ident.clone();
-                        self.molecule = Some(m);
+                        self.peptide = Some(m);
 
                         // Only updating if not loading a ligand.
                         // Update from prefs based on the molecule-specific items.
@@ -205,7 +205,7 @@ impl State {
                     }
                 }
 
-                if let Some(mol) = &mut self.molecule {
+                if let Some(mol) = &mut self.peptide {
                     // Only after updating from prefs (to prevent unnecessary loading) do we update data avail.
                     mol.updates_rcsb_data(&mut self.volatile.mol_pending_data_avail);
                 }
@@ -231,7 +231,7 @@ impl State {
     }
 
     pub fn load_density(&mut self, dens_map: DensityMap) {
-        if let Some(mol) = &mut self.molecule {
+        if let Some(mol) = &mut self.peptide {
             // We are filtering for backbone atoms of one type for now, for performance reasons. This is
             // a sample. Good enough?
             let atom_posits: Vec<_> = mol
@@ -393,7 +393,7 @@ impl State {
                 if let Some(data) = &mut self.cif_pdb_raw {
                     fs::write(path, data)?;
 
-                    let ident = match &self.molecule {
+                    let ident = match &self.peptide {
                         Some(mol) => mol.common.ident.clone(),
                         None => String::new(),
                     };
@@ -449,7 +449,7 @@ impl State {
             },
             // todo: Consider if you want to store the original map bytes, as you do with
             // todo mmCIF files, instead of saving what you parsed.
-            "map" => match &self.molecule {
+            "map" => match &self.peptide {
                 Some(mol) => match &mol.density_map {
                     Some(dm) => {
                         dm.save(path)?;

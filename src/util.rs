@@ -97,7 +97,7 @@ pub fn cam_look_at_outside(cam: &mut Camera, target: Vec3F32, mol_center: Vec3F3
 pub fn select_from_search(state: &mut State) {
     let query = &state.ui.atom_res_search.to_lowercase();
 
-    let Some(mol) = &state.molecule else {
+    let Some(mol) = &state.peptide else {
         return;
     };
 
@@ -138,7 +138,7 @@ pub fn select_from_search(state: &mut State) {
 }
 
 pub fn cycle_selected(state: &mut State, scene: &mut Scene, reverse: bool) {
-    let Some(mol) = &state.molecule else { return };
+    let Some(mol) = &state.peptide else { return };
 
     let dir = if reverse { -1 } else { 1 };
 
@@ -273,7 +273,7 @@ pub fn orbit_center(state: &State) -> Vec3F32 {
     if state.ui.orbit_around_selection {
         match &state.ui.selection {
             Selection::Atom(i) => {
-                if let Some(mol) = &state.molecule {
+                if let Some(mol) = &state.peptide {
                     match mol.common.atoms.get(*i) {
                         Some(a) => a.posit.into(),
                         None => Vec3F32::new_zero(),
@@ -293,7 +293,7 @@ pub fn orbit_center(state: &State) -> Vec3F32 {
             }
 
             Selection::Residue(i) => {
-                if let Some(mol) = &state.molecule {
+                if let Some(mol) = &state.peptide {
                     match mol.residues.get(*i) {
                         Some(res) => {
                             match mol.common.atoms.get(match res.atoms.first() {
@@ -311,7 +311,7 @@ pub fn orbit_center(state: &State) -> Vec3F32 {
                 }
             }
             Selection::Atoms(is) => {
-                if let Some(mol) = &state.molecule {
+                if let Some(mol) = &state.peptide {
                     match mol.common.atoms.get(is[0]) {
                         Some(a) => a.posit.into(),
                         None => Vec3F32::new_zero(),
@@ -321,7 +321,7 @@ pub fn orbit_center(state: &State) -> Vec3F32 {
                 }
             }
             Selection::None => {
-                if let Some(mol) = &state.molecule {
+                if let Some(mol) = &state.peptide {
                     mol.center.into()
                 } else {
                     lin_alg::f32::Vec3::new_zero()
@@ -329,7 +329,7 @@ pub fn orbit_center(state: &State) -> Vec3F32 {
             }
         }
     } else {
-        if let Some(mol) = &state.molecule {
+        if let Some(mol) = &state.peptide {
             mol.center.into()
         } else {
             Vec3F32::new_zero()
@@ -398,7 +398,7 @@ pub fn load_atom_coords_rcsb(
             state.volatile.flags.ss_mesh_created = false;
             state.volatile.flags.sas_mesh_created = false;
             state.volatile.flags.clear_density_drawing = true;
-            state.molecule = Some(mol);
+            state.peptide = Some(mol);
             state.cif_pdb_raw = Some(cif_text);
         }
         Err(e) => {
@@ -420,7 +420,7 @@ pub fn load_atom_coords_rcsb(
     // todo: async
     // Only after updating from prefs (to prevent unecesasary loading) do we update data avail.
     state
-        .molecule
+        .peptide
         .as_mut()
         .unwrap()
         .updates_rcsb_data(&mut state.volatile.mol_pending_data_avail);
@@ -512,12 +512,12 @@ pub fn clear_cli_out(ui: &mut StateUi) {
 pub fn close_peptide(state: &mut State, scene: &mut Scene, engine_updates: &mut EngineUpdates) {
     let mut ident = String::new();
     let mut path = None;
-    if let Some(mol) = &state.molecule {
+    if let Some(mol) = &state.peptide {
         path = mol.common.path.clone();
         ident = mol.common.ident.clone();
     }
 
-    state.molecule = None;
+    state.peptide = None;
     state.mol_dynamics = None;
 
     scene.entities.retain(|ent| {
@@ -586,7 +586,7 @@ pub fn close_mol(
 
 /// Populate the electron-density mesh (isosurface). This assumes the density_rect is already set up.
 pub fn make_density_mesh(state: &mut State, scene: &mut Scene, engine_updates: &mut EngineUpdates) {
-    let Some(mol) = &state.molecule else {
+    let Some(mol) = &state.peptide else {
         return;
     };
     let Some(rect) = &mol.density_rect else {
@@ -655,7 +655,7 @@ pub fn handle_scene_flags(
     if state.volatile.flags.new_mol_loaded {
         state.volatile.flags.new_mol_loaded = false;
 
-        if let Some(mol) = &state.molecule {
+        if let Some(mol) = &state.peptide {
             reset_camera(scene, &mut state.ui.view_depth, engine_updates, mol);
         }
 
@@ -666,7 +666,7 @@ pub fn handle_scene_flags(
     if state.volatile.flags.new_density_loaded {
         state.volatile.flags.new_density_loaded = false;
 
-        if let Some(mol) = &state.molecule {
+        if let Some(mol) = &state.peptide {
             if !state.ui.visibility.hide_density_point_cloud {
                 if let Some(density) = &mol.elec_density {
                     draw_density_point_cloud(&mut scene.entities, density);
@@ -695,7 +695,7 @@ pub fn handle_scene_flags(
         state.volatile.flags.update_ss_mesh = false;
         state.volatile.flags.ss_mesh_created = true;
 
-        if let Some(mol) = &state.molecule {
+        if let Some(mol) = &state.peptide {
             scene.meshes[MESH_SECONDARY_STRUCTURE] =
                 build_cartoon_mesh(&mol.secondary_structure, &mol.common.atoms);
 
@@ -707,7 +707,7 @@ pub fn handle_scene_flags(
         state.volatile.flags.update_sas_mesh = false;
         state.volatile.flags.sas_mesh_created = true;
 
-        if let Some(mol) = &state.molecule {
+        if let Some(mol) = &state.peptide {
             let atoms: Vec<&_> = mol.common.atoms.iter().filter(|a| !a.hetero).collect();
             scene.meshes[MESH_SOLVENT_SURFACE] =
                 make_sas_mesh(&atoms, state.to_save.sa_surface_precision);
@@ -727,7 +727,7 @@ pub fn handle_scene_flags(
     }
 
     if state.volatile.mol_pending_data_avail.is_some() {
-        if let Some(mol) = &mut state.molecule {
+        if let Some(mol) = &mut state.peptide {
             if mol.poll_data_avail(&mut state.volatile.mol_pending_data_avail) {
                 state.update_save_prefs(false);
             }
@@ -761,8 +761,9 @@ pub fn move_mol_to_res(
     // todo: YOu need to add hydrogens to hetero atoms.
 
     let mut all_found = false;
-    for (lig_i, atom_lig) in mol.common().atoms.iter().enumerate() {
-        if atom_lig.type_in_res.is_none() {
+    for lig_i in 0..mol.common().atoms.len() {
+        let lig_type_in_res = { &mol.common().atoms[lig_i].type_in_res };
+        if lig_type_in_res.is_none() {
             continue;
         }
         let mut found = false;
@@ -773,15 +774,15 @@ pub fn move_mol_to_res(
                 continue;
             }
 
-            if atom_res.type_in_res == atom_lig.type_in_res {
-                mol.common().atom_posits[lig_i] = atom_res.posit;
+            if atom_res.type_in_res == *lig_type_in_res {
+                mol.common_mut().atom_posits[lig_i] = atom_res.posit;
                 found = true;
                 break;
             }
         }
         if !found {
             // todo: If it's just a few, automatically position based on geometry to the positioned atoms.
-            eprintln!("Unable to position a ligand atom based on the residue: {atom_lig}");
+            eprintln!("Unable to position a ligand atom based on the residue.");
             all_found = false;
             // todo: Temp break rm until we can add het Hydrogens or find a workaround.
             // break;

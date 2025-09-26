@@ -152,7 +152,7 @@ pub fn event_dev_handler(
                                 lipid_atoms.push(get_atoms(&mol.common));
                             }
 
-                            let selection = match &state_.molecule {
+                            let selection = match &state_.peptide {
                                 Some(mol) => {
                                     let (
                                         atoms_along_ray,
@@ -298,7 +298,7 @@ pub fn event_dev_handler(
                     Code(KeyCode::Enter) => {
                         move_cam_to_sel(
                             &mut state_.ui,
-                            &state_.molecule,
+                            &state_.peptide,
                             &state_.ligands,
                             &mut scene.camera,
                             &mut updates,
@@ -838,13 +838,13 @@ pub fn set_manip(
                     scene.input_settings.control_scheme = vol.control_scheme_prev;
                     vol.mol_manip.mol = ManipMode::None;
                 } else if rotate_active {
-                    vol.mol_manip.mol = ManipMode::Move((MolType::Ligand, i));
+                    vol.mol_manip.mol = ManipMode::Move((MolType::Ligand, i_active));
                 } else {
                     if scene.input_settings.control_scheme != ControlScheme::None {
                         vol.control_scheme_prev = scene.input_settings.control_scheme;
                     }
                     scene.input_settings.control_scheme = ControlScheme::None;
-                    vol.mol_manip.mol = ManipMode::Move((MolType::Ligand, i));
+                    vol.mol_manip.mol = ManipMode::Move((MolType::Ligand, i_active));
                 };
             }
             ManipMode::Rotate(_) => {
@@ -852,13 +852,13 @@ pub fn set_manip(
                     scene.input_settings.control_scheme = vol.control_scheme_prev;
                     vol.mol_manip.mol = ManipMode::None;
                 } else if move_active {
-                    vol.mol_manip.mol = ManipMode::Rotate((MolType::Ligand, i));
+                    vol.mol_manip.mol = ManipMode::Rotate((MolType::Ligand, i_active));
                 } else {
                     if scene.input_settings.control_scheme != ControlScheme::None {
                         vol.control_scheme_prev = scene.input_settings.control_scheme;
                     }
                     scene.input_settings.control_scheme = ControlScheme::None;
-                    vol.mol_manip.mol = ManipMode::Rotate((MolType::Ligand, i));
+                    vol.mol_manip.mol = ManipMode::Rotate((MolType::Ligand, i_active));
                 };
             }
             ManipMode::None => unreachable!(),

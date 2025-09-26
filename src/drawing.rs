@@ -1170,7 +1170,7 @@ pub fn draw_secondary_structure(update_mesh: &mut bool, mesh_created: bool, scen
 /// Refreshes entities with the model passed.
 /// Sensitive to various view configuration parameters.
 pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
-    let Some(mol) = state.molecule.as_ref() else {
+    let Some(mol) = state.peptide.as_ref() else {
         return;
     };
 

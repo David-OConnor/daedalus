@@ -441,7 +441,7 @@ struct State {
     pub volatile: StateVolatile,
     pub cif_pdb_raw: Option<String>,
     // todo: Allow multiple?
-    pub molecule: Option<MoleculePeptide>,
+    pub peptide: Option<MoleculePeptide>,
     // todo: Allow multiple.
     // pub ligand: Option<MoleculeSmall>,
     pub ligands: Vec<MoleculeSmall>,
@@ -730,7 +730,7 @@ fn main() {
     //     }
     // }
 
-    if let Some(mol) = &state.molecule {
+    if let Some(mol) = &state.peptide {
         let posit = state.to_save.per_mol[&mol.common.ident]
             .docking_site
             .site_center;

@@ -75,7 +75,7 @@ pub fn cam_controls(
                 if ui.button("Front")
                     .on_hover_text("Reset the camera to look at the \"front\" of the molecule. (Y axis)")
                     .clicked() {
-                    if let Some(mol) = &state.molecule {
+                    if let Some(mol) = &state.peptide {
                         reset_camera(scene, &mut state.ui.view_depth, engine_updates, mol);
                         changed = true;
                     }
@@ -84,7 +84,7 @@ pub fn cam_controls(
                 if ui.button("Top")
                     .on_hover_text("Reset the camera to look at the \"top\" of the molecule. (Z axis)")
                     .clicked() {
-                    if let Some(mol) = &state.molecule {
+                    if let Some(mol) = &state.peptide {
                         let center: Vec3 = mol.center.into();
                         reset_camera(scene, &mut state.ui.view_depth, engine_updates, mol);
                         scene.camera.position =
@@ -98,7 +98,7 @@ pub fn cam_controls(
                 if ui.button("Left")
                     .on_hover_text("Reset the camera to look at the \"left\" of the molecule. (X axis)")
                     .clicked() {
-                    if let Some(mol) = &state.molecule {
+                    if let Some(mol) = &state.peptide {
                         let center: Vec3 = mol.center.into();
                         reset_camera(scene, &mut state.ui.view_depth, engine_updates, mol);
                         scene.camera.position =
@@ -128,7 +128,7 @@ pub fn cam_controls(
                     .on_hover_text("Set the camera to orbit around a point: Either the center of the molecule, or the selection.")
                     .clicked()
                 {
-                    let center = match &state.molecule {
+                    let center = match &state.peptide {
                         Some(mol) => mol.center.into(),
                         None => Vec3::new_zero(),
                     };
@@ -160,7 +160,7 @@ pub fn cam_controls(
                         .on_hover_text("(Hotkey: Enter) Move camera near the selected atom or residue, looking at it.")
                         .clicked()
                     {
-                        move_cam_to_sel(&mut state.ui, &state.molecule, &state.ligands, &mut scene.camera, engine_updates);
+                        move_cam_to_sel(&mut state.ui, &state.peptide, &state.ligands, &mut scene.camera, engine_updates);
                     }
                 }
 
@@ -170,7 +170,7 @@ pub fn cam_controls(
                         .on_hover_text("Move camera near the ligand, looking at it.")
                         .clicked()
                     {
-                        let pep_center = match &state.molecule {
+                        let pep_center = match &state.peptide {
                             Some(mol) => mol.center,
                             None => lin_alg::f64::Vec3::new_zero(),
                         };
@@ -328,24 +328,30 @@ pub fn move_cam_to_lig(
     state.ui.cam_snapshot = None;
 }
 
-/// DRY with above. Can be more amenable to the borrow checker in some cases.
-pub fn move_cam_to_lig2(
-    mol: &MoleculeGenericRef,
-    cam_snapshot: &mut Option<usize>,
-    scene: &mut Scene,
-    mol_center: lin_alg::f64::Vec3,
-    engine_updates: &mut EngineUpdates,
-) {
-    // todo: Cache centroid.
-    let lig_pos: Vec3 = mol.common().centroid().into();
-    let ctr: Vec3 = mol_center.into();
-
-    cam_look_at_outside(&mut scene.camera, lig_pos, ctr);
-
-    engine_updates.camera = true;
-
-    set_flashlight(scene);
-    engine_updates.lighting = true;
-
-    *cam_snapshot = None;
-}
+// /// DRY with above. Can be more amenable to the borrow checker in some cases.
+// pub fn move_cam_to_lig2(
+//     // mol: &MoleculeGenericRef,
+//     // cam_snapshot: &mut Option<usize>,
+//     state: &mut State,
+//     scene: &mut Scene,
+//     mol_center: lin_alg::f64::Vec3,
+//     engine_updates: &mut EngineUpdates,
+// ) {
+//     let mol = &state.active_mol().unwrap();
+//     let Some(mol) = &mut state.active_mol_mut() else {
+//         return;
+//     };
+//
+//     // todo: Cache centroid.
+//     let lig_pos: Vec3 = mol.common().centroid().into();
+//     let ctr: Vec3 = mol_center.into();
+//
+//     cam_look_at_outside(&mut scene.camera, lig_pos, ctr);
+//
+//     engine_updates.camera = true;
+//
+//     set_flashlight(scene);
+//     engine_updates.lighting = true;
+//
+//     state.ui.cam_snapshot = None;
+// }

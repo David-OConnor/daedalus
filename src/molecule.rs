@@ -246,12 +246,21 @@ pub enum MoleculeGenericRefMut<'a> {
 }
 
 impl<'a> MoleculeGenericRefMut<'a> {
-    pub fn common(&mut self) -> &mut MoleculeCommon {
+    pub fn common_mut(&mut self) -> &mut MoleculeCommon {
         match self {
             Self::Peptide(m) => &mut m.common,
             Self::Ligand(m) => &mut m.common,
             Self::NucleicAcid(m) => &mut m.common,
             Self::Lipid(m) => &mut m.common,
+        }
+    }
+
+    pub fn common(&self) -> &MoleculeCommon {
+        match self {
+            Self::Peptide(m) => &m.common,
+            Self::Ligand(m) => &m.common,
+            Self::NucleicAcid(m) => &m.common,
+            Self::Lipid(m) => &m.common,
         }
     }
 

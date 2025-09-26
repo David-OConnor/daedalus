@@ -19,7 +19,7 @@ static INIT_COMPLETE: AtomicBool = AtomicBool::new(false);
 use bio_files::{DensityMap, ResidueType, density_from_2fo_fc_rcsb_gemmi};
 use lin_alg::f64::Vec3;
 use md::md_setup;
-use mol_data::display_small_mol_data;
+use mol_data::display_mol_data;
 
 use crate::{
     CamSnapshot, MsaaSetting, Selection, State, ViewSelLevel, cli,
@@ -180,7 +180,7 @@ fn get_snap_name(snap: Option<usize>, snaps: &[CamSnapshot]) -> String {
 /// Toggles chain visibility
 fn chain_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
     // todo: For now, DRY with res selec
-    let Some(mol) = &mut state.molecule else {
+    let Some(mol) = &mut state.peptide else {
         return;
     };
 
@@ -347,7 +347,7 @@ fn docking(
     //     return;
     // };
 
-    if state.molecule.is_none() || state.active_mol().is_none() {
+    if state.peptide.is_none() || state.active_mol().is_none() {
         return;
     }
 
@@ -405,7 +405,7 @@ fn residue_search(
         *redraw = true;
     }
 
-    if state.molecule.is_some() || !state.ligands.is_empty() {
+    if state.peptide.is_some() || !state.ligands.is_empty() {
         if ui
             .button(btn_text_p)
             .on_hover_text("Hotkey: Left arrow")
@@ -504,7 +504,7 @@ fn selection_section(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
                 // If we change from atom to res, select the prev-selected atom's res. If vice-versa,
                 // select that residue's Cα.
                 // state.ui.selection = Selection::None;
-                if let Some(mol) = &state.molecule {
+                if let Some(mol) = &state.peptide {
                     match state.ui.view_sel_level {
                         ViewSelLevel::Residue => {
                             state.ui.selection = match state.ui.selection {
@@ -615,7 +615,7 @@ fn selection_section(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
                     state.to_save.ph = *v;
 
                     // Re-assign hydrogens, and redraw
-                    if let Some(mol) = &mut state.molecule {
+                    if let Some(mol) = &mut state.peptide {
                         if let Some(ff_map) = &state.ff_param_set.peptide_ff_q_map {
                             match mol.reassign_hydrogens(state.to_save.ph, ff_map) {
                                 Ok(_) => *redraw = true,
@@ -857,7 +857,7 @@ fn view_settings(
             ui.add_space(COL_SPACING);
             // todo temp
             if ui.button("Load DNA").clicked() {
-                if let Some(mol) = &state.molecule {
+                if let Some(mol) = &state.peptide {
                     state.nucleic_acids = vec![MoleculeNucleicAcid::from_peptide(
                         &mol,
                         NucleicAcidType::Dna,
@@ -869,7 +869,7 @@ fn view_settings(
             }
 
             if ui.button("Load RNA").clicked() {
-                if let Some(mol) = &state.molecule {
+                if let Some(mol) = &state.peptide {
                     state.nucleic_acids = vec![MoleculeNucleicAcid::from_peptide(
                         &mol,
                         NucleicAcidType::Rna,
@@ -880,7 +880,7 @@ fn view_settings(
                 engine_updates.entities = true;
             }
 
-            if let Some(mol) = &state.molecule {
+            if let Some(mol) = &state.peptide {
                 if let Some(dens) = &mol.elec_density {
                     let mut redraw_dens = false;
                     misc::vis_check(
@@ -1053,7 +1053,7 @@ fn residue_selector(state: &mut State, scene: &mut Scene, ui: &mut Ui, redraw: &
 
         let mut update_arc_center = false;
 
-        if let Some(mol) = &state.molecule {
+        if let Some(mol) = &state.peptide {
             if let Some(chain_i) = state.ui.chain_to_pick_res {
                 if chain_i >= mol.chains.len() {
                     return;
@@ -1184,7 +1184,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             }
 
             let metadata_loaded = false; // avoids borrow error.
-            if let Some(mol) = &mut state.molecule {
+            if let Some(mol) = &mut state.peptide {
                 mol_descrip(&MoleculeGenericRef::Peptide(&mol), ui);
 
                 ui.add_space(COL_SPACING);
@@ -1206,7 +1206,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 ui.add_space(COL_SPACING);
             }
 
-            let color_open_tools = if state.molecule.is_none() {
+            let color_open_tools = if state.peptide.is_none() {
                 Color32::GOLD
             } else {
                 COLOR_INACTIVE
@@ -1219,7 +1219,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             }
 
             let mut dm_loaded = None; // avoids a double-borrow error.
-            if let Some(mol) = &mut state.molecule {
+            if let Some(mol) = &mut state.peptide {
                 // let color = if state.to_save.last_peptide_opened.is_none() {
                 //     COLOR_ATTENTION
                 // } else {
@@ -1477,7 +1477,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 }
             }
 
-            if state.molecule.is_none() && state.active_mol().is_none() {
+            if state.peptide.is_none() && state.active_mol().is_none() {
                 ui.add_space(COL_SPACING / 2.);
                 if ui
                     .button(RichText::new("I'm feeling lucky 🍀").color(color_open_tools))
@@ -1505,11 +1505,11 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         let mut close_lipid = false; // to avoid borrow error.
 
         // display_small_mol_data(state, scene, ui, &mut redraw_lig, &mut close_ligand, &mut engine_updates);
-        display_small_mol_data(state, scene, ui, MolType::Ligand, &mut redraw_lig,
-                               &mut close_ligand,&mut engine_updates);
+        display_mol_data(state, scene, ui, MolType::Ligand, &mut redraw_lig,
+                         &mut close_ligand, &mut engine_updates);
 
-        display_small_mol_data(state, scene, ui, MolType::Lipid, &mut redraw_lipid,
-                               &mut close_lipid,&mut engine_updates);
+        display_mol_data(state, scene, ui, MolType::Lipid, &mut redraw_lipid,
+                         &mut close_lipid, &mut engine_updates);
 
         ui.add_space(ROW_SPACING);
         selection_section(state, &mut redraw_mol, ui);
@@ -1548,7 +1548,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         ui.add_space(ROW_SPACING / 2.);
 
         if state.ui.show_aa_seq {
-            if state.molecule.is_some() {
+            if state.peptide.is_some() {
                 add_aa_seq(&mut state.ui.selection, &state.volatile.aa_seq_text, ui, &mut redraw_mol);
             }
         }
@@ -1792,7 +1792,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             draw_peptide(state, scene);
             draw_all_ligs(state, scene); // todo: Hmm.
 
-            if let Some(mol) = &state.molecule {
+            if let Some(mol) = &state.peptide {
                 set_window_title(&mol.common.ident, scene);
             }
 
@@ -1817,7 +1817,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         // Perform cleanup.
         if reset_cam {
-            if let Some(mol) = &state.molecule {
+            if let Some(mol) = &state.peptide {
                 reset_camera(scene, &mut state.ui.view_depth, &mut engine_updates, mol);
             }
         }
@@ -1841,7 +1841,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         }
 
         // todo: Move to new_mol_loaded code block?
-        if state.molecule.is_some() {
+        if state.peptide.is_some() {
             // if let Some(mol) = &state.molecule {
 
             // todo: Put back A/R. Dbl borrow error
@@ -1866,8 +1866,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
             set_static_light(
                 scene,
-                state.molecule.as_ref().unwrap().center.into(),
-                state.molecule.as_ref().unwrap().size,
+                state.peptide.as_ref().unwrap().center.into(),
+                state.peptide.as_ref().unwrap().size,
             );
         } else if !state.ligands.is_empty() {
             let lig = &state.ligands[0];

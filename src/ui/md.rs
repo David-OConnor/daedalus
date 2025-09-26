@@ -25,7 +25,7 @@ pub fn md_setup(
     misc::section_box().show(ui, |ui| {
         ui.horizontal(|ui| {
             ui.label("Select for MD:");
-            if let Some(mol) = &mut state.molecule {
+            if let Some(mol) = &mut state.peptide {
                 flag_btn(&mut mol.common.selected_for_md, &mol.common.ident, "Toggle if we use this molecule for MD.", ui);
 
                 let num_ligs = state.ligands.iter().filter(|l| l.common.selected_for_md).count();
@@ -63,7 +63,7 @@ pub fn md_setup(
 
                 if ready_to_run {
                     {
-                        let center = match &state.molecule {
+                        let center = match &state.peptide {
                             Some(m) => m.center,
                             None => Vec3::new(0., 0., 0.),
                         };
@@ -81,7 +81,7 @@ pub fn md_setup(
                     // mut so we can move their posits in the initial snapshot change.
                     let ligs: Vec<_> = state.ligands.iter_mut().filter(|l| l.common.selected_for_md).collect();
 
-                    let mol = match &state.molecule {
+                    let mol = match &state.peptide {
                         Some(m) => if m.common.selected_for_md { Some(m) } else { None },
                         None => None,
                     };

@@ -192,7 +192,7 @@ impl PerMolToSave {
         let mut rcsb_data = None;
         let mut rcsb_files_avail = None;
 
-        if let Some(mol) = &state.molecule {
+        if let Some(mol) = &state.peptide {
             chain_vis = mol.chains.iter().map(|c| c.visible).collect();
 
             rcsb_data = mol.rcsb_data.clone();
@@ -260,7 +260,7 @@ impl State {
     /// todo: See the note in PerMolsave::from_state. Workaround for order-related bugs.
     pub fn update_save_prefs(&mut self, on_init: bool) {
         println!("Saving state to prefs file.");
-        if let Some(mol) = &self.molecule {
+        if let Some(mol) = &self.peptide {
             let data = PerMolToSave::from_state(self, on_init);
 
             self.to_save.per_mol.insert(mol.common.ident.clone(), data);
@@ -283,7 +283,7 @@ impl State {
 
         let mut center = Vec3::new_zero();
 
-        if let Some(mol) = &mut self.molecule {
+        if let Some(mol) = &mut self.peptide {
             if self.to_save.per_mol.contains_key(&mol.common.ident) {
                 let data = &self.to_save.per_mol[&mol.common.ident];
 

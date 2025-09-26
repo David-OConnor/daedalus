@@ -214,7 +214,7 @@ pub fn handle_cmd(
 
         // todo uhoh: When you remove atoms, their indices in the vec get screwed up! You may need to use
         // todo a unique id!
-        if let Some(mol) = &mut state.molecule {
+        if let Some(mol) = &mut state.peptide {
             match item.as_ref() {
                 "solvents" => {
                     // todo: Remove residues as well?
@@ -265,7 +265,7 @@ pub fn handle_cmd(
     }
 
     if let Some(caps) = re_turn.captures(&input) {
-        let Some(mol) = &state.molecule else {
+        let Some(mol) = &state.peptide else {
             return Ok(String::from("Can't turn without a molecule"));
         };
 
@@ -307,7 +307,7 @@ pub fn handle_cmd(
     }
 
     if let Some(_caps) = re_orient.captures(&input) {
-        if let Some(mol) = &state.molecule {
+        if let Some(mol) = &state.peptide {
             let atom_sel = mol.get_sel_atom(&state.ui.selection);
 
             if let Some(atom) = atom_sel {
@@ -321,7 +321,7 @@ pub fn handle_cmd(
     }
 
     if re_reset.captures(&input).is_some() {
-        if let Some(mol) = &state.molecule {
+        if let Some(mol) = &state.peptide {
             reset_camera(scene, &mut state.ui.view_depth, engine_updates, mol);
             engine_updates.camera = true;
         }
@@ -348,7 +348,7 @@ pub fn handle_cmd(
 
     // Selections
     if let Some(caps) = re_sel_resn.captures(&input) {
-        if let Some(mol) = &state.molecule {
+        if let Some(mol) = &state.peptide {
             let aa = AminoAcid::from_str(&caps[1])?;
 
             let mut result = Vec::new();
@@ -368,7 +368,7 @@ pub fn handle_cmd(
     }
 
     if let Some(caps) = re_sel_resi.captures(&input) {
-        if let Some(mol) = &state.molecule {
+        if let Some(mol) = &state.peptide {
             let i: u32 = caps[1]
                 .parse()
                 .map_err(|_| io::Error::new(ErrorKind::InvalidData, "Invalid index."))?;
@@ -386,7 +386,7 @@ pub fn handle_cmd(
     }
 
     if let Some(caps) = re_sel_elem.captures(&input) {
-        if let Some(mol) = &state.molecule {
+        if let Some(mol) = &state.peptide {
             let el = Element::from_letter(&caps[1])?;
 
             let mut result = Vec::new();

@@ -103,7 +103,7 @@ pub fn dynamics_player(
                     .collect();
                 let ligs_len = ligs_md.len();
 
-                let peptide_md = match &mut state.molecule {
+                let peptide_md = match &mut state.peptide {
                     Some(m) => {
                         if m.common.selected_for_md {
                             Some(m)
@@ -120,7 +120,7 @@ pub fn dynamics_player(
                     draw_all_ligs(state, scene);
                 }
 
-                if let Some(mol) = &state.molecule {
+                if let Some(mol) = &state.peptide {
                     // if mol.common.atoms.len() > 0 {
                     if mol.common.selected_for_md {
                         draw_peptide(state, scene);
