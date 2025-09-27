@@ -831,7 +831,7 @@ pub fn draw_all_lipids(state: &mut State, scene: &mut Scene) {
 // todo: DRY with/subset of draw_molecule?
 pub fn draw_mol(
     mol: MoleculeGenericRef,
-    lig_i: usize,
+    mol_i: usize,
     state_ui: &StateUi,
     active_mol: &Option<(MolType, usize)>,
     move_mol: ManipMode,
@@ -842,7 +842,7 @@ pub fn draw_mol(
     }
 
     let active = if let Some((active_mol_type, active_i)) = active_mol {
-        mol.mol_type() == *active_mol_type && lig_i == *active_i
+        mol.mol_type() == *active_mol_type && mol_i == *active_i
     } else {
         false
     };
@@ -865,33 +865,60 @@ pub fn draw_mol(
         // });
     }
 
-    // todo: Impl this so not just sticks
-    // for atom in &mol.common().atoms {
-    //     let color = atom_color(
-    //         atom,
-    //         i_mol,
-    //         i_atom,
-    //         &[],
-    //         0,
-    //         &state.ui.selection,
-    //         ViewSelLevel::Atom, // Always color lipids by atom.
-    //         false,
-    //         false,
-    //         false,
-    //         MolType::Lipid,
-    //     );
-    //
-    //     let mut entity = Entity::new(
-    //         mesh,
-    //         mol.common.atom_posits[i_atom].into(),
-    //         Quaternion::new_identity(),
-    //         radius,
-    //         color,
-    //         ATOM_SHININESS,
-    //     );
-    //     entity.class = EntityType::Lipid as u32;
-    //     scene.entities.push(entity);
-    // }
+    if state_ui.mol_view == MoleculeView::BallAndStick {
+        for (i_atom, atom) in mol.common().atoms.iter().enumerate() {
+            if state_ui.visibility.hide_hydrogen && atom.element == Element::Hydrogen {
+                continue;
+            }
+
+            let mut color = (0., 0., 0.);
+            let mut manip_active = false;
+
+            match move_mol {
+                ManipMode::Move((mol_type, i)) => {
+                    if mol_type == mol.mol_type() && i == mol_i {
+                        color = COLOR_MOL_MOVING;
+                        manip_active = true;
+                    }
+                }
+                ManipMode::Rotate((mol_type, i)) => {
+                    if mol_type == mol.mol_type() && i == mol_i {
+                        color = COLOR_MOL_ROTATE;
+                        manip_active = true;
+                    }
+                }
+                ManipMode::None => (),
+            }
+
+            if !manip_active {
+                color = atom_color(
+                    atom,
+                    mol_i,
+                    i_atom,
+                    &[],
+                    0,
+                    &state_ui.selection,
+                    ViewSelLevel::Atom, // Always color lipids by atom.
+                    false,
+                    false,
+                    false,
+                    mol.mol_type(),
+                );
+            }
+
+            let mut entity = Entity::new(
+                MESH_BALL_STICK_SPHERE,
+                mol.common().atom_posits[i_atom].into(),
+                Quaternion::new_identity(),
+                BALL_STICK_RADIUS,
+                color,
+                ATOM_SHININESS,
+            );
+
+            entity.class = mol.mol_type().entity_type() as u32;
+            scene.entities.push(entity);
+        }
+    }
 
     // todo: C+P from draw_molecule. With some removed, but much repeated.
     for bond in &mol.common().bonds {
@@ -932,14 +959,14 @@ pub fn draw_mol(
 
         match move_mol {
             ManipMode::Move((mol_type, i)) => {
-                if mol_type == MolType::Ligand && i == lig_i {
+                if mol_type == mol.mol_type() && i == mol_i {
                     color_0 = COLOR_MOL_MOVING;
                     color_1 = COLOR_MOL_MOVING;
                     manip_active = true;
                 }
             }
             ManipMode::Rotate((mol_type, i)) => {
-                if mol_type == MolType::Ligand && i == lig_i {
+                if mol_type == mol.mol_type() && i == mol_i {
                     color_0 = COLOR_MOL_ROTATE;
                     color_1 = COLOR_MOL_ROTATE;
                     manip_active = true;
@@ -951,7 +978,7 @@ pub fn draw_mol(
         if !manip_active {
             color_0 = atom_color(
                 atom_0,
-                lig_i,
+                mol_i,
                 bond.atom_0,
                 &[],
                 0,
@@ -960,11 +987,11 @@ pub fn draw_mol(
                 false,
                 false,
                 false,
-                MolType::Ligand,
+                mol.mol_type(),
             );
             color_1 = atom_color(
                 atom_1,
-                lig_i,
+                mol_i,
                 bond.atom_1,
                 &[],
                 0,
@@ -974,14 +1001,15 @@ pub fn draw_mol(
                 false,
                 false,
                 false,
-                MolType::Ligand,
+                mol.mol_type(),
             );
 
+            // todo: PUt something like this back.
             if color_0 != COLOR_SELECTED {
-                color_0 = mod_color_for_ligand(&color_0, atom_0.element);
+                // color_0 = mod_color_for_ligand(&color_0, atom_0.element);
             }
             if color_1 != COLOR_SELECTED {
-                color_1 = mod_color_for_ligand(&color_1, atom_1.element);
+                // color_1 = mod_color_for_ligand(&color_1, atom_1.element);
             }
         }
 
@@ -992,7 +1020,7 @@ pub fn draw_mol(
             color_0,
             color_1,
             bond.bond_type,
-            MolType::Ligand,
+            mol.mol_type(),
             true,
             neighbor_posit,
             active,

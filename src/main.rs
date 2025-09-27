@@ -519,7 +519,7 @@ impl State {
                     }
                 }
                 MolType::Lipid => {
-                    if i < self.ligands.len() {
+                    if i < self.lipids.len() {
                         Some(MoleculeGenericRef::Lipid(&self.lipids[i]))
                     } else {
                         None

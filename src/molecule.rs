@@ -43,7 +43,7 @@ use crate::{
     util::mol_center_size,
 };
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub enum MolType {
     Peptide,
     Ligand,

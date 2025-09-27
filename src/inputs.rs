@@ -73,7 +73,14 @@ pub fn event_dev_handler(
             set_flashlight(scene);
             updates.lighting = true;
 
-            handle_mol_manip_in_out(state_, scene, delta, &mut redraw_lig);
+            handle_mol_manip_in_out(
+                state_,
+                scene,
+                delta,
+                &mut redraw_lig,
+                &mut redraw_na,
+                &mut redraw_lipid,
+            );
         }
         DeviceEvent::Button { button, state } => {
             #[cfg(target_os = "linux")]
@@ -294,6 +301,8 @@ pub fn event_dev_handler(
 
                         redraw_protein = true;
                         redraw_lig = true;
+                        redraw_na = true;
+                        redraw_lipid = true;
                     }
                     Code(KeyCode::Enter) => {
                         move_cam_to_sel(
@@ -314,11 +323,17 @@ pub fn event_dev_handler(
                     Code(KeyCode::BracketLeft) => {
                         state_.ui.mol_view = state_.ui.mol_view.prev();
                         redraw_protein = true;
+                        redraw_lig = true;
+                        redraw_na = true;
+                        redraw_lipid = true;
                         // lig_rot_dir = Some(-RIGHT_VEC);
                     }
                     Code(KeyCode::BracketRight) => {
                         state_.ui.mol_view = state_.ui.mol_view.next();
                         redraw_protein = true;
+                        redraw_lig = true;
+                        redraw_na = true;
+                        redraw_lipid = true;
                         // lig_rot_dir = Some(RIGHT_VEC);
                     }
                     Code(KeyCode::Semicolon) => {
@@ -347,20 +362,36 @@ pub fn event_dev_handler(
                     Code(KeyCode::AltRight) => {
                         lig_move_dir = Some(UP_VEC);
                     }
-                    Code(KeyCode::KeyM) => set_manip(
-                        &mut state_.volatile,
-                        scene,
-                        &mut redraw_lig,
-                        // todo: Not just lig
-                        ManipMode::Move((MolType::Ligand, 0)),
-                    ),
-                    Code(KeyCode::KeyR) => set_manip(
-                        &mut state_.volatile,
-                        scene,
-                        &mut redraw_lig,
-                        // todo: Not just lig
-                        ManipMode::Rotate((MolType::Ligand, 0)),
-                    ),
+                    Code(KeyCode::KeyM) => {
+                        let mol_type = match state_.active_mol() {
+                            Some(m) => m.mol_type(),
+                            None => return updates,
+                        };
+
+                        set_manip(
+                            &mut state_.volatile,
+                            scene,
+                            &mut redraw_lig,
+                            &mut redraw_na,
+                            &mut redraw_lipid,
+                            ManipMode::Move((mol_type, 0)),
+                        );
+                    }
+                    Code(KeyCode::KeyR) => {
+                        let mol_type = match state_.active_mol() {
+                            Some(m) => m.mol_type(),
+                            None => return updates,
+                        };
+
+                        set_manip(
+                            &mut state_.volatile,
+                            scene,
+                            &mut redraw_lig,
+                            &mut redraw_na,
+                            &mut redraw_lipid,
+                            ManipMode::Rotate((mol_type, 0)),
+                        );
+                    }
                     _ => (),
                 },
                 ElementState::Released => (),
@@ -454,7 +485,14 @@ pub fn event_dev_handler(
             }
 
             if state_.ui.left_click_down {
-                handle_mol_manip_horizontal(state_, scene, delta, &mut redraw_lig);
+                handle_mol_manip_in_plane(
+                    state_,
+                    scene,
+                    delta,
+                    &mut redraw_lig,
+                    &mut redraw_na,
+                    &mut redraw_lipid,
+                );
             }
 
             if state_.ui.left_click_down {
@@ -509,7 +547,7 @@ pub fn event_dev_handler(
     }
 
     if redraw_na {
-        // drawing::draw_all_ligs(state_, scene);
+        drawing::draw_all_nucleic_acids(state_, scene);
         updates.entities = true;
     }
 
@@ -584,11 +622,13 @@ fn plot_ray() {
 /// at the molecules depth. The mouse cursor projects to this plane, moving the molecule
 /// along it. (Movement). Handles rotation in a straightforward manner. This is for motion relative
 /// to the 2D screen, e.g. from mouse movement.
-fn handle_mol_manip_horizontal(
+fn handle_mol_manip_in_plane(
     state: &mut State,
     scene: &Scene,
     delta: (f64, f64),
     redraw_lig: &mut bool,
+    redraw_na: &mut bool,
+    redraw_lipid: &mut bool,
 ) {
     // We skip renders, as they are relatively slow. This produces choppy dragging,
     // but I don't have a better plan yet.
@@ -609,6 +649,7 @@ fn handle_mol_manip_horizontal(
         ManipMode::Move((mol_type, mol_i)) => {
             let mol = match mol_type {
                 MolType::Ligand => &mut state.ligands[mol_i].common,
+                MolType::NucleicAcid => &mut state.nucleic_acids[mol_i].common,
                 MolType::Lipid => &mut state.lipids[mol_i].common,
                 _ => unimplemented!(),
             };
@@ -659,7 +700,12 @@ fn handle_mol_manip_horizontal(
                 unsafe {
                     I += 1;
                     if I % ratio == 0 {
-                        *redraw_lig = true;
+                        match mol_type {
+                            MolType::Ligand => *redraw_lig = true,
+                            MolType::NucleicAcid => *redraw_na = true,
+                            MolType::Lipid => *redraw_lipid = true,
+                            _ => unimplemented!(),
+                        };
                     }
                 }
             }
@@ -667,6 +713,7 @@ fn handle_mol_manip_horizontal(
         ManipMode::Rotate((mol_type, mol_i)) => {
             let mol = match mol_type {
                 MolType::Ligand => &mut state.ligands[mol_i].common,
+                MolType::NucleicAcid => &mut state.nucleic_acids[mol_i].common,
                 MolType::Lipid => &mut state.lipids[mol_i].common,
                 _ => unimplemented!(),
             };
@@ -691,6 +738,13 @@ fn handle_mol_manip_horizontal(
                 I += 1;
                 if I % ratio == 0 {
                     *redraw_lig = true;
+
+                    match mol_type {
+                        MolType::Ligand => *redraw_lig = true,
+                        MolType::NucleicAcid => *redraw_na = true,
+                        MolType::Lipid => *redraw_lipid = true,
+                        _ => unimplemented!(),
+                    };
                 }
             }
         }
@@ -703,12 +757,15 @@ fn handle_mol_manip_in_out(
     scene: &mut Scene,
     delta: MouseScrollDelta,
     redraw_lig: &mut bool,
+    redraw_na: &mut bool,
+    redraw_lipid: &mut bool,
 ) {
     // Move the molecule forward and backwards relative to the camera on scroll.
     match state.volatile.mol_manip.mol {
         ManipMode::Move((mol_type, mol_i)) => {
             let mol = match mol_type {
                 MolType::Ligand => &mut state.ligands[mol_i].common,
+                MolType::NucleicAcid => &mut state.nucleic_acids[mol_i].common,
                 MolType::Lipid => &mut state.lipids[mol_i].common,
                 _ => unimplemented!(),
             };
@@ -755,8 +812,6 @@ fn handle_mol_manip_in_out(
                 state.volatile.mol_manip.pivot = Some(new_pivot);
                 state.volatile.mol_manip.depth_bias += scroll * step;
 
-                *redraw_lig = true;
-
                 // todo: QC if you need/want this.
                 // recompute intersection on the shifted plane to maintain stable drag
                 if let Some(mut cursor) = state.ui.cursor_pos {
@@ -779,6 +834,12 @@ fn handle_mol_manip_in_out(
                     }
                 }
             }
+            match mol_type {
+                MolType::Ligand => *redraw_lig = true,
+                MolType::NucleicAcid => *redraw_na = true,
+                MolType::Lipid => *redraw_lipid = true,
+                _ => unimplemented!(),
+            };
         }
         ManipMode::Rotate((mol_type, mol_i)) => {
             let scroll: f32 = match delta {
@@ -792,6 +853,7 @@ fn handle_mol_manip_in_out(
             // todo: C+P with slight changes from the mouse-move variant.
             let mol = match mol_type {
                 MolType::Ligand => &mut state.ligands[mol_i].common,
+                MolType::NucleicAcid => &mut state.nucleic_acids[mol_i].common,
                 MolType::Lipid => &mut state.lipids[mol_i].common,
                 _ => unimplemented!(),
             };
@@ -801,7 +863,12 @@ fn handle_mol_manip_in_out(
             let rot = Quaternion::from_axis_angle(fwd, scroll * SENS_MOL_ROT_SCROLL);
             mol.rotate(rot.into());
 
-            *redraw_lig = true;
+            match mol_type {
+                MolType::Ligand => *redraw_lig = true,
+                MolType::NucleicAcid => *redraw_na = true,
+                MolType::Lipid => *redraw_lipid = true,
+                _ => unimplemented!(),
+            };
         }
         ManipMode::None => (),
     }
@@ -812,6 +879,8 @@ pub fn set_manip(
     vol: &mut StateVolatile,
     scene: &mut Scene,
     redraw_lig: &mut bool,
+    redraw_na: &mut bool,
+    redraw_lipid: &mut bool,
     mode: ManipMode,
 ) {
     if let Some((mol_type_active, i_active)) = vol.active_mol {
@@ -821,12 +890,12 @@ pub fn set_manip(
         match vol.mol_manip.mol {
             ManipMode::None => (),
             ManipMode::Move((mol_type, mol_i)) => {
-                if mol_type == MolType::Ligand && mol_i == i_active {
+                if mol_type == mol_type_active && mol_i == i_active {
                     move_active = true;
                 }
             }
             ManipMode::Rotate((mol_type, mol_i)) => {
-                if mol_type == MolType::Ligand && mol_i == i_active {
+                if mol_type == mol_type_active && mol_i == i_active {
                     rotate_active = true;
                 }
             }
@@ -838,13 +907,13 @@ pub fn set_manip(
                     scene.input_settings.control_scheme = vol.control_scheme_prev;
                     vol.mol_manip.mol = ManipMode::None;
                 } else if rotate_active {
-                    vol.mol_manip.mol = ManipMode::Move((MolType::Ligand, i_active));
+                    vol.mol_manip.mol = ManipMode::Move((mol_type_active, i_active));
                 } else {
                     if scene.input_settings.control_scheme != ControlScheme::None {
                         vol.control_scheme_prev = scene.input_settings.control_scheme;
                     }
                     scene.input_settings.control_scheme = ControlScheme::None;
-                    vol.mol_manip.mol = ManipMode::Move((MolType::Ligand, i_active));
+                    vol.mol_manip.mol = ManipMode::Move((mol_type_active, i_active));
                 };
             }
             ManipMode::Rotate(_) => {
@@ -852,18 +921,23 @@ pub fn set_manip(
                     scene.input_settings.control_scheme = vol.control_scheme_prev;
                     vol.mol_manip.mol = ManipMode::None;
                 } else if move_active {
-                    vol.mol_manip.mol = ManipMode::Rotate((MolType::Ligand, i_active));
+                    vol.mol_manip.mol = ManipMode::Rotate((mol_type_active, i_active));
                 } else {
                     if scene.input_settings.control_scheme != ControlScheme::None {
                         vol.control_scheme_prev = scene.input_settings.control_scheme;
                     }
                     scene.input_settings.control_scheme = ControlScheme::None;
-                    vol.mol_manip.mol = ManipMode::Rotate((MolType::Ligand, i_active));
+                    vol.mol_manip.mol = ManipMode::Rotate((mol_type_active, i_active));
                 };
             }
             ManipMode::None => unreachable!(),
         }
 
-        *redraw_lig = true; // Affects color, so redraw.
+        match mol_type_active {
+            MolType::Ligand => *redraw_lig = true,
+            MolType::NucleicAcid => *redraw_na = true,
+            MolType::Lipid => *redraw_lipid = true,
+            _ => (),
+        }
     }
 }

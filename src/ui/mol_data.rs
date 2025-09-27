@@ -228,13 +228,15 @@ pub fn display_mol_data(
     state: &mut State,
     scene: &mut Scene,
     ui: &mut Ui,
-    mol_type: MolType,
-    redraw: &mut bool,
+    // mol_type: MolType,
+    redraw_lig: &mut bool,
+    redraw_na: &mut bool,
+    redraw_lipid: &mut bool,
     close: &mut bool,
     engine_updates: &mut EngineUpdates,
 ) {
     ui.horizontal(|ui| {
-        mol_picker(state, scene, ui, redraw, close, engine_updates);
+        mol_picker(state, scene, ui, redraw_lig, close, engine_updates);
 
         let (active_mol_type, active_mol_i) = state.volatile.active_mol.unwrap();
         ui.add_space(COL_SPACING);
@@ -270,14 +272,14 @@ pub fn display_mol_data(
                 .on_hover_text("Move the active molecule by clicking and dragging with the mouse. Scroll to move it forward and back. (Hotkey: M)")
                 .clicked() {
 
-                set_manip(&mut state.volatile, scene, redraw, ManipMode::Move((active_mol_type, active_mol_i)));
+                set_manip(&mut state.volatile, scene, redraw_lig, redraw_na, redraw_lipid, ManipMode::Move((active_mol_type, active_mol_i)));
             }
 
             if ui.button(RichText::new("⟳").color(color_rotate))
                 .on_hover_text("Rotate the active molecule by clicking and dragging with the mouse. Scroll to roll. (Hotkey: R)")
                 .clicked() {
 
-                set_manip(&mut state.volatile, scene, redraw, ManipMode::Rotate((active_mol_type, active_mol_i)));
+                set_manip(&mut state.volatile, scene, redraw_lig,redraw_na, redraw_lipid, ManipMode::Rotate((active_mol_type, active_mol_i)));
             }
         }
 
@@ -292,7 +294,7 @@ pub fn display_mol_data(
             let mut mol = state.active_mol_mut().unwrap();
             mol.common_mut().reset_posits();
 
-            *redraw = true;
+            *redraw_lig = true;
         }
 
         if ui.button("Close").clicked() {
@@ -435,7 +437,7 @@ pub fn display_mol_data(
                         //     );
                         // }
 
-                        *redraw = true;
+                        *redraw_lig = true;
                     }
                 }
             }
@@ -476,7 +478,7 @@ pub fn display_mol_data(
                     // set_docking_light(scene, Some(&lig.docking_site));
                     // engine_updates.lighting = true;
 
-                    *redraw = true;
+                    *redraw_lig = true;
 
                     // If creating from an AA, move to the origin (Where we assigned its atom positions).
                     // If from a hetero atom, leave it in place.
@@ -524,7 +526,7 @@ pub fn display_mol_data(
 
                     move_cam = true;
 
-                    *redraw = true;
+                    *redraw_lig = true;
                 }
             }
 
@@ -613,7 +615,7 @@ pub fn display_mol_data(
             &mut state.ui,
             format!("Loaded {} from Amber Geostd", data.ident),
         );
-        state.load_geostd_mol_data(&data.ident, true, data.frcmod_avail, redraw);
+        state.load_geostd_mol_data(&data.ident, true, data.frcmod_avail, redraw_lig);
 
         if state.active_mol().is_some() {
             if let Some(mol) = &state.peptide {
