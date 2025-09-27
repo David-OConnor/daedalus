@@ -40,6 +40,8 @@ use crate::{
     ui::{
         cam::{cam_controls, cam_snapshots},
         misc::section_box,
+        mol_data::display_mol_data_peptide,
+        rama_plot::plot_rama,
         view::view_settings,
     },
     util::{
@@ -52,6 +54,7 @@ pub mod cam;
 mod md;
 pub mod misc;
 mod mol_data;
+mod rama_plot;
 mod view;
 
 pub const ROW_SPACING: f32 = 10.;
@@ -683,22 +686,6 @@ fn mol_descrip(mol: &MoleculeGenericRef, ui: &mut Ui) {
             ui.label(RichText::new(title_abbrev).color(Color32::WHITE).size(12.));
         }
     }
-
-    match mol {
-        MoleculeGenericRef::Peptide(m) => {
-            if mol.common().ident.len() <= 5 {
-                // todo: You likely need a better approach.
-                if ui
-                    .button("View on RCSB")
-                    .on_hover_text("Open a web browser to the RCSB PDB page for this molecule.")
-                    .clicked()
-                {
-                    rcsb::open_overview(&mol.common().ident);
-                }
-            }
-        }
-        _ => (), // We handle ligand links in the lig-specific section.
-    }
 }
 
 fn settings(state: &mut State, scene: &mut Scene, ui: &mut Ui) {
@@ -946,26 +933,14 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             }
 
             let metadata_loaded = false; // avoids borrow error.
-            if let Some(mol) = &mut state.peptide {
-                mol_descrip(&MoleculeGenericRef::Peptide(&mol), ui);
 
-                ui.add_space(COL_SPACING);
-                if ui
-                    .button(RichText::new("Reset posit").color(COLOR_HIGHLIGHT))
-                    .on_hover_text(
-                        "Move the peptide to its absolute coordinates, e.g. as defined in \
-                    its source mmCIF file.",
-                    )
-                    .clicked()
-                {
-                    mol.common.reset_posits();
-                    redraw_peptide = true;
-                }
+            {
+                let mut close = false;
+                display_mol_data_peptide(state, scene, ui, &mut redraw_lig, &mut redraw_na, &mut redraw_lipid, &mut close, &mut engine_updates);
 
-                if ui.button("Close").clicked() {
+                if close {
                     close_peptide(state, scene, &mut engine_updates);
                 }
-                ui.add_space(COL_SPACING);
             }
 
             let color_open_tools = if state.peptide.is_none() {
@@ -1264,17 +1239,9 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         let mut close_active_mol = false; // to avoid borrow error.
 
-        // display_small_mol_data(state, scene, ui, &mut redraw_lig, &mut close_ligand, &mut engine_updates);
-        // if let Some(mol) = &state.active_mol() {
         if state.active_mol().is_some() {
-            display_mol_data(state, scene, ui, &mut redraw_lig, &mut redraw_na, &mut redraw_lipid, &mut close_active_mol, &mut engine_updates);
+            display_mol_data(state, scene, ui, &mut redraw_lig, &mut redraw_na, &mut redraw_lipid, &mut close_active_mol,  &mut engine_updates);
         }
-        // };
-        // display_mol_data(state, scene, ui, MolType::Ligand, &mut redraw_lig,
-        //                  &mut close_ligand, &mut engine_updates);
-
-        // display_mol_data(state, scene, ui, MolType::Lipid, &mut redraw_lipid,
-        //                  &mut close_lipid, &mut engine_updates);
 
         ui.add_space(ROW_SPACING);
         selection_section(state, &mut redraw_peptide, ui);

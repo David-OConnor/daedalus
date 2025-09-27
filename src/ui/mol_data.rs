@@ -1,6 +1,6 @@
 //! Information and settings for the opened, or to-be opened molecules.
 
-use bio_apis::{amber_geostd, drugbank, pdbe, pubchem};
+use bio_apis::{amber_geostd, drugbank, lmsd, pdbe, pubchem, rcsb};
 use bio_files::ResidueType;
 use egui::{Color32, RichText, Ui};
 use graphics::{EngineUpdates, Scene};
@@ -16,7 +16,7 @@ use crate::{
     nucleic_acid::MoleculeNucleicAcid,
     ui::{
         COL_SPACING, COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_HIGHLIGHT, COLOR_INACTIVE,
-        cam::move_cam_to_lig, mol_descrip,
+        cam::move_cam_to_lig, mol_descrip, rama_plot::plot_rama,
     },
     util::{handle_err, handle_success, make_egui_color, move_mol_to_res},
 };
@@ -224,11 +224,11 @@ fn mol_picker(
     }
 }
 
-pub fn display_mol_data(
+// todo: Unify this with non-peptide.
+pub fn display_mol_data_peptide(
     state: &mut State,
     scene: &mut Scene,
     ui: &mut Ui,
-    // mol_type: MolType,
     redraw_lig: &mut bool,
     redraw_na: &mut bool,
     redraw_lipid: &mut bool,
@@ -236,159 +236,48 @@ pub fn display_mol_data(
     engine_updates: &mut EngineUpdates,
 ) {
     ui.horizontal(|ui| {
-        mol_picker(state, scene, ui, redraw_lig, close, engine_updates);
+        let Some(mol) = &state.peptide else {
+            return;
+        };
 
-        let (active_mol_type, active_mol_i) = state.volatile.active_mol.unwrap();
-        ui.add_space(COL_SPACING);
-
-        if let Some(mol) = state.active_mol() {
-            mol_descrip(&mol, ui);
-        }
-
-        // let Some(mut mol) = state.active_mol_mut() else {
-        //     return;
-        // };
-
-        {
-            let mut color_move = COLOR_INACTIVE;
-            let mut color_rotate = COLOR_INACTIVE;
-
-            match state.volatile.mol_manip.mol {
-                ManipMode::Move((mol_type, mol_i)) => {
-                    if mol_type == active_mol_type && mol_i == active_mol_i {
-                        color_move = COLOR_ACTIVE;
-                    }
-                }
-                ManipMode::Rotate((mol_type, mol_i)) => {
-                    if mol_type == active_mol_type && mol_i == active_mol_i {
-                        color_rotate = COLOR_ACTIVE;
-                    }
-                }
-                ManipMode::None => (),
-            }
-
-            // ✥ doesn't work in EGUI.
-            if ui.button(RichText::new("↔").color(color_move))
-                .on_hover_text("Move the active molecule by clicking and dragging with the mouse. Scroll to move it forward and back. (Hotkey: M)")
-                .clicked() {
-
-                set_manip(&mut state.volatile, scene, redraw_lig, redraw_na, redraw_lipid, ManipMode::Move((active_mol_type, active_mol_i)));
-            }
-
-            if ui.button(RichText::new("⟳").color(color_rotate))
-                .on_hover_text("Rotate the active molecule by clicking and dragging with the mouse. Scroll to roll. (Hotkey: R)")
-                .clicked() {
-
-                set_manip(&mut state.volatile, scene, redraw_lig,redraw_na, redraw_lipid, ManipMode::Rotate((active_mol_type, active_mol_i)));
-            }
-        }
-
-        if ui
-            .button(RichText::new("Reset posit").color(COLOR_HIGHLIGHT))
-            .on_hover_text(
-                "Move the ligand to its absolute coordinates, e.g. as defined in \
-                    its source Mol2 or SDF file.",
-            )
-            .clicked()
-        {
-            if let Some(mol) = &mut state.active_mol_mut() {
-                mol.common_mut().reset_posits();
-                *redraw_lig = true;
-            }
-        }
+        mol_descrip(&MoleculeGenericRef::Peptide(mol), ui);
 
         if ui.button("Close").clicked() {
             *close = true;
         }
 
-        if let Some(mol) = state.active_mol() {
-            if let MoleculeGenericRef::Ligand(l) = mol {
-                ui.add_space(COL_SPACING);
-
-                // todo status color helper?
-                ui.label("Loaded:");
-                let color = if l.ff_params_loaded {
-                    Color32::LIGHT_GREEN
-                } else {
-                    Color32::LIGHT_RED
-                };
-                ui.label(RichText::new("FF/q").color(color)).on_hover_text(
-                    "Green if force field names, and partial charges are assigned \
-                for all ligand atoms. Required for ligand moleculer dynamics and docking.",
-                );
-
-                ui.add_space(COL_SPACING / 4.);
-
-                let color = if l.frcmod_loaded {
-                    Color32::LIGHT_GREEN
-                } else {
-                    Color32::LIGHT_RED
-                };
-                ui.label(RichText::new("Frcmod").color(color))
-                    .on_hover_text(
-                        "Green if molecule-specific Amber force field parameters are \
-                loaded for this ligand. Required for ligand molecular dynamics and docking.",
-                    );
-
-                if let Some(id) = &l.drugbank_id {
-                    if ui.button("View on Drugbank").clicked() {
-                        drugbank::open_overview(id);
-                    }
-                }
-
-                if let Some(id) = l.pubchem_cid {
-                    if ui.button("View on PubChem").clicked() {
-                        pubchem::open_overview(id);
-                    }
-                }
-
-                if let Some(id) = &l.pdbe_id {
-                    if ui.button("View on PDBe").clicked() {
-                        pdbe::open_overview(id);
-                    }
-                }
-
-                if let Some(cid) = l.pubchem_cid {
-                    if ui.button("Find associated structs").clicked() {
-                        // todo: Don't block.
-                        if l.associated_structures.is_empty() {
-                            match pubchem::load_associated_structures(cid) {
-                                Ok(data) => {
-                                    // todo: Put back! Borrow issue.
-                                    // l.associated_structures = data;
-                                    state.ui.popup.show_associated_structures = true;
-                                }
-                                Err(_) => handle_err(
-                                    &mut state.ui,
-                                    "Unable to find structures for this ligand".to_owned(),
-                                ),
-                            }
-                        } else {
-                            state.ui.popup.show_associated_structures = true;
-                        }
-                    }
-                }
+        if mol.common.ident.len() <= 5 {
+            // todo: You likely need a better approach.
+            if ui
+                .button("View on RCSB")
+                .on_hover_text("Open a web browser to the RCSB PDB page for this molecule.")
+                .clicked()
+            {
+                rcsb::open_overview(&mol.common.ident);
             }
+        }
+
+        if ui.button("Plot dihedrals").clicked() {
+            plot_rama(&mol.residues, &mol.common.ident, ui);
         }
 
         ui.add_space(COL_SPACING);
 
-        if let Some(peptide) = &state.peptide {
             let res_selected = match state.ui.selection {
                 Selection::AtomPeptide(sel_i) => {
-                    let atom = &peptide.common.atoms[sel_i];
+                    let atom = &mol.common.atoms[sel_i];
                     if let Some(res_i) = &atom.residue {
-                        Some(&peptide.residues[*res_i])
+                        Some(&mol.residues[*res_i])
                     } else {
                         None
                     }
                 }
                 Selection::Residue(sel_i) => {
-                    if sel_i >= peptide.residues.len() {
+                    if sel_i >= mol.residues.len() {
                         handle_err(&mut state.ui, "Residue selection is out of bounds.".to_owned());
                         None
                     } else {
-                        Some(&peptide.residues[sel_i])
+                        Some(&mol.residues[sel_i])
                     }
                 },
                 _ => None,
@@ -498,7 +387,6 @@ pub fn display_mol_data(
                     state.ui.visibility.hide_ligand = false;
                 }
             }
-        }
 
         if !matches!(
             state.ui.selection,
@@ -623,4 +511,164 @@ pub fn display_mol_data(
             }
         }
     }
+}
+
+pub fn display_mol_data(
+    state: &mut State,
+    scene: &mut Scene,
+    ui: &mut Ui,
+    // mol_type: MolType,
+    redraw_lig: &mut bool,
+    redraw_na: &mut bool,
+    redraw_lipid: &mut bool,
+    close: &mut bool,
+    engine_updates: &mut EngineUpdates,
+) {
+    if state.volatile.active_mol.is_none() {
+        return;
+    }
+
+    ui.horizontal(|ui| {
+        mol_picker(state, scene, ui, redraw_lig, close, engine_updates);
+
+        let (active_mol_type, active_mol_i) = state.volatile.active_mol.unwrap();
+        ui.add_space(COL_SPACING);
+
+        if let Some(mol) = state.active_mol() {
+            mol_descrip(&mol, ui);
+        }
+
+        {
+            let mut color_move = COLOR_INACTIVE;
+            let mut color_rotate = COLOR_INACTIVE;
+
+            match state.volatile.mol_manip.mol {
+                ManipMode::Move((mol_type, mol_i)) => {
+                    if mol_type == active_mol_type && mol_i == active_mol_i {
+                        color_move = COLOR_ACTIVE;
+                    }
+                }
+                ManipMode::Rotate((mol_type, mol_i)) => {
+                    if mol_type == active_mol_type && mol_i == active_mol_i {
+                        color_rotate = COLOR_ACTIVE;
+                    }
+                }
+                ManipMode::None => (),
+            }
+
+            // ✥ doesn't work in EGUI.
+            if ui.button(RichText::new("↔").color(color_move))
+                .on_hover_text("Move the active molecule by clicking and dragging with the mouse. Scroll to move it forward and back. (Hotkey: M)")
+                .clicked() {
+
+                set_manip(&mut state.volatile, scene, redraw_lig, redraw_na, redraw_lipid, ManipMode::Move((active_mol_type, active_mol_i)));
+            }
+
+            if ui.button(RichText::new("⟳").color(color_rotate))
+                .on_hover_text("Rotate the active molecule by clicking and dragging with the mouse. Scroll to roll. (Hotkey: R)")
+                .clicked() {
+
+                set_manip(&mut state.volatile, scene, redraw_lig,redraw_na, redraw_lipid, ManipMode::Rotate((active_mol_type, active_mol_i)));
+            }
+        }
+
+        if ui
+            .button(RichText::new("Reset posit").color(COLOR_HIGHLIGHT))
+            .on_hover_text(
+                "Move the ligand to its absolute coordinates, e.g. as defined in \
+                    its source mmCIF, Mol2 or SDF file.",
+            )
+            .clicked()
+        {
+            if let Some(mol) = &mut state.active_mol_mut() {
+                mol.common_mut().reset_posits();
+                *redraw_lig = true;
+            }
+        }
+
+        if ui.button("Close").clicked() {
+            *close = true;
+        }
+
+        if let Some(mol) = state.active_mol() {
+            match mol {
+                MoleculeGenericRef::Peptide(m) => {}
+                MoleculeGenericRef::Ligand(l) => {
+                    ui.add_space(COL_SPACING);
+
+                    // todo status color helper?
+                    ui.label("Loaded:");
+                    let color = if l.ff_params_loaded {
+                        Color32::LIGHT_GREEN
+                    } else {
+                        Color32::LIGHT_RED
+                    };
+                    ui.label(RichText::new("FF/q").color(color)).on_hover_text(
+                        "Green if force field names, and partial charges are assigned \
+                for all ligand atoms. Required for ligand moleculer dynamics and docking.",
+                    );
+
+                    ui.add_space(COL_SPACING / 4.);
+
+                    let color = if l.frcmod_loaded {
+                        Color32::LIGHT_GREEN
+                    } else {
+                        Color32::LIGHT_RED
+                    };
+                    ui.label(RichText::new("Frcmod").color(color))
+                        .on_hover_text(
+                            "Green if molecule-specific Amber force field parameters are \
+                loaded for this ligand. Required for ligand molecular dynamics and docking.",
+                        );
+
+                    if let Some(id) = &l.drugbank_id {
+                        if ui.button("View on Drugbank").clicked() {
+                            drugbank::open_overview(id);
+                        }
+                    }
+
+                    if let Some(id) = l.pubchem_cid {
+                        if ui.button("View on PubChem").clicked() {
+                            pubchem::open_overview(id);
+                        }
+                    }
+
+                    if let Some(id) = &l.pdbe_id {
+                        if ui.button("View on PDBe").clicked() {
+                            pdbe::open_overview(id);
+                        }
+                    }
+
+                    if let Some(cid) = l.pubchem_cid {
+                        if ui.button("Find associated structs").clicked() {
+                            // todo: Don't block.
+                            if l.associated_structures.is_empty() {
+                                match pubchem::load_associated_structures(cid) {
+                                    Ok(data) => {
+                                        // todo: Put back! Borrow issue.
+                                        // l.associated_structures = data;
+                                        state.ui.popup.show_associated_structures = true;
+                                    }
+                                    Err(_) => handle_err(
+                                        &mut state.ui,
+                                        "Unable to find structures for this ligand".to_owned(),
+                                    ),
+                                }
+                            } else {
+                                state.ui.popup.show_associated_structures = true;
+                            }
+                        }
+                    }
+                }
+                MoleculeGenericRef::Lipid(l) => {
+                    if ui.button("View on LMSD").clicked() {
+                        lmsd::open_overview(&l.lmsd_id);
+                    }
+                }
+                _ => ()
+            }
+        }
+
+        ui.add_space(COL_SPACING);
+    });
 }

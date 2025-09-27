@@ -20,6 +20,7 @@ use dynamics::{
 use lin_alg::f64::Vec3;
 
 use crate::{
+    lipid::MoleculeLipid,
     mol_lig::MoleculeSmall,
     molecule::{MoleculeCommon, MoleculePeptide},
 };
@@ -33,6 +34,7 @@ pub fn build_dynamics(
     #[cfg(feature = "cuda")] dev: &(ComputationDevice, Option<Arc<CudaModule>>),
     #[cfg(not(feature = "cuda"))] dev: &ComputationDevice,
     ligs: Vec<&mut MoleculeSmall>,
+    lipids: Vec<&mut MoleculeLipid>,
     peptide: Option<&MoleculePeptide>,
     param_set: &FfParamSet,
     mol_specific_params: &HashMap<String, ForceFieldParams>,
@@ -46,26 +48,53 @@ pub fn build_dynamics(
 
     let mut mols = Vec::new();
 
-    for lig in &ligs {
-        if !lig.common.selected_for_md {
+    for mol in &ligs {
+        if !mol.common.selected_for_md {
             continue;
         }
-        let atoms_gen: Vec<_> = lig.common.atoms.iter().map(|a| a.to_generic()).collect();
-        let bonds_gen: Vec<_> = lig.common.bonds.iter().map(|b| b.to_generic()).collect();
+        let atoms_gen: Vec<_> = mol.common.atoms.iter().map(|a| a.to_generic()).collect();
+        let bonds_gen: Vec<_> = mol.common.bonds.iter().map(|b| b.to_generic()).collect();
 
-        let Some(msp) = mol_specific_params.get(&lig.common.ident) else {
+        let Some(msp) = mol_specific_params.get(&mol.common.ident) else {
             return Err(ParamError::new(&format!(
                 "Missing molecule-specific parameters for  {}",
-                lig.common.ident
+                mol.common.ident
             )));
         };
 
         mols.push(MolDynamics {
             ff_mol_type: FfMolType::SmallOrganic,
             atoms: atoms_gen,
-            atom_posits: Some(lig.common.atom_posits.clone()),
+            atom_posits: Some(mol.common.atom_posits.clone()),
             bonds: bonds_gen,
-            adjacency_list: Some(lig.common.adjacency_list.clone()),
+            adjacency_list: Some(mol.common.adjacency_list.clone()),
+            static_: false,
+            bonded_only: false,
+            mol_specific_params: Some(msp.clone()),
+        })
+    }
+
+    // todo: DRY
+    for mol in &ligs {
+        if !mol.common.selected_for_md {
+            continue;
+        }
+        let atoms_gen: Vec<_> = mol.common.atoms.iter().map(|a| a.to_generic()).collect();
+        let bonds_gen: Vec<_> = mol.common.bonds.iter().map(|b| b.to_generic()).collect();
+
+        let Some(msp) = mol_specific_params.get(&mol.common.ident) else {
+            return Err(ParamError::new(&format!(
+                "Missing molecule-specific parameters for  {}",
+                mol.common.ident
+            )));
+        };
+
+        mols.push(MolDynamics {
+            ff_mol_type: FfMolType::Lipid,
+            atoms: atoms_gen,
+            atom_posits: Some(mol.common.atom_posits.clone()),
+            bonds: bonds_gen,
+            adjacency_list: Some(mol.common.adjacency_list.clone()),
             static_: false,
             bonded_only: false,
             mol_specific_params: Some(msp.clone()),
@@ -138,8 +167,6 @@ pub fn build_dynamics(
 
     // We filtered peptide hetero atoms out above. Adjust snapshot indices and atom positions so they
     // are properly synchronized.
-    // todo: Set this up to handle the case of excluding molecules not near the lig as well,
-    // todo if that's set.
     // todo: Delegat this to its own fn A/R.
     {
         println!("Re-assigning snapshot indices to match atoms excluded for MD...");
@@ -176,24 +203,31 @@ pub fn build_dynamics(
                 .map(|l| l.common.atoms.len())
                 .sum();
 
+            let lipid_atom_count: usize = lipids
+                .iter()
+                .filter(|l| l.common.selected_for_md)
+                .map(|l| l.common.atoms.len())
+                .sum();
+
+            let pep_start_i = lig_atom_count + lipid_atom_count;
+
             // Rebuild each snapshot's atom_posits: [ligands as-is] + [full peptide with holes filled]
             for snap in &mut md_state.snapshots {
                 // Iterator over the peptide positions that actually participated in MD
-                let mut pept_md_posits = snap.atom_posits
-                    [lig_atom_count..lig_atom_count + n_included]
-                    .iter()
-                    .cloned();
-                let mut pept_md_vels = snap.atom_velocities
-                    [lig_atom_count..lig_atom_count + n_included]
+                let mut pept_md_posits = snap.atom_posits[pep_start_i..pep_start_i + n_included]
                     .iter()
                     .cloned();
 
-                let mut new_posits = Vec::with_capacity(lig_atom_count + p.common.atoms.len());
-                let mut new_vels = Vec::with_capacity(lig_atom_count + p.common.atoms.len());
+                let mut pept_md_vels = snap.atom_velocities[pep_start_i..pep_start_i + n_included]
+                    .iter()
+                    .cloned();
+
+                let mut new_posits = Vec::with_capacity(pep_start_i + p.common.atoms.len());
+                let mut new_vels = Vec::with_capacity(pep_start_i + p.common.atoms.len());
 
                 // Keep ligand portion unchanged
-                new_posits.extend_from_slice(&snap.atom_posits[..lig_atom_count]);
-                new_vels.extend_from_slice(&snap.atom_velocities[..lig_atom_count]);
+                new_posits.extend_from_slice(&snap.atom_posits[..pep_start_i]);
+                new_vels.extend_from_slice(&snap.atom_velocities[..pep_start_i]);
 
                 // Insert peptide atoms in original index order; use MD-updated posits if included,
                 // otherwise the original (excluded) atom position.
@@ -238,18 +272,22 @@ fn change_snapshot_helper(posits: &mut [Vec3], start_i_this_mol: &mut usize, sna
     *start_i_this_mol += posits.len();
 }
 
-/// Set atom positions for molecules involve in dynamics to that of a snapshot. Ligs are only ones included
+/// Set atom positions for molecules involve in dynamics to that of a snapshot. Ligs and lipids are only ones included
 /// in dynamics.
-// pub fn change_snapshot(peptide: &mut Option<MoleculePeptide>, ligs: Vec<&mut MoleculeSmall>, snapshot: &Snapshot) {
 pub fn change_snapshot(
     peptide: Option<&mut MoleculePeptide>,
     ligs: Vec<&mut MoleculeSmall>,
+    lipids: Vec<&mut MoleculeLipid>,
     snapshot: &Snapshot,
 ) {
     let mut start_i_this_mol = 0;
 
-    for lig in ligs {
-        change_snapshot_helper(&mut lig.common.atom_posits, &mut start_i_this_mol, snapshot);
+    for mol in ligs {
+        change_snapshot_helper(&mut mol.common.atom_posits, &mut start_i_this_mol, snapshot);
+    }
+
+    for mol in lipids {
+        change_snapshot_helper(&mut mol.common.atom_posits, &mut start_i_this_mol, snapshot);
     }
 
     if let Some(mol) = peptide {

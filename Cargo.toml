@@ -9,13 +9,14 @@ egui = "0.32.0"
 
 #egui_tiles = "0.12.0" # For layouts etc. Experimenting
 egui-file-dialog = "0.11.0" #  For file dialogs.
+egui_plot = "0.33.0"  # For Rama plots
 
 cfg-if = "1.0.1"
 
 lin_alg = { version = "1.3.5", features = ["encode"] }
 na_seq = "0.3.7"
 #na_seq = { path = "../na_seq"}
-bio_apis = {  version = "0.1.8", features = ["encode"] }
+bio_apis = {  version = "0.1.9", features = ["encode"] }
 bio_files = "0.3.0"
 mcubes = "0.1.4"
 #dynamics = { version = "0.1.0", features = ["encode"] }

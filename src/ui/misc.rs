@@ -4,13 +4,13 @@ use egui::{Color32, ComboBox, CornerRadius, Frame, Margin, RichText, Slider, Str
 use graphics::{EngineUpdates, Scene};
 const COLOR_SECTION_BOX: Color32 = Color32::from_rgb(100, 100, 140);
 
-use crate::md::change_snapshot;
 use crate::{
     State,
     drawing::{draw_all_ligs, draw_peptide, draw_water},
     // molecule::PeptideAtomPosits,
     ui::{COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_INACTIVE, ROW_SPACING},
 };
+use crate::{drawing::draw_all_lipids, md::change_snapshot};
 
 /// A checkbox to show or hide a category.
 pub fn vis_check(val: &mut bool, text: &str, ui: &mut Ui, redraw: &mut bool) {
@@ -103,6 +103,13 @@ pub fn dynamics_player(
                     .collect();
                 let ligs_len = ligs_md.len();
 
+                let lipids_md: Vec<_> = state
+                    .lipids
+                    .iter_mut()
+                    .filter(|l| l.common.selected_for_md)
+                    .collect();
+                let lipids_len = lipids_md.len();
+
                 let peptide_md = match &mut state.peptide {
                     Some(m) => {
                         if m.common.selected_for_md {
@@ -114,10 +121,14 @@ pub fn dynamics_player(
                     None => None,
                 };
 
-                change_snapshot(peptide_md, ligs_md, snap);
+                change_snapshot(peptide_md, ligs_md, lipids_md, snap);
                 // todo: Only if at least one lig is involved.
                 if ligs_len > 0 {
                     draw_all_ligs(state, scene);
+                }
+
+                if lipids_len > 0 {
+                    draw_all_lipids(state, scene);
                 }
 
                 if let Some(mol) = &state.peptide {

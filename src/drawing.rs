@@ -506,6 +506,10 @@ fn bond_entities(
     } else {
         BOND_RADIUS_LIG_RATIO
     };
+    let adjust_thicknesses = matches!(
+        mol_type,
+        MolType::Ligand | MolType::NucleicAcid | MolType::Lipid
+    );
 
     match bond_type {
         // Draw a normal mesh, the same as a single, and a second thinner and shorter inner one.
@@ -542,12 +546,8 @@ fn bond_entities(
                 (p0, p1, center + offset, (p1 - p0).magnitude() / 2.)
             };
 
-            let thickness_outer = if mol_type == MolType::Ligand {
-                base_radius
-            } else {
-                1.
-            };
-            let thickness_inner = if mol_type == MolType::Ligand {
+            let thickness_outer = if adjust_thicknesses { base_radius } else { 1. };
+            let thickness_inner = if adjust_thicknesses {
                 base_radius * BOND_RADIUS_AR_INNER_RATIO
             } else {
                 BOND_RADIUS_AR_INNER_RATIO
@@ -672,11 +672,7 @@ fn bond_entities(
             let thickness = if bond_type == BondType::Dummy {
                 RADIUS_H_BOND
             } else {
-                if mol_type == MolType::Ligand {
-                    base_radius
-                } else {
-                    1.
-                }
+                if adjust_thicknesses { base_radius } else { 1. }
             };
 
             add_bond(
@@ -900,8 +896,8 @@ pub fn draw_mol(
                     &state_ui.selection,
                     ViewSelLevel::Atom, // Always color lipids by atom.
                     false,
-                    false,
-                    false,
+                    state_ui.res_color_by_index,
+                    state_ui.atom_color_by_charge,
                     mol.mol_type(),
                 );
             }
@@ -985,8 +981,8 @@ pub fn draw_mol(
                 &state_ui.selection,
                 ViewSelLevel::Atom, // Always color ligands by atom.
                 false,
-                false,
-                false,
+                state_ui.res_color_by_index,
+                state_ui.atom_color_by_charge,
                 mol.mol_type(),
             );
             color_1 = atom_color(
@@ -999,8 +995,8 @@ pub fn draw_mol(
                 // state.ui.view_sel_level,
                 ViewSelLevel::Atom, // Always color ligands by atom.
                 false,
-                false,
-                false,
+                state_ui.res_color_by_index,
+                state_ui.atom_color_by_charge,
                 mol.mol_type(),
             );
 
