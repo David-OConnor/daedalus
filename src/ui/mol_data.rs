@@ -93,7 +93,7 @@ pub fn selected_data(
 ) {
     // ui.horizontal_wrapped(|ui| {
     match selection {
-        Selection::Atom(sel_i) => {
+        Selection::AtomPeptide(sel_i) => {
             if let Some(mol) = &state.peptide {
                 if *sel_i >= mol.common.atoms.len() {
                     return;
@@ -291,10 +291,10 @@ pub fn display_mol_data(
             )
             .clicked()
         {
-            let mut mol = state.active_mol_mut().unwrap();
-            mol.common_mut().reset_posits();
-
-            *redraw_lig = true;
+            if let Some(mol) = &mut state.active_mol_mut() {
+                mol.common_mut().reset_posits();
+                *redraw_lig = true;
+            }
         }
 
         if ui.button("Close").clicked() {
@@ -375,7 +375,7 @@ pub fn display_mol_data(
 
         if let Some(peptide) = &state.peptide {
             let res_selected = match state.ui.selection {
-                Selection::Atom(sel_i) => {
+                Selection::AtomPeptide(sel_i) => {
                     let atom = &peptide.common.atoms[sel_i];
                     if let Some(res_i) = &atom.residue {
                         Some(&peptide.residues[*res_i])

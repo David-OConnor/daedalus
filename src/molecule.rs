@@ -357,7 +357,7 @@ impl MoleculePeptide {
     /// todo: Make this work for non-peptides.
     pub fn get_sel_atom(&self, sel: &Selection) -> Option<&Atom> {
         match sel {
-            Selection::Atom(i) => self.common.atoms.get(*i),
+            Selection::AtomPeptide(i) => self.common.atoms.get(*i),
             Selection::AtomLig((mol_i, atom_i)) => None,
             Selection::AtomNucleicAcid((mol_i, atom_i)) => None,
             Selection::AtomLipid((mol_i, atom_i)) => None,

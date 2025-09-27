@@ -273,7 +273,7 @@ pub fn event_dev_handler(
                         cycle_selected(state_, scene, true);
                         if matches!(
                             state_.ui.selection,
-                            Selection::Atom(_) | Selection::Residue(_)
+                            Selection::AtomPeptide(_) | Selection::Residue(_)
                         ) {
                             redraw_protein = true;
                         }
@@ -285,7 +285,7 @@ pub fn event_dev_handler(
                         cycle_selected(state_, scene, false);
                         if matches!(
                             state_.ui.selection,
-                            Selection::Atom(_) | Selection::Residue(_)
+                            Selection::AtomPeptide(_) | Selection::Residue(_)
                         ) {
                             redraw_protein = true;
                         }
@@ -295,6 +295,7 @@ pub fn event_dev_handler(
                     }
                     Code(KeyCode::Escape) => {
                         state_.ui.selection = Selection::None;
+                        state_.volatile.active_mol = None;
                         state_.volatile.mol_manip.mol = ManipMode::None;
                         state_.volatile.mol_manip.pivot = None;
                         scene.input_settings.control_scheme = state_.volatile.control_scheme_prev;
@@ -309,6 +310,8 @@ pub fn event_dev_handler(
                             &mut state_.ui,
                             &state_.peptide,
                             &state_.ligands,
+                            &state_.nucleic_acids,
+                            &state_.lipids,
                             &mut scene.camera,
                             &mut updates,
                         );
@@ -665,13 +668,13 @@ fn handle_mol_manip_in_plane(
                     .into();
 
                 state.volatile.mol_manip.pivot = Some(pivot);
-                state.volatile.mol_manip.pivot_norm = Some(n);
+                state.volatile.mol_manip.view_dir = Some(n);
                 state.volatile.mol_manip.offset = Vec3::new_zero();
             }
 
             // Cached at drag start
             let pivot = state.volatile.mol_manip.pivot.unwrap();
-            let pivot_norm = state.volatile.mol_manip.pivot_norm.unwrap();
+            let pivot_norm = state.volatile.mol_manip.view_dir.unwrap();
             let prev_offset = state.volatile.mol_manip.offset;
 
             // Ray from screen
@@ -783,23 +786,28 @@ fn handle_mol_manip_in_out(
             if state.volatile.mol_manip.pivot.is_none() {
                 let pivot: Vec3 = mol.centroid().into();
 
-                let fwd = scene.camera.orientation.rotate_vec(FWD_VEC).to_normalized();
+                let cam_pos32: Vec3 = scene.camera.position.into();
+                let view_dir = (pivot - cam_pos32).to_normalized();
 
                 state.volatile.mol_manip.pivot = Some(pivot);
-                state.volatile.mol_manip.pivot_norm = Some(fwd);
+                state.volatile.mol_manip.view_dir = Some(view_dir);
                 state.volatile.mol_manip.offset = Vec3::new_zero();
             }
 
-            if let (Some(pivot), Some(pivot_norm)) = (
+            if let (Some(pivot), _) = (
                 state.volatile.mol_manip.pivot,
-                state.volatile.mol_manip.pivot_norm,
+                state.volatile.mol_manip.view_dir,
             ) {
                 let cam_pos32: Vec3 = scene.camera.position.into();
-                let dist = (pivot - cam_pos32).magnitude();
 
+                let view_dir = (pivot - cam_pos32).to_normalized();
+                state.volatile.mol_manip.view_dir = Some(view_dir);
+
+                let dist = (pivot - cam_pos32).magnitude();
                 let step = SENS_MOL_MOVE_SCROLL * dist;
 
-                let dv = pivot_norm * (scroll * step);
+                // let dv = pivot_norm * (scroll * step);
+                let dv = view_dir * (scroll * step);
 
                 {
                     let dv64: Vec3F64 = dv.into();
@@ -824,9 +832,9 @@ fn handle_mol_manip_in_out(
                     let (ray_origin, ray_point) = scene.screen_to_render(cursor);
                     let rd = (ray_point - ray_origin).to_normalized();
 
-                    let denom = rd.dot(pivot_norm);
+                    let denom = rd.dot(view_dir);
                     if denom.abs() > 1e-6 {
-                        let t = pivot_norm.dot(new_pivot - ray_origin) / denom;
+                        let t = view_dir.dot(new_pivot - ray_origin) / denom;
                         if t > 0.0 {
                             let hit = ray_origin + rd * t;
                             state.volatile.mol_manip.offset = hit - new_pivot;

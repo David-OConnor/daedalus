@@ -19,13 +19,15 @@ use crate::{
     CamSnapshot, ManipMode, PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel,
     download_mols::load_cif_rcsb,
     drawing::{
-        EntityType, MoleculeView, draw_all_ligs, draw_density_point_cloud, draw_density_surface,
-        draw_peptide,
+        EntityType, MoleculeView, draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids,
+        draw_density_point_cloud, draw_density_surface, draw_peptide,
     },
+    lipid::{Lipid, MoleculeLipid},
     mol_lig::MoleculeSmall,
     molecule::{
         Atom, Bond, MolType, MoleculeCommon, MoleculeGenericRefMut, MoleculePeptide, Residue,
     },
+    nucleic_acid::MoleculeNucleicAcid,
     prefs::OpenType,
     render::{
         CAM_INIT_OFFSET, Color, MESH_DENSITY_SURFACE, MESH_SECONDARY_STRUCTURE,
@@ -106,7 +108,7 @@ pub fn select_from_search(state: &mut State) {
             for (i, atom) in mol.common.atoms.iter().enumerate() {
                 // if query.contains(&atom.serial_number.to_string()) {
                 if query == &atom.serial_number.to_string() {
-                    state.ui.selection = Selection::Atom(i);
+                    state.ui.selection = Selection::AtomPeptide(i);
                     return;
                 }
             }
@@ -145,7 +147,7 @@ pub fn cycle_selected(state: &mut State, scene: &mut Scene, reverse: bool) {
     // todo: DRY between atom and res.
     match state.ui.view_sel_level {
         ViewSelLevel::Atom => match state.ui.selection {
-            Selection::Atom(atom_i) => {
+            Selection::AtomPeptide(atom_i) => {
                 for chain in &mol.chains {
                     if chain.atoms.contains(&atom_i) {
                         let mut new_atom_i = atom_i as isize;
@@ -155,7 +157,7 @@ pub fn cycle_selected(state: &mut State, scene: &mut Scene, reverse: bool) {
                             new_atom_i += dir;
                             let nri = new_atom_i as usize;
                             if chain.atoms.contains(&nri) {
-                                state.ui.selection = Selection::Atom(nri);
+                                state.ui.selection = Selection::AtomPeptide(nri);
                                 break;
                             }
                         }
@@ -180,7 +182,7 @@ pub fn cycle_selected(state: &mut State, scene: &mut Scene, reverse: bool) {
             }
             _ => {
                 if !mol.common.atoms.is_empty() {
-                    state.ui.selection = Selection::Atom(0);
+                    state.ui.selection = Selection::AtomPeptide(0);
                 }
             }
         },
@@ -272,7 +274,7 @@ pub fn bond_angle(atoms: &[Atom], bond_0: &Bond, bond_1: &Bond) -> f64 {
 pub fn orbit_center(state: &State) -> Vec3F32 {
     if state.ui.orbit_around_selection {
         match &state.ui.selection {
-            Selection::Atom(i) => {
+            Selection::AtomPeptide(i) => {
                 if let Some(mol) = &state.peptide {
                     match mol.common.atoms.get(*i) {
                         Some(a) => a.posit.into(),
@@ -552,36 +554,70 @@ pub fn close_mol(
     scene: &mut Scene,
     engine_updates: &mut EngineUpdates,
 ) {
-    if i >= state.ligands.len() {
-        eprintln!("Error: Invalid lig index");
-        return;
-    }
-
-    let path = state.ligands[i].common.path.clone();
-
-    state.ligands.remove(i);
-
-    if !state.ligands.is_empty() {
-        state.volatile.active_mol = Some((MolType::Ligand, state.ligands.len() - 1));
-    }
-
     state.volatile.mol_manip.mol = ManipMode::None;
-
-    draw_all_ligs(state, scene);
-
     engine_updates.entities = true;
 
-    if let Some(path) = path {
-        for history in &mut state.to_save.open_history {
-            if let OpenType::Ligand = history.type_ {
-                if history.path == path {
-                    history.last_session = false;
+    match mol_type {
+        MolType::Ligand => {
+            if i >= state.ligands.len() {
+                eprintln!("Error: Invalid lig index");
+                return;
+            }
+
+            let path = state.ligands[i].common.path.clone();
+
+            state.ligands.remove(i);
+
+            if !state.ligands.is_empty() {
+                state.volatile.active_mol = Some((MolType::Ligand, state.ligands.len() - 1));
+            }
+
+            draw_all_ligs(state, scene);
+
+            if let Some(path) = path {
+                for history in &mut state.to_save.open_history {
+                    if let OpenType::Ligand = history.type_ {
+                        if history.path == path {
+                            history.last_session = false;
+                        }
+                    }
                 }
             }
-        }
-    }
 
-    state.update_save_prefs(false);
+            state.update_save_prefs(false);
+        }
+        // todo: DRY
+        MolType::NucleicAcid => {
+            if i >= state.nucleic_acids.len() {
+                eprintln!("Error: Invalid nucleic acid index");
+                return;
+            }
+
+            state.nucleic_acids.remove(i);
+
+            if !state.nucleic_acids.is_empty() {
+                state.volatile.active_mol =
+                    Some((MolType::NucleicAcid, state.nucleic_acids.len() - 1));
+            }
+
+            draw_all_nucleic_acids(state, scene);
+        }
+        MolType::Lipid => {
+            if i >= state.lipids.len() {
+                eprintln!("Error: Invalid lipid index");
+                return;
+            }
+
+            state.lipids.remove(i);
+
+            if !state.lipids.is_empty() {
+                state.volatile.active_mol = Some((MolType::Lipid, state.lipids.len() - 1));
+            }
+
+            draw_all_lipids(state, scene);
+        }
+        _ => unimplemented!(),
+    }
 }
 
 /// Populate the electron-density mesh (isosurface). This assumes the density_rect is already set up.
@@ -850,23 +886,37 @@ pub fn move_cam_to_sel(
     state_ui: &mut StateUi,
     mol_: &Option<MoleculePeptide>,
     ligs: &[MoleculeSmall],
+    nucleic_acids: &[MoleculeNucleicAcid],
+    lipids: &[MoleculeLipid],
     cam: &mut Camera,
     engine_updates: &mut EngineUpdates,
 ) {
-    if let Selection::AtomLig((i_mol, i_atom)) = &state_ui.selection {
-        cam_look_at(cam, ligs[*i_mol].common.atom_posits[*i_atom]);
-        engine_updates.camera = true;
-        state_ui.cam_snapshot = None;
-    } else {
-        let Some(mol) = mol_ else {
-            return;
-        };
-        let atom_sel = mol.get_sel_atom(&state_ui.selection);
+    match &state_ui.selection {
+        Selection::AtomPeptide(_i_atom) => {
+            let Some(mol) = mol_ else {
+                return;
+            };
+            let atom_sel = mol.get_sel_atom(&state_ui.selection);
 
-        if let Some(atom) = atom_sel {
-            cam_look_at(cam, atom.posit);
-            engine_updates.camera = true;
-            state_ui.cam_snapshot = None;
+            if let Some(atom) = atom_sel {
+                cam_look_at(cam, atom.posit);
+            }
         }
+        Selection::AtomLig((i_mol, i_atom)) => {
+            cam_look_at(cam, ligs[*i_mol].common.atom_posits[*i_atom]);
+        }
+        Selection::AtomNucleicAcid((i_mol, i_atom)) => {
+            // if *i_mol >= nucleic_acids.len() {
+            //     return;
+            // }
+            cam_look_at(cam, nucleic_acids[*i_mol].common.atom_posits[*i_atom]);
+        }
+        Selection::AtomLipid((i_mol, i_atom)) => {
+            cam_look_at(cam, lipids[*i_mol].common.atom_posits[*i_atom]);
+        }
+        _ => unimplemented!(),
     }
+
+    engine_updates.camera = true;
+    state_ui.cam_snapshot = None;
 }

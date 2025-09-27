@@ -203,7 +203,7 @@ pub fn find_selected_atom(
 
     match ui.view_sel_level {
         ViewSelLevel::Atom => match nearest.mol_type {
-            MolType::Peptide => Selection::Atom(nearest.atom_i),
+            MolType::Peptide => Selection::AtomPeptide(nearest.atom_i),
             MolType::Ligand => Selection::AtomLig((nearest.mol_i, nearest.atom_i)),
             MolType::NucleicAcid => Selection::AtomNucleicAcid((nearest.mol_i, nearest.atom_i)),
             MolType::Lipid => Selection::AtomLipid((nearest.mol_i, nearest.atom_i)),

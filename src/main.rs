@@ -191,7 +191,7 @@ struct MolManip {
     mol: ManipMode,
     /// For maintaining the screen plane when dragging the mol.
     pivot: Option<Vec3>,
-    pivot_norm: Option<Vec3>,
+    view_dir: Option<Vec3>,
     offset: Vec3,
     depth_bias: f32,
 }
@@ -401,7 +401,7 @@ pub enum Selection {
     #[default]
     None,
     /// Of the protein
-    Atom(usize),
+    AtomPeptide(usize),
     /// Of the protein
     Residue(usize),
     /// Of the protein

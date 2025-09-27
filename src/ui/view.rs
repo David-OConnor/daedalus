@@ -53,32 +53,34 @@ pub fn view_settings(
 
             ui.label("Vis:");
 
-            misc::vis_check(
-                &mut state.ui.visibility.hide_non_hetero,
-                "Peptide",
-                ui,
-                redraw_peptide,
-            );
-            misc::vis_check(
-                &mut state.ui.visibility.hide_hetero,
-                "Hetero",
-                ui,
-                redraw_peptide,
-            );
-
-            ui.add_space(COL_SPACING / 2.);
-
-            if !state.ui.visibility.hide_non_hetero {
-                // Subset of peptide.
+            if state.peptide.is_some() {
                 misc::vis_check(
-                    &mut state.ui.visibility.hide_sidechains,
-                    "Sidechains",
+                    &mut state.ui.visibility.hide_non_hetero,
+                    "Peptide",
                     ui,
                     redraw_peptide,
                 );
+                misc::vis_check(
+                    &mut state.ui.visibility.hide_hetero,
+                    "Hetero",
+                    ui,
+                    redraw_peptide,
+                );
+
+                ui.add_space(COL_SPACING / 2.);
+
+                if !state.ui.visibility.hide_non_hetero {
+                    // Subset of peptide.
+                    misc::vis_check(
+                        &mut state.ui.visibility.hide_sidechains,
+                        "Sidechains",
+                        ui,
+                        redraw_peptide,
+                    );
+                }
             }
 
-            let mut hide_hydrogen_prev = state.ui.visibility.hide_hydrogen;
+            let hide_hydrogen_prev = state.ui.visibility.hide_hydrogen;
             misc::vis_check(
                 &mut state.ui.visibility.hide_hydrogen,
                 "H",
@@ -180,31 +182,31 @@ pub fn view_settings(
                 }
             }
 
-            ui.add_space(COL_SPACING);
-            // todo temp
-            if ui.button("Load DNA").clicked() {
-                if let Some(mol) = &state.peptide {
-                    state.nucleic_acids = vec![MoleculeNucleicAcid::from_peptide(
-                        &mol,
-                        NucleicAcidType::Dna,
-                        Strands::Single,
-                    )];
-                }
-                draw_all_nucleic_acids(state, scene);
-                engine_updates.entities = true;
-            }
-
-            if ui.button("Load RNA").clicked() {
-                if let Some(mol) = &state.peptide {
-                    state.nucleic_acids = vec![MoleculeNucleicAcid::from_peptide(
-                        &mol,
-                        NucleicAcidType::Rna,
-                        Strands::Single,
-                    )];
-                }
-                draw_all_nucleic_acids(state, scene);
-                engine_updates.entities = true;
-            }
+            // ui.add_space(COL_SPACING);
+            // // todo temp
+            // if ui.button("Load DNA").clicked() {
+            //     if let Some(mol) = &state.peptide {
+            //         state.nucleic_acids = vec![MoleculeNucleicAcid::from_peptide(
+            //             &mol,
+            //             NucleicAcidType::Dna,
+            //             Strands::Single,
+            //         )];
+            //     }
+            //     draw_all_nucleic_acids(state, scene);
+            //     engine_updates.entities = true;
+            // }
+            //
+            // if ui.button("Load RNA").clicked() {
+            //     if let Some(mol) = &state.peptide {
+            //         state.nucleic_acids = vec![MoleculeNucleicAcid::from_peptide(
+            //             &mol,
+            //             NucleicAcidType::Rna,
+            //             Strands::Single,
+            //         )];
+            //     }
+            //     draw_all_nucleic_acids(state, scene);
+            //     engine_updates.entities = true;
+            // }
 
             if let Some(mol) = &state.peptide {
                 if let Some(dens) = &mol.elec_density {

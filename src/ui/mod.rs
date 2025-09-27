@@ -416,7 +416,7 @@ fn residue_search(
             cycle_selected(state, scene, true);
             if matches!(
                 state.ui.selection,
-                Selection::Atom(_) | Selection::Residue(_)
+                Selection::AtomPeptide(_) | Selection::Residue(_)
             ) {
                 *redraw = true;
             }
@@ -434,7 +434,7 @@ fn residue_search(
             cycle_selected(state, scene, false);
             if matches!(
                 state.ui.selection,
-                Selection::Atom(_) | Selection::Residue(_)
+                Selection::AtomPeptide(_) | Selection::Residue(_)
             ) {
                 *redraw = true;
             }
@@ -510,7 +510,7 @@ fn selection_section(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
                     match state.ui.view_sel_level {
                         ViewSelLevel::Residue => {
                             state.ui.selection = match state.ui.selection {
-                                Selection::Atom(i) => {
+                                Selection::AtomPeptide(i) => {
                                     Selection::Residue(mol.common.atoms[i].residue.unwrap_or_default())
                                 }
                                 _ => Selection::None,
@@ -525,7 +525,7 @@ fn selection_section(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
                                         Selection::None
                                     } else {
                                         if mol.residues[i].atoms.len() <= 2 {
-                                            Selection::Atom(mol.residues[i].atoms[1])
+                                            Selection::AtomPeptide(mol.residues[i].atoms[1])
                                         } else {
                                             Selection::None
                                         }
@@ -1262,14 +1262,12 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         ui.add_space(ROW_SPACING);
 
-        let mut close_ligand = false; // to avoid borrow error.
-        let mut close_na = false; // to avoid borrow error.
-        let mut close_lipid = false; // to avoid borrow error.
+        let mut close_active_mol = false; // to avoid borrow error.
 
         // display_small_mol_data(state, scene, ui, &mut redraw_lig, &mut close_ligand, &mut engine_updates);
         // if let Some(mol) = &state.active_mol() {
         if state.active_mol().is_some() {
-            display_mol_data(state, scene, ui, &mut redraw_lig, &mut redraw_na, &mut redraw_lipid, &mut close_ligand, &mut engine_updates);
+            display_mol_data(state, scene, ui, &mut redraw_lig, &mut redraw_na, &mut redraw_lipid, &mut close_active_mol, &mut engine_updates);
         }
         // };
         // display_mol_data(state, scene, ui, MolType::Ligand, &mut redraw_lig,
@@ -1494,7 +1492,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         // -------UI above; clean-up items (based on flags) below
 
-        if close_ligand {
+        if close_active_mol {
             if let Some((mol_type, i)) = state.volatile.active_mol {
                 close_mol(mol_type, i, state, scene, &mut engine_updates);
             }

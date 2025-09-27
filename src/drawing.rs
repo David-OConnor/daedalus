@@ -353,7 +353,7 @@ fn atom_color(
 
     // If selected, the selected color overrides the element or residue color.
     match selection {
-        Selection::Atom(sel_i) => {
+        Selection::AtomPeptide(sel_i) => {
             if mol_type == MolType::Peptide && *sel_i == i {
                 result = COLOR_SELECTED;
             }

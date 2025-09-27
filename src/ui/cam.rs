@@ -160,7 +160,7 @@ pub fn cam_controls(
                         .on_hover_text("(Hotkey: Enter) Move camera near the selected atom or residue, looking at it.")
                         .clicked()
                     {
-                        move_cam_to_sel(&mut state.ui, &state.peptide, &state.ligands, &mut scene.camera, engine_updates);
+                        move_cam_to_sel(&mut state.ui, &state.peptide, &state.ligands, &state.nucleic_acids, &state.lipids, &mut scene.camera, engine_updates);
                     }
                 }
 

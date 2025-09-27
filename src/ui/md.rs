@@ -12,7 +12,9 @@ use crate::{
     State,
     drawing::{draw_peptide, draw_water},
     md::build_dynamics,
-    ui::{COL_SPACING, cam::move_cam_to_lig, flag_btn, misc, num_field},
+    ui::{
+        COL_SPACING, COLOR_ACTIVE, COLOR_INACTIVE, cam::move_cam_to_lig, flag_btn, misc, num_field,
+    },
     util::{clear_cli_out, handle_err, handle_success},
 };
 
@@ -24,7 +26,7 @@ pub fn md_setup(
 ) {
     misc::section_box().show(ui, |ui| {
         ui.horizontal(|ui| {
-            ui.label("Select for MD:");
+            ui.label("MD:");
             if let Some(mol) = &mut state.peptide {
                 flag_btn(&mut mol.common.selected_for_md, &mol.common.ident, "Toggle if we use this molecule for MD.", ui);
 
@@ -33,6 +35,22 @@ pub fn md_setup(
                     flag_btn(&mut state.ui.md.peptide_only_near_ligs, "Pep only near lig", "Only model the subset of peptide atoms near a small molecule", ui);
                     flag_btn(&mut state.ui.md.peptide_static, "Pep static", "Let peptide (protein) atoms affect other molecules, but they don't move themselves", ui);
                 }
+            }
+
+            if !state.lipids.is_empty() {
+                let prev_val = state.lipids[0].common.selected_for_md;
+                let color = if prev_val { COLOR_ACTIVE } else { COLOR_INACTIVE };
+                if ui
+                    .button(RichText::new("All lipids").color(color))
+                    .on_hover_text("Select all lipids for MD")
+                    .clicked()
+                {
+                    for l in &mut state.lipids {
+                        l.common.selected_for_md = !prev_val;
+                    }
+                }
+
+
             }
 
             for mol in &mut state.ligands {
@@ -233,9 +251,12 @@ pub fn md_setup(
             // int_field_usize(&mut state.to_save.md_config.snapshot_ratio_file, "Snapshot ratio:", ui);
 
 
-            ui.label("Solvent pad (Å):");
+            let hover_text = "Set the minimum distance to pad the molecule in water atoms. Large values \
+            can be more realistic, but significantly increase computation time.";
+            ui.label("Solvent pad (Å):").on_hover_text(hover_text);
             if ui
                 .add_sized([22., Ui::available_height(ui)], TextEdit::singleline(&mut state.ui.md.simbox_pad_input))
+                .on_hover_text(hover_text)
                 .changed()
             {
                 if let Ok(v) = &mut state.ui.md.simbox_pad_input.parse::<f32>() {
