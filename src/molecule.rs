@@ -805,6 +805,7 @@ impl Atom {
         AtomGeneric {
             serial_number: self.serial_number,
             type_in_res: self.type_in_res.clone(),
+            type_in_res_lipid: self.type_in_res_lipid.clone(),
             posit: self.posit,
             element: self.element,
             partial_charge: self.partial_charge,
@@ -828,6 +829,7 @@ impl From<&AtomGeneric> for Atom {
             posit: atom.posit,
             element: atom.element,
             type_in_res: atom.type_in_res.clone(),
+            type_in_res_lipid: atom.type_in_res_lipid.clone(),
             role,
             partial_charge: atom.partial_charge,
             force_field_type: atom.force_field_type.clone(),

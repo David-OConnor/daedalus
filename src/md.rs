@@ -1,14 +1,6 @@
 //! An interface to dynamics library.
 
-use std::{
-    collections::HashMap,
-    sync::{
-        Arc,
-        mpsc::{self, Receiver},
-    },
-    thread,
-    time::Instant,
-};
+use std::{collections::HashMap, sync::Arc, time::Instant};
 
 use bio_files::{create_bonds, md_params::ForceFieldParams};
 #[cfg(feature = "cuda")]
@@ -19,11 +11,7 @@ use dynamics::{
 };
 use lin_alg::f64::Vec3;
 
-use crate::{
-    lipid::MoleculeLipid,
-    mol_lig::MoleculeSmall,
-    molecule::{MoleculeCommon, MoleculePeptide},
-};
+use crate::{lipid::MoleculeLipid, mol_lig::MoleculeSmall, molecule::MoleculePeptide};
 
 // Å. Static atoms must be at least this close to a dynamic atom at the start of MD to be counted.
 // Set this wide to take into account motion.
@@ -75,19 +63,12 @@ pub fn build_dynamics(
     }
 
     // todo: DRY
-    for mol in &ligs {
+    for mol in &lipids {
         if !mol.common.selected_for_md {
             continue;
         }
         let atoms_gen: Vec<_> = mol.common.atoms.iter().map(|a| a.to_generic()).collect();
         let bonds_gen: Vec<_> = mol.common.bonds.iter().map(|b| b.to_generic()).collect();
-
-        let Some(msp) = mol_specific_params.get(&mol.common.ident) else {
-            return Err(ParamError::new(&format!(
-                "Missing molecule-specific parameters for  {}",
-                mol.common.ident
-            )));
-        };
 
         mols.push(MolDynamics {
             ff_mol_type: FfMolType::Lipid,
@@ -97,7 +78,7 @@ pub fn build_dynamics(
             adjacency_list: Some(mol.common.adjacency_list.clone()),
             static_: false,
             bonded_only: false,
-            mol_specific_params: Some(msp.clone()),
+            mol_specific_params: None,
         })
     }
 

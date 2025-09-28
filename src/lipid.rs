@@ -4,6 +4,7 @@
 
 use std::{
     collections::HashMap,
+    f64::consts::TAU,
     fmt::{Display, Formatter},
 };
 
@@ -11,7 +12,7 @@ use bio_files::{
     BondType::{self, *},
     LipidStandard,
 };
-use lin_alg::f64::{Quaternion, Vec3};
+use lin_alg::f64::{Quaternion, Vec3, Y_VEC, Z_VEC};
 use na_seq::Element::{self, *};
 use rand::{Rng, distr::Uniform, rngs::ThreadRng};
 
@@ -30,8 +31,8 @@ use crate::molecule::{Atom, Bond, MoleculeCommon, build_adjacency_list};
 
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub enum LipidShape {
-    #[default]
     Free,
+    #[default]
     Membrane,
     Lnp,
 }
@@ -49,7 +50,7 @@ impl Display for LipidShape {
 }
 
 /// Hard-coded for E. Coli membrane protein for now.
-pub fn get_lipid_from_distro(
+pub fn get_headgroup_from_distro(
     templates: &[MoleculeLipid],
     rng: &mut ThreadRng,
     uni: &Uniform<f32>,
@@ -70,6 +71,89 @@ pub fn get_lipid_from_distro(
     templates[standard as usize].clone()
 }
 
+/// Identify an atom in a molecule from its type-in-res.
+fn find_atom_by_tir(m: &MoleculeLipid, name: &str) -> usize {
+    m.common
+        .atoms
+        .iter()
+        .position(|a| a.type_in_res_lipid.as_deref() == Some(name))
+        .expect(name)
+}
+
+// todo: QC and clean this up
+/// Bonds a phospholipid head's O11 to Acyl C1 (Carbonyl carbon). Bonds Head's O21 to other acyl C1.
+fn combine_head_tail(head: &mut MoleculeLipid, tail_0: MoleculeLipid, tail_1: MoleculeLipid) {
+    // Head joining atoms.
+    let o11_i = find_atom_by_tir(&head, "O11");
+    let o21_i = find_atom_by_tir(&head, "O21");
+    // todo: QC these names.
+    let t0_c1_i = find_atom_by_tir(&tail_0, "C110");
+    let t1_c1_i = find_atom_by_tir(&tail_1, "C110");
+
+    let o11_sn = head.common.atoms[o11_i].serial_number;
+    let o21_sn = head.common.atoms[o21_i].serial_number;
+    let t0_c1_sn = tail_0.common.atoms[t0_c1_i].serial_number;
+    let t1_c1_sn = tail_1.common.atoms[t1_c1_i].serial_number;
+
+    let o11_posit = head.common.atoms[o11_i].posit;
+    let o21_posit = head.common.atoms[o21_i].posit;
+
+    for atom in tail_0.common.atoms {
+        let at = Atom {
+            posit: atom.posit + o11_posit,
+            ..atom
+        };
+        head.common.atoms.push(at);
+    }
+    for atom in tail_1.common.atoms {
+        let at = Atom {
+            posit: atom.posit + o21_posit,
+            ..atom
+        };
+        head.common.atoms.push(at);
+    }
+
+    // Create ester bonds: O11–C1 (sn-1), O21–C1 (sn-2)
+    // Adjust this to your actual Bond struct if needed.
+    head.common.bonds.push(Bond {
+        atom_0: o11_i,
+        atom_0_sn: o11_sn,
+        atom_1: t0_c1_i,
+        atom_1_sn: t0_c1_sn,
+        bond_type: Single,
+        is_backbone: false,
+    });
+
+    head.common.bonds.push(Bond {
+        atom_0: o21_i,
+        atom_0_sn: o21_sn,
+        atom_1: t1_c1_i,
+        atom_1_sn: t1_c1_sn,
+        bond_type: Single,
+        is_backbone: false,
+    });
+
+    // todo: Instead of rebulding the adjacency list, you could update it procedurally. For now,
+    // todo doing this as it's safer. That would be faster
+    head.common.build_adjacency_list();
+    head.common.atom_posits = head.common.atoms.iter().map(|a| a.posit).collect();
+
+    // head.common.adjacency_list[o11_i].push(t0_c1);
+    // head.common.adjacency_list[t0_c1].push(o11_i);
+    // head.common.adjacency_list[o21_i].push(t1_c1);
+    // head.common.adjacency_list[t1_c1].push(o21_i);
+
+    head.lmsd_id = format!("{}/{}", head.lmsd_id, tail_0.lmsd_id);
+    head.common_name = format!("{}/{}", head.common_name, tail_0.common_name);
+    head.hmdb_id = format!("{}/{}", head.hmdb_id, tail_0.hmdb_id);
+    head.kegg_id = format!("{}/{}", head.kegg_id, tail_0.kegg_id);
+
+    // Optional: derive an ident for the combined lipid
+    // e.g., "PE(PA/OL)" if head is PE and tails are PA+OL (requires you to carry residue names somewhere).
+    // Keeping ident as the head's ident to avoid changing your existing logic:
+    // head.common.ident = head.common.ident;
+}
+
 /// todo: Hard-coded for E. coli for now.
 pub fn make_bacterial_lipids(
     n_mols: usize,
@@ -79,18 +163,21 @@ pub fn make_bacterial_lipids(
 ) -> Vec<MoleculeLipid> {
     let mut rng = rand::rng();
     let uni = Uniform::<f32>::new(0.0, 1.0).unwrap();
-
-    for t in templates {
-        println!("T: {:?}", t.common.ident);
-    }
+    let angle = Uniform::<f64>::new(0.0, TAU).unwrap();
 
     let mut result = Vec::new();
 
-    match shape {
-        LipidShape::Free => {
-            for _ in 0..n_mols {
-                let mut mol = get_lipid_from_distro(templates, &mut rng, &uni);
+    for i in 0..n_mols {
+        let mut mol = get_headgroup_from_distro(templates, &mut rng, &uni);
 
+        // For now, hardcoding PA + OL tails (POPE and POPG)
+        let chain_0 = templates[LipidStandard::Pa as usize].clone();
+        let chain_1 = templates[LipidStandard::Ol as usize].clone();
+
+        combine_head_tail(&mut mol, chain_0, chain_1);
+
+        match shape {
+            LipidShape::Free => {
                 let rot = {
                     let w: f64 = rng.random();
                     let x: f64 = rng.random();
@@ -118,44 +205,52 @@ pub fn make_bacterial_lipids(
 
                 result.push(mol);
             }
-        }
-        LipidShape::Membrane => {
-            // These are head-to-head distances.
-            // todo: Consts A/R
-            // Note: Area per lipid (APL) is ~60–62 Å² per lipid at ~37 °C.
-            const HEADGROUP_SPACING: f64 = 7.9; // 7.8-8.4Å
-            const DIST_ACROSS_MEMBRANE: f64 = 38.; // 36-39Å phosphate-to-phosphate
+            LipidShape::Membrane => {
+                // These are head-to-head distances.
+                // todo: Consts A/R
+                // Note: Area per lipid (APL) is ~60–62 Å² per lipid at ~37 °C.
+                const HEADGROUP_SPACING: f64 = 7.9; // 7.8-8.4Å
+                const DIST_ACROSS_MEMBRANE: f64 = 38.; // 36-39Å phosphate-to-phosphate
 
-            let n_rows = n_mols.isqrt();
-            let n_cols = (n_mols + n_rows - 1) / n_rows; // ceil(n_mols / n_rows)
+                let n_rows = n_mols.isqrt();
+                let n_cols = (n_mols + n_rows - 1) / n_rows; // ceil(n_mols / n_rows)
 
-            // start in the top-left so the grid is centered on `center`
-            let mut p = center
-                - Vec3::new(
-                    (n_cols as f64 - 1.0) * 0.5 * HEADGROUP_SPACING,
-                    (n_rows as f64 - 1.0) * 0.5 * HEADGROUP_SPACING,
-                    0.0,
-                );
-            let mut row_start = p;
+                // start in the top-left so the grid is centered on `center`
+                let mut p = center
+                    - Vec3::new(
+                        (n_cols as f64 - 1.0) * 0.5 * HEADGROUP_SPACING,
+                        (n_rows as f64 - 1.0) * 0.5 * HEADGROUP_SPACING,
+                        0.0,
+                    );
+                let mut row_start = p;
 
-            for i in 0..n_mols {
-                let mut mol = get_lipid_from_distro(templates, &mut rng, &uni);
+                // We rotate based on the original amber orientation, to have tails up and down
+                // along the Y axis.
+
+                // todo: PE and PGS seem to need opposite rotations.
+                let rotator = Quaternion::from_axis_angle(Z_VEC, -TAU / 4.);
+
+                // Apply an arbitrary rotation along the head/tail axis.
+                let rot_z = Quaternion::from_axis_angle(Y_VEC, rng.sample(angle));
+
+                mol.common.rotate(rot_z * rotator);
+
                 for posit in &mut mol.common.atom_posits {
                     *posit = *posit + p;
                 }
                 result.push(mol);
 
                 // advance across the row (columns go along +Y per your original code)
-                p += Vec3::new(0.0, HEADGROUP_SPACING, 0.0);
+                p.x += HEADGROUP_SPACING;
 
                 // wrap to next row after filling `n_cols` entries
                 if (i + 1) % n_cols == 0 {
-                    row_start.x += HEADGROUP_SPACING;
+                    row_start.z += HEADGROUP_SPACING;
                     p = Vec3::new(row_start.x, row_start.y, row_start.z);
                 }
             }
+            LipidShape::Lnp => {}
         }
-        LipidShape::Lnp => {}
     }
 
     result
