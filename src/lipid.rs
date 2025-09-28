@@ -10,13 +10,15 @@ use std::{
 
 use bio_files::{
     BondType::{self, *},
-    LipidStandard,
+    LipidStandard, ResidueEnd, ResidueType,
 };
+use dynamics::Dihedral;
+use egui::Key::Q;
 use lin_alg::f64::{Quaternion, Vec3, Y_VEC, Z_VEC};
 use na_seq::Element::{self, *};
 use rand::{Rng, distr::Uniform, rngs::ThreadRng};
 
-use crate::molecule::{Atom, Bond, MoleculeCommon, build_adjacency_list};
+use crate::molecule::{Atom, Bond, MoleculeCommon, Residue, build_adjacency_list};
 
 // todo: These are the fields after posit. Sometimes seem to be filled in. Should we use them?
 // todo: Charge code and atom stero parity seem to be filled out.
@@ -53,8 +55,10 @@ impl Display for LipidShape {
 }
 
 /// Hard-coded for E. Coli membrane protein for now.
-pub fn get_headgroup_from_distro(
-    templates: &[MoleculeLipid],
+/// Note: Natural bacteria almost always use PGS (?)
+pub fn get_mol_from_distro(
+    pe: &MoleculeLipid,
+    pg: &MoleculeLipid,
     rng: &mut ThreadRng,
     uni: &Uniform<f32>,
 ) -> MoleculeLipid {
@@ -62,16 +66,22 @@ pub fn get_headgroup_from_distro(
     // todo: teh result is balance.d
 
     let v = rng.sample(uni);
-    let mut standard = LipidStandard::Pe;
+    let mut lipid_std = LipidStandard::Pe;
+
     if v > 0.75 && v < 0.93 {
-        standard = LipidStandard::Pgs; // todo: Or pgr? Protenation variants
+        lipid_std = LipidStandard::Pgs; // For Pgs or Pgr.
     } else if v >= 0.93 {
         // todo: Placeholder; Amber doesn't have cardiolipin.
         // standard = LipidStandard::Cardiolipin;
-        standard = LipidStandard::Pe;
+        lipid_std = LipidStandard::Pe;
     }
 
-    templates[standard as usize].clone()
+    match lipid_std {
+        LipidStandard::Pe => pe.clone(),
+        LipidStandard::Pgs => pg.clone(),
+        // todo: Cardiolipin too once you have a template.
+        _ => unreachable!(),
+    }
 }
 
 /// Identify an atom in a molecule from its type-in-res.
@@ -85,6 +95,9 @@ fn find_atom_by_tir(m: &MoleculeLipid, name: &str) -> usize {
 
 /// Bonds a phospholipid head's O11 to Acyl C1 (Carbonyl carbon). Bonds Head's O21 to other acyl C1.
 /// Moves all atoms so that the head's phosphorous is at the origin.
+///
+/// Note: This makes new names like "PE(16:0/18:1) — also written as PE(PA/OL) or 1-palmitoyl-2-oleoyl-PE."
+/// todo: LMSD ID: LMGP02010009 ?
 fn combine_head_tail(
     head: &mut MoleculeLipid,
     mut tail_0: MoleculeLipid,
@@ -108,6 +121,27 @@ fn combine_head_tail(
     let t0_c1_posit = tail_0.common.atoms[t0_anchor].posit;
     let t1_c1_posit = tail_1.common.atoms[t1_anchor].posit;
 
+    // Todo: Consider adding these prepared combinations to templates instead
+    // todo of creating them each time.
+
+    {
+        // Rotate the tails; they are initially reversed relative to the head.
+        let rotator = Quaternion::from_axis_angle(Z_VEC, TAU / 2.);
+
+        tail_0.common.rotate(rotator, Some(t0_anchor));
+        tail_1.common.rotate(rotator, Some(t1_anchor));
+
+        // We normally only rotate the atom positions; that's what these functions do.
+        // Because we're modifying the initial "reset" positions of the atoms, load these back into
+        // the Atom structs.
+        for (i, atom) in tail_0.common.atoms.iter_mut().enumerate() {
+            atom.posit = tail_0.common.atom_posits[i];
+        }
+        for (i, atom) in tail_1.common.atoms.iter_mut().enumerate() {
+            atom.posit = tail_1.common.atom_posits[i];
+        }
+    }
+
     // Update bond indices and SNs, offsetting from ones that come before. Order is
     // Head, tail on head's O11, tail on head's O21.
     let head_len = head.common.atoms.len();
@@ -116,12 +150,18 @@ fn combine_head_tail(
 
     // These serial numbers will deconflict, and leave the original values transparent.
     // (Take off the first digit).
-    let offset_t0_sn = 100;
-    let offset_t1_sn = 200;
+    let offset_t0_sn = 1_000;
+    let offset_t1_sn = 2_000;
 
     // We re-anchor tail atoms the head.
-    let tail_0_offset = o11_posit - t0_c1_posit;
-    let tail_1_offset = o21_posit - t1_c1_posit;
+    // todo: Find a more accurate way to offset the first chain atom from the head Oxygen
+    // todo it's bound to.
+    // todo: Ideally use the geometry, but I'm feeling lazy.
+    let diff_tail_start_head_end_0 = Vec3::new(1., 1., 1.0);
+    let diff_tail_start_head_end_1 = Vec3::new(1., 1., -1.0);
+
+    let tail_0_offset = o11_posit - t0_c1_posit + diff_tail_start_head_end_0;
+    let tail_1_offset = o21_posit - t1_c1_posit + diff_tail_start_head_end_1;
 
     for atom in &mut tail_0.common.atoms {
         atom.serial_number += offset_t0_sn;
@@ -176,7 +216,7 @@ fn combine_head_tail(
     });
 
     head.common.bonds.push(Bond {
-        atom_0:head_anchor_1,
+        atom_0: head_anchor_1,
         atom_0_sn: o21_sn,
         atom_1: t1_anchor + offset_t1,
         atom_1_sn: t1_c1_sn,
@@ -195,10 +235,83 @@ fn combine_head_tail(
     head.common.build_adjacency_list();
     head.common.atom_posits = head.common.atoms.iter().map(|a| a.posit).collect();
 
-    head.lmsd_id = format!("{}/{}", head.lmsd_id, tail_0.lmsd_id);
-    head.common_name = format!("{}/{}", head.common_name, tail_0.common_name);
-    head.hmdb_id = format!("{}/{}", head.hmdb_id, tail_0.hmdb_id);
-    head.kegg_id = format!("{}/{}", head.kegg_id, tail_0.kegg_id);;
+    let total_len = head.common.atoms.len();
+
+    // Populate residues; one per components.
+    {
+        head.residues.push(Residue {
+            serial_number: 0,
+            res_type: ResidueType::Other("Head".to_string()),
+            atom_sns: head.common.atoms[..head_len]
+                .iter()
+                .map(|a| a.serial_number)
+                .collect(),
+            atoms: (0..head_len).collect(),
+            dihedral: None,
+            end: ResidueEnd::Internal, // N/A
+        });
+        head.residues.push(Residue {
+            serial_number: 1,
+            // todo: Name it properly. E.g. PA, OL etc
+            res_type: ResidueType::Other("Chain 1".to_string()),
+            atom_sns: head.common.atoms[head_len..offset_t1]
+                .iter()
+                .map(|a| a.serial_number)
+                .collect(),
+            atoms: (head_len..offset_t1).collect(),
+            dihedral: None,
+            end: ResidueEnd::Internal,
+        });
+        head.residues.push(Residue {
+            serial_number: 2,
+            res_type: ResidueType::Other("Chain 2".to_string()),
+            atom_sns: head.common.atoms[offset_t1..total_len]
+                .iter()
+                .map(|a| a.serial_number)
+                .collect(),
+            atoms: (offset_t1..total_len).collect(),
+            dihedral: None,
+            end: ResidueEnd::Internal,
+        });
+
+        for (i, atom) in head.common.atoms.iter_mut().enumerate() {
+            if i < head_len {
+                atom.residue = Some(0);
+            } else if i < offset_t1 {
+                atom.residue = Some(1);
+            } else {
+                atom.residue = Some(2);
+            }
+        }
+    }
+
+    {
+        //todo: The results has duplicate tail data. Not sure why.
+        head.common.ident = format!(
+            "{}({}/{})",
+            head.common.ident, tail_0.common.ident, tail_1.common.ident
+        );
+        head.lmsd_id = format!("{}({}/{})", head.lmsd_id, tail_0.lmsd_id, tail_1.lmsd_id);
+        head.common_name = format!(
+            "{}({}/{})",
+            head.common_name, tail_0.common_name, tail_1.common_name
+        );
+        head.hmdb_id = format!("{}({}/{})", head.hmdb_id, tail_0.hmdb_id, tail_1.hmdb_id);
+        head.kegg_id = format!("{}({}/{})", head.kegg_id, tail_0.kegg_id, tail_1.kegg_id);
+    }
+}
+
+fn make_phospholipid(head_std: LipidStandard, templates: &[MoleculeLipid]) -> MoleculeLipid {
+    // todo: Add to the templates.
+    let mut head = templates[head_std as usize].clone();
+
+    // For now, hardcoding PA + OL tails (POPE and POPG)
+    let chain_0 = templates[LipidStandard::Pa as usize].clone();
+    let chain_1 = templates[LipidStandard::Ol as usize].clone();
+
+    combine_head_tail(&mut head, chain_0, chain_1);
+
+    head
 }
 
 /// todo: Hard-coded for E. coli for now.
@@ -214,17 +327,20 @@ pub fn make_bacterial_lipids(
 
     let mut result = Vec::new();
 
+    let pe = make_phospholipid(LipidStandard::Pe, templates);
+
+    // Natural bacterial almost always use PGS (?)
+    let pg_r_variant = true;
+    let pg = if pg_r_variant {
+        make_phospholipid(LipidStandard::Pgr, templates)
+    } else {
+        make_phospholipid(LipidStandard::Pgs, templates)
+    };
 
     match shape {
         LipidShape::Free => {
-            for i in 0..n_mols {
-                let mut mol = get_headgroup_from_distro(templates, &mut rng, &uni);
-
-                // For now, hardcoding PA + OL tails (POPE and POPG)
-                let chain_0 = templates[LipidStandard::Pa as usize].clone();
-                let chain_1 = templates[LipidStandard::Ol as usize].clone();
-
-                combine_head_tail(&mut mol, chain_0, chain_1);
+            for _ in 0..n_mols {
+                let mut mol = get_mol_from_distro(&pe, &pg, &mut rng, &uni);
 
                 let rot = {
                     let w: f64 = rng.random();
@@ -267,15 +383,15 @@ pub fn make_bacterial_lipids(
             // start in the top-left so the grid is centered on `center`
             let mut p = center
                 - Vec3::new(
-                (n_cols as f64 - 1.0) * 0.5 * HEADGROUP_SPACING,
-                (n_rows as f64 - 1.0) * 0.5 * HEADGROUP_SPACING,
-                0.0,
-            );
+                    (n_cols as f64 - 1.0) * 0.5 * HEADGROUP_SPACING,
+                    (n_rows as f64 - 1.0) * 0.5 * HEADGROUP_SPACING,
+                    0.0,
+                );
             let mut row_start = p;
 
             for i in 0..n_mols {
                 // todo: DRy with above.
-                let mut mol = get_headgroup_from_distro(templates, &mut rng, &uni);
+                let mut mol = get_mol_from_distro(&pe, &pg, &mut rng, &uni);
 
                 // For now, hardcoding PA + OL tails (POPE and POPG)
                 let chain_0 = templates[LipidStandard::Pa as usize].clone();
@@ -392,6 +508,8 @@ pub struct MoleculeLipid {
     pub kegg_id: String,
     // todo: CHEBI ID A/R.
     pub common_name: String,
+    /// We use residues to denote headgroups and chains.
+    pub residues: Vec<Residue>,
 }
 
 // todo: Deprecate these A/R. We switched to amber templates.

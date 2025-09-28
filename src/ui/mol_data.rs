@@ -49,6 +49,7 @@ fn disp_atom_data(atom: &Atom, residues: &[Residue], posit_override: Option<Vec3
     if let Some(res_i) = atom.residue {
         // Placeholder for water etc.
         let mut res_color = COLOR_AA_NON_RESIDUE_EGUI;
+
         let res = &residues[res_i];
         let res_txt = &format!("  {res}");
 
@@ -152,7 +153,7 @@ pub fn selected_data(
             let atom = &mol.common.atoms[*atom_i];
             let posit = mol.common.atom_posits[*atom_i];
 
-            disp_atom_data(atom, &[], Some(posit), ui);
+            disp_atom_data(atom, &mol.residues, Some(posit), ui);
         }
         Selection::Residue(sel_i) => {
             if let Some(mol) = &state.peptide {

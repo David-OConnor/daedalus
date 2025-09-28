@@ -178,7 +178,7 @@ pub struct MolMetaData {
 pub struct PerMolToSave {
     chain_vis: Vec<bool>,
     chain_to_pick_res: Option<usize>,
-    
+
     // todo: A/R
     // metadata: Option<MolMetaData>,
     pub docking_site: DockingSite,
@@ -347,7 +347,7 @@ impl State {
         self.ui.show_near_lig_only = self.to_save.near_lig_only;
         self.ui.nearby_dist_thresh = self.to_save.nearby_dist_thresh;
         self.ui.visibility = self.to_save.visibility.clone();
-        
+
         self.ui.movement_speed_input = self.to_save.movement_speed.to_string();
         self.ui.rotation_sens_input = self.to_save.rotation_sens.to_string();
 

@@ -82,10 +82,9 @@ use crate::{
     nucleic_acid::MoleculeNucleicAcid,
     prefs::ToSave,
     render::render,
-    ui::cam::{FOG_DIST_MAX, FOG_DIST_MIN},
+    ui::cam::{FOG_DIST_DEFAULT, FOG_DIST_MAX, FOG_DIST_MIN, VIEW_DEPTH_NEAR_MIN},
     util::handle_err,
 };
-use crate::ui::cam::{FOG_DIST_DEFAULT, VIEW_DEPTH_NEAR_MIN};
 // ------Including files into the executable
 
 // Note: If you haven't generated this file yet when compiling (e.g. from a freshly-cloned repo),
@@ -634,6 +633,7 @@ impl State {
                         hmdb_id: String::new(),
                         kegg_id: String::new(),
                         common_name: String::new(),
+                        residues: Vec::new(),
                     };
                     for atom in atoms {
                         mol.common.atoms.push((&atom).try_into().unwrap());
@@ -669,7 +669,6 @@ fn main() {
     #[cfg(feature = "cuda")]
     let mut module_reflections = None;
     #[cfg(feature = "cuda")]
-
     let dev = {
         if cudarc::driver::result::init().is_ok() {
             // This is compiled in `build_`.

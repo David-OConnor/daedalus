@@ -170,7 +170,7 @@ pub fn cycle_selected(state: &mut State, scene: &mut Scene, reverse: bool) {
                 };
 
                 let new_atom_i = atom_i as isize + dir;
-                if new_atom_i < mol.common().atoms.len() as isize  && new_atom_i >= 0 {
+                if new_atom_i < mol.common().atoms.len() as isize && new_atom_i >= 0 {
                     state.ui.selection = Selection::AtomLig((mol_i, new_atom_i as usize));
                 }
             }
@@ -182,7 +182,7 @@ pub fn cycle_selected(state: &mut State, scene: &mut Scene, reverse: bool) {
 
                 // todo: DRY with the above for peptide atoms.
                 let new_atom_i = atom_i as isize + dir;
-                if new_atom_i < mol.common().atoms.len() as isize  && new_atom_i >= 0 {
+                if new_atom_i < mol.common().atoms.len() as isize && new_atom_i >= 0 {
                     state.ui.selection = Selection::AtomNucleicAcid((mol_i, new_atom_i as usize));
                 }
             }
@@ -194,7 +194,7 @@ pub fn cycle_selected(state: &mut State, scene: &mut Scene, reverse: bool) {
 
                 // todo: DRY with the above for peptide atoms.
                 let new_atom_i = atom_i as isize + dir;
-                if new_atom_i < mol.common().atoms.len() as isize  && new_atom_i >= 0 {
+                if new_atom_i < mol.common().atoms.len() as isize && new_atom_i >= 0 {
                     state.ui.selection = Selection::AtomLipid((mol_i, new_atom_i as usize));
                 }
             }
