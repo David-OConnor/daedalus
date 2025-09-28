@@ -85,6 +85,7 @@ use crate::{
     ui::cam::{FOG_DIST_MAX, FOG_DIST_MIN},
     util::handle_err,
 };
+use crate::ui::cam::{FOG_DIST_DEFAULT, VIEW_DEPTH_NEAR_MIN};
 // ------Including files into the executable
 
 // Note: If you haven't generated this file yet when compiling (e.g. from a freshly-cloned repo),
@@ -486,7 +487,9 @@ impl Default for State {
     fn default() -> Self {
         // Many other UI defaults are loaded after the initial prefs load in `main`.
         let ui = StateUi {
-            view_depth: (FOG_DIST_MIN, FOG_DIST_MAX),
+            view_depth: (VIEW_DEPTH_NEAR_MIN, FOG_DIST_DEFAULT),
+            nearby_dist_thresh: 15,
+            density_iso_level: 1.8,
             ..Default::default()
         };
 
@@ -664,6 +667,9 @@ impl State {
 
 fn main() {
     #[cfg(feature = "cuda")]
+    let mut module_reflections = None;
+    #[cfg(feature = "cuda")]
+
     let dev = {
         if cudarc::driver::result::init().is_ok() {
             // This is compiled in `build_`.
@@ -672,35 +678,37 @@ fn main() {
 
             // todo: Figure out how to handle multiple modules, given you've moved the ComputationDevice
             // todo struct to dynamics. Your reflections GPU code will be broken until this is solved.
-            let module = ctx.load_module(Ptx::from_src(PTX));
             let module_dynamics = ctx.load_module(Ptx::from_src(dynamics::PTX));
 
             match module_dynamics {
                 Ok(m) => {
+                    module_reflections = Some(ctx.load_module(Ptx::from_src(PTX)).unwrap());
                     // todo: Store/cache these, likely.
                     // let func_coulomb = module.load_function("coulomb_kernel").unwrap();
                     // let func_lj_V = module.load_function("lj_V_kernel").unwrap();
                     // let func_lj_force = module.load_function("lj_force_kernel").unwrap();
 
-                    (ComputationDevice::Gpu((stream, m)), Some(module.unwrap()))
+                    // (ComputationDevice::Gpu((stream, m)), Some(module.unwrap()))
+                    ComputationDevice::Gpu((stream, m))
                 }
                 Err(e) => {
                     eprintln!(
                         "Error loading CUDA module: {}; not using CUDA. Error: {e}",
                         dynamics::PTX
                     );
-                    (ComputationDevice::Cpu, None)
+                    // (ComputationDevice::Cpu, None)
+                    ComputationDevice::Cpu
                 }
             }
         } else {
-            (ComputationDevice::Cpu, None)
+            // (ComputationDevice::Cpu, None)
+            ComputationDevice::Cpu
         }
     };
 
     #[cfg(not(feature = "cuda"))]
     let dev = ComputationDevice::Cpu;
-
-    // let dev = (ComputationDevice::Cpu, None);
+    // let dev = ComputationDevice::Cpu;
 
     #[cfg(target_arch = "x86_64")]
     {
@@ -718,13 +726,13 @@ fn main() {
     // todo: Consider a custom default impl. This is a substitute.
     let mut state = State {
         dev,
-        ui: StateUi {
-            nearby_dist_thresh: 15,
-            density_iso_level: 1.8,
-            ..Default::default()
-        },
         ..Default::default()
     };
+
+    #[cfg(feature = "cuda")]
+    if let Some(m) = module_reflections {
+        state.cuda_modules = Some(CudaModules { reflections: m });
+    }
 
     // todo: Consider if you want this here. Currently required when adding H to a molecule.
     // In release mode, takes 20ms on a fast CPU. (todo: Test on a slow CPU.)

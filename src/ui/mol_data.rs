@@ -65,6 +65,10 @@ fn disp_atom_data(atom: &Atom, residues: &[Residue], posit_override: Option<Vec3
         ui.label(RichText::new(format!("{tir}")).color(Color32::LIGHT_YELLOW));
     }
 
+    if let Some(tir) = &atom.type_in_res_lipid {
+        ui.label(RichText::new(tir).color(Color32::LIGHT_YELLOW));
+    }
+
     if let Some(ff) = &atom.force_field_type {
         ui.label(RichText::new(format!("FF: {ff}")).color(Color32::LIGHT_YELLOW));
     }

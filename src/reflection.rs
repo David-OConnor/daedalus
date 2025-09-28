@@ -333,7 +333,7 @@ impl DensityRect {
             ComputationDevice::Gpu((stream, _mod_dynamics)) => self.make_densities_inner_gpu(
                 stream,
                 // Assume Some if on Device::Gpu.
-                cuda_modules.unwrap().reflections,
+                &cuda_modules.as_ref().unwrap().reflections,
                 triplets,
                 &atom_posits_sample,
                 step_vecs,

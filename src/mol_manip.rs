@@ -126,7 +126,7 @@ pub fn handle_mol_manip_in_plane(
             let rot_y = Quaternion::from_axis_angle(up, -delta.0 as f32 * SENS_MOL_ROT_MOUSE);
 
             let rot = rot_y * rot_x; // Note: Can swap the order for a slightly different effect.
-            mol.rotate(rot.into());
+            mol.rotate(rot.into(), None);
 
             let ratio = 20;
             unsafe {
@@ -264,7 +264,7 @@ pub fn handle_mol_manip_in_out(
             let fwd = scene.camera.orientation.rotate_vec(FWD_VEC).to_normalized();
 
             let rot = Quaternion::from_axis_angle(fwd, scroll * SENS_MOL_ROT_SCROLL);
-            mol.rotate(rot.into());
+            mol.rotate(rot.into(), None);
 
             match mol_type {
                 MolType::Ligand => *redraw_lig = true,

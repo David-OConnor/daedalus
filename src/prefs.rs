@@ -132,6 +132,14 @@ pub struct ToSave {
     /// ps (10^-12). Typical values are 0.001 or 0.002.
     pub md_dt: f32,
     pub ph: f32,
+    pub selection: Selection,
+    pub cam_snapshots: Vec<CamSnapshot>,
+    pub mol_view: MoleculeView,
+    pub view_sel_level: ViewSelLevel,
+    pub visibility: Visibility,
+    pub near_sel_only: bool,
+    pub near_lig_only: bool,
+    pub nearby_dist_thresh: u16,
 }
 
 impl Default for ToSave {
@@ -148,6 +156,14 @@ impl Default for ToSave {
             num_md_steps: 100,
             md_dt: 0.002,
             ph: 7.4,
+            selection: Default::default(),
+            cam_snapshots: Default::default(),
+            mol_view: Default::default(),
+            view_sel_level: Default::default(),
+            near_sel_only: Default::default(),
+            near_lig_only: Default::default(),
+            nearby_dist_thresh: Default::default(),
+            visibility: Default::default(),
         }
     }
 }
@@ -157,18 +173,12 @@ pub struct MolMetaData {
     prim_cit_title: String,
 }
 
+/// Generally, data here only applies if a protein is present.
 #[derive(Debug, Encode, Decode)]
 pub struct PerMolToSave {
-    selection: Selection,
-    cam_snapshots: Vec<CamSnapshot>,
-    mol_view: MoleculeView,
-    view_sel_level: ViewSelLevel,
-    near_sel_only: bool,
-    near_lig_only: bool,
-    nearby_dist_thresh: u16,
     chain_vis: Vec<bool>,
     chain_to_pick_res: Option<usize>,
-    visibility: Visibility,
+    
     // todo: A/R
     // metadata: Option<MolMetaData>,
     pub docking_site: DockingSite,
@@ -180,6 +190,7 @@ pub struct PerMolToSave {
     rcsb_files_avail: Option<FilesAvailable>,
     docking_site_posit: Vec3,
     /// This is useful in the case of absolute positions. Ideally, this is per-ligand.
+    /// todo: This needs a rework with your generalizations.
     lig_atom_positions: Vec<Vec3>,
 }
 
@@ -219,16 +230,8 @@ impl PerMolToSave {
         }
 
         Self {
-            selection: state.ui.selection.clone(),
-            cam_snapshots: state.cam_snapshots.clone(),
-            mol_view: state.ui.mol_view,
-            view_sel_level: state.ui.view_sel_level,
-            near_sel_only: state.ui.show_near_sel_only,
-            near_lig_only: state.ui.show_near_lig_only,
-            nearby_dist_thresh: state.ui.nearby_dist_thresh,
             chain_vis,
             chain_to_pick_res: state.ui.chain_to_pick_res,
-            visibility: state.ui.visibility.clone(),
             // metadata,
             docking_site,
             show_docking_tools: state.ui.show_docking_tools,
@@ -264,6 +267,15 @@ impl State {
             self.to_save.per_mol.insert(mol.common.ident.clone(), data);
         }
 
+        self.to_save.selection = self.ui.selection.clone();
+        self.to_save.cam_snapshots = self.cam_snapshots.clone();
+        self.to_save.mol_view = self.ui.mol_view;
+        self.to_save.view_sel_level = self.ui.view_sel_level;
+        self.to_save.near_sel_only = self.ui.show_near_sel_only;
+        self.to_save.near_lig_only = self.ui.show_near_lig_only;
+        self.to_save.nearby_dist_thresh = self.ui.nearby_dist_thresh;
+        self.to_save.visibility = self.ui.visibility.clone();
+
         // println!("Saving history: {:?}", self.to_save.open_history);
 
         if let Err(e) = save(
@@ -285,15 +297,7 @@ impl State {
             if self.to_save.per_mol.contains_key(&mol.common.ident) {
                 let data = &self.to_save.per_mol[&mol.common.ident];
 
-                self.ui.selection = data.selection.clone();
-                self.cam_snapshots = data.cam_snapshots.clone();
-                self.ui.mol_view = data.mol_view;
-                self.ui.view_sel_level = data.view_sel_level;
-                self.ui.show_near_sel_only = data.near_sel_only;
-                self.ui.show_near_lig_only = data.near_lig_only;
-                self.ui.nearby_dist_thresh = data.nearby_dist_thresh;
                 self.ui.chain_to_pick_res = data.chain_to_pick_res;
-                self.ui.visibility = data.visibility.clone();
                 self.ui.show_docking_tools = data.show_docking_tools;
                 self.ui.res_color_by_index = data.res_color_by_index;
                 self.ui.atom_color_by_charge = data.aatom_color_by_charge;
@@ -335,6 +339,15 @@ impl State {
         //     // lig.pose.conformation_type = ConformationType::AbsolutePosits;
         // }
 
+        self.ui.selection = self.to_save.selection.clone();
+        self.cam_snapshots = self.to_save.cam_snapshots.clone();
+        self.ui.mol_view = self.to_save.mol_view;
+        self.ui.view_sel_level = self.to_save.view_sel_level;
+        self.ui.show_near_sel_only = self.to_save.near_sel_only;
+        self.ui.show_near_lig_only = self.to_save.near_lig_only;
+        self.ui.nearby_dist_thresh = self.to_save.nearby_dist_thresh;
+        self.ui.visibility = self.to_save.visibility.clone();
+        
         self.ui.movement_speed_input = self.to_save.movement_speed.to_string();
         self.ui.rotation_sens_input = self.to_save.rotation_sens.to_string();
 

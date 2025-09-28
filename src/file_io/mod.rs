@@ -243,6 +243,12 @@ impl State {
                 .collect();
 
             let dens_rect = DensityRect::new(&atom_posits, &dens_map, DENSITY_CELL_MARGIN);
+
+            #[cfg(feature = "cuda")]
+            let dens =
+                dens_rect.make_densities(&self.dev, &self.cuda_modules, &atom_posits, &dens_map.cell, DENSITY_MAX_DIST);
+
+            #[cfg(not(feature = "cuda"))]
             let dens =
                 dens_rect.make_densities(&self.dev, &atom_posits, &dens_map.cell, DENSITY_MAX_DIST);
 

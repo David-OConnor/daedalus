@@ -169,14 +169,9 @@ pub fn cycle_selected(state: &mut State, scene: &mut Scene, reverse: bool) {
                     return;
                 };
 
-                // todo: DRY with the above for peptide atoms.
-                let mut new_atom_i = atom_i as isize;
-
-                while new_atom_i < (mol.common().atoms.len() as isize) - 1 && new_atom_i >= 0 {
-                    new_atom_i += dir;
-                    let na_i = new_atom_i as usize;
-                    state.ui.selection = Selection::AtomLig((mol_i, na_i));
-                    break;
+                let new_atom_i = atom_i as isize + dir;
+                if new_atom_i < mol.common().atoms.len() as isize  && new_atom_i >= 0 {
+                    state.ui.selection = Selection::AtomLig((mol_i, new_atom_i as usize));
                 }
             }
             // todo: DRY!
@@ -186,13 +181,9 @@ pub fn cycle_selected(state: &mut State, scene: &mut Scene, reverse: bool) {
                 };
 
                 // todo: DRY with the above for peptide atoms.
-                let mut new_atom_i = atom_i as isize;
-
-                while new_atom_i < (mol.common().atoms.len() as isize) - 1 && new_atom_i >= 0 {
-                    new_atom_i += dir;
-                    let na_i = new_atom_i as usize;
-                    state.ui.selection = Selection::AtomNucleicAcid((mol_i, na_i));
-                    break;
+                let new_atom_i = atom_i as isize + dir;
+                if new_atom_i < mol.common().atoms.len() as isize  && new_atom_i >= 0 {
+                    state.ui.selection = Selection::AtomNucleicAcid((mol_i, new_atom_i as usize));
                 }
             }
             // todo DRY
@@ -202,13 +193,9 @@ pub fn cycle_selected(state: &mut State, scene: &mut Scene, reverse: bool) {
                 };
 
                 // todo: DRY with the above for peptide atoms.
-                let mut new_atom_i = atom_i as isize;
-
-                while new_atom_i < (mol.common().atoms.len() as isize) - 1 && new_atom_i >= 0 {
-                    new_atom_i += dir;
-                    let na_i = new_atom_i as usize;
-                    state.ui.selection = Selection::AtomLipid((mol_i, na_i));
-                    break;
+                let new_atom_i = atom_i as isize + dir;
+                if new_atom_i < mol.common().atoms.len() as isize  && new_atom_i >= 0 {
+                    state.ui.selection = Selection::AtomLipid((mol_i, new_atom_i as usize));
                 }
             }
             _ => {
@@ -505,16 +492,6 @@ pub fn reset_camera(
     scene.camera.position =
         lin_alg::f32::Vec3::new(center.x, center.y, center.z - (mol.size + CAM_INIT_OFFSET));
     scene.camera.orientation = Quaternion::new_identity();
-
-    // scene.camera.near = RENDER_DIST_NEAR;
-    // scene.camera.far = RENDER_DIST_FAR;
-
-    // let (start, end) = calc_fog_dists(FOG_DIST_DEFAULT);
-    //
-    // scene.camera.fog_start = start;
-    // scene.camera.fog_end = end;
-
-    // scene.camera.update_proj_mat();
 
     set_static_light(scene, center, mol.size);
     set_flashlight(scene);

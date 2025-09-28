@@ -145,8 +145,11 @@ impl MoleculeCommon {
         sum / n
     }
 
-    pub fn rotate(&mut self, rot: Quaternion) {
-        let pivot: Vec3 = self.centroid();
+    pub fn rotate(&mut self, rot: Quaternion, pivot_: Option<usize>) {
+        let pivot = match pivot_ {
+            Some(i) => self.atom_posits[i],
+            None => self.centroid(),
+        };
 
         for posit in &mut self.atom_posits {
             let local = *posit - pivot;

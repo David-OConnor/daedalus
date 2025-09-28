@@ -29,6 +29,9 @@ use crate::molecule::{Atom, Bond, MoleculeCommon, build_adjacency_list};
 // - Staphy aureus: PG:CL: 80:20
 // Bacillus subtilis: PE:PG:CL: 40-60%, 5-40%, 8-18%
 
+// todo: Fragile. Used to rotate lipids around the phosphate in the head.
+const PHOSPHATE_I: usize = 12;
+
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub enum LipidShape {
     Free,
@@ -80,38 +83,43 @@ fn find_atom_by_tir(m: &MoleculeLipid, name: &str) -> usize {
         .expect(name)
 }
 
-// todo: QC and clean this up
 /// Bonds a phospholipid head's O11 to Acyl C1 (Carbonyl carbon). Bonds Head's O21 to other acyl C1.
+/// Moves all atoms so that the head's phosphorous is at the origin.
 fn combine_head_tail(
     head: &mut MoleculeLipid,
     mut tail_0: MoleculeLipid,
     mut tail_1: MoleculeLipid,
 ) {
     // Head joining atoms.
-    let o11_i = find_atom_by_tir(&head, "O11");
-    let o21_i = find_atom_by_tir(&head, "O21");
+    // todo: Rename everyone once you find teh actual idents.
+    let head_p = find_atom_by_tir(&head, "P31");
+
+    let head_anchor_0 = find_atom_by_tir(&head, "O12");
+    let head_anchor_1 = find_atom_by_tir(&head, "O22");
     // todo: QC these names.
-    let t0_c1_i = find_atom_by_tir(&tail_0, "C110");
-    let t1_c1_i = find_atom_by_tir(&tail_1, "C110");
+    let t0_anchor = find_atom_by_tir(&tail_0, "C12");
+    let t1_anchor = find_atom_by_tir(&tail_1, "C12");
 
-    let o11_sn = head.common.atoms[o11_i].serial_number;
-    let o21_sn = head.common.atoms[o21_i].serial_number;
+    let o11_sn = head.common.atoms[head_anchor_0].serial_number;
+    let o21_sn = head.common.atoms[head_anchor_1].serial_number;
 
-    let o11_posit = head.common.atoms[o11_i].posit;
-    let o21_posit = head.common.atoms[o21_i].posit;
-    let t0_c1_posit = tail_0.common.atoms[t0_c1_i].posit;
-    let t1_c1_posit = tail_1.common.atoms[t1_c1_i].posit;
+    let o11_posit = head.common.atoms[head_anchor_0].posit;
+    let o21_posit = head.common.atoms[head_anchor_1].posit;
+    let t0_c1_posit = tail_0.common.atoms[t0_anchor].posit;
+    let t1_c1_posit = tail_1.common.atoms[t1_anchor].posit;
 
     // Update bond indices and SNs, offsetting from ones that come before. Order is
-    // Head, tail on head's O21, tail on head's O22.
-    let offset_t0 = head.common.atoms.len();
-    let offset_t1 = head.common.atoms.len() + offset_t0;
-    // todo: QC thse SN offsets.
-    let offset_t0_sn = offset_t0 as u32;
-    let offset_t1_sn = offset_t1 as u32;
+    // Head, tail on head's O11, tail on head's O21.
+    let head_len = head.common.atoms.len();
+    let offset_t0 = head_len;
+    let offset_t1 = head_len + tail_0.common.atoms.len();
+
+    // These serial numbers will deconflict, and leave the original values transparent.
+    // (Take off the first digit).
+    let offset_t0_sn = 100;
+    let offset_t1_sn = 200;
 
     // We re-anchor tail atoms the head.
-    // todo: QC order
     let tail_0_offset = o11_posit - t0_c1_posit;
     let tail_1_offset = o21_posit - t1_c1_posit;
 
@@ -126,8 +134,8 @@ fn combine_head_tail(
     }
 
     // Set these after assigning new SNs to the tail
-    let t0_c1_sn = tail_0.common.atoms[t0_c1_i].serial_number;
-    let t1_c1_sn = tail_1.common.atoms[t1_c1_i].serial_number;
+    let t0_c1_sn = tail_0.common.atoms[t0_anchor].serial_number;
+    let t1_c1_sn = tail_1.common.atoms[t1_anchor].serial_number;
 
     for bond in &mut tail_0.common.bonds {
         bond.atom_0 += offset_t0;
@@ -149,46 +157,48 @@ fn combine_head_tail(
     for atom in tail_1.common.atoms {
         head.common.atoms.push(atom);
     }
+    for bond in tail_0.common.bonds {
+        head.common.bonds.push(bond);
+    }
+    for bond in tail_1.common.bonds {
+        head.common.bonds.push(bond);
+    }
 
     // Create ester bonds: O11–C1 (sn-1), O21–C1 (sn-2)
     // Adjust this to your actual Bond struct if needed.
     head.common.bonds.push(Bond {
-        atom_0: o11_i,
+        atom_0: head_anchor_0,
         atom_0_sn: o11_sn,
-        atom_1: t0_c1_i,
+        atom_1: t0_anchor + offset_t0,
         atom_1_sn: t0_c1_sn,
         bond_type: Single,
         is_backbone: false,
     });
 
     head.common.bonds.push(Bond {
-        atom_0: o21_i,
+        atom_0:head_anchor_1,
         atom_0_sn: o21_sn,
-        atom_1: t1_c1_i,
+        atom_1: t1_anchor + offset_t1,
         atom_1_sn: t1_c1_sn,
         bond_type: Single,
         is_backbone: false,
     });
+
+    // Move all atoms to place the P at the origin.
+    let p_posit = head.common.atoms[head_p].posit;
+    for atom in &mut head.common.atoms {
+        atom.posit -= p_posit;
+    }
 
     // todo: Instead of rebulding the adjacency list, you could update it procedurally. For now,
     // todo doing this as it's safer. That would be faster
     head.common.build_adjacency_list();
     head.common.atom_posits = head.common.atoms.iter().map(|a| a.posit).collect();
 
-    // head.common.adjacency_list[o11_i].push(t0_c1);
-    // head.common.adjacency_list[t0_c1].push(o11_i);
-    // head.common.adjacency_list[o21_i].push(t1_c1);
-    // head.common.adjacency_list[t1_c1].push(o21_i);
-
     head.lmsd_id = format!("{}/{}", head.lmsd_id, tail_0.lmsd_id);
     head.common_name = format!("{}/{}", head.common_name, tail_0.common_name);
     head.hmdb_id = format!("{}/{}", head.hmdb_id, tail_0.hmdb_id);
-    head.kegg_id = format!("{}/{}", head.kegg_id, tail_0.kegg_id);
-
-    // Optional: derive an ident for the combined lipid
-    // e.g., "PE(PA/OL)" if head is PE and tails are PA+OL (requires you to carry residue names somewhere).
-    // Keeping ident as the head's ident to avoid changing your existing logic:
-    // head.common.ident = head.common.ident;
+    head.kegg_id = format!("{}/{}", head.kegg_id, tail_0.kegg_id);;
 }
 
 /// todo: Hard-coded for E. coli for now.
@@ -204,19 +214,18 @@ pub fn make_bacterial_lipids(
 
     let mut result = Vec::new();
 
-    for i in 0..n_mols {
-        let mut mol = get_headgroup_from_distro(templates, &mut rng, &uni);
 
-        // For now, hardcoding PA + OL tails (POPE and POPG)
-        let chain_0 = templates[LipidStandard::Pa as usize].clone();
-        let chain_1 = templates[LipidStandard::Ol as usize].clone();
+    match shape {
+        LipidShape::Free => {
+            for i in 0..n_mols {
+                let mut mol = get_headgroup_from_distro(templates, &mut rng, &uni);
 
-        println!("Head len pre: {}", mol.common.atoms.len());
-        combine_head_tail(&mut mol, chain_0, chain_1);
-        println!("Head len post: {}", mol.common.atoms.len());
+                // For now, hardcoding PA + OL tails (POPE and POPG)
+                let chain_0 = templates[LipidStandard::Pa as usize].clone();
+                let chain_1 = templates[LipidStandard::Ol as usize].clone();
 
-        match shape {
-            LipidShape::Free => {
+                combine_head_tail(&mut mol, chain_0, chain_1);
+
                 let rot = {
                     let w: f64 = rng.random();
                     let x: f64 = rng.random();
@@ -226,7 +235,7 @@ pub fn make_bacterial_lipids(
                     Quaternion::new(w, x, y, z).to_normalized()
                 };
 
-                mol.common.rotate(rot);
+                mol.common.rotate(rot, None);
 
                 // todo temp: You have to prevent collisions.
                 let offset_mag = 20.;
@@ -244,24 +253,35 @@ pub fn make_bacterial_lipids(
 
                 result.push(mol);
             }
-            LipidShape::Membrane => {
-                // These are head-to-head distances.
-                // todo: Consts A/R
-                // Note: Area per lipid (APL) is ~60–62 Å² per lipid at ~37 °C.
-                const HEADGROUP_SPACING: f64 = 7.9; // 7.8-8.4Å
-                const DIST_ACROSS_MEMBRANE: f64 = 38.; // 36-39Å phosphate-to-phosphate
+        }
+        LipidShape::Membrane => {
+            // These are head-to-head distances.
+            // todo: Consts A/R
+            // Note: Area per lipid (APL) is ~60–62 Å² per lipid at ~37 °C.
+            const HEADGROUP_SPACING: f64 = 7.9; // 7.8-8.4Å
+            const DIST_ACROSS_MEMBRANE: f64 = 38.; // 36-39Å phosphate-to-phosphate
 
-                let n_rows = n_mols.isqrt();
-                let n_cols = (n_mols + n_rows - 1) / n_rows; // ceil(n_mols / n_rows)
+            let n_rows = n_mols.isqrt();
+            let n_cols = (n_mols + n_rows - 1) / n_rows; // ceil(n_mols / n_rows)
 
-                // start in the top-left so the grid is centered on `center`
-                let mut p = center
-                    - Vec3::new(
-                        (n_cols as f64 - 1.0) * 0.5 * HEADGROUP_SPACING,
-                        (n_rows as f64 - 1.0) * 0.5 * HEADGROUP_SPACING,
-                        0.0,
-                    );
-                let mut row_start = p;
+            // start in the top-left so the grid is centered on `center`
+            let mut p = center
+                - Vec3::new(
+                (n_cols as f64 - 1.0) * 0.5 * HEADGROUP_SPACING,
+                (n_rows as f64 - 1.0) * 0.5 * HEADGROUP_SPACING,
+                0.0,
+            );
+            let mut row_start = p;
+
+            for i in 0..n_mols {
+                // todo: DRy with above.
+                let mut mol = get_headgroup_from_distro(templates, &mut rng, &uni);
+
+                // For now, hardcoding PA + OL tails (POPE and POPG)
+                let chain_0 = templates[LipidStandard::Pa as usize].clone();
+                let chain_1 = templates[LipidStandard::Ol as usize].clone();
+
+                combine_head_tail(&mut mol, chain_0, chain_1);
 
                 // We rotate based on the original amber orientation, to have tails up and down
                 // along the Y axis.
@@ -272,10 +292,11 @@ pub fn make_bacterial_lipids(
                 // Apply an arbitrary rotation along the head/tail axis.
                 let rot_z = Quaternion::from_axis_angle(Y_VEC, rng.sample(angle));
 
-                mol.common.rotate(rot_z * rotator);
+                // Hard-coded phorphorous pivot. May not be correct...
+                mol.common.rotate(rot_z * rotator, Some(PHOSPHATE_I));
 
                 for posit in &mut mol.common.atom_posits {
-                    *posit = *posit + p;
+                    *posit += p;
                 }
                 result.push(mol);
 
@@ -288,8 +309,22 @@ pub fn make_bacterial_lipids(
                     p = Vec3::new(row_start.x, row_start.y, row_start.z);
                 }
             }
-            LipidShape::Lnp => {}
+
+            // Now make the opposite side of the membrane.
+            let mut other_side = Vec::new();
+            for mol in &result {
+                let mut mirror = mol.clone();
+                let rot = Quaternion::from_axis_angle(Z_VEC, TAU / 2.);
+                mirror.common.rotate(rot, Some(PHOSPHATE_I));
+                for p in &mut mirror.common.atom_posits {
+                    p.y += DIST_ACROSS_MEMBRANE;
+                }
+
+                other_side.push(mirror);
+            }
+            result.append(&mut other_side);
         }
+        LipidShape::Lnp => {}
     }
 
     result
