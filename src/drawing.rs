@@ -1383,11 +1383,10 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
                 }
             }
 
-            let dim_peptide = if state.active_mol().is_some() {
-                state.ui.visibility.dim_peptide
-            } else {
-                false
-            };
+            let dim_peptide = state.ui.visibility.dim_peptide
+                && (!state.ligands.is_empty()
+                    || !state.nucleic_acids.is_empty()
+                    || !state.lipids.is_empty());
 
             let color_atom = atom_color(
                 atom,

@@ -8,8 +8,8 @@ use std::{
 
 use bio_apis::{amber_geostd, rcsb};
 use egui::{
-    Color32, ComboBox, Context, Key, Popup, PopupAnchor, Pos2, RectAlign, RichText, Slider,
-    TextEdit, TopBottomPanel, Ui,
+    Align, Color32, ComboBox, Context, Key, Layout, Popup, PopupAnchor, Pos2, RectAlign, RichText,
+    Slider, TextEdit, TopBottomPanel, Ui,
 };
 use graphics::{ControlScheme, EngineUpdates, Scene};
 use na_seq::AaIdent;
@@ -796,8 +796,19 @@ fn residue_selector(state: &mut State, scene: &mut Scene, ui: &mut Ui, redraw: &
     )
     .align(RectAlign::TOP)
     .open(true)
+    .width(1_000.)
     .gap(4.0)
     .show(|ui| {
+        ui.with_layout(Layout::top_down(Align::RIGHT), |ui| {
+            if ui
+                .button(RichText::new("Close").color(Color32::LIGHT_RED))
+                .clicked()
+            {
+                state.ui.popup.residue_selector = false;
+                state.ui.chain_to_pick_res = None;
+            }
+        });
+        ui.add_space(ROW_SPACING);
         // This is a bit fuzzy, as the size varies by residue name (Not always 1 for non-AAs), and index digits.
 
         let mut update_arc_center = false;
@@ -816,6 +827,9 @@ fn residue_selector(state: &mut State, scene: &mut Scene, ui: &mut Ui, redraw: &
                     ui.spacing_mut().item_spacing.x = 8.0;
 
                     for (i, res) in mol.residues.iter().enumerate() {
+                        if i > 800 {
+                            break; // todo: Temp workaround to display blocking
+                        }
                         // For now, peptide residues only.
                         if let ResidueType::Water = res.res_type {
                             continue;
@@ -864,15 +878,6 @@ fn residue_selector(state: &mut State, scene: &mut Scene, ui: &mut Ui, redraw: &
                 *center = orbit_center(state);
             }
         }
-
-        ui.add_space(ROW_SPACING);
-
-        if ui
-            .button(RichText::new("Close").color(Color32::LIGHT_RED))
-            .clicked()
-        {
-            state.ui.popup.residue_selector = false;
-        }
     });
 }
 
@@ -917,6 +922,12 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         if state.ui.popup.residue_selector {
             // todo: Show hide based on AaCategory? i.e. residue.amino_acid.category(). Hydrophilic, acidic etc.
             residue_selector(state, scene, ui, &mut redraw_peptide);
+        }
+
+        if state.ui.popup.rama_plot {
+            if let Some(mol) = &state.peptide {
+                plot_rama(&mol.residues, &mol.common.ident, ui, &mut state.ui.popup.rama_plot);
+            }
         }
 
         ui.horizontal(|ui| {
@@ -1643,16 +1654,18 @@ pub fn lipid_section(
     engine_updates: &mut EngineUpdates,
     ui: &mut Ui,
 ) {
+    if state.ui.lipid_to_add >= state.lipid_templates.len() {
+        eprintln!("Error: Not enough lipid templates");
+        return;
+    }
+
     ui.horizontal(|ui| {
         ui.label("Add lipids:");
 
-        let mut add_standard_text = String::new();
-        if state.lipid_templates.len() > state.ui.lipid_to_add {
-            add_standard_text = state.lipid_templates[state.ui.lipid_to_add]
-                .common
-                .ident
-                .clone();
-        }
+        let add_standard_text = state.lipid_templates[state.ui.lipid_to_add]
+            .common
+            .ident
+            .clone();
 
         // Ideally hover text here too, but I'm not sure how.
         ComboBox::from_id_salt(101)

@@ -528,6 +528,7 @@ pub fn close_peptide(state: &mut State, scene: &mut Scene, engine_updates: &mut 
             && ent.class != EntityType::DensitySurface as u32
             && ent.class != EntityType::SecondaryStructure as u32
             && ent.class != EntityType::SaSurface as u32
+            && ent.class != EntityType::SaSurfaceDots as u32
     });
 
     state.volatile.aa_seq_text = String::new();

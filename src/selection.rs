@@ -10,6 +10,18 @@ use crate::{
     molecule::{Atom, AtomRole, Chain, MolType, Residue},
 };
 
+struct Nearest {
+    mol_type: MolType,
+    mol_i: usize,
+    atom_i: usize,
+}
+
+impl Nearest {
+    pub fn indices(&self) -> (usize, usize) {
+        (self.mol_i, self.atom_i)
+    }
+}
+
 /// From under the cursor; pick the one near the ray, closest to the camera. This function is
 /// run after the ray geometry is calculated, and is responsible for determing which atoms, residues, etc
 /// are available for selection. It takes into account graphical filters, so only visible items
@@ -42,12 +54,6 @@ pub fn find_selected_atom(
 
     // todo: Also consider togglign between ones under the cursor near the front,
     // todo and picking the one closest to the ray.
-
-    struct Nearest {
-        mol_type: MolType,
-        mol_i: usize,
-        atom_i: usize,
-    }
 
     let mut nearest = Nearest {
         mol_type: MolType::Peptide,
@@ -201,24 +207,34 @@ pub fn find_selected_atom(
         return Selection::None;
     }
 
+    let indices = nearest.indices();
     match ui.view_sel_level {
         ViewSelLevel::Atom => match nearest.mol_type {
             MolType::Peptide => Selection::AtomPeptide(nearest.atom_i),
-            MolType::Ligand => Selection::AtomLig((nearest.mol_i, nearest.atom_i)),
-            MolType::NucleicAcid => Selection::AtomNucleicAcid((nearest.mol_i, nearest.atom_i)),
-            MolType::Lipid => Selection::AtomLipid((nearest.mol_i, nearest.atom_i)),
+            MolType::Ligand => Selection::AtomLig(indices),
+            MolType::NucleicAcid => Selection::AtomNucleicAcid(indices),
+            MolType::Lipid => Selection::AtomLipid(indices),
             _ => unreachable!(),
         },
         ViewSelLevel::Residue => {
-            for (i_res, _res) in ress.iter().enumerate() {
-                let atom_near = &atoms_prot[nearest.mol_i];
-                if let Some(res_i) = atom_near.residue {
-                    if res_i == i_res {
-                        return Selection::Residue(i_res);
+            match nearest.mol_type {
+                MolType::Peptide => {
+                    for (i_res, _res) in ress.iter().enumerate() {
+                        let atom_near = &atoms_prot[nearest.mol_i];
+                        if let Some(res_i) = atom_near.residue {
+                            if res_i == i_res {
+                                return Selection::Residue(i_res);
+                            }
+                        }
                     }
+                    Selection::None // Selected atom is not in a residue.
                 }
+                // These are the same as bove.
+                MolType::Ligand => Selection::AtomLig(indices),
+                MolType::NucleicAcid => Selection::AtomNucleicAcid(indices),
+                MolType::Lipid => Selection::AtomLipid(indices),
+                _ => unreachable!(),
             }
-            Selection::None // Selected atom is not in a residue.
         }
     }
 }

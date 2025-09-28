@@ -13,7 +13,7 @@ use bio_files::{
 };
 use lin_alg::f64::{Quaternion, Vec3};
 use na_seq::Element::{self, *};
-use rand::{Rng, distr::Uniform};
+use rand::{Rng, distr::Uniform, rngs::ThreadRng};
 
 use crate::molecule::{Atom, Bond, MoleculeCommon, build_adjacency_list};
 
@@ -48,6 +48,28 @@ impl Display for LipidShape {
     }
 }
 
+/// Hard-coded for E. Coli membrane protein for now.
+pub fn get_lipid_from_distro(
+    templates: &[MoleculeLipid],
+    rng: &mut ThreadRng,
+    uni: &Uniform<f32>,
+) -> MoleculeLipid {
+    // todo: Instead of sampling each atom, you may wish to ensure
+    // todo: teh result is balance.d
+
+    let v = rng.sample(uni);
+    let mut standard = LipidStandard::Pe;
+    if v > 0.75 && v < 0.93 {
+        standard = LipidStandard::Pgs; // todo: Or pgr? Protenation variants
+    } else if v >= 0.93 {
+        // todo: Placeholder; Amber doesn't have cardiolipin.
+        // standard = LipidStandard::Cardiolipin;
+        standard = LipidStandard::Pe;
+    }
+
+    templates[standard as usize].clone()
+}
+
 /// todo: Hard-coded for E. coli for now.
 pub fn make_bacterial_lipids(
     n_mols: usize,
@@ -56,26 +78,18 @@ pub fn make_bacterial_lipids(
     templates: &[MoleculeLipid],
 ) -> Vec<MoleculeLipid> {
     let mut rng = rand::rng();
-    let mut result = Vec::new();
-    // todo: Do we need this?
     let uni = Uniform::<f32>::new(0.0, 1.0).unwrap();
+
+    for t in templates {
+        println!("T: {:?}", t.common.ident);
+    }
+
+    let mut result = Vec::new();
 
     match shape {
         LipidShape::Free => {
             for _ in 0..n_mols {
-                // todo: Instead of sampling each atom, you may wish to ensure
-                // todo: teh result is balance.d
-                let v = rng.sample(uni);
-                let mut standard = LipidStandard::Pe;
-                if v > 0.75 && v < 0.93 {
-                    standard = LipidStandard::Pgs; // todo: Or pgr? Protenation variants
-                } else if v >= 0.93 {
-                    // todo: Placeholder; Amber doesn't have cardiolipin.
-                    // standard = LipidStandard::Cardiolipin;
-                    standard = LipidStandard::Pe;
-                }
-
-                let mut mol = templates[standard as usize].clone();
+                let mut mol = get_lipid_from_distro(templates, &mut rng, &uni);
 
                 let rot = {
                     let w: f64 = rng.random();
@@ -106,11 +120,42 @@ pub fn make_bacterial_lipids(
             }
         }
         LipidShape::Membrane => {
-            unimplemented!()
+            // These are head-to-head distances.
+            // todo: Consts A/R
+            // Note: Area per lipid (APL) is ~60–62 Å² per lipid at ~37 °C.
+            const HEADGROUP_SPACING: f64 = 7.9; // 7.8-8.4Å
+            const DIST_ACROSS_MEMBRANE: f64 = 38.; // 36-39Å phosphate-to-phosphate
+
+            let n_rows = n_mols.isqrt();
+            let n_cols = (n_mols + n_rows - 1) / n_rows; // ceil(n_mols / n_rows)
+
+            // start in the top-left so the grid is centered on `center`
+            let mut p = center
+                - Vec3::new(
+                    (n_cols as f64 - 1.0) * 0.5 * HEADGROUP_SPACING,
+                    (n_rows as f64 - 1.0) * 0.5 * HEADGROUP_SPACING,
+                    0.0,
+                );
+            let mut row_start = p;
+
+            for i in 0..n_mols {
+                let mut mol = get_lipid_from_distro(templates, &mut rng, &uni);
+                for posit in &mut mol.common.atom_posits {
+                    *posit = *posit + p;
+                }
+                result.push(mol);
+
+                // advance across the row (columns go along +Y per your original code)
+                p += Vec3::new(0.0, HEADGROUP_SPACING, 0.0);
+
+                // wrap to next row after filling `n_cols` entries
+                if (i + 1) % n_cols == 0 {
+                    row_start.x += HEADGROUP_SPACING;
+                    p = Vec3::new(row_start.x, row_start.y, row_start.z);
+                }
+            }
         }
-        LipidShape::Lnp => {
-            unimplemented!()
-        }
+        LipidShape::Lnp => {}
     }
 
     result

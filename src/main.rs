@@ -37,6 +37,7 @@ mod reflection;
 mod lipid;
 mod md;
 mod mol_lig;
+mod mol_manip;
 mod nucleic_acid;
 mod selection;
 #[cfg(test)]
@@ -316,6 +317,7 @@ struct PopupState {
     show_settings: bool,
     get_geostd_items: Vec<GeostdItem>,
     residue_selector: bool,
+    rama_plot: bool,
 }
 
 #[derive(Default)]
@@ -602,6 +604,9 @@ impl State {
 
                     self.lipid_templates.push(mol);
                 }
+
+                self.lipid_templates
+                    .sort_by_key(|mol| mol.common.ident.clone());
             }
             Err(e) => {
                 handle_err(&mut self.ui, format!("Unable to load lipid templates: {e}"));

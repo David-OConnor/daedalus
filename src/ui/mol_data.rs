@@ -9,14 +9,14 @@ use lin_alg::f64::Vec3;
 use crate::{
     ManipMode, Selection, State, drawing,
     drawing::{CHARGE_MAP_MAX, CHARGE_MAP_MIN, COLOR_AA_NON_RESIDUE_EGUI},
-    inputs::set_manip,
     lipid::MoleculeLipid,
     mol_lig::MoleculeSmall,
+    mol_manip::set_manip,
     molecule::{Atom, MolType, MoleculeGenericRef, MoleculeGenericRefMut, Residue, aa_color},
     nucleic_acid::MoleculeNucleicAcid,
     ui::{
         COL_SPACING, COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_HIGHLIGHT, COLOR_INACTIVE,
-        cam::move_cam_to_lig, mol_descrip, rama_plot::plot_rama,
+        cam::move_cam_to_lig, mol_descrip,
     },
     util::{handle_err, handle_success, make_egui_color, move_mol_to_res},
 };
@@ -258,7 +258,7 @@ pub fn display_mol_data_peptide(
         }
 
         if ui.button("Plot dihedrals").clicked() {
-            plot_rama(&mol.residues, &mol.common.ident, ui);
+            state.ui.popup.rama_plot = !state.ui.popup.rama_plot;
         }
 
         ui.add_space(COL_SPACING);
@@ -524,14 +524,13 @@ pub fn display_mol_data(
     close: &mut bool,
     engine_updates: &mut EngineUpdates,
 ) {
-    if state.volatile.active_mol.is_none() {
-        return;
-    }
-
     ui.horizontal(|ui| {
         mol_picker(state, scene, ui, redraw_lig, close, engine_updates);
 
-        let (active_mol_type, active_mol_i) = state.volatile.active_mol.unwrap();
+        let Some((active_mol_type, active_mol_i)) = state.volatile.active_mol else {
+            return
+        };
+
         ui.add_space(COL_SPACING);
 
         if let Some(mol) = state.active_mol() {
@@ -575,14 +574,23 @@ pub fn display_mol_data(
         if ui
             .button(RichText::new("Reset posit").color(COLOR_HIGHLIGHT))
             .on_hover_text(
-                "Move the ligand to its absolute coordinates, e.g. as defined in \
+                "Move the moleculeto its absolute coordinates, e.g. as defined in \
                     its source mmCIF, Mol2 or SDF file.",
             )
             .clicked()
         {
             if let Some(mol) = &mut state.active_mol_mut() {
                 mol.common_mut().reset_posits();
-                *redraw_lig = true;
+                // todo: Not working
+                println!("Reset positions"); // todo: Temp debug
+
+                match active_mol_type {
+                    MolType::Ligand => *redraw_lig = true,
+                    MolType::NucleicAcid => *redraw_na = true,
+                    MolType::Lipid => *redraw_lipid = true,
+                    _ => unimplemented!()
+                }
+
             }
         }
 
