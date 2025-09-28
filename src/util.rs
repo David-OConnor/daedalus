@@ -2,10 +2,9 @@
 //! For example, we may call some of these from the GUI, but they won't have any EGUI-specific
 //! logic in them.
 
-use std::{collections::HashMap, time::Instant};
+use std::time::Instant;
 
 use bio_files::ResidueType;
-use dynamics::params::populate_peptide_ff_and_q;
 use egui::Color32;
 use graphics::{Camera, ControlScheme, EngineUpdates, FWD_VEC, Mesh, Scene, Vertex};
 use lin_alg::{
@@ -22,7 +21,7 @@ use crate::{
         EntityType, MoleculeView, draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids,
         draw_density_point_cloud, draw_density_surface, draw_peptide,
     },
-    lipid::{Lipid, MoleculeLipid},
+    lipid::MoleculeLipid,
     mol_lig::MoleculeSmall,
     molecule::{
         Atom, Bond, MolType, MoleculeCommon, MoleculeGenericRefMut, MoleculePeptide, Residue,
@@ -140,14 +139,14 @@ pub fn select_from_search(state: &mut State) {
 }
 
 pub fn cycle_selected(state: &mut State, scene: &mut Scene, reverse: bool) {
-    let Some(mol) = &state.peptide else { return };
-
     let dir = if reverse { -1 } else { 1 };
 
     // todo: DRY between atom and res.
     match state.ui.view_sel_level {
         ViewSelLevel::Atom => match state.ui.selection {
             Selection::AtomPeptide(atom_i) => {
+                let Some(mol) = &state.peptide else { return };
+
                 for chain in &mol.chains {
                     if chain.atoms.contains(&atom_i) {
                         let mut new_atom_i = atom_i as isize;
@@ -165,28 +164,62 @@ pub fn cycle_selected(state: &mut State, scene: &mut Scene, reverse: bool) {
                     }
                 }
             }
-            Selection::AtomLig((lig_i, atom_i)) => {
-                let Some(mol_) = state.active_mol() else {
+            Selection::AtomLig((mol_i, atom_i)) => {
+                let Some(mol) = state.active_mol() else {
                     return;
                 };
 
                 // todo: DRY with the above for peptide atoms.
                 let mut new_atom_i = atom_i as isize;
 
-                while new_atom_i < (mol_.common().atoms.len() as isize) - 1 && new_atom_i >= 0 {
+                while new_atom_i < (mol.common().atoms.len() as isize) - 1 && new_atom_i >= 0 {
                     new_atom_i += dir;
                     let na_i = new_atom_i as usize;
-                    state.ui.selection = Selection::AtomLig((lig_i, na_i));
+                    state.ui.selection = Selection::AtomLig((mol_i, na_i));
+                    break;
+                }
+            }
+            // todo: DRY!
+            Selection::AtomNucleicAcid((mol_i, atom_i)) => {
+                let Some(mol) = state.active_mol() else {
+                    return;
+                };
+
+                // todo: DRY with the above for peptide atoms.
+                let mut new_atom_i = atom_i as isize;
+
+                while new_atom_i < (mol.common().atoms.len() as isize) - 1 && new_atom_i >= 0 {
+                    new_atom_i += dir;
+                    let na_i = new_atom_i as usize;
+                    state.ui.selection = Selection::AtomNucleicAcid((mol_i, na_i));
+                    break;
+                }
+            }
+            // todo DRY
+            Selection::AtomLipid((mol_i, atom_i)) => {
+                let Some(mol) = state.active_mol() else {
+                    return;
+                };
+
+                // todo: DRY with the above for peptide atoms.
+                let mut new_atom_i = atom_i as isize;
+
+                while new_atom_i < (mol.common().atoms.len() as isize) - 1 && new_atom_i >= 0 {
+                    new_atom_i += dir;
+                    let na_i = new_atom_i as usize;
+                    state.ui.selection = Selection::AtomLipid((mol_i, na_i));
                     break;
                 }
             }
             _ => {
-                if !mol.common.atoms.is_empty() {
-                    state.ui.selection = Selection::AtomPeptide(0);
-                }
+                // if !mol.common.atoms.is_empty() {
+                //     state.ui.selection = Selection::AtomPeptide(0);
+                // }
             }
         },
         ViewSelLevel::Residue => {
+            let Some(mol) = &state.peptide else { return };
+
             match state.ui.selection {
                 Selection::Residue(res_i) => {
                     for chain in &mol.chains {
@@ -512,12 +545,10 @@ pub fn clear_cli_out(ui: &mut StateUi) {
 }
 
 pub fn close_peptide(state: &mut State, scene: &mut Scene, engine_updates: &mut EngineUpdates) {
-    let mut ident = String::new();
-    let mut path = None;
-    if let Some(mol) = &state.peptide {
-        path = mol.common.path.clone();
-        ident = mol.common.ident.clone();
-    }
+    let path = match &state.peptide {
+        Some(mol) => mol.common.path.clone(),
+        None => None,
+    };
 
     state.peptide = None;
     state.mol_dynamics = None;

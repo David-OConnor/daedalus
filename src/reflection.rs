@@ -18,6 +18,8 @@ use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 use mcubes::GridPoint;
 use rayon::prelude::*;
 
+#[cfg(feature = "cuda")]
+use crate::CudaModules;
 use crate::{ComputationDevice, molecule::Atom};
 
 pub const DENSITY_CELL_MARGIN: f64 = 2.0;
@@ -275,7 +277,8 @@ impl DensityRect {
     /// We assume `atom_posits` has been filtered to not include Hydrogens, for performance reasons.
     pub fn make_densities(
         &self,
-        dev: &(ComputationDevice, Option<Arc<CudaModule>>),
+        dev: &ComputationDevice,
+        #[cfg(feature = "cuda")] cuda_modules: &Option<CudaModules>,
         atom_posits: &[Vec3],
         cell: &UnitCell,
         dist_thresh: f64,
@@ -317,7 +320,7 @@ impl DensityRect {
         // CPU without rayon: 20,000ms
         // CPU, with rayon (No SIMD): 780ms
         // GPU: 54ms
-        let out = match &dev.0 {
+        let out = match &dev {
             ComputationDevice::Cpu => self.make_densities_inner(
                 triplets,
                 &atom_posits_sample,
@@ -329,7 +332,8 @@ impl DensityRect {
             #[cfg(feature = "cuda")]
             ComputationDevice::Gpu((stream, _mod_dynamics)) => self.make_densities_inner_gpu(
                 stream,
-                dev.1.as_ref().unwrap(),
+                // Assume Some if on Device::Gpu.
+                cuda_modules.unwrap().reflections,
                 triplets,
                 &atom_posits_sample,
                 step_vecs,

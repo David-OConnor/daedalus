@@ -26,16 +26,13 @@ use crate::{
     cli::autocomplete_cli,
     download_mols::{load_sdf_drugbank, load_sdf_pubchem},
     drawing::{
-        EntityType, MoleculeView, color_viridis, draw_all_ligs, draw_all_lipids,
-        draw_all_nucleic_acids, draw_density_point_cloud, draw_density_surface, draw_peptide,
-        draw_water,
+        color_viridis, draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids, draw_peptide,
     },
     file_io::gemmi_path,
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
     lipid::{LipidShape, make_bacterial_lipids},
     mol_lig::MoleculeSmall,
     molecule::{MolType, MoleculeGenericRef},
-    nucleic_acid::{MoleculeNucleicAcid, NucleicAcidType, Strands},
     render::{set_flashlight, set_static_light},
     ui::{
         cam::{cam_controls, cam_snapshots},
@@ -247,8 +244,10 @@ fn draw_cli(
     state: &mut State,
     scene: &mut Scene,
     engine_updates: &mut EngineUpdates,
-    redraw_mol: &mut bool,
+    redraw_pep: &mut bool,
     redraw_lig: &mut bool,
+    redraw_na: &mut bool,
+    redraw_lipid: &mut bool,
     reset_cam: &mut bool,
     ui: &mut Ui,
 ) {
@@ -318,7 +317,7 @@ fn draw_cli(
         if (button_clicked || enter_pressed) && state.ui.cmd_line_input.len() >= 2 {
             // todo: Error color
             state.ui.cmd_line_output =
-                match cli::handle_cmd(state, scene, engine_updates, redraw_mol, reset_cam) {
+                match cli::handle_cmd(state, scene, engine_updates, redraw_pep, reset_cam) {
                     Ok(out) => {
                         state.ui.cmd_line_out_is_err = false;
                         out
@@ -336,7 +335,15 @@ fn draw_cli(
         }
 
         ui.add_space(COL_SPACING);
-        residue_search(state, scene, redraw_mol, redraw_lig, ui);
+        residue_search(
+            state,
+            scene,
+            redraw_pep,
+            redraw_lig,
+            redraw_na,
+            redraw_lipid,
+            ui,
+        );
     });
 }
 
@@ -392,8 +399,10 @@ fn docking(
 fn residue_search(
     state: &mut State,
     scene: &mut Scene,
-    redraw: &mut bool,
+    redraw_pep: &mut bool,
     redraw_lig: &mut bool,
+    redraw_na: &mut bool,
+    redraw_lipid: &mut bool,
     ui: &mut Ui,
 ) {
     let (btn_text_p, btn_text_n, search_text) = match state.ui.view_sel_level {
@@ -407,7 +416,7 @@ fn residue_search(
         .changed()
     {
         select_from_search(state);
-        *redraw = true;
+        *redraw_pep = true;
     }
 
     if state.peptide.is_some() || !state.ligands.is_empty() {
@@ -417,14 +426,13 @@ fn residue_search(
             .clicked()
         {
             cycle_selected(state, scene, true);
-            if matches!(
-                state.ui.selection,
-                Selection::AtomPeptide(_) | Selection::Residue(_)
-            ) {
-                *redraw = true;
-            }
-            if matches!(state.ui.selection, Selection::AtomLig(_)) {
-                *redraw_lig = true;
+
+            match state.ui.selection {
+                Selection::AtomPeptide(_) | Selection::Residue(_) => *redraw_pep = true,
+                Selection::AtomLig(_) => *redraw_lig = true,
+                Selection::AtomNucleicAcid(_) => *redraw_na = true,
+                Selection::AtomLipid(_) => *redraw_lipid = true,
+                _ => (),
             }
         }
         // todo: DRY
@@ -435,14 +443,13 @@ fn residue_search(
             .clicked()
         {
             cycle_selected(state, scene, false);
-            if matches!(
-                state.ui.selection,
-                Selection::AtomPeptide(_) | Selection::Residue(_)
-            ) {
-                *redraw = true;
-            }
-            if matches!(state.ui.selection, Selection::AtomLig(_)) {
-                *redraw_lig = true;
+
+            match state.ui.selection {
+                Selection::AtomPeptide(_) | Selection::Residue(_) => *redraw_pep = true,
+                Selection::AtomLig(_) => *redraw_lig = true,
+                Selection::AtomNucleicAcid(_) => *redraw_na = true,
+                Selection::AtomLipid(_) => *redraw_lipid = true,
+                _ => (),
             }
         }
 
@@ -947,7 +954,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
             {
                 let mut close = false;
-                display_mol_data_peptide(state, scene, ui, &mut redraw_lig, &mut redraw_na, &mut redraw_lipid, &mut close, &mut engine_updates);
+                display_mol_data_peptide(state, scene, ui, &mut redraw_lig, &mut close, &mut engine_updates);
 
                 if close {
                     close_peptide(state, scene, &mut engine_updates);
@@ -1301,6 +1308,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             &mut engine_updates,
             &mut redraw_peptide,
             &mut redraw_lig,
+            &mut redraw_na,
+            &mut redraw_lipid,
             &mut reset_cam,
             ui,
         );

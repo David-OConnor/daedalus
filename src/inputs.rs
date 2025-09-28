@@ -267,26 +267,28 @@ pub fn event_dev_handler(
                 ElementState::Pressed => match key.physical_key {
                     Code(KeyCode::ArrowLeft) => {
                         cycle_selected(state_, scene, true);
-                        if matches!(
-                            state_.ui.selection,
-                            Selection::AtomPeptide(_) | Selection::Residue(_)
-                        ) {
-                            redraw_protein = true;
-                        }
-                        if matches!(state_.ui.selection, Selection::AtomLig(_)) {
-                            redraw_lig = true;
+
+                        match state_.ui.selection {
+                            Selection::AtomPeptide(_) | Selection::Residue(_) => {
+                                redraw_protein = true
+                            }
+                            Selection::AtomLig(_) => redraw_lig = true,
+                            Selection::AtomNucleicAcid(_) => redraw_na = true,
+                            Selection::AtomLipid(_) => redraw_lipid = true,
+                            _ => (),
                         }
                     }
                     Code(KeyCode::ArrowRight) => {
                         cycle_selected(state_, scene, false);
-                        if matches!(
-                            state_.ui.selection,
-                            Selection::AtomPeptide(_) | Selection::Residue(_)
-                        ) {
-                            redraw_protein = true;
-                        }
-                        if matches!(state_.ui.selection, Selection::AtomLig(_)) {
-                            redraw_lig = true;
+
+                        match state_.ui.selection {
+                            Selection::AtomPeptide(_) | Selection::Residue(_) => {
+                                redraw_protein = true
+                            }
+                            Selection::AtomLig(_) => redraw_lig = true,
+                            Selection::AtomNucleicAcid(_) => redraw_na = true,
+                            Selection::AtomLipid(_) => redraw_lipid = true,
+                            _ => (),
                         }
                     }
                     Code(KeyCode::Escape) => {

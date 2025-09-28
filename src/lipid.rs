@@ -82,7 +82,11 @@ fn find_atom_by_tir(m: &MoleculeLipid, name: &str) -> usize {
 
 // todo: QC and clean this up
 /// Bonds a phospholipid head's O11 to Acyl C1 (Carbonyl carbon). Bonds Head's O21 to other acyl C1.
-fn combine_head_tail(head: &mut MoleculeLipid, tail_0: MoleculeLipid, tail_1: MoleculeLipid) {
+fn combine_head_tail(
+    head: &mut MoleculeLipid,
+    mut tail_0: MoleculeLipid,
+    mut tail_1: MoleculeLipid,
+) {
     // Head joining atoms.
     let o11_i = find_atom_by_tir(&head, "O11");
     let o21_i = find_atom_by_tir(&head, "O21");
@@ -92,25 +96,58 @@ fn combine_head_tail(head: &mut MoleculeLipid, tail_0: MoleculeLipid, tail_1: Mo
 
     let o11_sn = head.common.atoms[o11_i].serial_number;
     let o21_sn = head.common.atoms[o21_i].serial_number;
-    let t0_c1_sn = tail_0.common.atoms[t0_c1_i].serial_number;
-    let t1_c1_sn = tail_1.common.atoms[t1_c1_i].serial_number;
 
     let o11_posit = head.common.atoms[o11_i].posit;
     let o21_posit = head.common.atoms[o21_i].posit;
+    let t0_c1_posit = tail_0.common.atoms[t0_c1_i].posit;
+    let t1_c1_posit = tail_1.common.atoms[t1_c1_i].posit;
+
+    // Update bond indices and SNs, offsetting from ones that come before. Order is
+    // Head, tail on head's O21, tail on head's O22.
+    let offset_t0 = head.common.atoms.len();
+    let offset_t1 = head.common.atoms.len() + offset_t0;
+    // todo: QC thse SN offsets.
+    let offset_t0_sn = offset_t0 as u32;
+    let offset_t1_sn = offset_t1 as u32;
+
+    // We re-anchor tail atoms the head.
+    // todo: QC order
+    let tail_0_offset = o11_posit - t0_c1_posit;
+    let tail_1_offset = o21_posit - t1_c1_posit;
+
+    for atom in &mut tail_0.common.atoms {
+        atom.serial_number += offset_t0_sn;
+        atom.posit += tail_0_offset;
+    }
+
+    for atom in &mut tail_1.common.atoms {
+        atom.serial_number += offset_t1_sn;
+        atom.posit += tail_1_offset;
+    }
+
+    // Set these after assigning new SNs to the tail
+    let t0_c1_sn = tail_0.common.atoms[t0_c1_i].serial_number;
+    let t1_c1_sn = tail_1.common.atoms[t1_c1_i].serial_number;
+
+    for bond in &mut tail_0.common.bonds {
+        bond.atom_0 += offset_t0;
+        bond.atom_0_sn += offset_t0_sn;
+        bond.atom_1 += offset_t0;
+        bond.atom_1_sn += offset_t0_sn;
+    }
+
+    for bond in &mut tail_1.common.bonds {
+        bond.atom_0 += offset_t1;
+        bond.atom_0_sn += offset_t1_sn;
+        bond.atom_1 += offset_t1;
+        bond.atom_1_sn += offset_t1_sn;
+    }
 
     for atom in tail_0.common.atoms {
-        let at = Atom {
-            posit: atom.posit + o11_posit,
-            ..atom
-        };
-        head.common.atoms.push(at);
+        head.common.atoms.push(atom);
     }
     for atom in tail_1.common.atoms {
-        let at = Atom {
-            posit: atom.posit + o21_posit,
-            ..atom
-        };
-        head.common.atoms.push(at);
+        head.common.atoms.push(atom);
     }
 
     // Create ester bonds: O11–C1 (sn-1), O21–C1 (sn-2)
@@ -174,7 +211,9 @@ pub fn make_bacterial_lipids(
         let chain_0 = templates[LipidStandard::Pa as usize].clone();
         let chain_1 = templates[LipidStandard::Ol as usize].clone();
 
+        println!("Head len pre: {}", mol.common.atoms.len());
         combine_head_tail(&mut mol, chain_0, chain_1);
+        println!("Head len post: {}", mol.common.atoms.len());
 
         match shape {
             LipidShape::Free => {

@@ -230,8 +230,6 @@ pub fn display_mol_data_peptide(
     scene: &mut Scene,
     ui: &mut Ui,
     redraw_lig: &mut bool,
-    redraw_na: &mut bool,
-    redraw_lipid: &mut bool,
     close: &mut bool,
     engine_updates: &mut EngineUpdates,
 ) {
@@ -403,7 +401,6 @@ pub fn display_mol_data_peptide(
                 state.mol_dynamics = None;
 
                 if let Some(sel_atom) = atom_sel {
-
                     // todo: Put back. Borrow problem.
 
                     // let mut mol = state.active_mol_mut().unwrap();

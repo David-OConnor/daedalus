@@ -1,16 +1,15 @@
 //! Misc utility-related UI functionality.
 
-use egui::{Color32, ComboBox, CornerRadius, Frame, Margin, RichText, Slider, Stroke, Ui};
+use egui::{Color32, CornerRadius, Frame, Margin, RichText, Slider, Stroke, Ui};
 use graphics::{EngineUpdates, Scene};
 const COLOR_SECTION_BOX: Color32 = Color32::from_rgb(100, 100, 140);
 
 use crate::{
     State,
-    drawing::{draw_all_ligs, draw_peptide, draw_water},
-    // molecule::PeptideAtomPosits,
+    drawing::{draw_all_ligs, draw_all_lipids, draw_peptide, draw_water},
+    md::change_snapshot,
     ui::{COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_INACTIVE, ROW_SPACING},
 };
-use crate::{drawing::draw_all_lipids, md::change_snapshot};
 
 /// A checkbox to show or hide a category.
 pub fn vis_check(val: &mut bool, text: &str, ui: &mut Ui, redraw: &mut bool) {

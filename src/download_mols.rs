@@ -1,7 +1,7 @@
 //! Allows downloading PDB files from various APIs.
 
 use bio_apis::{ReqError, drugbank, pubchem, rcsb};
-use bio_files::{MmCif, Mol2, Sdf};
+use bio_files::{MmCif, Sdf};
 
 use crate::mol_lig::MoleculeSmall;
 /// Download mmCIF file from the RSCB, parse into a struct.

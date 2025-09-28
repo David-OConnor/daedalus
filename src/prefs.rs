@@ -11,7 +11,7 @@ use bincode::{
     error::{DecodeError, EncodeError},
 };
 use bio_apis::rcsb::{FilesAvailable, PdbDataResults};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use dynamics::MdConfig;
 use graphics::{
     ControlScheme,
@@ -75,15 +75,13 @@ impl<T> Decode<T> for OpenHistory {
         let ts = i64::decode(decoder)?;
         let path = PathBuf::decode(decoder)?;
         let type_ = OpenType::decode(decoder)?;
-        // let ident = String::decode(decoder)?;
         let last_session = bool::decode(decoder)?;
 
         Ok(OpenHistory {
-            timestamp: DateTime::<Utc>::from_utc(
-                chrono::NaiveDateTime::from_timestamp_opt(ts, 0)
-                    .ok_or_else(|| DecodeError::OtherString("invalid timestamp".to_string()))?,
-                Utc,
-            ),
+            timestamp: Utc
+                .timestamp_opt(ts, 0)
+                .single()
+                .ok_or_else(|| DecodeError::OtherString("invalid timestamp".to_string()))?,
             path,
             type_,
             // ident,

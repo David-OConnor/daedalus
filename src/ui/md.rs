@@ -1,9 +1,4 @@
-use std::path::PathBuf;
-
-use dynamics::{
-    ComputationDevice, HydrogenConstraint, Integrator, SimBoxInit,
-    snapshot::{SaveType, SnapshotHandler},
-};
+use dynamics::{ComputationDevice, HydrogenConstraint, Integrator, SimBoxInit};
 use egui::{Color32, ComboBox, RichText, TextEdit, Ui};
 use graphics::{EngineUpdates, Scene};
 use lin_alg::f64::Vec3;
@@ -140,7 +135,8 @@ pub fn md_setup(
                 }
             }
 
-            match &state.dev.0 {
+
+            match &state.dev {
                 ComputationDevice::Cpu => {
                     ui.label(RichText::new("CPU"));
                 }

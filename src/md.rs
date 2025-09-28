@@ -19,8 +19,7 @@ const STATIC_ATOM_DIST_THRESH: f64 = 8.; // todo: Increase (?) A/R.
 
 /// Perform MD on selected molecules.
 pub fn build_dynamics(
-    #[cfg(feature = "cuda")] dev: &(ComputationDevice, Option<Arc<CudaModule>>),
-    #[cfg(not(feature = "cuda"))] dev: &ComputationDevice,
+    dev: &ComputationDevice,
     ligs: Vec<&mut MoleculeSmall>,
     lipids: Vec<&mut MoleculeLipid>,
     peptide: Option<&MoleculePeptide>,
@@ -125,13 +124,14 @@ pub fn build_dynamics(
     }
 
     println!("Initializing MD state...");
-    let mut md_state = MdState::new(&dev.0, cfg, &mols, param_set)?;
+
+    let mut md_state = MdState::new(dev, cfg, &mols, param_set)?;
     println!("Done.");
 
     let start = Instant::now();
 
     for _ in 0..n_steps {
-        md_state.step(&dev.0, dt);
+        md_state.step(dev, dt);
     }
 
     let elapsed = start.elapsed();

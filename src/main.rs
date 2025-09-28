@@ -56,7 +56,7 @@ use bio_apis::{
     amber_geostd::GeostdItem,
     rcsb::{FilesAvailable, PdbDataResults},
 };
-use bio_files::md_params::{ChargeParams, ForceFieldParams, load_lipid_templates};
+use bio_files::md_params::{ForceFieldParams, load_lipid_templates};
 #[cfg(feature = "cuda")]
 use cudarc::{
     driver::{CudaContext, CudaModule, CudaStream},
@@ -78,7 +78,7 @@ use molecule::MoleculePeptide;
 
 use crate::{
     lipid::{LipidShape, MoleculeLipid},
-    molecule::{Atom, Bond, MolType, MoleculeCommon, MoleculeGenericRef, MoleculeGenericRefMut},
+    molecule::{Bond, MolType, MoleculeCommon, MoleculeGenericRef, MoleculeGenericRefMut},
     nucleic_acid::MoleculeNucleicAcid,
     prefs::ToSave,
     render::render,
@@ -99,6 +99,22 @@ const PTX: &str = include_str!("../daedalus.ptx");
 // todo: Eventually, implement a system that automatically checks for changes, and don't
 // todo save to disk if there are no changes.
 const PREFS_SAVE_INTERVAL: u64 = 60; // Save user preferences this often, in seconds.
+
+/// The MdModule is owned by `dynamics::ComputationDevice`.
+#[cfg(feature = "cuda")]
+struct CudaModules {
+    /// For processing as part of loading electron density data
+    pub reflections: Arc<CudaModule>,
+}
+
+// /// This wraps `dyanmics::ComputationDevice`. It's a bit awkard, but for now
+// /// allows Dynamics to own ComputationDev with the MD model. We add our additional
+// /// models here. Note: The CudaStream is owned by the inner `dynamics::ComputationDevice`.
+// enum ComputationDevOuter {
+//     Cpu,
+//     #[cfg(feature = "cuda")]
+//     Gpu((ComputationDevice, Arc<CudaModule>>)),
+// }
 
 #[derive(Clone, Copy, PartialEq, Debug, Default, Encode, Decode)]
 pub enum ViewSelLevel {
@@ -437,7 +453,6 @@ impl CamSnapshot {
     }
 }
 
-#[derive(Default)]
 struct State {
     pub ui: StateUi,
     pub volatile: StateVolatile,
@@ -452,11 +467,12 @@ struct State {
     pub cam_snapshots: Vec<CamSnapshot>,
     /// This allows us to keep in-memory data for other molecules.
     pub to_save: ToSave,
-    pub babel_avail: bool,
-    pub docking_ready: bool,
-    // pub bh_config: BhConfig,
-    // todo: Until you find a more elegant way, this will work.
-    pub dev: (ComputationDevice, Option<Arc<CudaModule>>),
+    // #[cfg(feature = "cuda")]
+    // pub dev: (ComputationDevice, Option<Arc<CudaModule>>),
+    pub dev: ComputationDevice,
+    /// This is None if Computation Device is CPU.
+    #[cfg(feature = "cuda")]
+    pub cuda_modules: Option<CudaModules>,
     pub mol_dynamics: Option<MdState>,
     // todo: Combine these params in a single struct.
     pub ff_param_set: FfParamSet,
@@ -464,6 +480,35 @@ struct State {
     /// Common lipid types, e.g. as derived from Amber's `lipids21.lib`, but perhaps not exclusively.
     /// These are loaded at init; there will be one of each type.
     pub lipid_templates: Vec<MoleculeLipid>,
+}
+
+impl Default for State {
+    fn default() -> Self {
+        // Many other UI defaults are loaded after the initial prefs load in `main`.
+        let ui = StateUi {
+            view_depth: (FOG_DIST_MIN, FOG_DIST_MAX),
+            ..Default::default()
+        };
+
+        Self {
+            ui,
+            volatile: Default::default(),
+            cif_pdb_raw: Default::default(),
+            peptide: Default::default(),
+            ligands: Default::default(),
+            nucleic_acids: Default::default(),
+            lipids: Default::default(),
+            cam_snapshots: Default::default(),
+            to_save: Default::default(),
+            dev: Default::default(),
+            #[cfg(feature = "cuda")]
+            cuda_modules: None,
+            mol_dynamics: Default::default(),
+            ff_param_set: Default::default(),
+            lig_specific_params: Default::default(),
+            lipid_templates: Default::default(),
+        }
+    }
 }
 
 impl State {
@@ -502,7 +547,7 @@ impl State {
     }
 
     /// Helper
-    pub fn active_mol(&self) -> Option<MoleculeGenericRef> {
+    pub fn active_mol(&self) -> Option<MoleculeGenericRef<'_>> {
         match self.volatile.active_mol {
             Some((mol_type, i)) => match mol_type {
                 MolType::Peptide => None,
@@ -535,7 +580,7 @@ impl State {
 
     /// Helper
     /// todo: DRy with the non-mutable variant.
-    pub fn active_mol_mut(&mut self) -> Option<MoleculeGenericRefMut> {
+    pub fn active_mol_mut(&mut self) -> Option<MoleculeGenericRefMut<'_>> {
         match self.volatile.active_mol {
             Some((mol_type, i)) => match mol_type {
                 MolType::Peptide => None,
@@ -653,7 +698,7 @@ fn main() {
     };
 
     #[cfg(not(feature = "cuda"))]
-    let dev = (ComputationDevice::Cpu, None);
+    let dev = ComputationDevice::Cpu;
 
     // let dev = (ComputationDevice::Cpu, None);
 
@@ -710,7 +755,6 @@ fn main() {
         SimBoxInit::Pad(p) => (p as u16).to_string(),
         SimBoxInit::Fixed(_) => "0".to_string(), // We currently don't use this.
     };
-    state.ui.view_depth = (FOG_DIST_MIN, FOG_DIST_MAX);
 
     state.ui.md.langevin_γ = match state.to_save.md_config.integrator {
         Integrator::Langevin { gamma } | Integrator::LangevinMiddle { gamma } => gamma.to_string(),

@@ -6,18 +6,14 @@ use graphics::{ControlScheme, EngineUpdates, RIGHT_VEC, Scene, UP_VEC};
 use lin_alg::f32::{Quaternion, Vec3};
 
 use crate::{
-    Selection, State, StateUi,
-    mol_lig::MoleculeSmall,
-    molecule::MoleculeGenericRef,
+    Selection, State,
     render::{CAM_INIT_OFFSET, set_flashlight},
     ui::{
         COL_SPACING, COLOR_HIGHLIGHT, get_snap_name,
         misc::{self, section_box},
     },
     util,
-    util::{
-        cam_look_at, cam_look_at_outside, handle_err, move_cam_to_sel, orbit_center, reset_camera,
-    },
+    util::{cam_look_at, cam_look_at_outside, move_cam_to_sel, orbit_center, reset_camera},
 };
 
 // This control the clip planes in the camera frustum.
