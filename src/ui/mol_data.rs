@@ -264,132 +264,130 @@ pub fn display_mol_data_peptide(
             state.ui.popup.rama_plot = !state.ui.popup.rama_plot;
         }
 
-        ui.add_space(COL_SPACING);
-
-            let res_selected = match state.ui.selection {
-                Selection::AtomPeptide(sel_i) => {
-                    let atom = &mol.common.atoms[sel_i];
-                    if let Some(res_i) = &atom.residue {
-                        Some(&mol.residues[*res_i])
-                    } else {
-                        None
-                    }
+        let res_selected = match state.ui.selection {
+            Selection::AtomPeptide(sel_i) => {
+                let atom = &mol.common.atoms[sel_i];
+                if let Some(res_i) = &atom.residue {
+                    Some(&mol.residues[*res_i])
+                } else {
+                    None
                 }
-                Selection::Residue(sel_i) => {
-                    if sel_i >= mol.residues.len() {
-                        handle_err(&mut state.ui, "Residue selection is out of bounds.".to_owned());
-                        None
-                    } else {
-                        Some(&mol.residues[sel_i])
-                    }
-                },
-                _ => None,
-            };
+            }
+            Selection::Residue(sel_i) => {
+                if sel_i >= mol.residues.len() {
+                    handle_err(&mut state.ui, "Residue selection is out of bounds.".to_owned());
+                    None
+                } else {
+                    Some(&mol.residues[sel_i])
+                }
+            },
+            _ => None,
+        };
 
-            let Some(pep) = &state.peptide else {
-                return;
-            };
+        let Some(pep) = &state.peptide else {
+            return;
+        };
 
-            // let mut lig_atom_count = 0;
-            // if let Some(lig) = &state.active_lig() {
-            //     lig_atom_count = lig.common.atoms.len();
-            // }
+        // let mut lig_atom_count = 0;
+        // if let Some(lig) = &state.active_lig() {
+        //     lig_atom_count = lig.common.atoms.len();
+        // }
 
-            for res in &pep.het_residues {
-                // Note: This is crude.
-                if (res.atoms.len() - pep.common.atoms.len()) < 5 {
-                    // todo: Don't list multiple; pick teh closest, at least in len.
-                    let name = match &res.res_type {
-                        ResidueType::Other(name) => name,
-                        _ => "hetero residue",
-                    };
-                    ui.add_space(COL_SPACING / 2.);
+        for res in &pep.het_residues {
+            // Note: This is crude.
+            if (res.atoms.len() - pep.common.atoms.len()) < 5 {
+                // todo: Don't list multiple; pick teh closest, at least in len.
+                let name = match &res.res_type {
+                    ResidueType::Other(name) => name,
+                    _ => "hetero residue",
+                };
+                ui.add_space(COL_SPACING / 2.);
 
-                    if ui
-                        .button(RichText::new(format!("Move lig to {name}")).color(COLOR_HIGHLIGHT))
-                        .on_hover_text("Move the ligand to be colocated with this residue. this is intended to \
+                if ui
+                    .button(RichText::new(format!("Move lig to {name}")).color(COLOR_HIGHLIGHT))
+                    .on_hover_text("Move the ligand to be colocated with this residue. this is intended to \
                     be used to synchronize the ligand with a pre-positioned hetero residue in the protein file, e.g. \
                     prior to docking. In addition to moving \
                     its center, this attempts to align each atom with its equivalent on the residue.")
-                        .clicked()
-                    {
-
-                        // todo: Put back. Borrow problem.
-                        // let mut mol = state.active_mol_mut().unwrap();
-                        // let _docking_center = move_mol_to_res(&mut mol, pep, res);
-                        //
-                        // if let Some(m) = &state.active_mol() {
-                        //     move_cam_to_lig(
-                        //         // &m,
-                        //         // &mut state.ui.cam_snapshot,
-                        //         &mut state,
-                        //         scene,
-                        //         pep.center,
-                        //         engine_updates,
-                        //     );
-                        // }
-
-                        *redraw_lig = true;
-                    }
-                }
-            }
-            if let Some(res) = res_selected {
-                if ui
-                    .button(
-                        RichText::new(format!("Make lig from {}", res.res_type))
-                            .color(Color32::GOLD),
-                    )
-                    .on_hover_text(
-                        "Create a ligand from this residue on the peptide. This can be \
-                    saved to a Mol2 or SDF file, and used as a ligand.",
-                    )
                     .clicked()
                 {
-                    let res_type = res.res_type.clone(); // Avoids dbl-borrow.
 
-                    let mut mol_fm_res = MoleculeSmall::from_res(
-                        res,
-                        &pep.common.atoms,
-                        &pep.common.bonds,
-                        false,
-                        // &state.ff_params.lig_specific,
-                    );
-                    // todo: Borrow prob.
-                    // mol_fm_res.update_aux(&state);
-
-                    let mut lig_new = MoleculeGenericRefMut::Ligand(&mut mol_fm_res);
-
-                    state.mol_dynamics = None;
-
-                    let docking_center = move_mol_to_res(&mut lig_new, pep, res);
-
-                    // todo: Put this save back / fix dble-borrow?
-                    // state.update_docking_site(docking_center);
-                    // state.update_sa
-                    // ve_prefs(false);
-                    // set_docking_light(scene, Some(&lig.docking_site));
-                    // engine_updates.lighting = true;
+                    // todo: Put back. Borrow problem.
+                    // let mut mol = state.active_mol_mut().unwrap();
+                    // let _docking_center = move_mol_to_res(&mut mol, pep, res);
+                    //
+                    // if let Some(m) = &state.active_mol() {
+                    //     move_cam_to_lig(
+                    //         // &m,
+                    //         // &mut state.ui.cam_snapshot,
+                    //         &mut state,
+                    //         scene,
+                    //         pep.center,
+                    //         engine_updates,
+                    //     );
+                    // }
 
                     *redraw_lig = true;
-
-                    // If creating from an AA, move to the origin (Where we assigned its atom positions).
-                    // If from a hetero atom, leave it in place.
-                    match &res_type {
-                        ResidueType::AminoAcid(_) => {
-                            let mut mol = state.active_mol_mut().unwrap();
-                            mol.common_mut().reset_posits();
-                        }
-                        _ => {
-                            state.ui.visibility.hide_hetero = true;
-                        }
-                    }
-                    let mut mol = state.active_mol_mut().unwrap();
-                    mol = lig_new;
-
-                    // Make it clear that we've added the ligand by showing it, and hiding hetero (if creating from Hetero)
-                    state.ui.visibility.hide_ligand = false;
                 }
             }
+        }
+        if let Some(res) = res_selected {
+            if ui
+                .button(
+                    RichText::new(format!("Make lig from {}", res.res_type))
+                        .color(Color32::GOLD),
+                )
+                .on_hover_text(
+                    "Create a ligand from this residue on the peptide. This can be \
+                    saved to a Mol2 or SDF file, and used as a ligand.",
+                )
+                .clicked()
+            {
+                let res_type = res.res_type.clone(); // Avoids dbl-borrow.
+
+                let mut mol_fm_res = MoleculeSmall::from_res(
+                    res,
+                    &pep.common.atoms,
+                    &pep.common.bonds,
+                    false,
+                    // &state.ff_params.lig_specific,
+                );
+                // todo: Borrow prob.
+                // mol_fm_res.update_aux(&state);
+
+                let mut lig_new = MoleculeGenericRefMut::Ligand(&mut mol_fm_res);
+
+                state.mol_dynamics = None;
+
+                let docking_center = move_mol_to_res(&mut lig_new, pep, res);
+
+                // todo: Put this save back / fix dble-borrow?
+                // state.update_docking_site(docking_center);
+                // state.update_sa
+                // ve_prefs(false);
+                // set_docking_light(scene, Some(&lig.docking_site));
+                // engine_updates.lighting = true;
+
+                *redraw_lig = true;
+
+                // If creating from an AA, move to the origin (Where we assigned its atom positions).
+                // If from a hetero atom, leave it in place.
+                match &res_type {
+                    ResidueType::AminoAcid(_) => {
+                        let mut mol = state.active_mol_mut().unwrap();
+                        mol.common_mut().reset_posits();
+                    }
+                    _ => {
+                        state.ui.visibility.hide_hetero = true;
+                    }
+                }
+                let mut mol = state.active_mol_mut().unwrap();
+                mol = lig_new;
+
+                // Make it clear that we've added the ligand by showing it, and hiding hetero (if creating from Hetero)
+                state.ui.visibility.hide_ligand = false;
+            }
+        }
 
         if !matches!(
             state.ui.selection,
@@ -457,7 +455,7 @@ pub fn display_mol_data_peptide(
 
         if count_geostd_candidate > 0 {
             ui.horizontal(|ui| {
-                ui.label("Load Amber Geostd lig from: ").on_hover_text(
+                ui.label("Download ligs:").on_hover_text(
                     "Attempt to load a ligand molecule and force field \
                             params from a hetero residue included in the protein file.",
                 );
@@ -505,6 +503,9 @@ pub fn display_mol_data_peptide(
             &mut state.ui,
             format!("Loaded {} from Amber Geostd", data.ident),
         );
+
+        // Crude check for success.
+        let lig_count_prev = state.ligands.len();
         state.load_geostd_mol_data(&data.ident, true, data.frcmod_avail, redraw_lig);
 
         if state.active_mol().is_some() {

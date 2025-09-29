@@ -681,7 +681,7 @@ fn mol_descrip(mol: &MoleculeGenericRef, ui: &mut Ui) {
 
     if let Some(title) = mol.common().metadata.get("_struct.title") {
         // Limit size to prevent UI problems.
-        let mut title_abbrev: String = title.chars().take(MAX_TITLE_LEN).collect();
+        let mut title_abbrev: String = title.trim().chars().take(MAX_TITLE_LEN).collect();
 
         if title_abbrev.len() != title.len() {
             title_abbrev += "...";
