@@ -16,7 +16,7 @@ use crate::{
     nucleic_acid::MoleculeNucleicAcid,
     ui::{
         COL_SPACING, COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_HIGHLIGHT, COLOR_INACTIVE,
-        cam::move_cam_to_lig, mol_descrip,
+        ROW_SPACING, cam::move_cam_to_lig, mol_descrip,
     },
     util::{handle_err, handle_success, make_egui_color, move_mol_to_res},
 };
@@ -245,7 +245,7 @@ pub fn display_mol_data_peptide(
 
         mol_descrip(&MoleculeGenericRef::Peptide(mol), ui);
 
-        if ui.button("Close").clicked() {
+        if ui.button(RichText::new("Close").color(Color32::LIGHT_RED)).clicked() {
             *close = true;
         }
 
@@ -596,7 +596,7 @@ pub fn display_mol_data(
             }
         }
 
-        if ui.button("Close").clicked() {
+        if ui.button(RichText::new("Close").color(Color32::LIGHT_RED)).clicked() {
             *close = true;
         }
 

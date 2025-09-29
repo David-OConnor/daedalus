@@ -451,7 +451,10 @@ impl MoleculeSmall {
         ident: &str,
         lig_specific: &mut HashMap<String, ForceFieldParams>,
     ) {
+        println!("Attempting to load Amber Geostd dynamics data for this molecule.");
+
         let Ok(data) = amber_geostd::load_mol_files(&ident) else {
+            println!("Unable to find data");
             return;
         };
 
@@ -498,10 +501,6 @@ impl MoleculeSmall {
                     "Unable to load Amber Geostd data for this molecule; atom count mismatch."
                 );
 
-                println!("Counts. C: {:?}, Geostd: {:?}", count_c_orig, count_c_amber);
-                println!("Counts. N: {:?}, Geostd: {:?}", count_n_orig, count_n_amber);
-                println!("Counts. O: {:?}, Geostd: {:?}", count_o_orig, count_o_amber);
-                println!("Counts. H: {:?}, Geostd: {:?}", count_h_orig, count_h_amber);
                 return;
             }
 
@@ -519,6 +518,8 @@ impl MoleculeSmall {
             self.common.adjacency_list = mol.common.adjacency_list;
 
             self.ff_params_loaded = true;
+
+            println!("Success");
         }
 
         if !self.frcmod_loaded {
@@ -548,7 +549,6 @@ impl MoleculeSmall {
         for atom in &self.common.atoms {
             if atom.force_field_type.is_none() || atom.partial_charge.is_none() {
                 self.ff_params_loaded = false;
-                println!("ATOM WITH MISSING PARAMS: {}", atom);
                 break;
             }
         }

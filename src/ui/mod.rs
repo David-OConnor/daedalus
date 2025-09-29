@@ -1253,18 +1253,23 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             }
         });
 
-        ui.add_space(ROW_SPACING);
-
         let mut close_active_mol = false; // to avoid borrow error.
 
         if state.active_mol().is_some() {
             display_mol_data(state, scene, ui, &mut redraw_lig, &mut redraw_na, &mut redraw_lipid, &mut close_active_mol,  &mut engine_updates);
+        } else {
+            // Prevents display jump between selecting/unselecting molecules.
+            ui.add_space(24.);
         }
 
-        ui.add_space(ROW_SPACING);
+        let redraw_prev = redraw_peptide;
         selection_section(state, &mut redraw_peptide, ui);
-
-        ui.add_space(ROW_SPACING);
+        // todo: Kludge
+        if redraw_peptide && !redraw_prev {
+            redraw_lig = true;
+            redraw_na = true;
+            redraw_lipid = true;
+        }
 
         ui.horizontal_wrapped(|ui| {
             cam_controls(scene, state, &mut engine_updates, ui);
@@ -1668,60 +1673,63 @@ pub fn lipid_section(
         return;
     }
 
-    ui.horizontal(|ui| {
-        ui.label("Add lipids:");
+    section_box().show(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.label("Add lipids:");
 
-        let add_standard_text = state.lipid_templates[state.ui.lipid_to_add]
-            .common
-            .ident
-            .clone();
+            let add_standard_text = state.lipid_templates[state.ui.lipid_to_add]
+                .common
+                .ident
+                .clone();
 
-        // Ideally hover text here too, but I'm not sure how.
-        ComboBox::from_id_salt(101)
-            .width(30.)
-            .selected_text(add_standard_text)
-            .show_ui(ui, |ui| {
-                for (i, mol) in state.lipid_templates.iter().enumerate() {
-                    ui.selectable_value(&mut state.ui.lipid_to_add, i, &mol.common.ident);
-                }
-            })
-            .response
-            .on_hover_text("Add this lipid to the scene.");
+            ComboBox::from_id_salt(102)
+                .width(90.)
+                .selected_text(state.ui.lipid_shape.to_string())
+                .show_ui(ui, |ui| {
+                    for shape in [LipidShape::Free, LipidShape::Membrane, LipidShape::Lnp] {
+                        ui.selectable_value(&mut state.ui.lipid_shape, shape, shape.to_string());
+                    }
+                })
+                .response
+                .on_hover_text("Add lipids in this pattern");
 
-        ComboBox::from_id_salt(102)
-            .width(90.)
-            .selected_text(state.ui.lipid_shape.to_string())
-            .show_ui(ui, |ui| {
-                for shape in [LipidShape::Free, LipidShape::Membrane, LipidShape::Lnp] {
-                    ui.selectable_value(&mut state.ui.lipid_shape, shape, shape.to_string());
-                }
-            })
-            .response
-            .on_hover_text("Add lipids in this pattern");
+            if state.ui.lipid_shape == LipidShape::Free {
+                ComboBox::from_id_salt(101)
+                    .width(30.)
+                    .selected_text(add_standard_text)
+                    .show_ui(ui, |ui| {
+                        for (i, mol) in state.lipid_templates.iter().enumerate() {
+                            ui.selectable_value(&mut state.ui.lipid_to_add, i, &mol.common.ident);
+                        }
+                    })
+                    .response
+                    .on_hover_text("Add this lipid to the scene.");
+            }
 
-        num_field(&mut state.ui.lipid_mol_count, "# mols", 36, ui);
+            num_field(&mut state.ui.lipid_mol_count, "# mols", 36, ui);
 
-        // todo: Multiple and sets once this is validated
-        if ui.button("+").clicked() {
-            let center = Vec3::new_zero();
-            state.lipids.extend(make_bacterial_lipids(
-                state.ui.lipid_mol_count as usize,
-                center,
-                state.ui.lipid_shape,
-                &state.lipid_templates,
-            ));
-            //
-            // let mut mol = state.lipid_templates[state.ui.lipid_to_add].clone();
-            // for p in &mut mol.common.atom_posits {
-            //     *p = *p + Vec3::new_zero();
-            // }
-            //
-            // state.lipids.push(mol);
+            // todo: Multiple and sets once this is validated
+            if ui.button("+").clicked() {
+                let center = Vec3::new_zero();
+                state.lipids.extend(make_bacterial_lipids(
+                    state.ui.lipid_mol_count as usize,
+                    center,
+                    state.ui.lipid_shape,
+                    &state.lipid_templates,
+                ));
+                //
+                // let mut mol = state.lipid_templates[state.ui.lipid_to_add].clone();
+                // for p in &mut mol.common.atom_posits {
+                //     *p = *p + Vec3::new_zero();
+                // }
+                //
+                // state.lipids.push(mol);
 
-            draw_all_lipids(state, scene);
-            engine_updates.entities = true;
-        }
+                draw_all_lipids(state, scene);
+                engine_updates.entities = true;
+            }
 
-        ui.add_space(COL_SPACING);
+            ui.add_space(COL_SPACING);
+        });
     });
 }
