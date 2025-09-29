@@ -12,7 +12,7 @@ use crate::{
     State,
     docking_v2::DockingSite,
     drawing,
-    drawing::BOND_RADIUS_PEP,
+    drawing::BOND_RADIUS_BASE,
     inputs,
     inputs::{RUN_FACTOR, SCROLL_MOVE_AMT, SCROLL_ROTATE_AMT},
     ui::{
@@ -45,7 +45,7 @@ pub const MESH_DENSITY_SURFACE: usize = 8;
 pub const MESH_SECONDARY_STRUCTURE: usize = 9;
 
 pub const BALL_STICK_RADIUS: f32 = 0.3;
-pub const BALL_STICK_RADIUS_H: f32 = 0.2;
+pub const BALL_STICK_RADIUS_H: f32 = 0.1;
 
 pub const BALL_RADIUS_WATER_O: f32 = 0.09;
 pub const BALL_RADIUS_WATER_H: f32 = 0.06;
@@ -138,7 +138,7 @@ pub fn render(mut state: State) {
         meshes: vec![
             Mesh::new_sphere(1., 3),
             Mesh::new_box(1., 1., 1.),
-            Mesh::new_cylinder(1., BOND_RADIUS_PEP, 14),
+            Mesh::new_cylinder(1., BOND_RADIUS_BASE, 14),
             Mesh::new_sphere(1., 1), // low-res sphere
             Mesh::new_sphere(1., 2), // med-res sphere
             Mesh::new_box(1., 1., 1.),

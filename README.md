@@ -2,15 +2,17 @@
 
 [//]: # ([![Crate]&#40;https://img.shields.io/crates/v/daedalus.svg&#41;]&#40;https://crates.io/crates/daedalus&#41;)
 
+## Goal: The easiest to use structural biology tool
+
 For viewing and exploring proteins and small molecules. View atom positions, bonds, solvent-accessible-surfaces, and
 electron density. Perform and visualize molecular dynamics using built-in [Amber](https://ambermd.org/) parameters.
 
-Conceptually similar to [PyMol](https://www.pymol.org/), [Chimera](https://www.cgl.ucsf.edu/chimera/), and Discovery Studio, with functionality similar to
-[Coot](https://www2.mrc-lmb.cam.ac.uk/personal/pemsley/coot/)
-and [VMD](https://www.ks.uiuc.edu/Research/vmd/) as well.
+Blends functionality similar to [PyMol](https://www.pymol.org/), [Chimera](https://www.cgl.ucsf.edu/chimera/), w[Coot](https://www2.mrc-lmb.cam.ac.uk/personal/pemsley/coot/), [VMD](https://www.ks.uiuc.edu/Research/vmd/), and [GROMACS](https://www.gromacs.org/).
 
-Designed to be as easy to use, and fast as possible. Has tight integration with RSCB, Pubchem, drugbank, PDBe.
-and Amber. Uses parallel computing to accelerate calculations. (GPU, SIMD, and thread pools.)
+Designed to be as easy to use, and fast as possible. Has tight integration with online databases including [RSCB PDB](https://www.rcsb.org/),
+[Pubchem](https://pubchem.ncbi.nlm.nih.gov/), [drugbank](https://go.drugbank.com/), [PDBe](https://www.ebi.ac.uk/pdbe/),
+and [LMSD](https://www.lipidmaps.org/databases/lmsd/overview). Uses parallel computing to accelerate calculations. 
+(GPU, SIMD, and thread pools.)
 
 
 ## Installation
@@ -18,17 +20,22 @@ and Amber. Uses parallel computing to accelerate calculations. (GPU, SIMD, and t
 ### Windows and Linux
 [Download, unzip, and run](https://github.com/David-OConnor/daedalus/releases).
 
+If using with GPU, you may need to download [libcufft.so.12](https://github.com/David-OConnor/daedalus/releases/download/0.2.0/cufft_linux.zip),
+and place it in `/usr/lib`. (Linux), or [cufft64_12.dll](https://github.com/David-OConnor/daedalus/releases/download/0.2.0/cufft_win.zip),
+and place it in next to the executable or system PATH. (Windows) (You will know if you need to do this if the application doesn't open from GUI, or
+you get an error mentioning this file name when running from CLI or GUI). If you have the Cuda toolklit installed, this isn't required.
 
 Notes:
 - On Linux distros that use Gnome (e.g. Ubuntu), run `setup_linux_desktop.sh`, included in the zip, to create a Desktop GUI entry.
 - On Windows, the first time you run the program, you may get the message *"Microsoft Defender prevented an unrecognized app from starting"*. To bypass this, click *More info*, then *Run Anyway*.
+
 
 ### Mac, and linux distros we don't provide a binary for
 
 [//]: # (Compile from source by [downloading and installing Rust]&#40;https://www.rust-lang.org/tools/install&#41;, then running `cargo install daedalus` from a CLI.)
 Compile from source by [downloading and installing Rust](https://www.rust-lang.org/tools/install), then running `cargo build --release` from a CLI
 in the project directory. See notes in the *compiling* section below about setting up Amber parameter files,
-and disabling CUDA.
+and either installing the CUDA toolkit, or disabling CUDA.
 
 
 ## Functionality
@@ -262,7 +269,8 @@ If you're not running on a machine with an Nvidia GPU or without the CUDA toolki
 
 
 #### Compiling with GPU support
-If compiling with GPU support, you must set the environment var `LD_LIBARARY_PATH` (Linux) or `Path` (Windows) to your CUDA bin
+If compiling with GPU support, your compiling PC must have the [CUDA Toolkit, v13+](https://developer.nvidia.com/cuda-downloads) installled.
+You must set the environment var `LD_LIBARARY_PATH` (Linux) or `Path` (Windows) to your CUDA bin
 directory, e.g. `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0\bin`. You may also need the build tools
 containing `cl.exe` or similar in the path, e.g.: `C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64`
 

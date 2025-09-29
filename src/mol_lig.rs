@@ -1,6 +1,6 @@
 //! Fundamental data structures for small organic molecules / ligands
 
-use std::{collections::HashMap, io, path::PathBuf};
+use std::{collections::HashMap, io, path::PathBuf, time::Instant};
 
 use bio_apis::{amber_geostd, pubchem::ProteinStructure};
 use bio_files::{
@@ -395,48 +395,63 @@ impl MoleculeSmall {
     /// todo: How do we get partial charge and ff type? We normally *get* those from Amber-provided
     /// todo Mol2 files. If we do this from an AA, it works, but it doesn't from hereo residues.
     ///
-    pub fn from_res(res: &Residue, atoms: &[Atom], bonds: &[Bond], use_sns: bool) -> Self {
+    pub fn from_res(res: &Residue, atoms: &[Atom], bonds: &[Bond]) -> Self {
         // todo: Handle `use_sns`.
         let mut atoms_this = Vec::with_capacity(res.atoms.len());
-        let mut atom_indices = Vec::with_capacity(res.atoms.len());
 
-        for (i, atom_i) in res.atoms.iter().enumerate() {
+        // We use this map when rebuilding bonds.
+        // Old index: (new index, new sn)
+        let mut bond_map = HashMap::new();
+
+        for (i, &atom_i_orig) in res.atoms.iter().enumerate() {
+            let atom = &atoms[atom_i_orig];
+
+            let serial_number = i as u32 + 1;
+            bond_map.insert(atom_i_orig, (i, serial_number));
+
             atoms_this.push(Atom {
-                serial_number: i as u32 + 1,
-                // residue: Some(0), // The one and only residue: The one we create this from.
+                serial_number,
                 residue: None,
                 chain: None,
-                ..atoms[*atom_i].clone()
+                ..atom.clone()
             });
-            atom_indices.push(*atom_i);
         }
 
+        // todo: Consider something better like near the original spot, but spaced out from origin.
         // Reposition atoms so they're near the origin.
-        if !atoms_this.is_empty() {
-            let move_vec = atoms_this[0].posit;
-            for atom in &mut atoms_this {
-                atom.posit -= move_vec;
-            }
-        }
+        // if !atoms_this.is_empty() {
+        //     let move_vec = atoms_this[0].posit;
+        //     for atom in &mut atoms_this {
+        //         atom.posit -= move_vec;
+        //     }
+        // }
 
-        let bonds_this = bonds
+        let atom_orig_i: Vec<_> = bond_map.keys().collect();
+        let mut bonds_this: Vec<_> = bonds
             .iter()
-            .filter(|b| atom_indices.contains(&b.atom_0) || atom_indices.contains(&b.atom_1))
+            .filter(|b| atom_orig_i.contains(&&b.atom_0) && atom_orig_i.contains(&&b.atom_1))
             .cloned()
             .collect();
 
-        // This allows saving as Mol2, for example, with residue types, without breaking
-        // bindings
-        let _res_new = Residue {
-            atoms: Vec::new(),
-            atom_sns: atoms_this.iter().map(|a| a.serial_number).collect(),
-            ..res.clone()
-        };
+        let mut bonds_new = Vec::with_capacity(bonds_this.len());
+        for bond in &bonds_this {
+            let (atom_0, atom_0_sn) = bond_map.get(&bond.atom_0).unwrap();
+            let (atom_1, atom_1_sn) = bond_map.get(&bond.atom_1).unwrap();
+
+            bonds_new.push(Bond {
+                bond_type: bond.bond_type,
+                atom_0_sn: *atom_0_sn,
+                atom_1_sn: *atom_1_sn,
+                atom_0: *atom_0,
+                atom_1: *atom_1,
+                is_backbone: false,
+            })
+        }
 
         Self::new(
             res.res_type.to_string(),
             atoms_this,
-            bonds_this,
+            bonds_new,
             HashMap::new(),
             None,
         )
@@ -451,10 +466,12 @@ impl MoleculeSmall {
         ident: &str,
         lig_specific: &mut HashMap<String, ForceFieldParams>,
     ) {
-        println!("Attempting to load Amber Geostd dynamics data for this molecule.");
+        println!("Attempting to load Amber Geostd dynamics data for this molecule...");
+        let start = Instant::now();
 
         let Ok(data) = amber_geostd::load_mol_files(&ident) else {
-            println!("Unable to find data");
+            let elapsed = start.elapsed().as_millis();
+            println!("Unable to find data, took {elapsed:.1}ms");
             return;
         };
 
@@ -519,7 +536,8 @@ impl MoleculeSmall {
 
             self.ff_params_loaded = true;
 
-            println!("Success");
+            let elapsed = start.elapsed().as_millis();
+            println!("Loaded Amber Geostd in {elapsed:.1}ms");
         }
 
         if !self.frcmod_loaded {
@@ -538,7 +556,7 @@ impl MoleculeSmall {
         active_mol: &Option<(Mt, usize)>,
         lig_specific: &mut HashMap<String, ForceFieldParams>,
     ) {
-        if let Some((mol_type, i)) = active_mol {
+        if let Some((_, i)) = active_mol {
             let offset = LIGAND_ABS_POSIT_OFFSET * (*i as f64);
             for posit in &mut self.common.atom_posits {
                 posit.x += offset; // Arbitrary axis and direction.

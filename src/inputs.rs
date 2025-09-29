@@ -1,15 +1,15 @@
 //! Handles user inputs, e.g. from keyboard and mouse.
 
 use graphics::{
-    ControlScheme, DeviceEvent, ElementState, EngineUpdates, FWD_VEC, RIGHT_VEC, Scene, UP_VEC,
-    WindowEvent,
+    ControlScheme, DeviceEvent, ElementState, EngineUpdates, EntityUpdate, FWD_VEC, RIGHT_VEC,
+    Scene, UP_VEC, WindowEvent,
     winit::keyboard::{KeyCode, PhysicalKey::Code},
 };
 use lin_alg::{f32::Vec3, f64::Vec3 as Vec3F64, map_linear};
 
 use crate::{
     ManipMode, Selection, State, drawing,
-    drawing::MoleculeView,
+    drawing::{EntityClass, MoleculeView},
     mol_manip,
     molecule::{Atom, MolType, MoleculeCommon},
     render::set_flashlight,
@@ -507,7 +507,8 @@ pub fn event_dev_handler(
     if redraw_protein {
         // todo:This is overkill for certain keys. Just change the color of the one[s] in question, and set update.entities = true.
         drawing::draw_peptide(state_, scene);
-        updates.entities = true;
+        // updates.entities = true;
+        updates.entities.push(EntityClass::Peptide as u32);
     }
 
     // todo: Note that lig movements etc don't currently stack.
@@ -544,17 +545,17 @@ pub fn event_dev_handler(
         // }
 
         drawing::draw_all_ligs(state_, scene);
-        updates.entities = true;
+        updates.entities.push(EntityClass::Ligand as u32);
     }
 
     if redraw_na {
         drawing::draw_all_nucleic_acids(state_, scene);
-        updates.entities = true;
+        updates.entities.push(EntityClass::NucleicAcid as u32);
     }
 
     if redraw_lipid {
         drawing::draw_all_lipids(state_, scene);
-        updates.entities = true;
+        updates.entities.push(EntityClass::Lipid as u32);
     }
 
     // We handle the flashlight elsewhere, as this event handler only fires upon events; not while

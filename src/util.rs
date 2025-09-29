@@ -18,7 +18,7 @@ use crate::{
     CamSnapshot, ManipMode, PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel,
     download_mols::load_cif_rcsb,
     drawing::{
-        EntityType, MoleculeView, draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids,
+        EntityClass, MoleculeView, draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids,
         draw_density_point_cloud, draw_density_surface, draw_peptide,
     },
     lipid::MoleculeLipid,
@@ -378,6 +378,9 @@ pub fn load_atom_coords_rcsb(
     redraw: &mut bool,
     reset_cam: &mut bool,
 ) {
+    println!("Loading atom data from RCSB...");
+    let start = Instant::now();
+
     match load_cif_rcsb(ident) {
         // todo: For organization purposes, move this code out of the UI.
         Ok((cif, cif_text)) => {
@@ -431,6 +434,8 @@ pub fn load_atom_coords_rcsb(
             return;
         }
     }
+    let elapsed = start.elapsed().as_millis();
+    println!("Loading complete in {elapsed:.1}ms");
 
     state.update_from_prefs();
 
@@ -531,12 +536,12 @@ pub fn close_peptide(state: &mut State, scene: &mut Scene, engine_updates: &mut 
     state.mol_dynamics = None;
 
     scene.entities.retain(|ent| {
-        ent.class != EntityType::Protein as u32
-            && ent.class != EntityType::DensityPoint as u32
-            && ent.class != EntityType::DensitySurface as u32
-            && ent.class != EntityType::SecondaryStructure as u32
-            && ent.class != EntityType::SaSurface as u32
-            && ent.class != EntityType::SaSurfaceDots as u32
+        ent.class != EntityClass::Protein as u32
+            && ent.class != EntityClass::DensityPoint as u32
+            && ent.class != EntityClass::DensitySurface as u32
+            && ent.class != EntityClass::SecondaryStructure as u32
+            && ent.class != EntityClass::SaSurface as u32
+            && ent.class != EntityClass::SaSurfaceDots as u32
     });
 
     state.volatile.aa_seq_text = String::new();
@@ -553,7 +558,8 @@ pub fn close_peptide(state: &mut State, scene: &mut Scene, engine_updates: &mut 
 
     state.update_save_prefs(false);
 
-    engine_updates.entities = true;
+    // engine_updates.entities = true;
+    engine_updates.entities.push(EntityClass::Peptide as u32);
 }
 
 pub fn close_mol(
@@ -564,7 +570,8 @@ pub fn close_mol(
     engine_updates: &mut EngineUpdates,
 ) {
     state.volatile.mol_manip.mol = ManipMode::None;
-    engine_updates.entities = true;
+    // engine_updates.entities = true;
+    engine_updates.entities.push(mol_type.entity_type() as u32);
 
     match mol_type {
         MolType::Ligand => {
@@ -684,7 +691,8 @@ pub fn make_density_mesh(state: &mut State, scene: &mut Scene, engine_updates: &
             }
 
             engine_updates.meshes = true;
-            engine_updates.entities = true;
+            // engine_updates.entities = true;
+            engine_updates.entities.push(EntityClass::SaSurface as u32);
         }
         Err(e) => handle_err(&mut state.ui, e.to_string()),
     }
@@ -715,7 +723,10 @@ pub fn handle_scene_flags(
             if !state.ui.visibility.hide_density_point_cloud {
                 if let Some(density) = &mol.elec_density {
                     draw_density_point_cloud(&mut scene.entities, density);
-                    engine_updates.entities = true;
+                    // engine_updates.entities = true;
+                    engine_updates
+                        .entities
+                        .push(EntityClass::DensityPoint as u32);
                     return;
                 }
             }
@@ -726,8 +737,8 @@ pub fn handle_scene_flags(
         state.volatile.flags.clear_density_drawing = false;
 
         scene.entities.retain(|ent| {
-            ent.class != EntityType::DensityPoint as u32
-                && ent.class != EntityType::DensitySurface as u32
+            ent.class != EntityClass::DensityPoint as u32
+                && ent.class != EntityClass::DensitySurface as u32
         });
     }
 
@@ -764,7 +775,11 @@ pub fn handle_scene_flags(
             ) {
                 // The dots are drawn from the mesh vertices
                 draw_peptide(state, scene);
-                engine_updates.entities = true;
+                // engine_updates.entities = true;
+                engine_updates.entities.push(EntityClass::SaSurface as u32);
+                engine_updates
+                    .entities
+                    .push(EntityClass::SaSurfaceDots as u32);
             }
 
             engine_updates.meshes = true;

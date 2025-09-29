@@ -1,11 +1,11 @@
 use dynamics::{ComputationDevice, HydrogenConstraint, Integrator, SimBoxInit};
 use egui::{Color32, ComboBox, RichText, TextEdit, Ui};
-use graphics::{EngineUpdates, Scene};
+use graphics::{EngineUpdates, EntityUpdate, Scene};
 use lin_alg::f64::Vec3;
 
 use crate::{
     State,
-    drawing::{draw_peptide, draw_water},
+    drawing::{EntityClass, draw_peptide, draw_water},
     md::build_dynamics,
     ui::{
         COL_SPACING, COLOR_ACTIVE, COLOR_INACTIVE, cam::move_cam_to_lig, flag_btn, misc, num_field,
@@ -127,7 +127,10 @@ pub fn md_setup(
                             );
 
                             state.ui.current_snapshot = 0;
-                            engine_updates.entities = true;
+
+                            // engine_updates.entities = true;
+                            engine_updates.entities = EntityUpdate::All;
+
                             state.mol_dynamics = Some(md);
                         }
                         Err(e) => handle_err(&mut state.ui, e.descrip),

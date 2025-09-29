@@ -618,6 +618,7 @@ impl State {
     /// Create lipid molecules from Amber's Lipids21.lib, which is included in the binary.
     pub fn load_lipid_templates(&mut self) {
         println!("Loading lipid templates...");
+        let start = Instant::now();
         match load_lipid_templates(LIPID_21_LIB) {
             Ok(l) => {
                 self.lipid_templates = Vec::new();
@@ -661,7 +662,8 @@ impl State {
             }
         };
 
-        println!("Done.");
+        let elapsed = start.elapsed().as_millis();
+        println!("Loaded lipid templates in {elapsed:.1}ms");
     }
 }
 
@@ -735,17 +737,18 @@ fn main() {
 
     // todo: Consider if you want this here. Currently required when adding H to a molecule.
     // In release mode, takes 20ms on a fast CPU. (todo: Test on a slow CPU.)
+    println!("Loading force field data from Amber lib/dat/frcmod...");
     let start = Instant::now();
     match FfParamSet::new_amber() {
         Ok(f) => {
             state.ff_param_set = f;
             let elapsed = start.elapsed().as_millis();
-            println!("Loaded static FF data in {elapsed}ms");
+            println!("Loaded data in {elapsed}ms");
         }
         Err(e) => {
             handle_err(
                 &mut state.ui,
-                format!("Unable to load general FF params: {e:?}"),
+                format!("Unable to load Amber force field data: {e:?}"),
             );
         }
     }

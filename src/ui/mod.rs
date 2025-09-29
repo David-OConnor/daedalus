@@ -11,7 +11,7 @@ use egui::{
     Align, Color32, ComboBox, Context, Key, Layout, Popup, PopupAnchor, Pos2, RectAlign, RichText,
     Slider, TextEdit, TopBottomPanel, Ui,
 };
-use graphics::{ControlScheme, EngineUpdates, Scene};
+use graphics::{ControlScheme, EngineUpdates, EntityUpdate, Scene};
 use na_seq::AaIdent;
 
 static INIT_COMPLETE: AtomicBool = AtomicBool::new(false);
@@ -26,7 +26,8 @@ use crate::{
     cli::autocomplete_cli,
     download_mols::{load_sdf_drugbank, load_sdf_pubchem},
     drawing::{
-        color_viridis, draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids, draw_peptide,
+        EntityClass, color_viridis, draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids,
+        draw_peptide,
     },
     file_io::gemmi_path,
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
@@ -76,7 +77,7 @@ const COLOR_OUT_SUCCESS: Color32 = Color32::LIGHT_GREEN; // Unused for now
 pub const COLOR_POPUP: Color32 = Color32::from_rgb(20, 20, 30);
 
 // Number of characters to display. E.g. the molecular description. Often long.
-const MAX_TITLE_LEN: usize = 80;
+const MAX_TITLE_LEN: usize = 40;
 
 /// Update the tilebar to reflect the current molecule
 fn set_window_title(title: &str, scene: &mut Scene) {
@@ -109,7 +110,9 @@ pub fn load_file(
 
     *redraw = true;
     *reset_cam = true;
-    engine_updates.entities = true;
+    // engine_updates.entities = true;
+    // todo: Overkill.
+    engine_updates.entities = EntityUpdate::All;
 
     Ok(())
 }
@@ -735,7 +738,7 @@ fn settings(state: &mut State, scene: &mut Scene, ui: &mut Ui) {
             }
 
             ui.add_space(COL_SPACING);
-            ui.label("Movement speed:");
+            ui.label("Cam movement speed:");
             if ui
                 .add(TextEdit::singleline(&mut state.ui.movement_speed_input).desired_width(32.))
                 .changed()
@@ -752,7 +755,7 @@ fn settings(state: &mut State, scene: &mut Scene, ui: &mut Ui) {
             }
 
             ui.add_space(COL_SPACING / 2.);
-            ui.label("Rotation sensitivity:");
+            ui.label("Cam rotation sensitivity:");
             if ui
                 .add(TextEdit::singleline(&mut state.ui.rotation_sens_input).desired_width(32.))
                 .changed()
@@ -954,7 +957,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
             {
                 let mut close = false;
-                display_mol_data_peptide(state, scene, ui, &mut redraw_lig, &mut close, &mut engine_updates);
+                display_mol_data_peptide(state, scene, ui, &mut redraw_peptide, &mut redraw_lig, &mut close, &mut engine_updates);
 
                 if close {
                     close_peptide(state, scene, &mut engine_updates);
@@ -1552,7 +1555,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 set_window_title(&mol.common.ident, scene);
             }
 
-            engine_updates.entities = true;
+            // engine_updates.entities = true;
+            engine_updates.entities.push(EntityClass::Peptide as u32);
 
             // For docking light, but may be overkill here.
             if state.active_mol().is_some() {
@@ -1563,7 +1567,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         if redraw_lig {
             draw_all_ligs(state, scene);
 
-            engine_updates.entities = true;
+            engine_updates.entities.push(EntityClass::Ligand as u32);
 
             // For docking light, but may be overkill here.
             if state.active_mol().is_some() {
@@ -1573,12 +1577,15 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         if redraw_na {
             draw_all_nucleic_acids(state, scene);
-            engine_updates.entities = true;
+            // engine_updates.entities = true;
+            engine_updates.entities.push(EntityClass::NucleicAcid as u32);
+
         }
 
         if redraw_lipid {
             draw_all_lipids(state, scene);
-            engine_updates.entities = true;
+            // engine_updates.entities = true;
+            engine_updates.entities.push(EntityClass::Lipid as u32);
         }
 
         // Perform cleanup.
@@ -1726,7 +1733,8 @@ pub fn lipid_section(
                 // state.lipids.push(mol);
 
                 draw_all_lipids(state, scene);
-                engine_updates.entities = true;
+                // engine_updates.entities = true;
+                engine_updates.entities.push(EntityClass::Lipid as u32);
             }
 
             ui.add_space(COL_SPACING);

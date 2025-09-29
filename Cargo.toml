@@ -33,22 +33,22 @@ rayon = "1.10.0"  # Parallel execution on CPU using thread pools.
 # Static linking results in an error when compiling. Dyanmic loading seems to require the PC that runs it
 # to have CUDA installed. So, we use dynamic-linking.
 
+rand = "0.9.2"
+regex = "1.11.1"
+chrono = "0.4.41"
+
 # It appears, to work on systems without nvidia drivers, we need dynamic-linking on Linux, and dynamic-loading
 # on Windows. # todo: Still not able to get running on a Linux machine that doesn't have CUDA
+# Note: This section must be at the bottom; applies to all elements below it.
 [target.'cfg(not(target_os = "windows"))'.dependencies]
 cudarc = { version = "0.17.2", default-features = false, features = ["std", "driver", "dynamic-linking", "cuda-13000"], optional=true }
 [target.'cfg(target_os = "windows")'.dependencies]
-cudarc = { version = "0.17.2", default-features = false, features = ["std", "driver", "dynamic-loading", "cuda-13000"], optional=true }
-
-rand = "0.9.2"
-regex = "1.11.1"
-
-chrono = "0.4.41"
+cudarc = { version = "0.17.2", default-features = false, features = ["std", "driver", "dynamic-linking", "cuda-13000"], optional=true }
 
 
 # We use these when developing locally to reduce friction.
 [patch.crates-io]
-#graphics = { path = "../graphics" }
+graphics = { path = "../../graphics" }
 #lin_alg = { path = "../../lin_alg" }
 #na_seq = { path = "../na_seq" }
 #bio_apis = { path = "../bio_apis" }

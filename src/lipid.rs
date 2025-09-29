@@ -433,7 +433,7 @@ pub fn make_bacterial_lipids(
                 let rot = Quaternion::from_axis_angle(Z_VEC, TAU / 2.);
                 mirror.common.rotate(rot, Some(PHOSPHATE_I));
                 for p in &mut mirror.common.atom_posits {
-                    p.y += DIST_ACROSS_MEMBRANE;
+                    p.y -= DIST_ACROSS_MEMBRANE;
                 }
 
                 other_side.push(mirror);

@@ -1,5 +1,7 @@
 //! Information and settings for the opened, or to-be opened molecules.
 
+use std::time::Instant;
+
 use bio_apis::{amber_geostd, drugbank, lmsd, pdbe, pubchem, rcsb};
 use bio_files::ResidueType;
 use egui::{Color32, RichText, Ui};
@@ -8,17 +10,17 @@ use lin_alg::f64::Vec3;
 
 use crate::{
     ManipMode, Selection, State, drawing,
-    drawing::{CHARGE_MAP_MAX, CHARGE_MAP_MIN, COLOR_AA_NON_RESIDUE_EGUI},
+    drawing::{CHARGE_MAP_MAX, CHARGE_MAP_MIN, COLOR_AA_NON_RESIDUE_EGUI, EntityClass},
     lipid::MoleculeLipid,
     mol_lig::MoleculeSmall,
     mol_manip::set_manip,
-    molecule::{Atom, MolType, MoleculeGenericRef, MoleculeGenericRefMut, Residue, aa_color},
+    molecule::{Atom, MolType, MoleculeGenericRef, Residue, aa_color},
     nucleic_acid::MoleculeNucleicAcid,
     ui::{
         COL_SPACING, COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_HIGHLIGHT, COLOR_INACTIVE,
-        ROW_SPACING, cam::move_cam_to_lig, mol_descrip,
+        cam::move_cam_to_lig, mol_descrip,
     },
-    util::{handle_err, handle_success, make_egui_color, move_mol_to_res},
+    util::{handle_err, handle_success, make_egui_color},
 };
 
 /// `posit_override` is for example, relative atom positions, such as a positioned ligand.
@@ -224,7 +226,8 @@ fn mol_picker(
             mol.common.visible = !mol.common.visible;
 
             *redraw_lig = true; // todo Overkill; only need to redraw (or even just clear) one.
-            engine_updates.entities = true;
+            // todo: Generalize.
+            engine_updates.entities.push(EntityClass::Ligand as u32);
         }
     }
 }
@@ -234,6 +237,7 @@ pub fn display_mol_data_peptide(
     state: &mut State,
     scene: &mut Scene,
     ui: &mut Ui,
+    redraw_peptide: &mut bool,
     redraw_lig: &mut bool,
     close: &mut bool,
     engine_updates: &mut EngineUpdates,
@@ -260,7 +264,9 @@ pub fn display_mol_data_peptide(
             }
         }
 
-        if ui.button("Plot dihedrals").clicked() {
+        if ui.button("Plot dihe")
+            .on_hover_text("Draw a Ramachandran plot of the dihedral angles of the peptide.")
+            .clicked() {
             state.ui.popup.rama_plot = !state.ui.popup.rama_plot;
         }
 
@@ -334,12 +340,12 @@ pub fn display_mol_data_peptide(
         if let Some(res) = res_selected {
             if ui
                 .button(
-                    RichText::new(format!("Make lig from {}", res.res_type))
+                    RichText::new(format!("Lig from {}", res.res_type))
                         .color(Color32::GOLD),
                 )
                 .on_hover_text(
                     "Create a ligand from this residue on the peptide. This can be \
-                    saved to a Mol2 or SDF file, and used as a ligand.",
+                    saved to a Mol2 or SDF file, and used as a ligand. Molecular dynamics can be performed on it.",
                 )
                 .clicked()
             {
@@ -349,17 +355,14 @@ pub fn display_mol_data_peptide(
                     res,
                     &pep.common.atoms,
                     &pep.common.bonds,
-                    false,
-                    // &state.ff_params.lig_specific,
                 );
-                // todo: Borrow prob.
-                // mol_fm_res.update_aux(&state);
 
-                let mut lig_new = MoleculeGenericRefMut::Ligand(&mut mol_fm_res);
+                mol_fm_res.update_aux(&state.volatile.active_mol, &mut state.lig_specific_params);
 
-                state.mol_dynamics = None;
-
-                let docking_center = move_mol_to_res(&mut lig_new, pep, res);
+                state.ligands.push(mol_fm_res);
+                // // let mut lig_new = MoleculeGenericRefMut::Ligand(&mut state.ligands[state.ligands.len() - 1]);
+                //
+                // let docking_center = move_mol_to_res(&mut lig_new, pep, res);
 
                 // todo: Put this save back / fix dble-borrow?
                 // state.update_docking_site(docking_center);
@@ -368,10 +371,14 @@ pub fn display_mol_data_peptide(
                 // set_docking_light(scene, Some(&lig.docking_site));
                 // engine_updates.lighting = true;
 
+                *redraw_peptide = true; // to hide the het res.
                 *redraw_lig = true;
+                state.mol_dynamics = None;
 
-                // If creating from an AA, move to the origin (Where we assigned its atom positions).
-                // If from a hetero atom, leave it in place.
+                // We leave the new ligand in place, overlapping the residue we created it from.
+
+                state.volatile.active_mol = Some((MolType::Ligand, state.ligands.len() - 1));
+
                 match &res_type {
                     ResidueType::AminoAcid(_) => {
                         let mut mol = state.active_mol_mut().unwrap();
@@ -381,8 +388,7 @@ pub fn display_mol_data_peptide(
                         state.ui.visibility.hide_hetero = true;
                     }
                 }
-                let mut mol = state.active_mol_mut().unwrap();
-                mol = lig_new;
+
 
                 // Make it clear that we've added the ligand by showing it, and hiding hetero (if creating from Hetero)
                 state.ui.visibility.hide_ligand = false;
@@ -460,16 +466,27 @@ pub fn display_mol_data_peptide(
                             params from a hetero residue included in the protein file.",
                 );
 
+                // This mechanism prevents buttons from duplicate hetero residues, e.g.
+                // if more than one copy of a ligand is present in the data.
+                let mut residue_names = Vec::new();
                 for res in &mol.het_residues {
                     let name = match &res.res_type {
                         ResidueType::Other(name) => name,
                         _ => "hetero residue",
                     };
                     if name.len() == 3 {
+                        if residue_names.contains(&name) {
+                            continue;
+                        }
+                        residue_names.push(name);
+
                         if ui
                             .button(RichText::new(name).color(Color32::GOLD))
                             .clicked()
                         {
+                            println!("Loading Amber Geostd data...");
+                            let start = Instant::now();
+
                             match amber_geostd::find_mols(&name) {
                                 Ok(data) => match data.len() {
                                     0 => handle_err(
@@ -490,6 +507,9 @@ pub fn display_mol_data_peptide(
                                     format!("Problem loading mol data online: {e:?}"),
                                 ),
                             }
+
+                            let elapsed = start.elapsed().as_millis();
+                            println!("Loaded Amber Geostd in {elapsed:.1}ms");
                         }
                     }
                 }

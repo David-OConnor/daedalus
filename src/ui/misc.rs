@@ -1,12 +1,12 @@
 //! Misc utility-related UI functionality.
 
 use egui::{Color32, CornerRadius, Frame, Margin, RichText, Slider, Stroke, Ui};
-use graphics::{EngineUpdates, Scene};
+use graphics::{EngineUpdates, EntityUpdate, Scene};
 const COLOR_SECTION_BOX: Color32 = Color32::from_rgb(100, 100, 140);
 
 use crate::{
     State,
-    drawing::{draw_all_ligs, draw_all_lipids, draw_peptide, draw_water},
+    drawing::{EntityClass, draw_all_ligs, draw_all_lipids, draw_peptide, draw_water},
     md::change_snapshot,
     ui::{COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_INACTIVE, ROW_SPACING},
 };
@@ -137,7 +137,8 @@ pub fn dynamics_player(
                     }
                 }
 
-                engine_updates.entities = true;
+                // engine_updates.entities = true;
+                engine_updates.entities = EntityUpdate::All;
             }
         };
 

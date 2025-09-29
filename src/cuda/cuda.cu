@@ -1,8 +1,4 @@
-// #include <math.h>
-// #include <initializer_list>
-
-// todo: A/R
-// #include <math.h>
+#include <cstdint>
 
 #include "util.cu"
 

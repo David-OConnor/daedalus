@@ -9,6 +9,7 @@ use std::{
     path::PathBuf,
     sync::mpsc::{self, Receiver},
     thread,
+    time::Instant,
 };
 
 // todo: TO simplify various APIs, we may need a wrapped Molecule Enum that
@@ -406,17 +407,19 @@ impl MoleculePeptide {
             return;
         }
 
-        println!("Existing data: {:?}", self.rcsb_data);
-        println!("Existing files: {:?}", self.rcsb_files_avail);
-
         let ident = self.common.ident.clone(); // data the worker needs
         let (tx, rx) = mpsc::channel(); // one-shot channel
 
-        println!("Getting RCSB data...");
+        println!("Getting RCSB auxiliary data...");
+
+        let start = Instant::now();
 
         thread::spawn(move || {
             let data = rcsb::get_all_data(&ident);
             let files_data = rcsb::get_files_avail(&ident);
+
+            let elapsed = start.elapsed().as_millis();
+            println!("RCSB data loaded in  {elapsed:.1}ms");
 
             let _ = tx.send((data, files_data));
         });
@@ -918,8 +921,6 @@ impl MoleculePeptide {
             }
         }
 
-        println!("CONFS: {:?}", alternate_conformations);
-
         // todo: Handle alternate conformations!
         // todo: For now, we force the first one. This is crude, and ignores alt conformations.
         if !alternate_conformations.is_empty() {
@@ -954,8 +955,15 @@ impl MoleculePeptide {
         //     result.alternate_conformations = Some(alternate_conformations);
         // }
 
+        println!("Populating protein hydrogens, dihedral angles, FF types and partial charges...");
+        let mut start = Instant::now();
+
         let (bonds_, dihedrals) = prepare_peptide_mmcif(&mut m, ff_map, ph)
             .map_err(|e| io::Error::new(ErrorKind::InvalidData, e.descrip))?;
+
+        // todo: Speed this up?
+        let end = start.elapsed().as_millis();
+        println!("Populated in {end:.1}ms");
 
         let (atoms, bonds, residues, chains) =
             init_bonds_chains_res(&m.atoms, &bonds_, &m.residues, &m.chains, &dihedrals)?;
@@ -994,10 +1002,15 @@ impl MoleculePeptide {
         let mut res_gen = self.residues.iter().map(|a| a.to_generic()).collect();
         let mut chains_gen: Vec<_> = self.chains.iter().map(|a| a.to_generic()).collect();
 
+        println!("Populating Hydrogens and dihedral angles...");
+        let mut start = Instant::now();
         // Note: These don't change here, but htis function populates them anyway, so why not.
         let dihedrals =
             populate_hydrogens_dihedrals(&mut atoms_gen, &mut res_gen, &mut chains_gen, ff_map, ph)
                 .map_err(|e| io::Error::new(ErrorKind::InvalidData, e.descrip))?;
+
+        let end = start.elapsed().as_millis();
+        println!("Hydrogens populated in {end:.1}");
 
         let bonds_gen = create_bonds(&atoms_gen);
 

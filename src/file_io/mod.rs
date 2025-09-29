@@ -4,6 +4,7 @@ use std::{
     io,
     io::{ErrorKind, Read},
     path::Path,
+    time::Instant,
 };
 
 use bio_apis::amber_geostd;
@@ -507,6 +508,9 @@ impl State {
     ) {
         let ident = ident.trim().to_owned();
 
+        let start = Instant::now();
+        println!("Loading mol files from Amber Geostd...");
+
         match amber_geostd::load_mol_files(&ident) {
             Ok(data) => {
                 // Load FRCmod first, then the Ligand constructor will populate that it loaded.
@@ -558,6 +562,9 @@ impl State {
                 format!("Unable to load Amber Geostd data (Server or internet problem?)"),
             ),
         }
+
+        let elapsed = start.elapsed().as_millis();
+        println!("Loaded Amber Geostd in {elapsed:.1}ms");
     }
 
     /// We run this at init. Loads all relevant files marked as "last opened".

@@ -27,7 +27,6 @@ use crate::{
     util::{find_neighbor_posit, orbit_center},
 };
 
-const LIGAND_COLOR: Color = (0., 0.4, 1.);
 const LIGAND_COLOR_ANCHOR: Color = (1., 0., 1.);
 
 const COLOR_MOL_MOVING: Color = (1., 1., 1.);
@@ -46,15 +45,29 @@ const COLOR_WATER_BOND: Color = (0.5, 0.5, 0.8);
 
 const COLOR_SFC_DOT: Color = (0.7, 0.7, 0.7);
 
+// Hetero residues in protein, so they stand out from the normal protein molecules.
+// Lower blend values mean more of the original color.
+const COLOR_HETERO_RES: Color = (0.0, 0.0, 1.0);
+const BLEND_AMT_HETERO_RES: f32 = 0.4;
+const LIGAND_COLOR: Color = (0., 0.4, 1.);
+const LIGAND_BLEND_AMT: f32 = 0.4;
+const LIPID_COLOR: Color = (1.0, 1.0, 0.);
+const LIPID_BLEND_AMT: f32 = 0.3;
+
 const COLOR_DOCKING_BOX: Color = (0.3, 0.3, 0.9);
 pub const COLOR_DOCKING_SITE_MESH: Color = (0.5, 0.5, 0.9);
 const DOCKING_SITE_OPACITY: f32 = 0.1;
 
 const COLOR_SA_SURFACE: Color = (0.3, 0.2, 1.);
 
-pub const BOND_RADIUS_PEP: f32 = 0.10;
+pub const BOND_RADIUS_BASE: f32 = 0.10; // Absolute unit in Å.
+
+// These ratios scale the base bond radius above.
 pub const BOND_RADIUS_LIG_RATIO: f32 = 1.3; // Of bond radius.
 pub const BOND_RADIUS_LIG_RATIO_SEL: f32 = 1.6; // Of bond radius.
+pub const BOND_RADIUS_RATIO_H: f32 = 0.5; // Of bond radius. Covalent to H.
+pub const BOND_RADIUS_LIPID_RATIO: f32 = 0.6; // Of bond radius. Covalent to H.
+
 // Aromatic inner radius, relative to bond radius.
 const BOND_RADIUS_AR_INNER_RATIO: f32 = 0.4; // Of bond radius.
 const AR_INNER_OFFSET: f32 = 0.3; // Å
@@ -99,10 +112,11 @@ static LIG_O: OnceLock<Color> = OnceLock::new();
 static LIG_H: OnceLock<Color> = OnceLock::new();
 static LIG_N: OnceLock<Color> = OnceLock::new();
 
-/// We use the Entity's class field to determine which entities to retain and remove.
+/// We use the Entity's class field to determine which graphics-engine entities to retain and remove.
+/// This affects both local drawing logic, and engine-level entity setup.
 #[derive(Clone, Copy, PartialEq)]
 #[repr(u32)]
-pub enum EntityType {
+pub enum EntityClass {
     Protein = 0,
     Ligand = 1,
     NucleicAcid = 2,
@@ -115,16 +129,17 @@ pub enum EntityType {
     DockingSite = 9,
     WaterModel = 10,
     Other = 11,
+    Peptide,
 }
 
 impl MolType {
-    pub fn entity_type(&self) -> EntityType {
+    pub fn entity_type(&self) -> EntityClass {
         match self {
-            Self::Peptide => EntityType::Protein,
-            Self::Ligand => EntityType::Ligand,
-            Self::NucleicAcid => EntityType::NucleicAcid,
-            Self::Lipid => EntityType::Lipid,
-            Self::Water => EntityType::Protein, // todo for now
+            Self::Peptide => EntityClass::Protein,
+            Self::Ligand => EntityClass::Ligand,
+            Self::NucleicAcid => EntityClass::NucleicAcid,
+            Self::Lipid => EntityClass::Lipid,
+            Self::Water => EntityClass::Protein, // todo for now
         }
     }
 }
@@ -152,14 +167,11 @@ fn cache_lig_color(el: Element) -> Option<&'static OnceLock<Color>> {
 
 /// Make ligands stand out visually, when colored by atom.
 fn mod_color_for_ligand(color: &Color, el: Element) -> Color {
-    let blend = (0., 0.3, 1.);
-    let alpha = 0.5;
-
     if let Some(slot) = cache_lig_color(el) {
-        slot.get_or_init(|| blend_color(*color, blend, alpha))
+        slot.get_or_init(|| blend_color(*color, LIGAND_COLOR, LIGAND_BLEND_AMT))
             .clone()
     } else {
-        blend_color(*color, blend, alpha)
+        blend_color(*color, LIGAND_COLOR, LIGAND_BLEND_AMT)
     }
 }
 
@@ -293,6 +305,8 @@ pub fn color_viridis_float(i: f32, min: f32, max: f32) -> Color {
     color_viridis(idx, 0, RESOLUTION)
 }
 
+/// A general function that sets color based criteria like element, partial charge,
+/// if selected or not etc.
 fn atom_color(
     atom: &Atom,
     mol_i: usize,
@@ -407,7 +421,7 @@ fn add_bond(
     orientation: Quaternion,
     dist_half: f32,
     caps: bool,
-    thickness: f32,
+    radius_scaler: f32,
     mol_type: MolType,
 ) {
     // Split the bond into two entities, so you can color-code them separately based
@@ -444,7 +458,7 @@ fn add_bond(
             MESH_BOND_CAP,
             posits.0,
             Quaternion::new_identity(),
-            BOND_RADIUS_PEP * thickness,
+            BOND_RADIUS_BASE * radius_scaler,
             colors.0,
             BODY_SHINYNESS,
         );
@@ -452,7 +466,7 @@ fn add_bond(
             MESH_BOND_CAP,
             posits.1,
             Quaternion::new_identity(),
-            BOND_RADIUS_PEP * thickness,
+            BOND_RADIUS_BASE * radius_scaler,
             colors.1,
             BODY_SHINYNESS,
         );
@@ -463,7 +477,7 @@ fn add_bond(
         entities.push(cap_1);
     }
 
-    let scale = Some(Vec3::new(thickness, dist_half, thickness));
+    let scale = Some(Vec3::new(radius_scaler, dist_half, radius_scaler));
     entity_0.scale_partial = scale;
     entity_1.scale_partial = scale;
 
@@ -485,7 +499,8 @@ fn bond_entities(
     // to orient the bond meshes, e.g. in plane with a ring. Second pararm is if the bond is from posit 1,
     // vice posit 0.
     neighbor: (Vec3, bool),
-    active: bool, // i.e. selected
+    mol_active: bool,  // i.e. selected
+    to_hydrogen: bool, // A covalent bond to H
 ) {
     let center: Vec3 = (posit_0 + posit_1) / 2.;
 
@@ -494,21 +509,35 @@ fn bond_entities(
     let orientation = Quaternion::from_unit_vecs(UP_VEC, diff_unit);
     let dist_half = diff.magnitude() / 2.;
 
-    // Dummy not ideal for H bonds semantically.
+    // Dummy not ideal for H bonds semantically, but it's how we currently use it.
     if bond_type == BondType::Dummy {
         color_0 = COLOR_H_BOND;
         color_1 = COLOR_H_BOND;
     }
 
-    let base_radius = if active {
-        BOND_RADIUS_LIG_RATIO_SEL
-    } else {
-        BOND_RADIUS_LIG_RATIO
-    };
-    let adjust_thicknesses = matches!(
-        mol_type,
-        MolType::Ligand | MolType::NucleicAcid | MolType::Lipid
-    );
+    let mut radius_scaler = 1.;
+
+    match mol_type {
+        MolType::Ligand | MolType::NucleicAcid => {
+            if mol_active {
+                radius_scaler *= BOND_RADIUS_LIG_RATIO_SEL
+            } else {
+                radius_scaler *= BOND_RADIUS_LIG_RATIO;
+            }
+        }
+        MolType::Lipid => {
+            if mol_active {
+                radius_scaler *= BOND_RADIUS_LIG_RATIO_SEL
+            } else {
+                radius_scaler *= BOND_RADIUS_LIPID_RATIO
+            }
+        }
+        _ => (),
+    }
+
+    if to_hydrogen {
+        radius_scaler *= BOND_RADIUS_RATIO_H;
+    }
 
     match bond_type {
         // Draw a normal mesh, the same as a single, and a second thinner and shorter inner one.
@@ -545,12 +574,8 @@ fn bond_entities(
                 (p0, p1, center + offset, (p1 - p0).magnitude() / 2.)
             };
 
-            let thickness_outer = if adjust_thicknesses { base_radius } else { 1. };
-            let thickness_inner = if adjust_thicknesses {
-                base_radius * BOND_RADIUS_AR_INNER_RATIO
-            } else {
-                BOND_RADIUS_AR_INNER_RATIO
-            };
+            let thickness_outer = radius_scaler;
+            let thickness_inner = radius_scaler * BOND_RADIUS_AR_INNER_RATIO;
 
             // Primary bond exactly like a normal single bond.
             add_bond(
@@ -671,7 +696,7 @@ fn bond_entities(
             let thickness = if bond_type == BondType::Dummy {
                 RADIUS_H_BOND
             } else {
-                if adjust_thicknesses { base_radius } else { 1. }
+                radius_scaler
             };
 
             add_bond(
@@ -699,7 +724,7 @@ pub fn draw_water(
 ) {
     scene
         .entities
-        .retain(|ent| ent.class != EntityType::WaterModel as u32);
+        .retain(|ent| ent.class != EntityClass::WaterModel as u32);
 
     if hide_water {
         return;
@@ -716,7 +741,7 @@ pub fn draw_water(
         );
 
         ent.opacity = WATER_OPACITY;
-        ent.class = EntityType::WaterModel as u32;
+        ent.class = EntityClass::WaterModel as u32;
         scene.entities.push(ent);
 
         for pos in [h0_pos[i], h1_pos[i]].iter() {
@@ -730,7 +755,7 @@ pub fn draw_water(
             );
 
             ent.opacity = WATER_OPACITY;
-            ent.class = EntityType::WaterModel as u32;
+            ent.class = EntityClass::WaterModel as u32;
             scene.entities.push(ent);
         }
 
@@ -759,7 +784,7 @@ pub fn draw_water(
 
             ent_bond.opacity = WATER_OPACITY;
             ent_bond.scale_partial = scale;
-            ent_bond.class = EntityType::WaterModel as u32;
+            ent_bond.class = EntityClass::WaterModel as u32;
             scene.entities.push(ent_bond);
         }
     }
@@ -767,7 +792,7 @@ pub fn draw_water(
 
 pub fn draw_all_ligs(state: &State, scene: &mut Scene) {
     scene.entities.retain(|ent| {
-        ent.class != EntityType::Ligand as u32 && ent.class != EntityType::DockingSite as u32
+        ent.class != EntityClass::Ligand as u32 && ent.class != EntityClass::DockingSite as u32
     });
 
     if state.ui.visibility.hide_ligand {
@@ -790,7 +815,7 @@ pub fn draw_all_ligs(state: &State, scene: &mut Scene) {
 pub fn draw_all_nucleic_acids(state: &mut State, scene: &mut Scene) {
     scene
         .entities
-        .retain(|ent| ent.class != EntityType::NucleicAcid as u32);
+        .retain(|ent| ent.class != EntityClass::NucleicAcid as u32);
 
     for (i, na) in state.nucleic_acids.iter().enumerate() {
         draw_mol(
@@ -808,7 +833,7 @@ pub fn draw_all_nucleic_acids(state: &mut State, scene: &mut Scene) {
 pub fn draw_all_lipids(state: &mut State, scene: &mut Scene) {
     scene
         .entities
-        .retain(|ent| ent.class != EntityType::Lipid as u32);
+        .retain(|ent| ent.class != EntityClass::Lipid as u32);
 
     for (i, mol) in state.lipids.iter().enumerate() {
         draw_mol(
@@ -899,6 +924,15 @@ pub fn draw_mol(
                     state_ui.atom_color_by_charge,
                     mol.mol_type(),
                 );
+
+                if color != COLOR_SELECTED {
+                    match mol.mol_type() {
+                        MolType::Ligand => color = mod_color_for_ligand(&color, atom.element),
+                        // todo: Lipid cache A/R
+                        MolType::Lipid => color = blend_color(color, LIPID_COLOR, LIPID_BLEND_AMT),
+                        _ => (),
+                    }
+                }
             }
 
             let mut entity = Entity::new(
@@ -999,14 +1033,26 @@ pub fn draw_mol(
                 mol.mol_type(),
             );
 
-            // todo: PUt something like this back.
             if color_0 != COLOR_SELECTED {
-                // color_0 = mod_color_for_ligand(&color_0, atom_0.element);
+                match mol.mol_type() {
+                    MolType::Ligand => color_0 = mod_color_for_ligand(&color_0, atom_0.element),
+                    // todo: Lipid cache A/R
+                    MolType::Lipid => color_0 = blend_color(color_0, LIPID_COLOR, LIPID_BLEND_AMT),
+                    _ => (),
+                }
             }
             if color_1 != COLOR_SELECTED {
-                // color_1 = mod_color_for_ligand(&color_1, atom_1.element);
+                match mol.mol_type() {
+                    MolType::Ligand => color_1 = mod_color_for_ligand(&color_1, atom_1.element),
+                    // todo: Lipid cache A/R
+                    MolType::Lipid => color_1 = blend_color(color_1, LIPID_COLOR, LIPID_BLEND_AMT),
+                    _ => (),
+                }
             }
         }
+
+        let to_hydrogen =
+            atom_0.element == Element::Hydrogen || atom_1.element == Element::Hydrogen;
 
         bond_entities(
             &mut scene.entities,
@@ -1019,6 +1065,7 @@ pub fn draw_mol(
             true,
             neighbor_posit,
             active,
+            to_hydrogen,
         );
     }
 
@@ -1053,7 +1100,7 @@ pub fn draw_mol(
 /// as loaded from .map files or similar. This is our point-based approach; not the isosurface.
 /// We change size based on density, and not linearly, for visual effect.
 pub fn draw_density_point_cloud(entities: &mut Vec<Entity>, density: &[ElectronDensity]) {
-    entities.retain(|ent| ent.class != EntityType::DensityPoint as u32);
+    entities.retain(|ent| ent.class != EntityClass::DensityPoint as u32);
 
     const EPS: f64 = 0.0000001;
 
@@ -1078,7 +1125,7 @@ pub fn draw_density_point_cloud(entities: &mut Vec<Entity>, density: &[ElectronD
             (point.density as f32 * 2., 0.0, 0.2),
             ATOM_SHININESS,
         );
-        ent.class = EntityType::DensityPoint as u32;
+        ent.class = EntityClass::DensityPoint as u32;
 
         entities.push(ent);
     }
@@ -1087,7 +1134,7 @@ pub fn draw_density_point_cloud(entities: &mut Vec<Entity>, density: &[ElectronD
 /// An isosurface of electron density,
 /// as loaded from .map files or similar.
 pub fn draw_density_surface(entities: &mut Vec<Entity>) {
-    entities.retain(|ent| ent.class != EntityType::DensitySurface as u32);
+    entities.retain(|ent| ent.class != EntityClass::DensitySurface as u32);
 
     let mut ent = Entity::new(
         MESH_DENSITY_SURFACE,
@@ -1097,7 +1144,7 @@ pub fn draw_density_surface(entities: &mut Vec<Entity>) {
         (0., 1., 1.),
         ATOM_SHININESS,
     );
-    ent.class = EntityType::DensitySurface as u32;
+    ent.class = EntityClass::DensitySurface as u32;
     ent.opacity = DENSITY_ISO_OPACITY;
     entities.push(ent);
 }
@@ -1124,7 +1171,7 @@ fn draw_dots(update_mesh: &mut bool, mesh_created: bool, scene: &mut Scene) {
             COLOR_SFC_DOT,
             ATOM_SHININESS,
         );
-        entity.class = EntityType::SaSurfaceDots as u32;
+        entity.class = EntityClass::SaSurfaceDots as u32;
         scene.entities.push(entity);
     }
 }
@@ -1145,7 +1192,7 @@ fn draw_sa_surface(update_mesh: &mut bool, mesh_created: bool, scene: &mut Scene
         COLOR_SA_SURFACE,
         ATOM_SHININESS,
     );
-    ent.class = EntityType::SaSurface as u32;
+    ent.class = EntityClass::SaSurface as u32;
     ent.opacity = SAS_ISO_OPACITY;
     scene.entities.push(ent);
 }
@@ -1160,7 +1207,7 @@ pub fn draw_secondary_structure(update_mesh: &mut bool, mesh_created: bool, scen
 
     scene
         .entities
-        .retain(|ent| ent.class != EntityType::SecondaryStructure as u32);
+        .retain(|ent| ent.class != EntityClass::SecondaryStructure as u32);
 
     let mut ent = Entity::new(
         MESH_SECONDARY_STRUCTURE,
@@ -1170,7 +1217,7 @@ pub fn draw_secondary_structure(update_mesh: &mut bool, mesh_created: bool, scen
         (0.7, 0.2, 1.), // todo: Make this customizable etc.
         ATOM_SHININESS,
     );
-    ent.class = EntityType::SecondaryStructure as u32;
+    ent.class = EntityClass::SecondaryStructure as u32;
     scene.entities.push(ent);
 }
 
@@ -1212,9 +1259,9 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
 
     // todo: You may wish to integrate Cartoon into this workflow.
     scene.entities.retain(|ent| {
-        ent.class != EntityType::Protein as u32
-            && ent.class != EntityType::SaSurface as u32
-            && ent.class != EntityType::SaSurfaceDots as u32
+        ent.class != EntityClass::Protein as u32
+            && ent.class != EntityClass::SaSurface as u32
+            && ent.class != EntityClass::SaSurfaceDots as u32
     });
 
     let ui = &state.ui;
@@ -1280,7 +1327,7 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
                             color_atom,
                             ATOM_SHININESS,
                         );
-                        entity.class = EntityType::Protein as u32;
+                        entity.class = EntityClass::Protein as u32;
                         scene.entities.push(entity);
                     }
                 }
@@ -1303,7 +1350,7 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
                 if let Some(role) = atom.role {
                     water = role == AtomRole::Water;
                 }
-                if !water {
+                if !water && ui.mol_view == MoleculeView::SpaceFill {
                     // Don't draw VDW spheres for hetero atoms; draw as sticks.
                     continue;
                 }
@@ -1382,12 +1429,9 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
                 }
             }
 
-            let dim_peptide = state.ui.visibility.dim_peptide
-                && (!state.ligands.is_empty()
-                    || !state.nucleic_acids.is_empty()
-                    || !state.lipids.is_empty());
+            let dim_peptide = state.ui.visibility.dim_peptide && !atom.hetero;
 
-            let color_atom = atom_color(
+            let mut color_atom = atom_color(
                 atom,
                 0,
                 i,
@@ -1401,6 +1445,10 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
                 MolType::Peptide,
             );
 
+            if atom.hetero {
+                color_atom = blend_color(color_atom, COLOR_HETERO_RES, BLEND_AMT_HETERO_RES);
+            }
+
             let mut entity = Entity::new(
                 mesh,
                 atom_posit.into(),
@@ -1409,7 +1457,7 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
                 color_atom,
                 ATOM_SHININESS,
             );
-            entity.class = EntityType::Protein as u32;
+            entity.class = EntityClass::Protein as u32;
             scene.entities.push(entity);
         }
     }
@@ -1436,19 +1484,6 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
 
         let atom_0_posit = mol.common.atom_posits[bond.atom_0];
         let atom_1_posit = mol.common.atom_posits[bond.atom_1];
-
-        // let atom_0_posit = get_atom_posit(
-        //     state.ui.peptide_atom_posits,
-        //     Some(&mol.common.atom_posits),
-        //     bond.atom_0,
-        //     atom_0,
-        // );
-        // let atom_1_posit = get_atom_posit(
-        //     state.ui.peptide_atom_posits,
-        //     Some(&mol.common.atom_posits),
-        //     bond.atom_1,
-        //     atom_1,
-        // );
 
         // Don't draw bonds if on the spacefill view, and the atoms aren't hetero.
         if ui.mol_view == MoleculeView::SpaceFill && !atom_0.hetero && !atom_1.hetero {
@@ -1517,14 +1552,12 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
             None => (mol.common.atoms[0].posit.into(), false),
         };
 
-        let dim_peptide = if state.active_mol().is_some() && !&mol.common.atoms[bond.atom_0].hetero
-        {
-            state.ui.visibility.dim_peptide
-        } else {
-            false
-        };
+        let dim_peptide_0 =
+            state.ui.visibility.dim_peptide && !mol.common.atoms[bond.atom_0].hetero;
+        let dim_peptide_1 =
+            state.ui.visibility.dim_peptide && !mol.common.atoms[bond.atom_1].hetero;
 
-        let color_0 = atom_color(
+        let mut color_0 = atom_color(
             atom_0,
             0,
             bond.atom_0,
@@ -1532,12 +1565,12 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
             aa_count,
             &state.ui.selection,
             state.ui.view_sel_level,
-            dim_peptide,
+            dim_peptide_0,
             state.ui.res_color_by_index,
             state.ui.atom_color_by_charge,
             MolType::Peptide,
         );
-        let color_1 = atom_color(
+        let mut color_1 = atom_color(
             atom_1,
             0,
             bond.atom_1,
@@ -1545,11 +1578,22 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
             aa_count,
             &state.ui.selection,
             state.ui.view_sel_level,
-            dim_peptide,
+            dim_peptide_1,
             state.ui.res_color_by_index,
             state.ui.atom_color_by_charge,
             MolType::Peptide,
         );
+
+        if atom_0.hetero {
+            color_0 = blend_color(color_0, COLOR_HETERO_RES, BLEND_AMT_HETERO_RES);
+        }
+
+        if atom_1.hetero {
+            color_1 = blend_color(color_1, COLOR_HETERO_RES, BLEND_AMT_HETERO_RES);
+        }
+
+        let to_hydrogen =
+            atom_0.element == Element::Hydrogen || atom_1.element == Element::Hydrogen;
 
         bond_entities(
             &mut scene.entities,
@@ -1562,6 +1606,7 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
             state.ui.mol_view != MoleculeView::BallAndStick,
             neighbor_posit,
             false,
+            to_hydrogen,
         );
     }
 
@@ -1643,6 +1688,7 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
                 MolType::Peptide,
                 state.ui.mol_view != MoleculeView::BallAndStick,
                 (Vec3::new_zero(), false), // N/A
+                false,
                 false,
             );
         }
