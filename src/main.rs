@@ -278,13 +278,13 @@ struct Visibility {
     hide_hetero: bool,
     hide_non_hetero: bool,
     hide_ligand: bool,
+    hide_nucleic_acids: bool,
+    hide_lipids: bool,
     hide_hydrogen: bool,
     hide_h_bonds: bool,
     dim_peptide: bool,
     hide_density_point_cloud: bool,
     hide_density_surface: bool,
-    hide_nucleic_acids: bool,
-    // lig_vis: Vec<bool>,
 }
 
 impl Default for Visibility {
@@ -295,13 +295,13 @@ impl Default for Visibility {
             hide_hetero: false,
             hide_non_hetero: false,
             hide_ligand: false,
+            hide_nucleic_acids: false,
+            hide_lipids: false,
             hide_hydrogen: true,
             hide_h_bonds: false,
             dim_peptide: false,
             hide_density_point_cloud: false,
             hide_density_surface: false,
-            hide_nucleic_acids: false,
-            // lig_vis: Vec::new(),
         }
     }
 }
@@ -392,6 +392,7 @@ struct StateUi {
     show_docking_tools: bool,
     movement_speed_input: String,
     rotation_sens_input: String,
+    mol_move_sens_input: String, // scroll
     cmd_line_input: String,
     cmd_line_output: String,
     /// Indicates CLI, or errors more broadly by changing its displayed color.
@@ -459,8 +460,6 @@ struct State {
     pub cif_pdb_raw: Option<String>,
     // todo: Allow multiple?
     pub peptide: Option<MoleculePeptide>,
-    // todo: Allow multiple.
-    // pub ligand: Option<MoleculeSmall>,
     pub ligands: Vec<MoleculeSmall>,
     pub nucleic_acids: Vec<MoleculeNucleicAcid>,
     pub lipids: Vec<MoleculeLipid>,
@@ -603,7 +602,7 @@ impl State {
                     }
                 }
                 MolType::Lipid => {
-                    if i < self.ligands.len() {
+                    if i < self.lipids.len() {
                         Some(MoleculeGenericRefMut::Lipid(&mut self.lipids[i]))
                     } else {
                         None

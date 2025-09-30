@@ -74,6 +74,7 @@ pub struct MoleculeCommon {
     pub visible: bool,
     pub path: Option<PathBuf>,
     pub selected_for_md: bool,
+    pub entity_i_range: Option<(usize, usize)>,
 }
 
 impl Default for MoleculeCommon {
@@ -89,6 +90,7 @@ impl Default for MoleculeCommon {
             visible: true,
             path: None,
             selected_for_md: false,
+            entity_i_range: None,
         }
     }
 }

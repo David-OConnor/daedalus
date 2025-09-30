@@ -45,9 +45,6 @@ pub fn event_dev_handler(
     _engine_inputs: bool,
     dt: f32,
 ) -> EngineUpdates {
-    let lig_move_amt = 0.05;
-    let lig_rotate_amt = 2.;
-
     let mut updates = EngineUpdates::default();
 
     let mut redraw_protein = false;
@@ -55,8 +52,9 @@ pub fn event_dev_handler(
     let mut redraw_na = false;
     let mut redraw_lipid = false;
 
-    let mut lig_move_dir = None;
-    let mut lig_rot_dir = None;
+    let mut redraw_ligs_inplace = false;
+    let mut redraw_na_inplace = false;
+    let mut redraw_lipid_inplace = false;
 
     // todo: Move this logic to the engine (graphics lib)?
     if !state_.ui.mouse_in_window {
@@ -73,9 +71,9 @@ pub fn event_dev_handler(
                 state_,
                 scene,
                 delta,
-                &mut redraw_lig,
-                &mut redraw_na,
-                &mut redraw_lipid,
+                &mut redraw_ligs_inplace,
+                &mut redraw_na_inplace,
+                &mut redraw_lipid_inplace,
             );
         }
         DeviceEvent::Button { button, state } => {
@@ -314,20 +312,12 @@ pub fn event_dev_handler(
                             &mut updates,
                         );
                     }
-                    // These lig rotations are temporary.
-                    Code(KeyCode::KeyU) => {
-                        lig_rot_dir = Some(FWD_VEC);
-                    }
-                    Code(KeyCode::KeyO) => {
-                        lig_rot_dir = Some(-FWD_VEC);
-                    }
                     Code(KeyCode::BracketLeft) => {
                         state_.ui.mol_view = state_.ui.mol_view.prev();
                         redraw_protein = true;
                         redraw_lig = true;
                         redraw_na = true;
                         redraw_lipid = true;
-                        // lig_rot_dir = Some(-RIGHT_VEC);
                     }
                     Code(KeyCode::BracketRight) => {
                         state_.ui.mol_view = state_.ui.mol_view.next();
@@ -335,34 +325,8 @@ pub fn event_dev_handler(
                         redraw_lig = true;
                         redraw_na = true;
                         redraw_lipid = true;
-                        // lig_rot_dir = Some(RIGHT_VEC);
                     }
-                    Code(KeyCode::Semicolon) => {
-                        // lig_rot_dir = Some(UP_VEC);
-                    }
-                    Code(KeyCode::Quote) => {
-                        // lig_rot_dir = Some(-UP_VEC);
-                    }
-                    Code(KeyCode::KeyI) => {
-                        // lig_move_dir = Some(FWD_VEC);
-                    }
-                    // Ad-hoc ligand movement. For now, moves in discrete chunks, i.e. doens't respect key
-                    // holding directly. Moves releative to the camera.
-                    Code(KeyCode::KeyK) => {
-                        lig_move_dir = Some(-FWD_VEC);
-                    }
-                    Code(KeyCode::KeyJ) => {
-                        lig_move_dir = Some(-RIGHT_VEC);
-                    }
-                    Code(KeyCode::KeyL) => {
-                        lig_move_dir = Some(RIGHT_VEC);
-                    }
-                    Code(KeyCode::Period) => {
-                        lig_move_dir = Some(-UP_VEC);
-                    }
-                    Code(KeyCode::AltRight) => {
-                        lig_move_dir = Some(UP_VEC);
-                    }
+
                     Code(KeyCode::KeyM) => {
                         let mol_type = match state_.active_mol() {
                             Some(m) => m.mol_type(),
@@ -372,9 +336,9 @@ pub fn event_dev_handler(
                         mol_manip::set_manip(
                             &mut state_.volatile,
                             scene,
-                            &mut redraw_lig,
-                            &mut redraw_na,
-                            &mut redraw_lipid,
+                            &mut redraw_ligs_inplace,
+                            &mut redraw_na_inplace,
+                            &mut redraw_lipid_inplace,
                             ManipMode::Move((mol_type, 0)),
                         );
                     }
@@ -387,9 +351,9 @@ pub fn event_dev_handler(
                         mol_manip::set_manip(
                             &mut state_.volatile,
                             scene,
-                            &mut redraw_lig,
-                            &mut redraw_na,
-                            &mut redraw_lipid,
+                            &mut redraw_ligs_inplace,
+                            &mut redraw_na_inplace,
+                            &mut redraw_lipid_inplace,
                             ManipMode::Rotate((mol_type, 0)),
                         );
                     }
@@ -490,9 +454,9 @@ pub fn event_dev_handler(
                     state_,
                     scene,
                     delta,
-                    &mut redraw_lig,
-                    &mut redraw_na,
-                    &mut redraw_lipid,
+                    &mut redraw_ligs_inplace,
+                    &mut redraw_na_inplace,
+                    &mut redraw_lipid_inplace,
                 );
             }
 
@@ -507,36 +471,8 @@ pub fn event_dev_handler(
     if redraw_protein {
         // todo:This is overkill for certain keys. Just change the color of the one[s] in question, and set update.entities = true.
         drawing::draw_peptide(state_, scene);
-        // updates.entities = true;
-        updates.entities.push(EntityClass::Peptide as u32);
-    }
-
-    // todo: Note that lig movements etc don't currently stack.
-    if let Some(dir_) = lig_move_dir {
-        if let Some(lig) = state_.active_mol_mut() {
-            let dir = scene.camera.orientation.rotate_vec(dir_);
-            let move_amt: Vec3F64 = (dir * lig_move_amt).into();
-            //
-            // if let Some(data) = &mut lig.lig_data {
-            //     data.pose.anchor_posit += move_amt;
-            // }
-
-            redraw_lig = true;
-        }
-    }
-
-    if let Some(dir_) = lig_rot_dir {
-        if let Some(lig) = state_.active_mol_mut() {
-            let dir = scene.camera.orientation.rotate_vec(dir_);
-
-            // if let Some(data) = &mut lig.lig_data {
-            //     let rotation: QuaternionF64 =
-            //         Quaternion::from_axis_angle(dir, lig_rotate_amt * dt).into();
-            //     data.pose.orientation = rotation * data.pose.orientation;
-            // }
-
-            redraw_lig = true;
-        }
+        updates.entities = EntityUpdate::All;
+        // updates.entities.push_class(EntityClass::Peptide as u32);
     }
 
     if redraw_lig {
@@ -545,17 +481,75 @@ pub fn event_dev_handler(
         // }
 
         drawing::draw_all_ligs(state_, scene);
-        updates.entities.push(EntityClass::Ligand as u32);
+        updates.entities = EntityUpdate::All;
     }
 
     if redraw_na {
         drawing::draw_all_nucleic_acids(state_, scene);
-        updates.entities.push(EntityClass::NucleicAcid as u32);
+        updates.entities = EntityUpdate::All;
     }
 
     if redraw_lipid {
         drawing::draw_all_lipids(state_, scene);
-        updates.entities.push(EntityClass::Lipid as u32);
+        updates.entities = EntityUpdate::All;
+    }
+
+    // if redraw_ligs_inplace {
+    //     drawing::update_all_ligs_inplace(state_, scene);
+    //     updates.entities.push_class(EntityClass::Ligand as u32);
+    // }
+    //
+    // if redraw_na_inplace {
+    //     drawing::update_all_na_inplace(state_, scene);
+    //     updates.entities.push_class(EntityClass::NucleicAcid as u32);
+    // }
+
+    if redraw_ligs_inplace {
+        // todo: Fragile? Error handle.
+        let mol_i = state_.volatile.active_mol.unwrap().1;
+
+        if mol_i >= state_.ligands.len() {
+            eprintln!("Uhoh: Index error on in-place redraw");
+            drawing::draw_all_ligs(state_, scene);
+            return updates;
+        }
+
+        drawing::update_single_ligand_inplace(mol_i, state_, scene);
+
+        let mol = &mut state_.ligands[mol_i];
+        updates.entities = EntityUpdate::Indexes(mol.common.entity_i_range.unwrap())
+    }
+
+    if redraw_na_inplace {
+        // todo: Fragile? Error handle.
+        let mol_i = state_.volatile.active_mol.unwrap().1;
+
+        if mol_i >= state_.nucleic_acids.len() {
+            eprintln!("Uhoh: Index error on in-place redraw");
+            drawing::draw_all_ligs(state_, scene);
+            return updates;
+        }
+
+        drawing::update_single_nucleic_acid_inplace(mol_i, state_, scene);
+
+        let mol = &mut state_.nucleic_acids[mol_i];
+        updates.entities = EntityUpdate::Indexes(mol.common.entity_i_range.unwrap())
+    }
+
+    if redraw_lipid_inplace {
+        // todo: Fragile? Error handle.
+        let mol_i = state_.volatile.active_mol.unwrap().1;
+
+        if mol_i >= state_.lipids.len() {
+            eprintln!("Uhoh: Index error on in-place redraw");
+            drawing::draw_all_ligs(state_, scene);
+            return updates;
+        }
+
+        drawing::update_single_lipid_inplace(mol_i, state_, scene);
+
+        let mol = &mut state_.lipids[mol_i];
+        updates.entities = EntityUpdate::Indexes(mol.common.entity_i_range.unwrap())
     }
 
     // We handle the flashlight elsewhere, as this event handler only fires upon events; not while

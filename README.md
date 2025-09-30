@@ -1,4 +1,4 @@
-# Daedalus molecule viewer
+# Daedalus: structural biology
 
 [//]: # ([![Crate]&#40;https://img.shields.io/crates/v/daedalus.svg&#41;]&#40;https://crates.io/crates/daedalus&#41;)
 
@@ -7,7 +7,7 @@
 For viewing and exploring proteins and small molecules. View atom positions, bonds, solvent-accessible-surfaces, and
 electron density. Perform and visualize molecular dynamics using built-in [Amber](https://ambermd.org/) parameters.
 
-Blends functionality similar to [PyMol](https://www.pymol.org/), [Chimera](https://www.cgl.ucsf.edu/chimera/), w[Coot](https://www2.mrc-lmb.cam.ac.uk/personal/pemsley/coot/), [VMD](https://www.ks.uiuc.edu/Research/vmd/), and [GROMACS](https://www.gromacs.org/).
+Blends functionality similar to [PyMol](https://www.pymol.org/), [Chimera](https://www.cgl.ucsf.edu/chimera/), [Coot](https://www2.mrc-lmb.cam.ac.uk/personal/pemsley/coot/), [VMD](https://www.ks.uiuc.edu/Research/vmd/), and [GROMACS](https://www.gromacs.org/).
 
 Designed to be as easy to use, and fast as possible. Has tight integration with online databases including [RSCB PDB](https://www.rcsb.org/),
 [Pubchem](https://pubchem.ncbi.nlm.nih.gov/), [drugbank](https://go.drugbank.com/), [PDBe](https://www.ebi.ac.uk/pdbe/),
@@ -22,8 +22,8 @@ and [LMSD](https://www.lipidmaps.org/databases/lmsd/overview). Uses parallel com
 
 If using with GPU, you may need to download [libcufft.so.12](https://github.com/David-OConnor/daedalus/releases/download/0.2.0/cufft_linux.zip),
 and place it in `/usr/lib`. (Linux), or [cufft64_12.dll](https://github.com/David-OConnor/daedalus/releases/download/0.2.0/cufft_win.zip),
-and place it in next to the executable or system PATH. (Windows) (You will know if you need to do this if the application doesn't open from GUI, or
-you get an error mentioning this file name when running from CLI or GUI). If you have the Cuda toolklit installed, this isn't required.
+and place it in next to the executable or system PATH. (Windows) You will know if you need to do this if the application doesn't open from GUI, or
+you get an error mentioning this file name when running from CLI or GUI. If you have the Cuda toolklit installed, this isn't required.
 
 Notes:
 - On Linux distros that use Gnome (e.g. Ubuntu), run `setup_linux_desktop.sh`, included in the zip, to create a Desktop GUI entry.
@@ -71,7 +71,7 @@ from the [RCSB PDB](https://www.rcsb.org/).
 
 
 ## File formats
-- Proteins: mmCIF (.pdb supported removed; use mmCIF instead)
+- Proteins: mmCIF (aka PDBx)
 - Small molecules: SDF, Mol2, GRO, and PDBQT
 - Electron density: 2fo-fc mmCIF, Map, and MTZ
 - Force field parameters: dat, lib, frcmod, prmtop (Amber), and top (GROMACS)
@@ -278,14 +278,11 @@ CUDA v13.0 or higher must be installed on the compiling machine, but is not requ
 
 
 ### Errata
+- Only one protein can be loaded at a time
 - Ribbon (cartoon) view is unavailable.
 - Loading map (electron density) files that are very large (e.g. high detail, especially Map files directly available
 on RCSB, vice created from 2fo-fc) may crash the program.
 - Opening electron density files in general can be slow. This can lead to the program starting slowly if it was
 last shut down with electron density data open.
 - The GUI doesn't handle proteins with many chains well.
-- Electron density isosurfaces are currently broken
-- GPU on Linux is finicky at the moment. You might get an error on launch if not on an Nvidia GPU with drivers installed,
-instead of falling back to the CPU. The latest linux drivers available on Ubuntu's official tool don't support CUDA 13, 
-which is currently required. We provide CUDA and non-CUDA linux downloads until this is resolved.
 - On some displays, dragging the MD time slider may also move the camera. To workaround, click the slider instead of dragging.

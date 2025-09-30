@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use bio_files::ResidueType;
 use egui::Color32;
-use graphics::{Camera, ControlScheme, EngineUpdates, FWD_VEC, Mesh, Scene, Vertex};
+use graphics::{Camera, ControlScheme, EngineUpdates, EntityUpdate, FWD_VEC, Mesh, Scene, Vertex};
 use lin_alg::{
     f32::{Quaternion, Vec3 as Vec3F32},
     f64::Vec3,
@@ -558,8 +558,8 @@ pub fn close_peptide(state: &mut State, scene: &mut Scene, engine_updates: &mut 
 
     state.update_save_prefs(false);
 
-    // engine_updates.entities = true;
-    engine_updates.entities.push(EntityClass::Peptide as u32);
+    engine_updates.entities = EntityUpdate::All;
+    // engine_updates.entities.push_class(EntityClass::Peptide as u32);
 }
 
 pub fn close_mol(
@@ -571,7 +571,8 @@ pub fn close_mol(
 ) {
     state.volatile.mol_manip.mol = ManipMode::None;
     // engine_updates.entities = true;
-    engine_updates.entities.push(mol_type.entity_type() as u32);
+    engine_updates.entities = EntityUpdate::All;
+    // engine_updates.entities.push_class(mol_type.entity_type() as u32);
 
     match mol_type {
         MolType::Ligand => {
@@ -687,12 +688,12 @@ pub fn make_density_mesh(state: &mut State, scene: &mut Scene, engine_updates: &
             };
 
             if !state.ui.visibility.hide_density_surface {
-                draw_density_surface(&mut scene.entities);
+                draw_density_surface(&mut scene.entities, state);
             }
 
             engine_updates.meshes = true;
-            // engine_updates.entities = true;
-            engine_updates.entities.push(EntityClass::SaSurface as u32);
+            engine_updates.entities = EntityUpdate::All;
+            // engine_updates.entities.push_class(EntityClass::SaSurface as u32);
         }
         Err(e) => handle_err(&mut state.ui, e.to_string()),
     }
@@ -723,10 +724,11 @@ pub fn handle_scene_flags(
             if !state.ui.visibility.hide_density_point_cloud {
                 if let Some(density) = &mol.elec_density {
                     draw_density_point_cloud(&mut scene.entities, density);
-                    // engine_updates.entities = true;
-                    engine_updates
-                        .entities
-                        .push(EntityClass::DensityPoint as u32);
+                    clear_mol_entity_indices(state);
+                    engine_updates.entities = EntityUpdate::All;
+                    // engine_updates
+                    //     .entities
+                    //     .push_class(EntityClass::DensityPoint as u32);
                     return;
                 }
             }
@@ -775,11 +777,11 @@ pub fn handle_scene_flags(
             ) {
                 // The dots are drawn from the mesh vertices
                 draw_peptide(state, scene);
-                // engine_updates.entities = true;
-                engine_updates.entities.push(EntityClass::SaSurface as u32);
-                engine_updates
-                    .entities
-                    .push(EntityClass::SaSurfaceDots as u32);
+                engine_updates.entities = EntityUpdate::All;
+                // engine_updates.entities.push_class(EntityClass::SaSurface as u32);
+                // engine_updates
+                //     .entities
+                //     .push_class(EntityClass::SaSurfaceDots as u32);
             }
 
             engine_updates.meshes = true;
@@ -943,4 +945,22 @@ pub fn move_cam_to_sel(
 
     engine_updates.camera = true;
     state_ui.cam_snapshot = None;
+}
+
+// todo: Maybe only invalidate indices that come before?
+/// We use this to invalidate indices when removing entities. Only run this when entities are removed.
+pub fn clear_mol_entity_indices(state: &mut State) {
+    println!("Clearing indices");
+    if let Some(pep) = &mut state.peptide {
+        pep.common.entity_i_range = None;
+    }
+    for mol in &mut state.ligands {
+        mol.common.entity_i_range = None;
+    }
+    for mol in &mut state.nucleic_acids {
+        mol.common.entity_i_range = None;
+    }
+    for mol in &mut state.lipids {
+        mol.common.entity_i_range = None;
+    }
 }

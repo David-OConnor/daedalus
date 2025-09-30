@@ -91,7 +91,7 @@ pub fn handle_mol_manip_in_plane(
 
                 state.volatile.mol_manip.offset = offset;
 
-                let ratio = 20;
+                let ratio = 8;
                 unsafe {
                     I += 1;
                     if I % ratio == 0 {
@@ -128,7 +128,7 @@ pub fn handle_mol_manip_in_plane(
             let rot = rot_y * rot_x; // Note: Can swap the order for a slightly different effect.
             mol.rotate(rot.into(), None);
 
-            let ratio = 20;
+            let ratio = 8;
             unsafe {
                 I += 1;
                 if I % ratio == 0 {
@@ -199,7 +199,7 @@ pub fn handle_mol_manip_in_out(
                 state.volatile.mol_manip.view_dir = Some(view_dir);
 
                 let dist = (pivot - cam_pos32).magnitude();
-                let step = SENS_MOL_MOVE_SCROLL * dist;
+                let step = state.to_save.mol_move_sens as f32 / 1_000. * dist;
 
                 // let dv = pivot_norm * (scroll * step);
                 let dv = view_dir * (scroll * step);

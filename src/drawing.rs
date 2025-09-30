@@ -15,6 +15,7 @@ use na_seq::Element;
 
 use crate::{
     ManipMode, Selection, State, StateUi, ViewSelLevel,
+    lipid::MoleculeLipid,
     molecule::{Atom, AtomRole, Chain, MolType, MoleculeGenericRef, Residue, aa_color},
     reflection::ElectronDensity,
     render::{
@@ -24,7 +25,7 @@ use crate::{
         MESH_SPHERE_HIGHRES, MESH_SPHERE_LOWRES, MESH_SPHERE_MEDRES, WATER_BOND_THICKNESS,
         WATER_OPACITY,
     },
-    util::{find_neighbor_posit, orbit_center},
+    util::{clear_mol_entity_indices, find_neighbor_posit, handle_err, orbit_center},
 };
 
 const LIGAND_COLOR_ANCHOR: Color = (1., 0., 1.);
@@ -414,7 +415,6 @@ fn atom_color(
 /// Adds a cylindrical bond. This is divided into two halves, so they can be color-coded by their side's
 /// atom. Adds optional rounding. `thickness` is relative to BOND_RADIUS.
 fn add_bond(
-    entities: &mut Vec<Entity>,
     posits: (Vec3, Vec3),
     colors: (Color, Color),
     center: Vec3,
@@ -423,7 +423,9 @@ fn add_bond(
     caps: bool,
     radius_scaler: f32,
     mol_type: MolType,
-) {
+) -> Vec<Entity> {
+    let mut result = Vec::new();
+
     // Split the bond into two entities, so you can color-code them separately based
     // on which atom the half is closer to.
     let center_0 = (posits.0 + center) / 2.;
@@ -473,20 +475,21 @@ fn add_bond(
 
         cap_0.class = entity_type;
         cap_1.class = entity_type;
-        entities.push(cap_0);
-        entities.push(cap_1);
+        result.push(cap_0);
+        result.push(cap_1);
     }
 
     let scale = Some(Vec3::new(radius_scaler, dist_half, radius_scaler));
     entity_0.scale_partial = scale;
     entity_1.scale_partial = scale;
 
-    entities.push(entity_0);
-    entities.push(entity_1);
+    result.push(entity_0);
+    result.push(entity_1);
+
+    result
 }
 
 fn bond_entities(
-    entities: &mut Vec<Entity>,
     posit_0: Vec3,
     posit_1: Vec3,
     mut color_0: Color,
@@ -501,7 +504,9 @@ fn bond_entities(
     neighbor: (Vec3, bool),
     mol_active: bool,  // i.e. selected
     to_hydrogen: bool, // A covalent bond to H
-) {
+) -> Vec<Entity> {
+    let mut result = Vec::new();
+
     let center: Vec3 = (posit_0 + posit_1) / 2.;
 
     let diff = posit_0 - posit_1;
@@ -578,8 +583,7 @@ fn bond_entities(
             let thickness_inner = radius_scaler * BOND_RADIUS_AR_INNER_RATIO;
 
             // Primary bond exactly like a normal single bond.
-            add_bond(
-                entities,
+            result.extend(add_bond(
                 (posit_0, posit_1),
                 (color_0, color_1),
                 center,
@@ -588,11 +592,10 @@ fn bond_entities(
                 caps,
                 thickness_outer,
                 mol_type,
-            );
+            ));
 
             // Smaller bond on the inside.
-            add_bond(
-                entities,
+            result.extend(add_bond(
                 (posit_0_inner, posit_1_inner),
                 (color_0, color_1),
                 center_inner,
@@ -601,7 +604,7 @@ fn bond_entities(
                 caps,
                 thickness_inner,
                 mol_type,
-            );
+            ));
         }
         BondType::Double => {
             // Draw two offset bond cylinders.
@@ -618,8 +621,7 @@ fn bond_entities(
                 (offset_a, offset_b)
             };
 
-            add_bond(
-                entities,
+            result.extend(add_bond(
                 (posit_0 + offset_a, posit_1 + offset_a),
                 (color_0, color_1),
                 center + offset_a,
@@ -628,10 +630,9 @@ fn bond_entities(
                 caps,
                 0.5,
                 mol_type,
-            );
+            ));
 
-            add_bond(
-                entities,
+            result.extend(add_bond(
                 (posit_0 + offset_b, posit_1 + offset_b),
                 (color_0, color_1),
                 center + offset_b,
@@ -640,7 +641,7 @@ fn bond_entities(
                 caps,
                 0.5,
                 mol_type,
-            );
+            ));
         }
         BondType::Triple => {
             // Draw two offset bond cylinders.
@@ -656,8 +657,7 @@ fn bond_entities(
                 (offset_a, offset_b)
             };
 
-            add_bond(
-                entities,
+            result.extend(add_bond(
                 (posit_0, posit_1),
                 (color_0, color_1),
                 center,
@@ -666,9 +666,8 @@ fn bond_entities(
                 caps,
                 0.4,
                 mol_type,
-            );
-            add_bond(
-                entities,
+            ));
+            result.extend(add_bond(
                 (posit_0 + offset_a, posit_1 + offset_a),
                 (color_0, color_1),
                 center + offset_a,
@@ -677,9 +676,8 @@ fn bond_entities(
                 caps,
                 0.4,
                 mol_type,
-            );
-            add_bond(
-                entities,
+            ));
+            result.extend(add_bond(
                 (posit_0 + offset_b, posit_1 + offset_b),
                 (color_0, color_1),
                 center + offset_b,
@@ -688,7 +686,7 @@ fn bond_entities(
                 caps,
                 0.4,
                 mol_type,
-            );
+            ));
         }
         // Single bonds, and others.
         _ => {
@@ -699,8 +697,7 @@ fn bond_entities(
                 radius_scaler
             };
 
-            add_bond(
-                entities,
+            result.extend(add_bond(
                 (posit_0, posit_1),
                 (color_0, color_1),
                 center,
@@ -709,9 +706,11 @@ fn bond_entities(
                 caps,
                 thickness,
                 mol_type,
-            );
+            ));
         }
     }
+
+    result
 }
 
 /// Water from a MD sim; not from atoms in experimental data.
@@ -721,10 +720,14 @@ pub fn draw_water(
     h0_pos: &[Vec3],
     h1_pos: &[Vec3],
     hide_water: bool,
+    // state: &mut State,
 ) {
     scene
         .entities
         .retain(|ent| ent.class != EntityClass::WaterModel as u32);
+
+    // todo: Borrow mut prob.
+    // clear_mol_entity_indices(state);
 
     if hide_water {
         return;
@@ -790,7 +793,8 @@ pub fn draw_water(
     }
 }
 
-pub fn draw_all_ligs(state: &State, scene: &mut Scene) {
+pub fn draw_all_ligs(state: &mut State, scene: &mut Scene) {
+    let initial_ent_count = scene.entities.len();
     scene.entities.retain(|ent| {
         ent.class != EntityClass::Ligand as u32 && ent.class != EntityClass::DockingSite as u32
     });
@@ -799,52 +803,195 @@ pub fn draw_all_ligs(state: &State, scene: &mut Scene) {
         return;
     }
 
-    for (i, lig) in state.ligands.iter().enumerate() {
-        draw_mol(
-            MoleculeGenericRef::Ligand(lig),
+    for (i, mol) in state.ligands.iter_mut().enumerate() {
+        let start_i = scene.entities.len();
+
+        scene.entities.extend(draw_mol(
+            MoleculeGenericRef::Ligand(mol),
             i,
             &state.ui,
             &state.volatile.active_mol,
             state.volatile.mol_manip.mol,
-            scene,
-        );
+        ));
+
+        let end_i = scene.entities.len();
+        mol.common.entity_i_range = Some((start_i, end_i));
+    }
+
+    if scene.entities.len() != initial_ent_count {
+        clear_mol_entity_indices(state);
     }
 }
 
 // todo: You need to generalize your drawing code so you have less repetition, and it's more consistent.
 pub fn draw_all_nucleic_acids(state: &mut State, scene: &mut Scene) {
+    let initial_ent_count = scene.entities.len();
     scene
         .entities
         .retain(|ent| ent.class != EntityClass::NucleicAcid as u32);
 
-    for (i, na) in state.nucleic_acids.iter().enumerate() {
-        draw_mol(
-            MoleculeGenericRef::NucleicAcid(na),
+    if state.ui.visibility.hide_nucleic_acids {
+        return;
+    }
+
+    for (i, mol) in state.nucleic_acids.iter_mut().enumerate() {
+        let start_i = scene.entities.len();
+
+        scene.entities.extend(draw_mol(
+            MoleculeGenericRef::NucleicAcid(mol),
             i,
             &state.ui,
             &state.volatile.active_mol,
             state.volatile.mol_manip.mol,
-            scene,
-        );
+        ));
+
+        let end_i = scene.entities.len();
+        mol.common.entity_i_range = Some((start_i, end_i));
+    }
+
+    if scene.entities.len() != initial_ent_count {
+        clear_mol_entity_indices(state);
     }
 }
 
 // todo: You need to generalize your drawing code so you have less repetition, and it's more consistent.
 pub fn draw_all_lipids(state: &mut State, scene: &mut Scene) {
+    let initial_ent_count = scene.entities.len();
     scene
         .entities
         .retain(|ent| ent.class != EntityClass::Lipid as u32);
 
-    for (i, mol) in state.lipids.iter().enumerate() {
-        draw_mol(
+    if state.ui.visibility.hide_lipids {
+        return;
+    }
+
+    for (i, mol) in state.lipids.iter_mut().enumerate() {
+        let start_i = scene.entities.len();
+
+        scene.entities.extend(draw_mol(
             MoleculeGenericRef::Lipid(mol),
             i,
             &state.ui,
             &state.volatile.active_mol,
             state.volatile.mol_manip.mol,
-            scene,
-        );
+        ));
+
+        let end_i = scene.entities.len();
+        mol.common.entity_i_range = Some((start_i, end_i));
     }
+
+    if scene.entities.len() != initial_ent_count {
+        clear_mol_entity_indices(state);
+    }
+}
+
+/// Updates a single molecule's entities.
+fn update_inplace_inner(
+    mol: MoleculeGenericRef,
+    i: usize,
+    ent_i_start: usize,
+    ent_i_end: usize,
+    state: &State,
+    scene: &mut Scene,
+) {
+    let ents_updated = draw_mol(
+        mol,
+        i,
+        &state.ui,
+        &state.volatile.active_mol,
+        state.volatile.mol_manip.mol,
+    );
+
+    if ents_updated.len() != ent_i_end - ent_i_start {
+        eprintln!(
+            "Error: Mismatch between new and old mol et counts. Old: {}, new: {}",
+            ents_updated.len(),
+            ent_i_end - ent_i_start
+        );
+        return;
+    }
+
+    for (i, ent) in scene.entities[ent_i_start..ent_i_end]
+        .iter_mut()
+        .enumerate()
+    {
+        ent.position = ents_updated[i].position;
+        ent.orientation = ents_updated[i].orientation;
+        ent.color = ents_updated[i].color;
+    }
+}
+
+/// Cheaper, but takes some care in synchronization. Only draws
+/// This should be run in conjunction with `engine_updates.entities.push_class(EntityClass::Ligand as u32)` or similar.
+/// We update entities, then command an instance buffer update only of these updates
+/// todo: You can go even further and do it one lig and a time, instead of all ligs.
+pub fn update_all_ligs_inplace(state: &State, scene: &mut Scene) {
+    for (i, lig) in state.ligands.iter().enumerate() {
+        let Some((ent_i_start, ent_i_end)) = lig.common.entity_i_range else {
+            eprintln!("Unable to update mol entities in place; missing entity indices");
+            continue;
+        };
+
+        let mol = MoleculeGenericRef::Ligand(lig);
+        update_inplace_inner(mol, i, ent_i_start, ent_i_end, state, scene);
+    }
+}
+
+pub fn update_all_na_inplace(state: &State, scene: &mut Scene) {
+    for (i, na) in state.nucleic_acids.iter().enumerate() {
+        let Some((ent_i_start, ent_i_end)) = na.common.entity_i_range else {
+            eprintln!("Unable to update mol entities in place; missing entity indices");
+            continue;
+        };
+
+        let mol = MoleculeGenericRef::NucleicAcid(na);
+        update_inplace_inner(mol, i, ent_i_start, ent_i_end, state, scene);
+    }
+}
+
+pub fn update_all_lipids_inplace(state: &State, scene: &mut Scene) {
+    for (i, lipid) in state.lipids.iter().enumerate() {
+        let Some((ent_i_start, ent_i_end)) = lipid.common.entity_i_range else {
+            eprintln!("Unable to update mol entities in place; missing entity indices");
+            continue;
+        };
+
+        let mol = MoleculeGenericRef::Lipid(lipid);
+        update_inplace_inner(mol, i, ent_i_start, ent_i_end, state, scene);
+    }
+}
+
+pub fn update_single_ligand_inplace(i: usize, state: &State, scene: &mut Scene) {
+    let ligand = &state.ligands[i];
+    let Some((ent_i_start, ent_i_end)) = ligand.common.entity_i_range else {
+        eprintln!("Unable to update mol entities in place; missing entity indices");
+        return;
+    };
+
+    let mol = MoleculeGenericRef::Ligand(ligand);
+    update_inplace_inner(mol, i, ent_i_start, ent_i_end, state, scene);
+}
+
+pub fn update_single_nucleic_acid_inplace(i: usize, state: &State, scene: &mut Scene) {
+    let na = &state.nucleic_acids[i];
+    let Some((ent_i_start, ent_i_end)) = na.common.entity_i_range else {
+        eprintln!("Unable to update mol entities in place; missing entity indices");
+        return;
+    };
+
+    let mol = MoleculeGenericRef::NucleicAcid(na);
+    update_inplace_inner(mol, i, ent_i_start, ent_i_end, state, scene);
+}
+
+pub fn update_single_lipid_inplace(i: usize, state: &State, scene: &mut Scene) {
+    let lipid = &state.lipids[i];
+    let Some((ent_i_start, ent_i_end)) = lipid.common.entity_i_range else {
+        eprintln!("Unable to update mol entities in place; missing entity indices");
+        return;
+    };
+
+    let mol = MoleculeGenericRef::Lipid(lipid);
+    update_inplace_inner(mol, i, ent_i_start, ent_i_end, state, scene);
 }
 
 /// For all molecule types (for now, not including peptide)
@@ -855,10 +1002,11 @@ pub fn draw_mol(
     state_ui: &StateUi,
     active_mol: &Option<(MolType, usize)>,
     move_mol: ManipMode,
-    scene: &mut Scene,
-) {
+) -> Vec<Entity> {
+    let mut result = Vec::new();
+
     if !mol.common().visible {
-        return;
+        return result;
     }
 
     let active = if let Some((active_mol_type, active_i)) = active_mol {
@@ -945,7 +1093,7 @@ pub fn draw_mol(
             );
 
             entity.class = mol.mol_type().entity_type() as u32;
-            scene.entities.push(entity);
+            result.push(entity);
         }
     }
 
@@ -1054,8 +1202,7 @@ pub fn draw_mol(
         let to_hydrogen =
             atom_0.element == Element::Hydrogen || atom_1.element == Element::Hydrogen;
 
-        bond_entities(
-            &mut scene.entities,
+        result.extend(bond_entities(
             posit_0,
             posit_1,
             color_0,
@@ -1066,7 +1213,7 @@ pub fn draw_mol(
             neighbor_posit,
             active,
             to_hydrogen,
-        );
+        ));
     }
 
     // todo: Add back if you include lig H bonds.
@@ -1094,6 +1241,8 @@ pub fn draw_mol(
     // }
 
     // set_docking_light(scene, Some(&state.ligand.as_ref().unwrap().docking_site));
+
+    result
 }
 
 /// A visual representation of volumetric electron density,
@@ -1101,6 +1250,7 @@ pub fn draw_mol(
 /// We change size based on density, and not linearly, for visual effect.
 pub fn draw_density_point_cloud(entities: &mut Vec<Entity>, density: &[ElectronDensity]) {
     entities.retain(|ent| ent.class != EntityClass::DensityPoint as u32);
+    // clear_mol_entity_indices(state); // todo: Borrow mut problem.
 
     const EPS: f64 = 0.0000001;
 
@@ -1133,8 +1283,9 @@ pub fn draw_density_point_cloud(entities: &mut Vec<Entity>, density: &[ElectronD
 
 /// An isosurface of electron density,
 /// as loaded from .map files or similar.
-pub fn draw_density_surface(entities: &mut Vec<Entity>) {
+pub fn draw_density_surface(entities: &mut Vec<Entity>, state: &mut State) {
     entities.retain(|ent| ent.class != EntityClass::DensitySurface as u32);
+    // clear_mol_entity_indices(state);
 
     let mut ent = Entity::new(
         MESH_DENSITY_SURFACE,
@@ -1198,6 +1349,7 @@ fn draw_sa_surface(update_mesh: &mut bool, mesh_created: bool, scene: &mut Scene
 }
 
 /// Secondary structure, e.g. cartoon.
+// pub fn draw_secondary_structure(update_mesh: &mut bool, mesh_created: bool, scene: &mut Scene, state: &mut State) {
 pub fn draw_secondary_structure(update_mesh: &mut bool, mesh_created: bool, scene: &mut Scene) {
     // If the mesh is the default cube, build it. (On demand.)
     if !mesh_created {
@@ -1208,6 +1360,7 @@ pub fn draw_secondary_structure(update_mesh: &mut bool, mesh_created: bool, scen
     scene
         .entities
         .retain(|ent| ent.class != EntityClass::SecondaryStructure as u32);
+    // clear_mol_entity_indices(state);
 
     let mut ent = Entity::new(
         MESH_SECONDARY_STRUCTURE,
@@ -1240,6 +1393,19 @@ pub fn draw_secondary_structure(update_mesh: &mut bool, mesh_created: bool, scen
 /// Refreshes entities with the model passed.
 /// Sensitive to various view configuration parameters.
 pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
+    // todo: You may wish to integrate Cartoon into this workflow.
+    let initial_ent_count = scene.entities.len();
+
+    scene.entities.retain(|ent| {
+        ent.class != EntityClass::Protein as u32
+            && ent.class != EntityClass::SaSurface as u32
+            && ent.class != EntityClass::SaSurfaceDots as u32
+    });
+
+    let start_i = scene.entities.len();
+
+    let mut entities = Vec::new();
+
     let Some(mol) = state.peptide.as_ref() else {
         return;
     };
@@ -1256,13 +1422,6 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
             }
         })
         .count();
-
-    // todo: You may wish to integrate Cartoon into this workflow.
-    scene.entities.retain(|ent| {
-        ent.class != EntityClass::Protein as u32
-            && ent.class != EntityClass::SaSurface as u32
-            && ent.class != EntityClass::SaSurfaceDots as u32
-    });
 
     let ui = &state.ui;
 
@@ -1328,7 +1487,7 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
                             ATOM_SHININESS,
                         );
                         entity.class = EntityClass::Protein as u32;
-                        scene.entities.push(entity);
+                        entities.push(entity);
                     }
                 }
             }
@@ -1458,7 +1617,7 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
                 ATOM_SHININESS,
             );
             entity.class = EntityClass::Protein as u32;
-            scene.entities.push(entity);
+            entities.push(entity);
         }
     }
 
@@ -1595,8 +1754,7 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
         let to_hydrogen =
             atom_0.element == Element::Hydrogen || atom_1.element == Element::Hydrogen;
 
-        bond_entities(
-            &mut scene.entities,
+        entities.extend(bond_entities(
             posit_0,
             posit_1,
             color_0,
@@ -1607,7 +1765,7 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
             neighbor_posit,
             false,
             to_hydrogen,
-        );
+        ));
     }
 
     // Draw H bonds.
@@ -1678,8 +1836,7 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
                 }
             }
 
-            bond_entities(
-                &mut scene.entities,
+            entities.extend(bond_entities(
                 atom_donor.posit.into(),
                 atom_acceptor.posit.into(),
                 COLOR_H_BOND,
@@ -1690,11 +1847,24 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
                 (Vec3::new_zero(), false), // N/A
                 false,
                 false,
-            );
+            ));
         }
     }
 
     if let ControlScheme::Arc { center } = &mut scene.input_settings.control_scheme {
         *center = orbit_center(state);
+    }
+
+    scene.entities.extend(entities);
+
+    let end_i = scene.entities.len();
+    if let Some(mol) = state.peptide.as_mut() {
+        mol.common.entity_i_range = Some((start_i, end_i));
+    } else {
+        eprintln!("Uhoh!")
+    }
+
+    if scene.entities.len() != initial_ent_count {
+        clear_mol_entity_indices(state);
     }
 }

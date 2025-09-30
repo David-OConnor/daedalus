@@ -19,7 +19,6 @@ use graphics::{
 };
 use lin_alg::f64::Vec3;
 
-use crate::docking_v2::DockingSite;
 use crate::{
     CamSnapshot,
     MsaaSetting,
@@ -31,6 +30,7 @@ use crate::{
     drawing::MoleculeView,
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
 };
+use crate::{docking_v2::DockingSite, inputs::SENS_MOL_MOVE_SCROLL};
 
 pub const DEFAULT_PREFS_FILE: &str = "daedalus_prefs.dae";
 
@@ -124,6 +124,7 @@ pub struct ToSave {
     pub movement_speed: u8,
     /// Divide this by 100 to get engine standard.
     pub rotation_sens: u8,
+    pub mol_move_sens: u8,
     /// Solvent-accessible surface (and dots) precision. Lower is higher precision. A value of 0.5 - 0.6
     /// is a good default. Too low will cause crashes and very poor performance. Higher is too coarse.
     pub sa_surface_precision: f32,
@@ -151,6 +152,7 @@ impl Default for ToSave {
             msaa: Default::default(),
             movement_speed: MOVEMENT_SENS as u8,
             rotation_sens: (ROTATE_SENS * 100.) as u8,
+            mol_move_sens: (SENS_MOL_MOVE_SCROLL * 1_000.) as u8,
             sa_surface_precision: 0.55,
             md_config: Default::default(),
             num_md_steps: 100,
@@ -350,6 +352,7 @@ impl State {
 
         self.ui.movement_speed_input = self.to_save.movement_speed.to_string();
         self.ui.rotation_sens_input = self.to_save.rotation_sens.to_string();
+        self.ui.mol_move_sens_input = self.to_save.mol_move_sens.to_string();
 
         self.update_docking_site(center);
     }

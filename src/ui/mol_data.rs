@@ -5,7 +5,7 @@ use std::time::Instant;
 use bio_apis::{amber_geostd, drugbank, lmsd, pdbe, pubchem, rcsb};
 use bio_files::ResidueType;
 use egui::{Color32, RichText, Ui};
-use graphics::{EngineUpdates, Scene};
+use graphics::{EngineUpdates, EntityUpdate, Scene};
 use lin_alg::f64::Vec3;
 
 use crate::{
@@ -227,7 +227,8 @@ fn mol_picker(
 
             *redraw_lig = true; // todo Overkill; only need to redraw (or even just clear) one.
             // todo: Generalize.
-            engine_updates.entities.push(EntityClass::Ligand as u32);
+            engine_updates.entities = EntityUpdate::All;
+            // engine_updates.entities.push_class(EntityClass::Ligand as u32);
         }
     }
 }

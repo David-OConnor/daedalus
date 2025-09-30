@@ -1,14 +1,15 @@
 use egui::{ComboBox, RichText, Slider, Ui};
-use graphics::{EngineUpdates, Scene};
+use graphics::{EngineUpdates, EntityUpdate, Scene};
 
 use crate::{
     State,
     drawing::{
-        EntityClass, MoleculeView, draw_all_ligs, draw_all_nucleic_acids, draw_density_point_cloud,
-        draw_density_surface, draw_water,
+        EntityClass, MoleculeView, draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids,
+        draw_density_point_cloud, draw_density_surface, draw_water,
     },
     nucleic_acid::{MoleculeNucleicAcid, NucleicAcidType, Strands},
     ui::{COL_SPACING, DENS_ISO_MAX, DENS_ISO_MIN, misc, misc::section_box},
+    util::clear_mol_entity_indices,
 };
 
 pub fn view_settings(
@@ -126,28 +127,37 @@ pub fn view_settings(
                         &snap.water_h0_posits,
                         &snap.water_h1_posits,
                         state.ui.visibility.hide_water,
+                        // state,
                     );
                 }
             }
 
-            // if state.active_mol().is_some() {
-            if let Some((mol_type, _)) = state.volatile.active_mol {
+            if !state.ligands.is_empty() {
                 let color = misc::active_color(!state.ui.visibility.hide_ligand);
                 if ui.button(RichText::new("Lig").color(color)).clicked() {
                     state.ui.visibility.hide_ligand = !state.ui.visibility.hide_ligand;
 
-                    if state.ui.visibility.hide_ligand {
-                        scene.entities.retain(|ent| {
-                            ent.class != EntityClass::Ligand as u32
-                                && ent.class != EntityClass::DockingSite as u32
-                        });
-                    } else {
-                        draw_all_ligs(state, scene);
-                    }
-
-                    // engine_updates.entities = true;
-                    engine_updates.entities.push(mol_type.entity_type() as u32);
+                    draw_all_ligs(state, scene);
+                    engine_updates.entities = EntityUpdate::All;
                     engine_updates.lighting = true; // docking light.
+                }
+            }
+            if !state.nucleic_acids.is_empty() {
+                let color = misc::active_color(!state.ui.visibility.hide_ligand);
+                if ui.button(RichText::new("NA").color(color)).clicked() {
+                    state.ui.visibility.hide_ligand = !state.ui.visibility.hide_ligand;
+
+                    draw_all_nucleic_acids(state, scene);
+                    engine_updates.entities = EntityUpdate::All;
+                }
+            }
+            if !state.lipids.is_empty() {
+                let color = misc::active_color(!state.ui.visibility.hide_lipids);
+                if ui.button(RichText::new("Lipid").color(color)).clicked() {
+                    state.ui.visibility.hide_lipids = !state.ui.visibility.hide_lipids;
+
+                    draw_all_lipids(state, scene);
+                    engine_updates.entities = EntityUpdate::All;
                 }
             }
 
@@ -227,9 +237,10 @@ pub fn view_settings(
                                 .retain(|ent| ent.class != EntityClass::DensityPoint as u32);
                         } else {
                             draw_density_point_cloud(&mut scene.entities, dens);
+                            clear_mol_entity_indices(state);
                         }
-                        // engine_updates.entities = true;
-                        engine_updates.entities.push(EntityClass::Peptide as u32);
+                        engine_updates.entities = EntityUpdate::All;
+                        // engine_updates.entities.push_class(EntityClass::Peptide as u32);
                     }
 
                     let mut redraw_dens_surface = false;
@@ -260,12 +271,12 @@ pub fn view_settings(
                                 .entities
                                 .retain(|ent| ent.class != EntityClass::DensitySurface as u32);
                         } else {
-                            draw_density_surface(&mut scene.entities);
+                            draw_density_surface(&mut scene.entities, state);
                         }
-                        // engine_updates.entities = true;
-                        engine_updates
-                            .entities
-                            .push(EntityClass::DensitySurface as u32);
+                        engine_updates.entities = EntityUpdate::All;
+                        // engine_updates
+                        //     .entities
+                        //     .push_class(EntityClass::DensitySurface as u32);
                     }
                 }
             }

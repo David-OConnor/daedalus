@@ -160,10 +160,10 @@ pub fn cam_controls(
                     }
                 }
 
-                if let Some(lig) = state.active_mol() {
+                if state.volatile.active_mol.is_some() {
                     if ui
-                        .button(RichText::new("Cam to lig").color(COLOR_HIGHLIGHT))
-                        .on_hover_text("Move camera near the ligand, looking at it.")
+                        .button(RichText::new("Cam to mol").color(COLOR_HIGHLIGHT))
+                        .on_hover_text("Move camera near active molecule, looking at it.")
                         .clicked()
                     {
                         let pep_center = match &state.peptide {

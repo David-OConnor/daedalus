@@ -145,11 +145,11 @@ impl State {
                     MoleculeGeneric::Ligand(mut mol) => {
                         self.mol_dynamics = None;
 
-                        self.volatile.active_mol = Some((MolType::Ligand, self.ligands.len())); // Prior to push; no - 1
+                        self.volatile.active_mol = Some((MolType::Ligand, self.lipids.len())); // Prior to push; no - 1
                         mol.update_aux(&self.volatile.active_mol, &mut self.lig_specific_params);
 
                         self.ligands.push(mol);
-                        self.volatile.active_mol = Some((MolType::Ligand, self.ligands.len() - 1));
+                        self.volatile.active_mol = Some((MolType::Ligand, self.lipids.len() - 1));
 
                         // self.to_save.last_ligand_opened = Some(path.to_owned());
                         // self.update_history(path, OpenType::Ligand, &ident);
@@ -545,7 +545,7 @@ impl State {
 
                             self.ligands.push(mol);
                             self.volatile.active_mol =
-                                Some((MolType::Ligand, self.ligands.len() - 1));
+                                Some((MolType::Ligand, self.lipids.len() - 1));
                             self.mol_dynamics = None;
 
                             *redraw_lig = true;

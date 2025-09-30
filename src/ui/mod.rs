@@ -30,7 +30,7 @@ use crate::{
         draw_peptide,
     },
     file_io::gemmi_path,
-    inputs::{MOVEMENT_SENS, ROTATE_SENS},
+    inputs::{MOVEMENT_SENS, ROTATE_SENS, SENS_MOL_MOVE_SCROLL},
     lipid::{LipidShape, make_bacterial_lipids},
     mol_lig::MoleculeSmall,
     molecule::{MolType, MoleculeGenericRef},
@@ -738,7 +738,7 @@ fn settings(state: &mut State, scene: &mut Scene, ui: &mut Ui) {
             }
 
             ui.add_space(COL_SPACING);
-            ui.label("Cam movement speed:");
+            ui.label("Cam move speed:");
             if ui
                 .add(TextEdit::singleline(&mut state.ui.movement_speed_input).desired_width(32.))
                 .changed()
@@ -755,7 +755,7 @@ fn settings(state: &mut State, scene: &mut Scene, ui: &mut Ui) {
             }
 
             ui.add_space(COL_SPACING / 2.);
-            ui.label("Cam rotation sensitivity:");
+            ui.label("Cam rot sensitivity:");
             if ui
                 .add(TextEdit::singleline(&mut state.ui.rotation_sens_input).desired_width(32.))
                 .changed()
@@ -771,6 +771,23 @@ fn settings(state: &mut State, scene: &mut Scene, ui: &mut Ui) {
                 }
             }
 
+            ui.add_space(COL_SPACING);
+            ui.label("Mol scroll move speed:").on_hover_text(
+                "When using the scroll wheel to move molecules, this controls how fast they move.",
+            );
+            if ui
+                .add(TextEdit::singleline(&mut state.ui.mol_move_sens_input).desired_width(32.))
+                .changed()
+            {
+                if let Ok(v) = &mut state.ui.mol_move_sens_input.parse::<u8>() {
+                    state.to_save.mol_move_sens = *v;
+                    state.update_save_prefs(false);
+                } else {
+                    // reset
+                    state.ui.mol_move_sens_input = state.to_save.mol_move_sens.to_string();
+                }
+            }
+
             ui.add_space(COL_SPACING / 2.);
             if ui.button("Reset sensitivities").clicked() {
                 state.to_save.movement_speed = MOVEMENT_SENS as u8;
@@ -780,6 +797,9 @@ fn settings(state: &mut State, scene: &mut Scene, ui: &mut Ui) {
                 state.to_save.rotation_sens = (ROTATE_SENS * 100.) as u8;
                 state.ui.rotation_sens_input = state.to_save.rotation_sens.to_string();
                 scene.input_settings.rotate_sens = ROTATE_SENS;
+
+                state.to_save.mol_move_sens = (SENS_MOL_MOVE_SCROLL * 1_000.) as u8;
+                state.ui.mol_move_sens_input = state.to_save.mol_move_sens.to_string();
 
                 state.update_save_prefs(false);
             }
@@ -1555,8 +1575,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 set_window_title(&mol.common.ident, scene);
             }
 
-            // engine_updates.entities = true;
-            engine_updates.entities.push(EntityClass::Peptide as u32);
+            engine_updates.entities = EntityUpdate::All;
+            // engine_updates.entities.push_class(EntityClass::Peptide as u32);
 
             // For docking light, but may be overkill here.
             if state.active_mol().is_some() {
@@ -1567,7 +1587,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         if redraw_lig {
             draw_all_ligs(state, scene);
 
-            engine_updates.entities.push(EntityClass::Ligand as u32);
+            engine_updates.entities = EntityUpdate::All;
+            // engine_updates.entities.push_class(EntityClass::Ligand as u32);
 
             // For docking light, but may be overkill here.
             if state.active_mol().is_some() {
@@ -1577,15 +1598,15 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         if redraw_na {
             draw_all_nucleic_acids(state, scene);
-            // engine_updates.entities = true;
-            engine_updates.entities.push(EntityClass::NucleicAcid as u32);
+            engine_updates.entities = EntityUpdate::All;
+            // engine_updates.entities.push_class(EntityClass::NucleicAcid as u32);
 
         }
 
         if redraw_lipid {
             draw_all_lipids(state, scene);
-            // engine_updates.entities = true;
-            engine_updates.entities.push(EntityClass::Lipid as u32);
+            engine_updates.entities = EntityUpdate::All;
+            // engine_updates.entities.push_class(EntityClass::Lipid as u32);
         }
 
         // Perform cleanup.
@@ -1733,8 +1754,8 @@ pub fn lipid_section(
                 // state.lipids.push(mol);
 
                 draw_all_lipids(state, scene);
-                // engine_updates.entities = true;
-                engine_updates.entities.push(EntityClass::Lipid as u32);
+                engine_updates.entities = EntityUpdate::All;
+                // engine_updates.entities.push_class(EntityClass::Lipid as u32);
             }
 
             ui.add_space(COL_SPACING);
