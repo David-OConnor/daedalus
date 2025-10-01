@@ -321,10 +321,8 @@ pub fn handle_cmd(
     }
 
     if re_reset.captures(&input).is_some() {
-        if let Some(mol) = &state.peptide {
-            reset_camera(scene, &mut state.ui.view_depth, engine_updates, mol);
-            engine_updates.camera = true;
-        }
+        reset_camera(state, scene, engine_updates, FWD_VEC);
+        engine_updates.camera = true;
         return Ok("Complete".to_owned());
     }
 

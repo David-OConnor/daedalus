@@ -37,10 +37,11 @@ use crate::{
     ui::cam::{
         FOG_DIST_DEFAULT, RENDER_DIST_FAR, RENDER_DIST_NEAR, VIEW_DEPTH_NEAR_MIN, calc_fog_dists,
     },
+    util,
 };
 
 const MOVE_TO_TARGET_DIST: f32 = 15.;
-const MOVE_CAM_TO_LIG_DIST: f32 = 30.;
+pub const MOVE_CAM_TO_LIG_DIST: f32 = 30.;
 
 pub fn mol_center_size(atoms: &[Atom]) -> (Vec3, f32) {
     let mut sum = Vec3::new_zero();
@@ -78,20 +79,20 @@ pub fn cam_look_at(cam: &mut Camera, target: Vec3) {
 
     cam.orientation = rotator * cam.orientation;
 
-    // Slide along the patah between cam and target until close to it.
+    // Slide along the path between cam and target until close to it.
     let move_dist = dist - MOVE_TO_TARGET_DIST;
     cam.position += dir * move_dist;
 }
 
-pub fn cam_look_at_outside(cam: &mut Camera, target: Vec3F32, mol_center: Vec3F32) {
+pub fn cam_look_at_outside(cam: &mut Camera, target: Vec3F32, alignment: Vec3F32, dist: f32) {
     // Note: This is similar to `cam_look_at`, but we don't call that, as we're positioning
     // with an absolute orientation in mind, vice `cam_look_at`'s use of current cam LOS.
 
     // Look from the outside in, so our view is unobstructed by the protein. Do this after
     // the camera is positioned.
-    let look_vec = (target - mol_center).to_normalized();
+    let look_vec = (target - alignment).to_normalized();
 
-    cam.position = target + look_vec * MOVE_CAM_TO_LIG_DIST;
+    cam.position = target + look_vec * dist;
     cam.orientation = Quaternion::from_unit_vecs(FWD_VEC, -look_vec);
 }
 
@@ -486,25 +487,62 @@ pub fn load_snap(state: &mut State, scene: &mut Scene, engine_updates: &mut Engi
     }
 }
 
-/// Resets the camera to the *front* view, and related settings.
+/// Resets the camera to the *front* view, and related settings. Its beahvior deepends
+/// on the size and positions of open molecules.
 pub fn reset_camera(
+    state: &mut State,
     scene: &mut Scene,
-    view_depth: &mut (u16, u16),
+    // view_depth: &mut (u16, u16),
     engine_updates: &mut EngineUpdates,
-    mol: &MoleculePeptide,
+    // mol: &MoleculeCommon,
+    look_vec: Vec3F32, // unit vector the cam is pointing to.
 ) {
-    let center: lin_alg::f32::Vec3 = mol.center.into();
-    scene.camera.position =
-        lin_alg::f32::Vec3::new(center.x, center.y, center.z - (mol.size + CAM_INIT_OFFSET));
-    scene.camera.orientation = Quaternion::new_identity();
+    let mut center = Vec3F32::new_zero();
+    let mut size = 8.; // E.g. for small organic molecules.
 
-    set_static_light(scene, center, mol.size);
+    if let Some(mol) = &state.peptide {
+        // We cache center and size, due to the potential large number of molecules.
+        center = mol.center.into();
+        size = mol.size;
+    } else {
+        if let Some(mol) = state.active_mol() {
+            center = mol.common().centroid().into();
+            // Leaving size at its default for now.
+        } else {
+            let mut n = 0;
+            let mut centroid = Vec3F32::new_zero();
+            for mol in &state.ligands[0..10.min(state.ligands.len())] {
+                let c: Vec3F32 = mol.common.centroid().into();
+                centroid += c;
+                n += 1;
+            }
+            for mol in &state.lipids[0..10.min(state.lipids.len())] {
+                let c: Vec3F32 = mol.common.centroid().into();
+                centroid += c;
+                n += 1;
+            }
+            centroid /= n as f32;
+            center = centroid;
+            size = 40.; // A broad view.
+        }
+    }
+
+    let dist_fm_center = size + CAM_INIT_OFFSET;
+
+    // cam_look_at_outside(&mut scene.camera, center, Vec3F32::new_zero(), dist_fm_center);
+    // let look_vec = (target - alignment).to_normalized();
+
+    scene.camera.position = center - look_vec * dist_fm_center;
+    scene.camera.orientation = Quaternion::from_unit_vecs(FWD_VEC, look_vec);
+
+    set_static_light(scene, center, size);
     set_flashlight(scene);
 
     engine_updates.camera = true;
     engine_updates.lighting = true;
 
-    *view_depth = (VIEW_DEPTH_NEAR_MIN, FOG_DIST_DEFAULT);
+    // todo: A/R.
+    state.ui.view_depth = (VIEW_DEPTH_NEAR_MIN, FOG_DIST_DEFAULT);
 }
 
 /// Utility function that prints to stderr, and the CLI output. Sets the out flag.
@@ -699,7 +737,7 @@ pub fn make_density_mesh(state: &mut State, scene: &mut Scene, engine_updates: &
     }
 }
 
-/// Code here is ctivated by flags. It's organized here, where we have access to the Scene.
+/// Code here is activated by flags. It's organized here, where we have access to the Scene.
 /// These flags are set in places that don't have access to the scene.
 pub fn handle_scene_flags(
     state: &mut State,
@@ -709,9 +747,7 @@ pub fn handle_scene_flags(
     if state.volatile.flags.new_mol_loaded {
         state.volatile.flags.new_mol_loaded = false;
 
-        if let Some(mol) = &state.peptide {
-            reset_camera(scene, &mut state.ui.view_depth, engine_updates, mol);
-        }
+        reset_camera(state, scene, engine_updates, FWD_VEC);
 
         set_flashlight(scene);
         engine_updates.lighting = true;

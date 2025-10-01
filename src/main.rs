@@ -488,6 +488,7 @@ impl Default for State {
             view_depth: (VIEW_DEPTH_NEAR_MIN, FOG_DIST_DEFAULT),
             nearby_dist_thresh: 15,
             density_iso_level: 1.8,
+            lipid_mol_count: 10,
             ..Default::default()
         };
 

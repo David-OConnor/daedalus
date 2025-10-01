@@ -526,7 +526,7 @@ pub fn event_dev_handler(
 
         if mol_i >= state_.nucleic_acids.len() {
             eprintln!("Uhoh: Index error on in-place redraw");
-            drawing::draw_all_ligs(state_, scene);
+            drawing::draw_all_nucleic_acids(state_, scene);
             return updates;
         }
 
@@ -542,7 +542,7 @@ pub fn event_dev_handler(
 
         if mol_i >= state_.lipids.len() {
             eprintln!("Uhoh: Index error on in-place redraw");
-            drawing::draw_all_ligs(state_, scene);
+            drawing::draw_all_lipids(state_, scene);
             return updates;
         }
 

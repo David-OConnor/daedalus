@@ -2,7 +2,7 @@
 use std::f32::consts::TAU;
 
 use egui::{Color32, ComboBox, RichText, Slider, TextEdit, Ui};
-use graphics::{ControlScheme, EngineUpdates, RIGHT_VEC, Scene, UP_VEC};
+use graphics::{ControlScheme, EngineUpdates, FWD_VEC, RIGHT_VEC, Scene, UP_VEC};
 use lin_alg::f32::{Quaternion, Vec3};
 
 use crate::{
@@ -71,38 +71,22 @@ pub fn cam_controls(
                 if ui.button("Front")
                     .on_hover_text("Reset the camera to look at the \"front\" of the molecule. (Y axis)")
                     .clicked() {
-                    if let Some(mol) = &state.peptide {
-                        reset_camera(scene, &mut state.ui.view_depth, engine_updates, mol);
+                        reset_camera(state, scene, engine_updates, FWD_VEC);
                         changed = true;
-                    }
                 }
 
                 if ui.button("Top")
                     .on_hover_text("Reset the camera to look at the \"top\" of the molecule. (Z axis)")
                     .clicked() {
-                    if let Some(mol) = &state.peptide {
-                        let center: Vec3 = mol.center.into();
-                        reset_camera(scene, &mut state.ui.view_depth, engine_updates, mol);
-                        scene.camera.position =
-                            Vec3::new(center.x, center.y + (mol.size + CAM_INIT_OFFSET), center.z);
-                        scene.camera.orientation = Quaternion::from_axis_angle(RIGHT_VEC, TAU / 4.);
-
+                        reset_camera(state, scene, engine_updates, -UP_VEC);
                         changed = true;
-                    }
                 }
 
                 if ui.button("Left")
                     .on_hover_text("Reset the camera to look at the \"left\" of the molecule. (X axis)")
                     .clicked() {
-                    if let Some(mol) = &state.peptide {
-                        let center: Vec3 = mol.center.into();
-                        reset_camera(scene, &mut state.ui.view_depth, engine_updates, mol);
-                        scene.camera.position =
-                            Vec3::new(center.x - (mol.size + CAM_INIT_OFFSET), center.y, center.z);
-                        scene.camera.orientation = Quaternion::from_axis_angle(UP_VEC, TAU / 4.);
-
+                        reset_camera(state, scene, engine_updates, RIGHT_VEC);
                         changed = true;
-                    }
                 }
 
                 ui.add_space(COL_SPACING);
@@ -300,7 +284,6 @@ pub fn cam_snapshots(
 }
 
 pub fn move_cam_to_lig(
-    // state_ui: &mut StateUi,
     state: &mut State,
     scene: &mut Scene,
     mol_center: lin_alg::f64::Vec3,
@@ -314,7 +297,7 @@ pub fn move_cam_to_lig(
     let lig_pos: Vec3 = mol.common().centroid().into();
     let ctr: Vec3 = mol_center.into();
 
-    cam_look_at_outside(&mut scene.camera, lig_pos, ctr);
+    cam_look_at_outside(&mut scene.camera, lig_pos, ctr, util::MOVE_CAM_TO_LIG_DIST);
 
     engine_updates.camera = true;
 

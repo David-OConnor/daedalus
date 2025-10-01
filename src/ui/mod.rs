@@ -11,7 +11,7 @@ use egui::{
     Align, Color32, ComboBox, Context, Key, Layout, Popup, PopupAnchor, Pos2, RectAlign, RichText,
     Slider, TextEdit, TopBottomPanel, Ui,
 };
-use graphics::{ControlScheme, EngineUpdates, EntityUpdate, Scene};
+use graphics::{ControlScheme, EngineUpdates, EntityUpdate, FWD_VEC, Scene};
 use na_seq::AaIdent;
 
 static INIT_COMPLETE: AtomicBool = AtomicBool::new(false);
@@ -1611,9 +1611,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         // Perform cleanup.
         if reset_cam {
-            if let Some(mol) = &state.peptide {
-                reset_camera(scene, &mut state.ui.view_depth, &mut engine_updates, mol);
-            }
+            reset_camera(state, scene, &mut engine_updates, FWD_VEC);
         }
     });
 
