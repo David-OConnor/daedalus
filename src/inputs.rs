@@ -517,7 +517,14 @@ pub fn event_dev_handler(
         drawing::update_single_ligand_inplace(mol_i, state_, scene);
 
         let mol = &mut state_.ligands[mol_i];
-        updates.entities = EntityUpdate::Indexes(mol.common.entity_i_range.unwrap())
+
+        updates.entities = match mol.common.entity_i_range {
+            Some(range) => EntityUpdate::Indexes(range),
+            None => {
+                eprintln!("Error: Missing entity index range.");
+                EntityUpdate::All
+            }
+        };
     }
 
     if redraw_na_inplace {
@@ -533,7 +540,13 @@ pub fn event_dev_handler(
         drawing::update_single_nucleic_acid_inplace(mol_i, state_, scene);
 
         let mol = &mut state_.nucleic_acids[mol_i];
-        updates.entities = EntityUpdate::Indexes(mol.common.entity_i_range.unwrap())
+        updates.entities = match mol.common.entity_i_range {
+            Some(range) => EntityUpdate::Indexes(range),
+            None => {
+                eprintln!("Error: Missing entity index range.");
+                EntityUpdate::All
+            }
+        };
     }
 
     if redraw_lipid_inplace {
@@ -549,7 +562,13 @@ pub fn event_dev_handler(
         drawing::update_single_lipid_inplace(mol_i, state_, scene);
 
         let mol = &mut state_.lipids[mol_i];
-        updates.entities = EntityUpdate::Indexes(mol.common.entity_i_range.unwrap())
+        updates.entities = match mol.common.entity_i_range {
+            Some(range) => EntityUpdate::Indexes(range),
+            None => {
+                eprintln!("Error: Missing entity index range.");
+                EntityUpdate::All
+            }
+        };
     }
 
     // We handle the flashlight elsewhere, as this event handler only fires upon events; not while

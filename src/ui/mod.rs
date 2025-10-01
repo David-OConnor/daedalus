@@ -1278,7 +1278,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         let mut close_active_mol = false; // to avoid borrow error.
 
-        if state.active_mol().is_some() {
+        // Show the picker, at least.
+        if !state.ligands.is_empty() {
             display_mol_data(state, scene, ui, &mut redraw_lig, &mut redraw_na, &mut redraw_lipid, &mut close_active_mol,  &mut engine_updates);
         } else {
             // Prevents display jump between selecting/unselecting molecules.
@@ -1348,13 +1349,11 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             Popup::new(
                 popup_id,
                 ui.ctx().clone(), // todo clone???
-                // PopupAnchor::PointerFixed,
-                // PopupAnchor::ParentRect(),
                 PopupAnchor::Position(Pos2::new(60., 60.)),
                 ui.layer_id(), // draw on top of the current layer
             )
-                .align(RectAlign::TOP)
-                // .align(RectAlign::BOTTOM_START)
+                // .align(RectAlign::TOP)
+                .align(RectAlign::BOTTOM_START)
                 .open(true)
                 .gap(4.0)
                 .show(|ui| {

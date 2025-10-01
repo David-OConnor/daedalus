@@ -148,6 +148,13 @@ impl MoleculeCommon {
         sum / n
     }
 
+    pub fn move_to(&mut self, pos: Vec3) {
+        let delta = pos - self.centroid();
+        for posit in &mut self.atom_posits {
+            *posit += delta;
+        }
+    }
+
     pub fn rotate(&mut self, rot: Quaternion, pivot_: Option<usize>) {
         let pivot = match pivot_ {
             Some(i) => self.atom_posits[i],

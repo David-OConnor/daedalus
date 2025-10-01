@@ -130,7 +130,14 @@ pub fn build_dynamics(
 
     let start = Instant::now();
 
-    for _ in 0..n_steps {
+    let i_20_pc = n_steps / 5;
+    let mut disp_count = 0;
+    for i in 0..n_steps {
+        if i % i_20_pc == 0 {
+            println!("{}% Complete", disp_count * 20);
+            disp_count += 1;
+        }
+
         md_state.step(dev, dt);
     }
 

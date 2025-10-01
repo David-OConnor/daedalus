@@ -5,11 +5,11 @@ use std::time::Instant;
 use bio_apis::{amber_geostd, drugbank, lmsd, pdbe, pubchem, rcsb};
 use bio_files::ResidueType;
 use egui::{Color32, RichText, Ui};
-use graphics::{EngineUpdates, EntityUpdate, Scene};
+use graphics::{EngineUpdates, EntityUpdate, FWD_VEC, Scene};
 use lin_alg::f64::Vec3;
 
 use crate::{
-    ManipMode, Selection, State, drawing,
+    ManipMode, Selection, State, download_mols, drawing,
     drawing::{CHARGE_MAP_MAX, CHARGE_MAP_MIN, COLOR_AA_NON_RESIDUE_EGUI, EntityClass},
     lipid::MoleculeLipid,
     mol_lig::MoleculeSmall,
@@ -372,24 +372,12 @@ pub fn display_mol_data_peptide(
                 // set_docking_light(scene, Some(&lig.docking_site));
                 // engine_updates.lighting = true;
 
-                *redraw_peptide = true; // to hide the het res.
                 *redraw_lig = true;
                 state.mol_dynamics = None;
 
                 // We leave the new ligand in place, overlapping the residue we created it from.
 
                 state.volatile.active_mol = Some((MolType::Ligand, state.ligands.len() - 1));
-
-                match &res_type {
-                    ResidueType::AminoAcid(_) => {
-                        let mut mol = state.active_mol_mut().unwrap();
-                        mol.common_mut().reset_posits();
-                    }
-                    _ => {
-                        state.ui.visibility.hide_hetero = true;
-                    }
-                }
-
 
                 // Make it clear that we've added the ligand by showing it, and hiding hetero (if creating from Hetero)
                 state.ui.visibility.hide_ligand = false;
@@ -442,12 +430,8 @@ pub fn display_mol_data_peptide(
         }
     });
 
-    // If no ligand, provide convenience functionality for loading one based on hetero residues
+    // Provide convenience functionality for loading ligands based on hetero residues
     // in the protein.
-    if state.active_mol().is_some() {
-        return;
-    }
-
     let mut load_data = None; // Avoids dbl-borrow.
 
     if let Some(mol) = &mut state.peptide {
@@ -485,32 +469,7 @@ pub fn display_mol_data_peptide(
                             .button(RichText::new(name).color(Color32::GOLD))
                             .clicked()
                         {
-                            println!("Loading Amber Geostd data...");
-                            let start = Instant::now();
-
-                            match amber_geostd::find_mols(&name) {
-                                Ok(data) => match data.len() {
-                                    0 => handle_err(
-                                        &mut state.ui,
-                                        "Unable to find an Amber molecule for this residue"
-                                            .to_string(),
-                                    ),
-                                    1 => {
-                                        load_data = Some(data[0].clone());
-                                    }
-                                    _ => {
-                                        load_data = Some(data[0].clone());
-                                        eprintln!("More than 1 geostd items available");
-                                    }
-                                },
-                                Err(e) => handle_err(
-                                    &mut state.ui,
-                                    format!("Problem loading mol data online: {e:?}"),
-                                ),
-                            }
-
-                            let elapsed = start.elapsed().as_millis();
-                            println!("Loaded Amber Geostd in {elapsed:.1}ms");
+                            download_mols::load_geostd(name, &mut load_data, &mut state.ui);
                         }
                     }
                 }
@@ -595,18 +554,19 @@ pub fn display_mol_data(
             }
         }
 
-        if ui
-            .button(RichText::new("Reset posit").color(COLOR_HIGHLIGHT))
-            .on_hover_text(
-                "Move the moleculeto its absolute coordinates, e.g. as defined in \
-                    its source mmCIF, Mol2 or SDF file.",
-            )
-            .clicked()
-        {
-            if let Some(mol) = &mut state.active_mol_mut() {
-                mol.common_mut().reset_posits();
-                // todo: Not working
-                println!("Reset positions"); // todo: Temp debug
+        if let Some(mol) = &mut state.active_mol_mut() {
+            if ui
+                .button(RichText::new("Move to cam").color(COLOR_HIGHLIGHT))
+                .on_hover_text(
+                    "Move the molecule to be a short distance in front of the camera.",
+                )
+                .clicked()
+            {
+
+                // todo: Move to a function A/R.
+                let tgt_dist = 15.;
+                let new_posit = scene.camera.position + scene.camera.orientation.rotate_vec(FWD_VEC) * tgt_dist;
+                mol.common_mut().move_to(new_posit.into());
 
                 match active_mol_type {
                     MolType::Ligand => *redraw_lig = true,
@@ -614,7 +574,25 @@ pub fn display_mol_data(
                     MolType::Lipid => *redraw_lipid = true,
                     _ => unimplemented!()
                 }
+            }
 
+            if ui
+                .button(RichText::new("Reset pos").color(COLOR_HIGHLIGHT))
+                .on_hover_text(
+                    "Move the molecule to its absolute coordinates, e.g. as defined in \
+                        its source mmCIF, Mol2 or SDF file.",
+                )
+                .clicked()
+            {
+                mol.common_mut().reset_posits();
+
+                // todo: Use the inplace move.
+                match active_mol_type {
+                    MolType::Ligand => *redraw_lig = true,
+                    MolType::NucleicAcid => *redraw_na = true,
+                    MolType::Lipid => *redraw_lipid = true,
+                    _ => unimplemented!()
+                }
             }
         }
 

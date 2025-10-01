@@ -1,9 +1,12 @@
 //! Allows downloading PDB files from various APIs.
 
-use bio_apis::{ReqError, drugbank, pubchem, rcsb};
+use std::time::Instant;
+
+use bio_apis::{ReqError, amber_geostd, amber_geostd::GeostdItem, drugbank, pubchem, rcsb};
 use bio_files::{MmCif, Sdf};
 
-use crate::mol_lig::MoleculeSmall;
+use crate::{StateUi, mol_lig::MoleculeSmall, util::handle_err};
+
 /// Download mmCIF file from the RSCB, parse into a struct.
 pub fn load_cif_rcsb(ident: &str) -> Result<(MmCif, String), ReqError> {
     let cif_text = rcsb::load_cif(ident)?;
@@ -34,4 +37,29 @@ pub fn load_sdf_pubchem(ident: &str) -> Result<MoleculeSmall, ReqError> {
         Ok(m) => Ok(m.try_into().map_err(|e| ReqError::from(e))?),
         Err(_) => Err(ReqError::Http),
     }
+}
+
+pub fn load_geostd(ident: &str, load_data: &mut Option<GeostdItem>, state_ui: &mut StateUi) {
+    println!("Loading Amber Geostd data...");
+    let start = Instant::now();
+
+    match amber_geostd::find_mols(&ident) {
+        Ok(data) => match data.len() {
+            0 => handle_err(
+                state_ui,
+                "Unable to find an Amber molecule for this residue".to_string(),
+            ),
+            1 => {
+                *load_data = Some(data[0].clone());
+            }
+            _ => {
+                *load_data = Some(data[0].clone());
+                eprintln!("More than 1 geostd items available");
+            }
+        },
+        Err(e) => handle_err(state_ui, format!("Problem loading mol data online: {e:?}")),
+    }
+
+    let elapsed = start.elapsed().as_millis();
+    println!("Loaded Amber Geostd in {elapsed:.1}ms");
 }
