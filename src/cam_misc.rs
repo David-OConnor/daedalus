@@ -18,7 +18,7 @@ use crate::{
 
 const MOVE_TO_TARGET_DIST: f32 = 15.;
 pub const MOVE_CAM_TO_LIG_DIST: f32 = 30.;
-const MOVE_TO_CAM_DIST: f32 = 25.;
+const MOVE_TO_CAM_DIST: f32 = 20.;
 
 /// Move the camera to look at a point of interest. Takes the starting location into account.
 /// todo: Smooth interpolated zoom.
