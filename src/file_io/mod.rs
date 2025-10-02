@@ -12,10 +12,12 @@ use bio_files::{
     DensityMap, MmCif, Mol2, Pdbqt, gemmi_sf_to_map, md_params::ForceFieldParams, sdf::Sdf,
 };
 use chrono::Utc;
+use graphics::{Camera, Scene};
 use na_seq::{AaIdent, Element};
 
 use crate::{
     State,
+    cam_misc::move_mol_to_cam,
     mol_lig::MoleculeSmall,
     molecule::{MolType, MoleculeGeneric, MoleculeGenericRefMut, MoleculePeptide},
     prefs::{OpenHistory, OpenType},
@@ -25,7 +27,7 @@ use crate::{
 
 impl State {
     /// A single endpoint to open a number of file types
-    pub fn open(&mut self, path: &Path) -> io::Result<()> {
+    pub fn open(&mut self, path: &Path, scene: Option<&Scene>) -> io::Result<()> {
         match path
             .extension()
             .unwrap_or_default()
@@ -33,8 +35,8 @@ impl State {
             .to_str()
             .unwrap_or_default()
         {
-            // The cif branch here handles 2fo-fc mmCIF files.
-            "sdf" | "mol2" | "pdbqt" | "pdb" | "cif" => self.open_molecule(path)?,
+            // The cif branch here also handles 2fo-fc mmCIF files.
+            "sdf" | "mol2" | "pdbqt" | "pdb" | "cif" => self.open_molecule(path, scene)?,
             "prmtop" => {
                 // todo
             }
@@ -65,7 +67,8 @@ impl State {
         Ok(())
     }
 
-    pub fn open_molecule(&mut self, path: &Path) -> io::Result<()> {
+    /// For opening molecule files: Proteins, small organic molecules, nucleic acids etc.
+    pub fn open_molecule(&mut self, path: &Path, scene: Option<&Scene>) -> io::Result<()> {
         let binding = path.extension().unwrap_or_default().to_ascii_lowercase();
         let extension = binding;
 
@@ -142,24 +145,6 @@ impl State {
         match molecule {
             Ok(mol_gen) => {
                 match mol_gen {
-                    MoleculeGeneric::Ligand(mut mol) => {
-                        self.mol_dynamics = None;
-
-                        self.volatile.active_mol = Some((MolType::Ligand, self.ligands.len())); // Prior to push; no - 1
-                        mol.update_aux(&self.volatile.active_mol, &mut self.lig_specific_params);
-
-                        self.ligands.push(mol);
-                        self.volatile.active_mol = Some((MolType::Ligand, self.ligands.len() - 1));
-
-                        // self.to_save.last_ligand_opened = Some(path.to_owned());
-                        // self.update_history(path, OpenType::Ligand, &ident);
-                        self.update_history(path, OpenType::Ligand);
-
-                        // Save the open history.
-                        self.update_save_prefs(false);
-
-                        // self.update_docking_site(init_posit);
-                    }
                     MoleculeGeneric::Peptide(m) => {
                         self.volatile.aa_seq_text = String::with_capacity(m.common.atoms.len());
                         for aa in &m.aa_seq {
@@ -173,38 +158,47 @@ impl State {
 
                         self.volatile.flags.clear_density_drawing = true;
 
-                        let ident = m.common.ident.clone();
                         self.peptide = Some(m);
 
-                        // Only updating if not loading a ligand.
-                        // Update from prefs based on the molecule-specific items.
-                        self.update_from_prefs();
-
-                        // self.to_save.last_peptide_opened = Some(path.to_owned());
-                        // self.update_history(path, OpenType::Peptide, &ident);
                         self.update_history(path, OpenType::Peptide);
-
-                        // Save the open history.
-                        self.update_save_prefs(false);
                     }
-                    MoleculeGeneric::NucleicAcid(m) => {
-                        // todo: Fill this in
-                        // self.to_save.last_nucleic_acid_opened = Some(path.to_owned());
-                        // self.update_history(path, OpenType::NucleicAcid, ""); // todo ident
-                        self.update_history(path, OpenType::NucleicAcid); // todo ident
+                    MoleculeGeneric::Ligand(mut mol) => {
+                        self.mol_dynamics = None;
 
-                        // Save teh open history.
-                        self.update_save_prefs(false);
+                        self.volatile.active_mol = Some((MolType::Ligand, self.ligands.len())); // Prior to push; no - 1
+                        mol.update_aux(&self.volatile.active_mol, &mut self.lig_specific_params);
+
+                        if let Some(s) = scene {
+                            move_mol_to_cam(&mut mol.common, &s.camera);
+                        }
+                        self.ligands.push(mol);
+
+                        self.update_history(path, OpenType::Ligand);
                     }
-                    MoleculeGeneric::Lipid(m) => {
-                        // todo: Fill this in
-                        // self.to_save.last_lipid_opened = Some(path.to_owned());
-                        // self.update_history(path, OpenType::Lipid); // todo ident
+                    MoleculeGeneric::NucleicAcid(mut mol) => {
+                        self.volatile.active_mol =
+                            Some((MolType::NucleicAcid, self.nucleic_acids.len())); // Prior to push; no - 1
 
-                        // Save teh open history.
-                        self.update_save_prefs(false);
+                        if let Some(s) = scene {
+                            move_mol_to_cam(&mut mol.common, &s.camera);
+                        }
+                        self.nucleic_acids.push(mol);
+
+                        self.update_history(path, OpenType::NucleicAcid);
+                    }
+                    MoleculeGeneric::Lipid(mut mol) => {
+                        self.volatile.active_mol = Some((MolType::Lipid, self.nucleic_acids.len())); // Prior to push; no - 1
+
+                        if let Some(s) = scene {
+                            move_mol_to_cam(&mut mol.common, &s.camera);
+                        }
+                        self.lipids.push(mol);
+
+                        self.update_history(path, OpenType::Lipid);
                     }
                 }
+                // Save the open history.
+                self.update_save_prefs(false);
 
                 if let Some(mol) = &mut self.peptide {
                     // Only after updating from prefs (to prevent unnecessary loading) do we update data avail.
@@ -505,6 +499,7 @@ impl State {
         load_mol2: bool,
         load_frcmod: bool,
         redraw_lig: &mut bool,
+        cam: &Camera,
     ) {
         let ident = ident.trim().to_owned();
 
@@ -543,7 +538,10 @@ impl State {
                                 &mut self.lig_specific_params,
                             );
 
+                            move_mol_to_cam(&mut mol.common, cam);
+
                             self.ligands.push(mol);
+
                             self.volatile.active_mol =
                                 Some((MolType::Ligand, self.ligands.len() - 1));
                             self.mol_dynamics = None;
@@ -582,20 +580,23 @@ impl State {
 
             match history.type_ {
                 OpenType::Peptide => {
-                    if let Err(e) = self.open_molecule(&history.path) {
+                    if let Err(e) = self.open_molecule(&history.path, None) {
                         handle_err(&mut self.ui, e.to_string());
                     }
                 }
                 OpenType::Ligand => {
-                    if let Err(e) = self.open_molecule(&history.path) {
+                    if let Err(e) = self.open_molecule(&history.path, None) {
                         handle_err(&mut self.ui, e.to_string());
                     }
                 }
                 OpenType::NucleicAcid => {
                     // todo
                 }
+                OpenType::Lipid => {
+                    // todo
+                }
                 OpenType::Map => {
-                    if let Err(e) = self.open(&history.path) {
+                    if let Err(e) = self.open(&history.path, None) {
                         handle_err(&mut self.ui, e.to_string());
                     }
                 }

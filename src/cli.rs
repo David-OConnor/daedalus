@@ -135,7 +135,7 @@ pub fn handle_cmd(
         let filename = &caps[1];
         let path = PathBuf::from_str(filename).unwrap();
 
-        load_file(&path, state, redraw, reset_cam, engine_updates)?;
+        load_file(&path, state, redraw, reset_cam, engine_updates, scene)?;
 
         set_flashlight(scene);
         engine_updates.lighting = true;

@@ -39,6 +39,7 @@ pub enum OpenType {
     Peptide,
     Ligand,
     NucleicAcid,
+    Lipid,
     Map,
     Frcmod,
 }

@@ -95,7 +95,7 @@ impl MolGenericTrait for MoleculeSmall {
         &mut self.common
     }
 
-    fn to_ref(&self) -> MoleculeGenericRef {
+    fn to_ref(&self) -> MoleculeGenericRef<'_> {
         MoleculeGenericRef::Ligand(self)
     }
 

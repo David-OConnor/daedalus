@@ -455,7 +455,13 @@ pub fn display_mol_data_peptide(
 
         // Crude check for success.
         // let lig_count_prev = state.ligands.len();
-        state.load_geostd_mol_data(&data.ident, true, data.frcmod_avail, redraw_lig);
+        state.load_geostd_mol_data(
+            &data.ident,
+            true,
+            data.frcmod_avail,
+            redraw_lig,
+            &scene.camera,
+        );
 
         let i = state.ligands.len() - 1;
         move_mol_to_cam(&mut state.ligands[i].common, &scene.camera);

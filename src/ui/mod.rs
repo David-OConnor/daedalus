@@ -11,7 +11,7 @@ use egui::{
     Align, Color32, ComboBox, Context, Key, Layout, Popup, PopupAnchor, Pos2, RectAlign, RichText,
     Slider, TextEdit, TopBottomPanel, Ui,
 };
-use graphics::{ControlScheme, EngineUpdates, EntityUpdate, FWD_VEC, Scene};
+use graphics::{Camera, ControlScheme, EngineUpdates, EntityUpdate, FWD_VEC, Scene};
 use na_seq::AaIdent;
 
 static INIT_COMPLETE: AtomicBool = AtomicBool::new(false);
@@ -23,7 +23,7 @@ use mol_data::display_mol_data;
 
 use crate::{
     CamSnapshot, MsaaSetting, Selection, State, ViewSelLevel,
-    cam_misc::reset_camera,
+    cam_misc::{move_mol_to_cam, reset_camera},
     cli,
     cli::autocomplete_cli,
     download_mols::{load_atom_coords_rcsb, load_sdf_drugbank, load_sdf_pubchem},
@@ -85,12 +85,16 @@ fn set_window_title(title: &str, scene: &mut Scene) {
     // ui.ctx().send_viewport_cmd(ViewportCommand::Title(title.to_string()));
 }
 
-fn open_lig(state: &mut State, mut mol: MoleculeSmall) {
+fn open_lig(state: &mut State, cam: &Camera, mut mol: MoleculeSmall) {
     mol.update_aux(&state.volatile.active_mol, &mut state.lig_specific_params);
-    state.ligands.push(mol);
-    state.volatile.active_mol = Some((MolType::Ligand, state.ligands.len() - 1));
 
-    state.mol_dynamics = None;
+    state.volatile.active_mol = Some((MolType::Ligand, state.ligands.len()));
+
+    // todo: Not working?
+    move_mol_to_cam(&mut mol.common, cam);
+
+    state.ligands.push(mol);
+
     state.update_from_prefs();
 
     state.ui.db_input = String::new();
@@ -102,8 +106,9 @@ pub fn load_file(
     redraw: &mut bool,
     reset_cam: &mut bool,
     engine_updates: &mut EngineUpdates,
+    scene: &Scene,
 ) -> io::Result<()> {
-    state.open(path)?;
+    state.open(path, Some(scene))?;
 
     // Clear last map opened here, vice in `open_molecule`, to prevent it clearing the map
     // on init.
@@ -116,24 +121,6 @@ pub fn load_file(
 
     Ok(())
 }
-
-// pub fn int_field_w_redraw(val: &mut u32, label: &str, redraw: &mut bool, ui: &mut Ui) {
-//     ui.label(label);
-//     let mut val_str = val.to_string();
-//
-//     if ui
-//         .add_sized(
-//             [70., Ui::available_height(ui)],
-//             TextEdit::singleline(&mut val_str),
-//         )
-//         .changed()
-//     {
-//         if let Ok(v) = val_str.parse::<u32>() {
-//             *val = v;
-//             *redraw = true;
-//         }
-//     }
-// }
 
 pub fn num_field<T>(val: &mut T, label: &str, width: u16, ui: &mut Ui)
 where
@@ -162,12 +149,13 @@ pub fn handle_input(
     redraw: &mut bool,
     reset_cam: &mut bool,
     engine_updates: &mut EngineUpdates,
+    scene: &Scene,
 ) {
     ui.ctx().input(|ip| {
         // Check for file drop
         if let Some(dropped_files) = ip.raw.dropped_files.first() {
             if let Some(path) = &dropped_files.path {
-                if let Err(e) = load_file(path, state, redraw, reset_cam, engine_updates) {
+                if let Err(e) = load_file(path, state, redraw, reset_cam, engine_updates, scene) {
                     handle_err(&mut state.ui, e.to_string());
                 }
             }
@@ -943,6 +931,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             &mut redraw_peptide,
             &mut reset_cam,
             &mut engine_updates,
+            scene,
         );
 
         if state.ui.popup.show_settings {
@@ -1182,8 +1171,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
             ui.add_space(COL_SPACING);
 
-            let query_help = "From RCSB PDB, PubChem, DrugBank, or Amber Geostd";
-            ui.label(RichText::new("Query databases (ident):").color(color_open_tools))
+            let query_help = "Download and view a molecule from RCSB PDB, PubChem, DrugBank, or Amber Geostd";
+            ui.label(RichText::new("Query DBs:").color(color_open_tools))
                 .on_hover_text(query_help);
 
             let edit_resp = ui
@@ -1193,7 +1182,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             if state.ui.db_input.len() >= 4 {
                 let enter_pressed =
                     edit_resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-                let button_clicked = ui.button("Download from RCSB").clicked();
+                let button_clicked = ui.button("Load from RCSB").clicked();
 
                 if (button_clicked || enter_pressed) && state.ui.db_input.trim().len() == 4 {
                     let ident = state.ui.db_input.clone().trim().to_owned();
@@ -1213,11 +1202,11 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             if state.ui.db_input.len() == 3 {
                 let enter_pressed =
                     edit_resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-                let button_clicked = ui.button("Download Amber Geostd").clicked();
+                let button_clicked = ui.button("Load Amber Geostd").clicked();
 
                 if button_clicked || enter_pressed {
                     let db_input = &state.ui.db_input.clone(); // Avoids a double borrow.
-                    state.load_geostd_mol_data(&db_input, true, true, &mut redraw_lig);
+                    state.load_geostd_mol_data(&db_input, true, true, &mut redraw_lig, &scene.camera);
 
                     state.ui.db_input = String::new();
                 }
@@ -1225,10 +1214,10 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
             if state.ui.db_input.len() >= 4 {
                 if state.ui.db_input.to_uppercase().starts_with("DB") {
-                    if ui.button("Download from DrugBank").clicked() {
+                    if ui.button("Load from DrugBank").clicked() {
                         match load_sdf_drugbank(&state.ui.db_input) {
                             Ok(mol) => {
-                                open_lig(state, mol);
+                                open_lig(state, &scene.camera, mol);
                                 redraw_lig = true;
                                 reset_cam = true;
                             }
@@ -1240,10 +1229,10 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     }
                 }
 
-                if ui.button("Download from PubChem").clicked() {
+                if ui.button("Load from PubChem").clicked() {
                     match load_sdf_pubchem(&state.ui.db_input) {
                         Ok(mol) => {
-                            open_lig(state, mol);
+                            open_lig(state, &scene.camera, mol);
                             redraw_lig = true;
                             reset_cam = true;
                         }
@@ -1417,6 +1406,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                                     load_ff,
                                     load_frcmod,
                                     &mut redraw_lig,
+                                    &scene.camera,
                                 );
 
                                 state.ui.popup.show_get_geostd = false;
@@ -1519,6 +1509,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 &mut redraw_peptide,
                 &mut reset_cam,
                 &mut engine_updates,
+                scene,
             ) {
                 handle_err(&mut state.ui, e.to_string());
             }

@@ -48,7 +48,7 @@ use crate::{
 pub trait MolGenericTrait {
     fn common(&self) -> &MoleculeCommon;
     fn common_mut(&mut self) -> &mut MoleculeCommon;
-    fn to_ref(&self) -> MoleculeGenericRef;
+    fn to_ref(&self) -> MoleculeGenericRef<'_>;
     fn mol_type(&self) -> MolType;
 }
 

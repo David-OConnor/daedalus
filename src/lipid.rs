@@ -527,7 +527,7 @@ impl MolGenericTrait for MoleculeLipid {
         &mut self.common
     }
 
-    fn to_ref(&self) -> MoleculeGenericRef {
+    fn to_ref(&self) -> MoleculeGenericRef<'_> {
         MoleculeGenericRef::Lipid(self)
     }
 

@@ -20,7 +20,7 @@ pub fn md_setup(
     ui: &mut Ui,
 ) {
     misc::section_box().show(ui, |ui| {
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.label("MD:");
             if let Some(mol) = &mut state.peptide {
                 flag_btn(&mut mol.common.selected_for_md, &mol.common.ident, "Toggle if we use this molecule for MD.", ui);
