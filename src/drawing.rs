@@ -15,8 +15,9 @@ use na_seq::Element;
 
 use crate::{
     ManipMode, Selection, State, StateUi, ViewSelLevel,
-    lipid::MoleculeLipid,
-    molecule::{Atom, AtomRole, Chain, MolType, MoleculeGenericRef, Residue, aa_color},
+    molecule::{
+        Atom, AtomRole, Chain, MolGenericTrait, MolType, MoleculeGenericRef, Residue, aa_color,
+    },
     reflection::ElectronDensity,
     render::{
         ATOM_SHININESS, BACKGROUND_COLOR, BALL_RADIUS_WATER_H, BALL_RADIUS_WATER_O,
@@ -25,7 +26,7 @@ use crate::{
         MESH_SPHERE_HIGHRES, MESH_SPHERE_LOWRES, MESH_SPHERE_MEDRES, WATER_BOND_THICKNESS,
         WATER_OPACITY,
     },
-    util::{clear_mol_entity_indices, find_neighbor_posit, handle_err, orbit_center},
+    util::{clear_mol_entity_indices, find_neighbor_posit, orbit_center},
 };
 
 const LIGAND_COLOR_ANCHOR: Color = (1., 0., 1.);
@@ -130,7 +131,6 @@ pub enum EntityClass {
     DockingSite = 9,
     WaterModel = 10,
     Other = 11,
-    Peptide,
 }
 
 impl MolType {
@@ -793,207 +793,6 @@ pub fn draw_water(
     }
 }
 
-pub fn draw_all_ligs(state: &mut State, scene: &mut Scene) {
-    let initial_ent_count = scene.entities.len();
-    scene.entities.retain(|ent| {
-        ent.class != EntityClass::Ligand as u32 && ent.class != EntityClass::DockingSite as u32
-    });
-
-    if state.ui.visibility.hide_ligand {
-        return;
-    }
-
-    for (i, mol) in state.ligands.iter_mut().enumerate() {
-        let start_i = scene.entities.len();
-
-        scene.entities.extend(draw_mol(
-            MoleculeGenericRef::Ligand(mol),
-            i,
-            &state.ui,
-            &state.volatile.active_mol,
-            state.volatile.mol_manip.mol,
-        ));
-
-        let end_i = scene.entities.len();
-        mol.common.entity_i_range = Some((start_i, end_i));
-    }
-
-    if scene.entities.len() != initial_ent_count {
-        clear_mol_entity_indices(state);
-    }
-}
-
-// todo: You need to generalize your drawing code so you have less repetition, and it's more consistent.
-pub fn draw_all_nucleic_acids(state: &mut State, scene: &mut Scene) {
-    let initial_ent_count = scene.entities.len();
-    scene
-        .entities
-        .retain(|ent| ent.class != EntityClass::NucleicAcid as u32);
-
-    if state.ui.visibility.hide_nucleic_acids {
-        return;
-    }
-
-    for (i, mol) in state.nucleic_acids.iter_mut().enumerate() {
-        let start_i = scene.entities.len();
-
-        scene.entities.extend(draw_mol(
-            MoleculeGenericRef::NucleicAcid(mol),
-            i,
-            &state.ui,
-            &state.volatile.active_mol,
-            state.volatile.mol_manip.mol,
-        ));
-
-        let end_i = scene.entities.len();
-        mol.common.entity_i_range = Some((start_i, end_i));
-    }
-
-    if scene.entities.len() != initial_ent_count {
-        clear_mol_entity_indices(state);
-    }
-}
-
-// todo: You need to generalize your drawing code so you have less repetition, and it's more consistent.
-pub fn draw_all_lipids(state: &mut State, scene: &mut Scene) {
-    let initial_ent_count = scene.entities.len();
-    scene
-        .entities
-        .retain(|ent| ent.class != EntityClass::Lipid as u32);
-
-    if state.ui.visibility.hide_lipids {
-        return;
-    }
-
-    for (i, mol) in state.lipids.iter_mut().enumerate() {
-        let start_i = scene.entities.len();
-
-        scene.entities.extend(draw_mol(
-            MoleculeGenericRef::Lipid(mol),
-            i,
-            &state.ui,
-            &state.volatile.active_mol,
-            state.volatile.mol_manip.mol,
-        ));
-
-        let end_i = scene.entities.len();
-        mol.common.entity_i_range = Some((start_i, end_i));
-    }
-
-    if scene.entities.len() != initial_ent_count {
-        clear_mol_entity_indices(state);
-    }
-}
-
-/// Updates a single molecule's entities.
-fn update_inplace_inner(
-    mol: MoleculeGenericRef,
-    i: usize,
-    ent_i_start: usize,
-    ent_i_end: usize,
-    state: &State,
-    scene: &mut Scene,
-) {
-    let ents_updated = draw_mol(
-        mol,
-        i,
-        &state.ui,
-        &state.volatile.active_mol,
-        state.volatile.mol_manip.mol,
-    );
-
-    if ents_updated.len() != ent_i_end - ent_i_start {
-        eprintln!(
-            "Error: Mismatch between new and old mol et counts. Old: {}, new: {}",
-            ents_updated.len(),
-            ent_i_end - ent_i_start
-        );
-        return;
-    }
-
-    for (i, ent) in scene.entities[ent_i_start..ent_i_end]
-        .iter_mut()
-        .enumerate()
-    {
-        ent.position = ents_updated[i].position;
-        ent.orientation = ents_updated[i].orientation;
-        ent.color = ents_updated[i].color;
-    }
-}
-
-/// Cheaper, but takes some care in synchronization. Only draws
-/// This should be run in conjunction with `engine_updates.entities.push_class(EntityClass::Ligand as u32)` or similar.
-/// We update entities, then command an instance buffer update only of these updates
-/// todo: You can go even further and do it one lig and a time, instead of all ligs.
-pub fn update_all_ligs_inplace(state: &State, scene: &mut Scene) {
-    for (i, lig) in state.ligands.iter().enumerate() {
-        let Some((ent_i_start, ent_i_end)) = lig.common.entity_i_range else {
-            eprintln!("Unable to update mol entities in place; missing entity indices");
-            continue;
-        };
-
-        let mol = MoleculeGenericRef::Ligand(lig);
-        update_inplace_inner(mol, i, ent_i_start, ent_i_end, state, scene);
-    }
-}
-
-pub fn update_all_na_inplace(state: &State, scene: &mut Scene) {
-    for (i, na) in state.nucleic_acids.iter().enumerate() {
-        let Some((ent_i_start, ent_i_end)) = na.common.entity_i_range else {
-            eprintln!("Unable to update mol entities in place; missing entity indices");
-            continue;
-        };
-
-        let mol = MoleculeGenericRef::NucleicAcid(na);
-        update_inplace_inner(mol, i, ent_i_start, ent_i_end, state, scene);
-    }
-}
-
-pub fn update_all_lipids_inplace(state: &State, scene: &mut Scene) {
-    for (i, lipid) in state.lipids.iter().enumerate() {
-        let Some((ent_i_start, ent_i_end)) = lipid.common.entity_i_range else {
-            eprintln!("Unable to update mol entities in place; missing entity indices");
-            continue;
-        };
-
-        let mol = MoleculeGenericRef::Lipid(lipid);
-        update_inplace_inner(mol, i, ent_i_start, ent_i_end, state, scene);
-    }
-}
-
-pub fn update_single_ligand_inplace(i: usize, state: &State, scene: &mut Scene) {
-    let ligand = &state.ligands[i];
-    let Some((ent_i_start, ent_i_end)) = ligand.common.entity_i_range else {
-        eprintln!("Unable to update mol entities in place; missing entity indices");
-        return;
-    };
-
-    let mol = MoleculeGenericRef::Ligand(ligand);
-    update_inplace_inner(mol, i, ent_i_start, ent_i_end, state, scene);
-}
-
-pub fn update_single_nucleic_acid_inplace(i: usize, state: &State, scene: &mut Scene) {
-    let na = &state.nucleic_acids[i];
-    let Some((ent_i_start, ent_i_end)) = na.common.entity_i_range else {
-        eprintln!("Unable to update mol entities in place; missing entity indices");
-        return;
-    };
-
-    let mol = MoleculeGenericRef::NucleicAcid(na);
-    update_inplace_inner(mol, i, ent_i_start, ent_i_end, state, scene);
-}
-
-pub fn update_single_lipid_inplace(i: usize, state: &State, scene: &mut Scene) {
-    let lipid = &state.lipids[i];
-    let Some((ent_i_start, ent_i_end)) = lipid.common.entity_i_range else {
-        eprintln!("Unable to update mol entities in place; missing entity indices");
-        return;
-    };
-
-    let mol = MoleculeGenericRef::Lipid(lipid);
-    update_inplace_inner(mol, i, ent_i_start, ent_i_end, state, scene);
-}
-
 /// For all molecule types (for now, not including peptide)
 // todo: DRY with/subset of draw_molecule?
 pub fn draw_mol(
@@ -1076,7 +875,11 @@ pub fn draw_mol(
                 if color != COLOR_SELECTED {
                     match mol.mol_type() {
                         MolType::Ligand => color = mod_color_for_ligand(&color, atom.element),
-                        // todo: Lipid cache A/R
+                        // todo: Lipid and NA caches A/R
+                        // todo: Color for NA
+                        MolType::NucleicAcid => {
+                            color = blend_color(color, LIPID_COLOR, LIPID_BLEND_AMT)
+                        }
                         MolType::Lipid => color = blend_color(color, LIPID_COLOR, LIPID_BLEND_AMT),
                         _ => (),
                     }
@@ -1184,7 +987,10 @@ pub fn draw_mol(
             if color_0 != COLOR_SELECTED {
                 match mol.mol_type() {
                     MolType::Ligand => color_0 = mod_color_for_ligand(&color_0, atom_0.element),
-                    // todo: Lipid cache A/R
+                    // todo: Color for NA
+                    MolType::NucleicAcid => {
+                        color_0 = blend_color(color_0, LIPID_COLOR, LIPID_BLEND_AMT)
+                    }
                     MolType::Lipid => color_0 = blend_color(color_0, LIPID_COLOR, LIPID_BLEND_AMT),
                     _ => (),
                 }
@@ -1192,7 +998,10 @@ pub fn draw_mol(
             if color_1 != COLOR_SELECTED {
                 match mol.mol_type() {
                     MolType::Ligand => color_1 = mod_color_for_ligand(&color_1, atom_1.element),
-                    // todo: Lipid cache A/R
+                    // todo: Color for NA
+                    MolType::NucleicAcid => {
+                        color_1 = blend_color(color_1, LIPID_COLOR, LIPID_BLEND_AMT)
+                    }
                     MolType::Lipid => color_1 = blend_color(color_1, LIPID_COLOR, LIPID_BLEND_AMT),
                     _ => (),
                 }
@@ -1285,7 +1094,7 @@ pub fn draw_density_point_cloud(entities: &mut Vec<Entity>, density: &[ElectronD
 /// as loaded from .map files or similar.
 pub fn draw_density_surface(entities: &mut Vec<Entity>, state: &mut State) {
     entities.retain(|ent| ent.class != EntityClass::DensitySurface as u32);
-    // clear_mol_entity_indices(state);
+    clear_mol_entity_indices(state, None);
 
     let mut ent = Entity::new(
         MESH_DENSITY_SURFACE,
@@ -1604,7 +1413,7 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
                 MolType::Peptide,
             );
 
-            if atom.hetero {
+            if atom.hetero && color_atom != COLOR_SELECTED {
                 color_atom = blend_color(color_atom, COLOR_HETERO_RES, BLEND_AMT_HETERO_RES);
             }
 
@@ -1743,11 +1552,11 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
             MolType::Peptide,
         );
 
-        if atom_0.hetero {
+        if atom_0.hetero && color_0 != COLOR_SELECTED {
             color_0 = blend_color(color_0, COLOR_HETERO_RES, BLEND_AMT_HETERO_RES);
         }
 
-        if atom_1.hetero {
+        if atom_1.hetero && color_1 != COLOR_SELECTED {
             color_1 = blend_color(color_1, COLOR_HETERO_RES, BLEND_AMT_HETERO_RES);
         }
 
@@ -1865,6 +1674,6 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
     }
 
     if scene.entities.len() != initial_ent_count {
-        clear_mol_entity_indices(state);
+        clear_mol_entity_indices(state, None);
     }
 }

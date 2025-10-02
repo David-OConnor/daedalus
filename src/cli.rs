@@ -19,11 +19,12 @@ use regex::Regex;
 
 use crate::{
     Selection, State,
+    cam_misc::{cam_look_at, reset_camera},
+    download_mols,
     molecule::AtomRole,
     render::set_flashlight,
     ui::load_file,
     util,
-    util::{cam_look_at, reset_camera},
 };
 
 fn new_invalid(msg: &str) -> io::Error {
@@ -106,7 +107,14 @@ pub fn handle_cmd(
 
     if let Some(caps) = re_fetch.captures(&input) {
         let ident = &caps[1];
-        util::load_atom_coords_rcsb(ident, state, scene, engine_updates, redraw, reset_cam);
+        download_mols::load_atom_coords_rcsb(
+            ident,
+            state,
+            scene,
+            engine_updates,
+            redraw,
+            reset_cam,
+        );
 
         return Ok(format!("Loaded {ident} molecule from RCSB PDB"));
     }

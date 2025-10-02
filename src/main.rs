@@ -34,6 +34,8 @@ mod util;
 mod cli;
 mod reflection;
 
+mod cam_misc;
+mod drawing_wrappers;
 mod lipid;
 mod md;
 mod mol_lig;

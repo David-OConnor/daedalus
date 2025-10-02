@@ -9,18 +9,20 @@ use graphics::{EngineUpdates, EntityUpdate, FWD_VEC, Scene};
 use lin_alg::f64::Vec3;
 
 use crate::{
-    ManipMode, Selection, State, download_mols, drawing,
+    ManipMode, Selection, State,
+    cam_misc::move_mol_to_cam,
+    download_mols, drawing,
     drawing::{CHARGE_MAP_MAX, CHARGE_MAP_MIN, COLOR_AA_NON_RESIDUE_EGUI, EntityClass},
     lipid::MoleculeLipid,
     mol_lig::MoleculeSmall,
     mol_manip::set_manip,
-    molecule::{Atom, MolType, MoleculeGenericRef, Residue, aa_color},
+    molecule::{Atom, MolType, MoleculeCommon, MoleculeGenericRef, Residue, aa_color},
     nucleic_acid::MoleculeNucleicAcid,
     ui::{
         COL_SPACING, COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_HIGHLIGHT, COLOR_INACTIVE,
         cam::move_cam_to_lig, mol_descrip,
     },
-    util::{handle_err, handle_success, make_egui_color},
+    util::{handle_err, handle_success, make_egui_color, make_lig_from_res},
 };
 
 /// `posit_override` is for example, relative atom positions, such as a positioned ligand.
@@ -243,197 +245,163 @@ pub fn display_mol_data_peptide(
     close: &mut bool,
     engine_updates: &mut EngineUpdates,
 ) {
+    let mut res_to_make = None; // Avoids dbl-borrow.
+    let mut move_lig_to_res = false; // Avoids db borrow.
+
     ui.horizontal(|ui| {
-        let Some(mol) = &state.peptide else {
-            return;
-        };
+        if let Some(pep) = &state.peptide {
+            mol_descrip(&MoleculeGenericRef::Peptide(pep), ui);
 
-        mol_descrip(&MoleculeGenericRef::Peptide(mol), ui);
-
-        if ui.button(RichText::new("Close").color(Color32::LIGHT_RED)).clicked() {
-            *close = true;
-        }
-
-        if mol.common.ident.len() <= 5 {
-            // todo: You likely need a better approach.
-            if ui
-                .button("View on RCSB")
-                .on_hover_text("Open a web browser to the RCSB PDB page for this molecule.")
-                .clicked()
-            {
-                rcsb::open_overview(&mol.common.ident);
+            if ui.button(RichText::new("Close").color(Color32::LIGHT_RED)).clicked() {
+                *close = true;
             }
-        }
 
-        if ui.button("Plot dihe")
-            .on_hover_text("Draw a Ramachandran plot of the dihedral angles of the peptide.")
-            .clicked() {
-            state.ui.popup.rama_plot = !state.ui.popup.rama_plot;
-        }
-
-        let res_selected = match state.ui.selection {
-            Selection::AtomPeptide(sel_i) => {
-                let atom = &mol.common.atoms[sel_i];
-                if let Some(res_i) = &atom.residue {
-                    Some(&mol.residues[*res_i])
-                } else {
-                    None
-                }
-            }
-            Selection::Residue(sel_i) => {
-                if sel_i >= mol.residues.len() {
-                    handle_err(&mut state.ui, "Residue selection is out of bounds.".to_owned());
-                    None
-                } else {
-                    Some(&mol.residues[sel_i])
-                }
-            },
-            _ => None,
-        };
-
-        let Some(pep) = &state.peptide else {
-            return;
-        };
-
-        // let mut lig_atom_count = 0;
-        // if let Some(lig) = &state.active_lig() {
-        //     lig_atom_count = lig.common.atoms.len();
-        // }
-
-        for res in &pep.het_residues {
-            // Note: This is crude.
-            if (res.atoms.len() - pep.common.atoms.len()) < 5 {
-                // todo: Don't list multiple; pick teh closest, at least in len.
-                let name = match &res.res_type {
-                    ResidueType::Other(name) => name,
-                    _ => "hetero residue",
-                };
-                ui.add_space(COL_SPACING / 2.);
-
+            if pep.common.ident.len() <= 5 {
+                // todo: You likely need a better approach.
                 if ui
-                    .button(RichText::new(format!("Move lig to {name}")).color(COLOR_HIGHLIGHT))
-                    .on_hover_text("Move the ligand to be colocated with this residue. this is intended to \
+                    .button("View on RCSB")
+                    .on_hover_text("Open a web browser to the RCSB PDB page for this molecule.")
+                    .clicked()
+                {
+                    rcsb::open_overview(&pep.common.ident);
+                }
+            }
+
+            if ui.button("Plot dihe")
+                .on_hover_text("Draw a Ramachandran plot of the dihedral angles of the peptide.")
+                .clicked() {
+                state.ui.popup.rama_plot = !state.ui.popup.rama_plot;
+            }
+
+            let res_selected = match state.ui.selection {
+                Selection::AtomPeptide(sel_i) => {
+                    let atom = &pep.common.atoms[sel_i];
+                    if let Some(res_i) = &atom.residue {
+                        Some(&pep.residues[*res_i])
+                    } else {
+                        None
+                    }
+                }
+                Selection::Residue(sel_i) => {
+                    if sel_i >= pep.residues.len() {
+                        handle_err(&mut state.ui, "Residue selection is out of bounds.".to_owned());
+                        None
+                    } else {
+                        Some(&pep.residues[sel_i])
+                    }
+                },
+                _ => None,
+            };
+
+
+            for res in &pep.het_residues {
+                // Note: This is crude.
+                if (res.atoms.len() - pep.common.atoms.len()) < 5 {
+                    // todo: Don't list multiple; pick teh closest, at least in len.
+                    let name = match &res.res_type {
+                        ResidueType::Other(name) => name,
+                        _ => "hetero residue",
+                    };
+                    ui.add_space(COL_SPACING / 2.);
+
+                    if ui
+                        .button(RichText::new(format!("Move lig to {name}")).color(COLOR_HIGHLIGHT))
+                        .on_hover_text("Move the ligand to be colocated with this residue. this is intended to \
                     be used to synchronize the ligand with a pre-positioned hetero residue in the protein file, e.g. \
                     prior to docking. In addition to moving \
                     its center, this attempts to align each atom with its equivalent on the residue.")
+                        .clicked()
+                    {
+                        move_lig_to_res = true;
+
+                    }
+                }
+            }
+
+            if let Some(res) = res_selected {
+                if ui
+                    .button(
+                        RichText::new(format!("Lig from {}", res.res_type))
+                            .color(Color32::GOLD),
+                    )
+                    .on_hover_text(
+                        "Create a ligand from this residue on the peptide. This can be \
+                    saved to a Mol2 or SDF file, and used as a ligand. Molecular dynamics can be performed on it.",
+                    )
                     .clicked()
                 {
-
-                    // todo: Put back. Borrow problem.
-                    // let mut mol = state.active_mol_mut().unwrap();
-                    // let _docking_center = move_mol_to_res(&mut mol, pep, res);
-                    //
-                    // if let Some(m) = &state.active_mol() {
-                    //     move_cam_to_lig(
-                    //         // &m,
-                    //         // &mut state.ui.cam_snapshot,
-                    //         &mut state,
-                    //         scene,
-                    //         pep.center,
-                    //         engine_updates,
-                    //     );
-                    // }
-
-                    *redraw_lig = true;
-                }
-            }
-        }
-        if let Some(res) = res_selected {
-            if ui
-                .button(
-                    RichText::new(format!("Lig from {}", res.res_type))
-                        .color(Color32::GOLD),
-                )
-                .on_hover_text(
-                    "Create a ligand from this residue on the peptide. This can be \
-                    saved to a Mol2 or SDF file, and used as a ligand. Molecular dynamics can be performed on it.",
-                )
-                .clicked()
-            {
-                let res_type = res.res_type.clone(); // Avoids dbl-borrow.
-
-                let mut mol_fm_res = MoleculeSmall::from_res(
-                    res,
-                    &pep.common.atoms,
-                    &pep.common.bonds,
-                );
-
-                mol_fm_res.update_aux(&state.volatile.active_mol, &mut state.lig_specific_params);
-
-                state.ligands.push(mol_fm_res);
-                // // let mut lig_new = MoleculeGenericRefMut::Ligand(&mut state.ligands[state.ligands.len() - 1]);
-                //
-                // let docking_center = move_mol_to_res(&mut lig_new, pep, res);
-
-                // todo: Put this save back / fix dble-borrow?
-                // state.update_docking_site(docking_center);
-                // state.update_sa
-                // ve_prefs(false);
-                // set_docking_light(scene, Some(&lig.docking_site));
-                // engine_updates.lighting = true;
-
-                *redraw_lig = true;
-                state.mol_dynamics = None;
-
-                // We leave the new ligand in place, overlapping the residue we created it from.
-
-                state.volatile.active_mol = Some((MolType::Ligand, state.ligands.len() - 1));
-
-                // Make it clear that we've added the ligand by showing it, and hiding hetero (if creating from Hetero)
-                state.ui.visibility.hide_ligand = false;
-            }
-        }
-
-        if !matches!(
-            state.ui.selection,
-            Selection::None | Selection::AtomLig(_)
-        ) {
-            let mut move_cam = false;
-            if ui
-                .button(RichText::new("Move lig to sel").color(COLOR_HIGHLIGHT))
-                .on_hover_text("Re-position the ligand to be colacated with the selected atom or residue.")
-                .clicked()
-            {
-                let peptide = &state.peptide.as_ref().unwrap();
-                let atom_sel = peptide.get_sel_atom(&state.ui.selection);
-                state.mol_dynamics = None;
-
-                if let Some(sel_atom) = atom_sel {
-                    // todo: Put back. Borrow problem.
-
-                    // let mut mol = state.active_mol_mut().unwrap();
-                    // let diff = sel_atom.posit - mol.common().centroid();
-                    // for p in &mut mol.common_mut().atom_posits{
-                    //     *p += diff;
-                    // }
-
-                    move_cam = true;
-
-                    *redraw_lig = true;
+                    res_to_make = Some(res.clone()); // todo: I don't like this clone, but it avoids a dbl-borrow.
                 }
             }
 
-            if move_cam {
-                let center = match &state.peptide {
-                    Some(m) => m.center,
-                    None => Vec3::new_zero()
-                };
+            if !matches!(
+                state.ui.selection,
+                Selection::None | Selection::AtomLig(_)
+            ) {
+                let mut move_cam = false;
+                if ui
+                    .button(RichText::new("Move lig to sel").color(COLOR_HIGHLIGHT))
+                    .on_hover_text("Re-position the ligand to be colacated with the selected atom or residue.")
+                    .clicked()
+                {
+                    let peptide = &state.peptide.as_ref().unwrap();
+                    let atom_sel = peptide.get_sel_atom(&state.ui.selection);
+                    state.mol_dynamics = None;
 
-                // todo: put back. Borrow problem.
-                // move_cam_to_lig(
-                //     &mut state,
-                //     scene,
-                //     center,
-                //     engine_updates,
-                // );
+                    if let Some(sel_atom) = atom_sel {
+                        // todo: Put back. Borrow problem.
+
+                        // let mut mol = state.active_mol_mut().unwrap();
+                        // let diff = sel_atom.posit - mol.common().centroid();
+                        // for p in &mut mol.common_mut().atom_posits{
+                        //     *p += diff;
+                        // }
+
+                        move_cam = true;
+
+                        *redraw_lig = true;
+                    }
+                }
+
+                if move_cam {
+                    let center = match &state.peptide {
+                        Some(m) => m.center,
+                        None => Vec3::new_zero()
+                    };
+
+                    move_cam_to_lig(
+                        state,
+                        scene,
+                        center,
+                        engine_updates,
+                    );
+                }
             }
         }
     });
+
+    if let Some(res) = res_to_make {
+        make_lig_from_res(state, &scene.camera, &res, redraw_lig);
+        if let Some(pep) = &state.peptide {
+            move_cam_to_lig(state, scene, pep.center, engine_updates);
+        }
+    }
+
+    if move_lig_to_res {
+        if state.active_mol().is_some() {
+            if let Some(pep) = &state.peptide {
+                move_cam_to_lig(state, scene, pep.center, engine_updates);
+            }
+        }
+
+        *redraw_lig = true;
+    }
 
     // Provide convenience functionality for loading ligands based on hetero residues
     // in the protein.
     let mut load_data = None; // Avoids dbl-borrow.
 
+    let mut res_to_load = None;
     if let Some(mol) = &mut state.peptide {
         let mut count_geostd_candidate = 0;
         for res in &mol.het_residues {
@@ -446,7 +414,7 @@ pub fn display_mol_data_peptide(
 
         if count_geostd_candidate > 0 {
             ui.horizontal(|ui| {
-                ui.label("Download ligs:").on_hover_text(
+                ui.label("Make ligs:").on_hover_text(
                     "Attempt to load a ligand molecule and force field \
                             params from a hetero residue included in the protein file.",
                 );
@@ -470,6 +438,7 @@ pub fn display_mol_data_peptide(
                             .clicked()
                         {
                             download_mols::load_geostd(name, &mut load_data, &mut state.ui);
+                            res_to_load = Some(res.clone()); // Clone avoids borrow error.
                         }
                     }
                 }
@@ -485,13 +454,31 @@ pub fn display_mol_data_peptide(
         );
 
         // Crude check for success.
-        let lig_count_prev = state.ligands.len();
+        // let lig_count_prev = state.ligands.len();
         state.load_geostd_mol_data(&data.ident, true, data.frcmod_avail, redraw_lig);
 
-        if state.active_mol().is_some() {
-            if let Some(mol) = &state.peptide {
-                move_cam_to_lig(state, scene, mol.center, engine_updates);
-            }
+        let i = state.ligands.len() - 1;
+        move_mol_to_cam(&mut state.ligands[i].common, &scene.camera);
+
+        // if state.active_mol().is_some() {
+        //     if let Some(mol) = &state.peptide {
+        //         move_cam_to_lig(state, scene, mol.center, engine_updates);
+        //     }
+        // }
+    } else {
+        if let Some(res) = res_to_load {
+            // Use our normal "Lig from" logic.
+            make_lig_from_res(state, &scene.camera, &res, redraw_lig);
+            // move_cam_to_lig(
+            //     state,
+            //     scene,
+            //     state.ligands[0].common.centroid(),
+            //     engine_updates,
+            // );
+            handle_success(
+                &mut state.ui,
+                "Unable to find FF params for this ligand; added without them".to_string(),
+            );
         }
     }
 }
@@ -562,11 +549,7 @@ pub fn display_mol_data(
                 )
                 .clicked()
             {
-
-                // todo: Move to a function A/R.
-                let tgt_dist = 15.;
-                let new_posit = scene.camera.position + scene.camera.orientation.rotate_vec(FWD_VEC) * tgt_dist;
-                mol.common_mut().move_to(new_posit.into());
+                move_mol_to_cam(mol.common_mut(), &scene.camera);
 
                 match active_mol_type {
                     MolType::Ligand => *redraw_lig = true,

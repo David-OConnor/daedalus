@@ -4,8 +4,13 @@ use std::time::Instant;
 
 use bio_apis::{ReqError, amber_geostd, amber_geostd::GeostdItem, drugbank, pubchem, rcsb};
 use bio_files::{MmCif, Sdf};
+use graphics::{EngineUpdates, Scene};
+use na_seq::AaIdent;
 
-use crate::{StateUi, mol_lig::MoleculeSmall, util::handle_err};
+use crate::{
+    State, StateUi, mol_lig::MoleculeSmall, molecule::MoleculePeptide, render::set_flashlight,
+    util::handle_err,
+};
 
 /// Download mmCIF file from the RSCB, parse into a struct.
 pub fn load_cif_rcsb(ident: &str) -> Result<(MmCif, String), ReqError> {
@@ -62,4 +67,87 @@ pub fn load_geostd(ident: &str, load_data: &mut Option<GeostdItem>, state_ui: &m
 
     let elapsed = start.elapsed().as_millis();
     println!("Loaded Amber Geostd in {elapsed:.1}ms");
+}
+
+pub fn load_atom_coords_rcsb(
+    ident: &str,
+    state: &mut State,
+    scene: &mut Scene,
+    engine_updates: &mut EngineUpdates,
+    redraw: &mut bool,
+    reset_cam: &mut bool,
+) {
+    println!("Loading atom data from RCSB...");
+    let start = Instant::now();
+
+    match load_cif_rcsb(ident) {
+        // todo: For organization purposes, move this code out of the UI.
+        Ok((cif, cif_text)) => {
+            let Some(ff_map) = &state.ff_param_set.peptide_ff_q_map else {
+                handle_err(
+                    &mut state.ui,
+                    "Unable to find the peptide FF Q map in parameters; can't load the molecule"
+                        .to_owned(),
+                );
+                return;
+            };
+
+            let mut mol: MoleculePeptide =
+                match MoleculePeptide::from_mmcif(cif, ff_map, None, state.to_save.ph) {
+                    Ok(m) => m,
+                    Err(e) => {
+                        eprintln!("Problem parsing mmCif data into molecule: {e:?}");
+                        return;
+                    }
+                };
+
+            state.volatile.aa_seq_text = String::with_capacity(mol.common.atoms.len());
+            for aa in &mol.aa_seq {
+                state
+                    .volatile
+                    .aa_seq_text
+                    .push_str(&aa.to_str(AaIdent::OneLetter));
+            }
+
+            // todo: DRY from `open_molecule`. Refactor into shared code?
+
+            state.volatile.aa_seq_text = String::with_capacity(mol.common.atoms.len());
+            for aa in &mol.aa_seq {
+                state
+                    .volatile
+                    .aa_seq_text
+                    .push_str(&aa.to_str(AaIdent::OneLetter));
+            }
+
+            state.volatile.flags.ss_mesh_created = false;
+            state.volatile.flags.sas_mesh_created = false;
+            state.volatile.flags.clear_density_drawing = true;
+            state.peptide = Some(mol);
+            state.cif_pdb_raw = Some(cif_text);
+        }
+        Err(e) => {
+            handle_err(
+                &mut state.ui,
+                format!("Problem loading molecule from CIF: {e:?}"),
+            );
+            return;
+        }
+    }
+    let elapsed = start.elapsed().as_millis();
+    println!("Loading complete in {elapsed:.1}ms");
+
+    state.update_from_prefs();
+
+    *redraw = true;
+    *reset_cam = true;
+    set_flashlight(scene);
+    engine_updates.lighting = true;
+
+    // todo: async
+    // Only after updating from prefs (to prevent unecesasary loading) do we update data avail.
+    state
+        .peptide
+        .as_mut()
+        .unwrap()
+        .updates_rcsb_data(&mut state.volatile.mol_pending_data_avail);
 }

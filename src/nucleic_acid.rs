@@ -12,7 +12,12 @@ use na_seq::{
     Nucleotide::{self, *},
 };
 
-use crate::molecule::{Atom, Bond, MoleculeCommon, MoleculePeptide};
+use crate::{
+    mol_lig::MoleculeSmall,
+    molecule::{
+        Atom, Bond, MolGenericTrait, MolType, MoleculeCommon, MoleculeGenericRef, MoleculePeptide,
+    },
+};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum NucleicAcidType {
@@ -218,6 +223,24 @@ impl MoleculeNucleicAcid {
         }
 
         Self::from_seq(&seq, na_type, strands)
+    }
+}
+
+impl MolGenericTrait for MoleculeNucleicAcid {
+    fn common(&self) -> &MoleculeCommon {
+        &self.common
+    }
+
+    fn common_mut(&mut self) -> &mut MoleculeCommon {
+        &mut self.common
+    }
+
+    fn to_ref(&self) -> MoleculeGenericRef {
+        MoleculeGenericRef::NucleicAcid(self)
+    }
+
+    fn mol_type(&self) -> MolType {
+        MolType::NucleicAcid
     }
 }
 

@@ -14,7 +14,10 @@ use rayon::prelude::*;
 use crate::{
     State,
     docking_v2::{ConformationType, DockingSite, Pose},
-    molecule::{Atom, Bond, Chain, MolType as Mt, MoleculeCommon, Residue},
+    molecule::{
+        Atom, Bond, Chain, MolGenericTrait, MolType as Mt, MoleculeCommon, MoleculeGenericRef,
+        Residue,
+    },
     util::handle_err,
 };
 
@@ -80,6 +83,24 @@ impl MoleculeSmall {
             drugbank_id,
             ..Default::default()
         }
+    }
+}
+
+impl MolGenericTrait for MoleculeSmall {
+    fn common(&self) -> &MoleculeCommon {
+        &self.common
+    }
+
+    fn common_mut(&mut self) -> &mut MoleculeCommon {
+        &mut self.common
+    }
+
+    fn to_ref(&self) -> MoleculeGenericRef {
+        MoleculeGenericRef::Ligand(self)
+    }
+
+    fn mol_type(&self) -> crate::molecule::MolType {
+        crate::molecule::MolType::Ligand
     }
 }
 
@@ -448,13 +469,11 @@ impl MoleculeSmall {
             })
         }
 
-        Self::new(
-            res.res_type.to_string(),
-            atoms_this,
-            bonds_new,
-            HashMap::new(),
-            None,
-        )
+        let name = res.res_type.to_string();
+        let mut result = Self::new(name.clone(), atoms_this, bonds_new, HashMap::new(), None);
+
+        result.pdbe_id = Some(name);
+        result
     }
 
     /// Unfortunately, we can't directly map atoms from our original molecule to

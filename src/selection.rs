@@ -29,11 +29,11 @@ impl Nearest {
 ///
 /// Can select atoms from the protein, or ligand.
 pub fn find_selected_atom(
-    atoms_along_ray: &[(usize, usize)],
+    atoms_pep_along_ray: &[(usize, usize)],
     atoms_lig_along_ray: &[(usize, usize)],
     atoms_na_along_ray: &[(usize, usize)],
     atoms_lipid_along_ray: &[(usize, usize)],
-    atoms_prot: &[Atom],
+    atoms_pep: &[Atom],
     ress: &[Residue],
     atoms_lig: &[Vec<Atom>],
     atoms_na: &[Vec<Atom>],
@@ -42,7 +42,7 @@ pub fn find_selected_atom(
     ui: &StateUi,
     chains: &[Chain],
 ) -> Selection {
-    if atoms_along_ray.is_empty()
+    if atoms_pep_along_ray.is_empty()
         && atoms_lig_along_ray.is_empty()
         && atoms_na_along_ray.is_empty()
         && atoms_lipid_along_ray.is_empty()
@@ -62,7 +62,7 @@ pub fn find_selected_atom(
     };
     let mut near_dist = INIT_DIST;
 
-    for (_mol_i, atom_i) in atoms_along_ray {
+    for (_mol_i, atom_i) in atoms_pep_along_ray {
         let chain_hidden = {
             let chains_this_atom: Vec<&Chain> =
                 chains.iter().filter(|c| c.atoms.contains(atom_i)).collect();
@@ -81,7 +81,7 @@ pub fn find_selected_atom(
             continue;
         }
 
-        let atom = &atoms_prot[*atom_i];
+        let atom = &atoms_pep[*atom_i];
 
         if ui.visibility.hide_sidechains || matches!(ui.mol_view, MoleculeView::Backbone) {
             if let Some(role) = atom.role {
@@ -220,9 +220,9 @@ pub fn find_selected_atom(
             match nearest.mol_type {
                 MolType::Peptide => {
                     for (i_res, _res) in ress.iter().enumerate() {
-                        let atom_near = &atoms_prot[nearest.mol_i];
-                        if let Some(res_i) = atom_near.residue {
-                            if res_i == i_res {
+                        let atom_near = &atoms_pep[nearest.atom_i];
+                        if let Some(i) = atom_near.residue {
+                            if i == i_res {
                                 return Selection::Residue(i_res);
                             }
                         }

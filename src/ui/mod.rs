@@ -22,13 +22,13 @@ use md::md_setup;
 use mol_data::display_mol_data;
 
 use crate::{
-    CamSnapshot, MsaaSetting, Selection, State, ViewSelLevel, cli,
+    CamSnapshot, MsaaSetting, Selection, State, ViewSelLevel,
+    cam_misc::reset_camera,
+    cli,
     cli::autocomplete_cli,
-    download_mols::{load_sdf_drugbank, load_sdf_pubchem},
-    drawing::{
-        EntityClass, color_viridis, draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids,
-        draw_peptide,
-    },
+    download_mols::{load_atom_coords_rcsb, load_sdf_drugbank, load_sdf_pubchem},
+    drawing::{color_viridis, draw_peptide},
+    drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
     file_io::gemmi_path,
     inputs::{MOVEMENT_SENS, ROTATE_SENS, SENS_MOL_MOVE_SCROLL},
     lipid::{LipidShape, make_bacterial_lipids},
@@ -44,7 +44,7 @@ use crate::{
     },
     util::{
         check_prefs_save, close_mol, close_peptide, cycle_selected, handle_err, handle_scene_flags,
-        handle_success, load_atom_coords_rcsb, orbit_center, reset_camera, select_from_search,
+        handle_success, orbit_center, select_from_search,
     },
 };
 
@@ -684,7 +684,7 @@ fn mol_descrip(mol: &MoleculeGenericRef, ui: &mut Ui) {
 
     if let Some(title) = mol.common().metadata.get("_struct.title") {
         // Limit size to prevent UI problems.
-        let mut title_abbrev: String = title.trim().chars().take(MAX_TITLE_LEN).collect();
+        let mut title_abbrev: String = title.chars().take(MAX_TITLE_LEN).collect();
 
         if title_abbrev.len() != title.len() {
             title_abbrev += "...";

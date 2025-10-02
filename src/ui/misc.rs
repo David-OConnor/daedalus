@@ -6,7 +6,8 @@ const COLOR_SECTION_BOX: Color32 = Color32::from_rgb(100, 100, 140);
 
 use crate::{
     State,
-    drawing::{EntityClass, draw_all_ligs, draw_all_lipids, draw_peptide, draw_water},
+    drawing::{draw_peptide, draw_water},
+    drawing_wrappers::{draw_all_ligs, draw_all_lipids},
     md::change_snapshot,
     ui::{COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_INACTIVE, ROW_SPACING},
 };

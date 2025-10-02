@@ -44,6 +44,14 @@ use crate::{
     util::mol_center_size,
 };
 
+// todo: Experimenting
+pub trait MolGenericTrait {
+    fn common(&self) -> &MoleculeCommon;
+    fn common_mut(&mut self) -> &mut MoleculeCommon;
+    fn to_ref(&self) -> MoleculeGenericRef;
+    fn mol_type(&self) -> MolType;
+}
+
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum MolType {
     Peptide,
@@ -285,6 +293,15 @@ impl<'a> MoleculeGenericRefMut<'a> {
             Self::Lipid(_) => MolType::Lipid,
         }
     }
+
+    // pub fn to_immut(&self) -> MoleculeGenericRef<'a> {
+    //     match self {
+    //         Self::Peptide(m) => MoleculeGenericRef::Peptide(m),
+    //         Self::Ligand(m) => MoleculeGenericRef::Ligand(m),
+    //         Self::NucleicAcid(m) => MoleculeGenericRef::NucleicAcid(m),
+    //         Self::Lipid(m) => MoleculeGenericRef::Lipid(m),
+    //     }
+    // }
 }
 
 /// A polypeptide molecule, e.g. a protein.

@@ -18,7 +18,13 @@ use lin_alg::f64::{Quaternion, Vec3, Y_VEC, Z_VEC};
 use na_seq::Element::{self, *};
 use rand::{Rng, distr::Uniform, rngs::ThreadRng};
 
-use crate::molecule::{Atom, Bond, MoleculeCommon, Residue, build_adjacency_list};
+use crate::{
+    mol_lig::MoleculeSmall,
+    molecule::{
+        Atom, Bond, MolGenericTrait, MolType, MoleculeCommon, MoleculeGenericRef, Residue,
+        build_adjacency_list,
+    },
+};
 
 // todo: These are the fields after posit. Sometimes seem to be filled in. Should we use them?
 // todo: Charge code and atom stero parity seem to be filled out.
@@ -510,6 +516,24 @@ pub struct MoleculeLipid {
     pub common_name: String,
     /// We use residues to denote headgroups and chains.
     pub residues: Vec<Residue>,
+}
+
+impl MolGenericTrait for MoleculeLipid {
+    fn common(&self) -> &MoleculeCommon {
+        &self.common
+    }
+
+    fn common_mut(&mut self) -> &mut MoleculeCommon {
+        &mut self.common
+    }
+
+    fn to_ref(&self) -> MoleculeGenericRef {
+        MoleculeGenericRef::Lipid(self)
+    }
+
+    fn mol_type(&self) -> MolType {
+        MolType::Lipid
+    }
 }
 
 // todo: Deprecate these A/R. We switched to amber templates.

@@ -7,41 +7,28 @@ use std::time::Instant;
 use bio_files::ResidueType;
 use egui::Color32;
 use graphics::{Camera, ControlScheme, EngineUpdates, EntityUpdate, FWD_VEC, Mesh, Scene, Vertex};
-use lin_alg::{
-    f32::{Quaternion, Vec3 as Vec3F32},
-    f64::Vec3,
-};
+use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 use mcubes::{MarchingCubes, MeshSide};
 use na_seq::AaIdent;
 
 use crate::{
-    CamSnapshot, ManipMode, PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel,
-    download_mols::load_cif_rcsb,
+    CamSnapshot, ManipMode, PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel, cam_misc,
+    cam_misc::move_mol_to_cam,
     drawing::{
-        EntityClass, MoleculeView, draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids,
-        draw_density_point_cloud, draw_density_surface, draw_peptide,
+        EntityClass, MoleculeView, draw_density_point_cloud, draw_density_surface, draw_peptide,
     },
-    lipid::MoleculeLipid,
+    drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
     mol_lig::MoleculeSmall,
     molecule::{
         Atom, Bond, MolType, MoleculeCommon, MoleculeGenericRefMut, MoleculePeptide, Residue,
     },
-    nucleic_acid::MoleculeNucleicAcid,
     prefs::OpenType,
     render::{
-        CAM_INIT_OFFSET, Color, MESH_DENSITY_SURFACE, MESH_SECONDARY_STRUCTURE,
-        MESH_SOLVENT_SURFACE, set_flashlight, set_static_light,
+        Color, MESH_DENSITY_SURFACE, MESH_SECONDARY_STRUCTURE, MESH_SOLVENT_SURFACE, set_flashlight,
     },
     ribbon_mesh::build_cartoon_mesh,
     sa_surface::make_sas_mesh,
-    ui::cam::{
-        FOG_DIST_DEFAULT, RENDER_DIST_FAR, RENDER_DIST_NEAR, VIEW_DEPTH_NEAR_MIN, calc_fog_dists,
-    },
-    util,
 };
-
-const MOVE_TO_TARGET_DIST: f32 = 15.;
-pub const MOVE_CAM_TO_LIG_DIST: f32 = 30.;
 
 pub fn mol_center_size(atoms: &[Atom]) -> (Vec3, f32) {
     let mut sum = Vec3::new_zero();
@@ -63,37 +50,6 @@ pub fn mol_center_size(atoms: &[Atom]) -> (Vec3, f32) {
     }
 
     (sum / (atoms.len() as f64), max_dim as f32)
-}
-
-/// Move the camera to look at a point of interest. Takes the starting location into account.
-/// todo: Smooth interpolated zoom.
-pub fn cam_look_at(cam: &mut Camera, target: Vec3) {
-    let tgt: Vec3F32 = target.into();
-    let diff = tgt - cam.position;
-    let dir = diff.to_normalized();
-    let dist = diff.magnitude();
-
-    // Rotate the camera to look at the target.
-    let cam_looking_at = cam.orientation.rotate_vec(FWD_VEC);
-    let rotator = Quaternion::from_unit_vecs(cam_looking_at, dir);
-
-    cam.orientation = rotator * cam.orientation;
-
-    // Slide along the path between cam and target until close to it.
-    let move_dist = dist - MOVE_TO_TARGET_DIST;
-    cam.position += dir * move_dist;
-}
-
-pub fn cam_look_at_outside(cam: &mut Camera, target: Vec3F32, alignment: Vec3F32, dist: f32) {
-    // Note: This is similar to `cam_look_at`, but we don't call that, as we're positioning
-    // with an absolute orientation in mind, vice `cam_look_at`'s use of current cam LOS.
-
-    // Look from the outside in, so our view is unobstructed by the protein. Do this after
-    // the camera is positioned.
-    let look_vec = (target - alignment).to_normalized();
-
-    cam.position = target + look_vec * dist;
-    cam.orientation = Quaternion::from_unit_vecs(FWD_VEC, -look_vec);
 }
 
 pub fn select_from_search(state: &mut State) {
@@ -371,89 +327,6 @@ pub fn find_atom<'a>(atoms: &'a [Atom], indices: &[usize], i_to_find: usize) -> 
     None
 }
 
-pub fn load_atom_coords_rcsb(
-    ident: &str,
-    state: &mut State,
-    scene: &mut Scene,
-    engine_updates: &mut EngineUpdates,
-    redraw: &mut bool,
-    reset_cam: &mut bool,
-) {
-    println!("Loading atom data from RCSB...");
-    let start = Instant::now();
-
-    match load_cif_rcsb(ident) {
-        // todo: For organization purposes, move this code out of the UI.
-        Ok((cif, cif_text)) => {
-            let Some(ff_map) = &state.ff_param_set.peptide_ff_q_map else {
-                handle_err(
-                    &mut state.ui,
-                    "Unable to find the peptide FF Q map in parameters; can't load the molecule"
-                        .to_owned(),
-                );
-                return;
-            };
-
-            let mut mol: MoleculePeptide =
-                match MoleculePeptide::from_mmcif(cif, ff_map, None, state.to_save.ph) {
-                    Ok(m) => m,
-                    Err(e) => {
-                        eprintln!("Problem parsing mmCif data into molecule: {e:?}");
-                        return;
-                    }
-                };
-
-            state.volatile.aa_seq_text = String::with_capacity(mol.common.atoms.len());
-            for aa in &mol.aa_seq {
-                state
-                    .volatile
-                    .aa_seq_text
-                    .push_str(&aa.to_str(AaIdent::OneLetter));
-            }
-
-            // todo: DRY from `open_molecule`. Refactor into shared code?
-
-            state.volatile.aa_seq_text = String::with_capacity(mol.common.atoms.len());
-            for aa in &mol.aa_seq {
-                state
-                    .volatile
-                    .aa_seq_text
-                    .push_str(&aa.to_str(AaIdent::OneLetter));
-            }
-
-            state.volatile.flags.ss_mesh_created = false;
-            state.volatile.flags.sas_mesh_created = false;
-            state.volatile.flags.clear_density_drawing = true;
-            state.peptide = Some(mol);
-            state.cif_pdb_raw = Some(cif_text);
-        }
-        Err(e) => {
-            handle_err(
-                &mut state.ui,
-                format!("Problem loading molecule from CIF: {e:?}"),
-            );
-            return;
-        }
-    }
-    let elapsed = start.elapsed().as_millis();
-    println!("Loading complete in {elapsed:.1}ms");
-
-    state.update_from_prefs();
-
-    *redraw = true;
-    *reset_cam = true;
-    set_flashlight(scene);
-    engine_updates.lighting = true;
-
-    // todo: async
-    // Only after updating from prefs (to prevent unecesasary loading) do we update data avail.
-    state
-        .peptide
-        .as_mut()
-        .unwrap()
-        .updates_rcsb_data(&mut state.volatile.mol_pending_data_avail);
-}
-
 pub fn save_snap(state: &mut State, cam: &Camera, name: &str) {
     state
         .cam_snapshots
@@ -485,64 +358,6 @@ pub fn load_snap(state: &mut State, scene: &mut Scene, engine_updates: &mut Engi
             }
         }
     }
-}
-
-/// Resets the camera to the *front* view, and related settings. Its beahvior deepends
-/// on the size and positions of open molecules.
-pub fn reset_camera(
-    state: &mut State,
-    scene: &mut Scene,
-    // view_depth: &mut (u16, u16),
-    engine_updates: &mut EngineUpdates,
-    // mol: &MoleculeCommon,
-    look_vec: Vec3F32, // unit vector the cam is pointing to.
-) {
-    let mut center = Vec3F32::new_zero();
-    let mut size = 8.; // E.g. for small organic molecules.
-
-    if let Some(mol) = &state.peptide {
-        // We cache center and size, due to the potential large number of molecules.
-        center = mol.center.into();
-        size = mol.size;
-    } else {
-        if let Some(mol) = state.active_mol() {
-            center = mol.common().centroid().into();
-            // Leaving size at its default for now.
-        } else {
-            let mut n = 0;
-            let mut centroid = Vec3F32::new_zero();
-            for mol in &state.ligands[0..10.min(state.ligands.len())] {
-                let c: Vec3F32 = mol.common.centroid().into();
-                centroid += c;
-                n += 1;
-            }
-            for mol in &state.lipids[0..10.min(state.lipids.len())] {
-                let c: Vec3F32 = mol.common.centroid().into();
-                centroid += c;
-                n += 1;
-            }
-            centroid /= n as f32;
-            center = centroid;
-            size = 40.; // A broad view.
-        }
-    }
-
-    let dist_fm_center = size + CAM_INIT_OFFSET;
-
-    // cam_look_at_outside(&mut scene.camera, center, Vec3F32::new_zero(), dist_fm_center);
-    // let look_vec = (target - alignment).to_normalized();
-
-    scene.camera.position = center - look_vec * dist_fm_center;
-    scene.camera.orientation = Quaternion::from_unit_vecs(FWD_VEC, look_vec);
-
-    set_static_light(scene, center, size);
-    set_flashlight(scene);
-
-    engine_updates.camera = true;
-    engine_updates.lighting = true;
-
-    // todo: A/R.
-    state.ui.view_depth = (VIEW_DEPTH_NEAR_MIN, FOG_DIST_DEFAULT);
 }
 
 /// Utility function that prints to stderr, and the CLI output. Sets the out flag.
@@ -581,6 +396,7 @@ pub fn close_peptide(state: &mut State, scene: &mut Scene, engine_updates: &mut 
             && ent.class != EntityClass::SaSurface as u32
             && ent.class != EntityClass::SaSurfaceDots as u32
     });
+    clear_mol_entity_indices(state, None);
 
     state.volatile.aa_seq_text = String::new();
 
@@ -747,7 +563,7 @@ pub fn handle_scene_flags(
     if state.volatile.flags.new_mol_loaded {
         state.volatile.flags.new_mol_loaded = false;
 
-        reset_camera(state, scene, engine_updates, FWD_VEC);
+        cam_misc::reset_camera(state, scene, engine_updates, FWD_VEC);
 
         set_flashlight(scene);
         engine_updates.lighting = true;
@@ -760,7 +576,7 @@ pub fn handle_scene_flags(
             if !state.ui.visibility.hide_density_point_cloud {
                 if let Some(density) = &mol.elec_density {
                     draw_density_point_cloud(&mut scene.entities, density);
-                    clear_mol_entity_indices(state);
+                    clear_mol_entity_indices(state, None);
                     engine_updates.entities = EntityUpdate::All;
                     // engine_updates
                     //     .entities
@@ -778,6 +594,7 @@ pub fn handle_scene_flags(
             ent.class != EntityClass::DensityPoint as u32
                 && ent.class != EntityClass::DensitySurface as u32
         });
+        clear_mol_entity_indices(state, None);
     }
 
     if state.volatile.flags.make_density_iso_mesh {
@@ -944,59 +761,63 @@ pub fn find_neighbor_posit(
 //     Vec3::new(motion.0 as f64, 0., motion.1 as f64)
 // }
 
-pub fn move_cam_to_sel(
-    state_ui: &mut StateUi,
-    mol_: &Option<MoleculePeptide>,
-    ligs: &[MoleculeSmall],
-    nucleic_acids: &[MoleculeNucleicAcid],
-    lipids: &[MoleculeLipid],
-    cam: &mut Camera,
-    engine_updates: &mut EngineUpdates,
-) {
-    match &state_ui.selection {
-        Selection::AtomPeptide(_i_atom) => {
-            let Some(mol) = mol_ else {
-                return;
-            };
-            let atom_sel = mol.get_sel_atom(&state_ui.selection);
-
-            if let Some(atom) = atom_sel {
-                cam_look_at(cam, atom.posit);
-            }
-        }
-        Selection::AtomLig((i_mol, i_atom)) => {
-            cam_look_at(cam, ligs[*i_mol].common.atom_posits[*i_atom]);
-        }
-        Selection::AtomNucleicAcid((i_mol, i_atom)) => {
-            // if *i_mol >= nucleic_acids.len() {
-            //     return;
-            // }
-            cam_look_at(cam, nucleic_acids[*i_mol].common.atom_posits[*i_atom]);
-        }
-        Selection::AtomLipid((i_mol, i_atom)) => {
-            cam_look_at(cam, lipids[*i_mol].common.atom_posits[*i_atom]);
-        }
-        _ => unimplemented!(),
-    }
-
-    engine_updates.camera = true;
-    state_ui.cam_snapshot = None;
-}
-
 // todo: Maybe only invalidate indices that come before?
 /// We use this to invalidate indices when removing entities. Only run this when entities are removed.
-pub fn clear_mol_entity_indices(state: &mut State) {
+pub fn clear_mol_entity_indices(state: &mut State, exempt: Option<MolType>) {
     println!("Clearing indices");
     if let Some(pep) = &mut state.peptide {
-        pep.common.entity_i_range = None;
+        let mut skip = false;
+        if let Some(e) = exempt {
+            if e == MolType::Ligand {
+                skip = true;
+            }
+        }
+        if !skip {
+            pep.common.entity_i_range = None;
+        }
     }
     for mol in &mut state.ligands {
+        if let Some(e) = exempt {
+            if e == MolType::Ligand {
+                break;
+            }
+        }
         mol.common.entity_i_range = None;
     }
     for mol in &mut state.nucleic_acids {
+        if let Some(e) = exempt {
+            if e == MolType::NucleicAcid {
+                break;
+            }
+        }
         mol.common.entity_i_range = None;
     }
     for mol in &mut state.lipids {
+        if let Some(e) = exempt {
+            if e == MolType::Lipid {
+                break;
+            }
+        }
         mol.common.entity_i_range = None;
     }
+}
+
+pub fn make_lig_from_res(state: &mut State, cam: &Camera, res: &Residue, redraw_lig: &mut bool) {
+    let mol = &state.peptide.as_ref().unwrap().common;
+    let mut mol_fm_res = MoleculeSmall::from_res(res, &mol.atoms, &mol.bonds);
+
+    mol_fm_res.update_aux(&state.volatile.active_mol, &mut state.lig_specific_params);
+
+    move_mol_to_cam(&mut mol_fm_res.common, cam);
+    state.ligands.push(mol_fm_res);
+
+    *redraw_lig = true;
+    state.mol_dynamics = None;
+
+    // We leave the new ligand in place, overlapping the residue we created it from.
+
+    state.volatile.active_mol = Some((MolType::Ligand, state.ligands.len() - 1));
+
+    // Make it clear that we've added the ligand by showing it, and hiding hetero (if creating from Hetero)
+    state.ui.visibility.hide_ligand = false;
 }

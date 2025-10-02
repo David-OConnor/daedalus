@@ -1,20 +1,21 @@
 //! Handles user inputs, e.g. from keyboard and mouse.
 
 use graphics::{
-    ControlScheme, DeviceEvent, ElementState, EngineUpdates, EntityUpdate, FWD_VEC, RIGHT_VEC,
-    Scene, UP_VEC, WindowEvent,
+    ControlScheme, DeviceEvent, ElementState, EngineUpdates, EntityUpdate, Scene, WindowEvent,
     winit::keyboard::{KeyCode, PhysicalKey::Code},
 };
-use lin_alg::{f32::Vec3, f64::Vec3 as Vec3F64, map_linear};
+use lin_alg::{f32::Vec3, map_linear};
 
 use crate::{
-    ManipMode, Selection, State, drawing,
-    drawing::{EntityClass, MoleculeView},
-    mol_manip,
+    ManipMode, Selection, State,
+    cam_misc::move_cam_to_sel,
+    drawing,
+    drawing::MoleculeView,
+    drawing_wrappers, mol_manip,
     molecule::{Atom, MolType, MoleculeCommon},
     render::set_flashlight,
     selection::{find_selected_atom, points_along_ray},
-    util::{cycle_selected, move_cam_to_sel, orbit_center},
+    util::{cycle_selected, orbit_center},
 };
 
 // These are defaults; overridden by the user A/R, and saved to prefs.
@@ -34,7 +35,7 @@ const SELECTION_DIST_THRESH_LARGE: f32 = 1.1; // e.g. VDW views like spheres.
 const SEL_NEAR_PAD: f32 = 4.;
 
 // Sensitives for mol manip.
-pub const SENS_MOL_MOVE_SCROLL: f32 = 1.5e-2;
+pub const SENS_MOL_MOVE_SCROLL: f32 = 2.5e-2;
 pub const SENS_MOL_ROT_SCROLL: f32 = 5e-2;
 pub const SENS_MOL_ROT_MOUSE: f32 = 5e-3;
 
@@ -156,7 +157,7 @@ pub fn event_dev_handler(
                             let selection = match &state_.peptide {
                                 Some(mol) => {
                                     let (
-                                        atoms_along_ray,
+                                        atoms_along_ray_pep,
                                         atoms_along_ray_lig,
                                         atoms_along_ray_na,
                                         atoms_along_ray_lipid,
@@ -170,7 +171,7 @@ pub fn event_dev_handler(
                                     );
 
                                     find_selected_atom(
-                                        &atoms_along_ray,
+                                        &atoms_along_ray_pep,
                                         &atoms_along_ray_lig,
                                         &atoms_along_ray_na,
                                         &atoms_along_ray_lipid,
@@ -186,7 +187,7 @@ pub fn event_dev_handler(
                                 }
                                 None => {
                                     let (
-                                        atoms_along_ray,
+                                        atoms_along_ray_pep,
                                         atoms_along_ray_lig,
                                         atoms_along_ray_na,
                                         atoms_along_ray_lipid,
@@ -200,7 +201,7 @@ pub fn event_dev_handler(
                                     );
 
                                     find_selected_atom(
-                                        &atoms_along_ray,
+                                        &atoms_along_ray_pep,
                                         &atoms_along_ray_lig,
                                         &atoms_along_ray_na,
                                         &atoms_along_ray_lipid,
@@ -480,17 +481,17 @@ pub fn event_dev_handler(
         //     lig.position_atoms(None);
         // }
 
-        drawing::draw_all_ligs(state_, scene);
+        drawing_wrappers::draw_all_ligs(state_, scene);
         updates.entities = EntityUpdate::All;
     }
 
     if redraw_na {
-        drawing::draw_all_nucleic_acids(state_, scene);
+        drawing_wrappers::draw_all_nucleic_acids(state_, scene);
         updates.entities = EntityUpdate::All;
     }
 
     if redraw_lipid {
-        drawing::draw_all_lipids(state_, scene);
+        drawing_wrappers::draw_all_lipids(state_, scene);
         updates.entities = EntityUpdate::All;
     }
 
@@ -510,11 +511,11 @@ pub fn event_dev_handler(
 
         if mol_i >= state_.ligands.len() {
             eprintln!("Uhoh: Index error on in-place redraw");
-            drawing::draw_all_ligs(state_, scene);
+            drawing_wrappers::draw_all_ligs(state_, scene);
             return updates;
         }
 
-        drawing::update_single_ligand_inplace(mol_i, state_, scene);
+        drawing_wrappers::update_single_ligand_inplace(mol_i, state_, scene);
 
         let mol = &mut state_.ligands[mol_i];
 
@@ -533,11 +534,11 @@ pub fn event_dev_handler(
 
         if mol_i >= state_.nucleic_acids.len() {
             eprintln!("Uhoh: Index error on in-place redraw");
-            drawing::draw_all_nucleic_acids(state_, scene);
+            drawing_wrappers::draw_all_nucleic_acids(state_, scene);
             return updates;
         }
 
-        drawing::update_single_nucleic_acid_inplace(mol_i, state_, scene);
+        drawing_wrappers::update_single_nucleic_acid_inplace(mol_i, state_, scene);
 
         let mol = &mut state_.nucleic_acids[mol_i];
         updates.entities = match mol.common.entity_i_range {
@@ -555,11 +556,11 @@ pub fn event_dev_handler(
 
         if mol_i >= state_.lipids.len() {
             eprintln!("Uhoh: Index error on in-place redraw");
-            drawing::draw_all_lipids(state_, scene);
+            drawing_wrappers::draw_all_lipids(state_, scene);
             return updates;
         }
 
-        drawing::update_single_lipid_inplace(mol_i, state_, scene);
+        drawing_wrappers::update_single_lipid_inplace(mol_i, state_, scene);
 
         let mol = &mut state_.lipids[mol_i];
         updates.entities = match mol.common.entity_i_range {

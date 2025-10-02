@@ -1,19 +1,17 @@
-/// Camera controls and related.
-use std::f32::consts::TAU;
-
 use egui::{Color32, ComboBox, RichText, Slider, TextEdit, Ui};
 use graphics::{ControlScheme, EngineUpdates, FWD_VEC, RIGHT_VEC, Scene, UP_VEC};
-use lin_alg::f32::{Quaternion, Vec3};
+use lin_alg::f32::Vec3;
 
 use crate::{
-    Selection, State,
-    render::{CAM_INIT_OFFSET, set_flashlight},
+    Selection, State, cam_misc,
+    cam_misc::{cam_look_at_outside, move_cam_to_sel, reset_camera},
+    render::set_flashlight,
     ui::{
         COL_SPACING, COLOR_HIGHLIGHT, get_snap_name,
         misc::{self, section_box},
     },
     util,
-    util::{cam_look_at, cam_look_at_outside, move_cam_to_sel, orbit_center, reset_camera},
+    util::orbit_center,
 };
 
 // This control the clip planes in the camera frustum.
@@ -297,7 +295,12 @@ pub fn move_cam_to_lig(
     let lig_pos: Vec3 = mol.common().centroid().into();
     let ctr: Vec3 = mol_center.into();
 
-    cam_look_at_outside(&mut scene.camera, lig_pos, ctr, util::MOVE_CAM_TO_LIG_DIST);
+    cam_look_at_outside(
+        &mut scene.camera,
+        lig_pos,
+        ctr,
+        cam_misc::MOVE_CAM_TO_LIG_DIST,
+    );
 
     engine_updates.camera = true;
 
