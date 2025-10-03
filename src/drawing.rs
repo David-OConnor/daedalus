@@ -794,11 +794,10 @@ pub fn draw_water(
 }
 
 /// For all molecule types (for now, not including peptide)
-// todo: DRY with/subset of draw_molecule?
 pub fn draw_mol(
     mol: MoleculeGenericRef,
     mol_i: usize,
-    state_ui: &StateUi,
+    ui: &StateUi,
     active_mol: &Option<(MolType, usize)>,
     move_mol: ManipMode,
 ) -> Vec<Entity> {
@@ -816,7 +815,7 @@ pub fn draw_mol(
 
     // todo: You have problems with transparent objects like the view cube in conjunction
     // todo with the transparent surface; workaround to not draw the cube here.
-    if state_ui.show_docking_tools && state_ui.mol_view != MoleculeView::Surface {
+    if ui.show_docking_tools && ui.mol_view != MoleculeView::Surface {
         // Add a visual indicator for the docking site.
 
         // scene.entities.push(Entity {
@@ -832,9 +831,12 @@ pub fn draw_mol(
         // });
     }
 
-    if state_ui.mol_view == MoleculeView::BallAndStick {
+    if matches!(
+        ui.mol_view,
+        MoleculeView::BallAndStick | MoleculeView::SpaceFill
+    ) {
         for (i_atom, atom) in mol.common().atoms.iter().enumerate() {
-            if state_ui.visibility.hide_hydrogen && atom.element == Element::Hydrogen {
+            if ui.visibility.hide_hydrogen && atom.element == Element::Hydrogen {
                 continue;
             }
 
@@ -864,11 +866,11 @@ pub fn draw_mol(
                     i_atom,
                     &[],
                     0,
-                    &state_ui.selection,
+                    &ui.selection,
                     ViewSelLevel::Atom, // Always color lipids by atom.
                     false,
-                    state_ui.res_color_by_index,
-                    state_ui.atom_color_by_charge,
+                    ui.res_color_by_index,
+                    ui.atom_color_by_charge,
                     mol.mol_type(),
                 );
 
@@ -886,11 +888,19 @@ pub fn draw_mol(
                 }
             }
 
+            let (radius, mesh) = match ui.mol_view {
+                MoleculeView::SpaceFill => (atom.element.vdw_radius(), MESH_SPACEFILL_SPHERE),
+                _ => match atom.element {
+                    Element::Hydrogen => (BALL_STICK_RADIUS_H, MESH_BALL_STICK_SPHERE),
+                    _ => (BALL_STICK_RADIUS, MESH_BALL_STICK_SPHERE),
+                },
+            };
+
             let mut entity = Entity::new(
-                MESH_BALL_STICK_SPHERE,
+                mesh,
                 mol.common().atom_posits[i_atom].into(),
                 Quaternion::new_identity(),
-                BALL_STICK_RADIUS,
+                radius,
                 color,
                 ATOM_SHININESS,
             );
@@ -905,7 +915,7 @@ pub fn draw_mol(
         let atom_0 = &mol.common().atoms[bond.atom_0];
         let atom_1 = &mol.common().atoms[bond.atom_1];
 
-        if state_ui.visibility.hide_hydrogen
+        if ui.visibility.hide_hydrogen
             && (atom_0.element == Element::Hydrogen || atom_1.element == Element::Hydrogen)
         {
             continue;
@@ -962,11 +972,11 @@ pub fn draw_mol(
                 bond.atom_0,
                 &[],
                 0,
-                &state_ui.selection,
+                &ui.selection,
                 ViewSelLevel::Atom, // Always color ligands by atom.
                 false,
-                state_ui.res_color_by_index,
-                state_ui.atom_color_by_charge,
+                ui.res_color_by_index,
+                ui.atom_color_by_charge,
                 mol.mol_type(),
             );
             color_1 = atom_color(
@@ -975,12 +985,12 @@ pub fn draw_mol(
                 bond.atom_1,
                 &[],
                 0,
-                &state_ui.selection,
+                &ui.selection,
                 // state.ui.view_sel_level,
                 ViewSelLevel::Atom, // Always color ligands by atom.
                 false,
-                state_ui.res_color_by_index,
-                state_ui.atom_color_by_charge,
+                ui.res_color_by_index,
+                ui.atom_color_by_charge,
                 mol.mol_type(),
             );
 

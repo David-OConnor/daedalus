@@ -20,7 +20,7 @@ use crate::{
     nucleic_acid::MoleculeNucleicAcid,
     ui::{
         COL_SPACING, COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_HIGHLIGHT, COLOR_INACTIVE,
-        cam::move_cam_to_lig, mol_descrip,
+        cam::move_cam_to_mol, mol_descrip,
     },
     util::{handle_err, handle_success, make_egui_color, make_lig_from_res},
 };
@@ -369,7 +369,7 @@ pub fn display_mol_data_peptide(
                         None => Vec3::new_zero()
                     };
 
-                    move_cam_to_lig(
+                    move_cam_to_mol(
                         state,
                         scene,
                         center,
@@ -381,16 +381,17 @@ pub fn display_mol_data_peptide(
     });
 
     if let Some(res) = res_to_make {
-        make_lig_from_res(state, &scene.camera, &res, redraw_lig);
+        make_lig_from_res(state, &res, redraw_lig);
+        // make_lig_from_res(state, &res, redraw_lig, None);
         if let Some(pep) = &state.peptide {
-            move_cam_to_lig(state, scene, pep.center, engine_updates);
+            move_cam_to_mol(state, scene, pep.center, engine_updates);
         }
     }
 
     if move_lig_to_res {
         if state.active_mol().is_some() {
             if let Some(pep) = &state.peptide {
-                move_cam_to_lig(state, scene, pep.center, engine_updates);
+                move_cam_to_mol(state, scene, pep.center, engine_updates);
             }
         }
 
@@ -463,24 +464,25 @@ pub fn display_mol_data_peptide(
             &scene.camera,
         );
 
-        let i = state.ligands.len() - 1;
-        move_mol_to_cam(&mut state.ligands[i].common, &scene.camera);
-
-        // if state.active_mol().is_some() {
-        //     if let Some(mol) = &state.peptide {
-        //         move_cam_to_lig(state, scene, mol.center, engine_updates);
-        //     }
-        // }
+        // Move camera to ligand; not ligand to camera, since we are generating a ligand
+        // that may already be docked to the protein.
+        // move_mol_to_cam(&mut state.ligands[i].common, &scene.camera);
+        if let Some(mol) = &state.peptide {
+            move_cam_to_mol(state, scene, mol.center, engine_updates);
+        }
     } else {
         if let Some(res) = res_to_load {
             // Use our normal "Lig from" logic.
-            make_lig_from_res(state, &scene.camera, &res, redraw_lig);
-            // move_cam_to_lig(
-            //     state,
-            //     scene,
-            //     state.ligands[0].common.centroid(),
-            //     engine_updates,
-            // );
+            // make_lig_from_res(state, &res, redraw_lig, None);
+            make_lig_from_res(state, &res, redraw_lig);
+
+            move_cam_to_mol(
+                state,
+                scene,
+                state.ligands[0].common.centroid(),
+                engine_updates,
+            );
+
             handle_success(
                 &mut state.ui,
                 "Unable to find FF params for this ligand; added without them".to_string(),
@@ -493,7 +495,6 @@ pub fn display_mol_data(
     state: &mut State,
     scene: &mut Scene,
     ui: &mut Ui,
-    // mol_type: MolType,
     redraw_lig: &mut bool,
     redraw_na: &mut bool,
     redraw_lipid: &mut bool,

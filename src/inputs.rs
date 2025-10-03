@@ -477,10 +477,6 @@ pub fn event_dev_handler(
     }
 
     if redraw_lig {
-        // if let Some(lig) = &mut state_.active_lig_mut() {
-        //     lig.position_atoms(None);
-        // }
-
         drawing_wrappers::draw_all_ligs(state_, scene);
         updates.entities = EntityUpdate::All;
     }
@@ -495,81 +491,16 @@ pub fn event_dev_handler(
         updates.entities = EntityUpdate::All;
     }
 
-    // if redraw_ligs_inplace {
-    //     drawing::update_all_ligs_inplace(state_, scene);
-    //     updates.entities.push_class(EntityClass::Ligand as u32);
-    // }
-    //
-    // if redraw_na_inplace {
-    //     drawing::update_all_na_inplace(state_, scene);
-    //     updates.entities.push_class(EntityClass::NucleicAcid as u32);
-    // }
-
     if redraw_ligs_inplace {
-        // todo: Fragile? Error handle.
-        let mol_i = state_.volatile.active_mol.unwrap().1;
-
-        if mol_i >= state_.ligands.len() {
-            eprintln!("Uhoh: Index error on in-place redraw");
-            drawing_wrappers::draw_all_ligs(state_, scene);
-            return updates;
-        }
-
-        drawing_wrappers::update_single_ligand_inplace(mol_i, state_, scene);
-
-        let mol = &mut state_.ligands[mol_i];
-
-        updates.entities = match mol.common.entity_i_range {
-            Some(range) => EntityUpdate::Indexes(range),
-            None => {
-                eprintln!("Error: Missing entity index range.");
-                EntityUpdate::All
-            }
-        };
+        redraw_inplace_helper(MolType::Ligand, state_, scene, &mut updates);
     }
 
     if redraw_na_inplace {
-        // todo: Fragile? Error handle.
-        let mol_i = state_.volatile.active_mol.unwrap().1;
-
-        if mol_i >= state_.nucleic_acids.len() {
-            eprintln!("Uhoh: Index error on in-place redraw");
-            drawing_wrappers::draw_all_nucleic_acids(state_, scene);
-            return updates;
-        }
-
-        drawing_wrappers::update_single_nucleic_acid_inplace(mol_i, state_, scene);
-
-        let mol = &mut state_.nucleic_acids[mol_i];
-        updates.entities = match mol.common.entity_i_range {
-            Some(range) => EntityUpdate::Indexes(range),
-            None => {
-                eprintln!("Error: Missing entity index range.");
-                EntityUpdate::All
-            }
-        };
+        redraw_inplace_helper(MolType::NucleicAcid, state_, scene, &mut updates);
     }
 
     if redraw_lipid_inplace {
-        // todo: Fragile? Error handle.
-        let mol_i = state_.volatile.active_mol.unwrap().1;
-
-        if mol_i >= state_.lipids.len() {
-            eprintln!("Uhoh: Index error on in-place redraw");
-            drawing_wrappers::draw_all_lipids(state_, scene);
-            return updates;
-        }
-
-        drawing_wrappers::update_single_lipid_inplace(mol_i, state_, scene);
-
-        let mol = &mut state_.lipids[mol_i];
-        updates.entities = match mol.common.entity_i_range {
-            Some(range) => EntityUpdate::Indexes(range),
-            None => {
-                eprintln!("Error: Missing entity index range.");
-                EntityUpdate::All
-            }
-        };
+        redraw_inplace_helper(MolType::Lipid, state_, scene, &mut updates);
     }
 
     // We handle the flashlight elsewhere, as this event handler only fires upon events; not while
@@ -632,4 +563,81 @@ fn plot_ray() {
     //
     // scene.entities.push(ent);
     // updates.entities = true;
+}
+
+//         // let mol_i = state_.volatile.active_mol.unwrap().1;
+//         //
+//         // if mol_i >= state_.lipids.len() {
+//         //     eprintln!("Uhoh: Index error on in-place redraw");
+//         //     drawing_wrappers::draw_all_lipids(state_, scene);
+//         //     return updates;
+//         // }
+//         //
+//         // drawing_wrappers::update_single_lipid_inplace(mol_i, state_, scene);
+//         //
+//         // let mol = &mut state_.lipids[mol_i];
+//         // updates.entities = match mol.common.entity_i_range {
+//         //     Some(range) => EntityUpdate::Indexes(range),
+//         //     None => {
+//         //         eprintln!("Error: Missing entity index range.");
+//         //         EntityUpdate::All
+//         //     }
+//         // };
+
+/// Abstracts over mol types.
+fn redraw_inplace_helper(
+    mol_type: MolType,
+    state: &mut State,
+    scene: &mut Scene,
+    updates: &mut EngineUpdates,
+) {
+    // todo: Fragile? Error handle.
+    let mol_i = state.volatile.active_mol.unwrap().1;
+
+    let err = "Uhoh: Index error on in-place redraw";
+
+    let mol = match mol_type {
+        MolType::Ligand => {
+            drawing_wrappers::update_single_ligand_inplace(mol_i, state, scene);
+
+            if mol_i >= state.ligands.len() {
+                eprintln!("{err}");
+                drawing_wrappers::draw_all_ligs(state, scene);
+                return;
+            }
+
+            &mut state.ligands[mol_i].common
+        }
+        MolType::NucleicAcid => {
+            drawing_wrappers::update_single_nucleic_acid_inplace(mol_i, state, scene);
+
+            if mol_i >= state.ligands.len() {
+                eprintln!("{err}");
+                drawing_wrappers::draw_all_nucleic_acids(state, scene);
+                return;
+            }
+
+            &mut state.nucleic_acids[mol_i].common
+        }
+        MolType::Lipid => {
+            drawing_wrappers::update_single_lipid_inplace(mol_i, state, scene);
+
+            if mol_i >= state.lipids.len() {
+                eprintln!("{err}");
+                drawing_wrappers::draw_all_lipids(state, scene);
+                return;
+            }
+
+            &mut state.lipids[mol_i].common
+        }
+        _ => unreachable!(),
+    };
+
+    updates.entities = match mol.entity_i_range {
+        Some(range) => EntityUpdate::Indexes(range),
+        None => {
+            eprintln!("Error: Missing entity index range.");
+            EntityUpdate::All
+        }
+    };
 }

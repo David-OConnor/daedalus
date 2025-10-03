@@ -132,8 +132,6 @@ pub fn handle_mol_manip_in_plane(
             unsafe {
                 I += 1;
                 if I % ratio == 0 {
-                    *redraw_lig = true;
-
                     match mol_type {
                         MolType::Ligand => *redraw_lig = true,
                         MolType::NucleicAcid => *redraw_na = true,

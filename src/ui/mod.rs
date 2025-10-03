@@ -36,7 +36,7 @@ use crate::{
     molecule::{MolType, MoleculeGenericRef},
     render::{set_flashlight, set_static_light},
     ui::{
-        cam::{cam_controls, cam_snapshots},
+        cam::{cam_controls, cam_snapshots, move_cam_to_mol},
         misc::section_box,
         mol_data::display_mol_data_peptide,
         rama_plot::plot_rama,
@@ -1251,15 +1251,18 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     .on_hover_text("Open a random recently-uploaded protein from RCSB PDB.")
                     .clicked()
                 {
-                    if let Ok(ident) = rcsb::get_newly_released() {
-                        load_atom_coords_rcsb(
-                            &ident,
-                            state,
-                            scene,
-                            &mut engine_updates,
-                            &mut redraw_peptide,
-                            &mut reset_cam,
-                        );
+                    match rcsb::get_newly_released() {
+                        Ok(ident) => {
+                            load_atom_coords_rcsb(
+                                &ident,
+                                state,
+                                scene,
+                                &mut engine_updates,
+                                &mut redraw_peptide,
+                                &mut reset_cam,
+                            );
+                        }
+                        Err(e) => handle_err(&mut state.ui, format!("Error loading a protein from RCSB: {e:?}"))
                     }
                 }
             }
@@ -1726,10 +1729,14 @@ pub fn lipid_section(
 
             // todo: Multiple and sets once this is validated
             if ui.button("+").clicked() {
-                let center = Vec3::new_zero();
+                // Place in front of the camera.
+                let center = scene.camera.position
+                    + scene.camera.orientation.rotate_vec(FWD_VEC)
+                        * crate::cam_misc::MOVE_TO_CAM_DIST;
+
                 state.lipids.extend(make_bacterial_lipids(
                     state.ui.lipid_mol_count as usize,
-                    center,
+                    center.into(),
                     state.ui.lipid_shape,
                     &state.lipid_templates,
                 ));

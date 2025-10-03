@@ -802,13 +802,17 @@ pub fn clear_mol_entity_indices(state: &mut State, exempt: Option<MolType>) {
     }
 }
 
-pub fn make_lig_from_res(state: &mut State, cam: &Camera, res: &Residue, redraw_lig: &mut bool) {
+// pub fn make_lig_from_res(state: &mut State, res: &Residue, redraw_lig: &mut bool, lig_to_cam: Option<&Camera>) {
+pub fn make_lig_from_res(state: &mut State, res: &Residue, redraw_lig: &mut bool) {
     let mol = &state.peptide.as_ref().unwrap().common;
     let mut mol_fm_res = MoleculeSmall::from_res(res, &mol.atoms, &mol.bonds);
 
     mol_fm_res.update_aux(&state.volatile.active_mol, &mut state.lig_specific_params);
 
-    move_mol_to_cam(&mut mol_fm_res.common, cam);
+    // if let Some(cam) = lig_to_cam {
+    //     move_mol_to_cam(&mut mol_fm_res.common, cam);
+    // }
+
     state.ligands.push(mol_fm_res);
 
     *redraw_lig = true;

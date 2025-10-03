@@ -153,7 +153,7 @@ pub fn cam_controls(
                             None => lin_alg::f64::Vec3::new_zero(),
                         };
                         // Setting mol center to 0 if no mol.
-                        move_cam_to_lig(state, scene, pep_center, engine_updates)
+                        move_cam_to_mol(state, scene, pep_center, engine_updates)
                     }
                 }
 
@@ -281,7 +281,7 @@ pub fn cam_snapshots(
     });
 }
 
-pub fn move_cam_to_lig(
+pub fn move_cam_to_mol(
     state: &mut State,
     scene: &mut Scene,
     mol_center: lin_alg::f64::Vec3,
@@ -299,7 +299,7 @@ pub fn move_cam_to_lig(
         &mut scene.camera,
         lig_pos,
         ctr,
-        cam_misc::MOVE_CAM_TO_LIG_DIST,
+        cam_misc::MOVE_CAM_TO_MOL_DIST,
     );
 
     engine_updates.camera = true;
