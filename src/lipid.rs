@@ -26,6 +26,9 @@ use crate::{
     },
 };
 
+// From Amber Lipid21.lib. This joins the phospholipid head to the tail.
+const BOND_LEN_C11_C12: f64 = 1.508; // From Amber params. cC-cD
+
 // todo: These are the fields after posit. Sometimes seem to be filled in. Should we use them?
 // todo: Charge code and atom stero parity seem to be filled out.
 // Mass difference (isotope delta; 0 = natural abundance)
@@ -102,7 +105,31 @@ fn find_atom_by_tir(m: &MoleculeLipid, name: &str) -> usize {
         .expect(name)
 }
 
-/// Bonds a phospholipid head's O12 to Acyl C12 (Carbonyl carbon). Bonds Head's O22 to other acyl C12.
+
+/// Uses plane geometry to position the first carbon atom in the tail, C12.
+///  todo: Base on valence angle and dihedral params instead.
+fn find_c12_pos(head: &MoleculeLipid, c11_posit: Vec3, o11_name: &str, o12_name: &str) -> Vec3 {
+    let o11 = find_atom_by_tir(&head, o11_name);
+    let o12 = find_atom_by_tir(&head, o12_name);
+
+    let o11_posit = head.common.atoms[o11].posit;
+    let o12_posit = head.common.atoms[o12].posit;
+
+    let bond_0 = (c11_posit - o11_posit).to_normalized();
+    let bond_1 = (c11_posit - o12_posit).to_normalized();
+
+    let plane = bond_0.cross(bond_1).to_normalized();
+
+    // Close to amber params: 111.960 and 123.110 degrees
+    // todo: Refine to match Amber exactly?
+    const TAU_DIV3: f64 = TAU / 3.;
+    let rotator = Quaternion::from_axis_angle(plane, -TAU_DIV3);
+
+    let bond_new = rotator.rotate_vec(-bond_0) * BOND_LEN_C11_C12;
+    c11_posit + bond_new
+}
+
+/// Bonds a phospholipid head's C11 or C21 to Acyl C12 (Carbonyl carbon).
 /// Moves all atoms so that the head's phosphorous is at the origin.
 ///
 /// Note: This makes new names like "PE(16:0/18:1) — also written as PE(PA/OL) or 1-palmitoyl-2-oleoyl-PE."
@@ -117,25 +144,21 @@ fn combine_head_tail(
     // todo: Rename everyone once you find teh actual idents.
     let head_p = find_atom_by_tir(&head, "P31");
 
-    let head_anchor_0 = find_atom_by_tir(&head, "O12");
-    let head_anchor_1 = find_atom_by_tir(&head, "O22");
-    // todo: QC these names.
+    let head_anchor_0 = find_atom_by_tir(&head, "C11");
+    let head_anchor_1 = find_atom_by_tir(&head, "C21");
+
     let t0_anchor = find_atom_by_tir(&tail_0, "C12");
     let t1_anchor = find_atom_by_tir(&tail_1, "C12");
 
-    let o11_sn = head.common.atoms[head_anchor_0].serial_number;
-    let o21_sn = head.common.atoms[head_anchor_1].serial_number;
-
-    let o11_posit = head.common.atoms[head_anchor_0].posit;
-    let o21_posit = head.common.atoms[head_anchor_1].posit;
-    let t0_c1_posit = tail_0.common.atoms[t0_anchor].posit;
-    let t1_c1_posit = tail_1.common.atoms[t1_anchor].posit;
+    let head_anchor_0_sn = head.common.atoms[head_anchor_0].serial_number;
+    let head_anchor_1_sn = head.common.atoms[head_anchor_1].serial_number;
 
     // Todo: Consider adding these prepared combinations to templates instead
     // todo of creating them each time.
 
+    // Rotate the tails; they are initially reversed relative to the head.
+    // todo: PE only; not PG?
     {
-        // Rotate the tails; they are initially reversed relative to the head.
         let rotator = Quaternion::from_axis_angle(Z_VEC, TAU / 2.);
 
         tail_0.common.rotate(rotator, Some(t0_anchor));
@@ -149,29 +172,36 @@ fn combine_head_tail(
         }
         for (i, atom) in tail_1.common.atoms.iter_mut().enumerate() {
             atom.posit = tail_1.common.atom_posits[i];
+            // Convert C11 to C21 etc; this is consistent with the head naming of this chain.
+            let mut tir = atom.type_in_res_lipid.clone().unwrap();
+            if tir.chars().next() == Some('C') {
+                tir.replace_range(1..2, "2"); // Instead of 1.
+            }
+            atom.type_in_res_lipid = Some(tir);
         }
     }
 
-    // Update bond indices and SNs, offsetting from ones that come before. Order is
-    // Head, tail on head's O11, tail on head's O21.
-    let head_len = head.common.atoms.len();
-    let offset_t0 = head_len;
-    let offset_t1 = head_len + tail_0.common.atoms.len();
+    // Positions of the first chain atoms, in the head's coordinates.
+    // We set up equal-angle plane geometry.
+    let c11_pos  = head.common.atoms[head_anchor_0].posit;
+    let c21_pos =  head.common.atoms[head_anchor_1].posit;
+
+    let posit_c12 = find_c12_pos(&head, c11_pos, "O11", "O12");
+    let posit_c22 = find_c12_pos(&head, c21_pos, "O21", "O22");
+
+    // todo: You likely still have an alignment to perform. Get the initial dihedral right, by
+    // todo rotating the chain along the C12/C13 bond.
+
+    let c12_orig  = tail_0.common.atoms[t0_anchor].posit;
+    let c22_orig =  tail_1.common.atoms[t1_anchor].posit;
+
+    let tail_0_offset = posit_c12 - c12_orig;
+    let tail_1_offset = posit_c22 - c22_orig;
 
     // These serial numbers will deconflict, and leave the original values transparent.
     // (Take off the first digit).
     let offset_t0_sn = 1_000;
     let offset_t1_sn = 2_000;
-
-    // We re-anchor tail atoms the head.
-    // todo: Find a more accurate way to offset the first chain atom from the head Oxygen
-    // todo it's bound to.
-    // todo: Ideally use the geometry, but I'm feeling lazy.
-    let diff_tail_start_head_end_0 = Vec3::new(1., 1., 1.0);
-    let diff_tail_start_head_end_1 = Vec3::new(1., 1., -1.0);
-
-    let tail_0_offset = o11_posit - t0_c1_posit + diff_tail_start_head_end_0;
-    let tail_1_offset = o21_posit - t1_c1_posit + diff_tail_start_head_end_1;
 
     for atom in &mut tail_0.common.atoms {
         atom.serial_number += offset_t0_sn;
@@ -186,6 +216,12 @@ fn combine_head_tail(
     // Set these after assigning new SNs to the tail
     let t0_c1_sn = tail_0.common.atoms[t0_anchor].serial_number;
     let t1_c1_sn = tail_1.common.atoms[t1_anchor].serial_number;
+
+    // Update bond indices and SNs, offsetting from ones that come before. Order is
+    // Head, tail on head's O11, tail on head's O21.
+    let head_len = head.common.atoms.len();
+    let offset_t0 = head_len;
+    let offset_t1 = head_len + tail_0.common.atoms.len();
 
     for bond in &mut tail_0.common.bonds {
         bond.atom_0 += offset_t0;
@@ -218,7 +254,7 @@ fn combine_head_tail(
     // Adjust this to your actual Bond struct if needed.
     head.common.bonds.push(Bond {
         atom_0: head_anchor_0,
-        atom_0_sn: o11_sn,
+        atom_0_sn: head_anchor_0_sn,
         atom_1: t0_anchor + offset_t0,
         atom_1_sn: t0_c1_sn,
         bond_type: Single,
@@ -227,7 +263,7 @@ fn combine_head_tail(
 
     head.common.bonds.push(Bond {
         atom_0: head_anchor_1,
-        atom_0_sn: o21_sn,
+        atom_0_sn: head_anchor_1_sn,
         atom_1: t1_anchor + offset_t1,
         atom_1_sn: t1_c1_sn,
         bond_type: Single,
@@ -407,18 +443,6 @@ pub fn make_bacterial_lipids(
             for i in 0..n_mols {
                 // todo: DRy with above.
                 let mut mol = get_mol_from_distro(&pe, &pg, &mut rng, &uni);
-
-                // For now, hardcoding PA + OL tails (POPE and POPG)
-                let chain_0 = templates[LipidStandard::Pa as usize].clone();
-                let chain_1 = templates[LipidStandard::Ol as usize].clone();
-
-                combine_head_tail(
-                    &mut mol,
-                    chain_0,
-                    chain_1,
-                    &LipidStandard::Pa.to_string(),
-                    &LipidStandard::Ol.to_string(),
-                );
 
                 // We rotate based on the original amber orientation, to have tails up and down
                 // along the Y axis.

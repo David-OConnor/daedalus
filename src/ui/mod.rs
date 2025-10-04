@@ -47,6 +47,8 @@ use crate::{
         handle_success, orbit_center, select_from_search,
     },
 };
+use crate::drawing::EntityClass;
+use crate::util::clear_mol_entity_indices;
 
 pub mod cam;
 mod md;
@@ -1206,7 +1208,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
                 if button_clicked || enter_pressed {
                     let db_input = &state.ui.db_input.clone(); // Avoids a double borrow.
-                    state.load_geostd_mol_data(&db_input, true, true, &mut redraw_lig, &scene.camera);
+                    state.load_geostd_mol_data(&db_input,true, true, &mut redraw_lig, &scene.camera);
 
                     state.ui.db_input = String::new();
                 }
@@ -1399,13 +1401,13 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                         for mol_data in items {
                             if ui
                                 .button(
-                                    RichText::new(format!("Load params for {}", mol_data.ident))
+                                    RichText::new(format!("Load params for {}", mol_data.ident_pdbe))
                                         .color(COLOR_HIGHLIGHT),
                                 )
                                 .clicked()
                             {
                                 state.load_geostd_mol_data(
-                                    &mol_data.ident,
+                                    &mol_data.ident_pdbe,
                                     load_ff,
                                     load_frcmod,
                                     &mut redraw_lig,
@@ -1750,10 +1752,17 @@ pub fn lipid_section(
 
                 draw_all_lipids(state, scene);
                 engine_updates.entities = EntityUpdate::All;
-                // engine_updates.entities.push_class(EntityClass::Lipid as u32);
             }
 
-            ui.add_space(COL_SPACING);
+            if !state.lipids.is_empty() {
+                if ui.button(RichText::new("Close all lipids").color(Color32::LIGHT_RED)).clicked() {
+                    state.lipids = Vec::new();
+                    scene.entities.retain(|e| e.class != EntityClass::Lipid as u32);
+                    clear_mol_entity_indices(state, None);
+
+                    engine_updates.entities = EntityUpdate::All;
+                }
+            }
         });
     });
 }

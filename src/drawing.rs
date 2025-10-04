@@ -833,7 +833,8 @@ pub fn draw_mol(
 
     if matches!(
         ui.mol_view,
-        MoleculeView::BallAndStick | MoleculeView::SpaceFill
+        // MoleculeView::BallAndStick | MoleculeView::SpaceFill
+        MoleculeView::BallAndStick
     ) {
         for (i_atom, atom) in mol.common().atoms.iter().enumerate() {
             if ui.visibility.hide_hydrogen && atom.element == Element::Hydrogen {
@@ -1253,21 +1254,25 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
     }
 
     // Note that this renders over a sticks model.
-    if ui.mol_view == MoleculeView::Dots {
-        draw_dots(
-            &mut state.volatile.flags.update_sas_mesh,
-            state.volatile.flags.sas_mesh_created,
-            scene,
-        );
+    if !state.ui.visibility.hide_protein {
+        if ui.mol_view == MoleculeView::Dots {
+            draw_dots(
+                &mut state.volatile.flags.update_sas_mesh,
+                state.volatile.flags.sas_mesh_created,
+                scene,
+            );
+        }
     }
 
     // todo: Consider if you handle this here, or in a sep fn.
-    if ui.mol_view == MoleculeView::Surface {
-        draw_sa_surface(
-            &mut state.volatile.flags.update_sas_mesh,
-            state.volatile.flags.sas_mesh_created,
-            scene,
-        );
+    if !state.ui.visibility.hide_protein {
+        if ui.mol_view == MoleculeView::Surface {
+            draw_sa_surface(
+                &mut state.volatile.flags.update_sas_mesh,
+                state.volatile.flags.sas_mesh_created,
+                scene,
+            );
+        }
     }
 
     let chains_invis: Vec<&Chain> = mol.chains.iter().filter(|c| !c.visible).collect();
@@ -1365,7 +1370,7 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
             }
 
             if (state.ui.visibility.hide_hetero && atom.hetero)
-                || (state.ui.visibility.hide_non_hetero && !atom.hetero)
+                || (state.ui.visibility.hide_protein && !atom.hetero)
             {
                 continue;
             }
@@ -1515,7 +1520,7 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
         }
 
         if (state.ui.visibility.hide_hetero && atom_0.hetero && atom_1.hetero)
-            || (state.ui.visibility.hide_non_hetero && !atom_0.hetero && !atom_1.hetero)
+            || (state.ui.visibility.hide_protein && !atom_0.hetero && !atom_1.hetero)
         {
             continue;
         }
@@ -1591,7 +1596,7 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
     // todo: DRY with Ligand
     // todo: This incorrectly hides hetero-only H bonds.
     if !state.ui.visibility.hide_h_bonds
-        && !state.ui.visibility.hide_non_hetero
+        && !state.ui.visibility.hide_protein
         && state.ui.mol_view != MoleculeView::SpaceFill
     {
         for bond in &mol.bonds_hydrogen {

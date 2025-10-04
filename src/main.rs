@@ -278,7 +278,7 @@ struct Visibility {
     hide_water: bool,
     /// Hide hetero atoms: i.e. ones not part of a polypeptide.
     hide_hetero: bool,
-    hide_non_hetero: bool,
+    hide_protein: bool,
     hide_ligand: bool,
     hide_nucleic_acids: bool,
     hide_lipids: bool,
@@ -295,7 +295,7 @@ impl Default for Visibility {
             hide_sidechains: false,
             hide_water: false,
             hide_hetero: false,
-            hide_non_hetero: false,
+            hide_protein: false,
             hide_ligand: false,
             hide_nucleic_acids: false,
             hide_lipids: false,

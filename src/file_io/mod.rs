@@ -15,15 +15,7 @@ use chrono::Utc;
 use graphics::{Camera, Scene};
 use na_seq::{AaIdent, Element};
 
-use crate::{
-    State,
-    cam_misc::move_mol_to_cam,
-    mol_lig::MoleculeSmall,
-    molecule::{MolType, MoleculeGeneric, MoleculeGenericRefMut, MoleculePeptide},
-    prefs::{OpenHistory, OpenType},
-    reflection::{DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityRect, ElectronDensity},
-    util::{handle_err, handle_success},
-};
+use crate::{State, cam_misc::move_mol_to_cam, mol_lig::MoleculeSmall, molecule::{MolType, MoleculeGeneric, MoleculeGenericRefMut, MoleculePeptide}, prefs::{OpenHistory, OpenType}, reflection::{DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityRect, ElectronDensity}, util::{handle_err, handle_success}, download_mols};
 
 impl State {
     /// A single endpoint to open a number of file types
@@ -501,65 +493,11 @@ impl State {
         redraw_lig: &mut bool,
         cam: &Camera,
     ) {
-        let ident = ident.trim().to_owned();
-
         let start = Instant::now();
         println!("Loading mol files from Amber Geostd...");
 
-        match amber_geostd::load_mol_files(&ident) {
-            Ok(data) => {
-                // Load FRCmod first, then the Ligand constructor will populate that it loaded.
-                if load_frcmod {
-                    if let Some(frcmod) = data.frcmod {
-                        self.lig_specific_params.insert(
-                            ident.to_uppercase(),
-                            // todo: Don't unwrap.
-                            ForceFieldParams::from_frcmod(&frcmod).unwrap(),
-                        );
-
-                        if let Some(lig) = self.active_mol_mut() {
-                            if let MoleculeGenericRefMut::Ligand(l) = lig {
-                                l.frcmod_loaded = true;
-                            }
-                        }
-                    }
-                }
-
-                if let Some(_lib) = data.lib {
-                    println!("todo: Lib data available from geostd; download?");
-                }
-
-                if load_mol2 {
-                    match Mol2::new(&data.mol2) {
-                        Ok(mol2) => {
-                            let mut mol: MoleculeSmall = mol2.try_into().unwrap();
-                            mol.update_aux(
-                                &self.volatile.active_mol,
-                                &mut self.lig_specific_params,
-                            );
-
-                            move_mol_to_cam(&mut mol.common, cam);
-
-                            self.ligands.push(mol);
-
-                            self.volatile.active_mol =
-                                Some((MolType::Ligand, self.ligands.len() - 1));
-                            self.mol_dynamics = None;
-
-                            *redraw_lig = true;
-                        }
-                        Err(e) => handle_err(
-                            &mut self.ui,
-                            format!("Unable to make a Mol2 from Geostd data: {:?}", e),
-                        ),
-                    }
-                }
-            }
-            Err(_) => handle_err(
-                &mut self.ui,
-                format!("Unable to load Amber Geostd data (Server or internet problem?)"),
-            ),
-        }
+        let ident = ident.trim().to_owned();
+        download_mols::load_geostd2(self, cam, &ident, load_mol2, load_frcmod, redraw_lig);
 
         let elapsed = start.elapsed().as_millis();
         println!("Loaded Amber Geostd in {elapsed:.1}ms");

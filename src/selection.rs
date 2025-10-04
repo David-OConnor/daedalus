@@ -114,7 +114,7 @@ pub fn find_selected_atom(
             continue;
         }
 
-        if ui.visibility.hide_non_hetero && !atom.hetero {
+        if ui.visibility.hide_protein && !atom.hetero {
             continue;
         }
 

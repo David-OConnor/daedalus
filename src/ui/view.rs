@@ -55,7 +55,7 @@ pub fn view_settings(
 
             if state.peptide.is_some() {
                 misc::vis_check(
-                    &mut state.ui.visibility.hide_non_hetero,
+                    &mut state.ui.visibility.hide_protein,
                     "Peptide",
                     ui,
                     redraw_peptide,
@@ -69,7 +69,7 @@ pub fn view_settings(
 
                 ui.add_space(COL_SPACING / 2.);
 
-                if !state.ui.visibility.hide_non_hetero {
+                if !state.ui.visibility.hide_protein {
                     // Subset of peptide.
                     misc::vis_check(
                         &mut state.ui.visibility.hide_sidechains,

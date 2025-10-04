@@ -382,7 +382,6 @@ pub fn display_mol_data_peptide(
 
     if let Some(res) = res_to_make {
         make_lig_from_res(state, &res, redraw_lig);
-        // make_lig_from_res(state, &res, redraw_lig, None);
         if let Some(pep) = &state.peptide {
             move_cam_to_mol(state, scene, pep.center, engine_updates);
         }
@@ -451,13 +450,13 @@ pub fn display_mol_data_peptide(
     if let Some(data) = load_data {
         handle_success(
             &mut state.ui,
-            format!("Loaded {} from Amber Geostd", data.ident),
+            format!("Loaded {} from Amber Geostd", data.ident_pdbe),
         );
 
         // Crude check for success.
         // let lig_count_prev = state.ligands.len();
         state.load_geostd_mol_data(
-            &data.ident,
+            &data.ident_pdbe,
             true,
             data.frcmod_avail,
             redraw_lig,

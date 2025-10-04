@@ -3,14 +3,17 @@
 use std::time::Instant;
 
 use bio_apis::{ReqError, amber_geostd, amber_geostd::GeostdItem, drugbank, pubchem, rcsb};
-use bio_files::{MmCif, Sdf};
-use graphics::{EngineUpdates, Scene};
+use bio_files::{MmCif, Mol2, Sdf};
+use bio_files::md_params::ForceFieldParams;
+use graphics::{Camera, EngineUpdates, Scene};
 use na_seq::AaIdent;
 
 use crate::{
     State, StateUi, mol_lig::MoleculeSmall, molecule::MoleculePeptide, render::set_flashlight,
     util::handle_err,
 };
+use crate::cam_misc::move_mol_to_cam;
+use crate::molecule::{MolType, MoleculeGenericRefMut};
 
 /// Download mmCIF file from the RSCB, parse into a struct.
 pub fn load_cif_rcsb(ident: &str) -> Result<(MmCif, String), ReqError> {
@@ -150,4 +153,67 @@ pub fn load_atom_coords_rcsb(
         .as_mut()
         .unwrap()
         .updates_rcsb_data(&mut state.volatile.mol_pending_data_avail);
+}
+
+
+pub fn load_geostd2(state: &mut State, cam: &Camera, ident: &str, load_mol2: bool, load_frcmod: bool, redraw_lig: &mut bool) {
+    match amber_geostd::load_mol_files(ident) {
+        Ok(data) => {
+            // Load FRCmod first, then the Ligand constructor will populate that it loaded.
+            if load_frcmod {
+                if let Some(frcmod) = data.frcmod {
+                    match ForceFieldParams::from_frcmod(&frcmod) {
+                        Ok(v) => {
+                            state.lig_specific_params.insert(ident.to_uppercase(), v);
+                        }
+                        Err(e) => {
+                            handle_err(&mut state.ui, format!("FRCmod empty from geostd: {e:?}"));
+                        },
+                    }
+                    if let Some(lig) = state.active_mol_mut() {
+                        if let MoleculeGenericRefMut::Ligand(l) = lig {
+                            l.frcmod_loaded = true;
+                        }
+                    }
+                }
+            }
+
+            if let Some(_lib) = data.lib {
+                println!("todo: Lib data available from geostd; download?");
+            }
+
+            if load_mol2 {
+                match Mol2::new(&data.mol2) {
+                    Ok(mol2) => {
+                        let mut mol: MoleculeSmall = mol2.try_into().unwrap();
+                        mol.pdbe_id = Some(ident.to_owned());
+                        mol.pubchem_cid = data.pubchem_cid;
+
+                        mol.update_aux(
+                            &state.volatile.active_mol,
+                            &mut state.lig_specific_params,
+                        );
+
+                        move_mol_to_cam(&mut mol.common, cam);
+
+                        state.ligands.push(mol);
+
+                        state.volatile.active_mol =
+                            Some((MolType::Ligand, state.ligands.len() - 1));
+                        state.mol_dynamics = None;
+
+                        *redraw_lig = true;
+                    }
+                    Err(e) => handle_err(
+                        &mut state.ui,
+                        format!("Unable to make a Mol2 from Geostd data: {:?}", e),
+                    ),
+                }
+            }
+        }
+        Err(_) => handle_err(
+            &mut state.ui,
+            format!("Unable to load Amber Geostd data (Server or internet problem?)"),
+        ),
+    }
 }

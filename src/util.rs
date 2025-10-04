@@ -416,6 +416,7 @@ pub fn close_peptide(state: &mut State, scene: &mut Scene, engine_updates: &mut 
     // engine_updates.entities.push_class(EntityClass::Peptide as u32);
 }
 
+/// Close the active molecule.
 pub fn close_mol(
     mol_type: MolType,
     i: usize,
@@ -424,9 +425,7 @@ pub fn close_mol(
     engine_updates: &mut EngineUpdates,
 ) {
     state.volatile.mol_manip.mol = ManipMode::None;
-    // engine_updates.entities = true;
     engine_updates.entities = EntityUpdate::All;
-    // engine_updates.entities.push_class(mol_type.entity_type() as u32);
 
     match mol_type {
         MolType::Ligand => {
@@ -808,10 +807,6 @@ pub fn make_lig_from_res(state: &mut State, res: &Residue, redraw_lig: &mut bool
     let mut mol_fm_res = MoleculeSmall::from_res(res, &mol.atoms, &mol.bonds);
 
     mol_fm_res.update_aux(&state.volatile.active_mol, &mut state.lig_specific_params);
-
-    // if let Some(cam) = lig_to_cam {
-    //     move_mol_to_cam(&mut mol_fm_res.common, cam);
-    // }
 
     state.ligands.push(mol_fm_res);
 
