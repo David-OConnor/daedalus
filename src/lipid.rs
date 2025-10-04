@@ -29,6 +29,12 @@ use crate::{
 // From Amber Lipid21.lib. This joins the phospholipid head to the tail.
 const BOND_LEN_C11_C12: f64 = 1.508; // From Amber params. cC-cD
 
+// These are head-to-head distances.
+// Note: Area per lipid (APL) is ~60–62 Å² per lipid at ~37 °C.
+const HEADGROUP_SPACING: f64 = 7.9; // 7.8-8.4Å
+const HEADGROUP_SPACING_DIV2: f64 = HEADGROUP_SPACING / 2.0;
+const DIST_ACROSS_MEMBRANE: f64 = 38.; // 36-39Å phosphate-to-phosphate
+
 // todo: These are the fields after posit. Sometimes seem to be filled in. Should we use them?
 // todo: Charge code and atom stero parity seem to be filled out.
 // Mass difference (isotope delta; 0 = natural abundance)
@@ -376,7 +382,6 @@ pub fn make_bacterial_lipids(
 ) -> Vec<MoleculeLipid> {
     let mut rng = rand::rng();
     let uni = Uniform::<f32>::new(0.0, 1.0).unwrap();
-    let angle = Uniform::<f64>::new(0.0, TAU).unwrap();
 
     let mut result = Vec::new();
 
@@ -424,68 +429,7 @@ pub fn make_bacterial_lipids(
             }
         }
         LipidShape::Membrane => {
-            // These are head-to-head distances.
-            // todo: Consts A/R
-            // Note: Area per lipid (APL) is ~60–62 Å² per lipid at ~37 °C.
-            const HEADGROUP_SPACING: f64 = 7.9; // 7.8-8.4Å
-            const DIST_ACROSS_MEMBRANE: f64 = 38.; // 36-39Å phosphate-to-phosphate
-
-            let n_rows = n_mols.isqrt();
-            let n_cols = (n_mols + n_rows - 1) / n_rows; // ceil(n_mols / n_rows)
-
-            // start in the top-left so the grid is centered on `center`
-            let mut p = center
-                - Vec3::new(
-                    (n_cols as f64 - 1.0) * 0.5 * HEADGROUP_SPACING,
-                    (n_rows as f64 - 1.0) * 0.5 * HEADGROUP_SPACING,
-                    0.0,
-                );
-            let mut row_start = p;
-
-            for i in 0..n_mols {
-                // todo: DRy with above.
-                let mut mol = get_mol_from_distro(&pe, &pg, &mut rng, &uni);
-
-                // We rotate based on the original amber orientation, to have tails up and down
-                // along the Y axis.
-
-                // todo: PE and PGS seem to need opposite rotations.
-                let rotator = Quaternion::from_axis_angle(Z_VEC, -TAU / 4.);
-
-                // Apply an arbitrary rotation along the head/tail axis.
-                let rot_z = Quaternion::from_axis_angle(Y_VEC, rng.sample(angle));
-
-                // Hard-coded phorphorous pivot. May not be correct...
-                mol.common.rotate(rot_z * rotator, Some(PHOSPHATE_I));
-
-                for posit in &mut mol.common.atom_posits {
-                    *posit += p;
-                }
-                result.push(mol);
-
-                // advance across the row (columns go along +Y per your original code)
-                p.x += HEADGROUP_SPACING;
-
-                // wrap to next row after filling `n_cols` entries
-                if (i + 1) % n_cols == 0 {
-                    row_start.z += HEADGROUP_SPACING;
-                    p = Vec3::new(row_start.x, row_start.y, row_start.z);
-                }
-            }
-
-            // Now make the opposite side of the membrane.
-            let mut other_side = Vec::new();
-            for mol in &result {
-                let mut mirror = mol.clone();
-                let rot = Quaternion::from_axis_angle(Z_VEC, TAU / 2.);
-                mirror.common.rotate(rot, Some(PHOSPHATE_I));
-                for p in &mut mirror.common.atom_posits {
-                    p.y -= DIST_ACROSS_MEMBRANE;
-                }
-
-                other_side.push(mirror);
-            }
-            result.append(&mut other_side);
+            result = make_membrane(n_mols, center, &pe, &pg, &mut rng, &uni);
         }
         LipidShape::Lnp => {}
     }
@@ -527,23 +471,83 @@ fn new_bond(bond_type: BondType, atom_0: usize, atom_1: usize) -> Bond {
     }
 }
 
-// pub fn make_membrane(templates: &[MoleculeLipid], ) -> Vec<MoleculeLipid> {
-//
-// }
+pub fn make_membrane(
+    n_mols: usize,
+    center: Vec3,
+    pe: &MoleculeLipid,
+    pg: &MoleculeLipid,
+    rng: &mut ThreadRng,
+    uni: &Uniform<f32>,
+) -> Vec<MoleculeLipid> {
+    let mut result = Vec::with_capacity(n_mols * 2);
+    let angle = Uniform::<f64>::new(0.0, TAU).unwrap();
 
-// pub fn make(standard: LipidStandard) -> MoleculeLipid {
-//     // match standard {
-//     //     LipidStandard::Pc => MoleculeLipid::make_pc(),
-//     //     LipidStandard::Pe => MoleculeLipid::make_pe(),
-//     //     LipidStandard::Ps => MoleculeLipid::make_ps(),
-//     //     LipidStandard::Pi => MoleculeLipid::make_pi(),
-//     //     LipidStandard::Pgr => MoleculeLipid::make_pg(),
-//     //     // todo: Diff between these?
-//     //     LipidStandard::Pgs => MoleculeLipid::make_pg(),
-//     //     LipidStandard::Cardiolipin => MoleculeLipid::make_cl(),
-//     //     _ => unimplemented!(),
-//     // }
-// }
+    let n_rows = n_mols.isqrt();
+    let n_cols = (n_mols + n_rows - 1) / n_rows; // ceil(n_mols / n_rows)
+
+    // start in the top-left so the grid is centered on `center`
+    let mut p = center
+        - Vec3::new(
+            (n_cols as f64 - 1.0) * 0.5 * HEADGROUP_SPACING,
+            (n_rows as f64 - 1.0) * 0.5 * HEADGROUP_SPACING,
+            0.0,
+        );
+    let mut row_start = p;
+
+    for i in 0..n_mols {
+        // todo: DRy with above.
+        let mut mol = get_mol_from_distro(&pe, &pg, rng, &uni);
+
+        // We rotate based on the original amber orientation, to have tails up and down
+        // along the Y axis.
+
+        // todo: PE and PGS seem to need opposite rotations.
+        let rotator = Quaternion::from_axis_angle(Z_VEC, -TAU / 4.);
+
+        // Apply an arbitrary rotation along the head/tail axis.
+        let rot_z = Quaternion::from_axis_angle(Y_VEC, rng.sample(angle));
+
+        // Hard-coded phorphorous pivot. May not be correct...
+        mol.common.rotate(rot_z * rotator, Some(PHOSPHATE_I));
+
+        for posit in &mut mol.common.atom_posits {
+            *posit += p;
+        }
+        result.push(mol);
+
+        // advance across the row (columns go along +Y per your original code)
+        p.x += HEADGROUP_SPACING;
+
+        // wrap to next row after filling `n_cols` entries
+        if (i + 1) % n_cols == 0 {
+            row_start.z += HEADGROUP_SPACING;
+            p = Vec3::new(row_start.x, row_start.y, row_start.z);
+        }
+    }
+
+    // Now make the opposite side of the membrane.
+    let mut other_side = Vec::new();
+    for mol in &result {
+        let mut mirror = mol.clone();
+        let rot = Quaternion::from_axis_angle(Z_VEC, TAU / 2.);
+
+        mirror.common.rotate(rot, Some(PHOSPHATE_I));
+        for p in &mut mirror.common.atom_posits {
+            p.y -= DIST_ACROSS_MEMBRANE;
+
+            // Shift the mirror ~1/2 lateral head-head dist to prevent initial overlap of
+            // atoms between halfs.
+            // todo: Better way? Rotate chains? More robust way that ensures deconfliction?
+            p.x += HEADGROUP_SPACING_DIV2;
+            p.z += HEADGROUP_SPACING_DIV2;
+        }
+
+        other_side.push(mirror);
+    }
+    result.append(&mut other_side);
+
+    result
+}
 
 #[derive(Clone, Debug)]
 /// Note: Ident under common name is the LMSD id".
