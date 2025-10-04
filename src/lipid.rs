@@ -1,9 +1,16 @@
 //! Can create lipids: Common ones by name, and ones built to specification.
 //!
 //! [LIPID MAPS Structure Database (LMSD)](https://www.lipidmaps.org/databases/lmsd/overview?utm_source=chatgpt.com)
+//!
+//! Lipids-per-area in membrane starting point:
+//! PC (POPC/DPPC, fluid): ~60–68 Å², PE (POPE): ~52–58 Å², DOPC: ~68–72 Å²
+//!
+//! // Example ratios:
+//! - E-coli membrane: PE:PG:CL: 70-80:20-25:5-10 (mol%)
+//! - Staphy aureus: PG:CL: 80:20
+//! Bacillus subtilis: PE:PG:CL: 40-60%, 5-40%, 8-18%
 
 use std::{
-    collections::HashMap,
     f64::consts::TAU,
     fmt::{Display, Formatter},
 };
@@ -12,17 +19,14 @@ use bio_files::{
     BondType::{self, *},
     LipidStandard, ResidueEnd, ResidueType,
 };
-use dynamics::Dihedral;
-use egui::Key::Q;
+
 use lin_alg::f64::{Quaternion, Vec3, Y_VEC, Z_VEC};
 use na_seq::Element::{self, *};
 use rand::{Rng, distr::Uniform, rngs::ThreadRng};
 
 use crate::{
-    mol_lig::MoleculeSmall,
     molecule::{
         Atom, Bond, MolGenericTrait, MolType, MoleculeCommon, MoleculeGenericRef, Residue,
-        build_adjacency_list,
     },
 };
 
@@ -31,9 +35,17 @@ const BOND_LEN_C11_C12: f64 = 1.508; // From Amber params. cC-cD
 
 // These are head-to-head distances.
 // Note: Area per lipid (APL) is ~60–62 Å² per lipid at ~37 °C.
-const HEADGROUP_SPACING: f64 = 7.9; // 7.8-8.4Å
+// 8.3-8.5 Angstrom. With a hex grid, works out to the spacing above.
+// a = sqrt(2A/sqrt(3))
+const HEADGROUP_SPACING: f64 = 8.4;
 const HEADGROUP_SPACING_DIV2: f64 = HEADGROUP_SPACING / 2.0;
+const HEADGROUP_SPACING_DIV4: f64 = HEADGROUP_SPACING / 4.0;
+
+// Spacing between rows. 1.73... is sqrt(3).
+const MEMBRANE_ROW_H: f64 = HEADGROUP_SPACING * 1.7320508075 * 0.5;
+
 const DIST_ACROSS_MEMBRANE: f64 = 38.; // 36-39Å phosphate-to-phosphate
+
 
 // todo: These are the fields after posit. Sometimes seem to be filled in. Should we use them?
 // todo: Charge code and atom stero parity seem to be filled out.
@@ -41,10 +53,7 @@ const DIST_ACROSS_MEMBRANE: f64 = 38.; // 36-39Å phosphate-to-phosphate
 // Charge code (0 = 0; 1 = +3; 2 = +2; 3 = +1; 4 = radical; 5 = −1; 6 = −2; 7 = −3)
 // Atom stereo parity (0 none, 1/2 odd/even, 3 either)
 
-// Example ratios:
-// - E-coli membrane: PE:PG:CL: 70-80:20-25:5-10 (mol%)
-// - Staphy aureus: PG:CL: 80:20
-// Bacillus subtilis: PE:PG:CL: 40-60%, 5-40%, 8-18%
+
 
 // todo: Fragile. Used to rotate lipids around the phosphate in the head.
 const PHOSPHATE_I: usize = 12;
@@ -471,6 +480,10 @@ fn new_bond(bond_type: BondType, atom_0: usize, atom_1: usize) -> Bond {
     }
 }
 
+/// Creates a dual-layer phospholipid membrane. Initialize in a hexagonal grid with
+/// realistic spacing. `n_mols` is per membrane half; actual quantity is 2x this.
+/// todo: different spacings for diff membrane types. And support more than PE/PG
+///
 pub fn make_membrane(
     n_mols: usize,
     center: Vec3,
@@ -488,11 +501,14 @@ pub fn make_membrane(
     // start in the top-left so the grid is centered on `center`
     let mut p = center
         - Vec3::new(
-            (n_cols as f64 - 1.0) * 0.5 * HEADGROUP_SPACING,
-            (n_rows as f64 - 1.0) * 0.5 * HEADGROUP_SPACING,
-            0.0,
+        (n_cols as f64 - 1.0) * 0.5 * HEADGROUP_SPACING,
+        0.,
+        (n_rows as f64 - 1.0) * 0.5 * MEMBRANE_ROW_H,
         );
+
     let mut row_start = p;
+    let initial_x = row_start.x - HEADGROUP_SPACING_DIV4;
+    let mut row_i = 0;
 
     for i in 0..n_mols {
         // todo: DRy with above.
@@ -507,20 +523,31 @@ pub fn make_membrane(
         // Apply an arbitrary rotation along the head/tail axis.
         let rot_z = Quaternion::from_axis_angle(Y_VEC, rng.sample(angle));
 
-        // Hard-coded phorphorous pivot. May not be correct...
+        // Hard-coded phosphorous pivot. May not be correct...
         mol.common.rotate(rot_z * rotator, Some(PHOSPHATE_I));
 
+        // Add a small blue-noise jitter to break the order; it's not a
+        // perfect crystal, and has no long-distance structure.
+
+        const JITTER_MUL: f64 = 0.4;
+        const JITTER_SUB: f64 = 0.2;
+
         for posit in &mut mol.common.atom_posits {
-            *posit += p;
+            let jx = rng.sample(uni) as f64 * JITTER_MUL - JITTER_SUB;
+            let jz = rng.sample(uni) as f64 * JITTER_MUL - JITTER_SUB;
+
+            *posit += p + Vec3::new(jx, 0., jz);
         }
         result.push(mol);
 
-        // advance across the row (columns go along +Y per your original code)
         p.x += HEADGROUP_SPACING;
 
         // wrap to next row after filling `n_cols` entries
         if (i + 1) % n_cols == 0 {
-            row_start.z += HEADGROUP_SPACING;
+            row_i += 1;
+            row_start.z += MEMBRANE_ROW_H;
+            // odd rows shifted by +half for hex packing
+            row_start.x = initial_x + if row_i % 2 == 1 { HEADGROUP_SPACING_DIV2 } else { 0.0 };
             p = Vec3::new(row_start.x, row_start.y, row_start.z);
         }
     }
@@ -529,11 +556,20 @@ pub fn make_membrane(
     let mut other_side = Vec::new();
     for mol in &result {
         let mut mirror = mol.clone();
-        let rot = Quaternion::from_axis_angle(Z_VEC, TAU / 2.);
+
+        let rot_invert = Quaternion::from_axis_angle(Z_VEC, TAU / 2.);
+        // AN attempt to deconflict chain atoms between top and bottom
+        // todo: Not good enough. For now, manually separating at init.
+        let rot_decon = Quaternion::from_axis_angle(Y_VEC, TAU/4.);
+
+        // I believe either order is fine.
+        let rot = rot_decon * rot_invert;
 
         mirror.common.rotate(rot, Some(PHOSPHATE_I));
+
         for p in &mut mirror.common.atom_posits {
             p.y -= DIST_ACROSS_MEMBRANE;
+            p.y -= 8.; // todo temp to prevent conflicct at init. not ideal!
 
             // Shift the mirror ~1/2 lateral head-head dist to prevent initial overlap of
             // atoms between halfs.
