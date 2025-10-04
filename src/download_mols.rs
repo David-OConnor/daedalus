@@ -3,17 +3,18 @@
 use std::time::Instant;
 
 use bio_apis::{ReqError, amber_geostd, amber_geostd::GeostdItem, drugbank, pubchem, rcsb};
-use bio_files::{MmCif, Mol2, Sdf};
-use bio_files::md_params::ForceFieldParams;
+use bio_files::{MmCif, Mol2, Sdf, md_params::ForceFieldParams};
 use graphics::{Camera, EngineUpdates, Scene};
 use na_seq::AaIdent;
 
 use crate::{
-    State, StateUi, mol_lig::MoleculeSmall, molecule::MoleculePeptide, render::set_flashlight,
+    State, StateUi,
+    cam_misc::move_mol_to_cam,
+    mol_lig::MoleculeSmall,
+    molecule::{MolType, MoleculeGenericRefMut, MoleculePeptide},
+    render::set_flashlight,
     util::handle_err,
 };
-use crate::cam_misc::move_mol_to_cam;
-use crate::molecule::{MolType, MoleculeGenericRefMut};
 
 /// Download mmCIF file from the RSCB, parse into a struct.
 pub fn load_cif_rcsb(ident: &str) -> Result<(MmCif, String), ReqError> {
@@ -155,8 +156,14 @@ pub fn load_atom_coords_rcsb(
         .updates_rcsb_data(&mut state.volatile.mol_pending_data_avail);
 }
 
-
-pub fn load_geostd2(state: &mut State, cam: &Camera, ident: &str, load_mol2: bool, load_frcmod: bool, redraw_lig: &mut bool) {
+pub fn load_geostd2(
+    state: &mut State,
+    cam: &Camera,
+    ident: &str,
+    load_mol2: bool,
+    load_frcmod: bool,
+    redraw_lig: &mut bool,
+) {
     match amber_geostd::load_mol_files(ident) {
         Ok(data) => {
             // Load FRCmod first, then the Ligand constructor will populate that it loaded.
@@ -168,7 +175,7 @@ pub fn load_geostd2(state: &mut State, cam: &Camera, ident: &str, load_mol2: boo
                         }
                         Err(e) => {
                             handle_err(&mut state.ui, format!("FRCmod empty from geostd: {e:?}"));
-                        },
+                        }
                     }
                     if let Some(lig) = state.active_mol_mut() {
                         if let MoleculeGenericRefMut::Ligand(l) = lig {
@@ -189,10 +196,7 @@ pub fn load_geostd2(state: &mut State, cam: &Camera, ident: &str, load_mol2: boo
                         mol.pdbe_id = Some(ident.to_owned());
                         mol.pubchem_cid = data.pubchem_cid;
 
-                        mol.update_aux(
-                            &state.volatile.active_mol,
-                            &mut state.lig_specific_params,
-                        );
+                        mol.update_aux(&state.volatile.active_mol, &mut state.lig_specific_params);
 
                         move_mol_to_cam(&mut mol.common, cam);
 

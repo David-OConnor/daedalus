@@ -15,7 +15,16 @@ use chrono::Utc;
 use graphics::{Camera, Scene};
 use na_seq::{AaIdent, Element};
 
-use crate::{State, cam_misc::move_mol_to_cam, mol_lig::MoleculeSmall, molecule::{MolType, MoleculeGeneric, MoleculeGenericRefMut, MoleculePeptide}, prefs::{OpenHistory, OpenType}, reflection::{DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityRect, ElectronDensity}, util::{handle_err, handle_success}, download_mols};
+use crate::{
+    State,
+    cam_misc::move_mol_to_cam,
+    download_mols,
+    mol_lig::MoleculeSmall,
+    molecule::{MolType, MoleculeGeneric, MoleculeGenericRefMut, MoleculePeptide},
+    prefs::{OpenHistory, OpenType},
+    reflection::{DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityRect, ElectronDensity},
+    util::{handle_err, handle_success},
+};
 
 impl State {
     /// A single endpoint to open a number of file types

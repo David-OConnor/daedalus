@@ -27,7 +27,7 @@ use crate::{
     cli,
     cli::autocomplete_cli,
     download_mols::{load_atom_coords_rcsb, load_sdf_drugbank, load_sdf_pubchem},
-    drawing::{color_viridis, draw_peptide},
+    drawing::{EntityClass, color_viridis, draw_peptide},
     drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
     file_io::gemmi_path,
     inputs::{MOVEMENT_SENS, ROTATE_SENS, SENS_MOL_MOVE_SCROLL},
@@ -43,12 +43,10 @@ use crate::{
         view::view_settings,
     },
     util::{
-        check_prefs_save, close_mol, close_peptide, cycle_selected, handle_err, handle_scene_flags,
-        handle_success, orbit_center, select_from_search,
+        check_prefs_save, clear_mol_entity_indices, close_mol, close_peptide, cycle_selected,
+        handle_err, handle_scene_flags, handle_success, orbit_center, select_from_search,
     },
 };
-use crate::drawing::EntityClass;
-use crate::util::clear_mol_entity_indices;
 
 pub mod cam;
 mod md;
@@ -1755,9 +1753,14 @@ pub fn lipid_section(
             }
 
             if !state.lipids.is_empty() {
-                if ui.button(RichText::new("Close all lipids").color(Color32::LIGHT_RED)).clicked() {
+                if ui
+                    .button(RichText::new("Close all lipids").color(Color32::LIGHT_RED))
+                    .clicked()
+                {
                     state.lipids = Vec::new();
-                    scene.entities.retain(|e| e.class != EntityClass::Lipid as u32);
+                    scene
+                        .entities
+                        .retain(|e| e.class != EntityClass::Lipid as u32);
                     clear_mol_entity_indices(state, None);
 
                     engine_updates.entities = EntityUpdate::All;

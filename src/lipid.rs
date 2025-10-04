@@ -71,9 +71,6 @@ pub fn get_mol_from_distro(
     rng: &mut ThreadRng,
     uni: &Uniform<f32>,
 ) -> MoleculeLipid {
-    // todo temp while you set up PGS
-    return pe.clone();
-
     // todo: Instead of sampling each atom, you may wish to ensure
     // todo: teh result is balance.d
 
@@ -104,7 +101,6 @@ fn find_atom_by_tir(m: &MoleculeLipid, name: &str) -> usize {
         .position(|a| a.type_in_res_lipid.as_deref() == Some(name))
         .expect(name)
 }
-
 
 /// Uses plane geometry to position the first carbon atom in the tail, C12.
 ///  todo: Base on valence angle and dihedral params instead.
@@ -157,7 +153,6 @@ fn combine_head_tail(
     // todo of creating them each time.
 
     // Rotate the tails; they are initially reversed relative to the head.
-    // todo: PE only; not PG?
     {
         let rotator = Quaternion::from_axis_angle(Z_VEC, TAU / 2.);
 
@@ -179,12 +174,20 @@ fn combine_head_tail(
             }
             atom.type_in_res_lipid = Some(tir);
         }
+        // PG has a (relative to PE) reversed head
+        if &head.common_name == "PGS" || &head.common_name == "PGR" {
+            head.common.rotate(rotator, Some(head_p));
+
+            for (i, atom) in head.common.atoms.iter_mut().enumerate() {
+                atom.posit = head.common.atom_posits[i];
+            }
+        }
     }
 
     // Positions of the first chain atoms, in the head's coordinates.
     // We set up equal-angle plane geometry.
-    let c11_pos  = head.common.atoms[head_anchor_0].posit;
-    let c21_pos =  head.common.atoms[head_anchor_1].posit;
+    let c11_pos = head.common.atoms[head_anchor_0].posit;
+    let c21_pos = head.common.atoms[head_anchor_1].posit;
 
     let posit_c12 = find_c12_pos(&head, c11_pos, "O11", "O12");
     let posit_c22 = find_c12_pos(&head, c21_pos, "O21", "O22");
@@ -192,8 +195,8 @@ fn combine_head_tail(
     // todo: You likely still have an alignment to perform. Get the initial dihedral right, by
     // todo rotating the chain along the C12/C13 bond.
 
-    let c12_orig  = tail_0.common.atoms[t0_anchor].posit;
-    let c22_orig =  tail_1.common.atoms[t1_anchor].posit;
+    let c12_orig = tail_0.common.atoms[t0_anchor].posit;
+    let c22_orig = tail_1.common.atoms[t1_anchor].posit;
 
     let tail_0_offset = posit_c12 - c12_orig;
     let tail_1_offset = posit_c22 - c22_orig;
@@ -276,7 +279,7 @@ fn combine_head_tail(
         atom.posit -= p_posit;
     }
 
-    // todo: Instead of rebulding the adjacency list, you could update it procedurally. For now,
+    // todo: Instead of rebuilding the adjacency list, you could update it procedurally. For now,
     // todo doing this as it's safer. That would be faster
     head.common.build_adjacency_list();
     head.common.atom_posits = head.common.atoms.iter().map(|a| a.posit).collect();
@@ -331,7 +334,6 @@ fn combine_head_tail(
     }
 
     {
-        //todo: The results has duplicate tail data. Not sure why.
         head.common.ident = format!(
             "{}({}/{})",
             head.common.ident, tail_0.common.ident, tail_1.common.ident
@@ -380,8 +382,8 @@ pub fn make_bacterial_lipids(
 
     let pe = make_phospholipid(LipidStandard::Pe, templates);
 
-    // Natural bacterial almost always use PGS (?)
-    let pg_r_variant = true;
+    // Natural bacterial almost always use PGS.
+    let pg_r_variant = false;
     let pg = if pg_r_variant {
         make_phospholipid(LipidStandard::Pgr, templates)
     } else {
@@ -640,14 +642,13 @@ impl MoleculeLipid {
                 self.lmsd_id = "LMGP04010000".to_owned();
                 self.hmdb_id = "".to_owned();
                 self.kegg_id = "C00344".to_owned();
-                self.common_name = "PG".to_owned();
+                self.common_name = "PGR".to_owned();
             }
             "PGS" => {
                 self.lmsd_id = "".to_owned();
                 self.hmdb_id = "".to_owned();
                 self.kegg_id = "".to_owned();
-                self.common_name = "".to_owned();
-                // todo: QC this: Amber has pgs adn pgr; we just have PG so far.
+                self.common_name = "PGS".to_owned();
             }
             "PH-" => {
                 self.lmsd_id = "".to_owned();
