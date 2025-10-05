@@ -22,8 +22,9 @@ and [LMSD](https://www.lipidmaps.org/databases/lmsd/overview). Uses parallel com
 
 If using with GPU, you may need to download [libcufft.so.12](https://github.com/David-OConnor/daedalus/releases/download/0.2.0/cufft_linux.zip),
 and place it in `/usr/lib`. (Linux), or [cufft64_12.dll](https://github.com/David-OConnor/daedalus/releases/download/0.2.0/cufft_win.zip),
-and place it in next to the executable or system PATH. (Windows) You will know if you need to do this if the application doesn't open from GUI, or
+and place it in next to the executable or system *Path*. (Windows) You will know if you need to do this if the application doesn't open from GUI, or
 you get an error mentioning this file name when running from CLI or GUI. If you have the Cuda toolklit installed, this isn't required.
+We intend to remove this requirement in the future by changing to a lighter GPU FFT lib.
 
 Notes:
 - On Linux distros that use Gnome (e.g. Ubuntu), run `setup_linux_desktop.sh`, included in the zip, to create a Desktop GUI entry.
@@ -262,14 +263,15 @@ settings. Deleting it is harmless, other than resetting these conveniences.
 
 
 ### Compiling
-This application is pure rust, so compiles normally using `cargo build --release`, which produces a standalone executable.
+This application is written in rust, so it compiles normally using `cargo build --release`, which produces a
+standalone executable.
 
 If you're not running on a machine with an Nvidia GPU or without the CUDA toolkit installed, append the 
 `--no-default-features` to the build command. This will disable GPU support.
 
 
 #### Compiling with GPU support
-If compiling with GPU support, your compiling PC must have the [CUDA Toolkit, v13+](https://developer.nvidia.com/cuda-downloads) installled.
+If compiling with GPU support, your compiling PC must have the [CUDA Toolkit, v13+](https://developer.nvidia.com/cuda-downloads) installed.
 You must set the environment var `LD_LIBARARY_PATH` (Linux) or `Path` (Windows) to your CUDA bin
 directory, e.g. `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0\bin`. You may also need the build tools
 containing `cl.exe` or similar in the path, e.g.: `C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64`

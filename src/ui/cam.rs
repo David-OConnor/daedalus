@@ -1,5 +1,5 @@
 use egui::{Color32, ComboBox, RichText, Slider, TextEdit, Ui};
-use graphics::{ControlScheme, EngineUpdates, FWD_VEC, RIGHT_VEC, Scene, UP_VEC};
+use graphics::{Camera, ControlScheme, EngineUpdates, FWD_VEC, RIGHT_VEC, Scene, UP_VEC};
 use lin_alg::f32::Vec3;
 
 use crate::{
@@ -43,6 +43,18 @@ pub fn calc_fog_dists(dist: u16) -> (f32, f32) {
     };
 
     (min as f32, (dist + FOG_HALF_DEPTH) as f32)
+}
+
+pub fn set_fog_dist(cam: &mut Camera, dist: u16) {
+    let (fog_start, fog_end) = if dist == FOG_DIST_MAX {
+        (0., 0.) // No fog will render.
+    } else {
+        let val = dist;
+        calc_fog_dists(val)
+    };
+
+    cam.fog_start = fog_start;
+    cam.fog_end = fog_end;
 }
 
 pub fn cam_controls(
@@ -191,15 +203,7 @@ pub fn cam_controls(
                         state.ui.view_depth.0 as f32 / 10.
                     };
 
-                    let (fog_start, fog_end) = if state.ui.view_depth.1 == FOG_DIST_MAX {
-                        (0., 0.) // No fog will render.
-                    } else {
-                        let val = state.ui.view_depth.1;
-                        calc_fog_dists(val)
-                    };
-
-                    scene.camera.fog_start = fog_start;
-                    scene.camera.fog_end = fog_end;
+                    set_fog_dist(&mut scene.camera, state.ui.view_depth.1);
 
                     scene.camera.update_proj_mat();
                     changed = true;

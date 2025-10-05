@@ -94,7 +94,7 @@ pub fn handle_mol_manip_in_plane(
                 let ratio = 8;
                 unsafe {
                     I += 1;
-                    if I % ratio == 0 {
+                    if I.is_multiple_of(ratio) {
                         match mol_type {
                             MolType::Ligand => *redraw_lig = true,
                             MolType::NucleicAcid => *redraw_na = true,
@@ -131,7 +131,7 @@ pub fn handle_mol_manip_in_plane(
             let ratio = 8;
             unsafe {
                 I += 1;
-                if I % ratio == 0 {
+                if I.is_multiple_of(ratio) {
                     match mol_type {
                         MolType::Ligand => *redraw_lig = true,
                         MolType::NucleicAcid => *redraw_na = true,

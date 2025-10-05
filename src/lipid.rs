@@ -19,15 +19,12 @@ use bio_files::{
     BondType::{self, *},
     LipidStandard, ResidueEnd, ResidueType,
 };
-
 use lin_alg::f64::{Quaternion, Vec3, Y_VEC, Z_VEC};
 use na_seq::Element::{self, *};
 use rand::{Rng, distr::Uniform, rngs::ThreadRng};
 
-use crate::{
-    molecule::{
-        Atom, Bond, MolGenericTrait, MolType, MoleculeCommon, MoleculeGenericRef, Residue,
-    },
+use crate::molecule::{
+    Atom, Bond, MolGenericTrait, MolType, MoleculeCommon, MoleculeGenericRef, Residue,
 };
 
 // From Amber Lipid21.lib. This joins the phospholipid head to the tail.
@@ -46,14 +43,11 @@ const MEMBRANE_ROW_H: f64 = HEADGROUP_SPACING * 1.7320508075 * 0.5;
 
 const DIST_ACROSS_MEMBRANE: f64 = 38.; // 36-39Å phosphate-to-phosphate
 
-
 // todo: These are the fields after posit. Sometimes seem to be filled in. Should we use them?
 // todo: Charge code and atom stero parity seem to be filled out.
 // Mass difference (isotope delta; 0 = natural abundance)
 // Charge code (0 = 0; 1 = +3; 2 = +2; 3 = +1; 4 = radical; 5 = −1; 6 = −2; 7 = −3)
 // Atom stereo parity (0 none, 1/2 odd/even, 3 either)
-
-
 
 // todo: Fragile. Used to rotate lipids around the phosphate in the head.
 const PHOSPHATE_I: usize = 12;
@@ -501,9 +495,9 @@ pub fn make_membrane(
     // start in the top-left so the grid is centered on `center`
     let mut p = center
         - Vec3::new(
-        (n_cols as f64 - 1.0) * 0.5 * HEADGROUP_SPACING,
-        0.,
-        (n_rows as f64 - 1.0) * 0.5 * MEMBRANE_ROW_H,
+            (n_cols as f64 - 1.0) * 0.5 * HEADGROUP_SPACING,
+            0.,
+            (n_rows as f64 - 1.0) * 0.5 * MEMBRANE_ROW_H,
         );
 
     let mut row_start = p;
@@ -547,7 +541,12 @@ pub fn make_membrane(
             row_i += 1;
             row_start.z += MEMBRANE_ROW_H;
             // odd rows shifted by +half for hex packing
-            row_start.x = initial_x + if row_i % 2 == 1 { HEADGROUP_SPACING_DIV2 } else { 0.0 };
+            row_start.x = initial_x
+                + if row_i % 2 == 1 {
+                    HEADGROUP_SPACING_DIV2
+                } else {
+                    0.0
+                };
             p = Vec3::new(row_start.x, row_start.y, row_start.z);
         }
     }
@@ -560,7 +559,7 @@ pub fn make_membrane(
         let rot_invert = Quaternion::from_axis_angle(Z_VEC, TAU / 2.);
         // AN attempt to deconflict chain atoms between top and bottom
         // todo: Not good enough. For now, manually separating at init.
-        let rot_decon = Quaternion::from_axis_angle(Y_VEC, TAU/4.);
+        let rot_decon = Quaternion::from_axis_angle(Y_VEC, TAU / 4.);
 
         // I believe either order is fine.
         let rot = rot_decon * rot_invert;

@@ -133,7 +133,7 @@ pub fn build_dynamics(
     let i_20_pc = n_steps / 5;
     let mut disp_count = 0;
     for i in 0..n_steps {
-        if i % i_20_pc == 0 {
+        if i.is_multiple_of(i_20_pc) {
             println!("{}% Complete", disp_count * 20);
             disp_count += 1;
         }

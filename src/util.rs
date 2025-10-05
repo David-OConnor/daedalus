@@ -9,7 +9,7 @@ use egui::Color32;
 use graphics::{Camera, ControlScheme, EngineUpdates, EntityUpdate, FWD_VEC, Mesh, Scene, Vertex};
 use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 use mcubes::{MarchingCubes, MeshSide};
-use na_seq::AaIdent;
+use na_seq::{AaIdent, Element};
 
 use crate::{
     CamSnapshot, ManipMode, PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel, cam_misc,
@@ -20,7 +20,8 @@ use crate::{
     drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
     mol_lig::MoleculeSmall,
     molecule::{
-        Atom, Bond, MolType, MoleculeCommon, MoleculeGenericRefMut, MoleculePeptide, Residue,
+        Atom, Bond, MolType, MoleculeCommon, MoleculeGenericRef, MoleculeGenericRefMut,
+        MoleculePeptide, Residue,
     },
     prefs::OpenType,
     render::{
@@ -819,4 +820,74 @@ pub fn make_lig_from_res(state: &mut State, res: &Residue, redraw_lig: &mut bool
 
     // Make it clear that we've added the ligand by showing it, and hiding hetero (if creating from Hetero)
     state.ui.visibility.hide_ligand = false;
+}
+
+fn find_nearest_mol_inner(mol: MoleculeGenericRef<'_>, cam: &Camera) -> Option<f32> {
+    let posit: Vec3F32 = mol.common().atom_posits[0].into();
+
+    // todo: Base the offset on the molecule size, e.g. atom count.
+    if cam.in_view(posit) {
+        return Some((cam.position - posit).magnitude() - 4.);
+    }
+
+    None
+}
+
+/// todo: Experimental
+/// Find the distance of the closest molecule to the camera, in front of it. Run this regularly upon
+/// camera movement, e.g. every x steps where camera position or orientation changes.
+///
+/// Returns None if there are no molecules in the camera FOV.
+pub fn find_nearest_mol_dist_to_cam(state: &State, cam: &Camera) -> Option<f32> {
+    let mut nearest = f32::INFINITY;
+
+    // For the protein, rely on cached distances along a collection of radials.
+    if let Some(pep) = &state.peptide {
+        // todo: Very slow approach for now to demonstrate concept. Change this to use a cache!!
+        for (i, atom) in pep.common.atoms.iter().enumerate() {
+            if !i.is_multiple_of(20) {
+                continue;
+            }
+            if atom.element != Element::Carbon {
+                continue;
+            }
+
+            let posit: Vec3F32 = pep.common.atom_posits[i].into();
+            if cam.in_view(posit.into()) {
+                let dist = (cam.position - posit).magnitude() - 4.;
+                if dist < nearest {
+                    nearest = dist;
+                }
+            }
+        }
+    }
+
+    for mol in &state.ligands {
+        if let Some(v) = find_nearest_mol_inner(MoleculeGenericRef::Ligand(mol), cam) {
+            if v < nearest {
+                nearest = v;
+            }
+        }
+    }
+
+    for mol in &state.nucleic_acids {
+        if let Some(v) = find_nearest_mol_inner(MoleculeGenericRef::NucleicAcid(mol), cam) {
+            if v < nearest {
+                nearest = v;
+            }
+        }
+    }
+
+    for mol in &state.lipids {
+        if let Some(v) = find_nearest_mol_inner(MoleculeGenericRef::Lipid(mol), cam) {
+            if v < nearest {
+                nearest = v;
+            }
+        }
+    }
+
+    if nearest != f32::INFINITY {
+        return Some(nearest);
+    }
+    None
 }

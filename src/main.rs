@@ -249,6 +249,9 @@ struct StateVolatile {
     mol_manip: MolManip,
     /// For restoring after temprarily disabling mouse look.
     control_scheme_prev: ControlScheme,
+    /// todo: Experimenting with a dynamic fog distance based on the nearest object to the camera.
+    /// Angstrom.
+    nearest_mol_dist_to_cam: Option<f32>,
 }
 
 impl Default for StateVolatile {
@@ -257,7 +260,6 @@ impl Default for StateVolatile {
             dialogs: Default::default(),
             ui_height: Default::default(),
             inputs_commanded: Default::default(),
-            // docking_setup: Default::default(),
             mol_pending_data_avail: Default::default(),
             prefs_dir: env::current_dir().unwrap(),
             cli_input_history: Default::default(),
@@ -268,6 +270,7 @@ impl Default for StateVolatile {
             active_mol: Default::default(),
             mol_manip: Default::default(),
             control_scheme_prev: Default::default(),
+            nearest_mol_dist_to_cam: Default::default(),
         }
     }
 }

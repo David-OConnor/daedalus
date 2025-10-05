@@ -15,7 +15,8 @@ use crate::{
     molecule::{Atom, MolType, MoleculeCommon},
     render::set_flashlight,
     selection::{find_selected_atom, points_along_ray},
-    util::{cycle_selected, orbit_center},
+    ui::cam::set_fog_dist,
+    util::{cycle_selected, find_nearest_mol_dist_to_cam, orbit_center},
 };
 
 // These are defaults; overridden by the user A/R, and saved to prefs.
@@ -38,6 +39,9 @@ const SEL_NEAR_PAD: f32 = 4.;
 pub const SENS_MOL_MOVE_SCROLL: f32 = 2.5e-2;
 pub const SENS_MOL_ROT_SCROLL: f32 = 5e-2;
 pub const SENS_MOL_ROT_MOUSE: f32 = 5e-3;
+
+static mut I_FIND_NEAREST: u32 = 0;
+const RATIO_FIND_NEAREST: u32 = 30;
 
 pub fn event_dev_handler(
     state_: &mut State,
@@ -459,11 +463,19 @@ pub fn event_dev_handler(
                     &mut redraw_na_inplace,
                     &mut redraw_lipid_inplace,
                 );
-            }
 
-            if state_.ui.left_click_down {
                 set_flashlight(scene);
                 updates.lighting = true;
+
+                // todo: Experimenting
+                unsafe {
+                    I_FIND_NEAREST += 1;
+                    if I_FIND_NEAREST.is_multiple_of(RATIO_FIND_NEAREST) {
+                        state_.volatile.nearest_mol_dist_to_cam =
+                            find_nearest_mol_dist_to_cam(state_, &scene.camera);
+                        println!("NEAR: {:?}", state_.volatile.nearest_mol_dist_to_cam);
+                    }
+                }
             }
         }
         _ => (),
@@ -507,6 +519,20 @@ pub fn event_dev_handler(
     // a key is held.
     if state_.volatile.inputs_commanded.inputs_present() {
         state_.ui.cam_snapshot = None;
+
+        // todo: Experimenting
+        unsafe {
+            I_FIND_NEAREST += 1;
+            if I_FIND_NEAREST.is_multiple_of(RATIO_FIND_NEAREST) {
+                state_.volatile.nearest_mol_dist_to_cam =
+                    find_nearest_mol_dist_to_cam(state_, &scene.camera);
+                println!("NEAR: {:?}", state_.volatile.nearest_mol_dist_to_cam);
+
+                if let Some(dist) = state_.volatile.nearest_mol_dist_to_cam {
+                    set_fog_dist(&mut scene.camera, (dist * 1.5) as u16);
+                }
+            }
+        }
     }
 
     updates
