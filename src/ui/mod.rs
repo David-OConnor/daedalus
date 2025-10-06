@@ -1302,7 +1302,18 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         // ui.add_space(ROW_SPACING);
 
-        lipid_section(state, scene, &mut engine_updates, ui);
+        ui.horizontal(|ui| {
+            lipid_section(state, scene, &mut engine_updates, ui);
+
+            ui.add_space(COL_SPACING);
+
+            ui.label("Docking");
+
+            if ui.button("Dock").clicked() {
+
+            }
+        });
+
 
         md_setup(state, scene, &mut engine_updates, ui);
 

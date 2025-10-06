@@ -13,7 +13,7 @@ use rayon::prelude::*;
 
 use crate::{
     State,
-    docking_v2::{ConformationType, DockingSite, Pose},
+    docking_v2::{DockingSite, Pose},
     molecule::{
         Atom, Bond, Chain, MolGenericTrait, MolType as Mt, MoleculeCommon, MoleculeGenericRef,
         Residue,
@@ -222,72 +222,72 @@ impl MoleculeSmall {
             None => &data.pose,
         };
 
-        match &pose_.conformation_type {
-            ConformationType::AbsolutePosits => {
-                // take no action; we are assigning and accessing the `atom_posits` field directly.
-            }
-            ConformationType::AssignedTorsions { torsions } => {
-                if data.anchor_atom >= self.common.atoms.len() {
-                    eprintln!(
-                        "Error positioning ligand atoms: Anchor outside atom count. Atom cound: {:?}",
-                        self.common.atoms.len()
-                    );
-                    return;
-                }
-                let anchor = self.common.atoms[data.anchor_atom].posit;
-
-                let mut result: Vec<_> = self
-                    .common
-                    .atoms
-                    .par_iter()
-                    .map(|atom| {
-                        let posit_rel = atom.posit - anchor;
-                        pose_.anchor_posit + pose_.orientation.rotate_vec(posit_rel)
-                    })
-                    .collect();
-                // Second pass: Rotations. For each flexible bond, divide all atoms into two groups:
-                // those upstream of this bond, and those downstream. For all downstream atoms, rotate
-                // by `torsions[i]`: The dihedral angle along this bond. If there are ambiguities in this
-                // process, it may mean the bond should not have been marked as flexible.
-                for torsion in torsions {
-                    let bond = &self.common.bonds[torsion.bond];
-
-                    // -- Step 1: measure how many atoms would be "downstream" from each side
-                    let side0_downstream = self.find_downstream_atoms(bond.atom_1, bond.atom_0);
-                    let side1_downstream = self.find_downstream_atoms(bond.atom_0, bond.atom_1);
-
-                    // -- Step 2: pick the pivot as the side with a larger subtree
-                    let (pivot_idx, side_idx, downstream_atom_indices) =
-                        if side0_downstream.len() > side1_downstream.len() {
-                            // side0_downstream means "downstream from atom_1 ignoring bond to atom_0"
-                            // => so pivot is atom_0, side is atom_1
-                            (bond.atom_0, bond.atom_1, side1_downstream)
-                        } else {
-                            // side1_downstream has equal or more
-                            (bond.atom_1, bond.atom_0, side0_downstream)
-                        };
-
-                    // pivot and side positions
-                    let pivot_pos = result[pivot_idx];
-                    let side_pos = result[side_idx];
-                    let axis_vec = (side_pos - pivot_pos).to_normalized();
-
-                    // Build the Quaternion for this rotation
-                    let rotator =
-                        Quaternion::from_axis_angle(axis_vec, torsion.dihedral_angle as f64);
-
-                    // Now apply the rotation to each downstream atom:
-                    for &atom_idx in &downstream_atom_indices {
-                        let old_pos = result[atom_idx];
-                        let relative = old_pos - pivot_pos;
-                        let new_pos = pivot_pos + rotator.rotate_vec(relative);
-                        result[atom_idx] = new_pos;
-                    }
-                }
-
-                self.common.atom_posits = result;
-            }
-        }
+        // match &pose_.conformation_type {
+        //     ConformationType::AbsolutePosits => {
+        //         // take no action; we are assigning and accessing the `atom_posits` field directly.
+        //     }
+        //     ConformationType::AssignedTorsions { torsions } => {
+        //         if data.anchor_atom >= self.common.atoms.len() {
+        //             eprintln!(
+        //                 "Error positioning ligand atoms: Anchor outside atom count. Atom cound: {:?}",
+        //                 self.common.atoms.len()
+        //             );
+        //             return;
+        //         }
+        //         let anchor = self.common.atoms[data.anchor_atom].posit;
+        //
+        //         let mut result: Vec<_> = self
+        //             .common
+        //             .atoms
+        //             .par_iter()
+        //             .map(|atom| {
+        //                 let posit_rel = atom.posit - anchor;
+        //                 pose_.anchor_posit + pose_.orientation.rotate_vec(posit_rel)
+        //             })
+        //             .collect();
+        //         // Second pass: Rotations. For each flexible bond, divide all atoms into two groups:
+        //         // those upstream of this bond, and those downstream. For all downstream atoms, rotate
+        //         // by `torsions[i]`: The dihedral angle along this bond. If there are ambiguities in this
+        //         // process, it may mean the bond should not have been marked as flexible.
+        //         for torsion in torsions {
+        //             let bond = &self.common.bonds[torsion.bond];
+        //
+        //             // -- Step 1: measure how many atoms would be "downstream" from each side
+        //             let side0_downstream = self.find_downstream_atoms(bond.atom_1, bond.atom_0);
+        //             let side1_downstream = self.find_downstream_atoms(bond.atom_0, bond.atom_1);
+        //
+        //             // -- Step 2: pick the pivot as the side with a larger subtree
+        //             let (pivot_idx, side_idx, downstream_atom_indices) =
+        //                 if side0_downstream.len() > side1_downstream.len() {
+        //                     // side0_downstream means "downstream from atom_1 ignoring bond to atom_0"
+        //                     // => so pivot is atom_0, side is atom_1
+        //                     (bond.atom_0, bond.atom_1, side1_downstream)
+        //                 } else {
+        //                     // side1_downstream has equal or more
+        //                     (bond.atom_1, bond.atom_0, side0_downstream)
+        //                 };
+        //
+        //             // pivot and side positions
+        //             let pivot_pos = result[pivot_idx];
+        //             let side_pos = result[side_idx];
+        //             let axis_vec = (side_pos - pivot_pos).to_normalized();
+        //
+        //             // Build the Quaternion for this rotation
+        //             let rotator =
+        //                 Quaternion::from_axis_angle(axis_vec, torsion.dihedral_angle as f64);
+        //
+        //             // Now apply the rotation to each downstream atom:
+        //             for &atom_idx in &downstream_atom_indices {
+        //                 let old_pos = result[atom_idx];
+        //                 let relative = old_pos - pivot_pos;
+        //                 let new_pos = pivot_pos + rotator.rotate_vec(relative);
+        //                 result[atom_idx] = new_pos;
+        //             }
+        //         }
+        //
+        //         self.common.atom_posits = result;
+        //     }
+        // }
     }
 
     /// Separate from constructor; run when the pose changes, for now.

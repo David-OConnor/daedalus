@@ -844,11 +844,11 @@ pub fn find_nearest_mol_dist_to_cam(state: &State, cam: &Camera) -> Option<f32> 
     // For the protein, rely on cached distances along a collection of radials.
     if let Some(pep) = &state.peptide {
         // todo: Very slow approach for now to demonstrate concept. Change this to use a cache!!
-        for (i, atom) in pep.common.atoms.iter().enumerate() {
+        for (i, atom) in pep.common.atoms
+            .iter()
+            .filter(|a| a.element == Element::Carbon)
+            .enumerate() {
             if !i.is_multiple_of(20) {
-                continue;
-            }
-            if atom.element != Element::Carbon {
                 continue;
             }
 
