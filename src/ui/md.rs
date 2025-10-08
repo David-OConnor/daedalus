@@ -6,10 +6,8 @@ use lin_alg::f64::Vec3;
 use crate::{
     State,
     drawing::{EntityClass, draw_peptide, draw_water},
-    md::build_dynamics,
-    ui::{
-        COL_SPACING, COLOR_ACTIVE, COLOR_INACTIVE, cam::move_cam_to_mol, flag_btn, misc, num_field,
-    },
+    md::{build_and_run_dynamics, build_dynamics},
+    ui::{COL_SPACING, COLOR_ACTIVE, COLOR_INACTIVE, cam::move_cam_to, flag_btn, misc, num_field},
     util::{clear_cli_out, handle_err, handle_success},
 };
 
@@ -81,7 +79,7 @@ pub fn md_setup(
                             None => Vec3::new(0., 0., 0.),
                         };
                         // todo: Set a loading indicator, and trigger the build next GUI frame.
-                        move_cam_to_mol(state, scene, center, engine_updates);
+                        move_cam_to(state, scene, center, engine_updates);
                     }
 
                     // todo temp
@@ -100,7 +98,7 @@ pub fn md_setup(
                         None => None,
                     };
 
-                    match build_dynamics(
+                    match build_and_run_dynamics(
                         &state.dev,
                         ligs,
                         lipids,

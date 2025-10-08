@@ -17,8 +17,7 @@ use crate::{lipid::MoleculeLipid, mol_lig::MoleculeSmall, molecule::MoleculePept
 // Set this wide to take into account motion.
 const STATIC_ATOM_DIST_THRESH: f64 = 8.; // todo: Increase (?) A/R.
 
-/// Perform MD on selected molecules.
-pub fn build_dynamics(
+pub fn build_and_run_dynamics(
     dev: &ComputationDevice,
     ligs: Vec<&mut MoleculeSmall>,
     lipids: Vec<&mut MoleculeLipid>,
@@ -31,11 +30,50 @@ pub fn build_dynamics(
     peptide_only_near_lig: bool,
     dt: f32,
 ) -> Result<MdState, ParamError> {
+    let mut md_state = build_dynamics(
+        dev,
+        &ligs,
+        &lipids,
+        peptide,
+        param_set,
+        mol_specific_params,
+        cfg,
+        static_peptide,
+        peptide_only_near_lig,
+    )?;
+
+    run_dynamics(&mut md_state, dev, dt, n_steps as usize);
+
+    if let Some(p) = peptide {
+        reassign_snapshot_indices(
+            p,
+            &ligs,
+            &lipids,
+            &mut md_state.snapshots,
+            peptide_only_near_lig,
+        );
+    }
+
+    Ok(md_state)
+}
+
+/// Set up MD for selected molecules.
+pub fn build_dynamics(
+    dev: &ComputationDevice,
+    ligs: &[&mut MoleculeSmall],
+    lipids: &[&mut MoleculeLipid],
+    peptide: Option<&MoleculePeptide>,
+    param_set: &FfParamSet,
+    mol_specific_params: &HashMap<String, ForceFieldParams>,
+    cfg: &MdConfig,
+    static_peptide: bool,
+    peptide_only_near_lig: bool,
+) -> Result<MdState, ParamError> {
     println!("Setting up dynamics...");
 
     let mut mols = Vec::new();
 
-    for mol in &ligs {
+    for mol in ligs {
         if !mol.common.selected_for_md {
             continue;
         }
@@ -62,7 +100,7 @@ pub fn build_dynamics(
     }
 
     // todo: DRY
-    for mol in &lipids {
+    for mol in lipids {
         if !mol.common.selected_for_md {
             continue;
         }
@@ -93,7 +131,7 @@ pub fn build_dynamics(
                 }
 
                 let mut closest_dist = f64::MAX;
-                for lig in &ligs {
+                for lig in ligs {
                     // todo: Use protein atom.posits A/R.
                     for p in &lig.common.atom_posits {
                         let dist = (*p - a.posit).magnitude();
@@ -124,10 +162,13 @@ pub fn build_dynamics(
     }
 
     println!("Initializing MD state...");
-
-    let mut md_state = MdState::new(dev, cfg, &mols, param_set)?;
+    let md_state = MdState::new(dev, cfg, &mols, param_set)?;
     println!("Done.");
 
+    Ok(md_state)
+}
+
+pub fn run_dynamics(md_state: &mut MdState, dev: &ComputationDevice, dt: f32, n_steps: usize) {
     let start = Instant::now();
 
     let i_20_pc = n_steps / 5;
@@ -152,100 +193,98 @@ pub fn build_dynamics(
         md_state.neighbor_rebuild_count,
         md_state.neighbor_rebuild_us / 1_000
     );
+}
 
-    // We filtered peptide hetero atoms out above. Adjust snapshot indices and atom positions so they
-    // are properly synchronized.
-    // todo: Delegat this to its own fn A/R.
-    {
-        println!("Re-assigning snapshot indices to match atoms excluded for MD...");
-        if let Some(p) = peptide {
-            // Which peptide atoms were included in MD (same logic as when building `atoms` above)
-            let included: Vec<bool> = p
-                .common
-                .atoms
-                .iter()
-                .map(|a| {
-                    if !peptide_only_near_lig {
-                        !a.hetero
-                    } else {
-                        let mut closest_dist = f64::MAX;
-                        for lig in &ligs {
-                            for lp in &lig.common.atom_posits {
-                                let d = (*lp - a.posit).magnitude();
-                                if d < closest_dist {
-                                    closest_dist = d;
-                                }
-                            }
+/// We filter peptide hetero atoms out of the MD workflow. Adjust snapshot indices and atom positions so they
+/// are properly synchronized. This also handles the case of resassigning due to peptide atoms near the ligand.
+pub fn reassign_snapshot_indices(
+    pep: &MoleculePeptide,
+    ligs: &[&mut MoleculeSmall],
+    lipids: &[&mut MoleculeLipid],
+    snapshots: &mut [Snapshot],
+    peptide_only_near_lig: bool,
+) {
+    println!("Re-assigning snapshot indices to match atoms excluded for MD...");
+    // Which peptide atoms were included in MD (same logic as when building `atoms` above)
+    let included: Vec<bool> = pep
+        .common
+        .atoms
+        .iter()
+        .map(|a| {
+            if !peptide_only_near_lig {
+                !a.hetero
+            } else {
+                let mut closest_dist = f64::MAX;
+                for lig in ligs {
+                    for lp in &lig.common.atom_posits {
+                        let d = (*lp - a.posit).magnitude();
+                        if d < closest_dist {
+                            closest_dist = d;
                         }
-                        !a.hetero && closest_dist < STATIC_ATOM_DIST_THRESH
-                    }
-                })
-                .collect();
-
-            let n_included = included.iter().filter(|&&b| b).count();
-
-            // Count how many ligand atoms precede the peptide in the snapshot ordering.
-            let lig_atom_count: usize = ligs
-                .iter()
-                .filter(|l| l.common.selected_for_md)
-                .map(|l| l.common.atoms.len())
-                .sum();
-
-            let lipid_atom_count: usize = lipids
-                .iter()
-                .filter(|l| l.common.selected_for_md)
-                .map(|l| l.common.atoms.len())
-                .sum();
-
-            let pep_start_i = lig_atom_count + lipid_atom_count;
-
-            // Rebuild each snapshot's atom_posits: [ligands as-is] + [full peptide with holes filled]
-            for snap in &mut md_state.snapshots {
-                // Iterator over the peptide positions that actually participated in MD
-                let mut pept_md_posits = snap.atom_posits[pep_start_i..pep_start_i + n_included]
-                    .iter()
-                    .cloned();
-
-                let mut pept_md_vels = snap.atom_velocities[pep_start_i..pep_start_i + n_included]
-                    .iter()
-                    .cloned();
-
-                let mut new_posits = Vec::with_capacity(pep_start_i + p.common.atoms.len());
-                let mut new_vels = Vec::with_capacity(pep_start_i + p.common.atoms.len());
-
-                // Keep ligand portion unchanged
-                new_posits.extend_from_slice(&snap.atom_posits[..pep_start_i]);
-                new_vels.extend_from_slice(&snap.atom_velocities[..pep_start_i]);
-
-                // Insert peptide atoms in original index order; use MD-updated posits if included,
-                // otherwise the original (excluded) atom position.
-                // todo: Do velocities too A/R.
-                for (a, inc) in p.common.atoms.iter().zip(included.iter()) {
-                    if *inc {
-                        new_posits
-                            .push(pept_md_posits.next().expect("peptide MD posits exhausted"));
-                        new_vels.push(
-                            pept_md_vels
-                                .next()
-                                .expect("peptide MD velocities exhausted"),
-                        );
-                    } else {
-                        new_posits.push(a.posit.into());
-                        new_vels.push(lin_alg::f32::Vec3::new_zero());
                     }
                 }
+                !a.hetero && closest_dist < STATIC_ATOM_DIST_THRESH
+            }
+        })
+        .collect();
 
-                // Replace the snapshot's positions with the reindexed set
-                snap.atom_posits = new_posits;
-                snap.atom_velocities = new_vels;
+    let n_included = included.iter().filter(|&&b| b).count();
+
+    // Count how many ligand atoms precede the peptide in the snapshot ordering.
+    let lig_atom_count: usize = ligs
+        .iter()
+        .filter(|l| l.common.selected_for_md)
+        .map(|l| l.common.atoms.len())
+        .sum();
+
+    let lipid_atom_count: usize = lipids
+        .iter()
+        .filter(|l| l.common.selected_for_md)
+        .map(|l| l.common.atoms.len())
+        .sum();
+
+    let pep_start_i = lig_atom_count + lipid_atom_count;
+
+    // Rebuild each snapshot's atom_posits: [ligands as-is] + [full peptide with holes filled]
+    for snap in snapshots {
+        // Iterator over the peptide positions that actually participated in MD
+        let mut pept_md_posits = snap.atom_posits[pep_start_i..pep_start_i + n_included]
+            .iter()
+            .cloned();
+
+        let mut pept_md_vels = snap.atom_velocities[pep_start_i..pep_start_i + n_included]
+            .iter()
+            .cloned();
+
+        let mut new_posits = Vec::with_capacity(pep_start_i + pep.common.atoms.len());
+        let mut new_vels = Vec::with_capacity(pep_start_i + pep.common.atoms.len());
+
+        // Keep ligand portion unchanged
+        new_posits.extend_from_slice(&snap.atom_posits[..pep_start_i]);
+        new_vels.extend_from_slice(&snap.atom_velocities[..pep_start_i]);
+
+        // Insert peptide atoms in original index order; use MD-updated posits if included,
+        // otherwise the original (excluded) atom position.
+        // todo: Do velocities too A/R.
+        for (a, inc) in pep.common.atoms.iter().zip(included.iter()) {
+            if *inc {
+                new_posits.push(pept_md_posits.next().expect("peptide MD posits exhausted"));
+                new_vels.push(
+                    pept_md_vels
+                        .next()
+                        .expect("peptide MD velocities exhausted"),
+                );
+            } else {
+                new_posits.push(a.posit.into());
+                new_vels.push(lin_alg::f32::Vec3::new_zero());
             }
         }
-        println!("Done.");
+
+        // Replace the snapshot's positions with the reindexed set
+        snap.atom_posits = new_posits;
+        snap.atom_velocities = new_vels;
     }
-
-    // change_snapshot(peptide, ligs, &md_state.snapshots[0]);
-
-    Ok(md_state)
+    println!("Done.");
 }
 
 fn change_snapshot_helper(posits: &mut [Vec3], start_i_this_mol: &mut usize, snapshot: &Snapshot) {

@@ -26,8 +26,9 @@ use crate::{
     cam_misc::{move_mol_to_cam, reset_camera},
     cli,
     cli::autocomplete_cli,
+    docking_v2::dock,
     download_mols::{load_atom_coords_rcsb, load_sdf_drugbank, load_sdf_pubchem},
-    drawing::{EntityClass, color_viridis, draw_peptide},
+    drawing::{EntityClass, MoleculeView, color_viridis, draw_peptide},
     drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
     file_io::gemmi_path,
     inputs::{MOVEMENT_SENS, ROTATE_SENS, SENS_MOL_MOVE_SCROLL},
@@ -36,7 +37,7 @@ use crate::{
     molecule::{MolType, MoleculeGenericRef},
     render::{set_flashlight, set_static_light},
     ui::{
-        cam::{cam_controls, cam_snapshots, move_cam_to_mol},
+        cam::{cam_controls, cam_snapshots, move_cam_to},
         misc::section_box,
         mol_data::display_mol_data_peptide,
         rama_plot::plot_rama,
@@ -1305,12 +1306,22 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         ui.horizontal(|ui| {
             lipid_section(state, scene, &mut engine_updates, ui);
 
-            ui.add_space(COL_SPACING);
+            if let Some(mol) = &state.active_mol() {
+                if let MoleculeGenericRef::Ligand(_) = mol {
+                    ui.add_space(COL_SPACING);
 
-            ui.label("Docking");
+                    ui.label("Docking");
 
-            if ui.button("Dock").clicked() {
+                    if ui.button(RichText::new("Dock").color(Color32::GOLD)).clicked() {
+                        // The other views make it tough to see the ligand rel the protein.
+                        if !matches!(state.ui.mol_view, MoleculeView::SpaceFill | MoleculeView::Surface) {
+                            // todo: Dim peptide?
+                            state.ui.mol_view = MoleculeView::Surface;
+                        }
 
+                        dock(state, state.volatile.active_mol.unwrap().1);
+                    }
+                }
             }
         });
 

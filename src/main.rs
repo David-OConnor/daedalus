@@ -341,7 +341,6 @@ struct PopupState {
     rama_plot: bool,
 }
 
-#[derive(Default)]
 struct StateUiMd {
     /// The state we store for this is a float, so we need to store state text too.
     dt_input: String,
@@ -353,6 +352,20 @@ struct StateUiMd {
     peptide_only_near_ligs: bool,
     /// Peptide atoms don't move, but exert forces.
     peptide_static: bool,
+}
+
+impl Default for StateUiMd {
+    fn default() -> Self {
+        Self {
+            dt_input: Default::default(),
+            temp_input: Default::default(),
+            pressure_input: Default::default(),
+            simbox_pad_input: Default::default(),
+            langevin_γ: Default::default(),
+            peptide_only_near_ligs: true,
+            peptide_static: true,
+        }
+    }
 }
 
 /// Ui text fields and similar.

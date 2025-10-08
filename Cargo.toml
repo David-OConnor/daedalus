@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-graphics = { version = "0.4.7", features = ["app_utils"] }
+graphics = { version = "0.4.8", features = ["app_utils"] }
 egui = "0.32.0"
 
 #egui_tiles = "0.12.0" # For layouts etc. Experimenting
@@ -48,7 +48,7 @@ cudarc = { version = "0.17.2", default-features = false, features = ["std", "dri
 
 # We use these when developing locally to reduce friction.
 [patch.crates-io]
-graphics = { path = "../graphics" }
+#graphics = { path = "../../graphics" }
 #lin_alg = { path = "../../lin_alg" }
 #na_seq = { path = "../na_seq" }
 bio_apis = { path = "../bio_apis" }

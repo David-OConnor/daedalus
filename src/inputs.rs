@@ -1,6 +1,7 @@
 //! Handles user inputs, e.g. from keyboard and mouse.
 
 use std::cmp::{max, min};
+
 use graphics::{
     ControlScheme, DeviceEvent, ElementState, EngineUpdates, EntityUpdate, Scene, WindowEvent,
     winit::keyboard::{KeyCode, PhysicalKey::Code},
@@ -16,10 +17,9 @@ use crate::{
     molecule::{Atom, MolType, MoleculeCommon},
     render::set_flashlight,
     selection::{find_selected_atom, points_along_ray},
-    ui::cam::set_fog_dist,
+    ui::cam::{FOG_HALF_DEPTH, set_fog_dist},
     util::{cycle_selected, find_nearest_mol_dist_to_cam, orbit_center},
 };
-use crate::ui::cam::FOG_HALF_DEPTH;
 
 // These are defaults; overridden by the user A/R, and saved to prefs.
 pub const MOVEMENT_SENS: f32 = 12.;
@@ -470,19 +470,19 @@ pub fn event_dev_handler(
                 updates.lighting = true;
 
                 // todo: Experimenting
-                unsafe {
-                    I_FIND_NEAREST += 1;
-                    if I_FIND_NEAREST.is_multiple_of(RATIO_FIND_NEAREST) {
-                        state_.volatile.nearest_mol_dist_to_cam =
-                            find_nearest_mol_dist_to_cam(state_, &scene.camera);
-
-                        if let Some(dist) = state_.volatile.nearest_mol_dist_to_cam {
-
-                            let dist = max(dist as u16 + FOG_HALF_DEPTH/2 - 5, 5);
-                            set_fog_dist(&mut scene.camera, dist);
-                        }
-                    }
-                }
+                // unsafe {
+                //     I_FIND_NEAREST += 1;
+                //     if I_FIND_NEAREST.is_multiple_of(RATIO_FIND_NEAREST) {
+                //         state_.volatile.nearest_mol_dist_to_cam =
+                //             find_nearest_mol_dist_to_cam(state_, &scene.camera);
+                //
+                //         if let Some(dist) = state_.volatile.nearest_mol_dist_to_cam {
+                //
+                //             let dist = max(dist as u16 + FOG_HALF_DEPTH/2 - 5, 5);
+                //             set_fog_dist(&mut scene.camera, dist);
+                //         }
+                //     }
+                // }
             }
         }
         _ => (),
@@ -528,18 +528,18 @@ pub fn event_dev_handler(
         state_.ui.cam_snapshot = None;
 
         // todo: Experimenting
-        unsafe {
-            I_FIND_NEAREST += 1;
-            if I_FIND_NEAREST.is_multiple_of(RATIO_FIND_NEAREST) {
-                state_.volatile.nearest_mol_dist_to_cam =
-                    find_nearest_mol_dist_to_cam(state_, &scene.camera);
-
-                if let Some(dist) = state_.volatile.nearest_mol_dist_to_cam {
-                    let dist = max(dist as u16 + FOG_HALF_DEPTH/2 - 5, 5);
-                    set_fog_dist(&mut scene.camera, dist);
-                }
-            }
-        }
+        // unsafe {
+        //     I_FIND_NEAREST += 1;
+        //     if I_FIND_NEAREST.is_multiple_of(RATIO_FIND_NEAREST) {
+        //         state_.volatile.nearest_mol_dist_to_cam =
+        //             find_nearest_mol_dist_to_cam(state_, &scene.camera);
+        //
+        //         if let Some(dist) = state_.volatile.nearest_mol_dist_to_cam {
+        //             let dist = max(dist as u16 + FOG_HALF_DEPTH/2 - 5, 5);
+        //             set_fog_dist(&mut scene.camera, dist);
+        //         }
+        //     }
+        // }
     }
 
     updates

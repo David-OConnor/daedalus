@@ -210,7 +210,6 @@ pub fn render(mut state: State) {
     set_flashlight(&mut scene);
 
     let msaa_samples = state.to_save.msaa as u8 as u32;
-    let msaa_samples = 1; // todo temp!!
 
     graphics::run(
         state,

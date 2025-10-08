@@ -1,7 +1,20 @@
 //! A new approach, leveraging our molecular dynamics state and processes.
 
+use std::collections::HashMap;
+
 use bincode::{Decode, Encode};
+use bio_files::md_params::ForceFieldParams;
+use dynamics::{ComputationDevice, MdConfig, MdState, ParamError, params::FfParamSet};
 use lin_alg::f64::{Quaternion, Vec3};
+
+use crate::{
+    State,
+    lipid::MoleculeLipid,
+    md::{build_dynamics, reassign_snapshot_indices, run_dynamics},
+    mol_lig::MoleculeSmall,
+    molecule::MoleculePeptide,
+};
+
 #[derive(Clone, Debug, Default)]
 /// Bonds that are marked as flexible, using a semi-rigid conformation.
 pub struct Torsion {
@@ -47,8 +60,7 @@ pub struct Pose {
     // pub anchor_posit: Vec3,
     // /// Only for rigid and torsion-set-based conformations.
     // pub orientation: Quaternion,
-
-    pub posits: Vec<Vec3>
+    pub posits: Vec<Vec3>,
 }
 
 pub struct DockingPose {
@@ -58,3 +70,48 @@ pub struct DockingPose {
 
 #[derive(Debug, Default)]
 pub struct DockingState {}
+
+pub fn dock(state: &mut State, mol_i: usize) -> Result<(), ParamError> {
+    let num_steps = 100;
+
+    let peptide = state.peptide.as_ref().unwrap(); // ?
+    let mol = &mut state.ligands[mol_i];
+    // Move the ligand away from the docking site prior to vectoring it towards it.
+
+    let start_dist = 10.;
+    let speed = 1_000.; // Å/ps
+
+    let docking_site = mol.common.centroid(); // for now
+
+    // let dir = (mol.common.centroid() - state.volatile.docking_site_center).to_normalized();
+    let dir = (peptide.common.centroid() - docking_site).to_normalized();
+
+    let starting_posit = docking_site + dir * start_dist;
+    let starting_vel = dir * speed;
+
+    mol.common.move_to(starting_posit);
+
+    let ligs = vec![mol];
+
+    let mut md_state = build_dynamics(
+        &state.dev,
+        &ligs,
+        &Vec::new(),
+        Some(peptide),
+        &state.ff_param_set,
+        &state.lig_specific_params,
+        &state.to_save.md_config,
+        true,
+        true,
+    )?;
+
+    let dt = 0.002;
+    let n_steps = 100;
+    run_dynamics(&mut md_state, &state.dev, dt, n_steps);
+
+    reassign_snapshot_indices(peptide, &ligs, &Vec::new(), &mut md_state.snapshots, true);
+
+    state.mol_dynamics = Some(md_state);
+
+    Ok(())
+}
