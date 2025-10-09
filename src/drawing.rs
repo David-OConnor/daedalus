@@ -28,11 +28,14 @@ use crate::{
     },
     util::{clear_mol_entity_indices, find_neighbor_posit, orbit_center},
 };
+use crate::md::STATIC_ATOM_DIST_THRESH;
 
 const LIGAND_COLOR_ANCHOR: Color = (1., 0., 1.);
 
 const COLOR_MOL_MOVING: Color = (1., 1., 1.);
 const COLOR_MOL_ROTATE: Color = (0.65, 1., 0.65);
+const COLOR_MD_NEAR_MOL: Color = (0.0, 0., 1.); // Blended into
+const BLEND_AMT_MD_NEAR_MOL: f32 = 0.5; // A higher value means it's closer to the special color.
 
 // i.e a flexible bond.
 const LIGAND_COLOR_FLEX: Color = (1., 1., 0.);
@@ -1432,6 +1435,12 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
                 color_atom = blend_color(color_atom, COLOR_HETERO_RES, BLEND_AMT_HETERO_RES);
             }
 
+            if state.mol_dynamics.is_some() && state.ui.md.peptide_only_near_ligs && mol.common.selected_for_md {
+                if state.volatile.md_peptide_selected.contains(&(0, i)) {
+                    color_atom = blend_color(color_atom, COLOR_MD_NEAR_MOL, BLEND_AMT_MD_NEAR_MOL);
+                }
+            }
+
             let mut entity = Entity::new(
                 mesh,
                 atom_posit.into(),
@@ -1573,6 +1582,15 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
 
         if atom_1.hetero && color_1 != COLOR_SELECTED {
             color_1 = blend_color(color_1, COLOR_HETERO_RES, BLEND_AMT_HETERO_RES);
+        }
+
+        if state.mol_dynamics.is_some() && state.ui.md.peptide_only_near_ligs && mol.common.selected_for_md {
+            if state.volatile.md_peptide_selected.contains(&(0, bond.atom_0)) {
+                color_0 = blend_color(color_0, COLOR_MD_NEAR_MOL, BLEND_AMT_MD_NEAR_MOL);
+            }
+            if state.volatile.md_peptide_selected.contains(&(0, bond.atom_1)) {
+                color_1 = blend_color(color_1, COLOR_MD_NEAR_MOL, BLEND_AMT_MD_NEAR_MOL);
+            }
         }
 
         let to_hydrogen =

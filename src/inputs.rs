@@ -1,11 +1,10 @@
 //! Handles user inputs, e.g. from keyboard and mouse.
 
-use std::cmp::{max, min};
-
 use graphics::{
     ControlScheme, DeviceEvent, ElementState, EngineUpdates, EntityUpdate, Scene, WindowEvent,
     winit::keyboard::{KeyCode, PhysicalKey::Code},
 };
+use graphics::event::MouseScrollDelta;
 use lin_alg::{f32::Vec3, map_linear};
 
 use crate::{
@@ -17,9 +16,9 @@ use crate::{
     molecule::{Atom, MolType, MoleculeCommon},
     render::set_flashlight,
     selection::{find_selected_atom, points_along_ray},
-    ui::cam::{FOG_HALF_DEPTH, set_fog_dist},
-    util::{cycle_selected, find_nearest_mol_dist_to_cam, orbit_center},
+    util::{cycle_selected, orbit_center},
 };
+use crate::ui::cam::set_fog_dist;
 
 // These are defaults; overridden by the user A/R, and saved to prefs.
 pub const MOVEMENT_SENS: f32 = 12.;
@@ -71,6 +70,21 @@ pub fn event_dev_handler(
     match event {
         // Move the camera forward and back on scroll; handled by Graphics cam controls.
         DeviceEvent::MouseWheel { delta } => {
+            if state_.volatile.key_modifiers.state().control_key() {
+                let scroll: f32 = match delta {
+                    MouseScrollDelta::LineDelta(_, y) => y,
+                    MouseScrollDelta::PixelDelta(p) => p.y as f32 / 120.0,
+                };
+
+                // todo: You will need to disable the engine's beavhior for scroll.
+                state_.ui.view_depth.1 = (state_.ui.view_depth.1 as i16 + (scroll * 5.) as i16) as u16;
+
+
+                set_fog_dist(&mut scene.camera, state_.ui.view_depth.1);
+                
+                return updates;
+            }
+
             set_flashlight(scene);
             updates.lighting = true;
 
@@ -377,7 +391,6 @@ pub fn event_dev_handler(
                 match key.physical_key {
                     // Check the cases for the engine's built-in movement commands, to set the current-snapshot to None.
                     // C+P partially, from `graphics`. These are for press and release.
-                    // todo:  You need to check mouse movement too.
                     Code(KeyCode::KeyW) => {
                         state_.volatile.inputs_commanded.fwd = true;
                     }
@@ -567,6 +580,9 @@ pub fn event_win_handler(
         }
         WindowEvent::Focused(val) => {
             state.ui.mouse_in_window = val;
+        }
+        WindowEvent::ModifiersChanged(val) => {
+            state.volatile.key_modifiers = val;
         }
         _ => (),
     }

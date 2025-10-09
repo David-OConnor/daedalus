@@ -51,7 +51,7 @@ use std::{
     collections::HashMap, env, fmt, fmt::Display, path::PathBuf, sync::mpsc::Receiver,
     time::Instant,
 };
-
+use std::collections::HashSet;
 use bincode::{Decode, Encode};
 use bio_apis::{
     ReqError,
@@ -71,6 +71,7 @@ use dynamics::{
 };
 use egui_file_dialog::{FileDialog, FileDialogConfig};
 use graphics::{Camera, ControlScheme, InputsCommanded};
+use graphics::winit::event::Modifiers;
 use lin_alg::{
     f32::{Quaternion, Vec3},
     f64::Vec3 as Vec3F64,
@@ -252,6 +253,11 @@ struct StateVolatile {
     /// todo: Experimenting with a dynamic fog distance based on the nearest object to the camera.
     /// Angstrom.
     nearest_mol_dist_to_cam: Option<f32>,
+    /// We maintain a set of atom indices of peptides that are used in MD. This for example, might
+    /// exclude hetero atoms and atoms not near a docking site. (mol i, atom i)
+    md_peptide_selected: HashSet<(usize, usize)>,
+    /// Ctrl, alt, shift etc.
+    key_modifiers: Modifiers,
 }
 
 impl Default for StateVolatile {
@@ -271,6 +277,8 @@ impl Default for StateVolatile {
             mol_manip: Default::default(),
             control_scheme_prev: Default::default(),
             nearest_mol_dist_to_cam: Default::default(),
+            md_peptide_selected: Default::default(),
+            key_modifiers: Default::default(),
         }
     }
 }

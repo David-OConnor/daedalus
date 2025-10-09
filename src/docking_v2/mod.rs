@@ -1,18 +1,13 @@
 //! A new approach, leveraging our molecular dynamics state and processes.
 
-use std::collections::HashMap;
 
 use bincode::{Decode, Encode};
-use bio_files::md_params::ForceFieldParams;
-use dynamics::{ComputationDevice, MdConfig, MdState, ParamError, params::FfParamSet};
-use lin_alg::f64::{Quaternion, Vec3};
+use dynamics::{MdConfig, ParamError};
+use lin_alg::f64::{Vec3};
 
 use crate::{
     State,
-    lipid::MoleculeLipid,
     md::{build_dynamics, reassign_snapshot_indices, run_dynamics},
-    mol_lig::MoleculeSmall,
-    molecule::MoleculePeptide,
 };
 
 #[derive(Clone, Debug, Default)]
@@ -93,6 +88,11 @@ pub fn dock(state: &mut State, mol_i: usize) -> Result<(), ParamError> {
 
     let ligs = vec![mol];
 
+    let cfg = MdConfig {
+        zero_com_drift: false, // May already be false.
+        ..state.to_save.md_config.clone()
+    };
+
     let mut md_state = build_dynamics(
         &state.dev,
         &ligs,
@@ -100,16 +100,17 @@ pub fn dock(state: &mut State, mol_i: usize) -> Result<(), ParamError> {
         Some(peptide),
         &state.ff_param_set,
         &state.lig_specific_params,
-        &state.to_save.md_config,
+        &cfg,
         true,
         true,
+        &mut state.volatile.md_peptide_selected,
     )?;
 
     let dt = 0.002;
     let n_steps = 100;
     run_dynamics(&mut md_state, &state.dev, dt, n_steps);
 
-    reassign_snapshot_indices(peptide, &ligs, &Vec::new(), &mut md_state.snapshots, true);
+    reassign_snapshot_indices(peptide, &ligs, &Vec::new(), &mut md_state.snapshots, &state.volatile.md_peptide_selected);
 
     state.mol_dynamics = Some(md_state);
 

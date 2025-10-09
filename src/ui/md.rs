@@ -110,6 +110,7 @@ pub fn md_setup(
                         state.ui.md.peptide_static,
                         state.ui.md.peptide_only_near_ligs,
                         state.to_save.md_dt,
+                        &mut state.volatile.md_peptide_selected,
                     ) {
                         Ok(md) => {
                             handle_success(&mut state.ui, "MD complete".to_string());

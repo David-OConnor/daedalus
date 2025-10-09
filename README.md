@@ -46,7 +46,7 @@ and either installing the CUDA toolkit, or disabling CUDA.
 - Visualize electron density from crystallography and Cryo-Em data
 - WIP: This software is a platform for ab-initio simulations of electron density.
 
-![Ligand dynamics](screenshots/daedalus_md_2025-08-03.png)
+![Ligand dynamics](screenshots/docked_2.png)
 
 
 ## Molecule types supported for viewing and dynamics
@@ -181,8 +181,6 @@ If *orbit sel* is set in the GUI, the orbit center will be the selected atom or 
 
 
 ### Non-camera hotkeys
-- **Esc**: Clear selection, molecule manipulation modes etc.
-- 
 - **Left arrow**: select previous residue
 - **Right arrow**: select next residue
 
@@ -196,6 +194,9 @@ If *orbit sel* is set in the GUI, the orbit center will be the selected atom or 
 - **R**: Rotate a molecule with the mouse and scroll wheel
 
 - **Enter**: Move the camera to the selected atom or residue. 
+- **Esc**: Clear selection, molecule manipulation modes etc.
+
+- **Ctrl + scroll**: Change the fog distance. (hide distant atoms)
 
 ![Protein B](screenshots/protein_b.png)
 

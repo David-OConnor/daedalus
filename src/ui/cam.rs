@@ -184,8 +184,7 @@ pub fn cam_controls(
                     VIEW_DEPTH_NEAR_MIN..=VIEW_DEPTH_NEAR_MAX,
                 )).on_hover_text(hover_text);
 
-                let hover_text = "Fade distant objects. This may make it easier to see objects near the camera. Objects at this distance in Å from the \
-                    camera are attentuated to 50% opacity.";
+                let hover_text = "(Hotkey: Ctrl + scroll) Fade distant objects. This may make it easier to see objects near the camera.";
                 ui.label("Far:")
                     .on_hover_text(hover_text);
 
@@ -202,10 +201,11 @@ pub fn cam_controls(
                     } else {
                         state.ui.view_depth.0 as f32 / 10.
                     };
+                    // todo: Only if near changed.
+                    scene.camera.update_proj_mat();
 
                     set_fog_dist(&mut scene.camera, state.ui.view_depth.1);
 
-                    scene.camera.update_proj_mat();
                     changed = true;
                 }
             });
@@ -288,7 +288,7 @@ pub fn cam_snapshots(
 pub fn move_cam_to(
     state: &mut State,
     scene: &mut Scene,
-    mol_center: lin_alg::f64::Vec3,
+    look_to_beyond: lin_alg::f64::Vec3,
     engine_updates: &mut EngineUpdates,
 ) {
     let Some(mol) = &mut state.active_mol_mut() else {
@@ -297,7 +297,7 @@ pub fn move_cam_to(
 
     // todo: Cache centroid.
     let lig_pos: Vec3 = mol.common().centroid().into();
-    let ctr: Vec3 = mol_center.into();
+    let ctr: Vec3 = look_to_beyond.into();
 
     cam_look_at_outside(
         &mut scene.camera,

@@ -1,21 +1,19 @@
 //! An interface to dynamics library.
 
 use std::{collections::HashMap, sync::Arc, time::Instant};
-
-use bio_files::{create_bonds, md_params::ForceFieldParams};
+use std::collections::HashSet;
+use bio_files::{create_bonds, md_params::ForceFieldParams, AtomGeneric};
 #[cfg(feature = "cuda")]
 use cudarc::driver::CudaModule;
-use dynamics::{
-    ComputationDevice, FfMolType, MdConfig, MdState, MolDynamics, ParamError, params::FfParamSet,
-    snapshot::Snapshot,
-};
+use dynamics::{ComputationDevice, FfMolType, MdConfig, MdState, MolDynamics, ParamError, params::FfParamSet, snapshot::Snapshot, AtomDynamics};
 use lin_alg::f64::Vec3;
 
 use crate::{lipid::MoleculeLipid, mol_lig::MoleculeSmall, molecule::MoleculePeptide};
+use crate::mol_lig::Ligand;
 
 // Å. Static atoms must be at least this close to a dynamic atom at the start of MD to be counted.
 // Set this wide to take into account motion.
-const STATIC_ATOM_DIST_THRESH: f64 = 8.; // todo: Increase (?) A/R.
+pub const STATIC_ATOM_DIST_THRESH: f64 = 14.;
 
 pub fn build_and_run_dynamics(
     dev: &ComputationDevice,
@@ -29,6 +27,7 @@ pub fn build_and_run_dynamics(
     static_peptide: bool,
     peptide_only_near_lig: bool,
     dt: f32,
+    pep_atom_set: &mut HashSet<(usize, usize)>,
 ) -> Result<MdState, ParamError> {
     let mut md_state = build_dynamics(
         dev,
@@ -40,6 +39,7 @@ pub fn build_and_run_dynamics(
         cfg,
         static_peptide,
         peptide_only_near_lig,
+        pep_atom_set,
     )?;
 
     run_dynamics(&mut md_state, dev, dt, n_steps as usize);
@@ -50,11 +50,45 @@ pub fn build_and_run_dynamics(
             &ligs,
             &lipids,
             &mut md_state.snapshots,
-            peptide_only_near_lig,
+            pep_atom_set,
         );
     }
 
     Ok(md_state)
+}
+
+fn filter_peptide_atoms(set: &mut HashSet<(usize, usize)>, pep: &MoleculePeptide, ligs: &[&mut MoleculeSmall], only_near_lig: bool) -> Vec<AtomGeneric> {
+    *set = HashSet::new();
+
+    pep
+        .common
+        .atoms
+        .iter()
+        .enumerate()
+        .filter_map(|(i, a)| {
+            let pass = if !only_near_lig {
+                !a.hetero
+            } else {
+                let mut closest_dist = f64::MAX;
+                for lig in ligs {
+                    for p in &lig.common.atom_posits {
+                        let dist = (*p - pep.common.atom_posits[i]).magnitude();
+                        if dist < closest_dist {
+                            closest_dist = dist;
+                        }
+                    }
+                }
+                !a.hetero && closest_dist < STATIC_ATOM_DIST_THRESH
+            };
+
+            if pass {
+                set.insert((0, i));
+                Some(a.to_generic())
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 /// Set up MD for selected molecules.
@@ -68,6 +102,7 @@ pub fn build_dynamics(
     cfg: &MdConfig,
     static_peptide: bool,
     peptide_only_near_lig: bool,
+    pep_atom_set: &mut HashSet<(usize, usize)>,
 ) -> Result<MdState, ParamError> {
     println!("Setting up dynamics...");
 
@@ -121,33 +156,12 @@ pub fn build_dynamics(
 
     if let Some(p) = peptide {
         // We assume hetero atoms are ligands, water etc, and are not part of the protein.
-        let atoms: Vec<_> = p
-            .common
-            .atoms
-            .iter()
-            .filter(|a| {
-                if !peptide_only_near_lig {
-                    return !a.hetero;
-                }
-
-                let mut closest_dist = f64::MAX;
-                for lig in ligs {
-                    // todo: Use protein atom.posits A/R.
-                    for p in &lig.common.atom_posits {
-                        let dist = (*p - a.posit).magnitude();
-                        if dist < closest_dist {
-                            closest_dist = dist;
-                        }
-                    }
-                }
-
-                !a.hetero && closest_dist < STATIC_ATOM_DIST_THRESH
-            })
-            .map(|a| a.to_generic())
-            .collect();
+        let atoms = filter_peptide_atoms(pep_atom_set, p, ligs, peptide_only_near_lig);
+        println!("Peptide atom count: {}", atoms.len());
 
         let bonds = create_bonds(&atoms);
 
+        println!("STATIC: {}", static_peptide);
         mols.push(MolDynamics {
             ff_mol_type: FfMolType::Peptide,
             atoms,
@@ -202,33 +216,11 @@ pub fn reassign_snapshot_indices(
     ligs: &[&mut MoleculeSmall],
     lipids: &[&mut MoleculeLipid],
     snapshots: &mut [Snapshot],
-    peptide_only_near_lig: bool,
+    included_set: &HashSet<(usize, usize)>
 ) {
     println!("Re-assigning snapshot indices to match atoms excluded for MD...");
-    // Which peptide atoms were included in MD (same logic as when building `atoms` above)
-    let included: Vec<bool> = pep
-        .common
-        .atoms
-        .iter()
-        .map(|a| {
-            if !peptide_only_near_lig {
-                !a.hetero
-            } else {
-                let mut closest_dist = f64::MAX;
-                for lig in ligs {
-                    for lp in &lig.common.atom_posits {
-                        let d = (*lp - a.posit).magnitude();
-                        if d < closest_dist {
-                            closest_dist = d;
-                        }
-                    }
-                }
-                !a.hetero && closest_dist < STATIC_ATOM_DIST_THRESH
-            }
-        })
-        .collect();
 
-    let n_included = included.iter().filter(|&&b| b).count();
+    let n_included = included_set.len();
 
     // Count how many ligand atoms precede the peptide in the snapshot ordering.
     let lig_atom_count: usize = ligs
@@ -263,19 +255,24 @@ pub fn reassign_snapshot_indices(
         new_posits.extend_from_slice(&snap.atom_posits[..pep_start_i]);
         new_vels.extend_from_slice(&snap.atom_velocities[..pep_start_i]);
 
-        // Insert peptide atoms in original index order; use MD-updated posits if included,
-        // otherwise the original (excluded) atom position.
-        // todo: Do velocities too A/R.
-        for (a, inc) in pep.common.atoms.iter().zip(included.iter()) {
-            if *inc {
-                new_posits.push(pept_md_posits.next().expect("peptide MD posits exhausted"));
+        // Reinsert peptide atoms in their original order
+        for (i, atom) in pep.common.atoms.iter().enumerate() {
+            let is_included = included_set.contains(&(0, i));
+
+            if is_included {
+                new_posits.push(
+                    pept_md_posits
+                        .next()
+                        .expect("Ran out of peptide MD positions"),
+                );
                 new_vels.push(
                     pept_md_vels
                         .next()
-                        .expect("peptide MD velocities exhausted"),
+                        .expect("Ran out of peptide MD velocities"),
                 );
             } else {
-                new_posits.push(a.posit.into());
+                // Non-MD atom: use its original static position
+                new_posits.push(atom.posit.into());
                 new_vels.push(lin_alg::f32::Vec3::new_zero());
             }
         }

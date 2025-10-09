@@ -414,7 +414,7 @@ fn residue_search(
     if state.peptide.is_some() || !state.ligands.is_empty() {
         if ui
             .button(btn_text_p)
-            .on_hover_text("Hotkey: Left arrow")
+            .on_hover_text("(Hotkey: Left arrow)")
             .clicked()
         {
             cycle_selected(state, scene, true);
@@ -431,7 +431,7 @@ fn residue_search(
 
         if ui
             .button(btn_text_n)
-            .on_hover_text("Hotkey: Right arrow")
+            .on_hover_text("(Hotkey: Right arrow)")
             .clicked()
         {
             cycle_selected(state, scene, false);
@@ -489,7 +489,7 @@ fn selection_section(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
     // todo: DRY with view.
     ui.horizontal_wrapped(|ui| {
         section_box().show(ui, |ui| {
-            let help_text = "Hotkeys: square brackets [ ] to cycle";
+            let help_text = "(Hotkeys: square brackets [ ])";
             ui.label("View/Select:").on_hover_text(help_text);
             let prev_view = state.ui.view_sel_level;
 

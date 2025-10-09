@@ -379,6 +379,7 @@ pub fn display_mol_data_peptide(
             let mol = &mut state.ligands[i];
             if let Some(pep) = &state.peptide {
                 move_mol_to_res(&mut MoleculeGenericRefMut::Ligand(mol), pep, &res);
+                move_cam_to(state, scene, pep.center, engine_updates);
             }
         }
 
@@ -387,11 +388,13 @@ pub fn display_mol_data_peptide(
 
     if let Some(sel_atom) = move_lig_to_sel {
         let mut mol = state.active_mol_mut().unwrap();
+        mol.common_mut().move_to(sel_atom.posit);
 
-        let diff = sel_atom.posit - mol.common().centroid();
-        for p in &mut mol.common_mut().atom_posits {
-            *p += diff;
-        }
+        let center = match &state.peptide {
+            Some(p) => p.center,
+            None => Vec3::new_zero(),
+        };
+        move_cam_to(state, scene, center, engine_updates);
 
         move_cam = true;
 
@@ -543,14 +546,14 @@ pub fn display_mol_data(
 
             // ✥ doesn't work in EGUI.
             if ui.button(RichText::new("↔").color(color_move))
-                .on_hover_text("Move the active molecule by clicking and dragging with the mouse. Scroll to move it forward and back. (Hotkey: M)")
+                .on_hover_text("(Hotkey: M) Move the active molecule by clicking and dragging with the mouse. Scroll to move it forward and back.")
                 .clicked() {
 
                 set_manip(&mut state.volatile, scene, redraw_lig, redraw_na, redraw_lipid, ManipMode::Move((active_mol_type, active_mol_i)));
             }
 
             if ui.button(RichText::new("⟳").color(color_rotate))
-                .on_hover_text("Rotate the active molecule by clicking and dragging with the mouse. Scroll to roll. (Hotkey: R)")
+                .on_hover_text("(Hotkey: R) Rotate the active molecule by clicking and dragging with the mouse. Scroll to roll.")
                 .clicked() {
 
                 set_manip(&mut state.volatile, scene, redraw_lig,redraw_na, redraw_lipid, ManipMode::Rotate((active_mol_type, active_mol_i)));
