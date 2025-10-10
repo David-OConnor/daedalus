@@ -1,10 +1,11 @@
 //! Handles user inputs, e.g. from keyboard and mouse.
 
 use graphics::{
-    ControlScheme, DeviceEvent, ElementState, EngineUpdates, EntityUpdate, Scene, WindowEvent,
+    ControlScheme, DeviceEvent, ElementState, EngineUpdates, EntityUpdate, FWD_VEC, Scene,
+    WindowEvent,
+    event::MouseScrollDelta,
     winit::keyboard::{KeyCode, PhysicalKey::Code},
 };
-use graphics::event::MouseScrollDelta;
 use lin_alg::{f32::Vec3, map_linear};
 
 use crate::{
@@ -16,9 +17,9 @@ use crate::{
     molecule::{Atom, MolType, MoleculeCommon},
     render::set_flashlight,
     selection::{find_selected_atom, points_along_ray},
+    ui::cam::{FOG_DIST_MIN, set_fog_dist},
     util::{cycle_selected, orbit_center},
 };
-use crate::ui::cam::set_fog_dist;
 
 // These are defaults; overridden by the user A/R, and saved to prefs.
 pub const MOVEMENT_SENS: f32 = 12.;
@@ -76,12 +77,27 @@ pub fn event_dev_handler(
                     MouseScrollDelta::PixelDelta(p) => p.y as f32 / 120.0,
                 };
 
-                // todo: You will need to disable the engine's beavhior for scroll.
-                state_.ui.view_depth.1 = (state_.ui.view_depth.1 as i16 + (scroll * 5.) as i16) as u16;
+                state_.ui.view_depth.1 =
+                    (state_.ui.view_depth.1 as i16 + (scroll * 5.) as i16) as u16;
 
+                // Overflowed from subtraction.
+                if state_.ui.view_depth.1 > 2_000 {
+                    state_.ui.view_depth.1 = FOG_DIST_MIN;
+                }
 
                 set_fog_dist(&mut scene.camera, state_.ui.view_depth.1);
-                
+
+                // Counteract the engine's default free look behavior. This is indirect, but good
+                // enough for now.
+                if matches!(
+                    scene.input_settings.control_scheme,
+                    ControlScheme::FreeCamera | ControlScheme::Arc { center: _ }
+                ) {
+                    let fwd = scene.camera.orientation.rotate_vec(FWD_VEC);
+                    scene.camera.position += fwd * -scroll * SCROLL_MOVE_AMT;
+                    updates.camera = true;
+                }
+
                 return updates;
             }
 

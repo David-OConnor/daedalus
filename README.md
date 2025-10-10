@@ -31,6 +31,8 @@ Notes:
 - On Windows, the first time you run the program, you may get the message *"Microsoft Defender prevented an unrecognized app from starting"*. To bypass this, click *More info*, then *Run Anyway*.
 
 
+![Ligand dynamics](screenshots/docked_2.png)
+
 ### Mac, and linux distros we don't provide a binary for
 
 [//]: # (Compile from source by [downloading and installing Rust]&#40;https://www.rust-lang.org/tools/install&#41;, then running `cargo install daedalus` from a CLI.)
@@ -45,8 +47,6 @@ and either installing the CUDA toolkit, or disabling CUDA.
 - Visualize ligand docking
 - Visualize electron density from crystallography and Cryo-Em data
 - WIP: This software is a platform for ab-initio simulations of electron density.
-
-![Ligand dynamics](screenshots/docked_2.png)
 
 
 ## Molecule types supported for viewing and dynamics

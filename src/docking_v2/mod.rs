@@ -1,9 +1,8 @@
 //! A new approach, leveraging our molecular dynamics state and processes.
 
-
 use bincode::{Decode, Encode};
 use dynamics::{MdConfig, ParamError};
-use lin_alg::f64::{Vec3};
+use lin_alg::f64::Vec3;
 
 use crate::{
     State,
@@ -110,7 +109,13 @@ pub fn dock(state: &mut State, mol_i: usize) -> Result<(), ParamError> {
     let n_steps = 100;
     run_dynamics(&mut md_state, &state.dev, dt, n_steps);
 
-    reassign_snapshot_indices(peptide, &ligs, &Vec::new(), &mut md_state.snapshots, &state.volatile.md_peptide_selected);
+    reassign_snapshot_indices(
+        peptide,
+        &ligs,
+        &Vec::new(),
+        &mut md_state.snapshots,
+        &state.volatile.md_peptide_selected,
+    );
 
     state.mol_dynamics = Some(md_state);
 

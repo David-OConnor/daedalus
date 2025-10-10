@@ -15,6 +15,7 @@ use na_seq::Element;
 
 use crate::{
     ManipMode, Selection, State, StateUi, ViewSelLevel,
+    md::STATIC_ATOM_DIST_THRESH,
     molecule::{
         Atom, AtomRole, Chain, MolGenericTrait, MolType, MoleculeGenericRef, Residue, aa_color,
     },
@@ -28,7 +29,6 @@ use crate::{
     },
     util::{clear_mol_entity_indices, find_neighbor_posit, orbit_center},
 };
-use crate::md::STATIC_ATOM_DIST_THRESH;
 
 const LIGAND_COLOR_ANCHOR: Color = (1., 0., 1.);
 
@@ -1435,7 +1435,10 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
                 color_atom = blend_color(color_atom, COLOR_HETERO_RES, BLEND_AMT_HETERO_RES);
             }
 
-            if state.mol_dynamics.is_some() && state.ui.md.peptide_only_near_ligs && mol.common.selected_for_md {
+            if state.mol_dynamics.is_some()
+                && state.ui.md.peptide_only_near_ligs
+                && mol.common.selected_for_md
+            {
                 if state.volatile.md_peptide_selected.contains(&(0, i)) {
                     color_atom = blend_color(color_atom, COLOR_MD_NEAR_MOL, BLEND_AMT_MD_NEAR_MOL);
                 }
@@ -1584,11 +1587,22 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
             color_1 = blend_color(color_1, COLOR_HETERO_RES, BLEND_AMT_HETERO_RES);
         }
 
-        if state.mol_dynamics.is_some() && state.ui.md.peptide_only_near_ligs && mol.common.selected_for_md {
-            if state.volatile.md_peptide_selected.contains(&(0, bond.atom_0)) {
+        if state.mol_dynamics.is_some()
+            && state.ui.md.peptide_only_near_ligs
+            && mol.common.selected_for_md
+        {
+            if state
+                .volatile
+                .md_peptide_selected
+                .contains(&(0, bond.atom_0))
+            {
                 color_0 = blend_color(color_0, COLOR_MD_NEAR_MOL, BLEND_AMT_MD_NEAR_MOL);
             }
-            if state.volatile.md_peptide_selected.contains(&(0, bond.atom_1)) {
+            if state
+                .volatile
+                .md_peptide_selected
+                .contains(&(0, bond.atom_1))
+            {
                 color_1 = blend_color(color_1, COLOR_MD_NEAR_MOL, BLEND_AMT_MD_NEAR_MOL);
             }
         }

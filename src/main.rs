@@ -48,10 +48,14 @@ mod tests;
 #[cfg(feature = "cuda")]
 use std::sync::Arc;
 use std::{
-    collections::HashMap, env, fmt, fmt::Display, path::PathBuf, sync::mpsc::Receiver,
+    collections::{HashMap, HashSet},
+    env, fmt,
+    fmt::Display,
+    path::PathBuf,
+    sync::mpsc::Receiver,
     time::Instant,
 };
-use std::collections::HashSet;
+
 use bincode::{Decode, Encode};
 use bio_apis::{
     ReqError,
@@ -70,8 +74,7 @@ use dynamics::{
     params::{FfParamSet, LIPID_21_LIB},
 };
 use egui_file_dialog::{FileDialog, FileDialogConfig};
-use graphics::{Camera, ControlScheme, InputsCommanded};
-use graphics::winit::event::Modifiers;
+use graphics::{Camera, ControlScheme, InputsCommanded, winit::event::Modifiers};
 use lin_alg::{
     f32::{Quaternion, Vec3},
     f64::Vec3 as Vec3F64,

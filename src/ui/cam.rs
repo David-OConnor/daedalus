@@ -31,7 +31,7 @@ pub const FOG_DIST_DEFAULT: u16 = 70;
 
 // Affects the user-setting far property.
 // Sets the fog center point in its fade.
-pub const FOG_DIST_MIN: u16 = 5;
+pub const FOG_DIST_MIN: u16 = 1;
 pub const FOG_DIST_MAX: u16 = 120;
 
 pub fn calc_fog_dists(dist: u16) -> (f32, f32) {

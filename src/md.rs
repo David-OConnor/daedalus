@@ -1,15 +1,25 @@
 //! An interface to dynamics library.
 
-use std::{collections::HashMap, sync::Arc, time::Instant};
-use std::collections::HashSet;
-use bio_files::{create_bonds, md_params::ForceFieldParams, AtomGeneric};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+    time::Instant,
+};
+
+use bio_files::{AtomGeneric, create_bonds, md_params::ForceFieldParams};
 #[cfg(feature = "cuda")]
 use cudarc::driver::CudaModule;
-use dynamics::{ComputationDevice, FfMolType, MdConfig, MdState, MolDynamics, ParamError, params::FfParamSet, snapshot::Snapshot, AtomDynamics};
+use dynamics::{
+    AtomDynamics, ComputationDevice, FfMolType, MdConfig, MdState, MolDynamics, ParamError,
+    params::FfParamSet, snapshot::Snapshot,
+};
 use lin_alg::f64::Vec3;
 
-use crate::{lipid::MoleculeLipid, mol_lig::MoleculeSmall, molecule::MoleculePeptide};
-use crate::mol_lig::Ligand;
+use crate::{
+    lipid::MoleculeLipid,
+    mol_lig::{Ligand, MoleculeSmall},
+    molecule::MoleculePeptide,
+};
 
 // Å. Static atoms must be at least this close to a dynamic atom at the start of MD to be counted.
 // Set this wide to take into account motion.
@@ -45,23 +55,21 @@ pub fn build_and_run_dynamics(
     run_dynamics(&mut md_state, dev, dt, n_steps as usize);
 
     if let Some(p) = peptide {
-        reassign_snapshot_indices(
-            p,
-            &ligs,
-            &lipids,
-            &mut md_state.snapshots,
-            pep_atom_set,
-        );
+        reassign_snapshot_indices(p, &ligs, &lipids, &mut md_state.snapshots, pep_atom_set);
     }
 
     Ok(md_state)
 }
 
-fn filter_peptide_atoms(set: &mut HashSet<(usize, usize)>, pep: &MoleculePeptide, ligs: &[&mut MoleculeSmall], only_near_lig: bool) -> Vec<AtomGeneric> {
+fn filter_peptide_atoms(
+    set: &mut HashSet<(usize, usize)>,
+    pep: &MoleculePeptide,
+    ligs: &[&mut MoleculeSmall],
+    only_near_lig: bool,
+) -> Vec<AtomGeneric> {
     *set = HashSet::new();
 
-    pep
-        .common
+    pep.common
         .atoms
         .iter()
         .enumerate()
@@ -183,6 +191,10 @@ pub fn build_dynamics(
 }
 
 pub fn run_dynamics(md_state: &mut MdState, dev: &ComputationDevice, dt: f32, n_steps: usize) {
+    if n_steps == 0 {
+        return;
+    }
+
     let start = Instant::now();
 
     let i_20_pc = n_steps / 5;
@@ -195,17 +207,15 @@ pub fn run_dynamics(md_state: &mut MdState, dev: &ComputationDevice, dt: f32, n_
 
         md_state.step(dev, dt);
     }
+    println!(
+        "\nMD computation time: {}",
+        md_state.computation_time().unwrap()
+    );
 
     let elapsed = start.elapsed();
     println!(
-        "MD complete in {:.2} s",
+        "MD complete in {:.1} s",
         elapsed.as_millis() as f32 / 1_000.
-    );
-
-    println!(
-        "Neighbor rebuild count: {} time: {}ms",
-        md_state.neighbor_rebuild_count,
-        md_state.neighbor_rebuild_us / 1_000
     );
 }
 
@@ -216,7 +226,7 @@ pub fn reassign_snapshot_indices(
     ligs: &[&mut MoleculeSmall],
     lipids: &[&mut MoleculeLipid],
     snapshots: &mut [Snapshot],
-    included_set: &HashSet<(usize, usize)>
+    included_set: &HashSet<(usize, usize)>,
 ) {
     println!("Re-assigning snapshot indices to match atoms excluded for MD...");
 
