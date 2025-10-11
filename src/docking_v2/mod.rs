@@ -66,19 +66,22 @@ pub struct DockingPose {
 pub struct DockingState {}
 
 pub fn dock(state: &mut State, mol_i: usize) -> Result<(), ParamError> {
-    let num_steps = 100;
-
     let peptide = state.peptide.as_ref().unwrap(); // ?
     let mol = &mut state.ligands[mol_i];
     // Move the ligand away from the docking site prior to vectoring it towards it.
 
-    let start_dist = 10.;
+    mol.common.selected_for_md = true; // Required to not get filtered out in `build_dynamics`.
+
+    let start_dist = 8.;
     let speed = 1_000.; // Å/ps
 
     let docking_site = mol.common.centroid(); // for now
 
     // let dir = (mol.common.centroid() - state.volatile.docking_site_center).to_normalized();
-    let dir = (peptide.common.centroid() - docking_site).to_normalized();
+    let dir = (docking_site - peptide.common.centroid() ).to_normalized();
+
+    let vel = dir * speed;
+
 
     let starting_posit = docking_site + dir * start_dist;
     let starting_vel = dir * speed;
@@ -107,6 +110,9 @@ pub fn dock(state: &mut State, mol_i: usize) -> Result<(), ParamError> {
 
     let dt = 0.002;
     let n_steps = 100;
+
+
+    println!("Running dynamics..."); // todo temp
     run_dynamics(&mut md_state, &state.dev, dt, n_steps);
 
     reassign_snapshot_indices(

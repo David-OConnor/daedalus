@@ -56,21 +56,6 @@ pub fn dynamics_player(
         let help_text = "Toggle between viewing the original (pre-dynamics) atom positions, and \
         ones at the selected dynamics snapshot.";
         ui.label("Show atoms:").on_hover_text(help_text);
-        // ComboBox::from_id_salt(3)
-        //     .width(80.)
-        //     .selected_text(state.ui.peptide_atom_posits.to_string())
-        //     .show_ui(ui, |ui| {
-        //         for view in &[PeptideAtomPosits::Original, PeptideAtomPosits::Dynamics] {
-        //             ui.selectable_value(&mut state.ui.peptide_atom_posits, *view, view.to_string());
-        //         }
-        //     })
-        //     .response
-        //     .on_hover_text(help_text);
-
-        // if state.ui.peptide_atom_posits != prev {
-        //     draw_peptide(state, scene);
-        //     engine_updates.entities = true;
-        // }
 
         let snapshot_prev = state.ui.current_snapshot;
 

@@ -169,7 +169,6 @@ pub fn build_dynamics(
 
         let bonds = create_bonds(&atoms);
 
-        println!("STATIC: {}", static_peptide);
         mols.push(MolDynamics {
             ff_mol_type: FfMolType::Peptide,
             atoms,

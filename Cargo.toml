@@ -4,12 +4,12 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-graphics = { version = "0.4.8", features = ["app_utils"] }
-egui = "0.32.0"
+graphics = { version = "0.4.9", features = ["app_utils"] }
+egui = "0.33.0"
 
 #egui_tiles = "0.12.0" # For layouts etc. Experimenting
-egui-file-dialog = "0.11.0" #  For file dialogs.
-egui_plot = "0.33.0"  # For Rama plots
+egui-file-dialog = "0.12.0" #  For file dialogs.
+egui_plot = "0.34.0"  # For Rama plots
 
 cfg-if = "1.0.1"
 
