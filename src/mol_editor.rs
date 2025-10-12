@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use bio_files::BondType;
 use graphics::{ControlScheme, EngineUpdates, EntityUpdate, Scene};
 use lin_alg::{
     f32::{Quaternion, Vec3 as Vec3F32},
@@ -9,16 +10,17 @@ use na_seq::{AtomTypeInRes, Element, Element::Carbon};
 
 use crate::{
     ManipMode, OperatingMode, State, StateUi,
-    drawing::{draw_mol, draw_peptide},
+    drawing::{EntityClass, draw_mol, draw_peptide},
     drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
     mol_lig::{Ligand, MoleculeSmall},
-    molecule::{Atom, MolType, MoleculeCommon, MoleculeGenericRef},
+    molecule::{Atom, Bond, MolType, MoleculeCommon, MoleculeGenericRef},
 };
 
 /// For editing small organic molecules.
+#[derive(Debug, Default)]
 pub struct MolEditorState {
-    mol: MoleculeSmall, // todo: A/R re this and atoms.
-    atoms: Vec<Atom>,
+    pub mol: MoleculeSmall,
+    // atoms: Vec<Atom>,
 }
 
 impl MolEditorState {
@@ -27,9 +29,9 @@ impl MolEditorState {
         // todo: Change this dist; rough start.
         const DIST: f64 = 1.3;
 
-        self.atoms = vec![
+        self.mol.common.atoms = vec![
             Atom {
-                serial_number: 0,
+                serial_number: 1,
                 posit: Vec3::new_zero(),
                 element: Carbon,
                 type_in_res: Some(AtomTypeInRes::C), // todo: no; fix this
@@ -38,7 +40,7 @@ impl MolEditorState {
                 ..Default::default()
             },
             Atom {
-                serial_number: 1,
+                serial_number: 2,
                 posit: Vec3::new(DIST, 0., 0.),
                 element: Carbon,
                 type_in_res: Some(AtomTypeInRes::C), // todo: no; fix this
@@ -47,6 +49,18 @@ impl MolEditorState {
                 ..Default::default()
             },
         ];
+
+        self.mol.common.bonds = vec![Bond {
+            bond_type: BondType::Single,
+            atom_0_sn: 1,
+            atom_1_sn: 2,
+            atom_0: 0,
+            atom_1: 1,
+            is_backbone: false,
+        }];
+
+        self.mol.common.atom_posits = self.mol.common.atoms.iter().map(|a| a.posit).collect();
+        self.mol.common.build_adjacency_list();
     }
 
     pub fn load_mol(&mut self, mol: &MoleculeCommon) {
@@ -59,7 +73,11 @@ impl MolEditorState {
             .map(|a| a.clone())
             .collect();
 
-        self.atoms = atoms;
+        self.mol.common = mol.clone();
+        // self.mol.common.atom_posits = atoms.iter().map(|a| a.posit).collect();
+        // self.mol.common.atoms = atoms;
+        // self
+        // self.mol.common.build_adjacency_list();
     }
 
     pub fn save_mol2(&self, path: &Path) -> Result<(), std::io::Error> {
@@ -72,16 +90,17 @@ impl MolEditorState {
 }
 
 pub mod templates {
+    use bio_files::BondType;
     use lin_alg::f64::Vec3;
     use na_seq::{
         AtomTypeInRes,
-        Element::{self, Carbon, Oxygen},
+        Element::{self, Carbon, Hydrogen, Oxygen},
     };
 
-    use crate::molecule::Atom;
+    use crate::molecule::{Atom, Bond};
 
     // todo: What does posit anchor too? Center? An corner marked in a certain way?
-    pub fn cooh_group(anchor: Vec3, starting_sn: u32) -> Vec<Atom> {
+    pub fn cooh_group(anchor: Vec3, starting_sn: u32) -> (Vec<Atom>, Vec<Bond>) {
         const POSITS: [Vec3; 3] = [
             Vec3::new(0.0000, 0.0000, 0.0), // C (carboxyl)
             Vec3::new(1.2290, 0.0000, 0.0), // O (carbonyl)
@@ -91,18 +110,19 @@ pub mod templates {
 
         // todo: Skip the H.
         // const ELEMENTS: [Element; 4] = [Carbon, Oxygen, Oxygen, Hydrogen];
-        const ELEMENTS: [Element; 3] = [Carbon, Oxygen, Oxygen];
+        const ELEMENTS: [Element; 4] = [Carbon, Oxygen, Oxygen, Hydrogen];
         const FF_TYPES: [&str; 4] = ["c", "o", "oh", "ho"]; // GAFF2-style
         const CHARGES: [f32; 4] = [0.70, -0.55, -0.61, 0.44]; // todo: A/R
 
         let posits = POSITS.iter().map(|p| *p + anchor);
 
-        let mut result = Vec::new();
+        let mut atoms = Vec::with_capacity(3);
+        let mut bonds = Vec::with_capacity(3);
 
         for (i, posit) in posits.enumerate() {
             let serial_number = starting_sn + i as u32;
 
-            result.push(Atom {
+            atoms.push(Atom {
                 serial_number,
                 posit,
                 element: ELEMENTS[i],
@@ -113,11 +133,28 @@ pub mod templates {
             })
         }
 
-        result
+        bonds.push(Bond {
+            bond_type: BondType::Double,
+            atom_0_sn: atoms[0].serial_number,
+            atom_1_sn: atoms[1].serial_number,
+            atom_0: 0,
+            atom_1: 1,
+            is_backbone: false,
+        });
+        bonds.push(Bond {
+            bond_type: BondType::Single,
+            atom_0_sn: atoms[1].serial_number,
+            atom_1_sn: atoms[2].serial_number,
+            atom_0: 1,
+            atom_1: 2,
+            is_backbone: false,
+        });
+
+        (atoms, bonds)
     }
 
     // todo: What does posit anchor too? Center? An corner marked in a certain way?
-    pub fn benzene_ring(anchor: Vec3, starting_sn: u32) -> Vec<Atom> {
+    pub fn benzene_ring(anchor: Vec3, starting_sn: u32) -> (Vec<Atom>, Vec<Bond>) {
         const POSITS: [Vec3; 6] = [
             Vec3::new(1.3970, 0.0000, 0.0),
             Vec3::new(0.6985, 1.2090, 0.0),
@@ -129,12 +166,13 @@ pub mod templates {
 
         let posits = POSITS.iter().map(|p| *p + anchor);
 
-        let mut result = Vec::new();
+        let mut atoms = Vec::with_capacity(6);
+        let mut bonds = Vec::with_capacity(6);
 
         for (i, posit) in posits.enumerate() {
             let serial_number = starting_sn + i as u32;
 
-            result.push(Atom {
+            atoms.push(Atom {
                 serial_number,
                 posit,
                 element: Carbon,
@@ -145,7 +183,19 @@ pub mod templates {
             })
         }
 
-        result
+        for i in 0..6 {
+            let i_next = i % 6; // Wrap 6 to 0.
+            bonds.push(Bond {
+                bond_type: BondType::Aromatic,
+                atom_0_sn: atoms[i].serial_number,
+                atom_1_sn: atoms[i_next].serial_number,
+                atom_0: i,
+                atom_1: i_next,
+                is_backbone: false,
+            });
+        }
+
+        (atoms, bonds)
     }
 }
 
@@ -154,13 +204,18 @@ pub fn enter_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mu
     state.volatile.operating_mode = OperatingMode::MolEditor;
     state.volatile.operating_mode_prev = OperatingMode::Primary;
 
-    let cam_dist: f32 = 15.;
+    let cam_dist: f32 = 20.;
 
-    match state.active_mol() {
-        Some(mol) => {
-            state.mol_editor.load_mol(mol.common());
+    match state.volatile.active_mol {
+        Some((mol_type, i)) => {
+            if mol_type == MolType::Ligand {
+                state.mol_editor.load_mol(&state.ligands[i].common);
+            } else {
+                state.mol_editor.clear_mol();
+            }
         }
         None => {
+            println!("Clearing mol");
             state.mol_editor.clear_mol();
         }
     }
@@ -171,23 +226,21 @@ pub fn enter_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mu
     };
 
     scene.camera.position = Vec3F32::new(0., 0., -cam_dist);
-    scene.camera.orientation = Quaternion::new_identity(); // todo: COnfirm this is fwd.
+    scene.camera.orientation = Quaternion::new_identity();
 
-    // Hide all of the non-editor molecules.
-    draw_peptide(state, scene);
-    draw_all_ligs(state, scene);
-    draw_all_nucleic_acids(state, scene);
-    draw_all_lipids(state, scene);
+    // Clear all entities for non-editor molecules.
+    scene.entities = Vec::new();
 
-    draw_mol(
+    scene.entities.extend(draw_mol(
         MoleculeGenericRef::Ligand(&state.mol_editor.mol),
         0,
         &state.ui,
         &None,
         ManipMode::None,
-    );
+    ));
 
     engine_updates.entities = EntityUpdate::All;
+    engine_updates.lighting = true; // todo: QC if you need or want this.
 }
 
 // todo: Into a GUI util?
@@ -205,4 +258,5 @@ pub fn exit_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mut
     draw_all_lipids(state, scene);
 
     engine_updates.entities = EntityUpdate::All;
+    engine_updates.lighting = true; // todo: QC if you need or want this.
 }

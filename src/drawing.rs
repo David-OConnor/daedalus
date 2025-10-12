@@ -834,11 +834,7 @@ pub fn draw_mol(
         // });
     }
 
-    if matches!(
-        ui.mol_view,
-        // MoleculeView::BallAndStick | MoleculeView::SpaceFill
-        MoleculeView::BallAndStick
-    ) {
+    if matches!(ui.mol_view, MoleculeView::BallAndStick) {
         for (i_atom, atom) in mol.common().atoms.iter().enumerate() {
             if ui.visibility.hide_hydrogen && atom.element == Element::Hydrogen {
                 continue;

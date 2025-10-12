@@ -437,7 +437,9 @@ pub fn close_mol(
 
             state.ligands.remove(i);
 
-            if !state.ligands.is_empty() {
+            if state.ligands.is_empty() {
+                state.volatile.active_mol = None;
+            } else {
                 state.volatile.active_mol = Some((MolType::Ligand, state.ligands.len() - 1));
             }
 
@@ -464,7 +466,9 @@ pub fn close_mol(
 
             state.nucleic_acids.remove(i);
 
-            if !state.nucleic_acids.is_empty() {
+            if state.nucleic_acids.is_empty() {
+                state.volatile.active_mol = None;
+            } else {
                 state.volatile.active_mol =
                     Some((MolType::NucleicAcid, state.nucleic_acids.len() - 1));
             }
@@ -479,7 +483,9 @@ pub fn close_mol(
 
             state.lipids.remove(i);
 
-            if !state.lipids.is_empty() {
+            if state.lipids.is_empty() {
+                state.volatile.active_mol = None;
+            } else {
                 state.volatile.active_mol = Some((MolType::Lipid, state.lipids.len() - 1));
             }
 
