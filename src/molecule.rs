@@ -565,6 +565,8 @@ impl Display for AtomRole {
     }
 }
 
+/// Represents a covalent bond between two atoms. Includes both atom indices for fast lookups,
+/// and serial numbers for stability.
 #[derive(Debug, Clone)]
 pub struct Bond {
     pub bond_type: BondType,

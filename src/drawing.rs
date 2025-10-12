@@ -810,7 +810,7 @@ pub fn draw_mol(
         return result;
     }
 
-    let active = if let Some((active_mol_type, active_i)) = active_mol {
+    let mol_active = if let Some((active_mol_type, active_i)) = active_mol {
         mol.mol_type() == *active_mol_type && mol_i == *active_i
     } else {
         false
@@ -1030,7 +1030,7 @@ pub fn draw_mol(
             mol.mol_type(),
             true,
             neighbor_posit,
-            active,
+            mol_active,
             to_hydrogen,
         ));
     }

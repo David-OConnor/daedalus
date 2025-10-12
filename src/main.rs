@@ -277,6 +277,8 @@ struct StateVolatile {
     /// This allows us to wait a frame before getting the UI height after assessing
     /// a mode change.
     operating_mode_reset_next_frame: bool,
+    /// Allows restoring after entering the mol edit mode.
+    primary_mode_cam: Camera,
 }
 
 impl Default for StateVolatile {
@@ -301,6 +303,7 @@ impl Default for StateVolatile {
             operating_mode: Default::default(),
             operating_mode_prev: Default::default(),
             operating_mode_reset_next_frame: false,
+            primary_mode_cam: Default::default(),
         }
     }
 }

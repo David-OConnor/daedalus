@@ -1,7 +1,7 @@
-use std::path::Path;
+use std::{collections::HashMap, io, io::ErrorKind, path::Path};
 
-use bio_files::BondType;
-use graphics::{ControlScheme, EngineUpdates, EntityUpdate, Scene};
+use bio_files::{BondType, create_bonds};
+use graphics::{ControlScheme, EngineUpdates, Entity, EntityUpdate, Scene};
 use lin_alg::{
     f32::{Quaternion, Vec3 as Vec3F32},
     f64::Vec3,
@@ -9,12 +9,15 @@ use lin_alg::{
 use na_seq::{AtomTypeInRes, Element, Element::Carbon};
 
 use crate::{
-    ManipMode, OperatingMode, State, StateUi,
+    ManipMode, OperatingMode, Selection, State, StateUi,
     drawing::{EntityClass, draw_mol, draw_peptide},
     drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
     mol_lig::{Ligand, MoleculeSmall},
     molecule::{Atom, Bond, MolType, MoleculeCommon, MoleculeGenericRef},
+    render::set_flashlight,
 };
+
+pub const INIT_CAM_DIST: f32 = 20.;
 
 /// For editing small organic molecules.
 #[derive(Debug, Default)]
@@ -64,27 +67,92 @@ impl MolEditorState {
     }
 
     pub fn load_mol(&mut self, mol: &MoleculeCommon) {
-        // We assign H dynamically; ignore present ones.
+        self.mol.common = mol.clone();
 
-        let atoms: Vec<_> = mol
+        // We assign H dynamically; ignore present ones.
+        self.mol.common.atoms = mol
             .atoms
             .iter()
             .filter(|a| a.element != Element::Hydrogen)
             .map(|a| a.clone())
             .collect();
 
-        self.mol.common = mol.clone();
-        // self.mol.common.atom_posits = atoms.iter().map(|a| a.posit).collect();
-        // self.mol.common.atoms = atoms;
-        // self
-        // self.mol.common.build_adjacency_list();
+        // Remove bonds to atoms that no longer exist, and change indices otherwise:
+        // serial_number -> new index after filtering
+        let sn2idx: HashMap<u32, usize> = self
+            .mol
+            .common
+            .atoms
+            .iter()
+            .enumerate()
+            .map(|(i, a)| (a.serial_number, i))
+            .collect();
+
+        // Keep only bonds whose endpoints still exist; reindex to new atom indices
+        self.mol.common.bonds = mol
+            .bonds
+            .iter()
+            .filter_map(|b| {
+                let i0 = sn2idx.get(&b.atom_0_sn)?;
+                let i1 = sn2idx.get(&b.atom_1_sn)?;
+                Some(Bond {
+                    bond_type: b.bond_type,
+                    atom_0_sn: b.atom_0_sn,
+                    atom_1_sn: b.atom_1_sn,
+                    atom_0: *i0,
+                    atom_1: *i1,
+                    is_backbone: b.is_backbone,
+                })
+            })
+            .collect();
+
+        // Rebuild these based on the new filters.
+        self.mol.common.atom_posits = self.mol.common.atoms.iter().map(|a| a.posit).collect();
+        self.mol.common.build_adjacency_list();
     }
 
-    pub fn save_mol2(&self, path: &Path) -> Result<(), std::io::Error> {
+    pub fn delete_atom(&mut self, i: usize) -> io::Result<()> {
+        if i >= self.mol.common.atoms.len() {
+            return Err(io::Error::new(ErrorKind::InvalidData, "Out of range"));
+        }
+
+        self.mol.common.atoms.remove(i);
+        self.mol.common.atom_posits.remove(i);
+
+        // Drop bonds that referenced the removed atom
+        self.mol
+            .common
+            .bonds
+            .retain(|b| b.atom_0 != i && b.atom_1 != i);
+
+        // Reindex remaining bonds (atom indices shift down after removal)
+        for b in &mut self.mol.common.bonds {
+            if b.atom_0 > i {
+                b.atom_0 -= 1;
+            }
+            if b.atom_1 > i {
+                b.atom_1 -= 1;
+            }
+        }
+
+        for adj in &mut self.mol.common.adjacency_list {
+            adj.retain(|&j| j != i);
+
+            for j in adj.iter_mut() {
+                if *j > i {
+                    *j -= 1;
+                }
+            }
+        }
+
         Ok(())
     }
 
-    pub fn save_sdf(&self, path: &Path) -> Result<(), std::io::Error> {
+    pub fn save_mol2(&self, path: &Path) -> io::Result<()> {
+        Ok(())
+    }
+
+    pub fn save_sdf(&self, path: &Path) -> io::Result<()> {
         Ok(())
     }
 }
@@ -126,9 +194,9 @@ pub mod templates {
                 serial_number,
                 posit,
                 element: ELEMENTS[i],
-                type_in_res: Some(AtomTypeInRes::CA), // todo: no; fix this
+                type_in_res: None, // todo: no; fix this
                 force_field_type: Some(FF_TYPES[i].to_owned()), // todo: A/R
-                partial_charge: Some(CHARGES[i]),     // todo: A/R,
+                partial_charge: Some(CHARGES[i]), // todo: A/R,
                 ..Default::default()
             })
         }
@@ -178,7 +246,7 @@ pub mod templates {
                 element: Carbon,
                 type_in_res: Some(AtomTypeInRes::CA), // todo: A/R
                 force_field_type: Some("ca".to_owned()), // todo: A/R
-                partial_charge: Some(-0.115),         // todo: A/R,
+                partial_charge: Some(-0.115),         // tood: Ar. -0.06 - 0.012 etc.
                 ..Default::default()
             })
         }
@@ -204,8 +272,6 @@ pub fn enter_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mu
     state.volatile.operating_mode = OperatingMode::MolEditor;
     state.volatile.operating_mode_prev = OperatingMode::Primary;
 
-    let cam_dist: f32 = 20.;
-
     match state.volatile.active_mol {
         Some((mol_type, i)) => {
             if mol_type == MolType::Ligand {
@@ -225,22 +291,16 @@ pub fn enter_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mu
         center: Vec3F32::new_zero(),
     };
 
-    scene.camera.position = Vec3F32::new(0., 0., -cam_dist);
+    state.volatile.primary_mode_cam = scene.camera.clone();
+    scene.camera.position = Vec3F32::new(0., 0., -INIT_CAM_DIST);
     scene.camera.orientation = Quaternion::new_identity();
 
     // Clear all entities for non-editor molecules.
-    scene.entities = Vec::new();
+    redraw(&mut scene.entities, &state.mol_editor.mol, &state.ui);
 
-    scene.entities.extend(draw_mol(
-        MoleculeGenericRef::Ligand(&state.mol_editor.mol),
-        0,
-        &state.ui,
-        &None,
-        ManipMode::None,
-    ));
-
+    set_flashlight(scene);
     engine_updates.entities = EntityUpdate::All;
-    engine_updates.lighting = true; // todo: QC if you need or want this.
+    engine_updates.lighting = true;
 }
 
 // todo: Into a GUI util?
@@ -257,6 +317,22 @@ pub fn exit_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mut
     draw_all_nucleic_acids(state, scene);
     draw_all_lipids(state, scene);
 
+    scene.camera = state.volatile.primary_mode_cam.clone();
+
+    set_flashlight(scene);
     engine_updates.entities = EntityUpdate::All;
-    engine_updates.lighting = true; // todo: QC if you need or want this.
+    engine_updates.lighting = true;
+}
+
+// todo: Move to drawing_wrappers?
+pub fn redraw(entities: &mut Vec<Entity>, mol: &MoleculeSmall, ui: &StateUi) {
+    *entities = Vec::new();
+
+    entities.extend(draw_mol(
+        MoleculeGenericRef::Ligand(mol),
+        0,
+        ui,
+        &None,
+        ManipMode::None,
+    ));
 }
