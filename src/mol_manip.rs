@@ -1,6 +1,5 @@
 //! Handles logic for moving and rotating molecules from user inputs.
 
-use cudarc::driver::sys::cudaError_enum;
 use graphics::{
     ControlScheme, EngineUpdates, FWD_VEC, RIGHT_VEC, Scene, UP_VEC, event::MouseScrollDelta,
 };

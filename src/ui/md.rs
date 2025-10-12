@@ -7,7 +7,10 @@ use crate::{
     State,
     drawing::{EntityClass, draw_peptide, draw_water},
     md::{build_and_run_dynamics, build_dynamics},
-    ui::{COL_SPACING, COLOR_ACTIVE, COLOR_INACTIVE, cam::move_cam_to_active_mol, flag_btn, misc, num_field},
+    ui::{
+        COL_SPACING, COLOR_ACTIVE, COLOR_INACTIVE, cam::move_cam_to_active_mol, flag_btn, misc,
+        num_field,
+    },
     util::{clear_cli_out, handle_err, handle_success},
 };
 

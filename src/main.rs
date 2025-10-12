@@ -38,6 +38,7 @@ mod cam_misc;
 mod drawing_wrappers;
 mod lipid;
 mod md;
+mod mol_editor;
 mod mol_lig;
 mod mol_manip;
 mod nucleic_acid;
@@ -84,6 +85,7 @@ use molecule::MoleculePeptide;
 
 use crate::{
     lipid::{LipidShape, MoleculeLipid},
+    mol_editor::MolEditorState,
     molecule::{Bond, MolType, MoleculeCommon, MoleculeGenericRef, MoleculeGenericRefMut},
     nucleic_acid::MoleculeNucleicAcid,
     prefs::ToSave,
@@ -525,6 +527,7 @@ struct State {
     /// Common lipid types, e.g. as derived from Amber's `lipids21.lib`, but perhaps not exclusively.
     /// These are loaded at init; there will be one of each type.
     pub lipid_templates: Vec<MoleculeLipid>,
+    pub mol_editor: MolEditorState,
 }
 
 impl Default for State {
@@ -555,6 +558,7 @@ impl Default for State {
             ff_param_set: Default::default(),
             lig_specific_params: Default::default(),
             lipid_templates: Default::default(),
+            mol_editor: Default::default(),
         }
     }
 }

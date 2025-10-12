@@ -8,7 +8,18 @@ use graphics::{
 };
 use lin_alg::{f32::Vec3, map_linear};
 
-use crate::{ManipMode, Selection, State, cam_misc::move_cam_to_sel, drawing, drawing::MoleculeView, drawing_wrappers, mol_manip, molecule::{Atom, MolType, MoleculeCommon}, render::set_flashlight, selection::{find_selected_atom, points_along_ray}, ui::cam::{FOG_DIST_MIN, set_fog_dist}, util::{cycle_selected, orbit_center}, OperatingMode};
+use crate::{
+    ManipMode, OperatingMode, Selection, State,
+    cam_misc::move_cam_to_sel,
+    drawing,
+    drawing::MoleculeView,
+    drawing_wrappers, mol_manip,
+    molecule::{Atom, MolType, MoleculeCommon},
+    render::set_flashlight,
+    selection::{find_selected_atom, points_along_ray},
+    ui::cam::{FOG_DIST_MIN, set_fog_dist},
+    util::{cycle_selected, orbit_center},
+};
 
 // These are defaults; overridden by the user A/R, and saved to prefs.
 pub const MOVEMENT_SENS: f32 = 12.;
@@ -118,16 +129,19 @@ pub fn event_dev_handler(
             if button == right_click {
                 // Right click
                 match state {
-                    ElementState::Pressed => {
-                        match state_.volatile.operating_mode {
-                            OperatingMode::Primary => {
-                                handle_selection_attempt(state_, scene, &mut redraw_protein, &mut redraw_lig, &mut redraw_lipid, &mut redraw_na);
-                            }
-                            OperatingMode::MolEditor => {
-                                
-                            }
+                    ElementState::Pressed => match state_.volatile.operating_mode {
+                        OperatingMode::Primary => {
+                            handle_selection_attempt(
+                                state_,
+                                scene,
+                                &mut redraw_protein,
+                                &mut redraw_lig,
+                                &mut redraw_lipid,
+                                &mut redraw_na,
+                            );
                         }
-                    }
+                        OperatingMode::MolEditor => {}
+                    },
                     ElementState::Released => (),
                 }
             }
@@ -170,10 +184,14 @@ pub fn event_dev_handler(
                     }
                     Code(KeyCode::Escape) => {
                         // If in manip mode, exit that, but don't remove selections.
-                        if matches!(state_.volatile.mol_manip.mol, ManipMode::Move(_) | ManipMode::Rotate(_)) {
+                        if matches!(
+                            state_.volatile.mol_manip.mol,
+                            ManipMode::Move(_) | ManipMode::Rotate(_)
+                        ) {
                             state_.volatile.mol_manip.mol = ManipMode::None;
                             state_.volatile.mol_manip.pivot = None;
-                            scene.input_settings.control_scheme = state_.volatile.control_scheme_prev;
+                            scene.input_settings.control_scheme =
+                                state_.volatile.control_scheme_prev;
                         } else {
                             state_.ui.selection = Selection::None;
                             state_.volatile.active_mol = None;
@@ -553,8 +571,14 @@ fn redraw_inplace_helper(
     };
 }
 
-fn handle_selection_attempt(state: &mut State, scene: &mut Scene, redraw_protein: &mut bool,
-                            redraw_lig: &mut bool, redraw_na: &mut bool, redraw_lipid: &mut bool) {
+fn handle_selection_attempt(
+    state: &mut State,
+    scene: &mut Scene,
+    redraw_protein: &mut bool,
+    redraw_lig: &mut bool,
+    redraw_na: &mut bool,
+    redraw_lipid: &mut bool,
+) {
     if let Some(mut cursor) = state.ui.cursor_pos {
         // Due to a quirk of some combination of our graphics engine and the egui
         // integration lib in it, we need this vertical offset for the UI; otherwise,
@@ -680,8 +704,7 @@ fn handle_selection_attempt(state: &mut State, scene: &mut Scene, redraw_protein
                 state.volatile.active_mol = Some((MolType::Ligand, mol_i));
             }
             Selection::AtomNucleicAcid((mol_i, _)) => {
-                state.volatile.active_mol =
-                    Some((MolType::NucleicAcid, mol_i));
+                state.volatile.active_mol = Some((MolType::NucleicAcid, mol_i));
             }
             Selection::AtomLipid((mol_i, _)) => {
                 state.volatile.active_mol = Some((MolType::Lipid, mol_i));
@@ -696,9 +719,7 @@ fn handle_selection_attempt(state: &mut State, scene: &mut Scene, redraw_protein
             state.ui.selection = selection;
         }
 
-        if let ControlScheme::Arc { center } =
-            &mut scene.input_settings.control_scheme
-        {
+        if let ControlScheme::Arc { center } = &mut scene.input_settings.control_scheme {
             *center = orbit_center(state);
         }
 

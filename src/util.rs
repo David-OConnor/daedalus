@@ -11,17 +11,24 @@ use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 use mcubes::{MarchingCubes, MeshSide};
 use na_seq::{AaIdent, Element};
 
-use crate::{CamSnapshot, ManipMode, PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel, cam_misc, cam_misc::move_mol_to_cam, drawing::{
-    EntityClass, MoleculeView, draw_density_point_cloud, draw_density_surface, draw_peptide,
-}, drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids}, mol_lig::MoleculeSmall, molecule::{
-    Atom, Bond, MolType, MoleculeCommon, MoleculeGenericRef, MoleculeGenericRefMut,
-    MoleculePeptide, Residue,
-}, prefs::OpenType, render::{
-    Color, MESH_DENSITY_SURFACE, MESH_SECONDARY_STRUCTURE, MESH_SOLVENT_SURFACE, set_flashlight,
-}, ribbon_mesh::build_cartoon_mesh, sa_surface::make_sas_mesh, OperatingMode};
-use crate::cam_misc::cam_look_at_outside;
-use crate::ui::cam::move_cam_to_active_mol;
-
+use crate::{
+    CamSnapshot, ManipMode, PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel, cam_misc,
+    drawing::{
+        EntityClass, MoleculeView, draw_density_point_cloud, draw_density_surface, draw_peptide,
+    },
+    drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
+    mol_lig::MoleculeSmall,
+    molecule::{
+        Atom, Bond, MolType, MoleculeCommon, MoleculeGenericRef, MoleculeGenericRefMut,
+        MoleculePeptide, Residue,
+    },
+    prefs::OpenType,
+    render::{
+        Color, MESH_DENSITY_SURFACE, MESH_SECONDARY_STRUCTURE, MESH_SOLVENT_SURFACE, set_flashlight,
+    },
+    ribbon_mesh::build_cartoon_mesh,
+    sa_surface::make_sas_mesh,
+};
 pub fn mol_center_size(atoms: &[Atom]) -> (Vec3, f32) {
     let mut sum = Vec3::new_zero();
     let mut max_dim = 0.;
@@ -884,46 +891,4 @@ pub fn find_nearest_mol_dist_to_cam(state: &State, cam: &Camera) -> Option<f32> 
         return Some(nearest);
     }
     None
-}
-
-
-// todo: Into a GUI util?
-pub fn enter_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mut EngineUpdates) {
-    state.volatile.operating_mode = OperatingMode::MolEditor;
-    state.volatile.operating_mode_prev = OperatingMode::Primary;
-
-    if state.volatile.active_mol.is_some() {
-        move_cam_to_active_mol(state, scene, Vec3::new_zero(), engine_updates);
-    }
-
-    state.volatile.control_scheme_prev = scene.input_settings.control_scheme;
-
-    let mut center = Vec3F32::new_zero();
-    if let Some(mol) = &state.active_mol() {
-        center = mol.common().centroid().into();
-    }
-
-    scene.input_settings.control_scheme = ControlScheme::Arc { center };
-
-    // cam_look_at_outside(
-    //     &mut scene.camera,
-    //     mol_pos,
-    //     Vec3F32::new_zero(), // todo A/R
-    //     cam_misc::MOVE_CAM_TO_MOL_DIST,
-    // );
-
-    draw_peptide(state, scene); // Hide the peptide.
-    engine_updates.entities = EntityUpdate::All;
-}
-
-// todo: Into a GUI util?
-pub fn exit_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mut EngineUpdates) {
-    state.volatile.operating_mode = OperatingMode::Primary;
-    state.volatile.operating_mode_prev = OperatingMode::MolEditor;
-
-    // todo: Not necessarily zero!
-    scene.input_settings.control_scheme = state.volatile.control_scheme_prev;
-
-    draw_peptide(state, scene); // Hide the peptide.
-    engine_updates.entities = EntityUpdate::All;
 }

@@ -21,25 +21,42 @@ use lin_alg::f64::Vec3;
 use md::md_setup;
 use mol_data::display_mol_data;
 
-use crate::{CamSnapshot, MsaaSetting, Selection, State, ViewSelLevel, cam_misc::{move_mol_to_cam, reset_camera}, cli, cli::autocomplete_cli, docking_v2::dock, download_mols::{load_atom_coords_rcsb, load_sdf_drugbank, load_sdf_pubchem}, drawing::{EntityClass, MoleculeView, color_viridis, draw_peptide}, drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids}, file_io::gemmi_path, inputs::{MOVEMENT_SENS, ROTATE_SENS, SENS_MOL_MOVE_SCROLL}, lipid::{LipidShape, make_bacterial_lipids}, mol_lig::MoleculeSmall, molecule::{MolType, MoleculeGenericRef}, render::{set_flashlight, set_static_light}, ui::{
-    cam::{cam_controls, cam_snapshots, move_cam_to_active_mol},
-    misc::section_box,
-    mol_data::display_mol_data_peptide,
-    rama_plot::plot_rama,
-    view::view_settings,
-}, util::{
-    check_prefs_save, clear_mol_entity_indices, close_mol, close_peptide, cycle_selected,
-    handle_err, handle_scene_flags, handle_success, orbit_center, select_from_search,
-}, OperatingMode};
-use crate::util::enter_edit_mode;
+use crate::{
+    CamSnapshot, MsaaSetting, OperatingMode, Selection, State, ViewSelLevel,
+    cam_misc::{move_mol_to_cam, reset_camera},
+    cli,
+    cli::autocomplete_cli,
+    docking_v2::dock,
+    download_mols::{load_atom_coords_rcsb, load_sdf_drugbank, load_sdf_pubchem},
+    drawing::{EntityClass, MoleculeView, color_viridis, draw_peptide},
+    drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
+    file_io::gemmi_path,
+    inputs::{MOVEMENT_SENS, ROTATE_SENS, SENS_MOL_MOVE_SCROLL},
+    lipid::{LipidShape, make_bacterial_lipids},
+    mol_editor::enter_edit_mode,
+    mol_lig::MoleculeSmall,
+    molecule::{MolType, MoleculeGenericRef},
+    render::{set_flashlight, set_static_light},
+    ui::{
+        cam::{cam_controls, cam_snapshots, move_cam_to_active_mol},
+        misc::section_box,
+        mol_data::display_mol_data_peptide,
+        rama_plot::plot_rama,
+        view::view_settings,
+    },
+    util::{
+        check_prefs_save, clear_mol_entity_indices, close_mol, close_peptide, cycle_selected,
+        handle_err, handle_scene_flags, handle_success, orbit_center, select_from_search,
+    },
+};
 
 pub mod cam;
 mod md;
 pub mod misc;
 mod mol_data;
+mod mol_editor;
 mod rama_plot;
 mod view;
-mod mol_editor;
 
 pub const ROW_SPACING: f32 = 10.;
 pub const COL_SPACING: f32 = 30.;
@@ -1643,7 +1660,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         } else {
             state.volatile.operating_mode_reset_next_frame = true;
         }
-
     }
 
     if !INIT_COMPLETE.swap(true, Ordering::AcqRel) {

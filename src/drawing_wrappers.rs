@@ -6,7 +6,7 @@
 use graphics::{Entity, Scene};
 
 use crate::{
-    State, drawing,
+    OperatingMode, State, drawing,
     drawing::EntityClass,
     molecule::{MolGenericTrait, MolType, MoleculeGenericRef},
     util::clear_mol_entity_indices,
@@ -68,6 +68,11 @@ pub fn draw_all_ligs(state: &mut State, scene: &mut Scene) {
         return;
     }
 
+    // Edit small molecules only; not proteins.
+    if state.volatile.operating_mode == OperatingMode::MolEditor {
+        return;
+    }
+
     let mut entities = Vec::new();
     for (i_mol, mol) in state.ligands.iter_mut().enumerate() {
         let start_i_mol = ent_i_start + entities.len();
@@ -110,6 +115,11 @@ pub fn draw_all_nucleic_acids(state: &mut State, scene: &mut Scene) {
         return;
     }
 
+    // Edit small molecules only; not proteins.
+    if state.volatile.operating_mode == OperatingMode::MolEditor {
+        return;
+    }
+
     let mut entities = Vec::new();
     for (i_mol, mol) in state.nucleic_acids.iter_mut().enumerate() {
         let start_i_mol = ent_i_start + entities.len();
@@ -149,6 +159,11 @@ pub fn draw_all_lipids(state: &mut State, scene: &mut Scene) {
     let (initial_ent_count, ent_i_start) = helper_a(scene, class);
 
     if state.ui.visibility.hide_lipids {
+        return;
+    }
+
+    // Edit small molecules only; not proteins.
+    if state.volatile.operating_mode == OperatingMode::MolEditor {
         return;
     }
 
