@@ -8,18 +8,7 @@ use graphics::{
 };
 use lin_alg::{f32::Vec3, map_linear};
 
-use crate::{
-    ManipMode, Selection, State,
-    cam_misc::move_cam_to_sel,
-    drawing,
-    drawing::MoleculeView,
-    drawing_wrappers, mol_manip,
-    molecule::{Atom, MolType, MoleculeCommon},
-    render::set_flashlight,
-    selection::{find_selected_atom, points_along_ray},
-    ui::cam::{FOG_DIST_MIN, set_fog_dist},
-    util::{cycle_selected, orbit_center},
-};
+use crate::{ManipMode, Selection, State, cam_misc::move_cam_to_sel, drawing, drawing::MoleculeView, drawing_wrappers, mol_manip, molecule::{Atom, MolType, MoleculeCommon}, render::set_flashlight, selection::{find_selected_atom, points_along_ray}, ui::cam::{FOG_DIST_MIN, set_fog_dist}, util::{cycle_selected, orbit_center}, OperatingMode};
 
 // These are defaults; overridden by the user A/R, and saved to prefs.
 pub const MOVEMENT_SENS: f32 = 12.;
@@ -41,9 +30,6 @@ const SEL_NEAR_PAD: f32 = 4.;
 pub const SENS_MOL_MOVE_SCROLL: f32 = 2.5e-2;
 pub const SENS_MOL_ROT_SCROLL: f32 = 5e-2;
 pub const SENS_MOL_ROT_MOUSE: f32 = 5e-3;
-
-static mut I_FIND_NEAREST: u32 = 0;
-const RATIO_FIND_NEAREST: u32 = 1;
 
 pub fn event_dev_handler(
     state_: &mut State,
@@ -133,157 +119,13 @@ pub fn event_dev_handler(
                 // Right click
                 match state {
                     ElementState::Pressed => {
-                        if let Some(mut cursor) = state_.ui.cursor_pos {
-                            // Due to a quirk of some combination of our graphics engine and the egui
-                            // integration lib in it, we need this vertical offset for the UI; otherwise,
-                            // the higher up we click, the more the projected ray will be below the one
-                            // indicated by the cursor. (Rays will only be accurate if clicked at the bottom of the screen).
-                            // todo: It may be worth addressing upstream.
-                            cursor.1 -= map_linear(
-                                cursor.1,
-                                (scene.window_size.1, state_.volatile.ui_height),
-                                (0., state_.volatile.ui_height),
-                            );
-
-                            let mut selected_ray = scene.screen_to_render(cursor);
-
-                            // Clip the near end of this to prevent false selections that seem to the user
-                            // to be behind the camera.
-                            let diff = selected_ray.1 - selected_ray.0;
-
-                            selected_ray.0 += diff.to_normalized() * SEL_NEAR_PAD;
-
-                            // If we don't scale the selection distance appropriately, an atom etc
-                            // behind the desired one, but closer to the ray, may be selected; likely
-                            // this is undesired.
-                            let dist_thresh = match state_.ui.mol_view {
-                                MoleculeView::SpaceFill => SELECTION_DIST_THRESH_LARGE,
-                                _ => SELECTION_DIST_THRESH_SMALL,
-                            };
-
-                            // todo: Lots of DRY here!
-
-                            fn get_atoms(mol: &MoleculeCommon) -> Vec<Atom> {
-                                // todo: I don't like this clone!
-                                mol.atoms
-                                    .iter()
-                                    .enumerate()
-                                    .map(|(i, a)| Atom {
-                                        posit: mol.atom_posits[i],
-                                        element: a.element,
-                                        ..Default::default()
-                                    })
-                                    .collect()
+                        match state_.volatile.operating_mode {
+                            OperatingMode::Primary => {
+                                handle_selection_attempt(state_, scene, &mut redraw_protein, &mut redraw_lig, &mut redraw_lipid, &mut redraw_na);
                             }
-
-                            let mut lig_atoms = Vec::new();
-                            for mol in &state_.ligands {
-                                lig_atoms.push(get_atoms(&mol.common));
+                            OperatingMode::MolEditor => {
+                                
                             }
-
-                            let mut na_atoms = Vec::new();
-                            for mol in &state_.nucleic_acids {
-                                na_atoms.push(get_atoms(&mol.common));
-                            }
-                            let mut lipid_atoms = Vec::new();
-                            for mol in &state_.lipids {
-                                lipid_atoms.push(get_atoms(&mol.common));
-                            }
-
-                            let selection = match &state_.peptide {
-                                Some(mol) => {
-                                    let (
-                                        atoms_along_ray_pep,
-                                        atoms_along_ray_lig,
-                                        atoms_along_ray_na,
-                                        atoms_along_ray_lipid,
-                                    ) = points_along_ray(
-                                        selected_ray,
-                                        &mol.common.atoms,
-                                        &lig_atoms,
-                                        &na_atoms,
-                                        &lipid_atoms,
-                                        dist_thresh,
-                                    );
-
-                                    find_selected_atom(
-                                        &atoms_along_ray_pep,
-                                        &atoms_along_ray_lig,
-                                        &atoms_along_ray_na,
-                                        &atoms_along_ray_lipid,
-                                        &mol.common.atoms,
-                                        &mol.residues,
-                                        &lig_atoms,
-                                        &na_atoms,
-                                        &lipid_atoms,
-                                        &selected_ray,
-                                        &state_.ui,
-                                        &mol.chains,
-                                    )
-                                }
-                                None => {
-                                    let (
-                                        atoms_along_ray_pep,
-                                        atoms_along_ray_lig,
-                                        atoms_along_ray_na,
-                                        atoms_along_ray_lipid,
-                                    ) = points_along_ray(
-                                        selected_ray,
-                                        &Vec::new(),
-                                        &lig_atoms,
-                                        &na_atoms,
-                                        &lipid_atoms,
-                                        dist_thresh,
-                                    );
-
-                                    find_selected_atom(
-                                        &atoms_along_ray_pep,
-                                        &atoms_along_ray_lig,
-                                        &atoms_along_ray_na,
-                                        &atoms_along_ray_lipid,
-                                        &Vec::new(),
-                                        &Vec::new(),
-                                        &lig_atoms,
-                                        &na_atoms,
-                                        &lipid_atoms,
-                                        &selected_ray,
-                                        &state_.ui,
-                                        &Vec::new(),
-                                    )
-                                }
-                            };
-
-                            match selection {
-                                Selection::AtomLig((mol_i, _)) => {
-                                    state_.volatile.active_mol = Some((MolType::Ligand, mol_i));
-                                }
-                                Selection::AtomNucleicAcid((mol_i, _)) => {
-                                    state_.volatile.active_mol =
-                                        Some((MolType::NucleicAcid, mol_i));
-                                }
-                                Selection::AtomLipid((mol_i, _)) => {
-                                    state_.volatile.active_mol = Some((MolType::Lipid, mol_i));
-                                }
-                                _ => (),
-                            }
-
-                            if selection == state_.ui.selection {
-                                // Toggle.
-                                state_.ui.selection = Selection::None;
-                            } else {
-                                state_.ui.selection = selection;
-                            }
-
-                            if let ControlScheme::Arc { center } =
-                                &mut scene.input_settings.control_scheme
-                            {
-                                *center = orbit_center(state_);
-                            }
-
-                            redraw_protein = true;
-                            redraw_lig = true;
-                            redraw_na = true;
-                            redraw_lipid = true;
                         }
                     }
                     ElementState::Released => (),
@@ -327,11 +169,15 @@ pub fn event_dev_handler(
                         }
                     }
                     Code(KeyCode::Escape) => {
-                        state_.ui.selection = Selection::None;
-                        state_.volatile.active_mol = None;
-                        state_.volatile.mol_manip.mol = ManipMode::None;
-                        state_.volatile.mol_manip.pivot = None;
-                        scene.input_settings.control_scheme = state_.volatile.control_scheme_prev;
+                        // If in manip mode, exit that, but don't remove selections.
+                        if matches!(state_.volatile.mol_manip.mol, ManipMode::Move(_) | ManipMode::Rotate(_)) {
+                            state_.volatile.mol_manip.mol = ManipMode::None;
+                            state_.volatile.mol_manip.pivot = None;
+                            scene.input_settings.control_scheme = state_.volatile.control_scheme_prev;
+                        } else {
+                            state_.ui.selection = Selection::None;
+                            state_.volatile.active_mol = None;
+                        }
 
                         redraw_protein = true;
                         redraw_lig = true;
@@ -705,4 +551,160 @@ fn redraw_inplace_helper(
             EntityUpdate::All
         }
     };
+}
+
+fn handle_selection_attempt(state: &mut State, scene: &mut Scene, redraw_protein: &mut bool,
+                            redraw_lig: &mut bool, redraw_na: &mut bool, redraw_lipid: &mut bool) {
+    if let Some(mut cursor) = state.ui.cursor_pos {
+        // Due to a quirk of some combination of our graphics engine and the egui
+        // integration lib in it, we need this vertical offset for the UI; otherwise,
+        // the higher up we click, the more the projected ray will be below the one
+        // indicated by the cursor. (Rays will only be accurate if clicked at the bottom of the screen).
+        // todo: It may be worth addressing upstream.
+        cursor.1 -= map_linear(
+            cursor.1,
+            (scene.window_size.1, state.volatile.ui_height),
+            (0., state.volatile.ui_height),
+        );
+
+        let mut selected_ray = scene.screen_to_render(cursor);
+
+        // Clip the near end of this to prevent false selections that seem to the user
+        // to be behind the camera.
+        let diff = selected_ray.1 - selected_ray.0;
+
+        selected_ray.0 += diff.to_normalized() * SEL_NEAR_PAD;
+
+        // If we don't scale the selection distance appropriately, an atom etc
+        // behind the desired one, but closer to the ray, may be selected; likely
+        // this is undesired.
+        let dist_thresh = match state.ui.mol_view {
+            MoleculeView::SpaceFill => SELECTION_DIST_THRESH_LARGE,
+            _ => SELECTION_DIST_THRESH_SMALL,
+        };
+
+        // todo: Lots of DRY here!
+
+        fn get_atoms(mol: &MoleculeCommon) -> Vec<Atom> {
+            // todo: I don't like this clone!
+            mol.atoms
+                .iter()
+                .enumerate()
+                .map(|(i, a)| Atom {
+                    posit: mol.atom_posits[i],
+                    element: a.element,
+                    ..Default::default()
+                })
+                .collect()
+        }
+
+        let mut lig_atoms = Vec::new();
+        for mol in &state.ligands {
+            lig_atoms.push(get_atoms(&mol.common));
+        }
+
+        let mut na_atoms = Vec::new();
+        for mol in &state.nucleic_acids {
+            na_atoms.push(get_atoms(&mol.common));
+        }
+        let mut lipid_atoms = Vec::new();
+        for mol in &state.lipids {
+            lipid_atoms.push(get_atoms(&mol.common));
+        }
+
+        let selection = match &state.peptide {
+            Some(mol) => {
+                let (
+                    atoms_along_ray_pep,
+                    atoms_along_ray_lig,
+                    atoms_along_ray_na,
+                    atoms_along_ray_lipid,
+                ) = points_along_ray(
+                    selected_ray,
+                    &mol.common.atoms,
+                    &lig_atoms,
+                    &na_atoms,
+                    &lipid_atoms,
+                    dist_thresh,
+                );
+
+                find_selected_atom(
+                    &atoms_along_ray_pep,
+                    &atoms_along_ray_lig,
+                    &atoms_along_ray_na,
+                    &atoms_along_ray_lipid,
+                    &mol.common.atoms,
+                    &mol.residues,
+                    &lig_atoms,
+                    &na_atoms,
+                    &lipid_atoms,
+                    &selected_ray,
+                    &state.ui,
+                    &mol.chains,
+                )
+            }
+            None => {
+                let (
+                    atoms_along_ray_pep,
+                    atoms_along_ray_lig,
+                    atoms_along_ray_na,
+                    atoms_along_ray_lipid,
+                ) = points_along_ray(
+                    selected_ray,
+                    &Vec::new(),
+                    &lig_atoms,
+                    &na_atoms,
+                    &lipid_atoms,
+                    dist_thresh,
+                );
+
+                find_selected_atom(
+                    &atoms_along_ray_pep,
+                    &atoms_along_ray_lig,
+                    &atoms_along_ray_na,
+                    &atoms_along_ray_lipid,
+                    &Vec::new(),
+                    &Vec::new(),
+                    &lig_atoms,
+                    &na_atoms,
+                    &lipid_atoms,
+                    &selected_ray,
+                    &state.ui,
+                    &Vec::new(),
+                )
+            }
+        };
+
+        match selection {
+            Selection::AtomLig((mol_i, _)) => {
+                state.volatile.active_mol = Some((MolType::Ligand, mol_i));
+            }
+            Selection::AtomNucleicAcid((mol_i, _)) => {
+                state.volatile.active_mol =
+                    Some((MolType::NucleicAcid, mol_i));
+            }
+            Selection::AtomLipid((mol_i, _)) => {
+                state.volatile.active_mol = Some((MolType::Lipid, mol_i));
+            }
+            _ => (),
+        }
+
+        if selection == state.ui.selection {
+            // Toggle.
+            state.ui.selection = Selection::None;
+        } else {
+            state.ui.selection = selection;
+        }
+
+        if let ControlScheme::Arc { center } =
+            &mut scene.input_settings.control_scheme
+        {
+            *center = orbit_center(state);
+        }
+
+        *redraw_protein = true;
+        *redraw_lig = true;
+        *redraw_na = true;
+        *redraw_lipid = true;
+    }
 }

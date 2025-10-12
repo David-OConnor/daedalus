@@ -22,7 +22,7 @@ use crate::{
     nucleic_acid::MoleculeNucleicAcid,
     ui::{
         COL_SPACING, COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_HIGHLIGHT, COLOR_INACTIVE,
-        cam::move_cam_to, mol_descrip,
+        cam::move_cam_to_active_mol, mol_descrip,
     },
     util::{handle_err, handle_success, make_egui_color, make_lig_from_res, move_mol_to_res},
 };
@@ -370,7 +370,7 @@ pub fn display_mol_data_peptide(
     if let Some(res) = res_to_make {
         make_lig_from_res(state, &res, redraw_lig);
         if let Some(pep) = &state.peptide {
-            move_cam_to(state, scene, pep.center, engine_updates);
+            move_cam_to_active_mol(state, scene, pep.center, engine_updates);
         }
     }
 
@@ -379,7 +379,7 @@ pub fn display_mol_data_peptide(
             let mol = &mut state.ligands[i];
             if let Some(pep) = &state.peptide {
                 move_mol_to_res(&mut MoleculeGenericRefMut::Ligand(mol), pep, &res);
-                move_cam_to(state, scene, pep.center, engine_updates);
+                move_cam_to_active_mol(state, scene, pep.center, engine_updates);
             }
         }
 
@@ -394,7 +394,7 @@ pub fn display_mol_data_peptide(
             Some(p) => p.center,
             None => Vec3::new_zero(),
         };
-        move_cam_to(state, scene, center, engine_updates);
+        move_cam_to_active_mol(state, scene, center, engine_updates);
 
         move_cam = true;
 
@@ -407,7 +407,7 @@ pub fn display_mol_data_peptide(
             None => Vec3::new_zero(),
         };
 
-        move_cam_to(state, scene, center, engine_updates);
+        move_cam_to_active_mol(state, scene, center, engine_updates);
     }
 
     // Provide convenience functionality for loading ligands based on hetero residues
@@ -480,7 +480,7 @@ pub fn display_mol_data_peptide(
         // that may already be docked to the protein.
         // move_mol_to_cam(&mut state.ligands[i].common, &scene.camera);
         if let Some(mol) = &state.peptide {
-            move_cam_to(state, scene, mol.center, engine_updates);
+            move_cam_to_active_mol(state, scene, mol.center, engine_updates);
         }
     } else {
         if let Some(res) = res_to_load {
@@ -488,7 +488,7 @@ pub fn display_mol_data_peptide(
             // make_lig_from_res(state, &res, redraw_lig, None);
             make_lig_from_res(state, &res, redraw_lig);
 
-            move_cam_to(
+            move_cam_to_active_mol(
                 state,
                 scene,
                 state.ligands[0].common.centroid(),

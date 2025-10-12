@@ -78,10 +78,9 @@ pub fn dock(state: &mut State, mol_i: usize) -> Result<(), ParamError> {
     let docking_site = mol.common.centroid(); // for now
 
     // let dir = (mol.common.centroid() - state.volatile.docking_site_center).to_normalized();
-    let dir = (docking_site - peptide.common.centroid() ).to_normalized();
+    let dir = (docking_site - peptide.common.centroid()).to_normalized();
 
     let vel = dir * speed;
-
 
     let starting_posit = docking_site + dir * start_dist;
     let starting_vel = dir * speed;
@@ -110,7 +109,6 @@ pub fn dock(state: &mut State, mol_i: usize) -> Result<(), ParamError> {
 
     let dt = 0.002;
     let n_steps = 100;
-
 
     println!("Running dynamics..."); // todo temp
     run_dynamics(&mut md_state, &state.dev, dt, n_steps);

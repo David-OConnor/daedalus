@@ -1,6 +1,9 @@
 //! Handles logic for moving and rotating molecules from user inputs.
 
-use graphics::{ControlScheme, FWD_VEC, RIGHT_VEC, Scene, UP_VEC, event::MouseScrollDelta};
+use cudarc::driver::sys::cudaError_enum;
+use graphics::{
+    ControlScheme, EngineUpdates, FWD_VEC, RIGHT_VEC, Scene, UP_VEC, event::MouseScrollDelta,
+};
 use lin_alg::{
     f32::{Quaternion, Vec3},
     f64::Vec3 as Vec3F64,
@@ -9,7 +12,7 @@ use lin_alg::{
 
 use crate::{
     ManipMode, State, StateVolatile,
-    inputs::{SENS_MOL_MOVE_SCROLL, SENS_MOL_ROT_MOUSE, SENS_MOL_ROT_SCROLL},
+    inputs::{SCROLL_MOVE_AMT, SENS_MOL_MOVE_SCROLL, SENS_MOL_ROT_MOUSE, SENS_MOL_ROT_SCROLL},
     molecule::MolType,
 };
 
@@ -153,7 +156,10 @@ pub fn handle_mol_manip_in_out(
     redraw_lig: &mut bool,
     redraw_na: &mut bool,
     redraw_lipid: &mut bool,
+    // updates: &mut EngineUpdates,
 ) {
+    let mut counter_movement = false;
+
     // Move the molecule forward and backwards relative to the camera on scroll.
     match state.volatile.mol_manip.mol {
         ManipMode::Move((mol_type, mol_i)) => {
@@ -241,6 +247,7 @@ pub fn handle_mol_manip_in_out(
                 MolType::Lipid => *redraw_lipid = true,
                 _ => unimplemented!(),
             };
+            counter_movement = true;
         }
         ManipMode::Rotate((mol_type, mol_i)) => {
             let scroll: f32 = match delta {
@@ -270,6 +277,7 @@ pub fn handle_mol_manip_in_out(
                 MolType::Lipid => *redraw_lipid = true,
                 _ => unimplemented!(),
             };
+            counter_movement = true;
         }
         ManipMode::None => (),
     }
@@ -307,6 +315,7 @@ pub fn set_manip(
                 if move_active {
                     scene.input_settings.control_scheme = vol.control_scheme_prev;
                     vol.mol_manip.mol = ManipMode::None;
+                    vol.mol_manip.pivot = None;
                 } else if rotate_active {
                     vol.mol_manip.mol = ManipMode::Move((mol_type_active, i_active));
                 } else {
@@ -321,6 +330,7 @@ pub fn set_manip(
                 if rotate_active {
                     scene.input_settings.control_scheme = vol.control_scheme_prev;
                     vol.mol_manip.mol = ManipMode::None;
+                    vol.mol_manip.pivot = None;
                 } else if move_active {
                     vol.mol_manip.mol = ManipMode::Rotate((mol_type_active, i_active));
                 } else {

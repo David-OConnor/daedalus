@@ -13,22 +13,15 @@ use lin_alg::{
 };
 use na_seq::Element;
 
-use crate::{
-    ManipMode, Selection, State, StateUi, ViewSelLevel,
-    md::STATIC_ATOM_DIST_THRESH,
-    molecule::{
-        Atom, AtomRole, Chain, MolGenericTrait, MolType, MoleculeGenericRef, Residue, aa_color,
-    },
-    reflection::ElectronDensity,
-    render::{
-        ATOM_SHININESS, BACKGROUND_COLOR, BALL_RADIUS_WATER_H, BALL_RADIUS_WATER_O,
-        BALL_STICK_RADIUS, BALL_STICK_RADIUS_H, BODY_SHINYNESS, Color, MESH_BOND, MESH_CUBE,
-        MESH_DENSITY_SURFACE, MESH_DOCKING_BOX, MESH_SECONDARY_STRUCTURE, MESH_SOLVENT_SURFACE,
-        MESH_SPHERE_HIGHRES, MESH_SPHERE_LOWRES, MESH_SPHERE_MEDRES, WATER_BOND_THICKNESS,
-        WATER_OPACITY,
-    },
-    util::{clear_mol_entity_indices, find_neighbor_posit, orbit_center},
-};
+use crate::{ManipMode, Selection, State, StateUi, ViewSelLevel, md::STATIC_ATOM_DIST_THRESH, molecule::{
+    Atom, AtomRole, Chain, MolGenericTrait, MolType, MoleculeGenericRef, Residue, aa_color,
+}, reflection::ElectronDensity, render::{
+    ATOM_SHININESS, BACKGROUND_COLOR, BALL_RADIUS_WATER_H, BALL_RADIUS_WATER_O,
+    BALL_STICK_RADIUS, BALL_STICK_RADIUS_H, BODY_SHINYNESS, Color, MESH_BOND, MESH_CUBE,
+    MESH_DENSITY_SURFACE, MESH_DOCKING_BOX, MESH_SECONDARY_STRUCTURE, MESH_SOLVENT_SURFACE,
+    MESH_SPHERE_HIGHRES, MESH_SPHERE_LOWRES, MESH_SPHERE_MEDRES, WATER_BOND_THICKNESS,
+    WATER_OPACITY,
+}, util::{clear_mol_entity_indices, find_neighbor_posit, orbit_center}, OperatingMode};
 
 const LIGAND_COLOR_ANCHOR: Color = (1., 0., 1.);
 
@@ -1225,13 +1218,17 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
             && ent.class != EntityClass::SaSurfaceDots as u32
     });
 
-    let start_i = scene.entities.len();
-
-    let mut entities = Vec::new();
+    // Edit small molecules only; not proteins.
+    if state.volatile.operating_mode == OperatingMode::MolEditor {
+        return;
+    }
 
     let Some(mol) = state.peptide.as_ref() else {
         return;
     };
+
+    let start_i = scene.entities.len();
+    let mut entities = Vec::new();
 
     // todo:  Unless colored by res #, set to 0 to save teh computation.
     let aa_count = mol

@@ -21,33 +21,17 @@ use lin_alg::f64::Vec3;
 use md::md_setup;
 use mol_data::display_mol_data;
 
-use crate::{
-    CamSnapshot, MsaaSetting, Selection, State, ViewSelLevel,
-    cam_misc::{move_mol_to_cam, reset_camera},
-    cli,
-    cli::autocomplete_cli,
-    docking_v2::dock,
-    download_mols::{load_atom_coords_rcsb, load_sdf_drugbank, load_sdf_pubchem},
-    drawing::{EntityClass, MoleculeView, color_viridis, draw_peptide},
-    drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
-    file_io::gemmi_path,
-    inputs::{MOVEMENT_SENS, ROTATE_SENS, SENS_MOL_MOVE_SCROLL},
-    lipid::{LipidShape, make_bacterial_lipids},
-    mol_lig::MoleculeSmall,
-    molecule::{MolType, MoleculeGenericRef},
-    render::{set_flashlight, set_static_light},
-    ui::{
-        cam::{cam_controls, cam_snapshots, move_cam_to},
-        misc::section_box,
-        mol_data::display_mol_data_peptide,
-        rama_plot::plot_rama,
-        view::view_settings,
-    },
-    util::{
-        check_prefs_save, clear_mol_entity_indices, close_mol, close_peptide, cycle_selected,
-        handle_err, handle_scene_flags, handle_success, orbit_center, select_from_search,
-    },
-};
+use crate::{CamSnapshot, MsaaSetting, Selection, State, ViewSelLevel, cam_misc::{move_mol_to_cam, reset_camera}, cli, cli::autocomplete_cli, docking_v2::dock, download_mols::{load_atom_coords_rcsb, load_sdf_drugbank, load_sdf_pubchem}, drawing::{EntityClass, MoleculeView, color_viridis, draw_peptide}, drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids}, file_io::gemmi_path, inputs::{MOVEMENT_SENS, ROTATE_SENS, SENS_MOL_MOVE_SCROLL}, lipid::{LipidShape, make_bacterial_lipids}, mol_lig::MoleculeSmall, molecule::{MolType, MoleculeGenericRef}, render::{set_flashlight, set_static_light}, ui::{
+    cam::{cam_controls, cam_snapshots, move_cam_to_active_mol},
+    misc::section_box,
+    mol_data::display_mol_data_peptide,
+    rama_plot::plot_rama,
+    view::view_settings,
+}, util::{
+    check_prefs_save, clear_mol_entity_indices, close_mol, close_peptide, cycle_selected,
+    handle_err, handle_scene_flags, handle_success, orbit_center, select_from_search,
+}, OperatingMode};
+use crate::util::enter_edit_mode;
 
 pub mod cam;
 mod md;
@@ -55,6 +39,7 @@ pub mod misc;
 mod mol_data;
 mod rama_plot;
 mod view;
+mod mol_editor;
 
 pub const ROW_SPACING: f32 = 10.;
 pub const COL_SPACING: f32 = 30.;
@@ -913,7 +898,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
     // style.visuals.widgets.noninteractive.bg_fill = COLOR_POPUP;
     // ctx.set_style(style);
 
-    // return  engine_updates;
     let mut redraw_peptide = false;
     let mut redraw_lig = false;
     let mut redraw_na = false;
@@ -934,6 +918,12 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             &mut engine_updates,
             scene,
         );
+
+        if state.volatile.operating_mode == OperatingMode::MolEditor {
+            mol_editor::editor(state, scene, &mut engine_updates,ui);
+            return;
+        }
+
 
         if state.ui.popup.show_settings {
             settings(state, scene, ui);
@@ -1271,13 +1261,16 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         let mut close_active_mol = false; // to avoid borrow error.
 
-        // Show the picker, at least.
-        if !state.ligands.is_empty() {
-            display_mol_data(state, scene, ui, &mut redraw_lig, &mut redraw_na, &mut redraw_lipid, &mut close_active_mol,  &mut engine_updates);
-        } else {
-            // Prevents display jump between selecting/unselecting molecules.
-            ui.add_space(24.);
-        }
+        ui.horizontal(|ui| {
+            // Show the picker, at least.
+            if !state.ligands.is_empty() {
+                display_mol_data(state, scene, ui, &mut redraw_lig, &mut redraw_na, &mut redraw_lipid, &mut close_active_mol, &mut engine_updates);
+            }
+
+            if ui.button(RichText::new("Edit mol").color(COLOR_HIGHLIGHT)).clicked() {
+                enter_edit_mode(state, scene, &mut engine_updates);
+            }
+        });
 
         let redraw_prev = redraw_peptide;
         selection_section(state, &mut redraw_peptide, ui);
@@ -1290,7 +1283,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         ui.horizontal_wrapped(|ui| {
             cam_controls(scene, state, &mut engine_updates, ui);
-
             cam_snapshots(state, scene, &mut engine_updates, ui);
         });
 
@@ -1584,7 +1576,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         if redraw_peptide {
             draw_peptide(state, scene);
-            draw_all_ligs(state, scene); // todo: Hmm.
+            // draw_all_ligs(state, scene); // todo: Hmm.
 
             if let Some(mol) = &state.peptide {
                 set_window_title(&mol.common.ident, scene);
@@ -1641,6 +1633,18 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
     }
 
     state.ui.dt_render = start.elapsed().as_secs_f32();
+
+    if state.volatile.operating_mode != state.volatile.operating_mode_prev {
+        if state.volatile.operating_mode_reset_next_frame {
+            state.volatile.operating_mode_reset_next_frame = false;
+            // We seem to need to wait a frame to get the height.
+            state.volatile.operating_mode_prev = state.volatile.operating_mode;
+            state.volatile.ui_height = ctx.used_size().y;
+        } else {
+            state.volatile.operating_mode_reset_next_frame = true;
+        }
+
+    }
 
     if !INIT_COMPLETE.swap(true, Ordering::AcqRel) {
         if state.volatile.ui_height < f32::EPSILON {

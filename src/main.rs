@@ -219,6 +219,15 @@ struct MolManip {
     depth_bias: f32,
 }
 
+// todo: Rename A/R
+#[derive(Clone, Copy, PartialEq, Default)]
+pub enum OperatingMode {
+    #[default]
+    Primary,
+    /// For editing small molecules
+    MolEditor,
+}
+
 /// Temporary, and generated state.
 struct StateVolatile {
     dialogs: FileDialogs,
@@ -261,6 +270,11 @@ struct StateVolatile {
     md_peptide_selected: HashSet<(usize, usize)>,
     /// Ctrl, alt, shift etc.
     key_modifiers: Modifiers,
+    operating_mode: OperatingMode,
+    operating_mode_prev: OperatingMode,
+    /// This allows us to wait a frame before getting the UI height after assessing
+    /// a mode change.
+    operating_mode_reset_next_frame: bool,
 }
 
 impl Default for StateVolatile {
@@ -282,6 +296,9 @@ impl Default for StateVolatile {
             nearest_mol_dist_to_cam: Default::default(),
             md_peptide_selected: Default::default(),
             key_modifiers: Default::default(),
+            operating_mode: Default::default(),
+            operating_mode_prev: Default::default(),
+            operating_mode_reset_next_frame: false,
         }
     }
 }

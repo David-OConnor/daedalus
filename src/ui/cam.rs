@@ -165,7 +165,7 @@ pub fn cam_controls(
                             None => lin_alg::f64::Vec3::new_zero(),
                         };
                         // Setting mol center to 0 if no mol.
-                        move_cam_to(state, scene, pep_center, engine_updates)
+                        move_cam_to_active_mol(state, scene, pep_center, engine_updates)
                     }
                 }
 
@@ -285,7 +285,7 @@ pub fn cam_snapshots(
     });
 }
 
-pub fn move_cam_to(
+pub fn move_cam_to_active_mol(
     state: &mut State,
     scene: &mut Scene,
     look_to_beyond: lin_alg::f64::Vec3,
@@ -296,12 +296,12 @@ pub fn move_cam_to(
     };
 
     // todo: Cache centroid.
-    let lig_pos: Vec3 = mol.common().centroid().into();
+    let mol_pos: Vec3 = mol.common().centroid().into();
     let ctr: Vec3 = look_to_beyond.into();
 
     cam_look_at_outside(
         &mut scene.camera,
-        lig_pos,
+        mol_pos,
         ctr,
         cam_misc::MOVE_CAM_TO_MOL_DIST,
     );

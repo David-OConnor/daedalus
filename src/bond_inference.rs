@@ -86,7 +86,7 @@ fn hydrogen_bond_inner(
     }
 }
 
-/// Create hydrogen bonds between all atomsm in a group. See `create_hydrogen_bonds_one_way` for the more
+/// Create hydrogen bonds between all atoms in a group. See `create_hydrogen_bonds_one_way` for the more
 /// flexible fn it calls.
 pub fn create_hydrogen_bonds(atoms: &[Atom], bonds: &[Bond]) -> Vec<HydrogenBond> {
     let indices: Vec<_> = (0..atoms.len()).collect();
