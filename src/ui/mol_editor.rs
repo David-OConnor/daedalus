@@ -192,7 +192,31 @@ pub fn editor(
             .button(RichText::new("Load"))
             .on_hover_text("Save to a Mol2 or SDF file")
             .clicked()
-        {}
+        {
+            state.volatile.dialogs.load.pick_file();
+        }
+
+        if ui
+            .button(RichText::new("Re-assign SNs"))
+            .on_hover_text("Reset atom serial numbers to be sequential without gaps.")
+            .clicked()
+        {
+            // todo: Be more clever about this.
+            let mut updated_sns = Vec::with_capacity(state.mol_editor.mol.common.atoms.len());
+
+            for (i, atom) in state.mol_editor.mol.common.atoms.iter_mut().enumerate() {
+                // let sn_prev = atom.serial_number;
+                let sn_new = i as u32 + 1;
+                atom.serial_number = sn_new;
+                updated_sns.push(sn_new);
+            }
+
+            for bond in &mut state.mol_editor.mol.common.bonds {
+                bond.atom_0_sn = updated_sns[bond.atom_0];
+                bond.atom_1_sn = updated_sns[bond.atom_1];
+            }
+
+        }
 
         ui.add_space(COL_SPACING);
         if ui

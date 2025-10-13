@@ -6,7 +6,7 @@ use std::{
     sync::atomic::{AtomicU32, Ordering, Ordering::Relaxed},
 };
 
-use bio_files::{BondType, create_bonds};
+use bio_files::{BondType, create_bonds, Mol2, Sdf, Pdbqt};
 use dynamics::find_tetra_posits;
 use graphics::{ControlScheme, EngineUpdates, Entity, EntityUpdate, Scene};
 use lin_alg::{
@@ -31,6 +31,7 @@ use crate::{
     ui::UI_HEIGHT_CHANGED,
     util::find_neighbor_posit,
 };
+use crate::molecule::MoleculeGeneric;
 
 pub const INIT_CAM_DIST: f32 = 20.;
 
@@ -82,7 +83,52 @@ impl MolEditorState {
         self.mol.common.build_adjacency_list();
     }
 
-    pub fn load_mol(&mut self, mol: &MoleculeCommon) {
+    /// A simplified variant of our primary `open_molecule` function.
+    pub fn open_molecule(
+        &mut self,
+        path: &Path,
+        scene: &mut Scene,
+        engine_updates: &mut EngineUpdates,
+        state_ui: &StateUi,
+    ) -> io::Result<()> {
+        let binding = path.extension().unwrap_or_default().to_ascii_lowercase();
+        let extension = binding;
+
+        let molecule = match extension.to_str().unwrap() {
+            "sdf" => {
+                let mut m: MoleculeSmall = Sdf::load(path)?.try_into()?;
+                m.common.path = Some(path.to_owned());
+                m
+            }
+            "mol2" => {
+                let mut m: MoleculeSmall = Mol2::load(path)?.try_into()?;
+                m.common.path = Some(path.to_owned());
+                m
+            }
+            "pdbqt" => {
+                let mut m: MoleculeSmall = Pdbqt::load(path)?.try_into()?;
+                m.common.path = Some(path.to_owned());
+                m
+            }
+            // "cif" => {
+            //     // todo
+            // }
+            _ => return Err(io::Error::new(
+                ErrorKind::InvalidData,
+                "Invalid file extension",
+            )),
+        };
+
+        self.load_mol(&molecule.common, scene, engine_updates, state_ui);
+        Ok(())
+    }
+
+    pub fn load_mol(&mut self,
+                    mol: &MoleculeCommon,
+                    scene: &mut Scene,
+                    engine_updates: &mut EngineUpdates,
+                    state_ui: &StateUi,
+    ) {
         self.mol.common = mol.clone();
 
         // We assign H dynamically; ignore present ones.
@@ -125,6 +171,21 @@ impl MolEditorState {
         // Rebuild these based on the new filters.
         self.mol.common.atom_posits = self.mol.common.atoms.iter().map(|a| a.posit).collect();
         self.mol.common.build_adjacency_list();
+
+        let mut highest_sn = 0;
+        for atom in &self.mol.common.atoms {
+            if atom.serial_number > highest_sn {
+                highest_sn = atom.serial_number;
+            }
+        }
+        NEXT_ATOM_SN.store(highest_sn + 1, Ordering::Release);
+
+        // Clear all entities for non-editor molecules.
+        redraw(&mut scene.entities, &self.mol, state_ui);
+
+        set_flashlight(scene);
+        engine_updates.entities = EntityUpdate::All;
+        engine_updates.lighting = true;
     }
 
     pub fn delete_atom(&mut self, i: usize) -> io::Result<()> {
@@ -189,7 +250,7 @@ pub mod templates {
             Vec3::new(0.0000, 0.0000, 0.0), // C (carboxyl)
             Vec3::new(1.2290, 0.0000, 0.0), // O (carbonyl)
             Vec3::new(-0.6715, 1.1645, 0.0), // O (hydroxyl)
-                                            // Vec3::new(-1.0286, 1.7826, 0.0), // H (hydroxyl)
+            // Vec3::new(-1.0286, 1.7826, 0.0), // H (hydroxyl)
         ];
 
         // todo: Skip the H.
@@ -288,18 +349,22 @@ pub fn enter_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mu
     state.volatile.operating_mode = OperatingMode::MolEditor;
     UI_HEIGHT_CHANGED.store(true, Ordering::Release);
 
-    match state.volatile.active_mol {
-        Some((mol_type, i)) => {
-            if mol_type == MolType::Ligand {
-                state.mol_editor.load_mol(&state.ligands[i].common);
+    // This stays false under several conditions.
+    let mut mol_loaded = false;
+
+    if let Some((mol_type, i)) = state.volatile.active_mol {
+        if mol_type == MolType::Ligand {
+            if i >= state.ligands.len() {
+                eprintln!("Expected a ligand at this index, but out of bounds when entering edit mode");
             } else {
-                state.mol_editor.clear_mol();
+                state.mol_editor.load_mol(&state.ligands[i].common, scene, engine_updates, &state.ui);
+                mol_loaded = true;
             }
         }
-        None => {
-            println!("Clearing mol");
-            state.mol_editor.clear_mol();
-        }
+    }
+
+    if !mol_loaded {
+        state.mol_editor.clear_mol();
     }
 
     state.volatile.control_scheme_prev = scene.input_settings.control_scheme;
@@ -620,3 +685,6 @@ pub fn save(state: &mut State, path: &Path) -> io::Result<()> {
 
     Ok(())
 }
+
+
+

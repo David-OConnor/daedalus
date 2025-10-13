@@ -31,17 +31,23 @@ pub fn update_file_dialogs(
 
     state.volatile.dialogs.load.update(ctx);
     state.volatile.dialogs.save.update(ctx);
-    state.volatile.dialogs.autodock_path.update(ctx);
 
     if let Some(path) = &state.volatile.dialogs.load.take_picked() {
-        if let Err(e) = load_file(
-            path,
-            state,
-            redraw_peptide,
-            reset_cam,
-            engine_updates,
-            scene,
-        ) {
+        if let Err(e) = match state.volatile.operating_mode {
+            OperatingMode::Primary => {
+                load_file(
+                    path,
+                    state,
+                    redraw_peptide,
+                    reset_cam,
+                    engine_updates,
+                    scene,
+                )
+            }
+            OperatingMode::MolEditor => {
+               state.mol_editor.open_molecule(path, scene, engine_updates, &state.ui)
+            }
+        } {
             handle_err(&mut state.ui, e.to_string());
         }
 

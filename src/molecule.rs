@@ -596,7 +596,7 @@ impl Bond {
             None => {
                 return Err(io::Error::new(
                     ErrorKind::InvalidData,
-                    "Unable to find atom SN when loading from generic res",
+                    "Unable to find atom SN when loading from generic bond",
                 ));
             }
         };
@@ -607,7 +607,7 @@ impl Bond {
             None => {
                 return Err(io::Error::new(
                     ErrorKind::InvalidData,
-                    "Unable to find atom SN when loading from generic res",
+                    "Unable to find atom SN when loading from generic bond",
                 ));
             }
         };
@@ -711,7 +711,7 @@ impl Chain {
                 None => {
                     return Err(io::Error::new(
                         ErrorKind::InvalidData,
-                        "Unable to find atom SN when loading from generic res",
+                        "Unable to find atom SN when loading from generic chain",
                     ));
                 }
             }

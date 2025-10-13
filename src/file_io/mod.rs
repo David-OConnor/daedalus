@@ -7,13 +7,12 @@ use std::{
     time::Instant,
 };
 
-use bio_apis::amber_geostd;
 use bio_files::{
     DensityMap, MmCif, Mol2, Pdbqt, gemmi_sf_to_map, md_params::ForceFieldParams, sdf::Sdf,
 };
 use chrono::Utc;
 use egui_file_dialog::FileDialog;
-use graphics::{Camera, EngineUpdates, EntityUpdate, Scene};
+use graphics::{Camera, ControlScheme, EngineUpdates, EntityUpdate, Scene};
 use na_seq::{AaIdent, Element};
 
 use crate::{
@@ -84,7 +83,7 @@ impl State {
     pub fn open_molecule(
         &mut self,
         path: &Path,
-        scene: Option<&mut Scene>,
+        mut scene: Option<&mut Scene>,
         engine_updates: &mut EngineUpdates,
     ) -> io::Result<()> {
         let binding = path.extension().unwrap_or_default().to_ascii_lowercase();
@@ -186,8 +185,11 @@ impl State {
                         self.volatile.active_mol = Some((MolType::Ligand, self.ligands.len())); // Prior to push; no - 1
                         mol.update_aux(&self.volatile.active_mol, &mut self.lig_specific_params);
 
-                        if let Some(ref s) = scene {
+                        if let Some(ref mut s) = scene {
                             move_mol_to_cam(&mut mol.common, &s.camera);
+                            if let ControlScheme::Arc { center: _} = s.input_settings.control_scheme {
+                                s.input_settings.control_scheme = ControlScheme::Arc { center: mol.common.centroid().into() };
+                            }
                         }
                         self.ligands.push(mol);
 
@@ -204,8 +206,11 @@ impl State {
                         self.volatile.active_mol =
                             Some((MolType::NucleicAcid, self.nucleic_acids.len())); // Prior to push; no - 1
 
-                        if let Some(ref s) = scene {
+                        if let Some(ref mut s) = scene {
                             move_mol_to_cam(&mut mol.common, &s.camera);
+                            if let ControlScheme::Arc { center: _} = s.input_settings.control_scheme {
+                                s.input_settings.control_scheme = ControlScheme::Arc { center: mol.common.centroid().into() };
+                            }
                         }
                         self.nucleic_acids.push(mol);
 
@@ -220,8 +225,11 @@ impl State {
                     MoleculeGeneric::Lipid(mut mol) => {
                         self.volatile.active_mol = Some((MolType::Lipid, self.nucleic_acids.len())); // Prior to push; no - 1
 
-                        if let Some(ref s) = scene {
+                        if let Some(ref mut s) = scene {
                             move_mol_to_cam(&mut mol.common, &s.camera);
+                            if let ControlScheme::Arc { center: _} = s.input_settings.control_scheme {
+                                s.input_settings.control_scheme = ControlScheme::Arc { center: mol.common.centroid().into() };
+                            }
                         }
                         self.lipids.push(mol);
 

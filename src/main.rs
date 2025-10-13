@@ -143,7 +143,9 @@ impl Display for ViewSelLevel {
 struct FileDialogs {
     load: FileDialog,
     save: FileDialog,
-    autodock_path: FileDialog,
+    // todo: Add these A/R.
+    // load_editor: FileDialog,
+    // save_editor: FileDialog,
 }
 
 impl Default for FileDialogs {
@@ -182,7 +184,6 @@ impl Default for FileDialogs {
         Self {
             load,
             save,
-            autodock_path,
         }
     }
 }
