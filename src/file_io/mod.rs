@@ -13,13 +13,15 @@ use bio_files::{
 };
 use chrono::Utc;
 use egui_file_dialog::FileDialog;
-use graphics::{Camera, Scene};
+use graphics::{Camera, EngineUpdates, EntityUpdate, Scene};
 use na_seq::{AaIdent, Element};
 
 use crate::{
     State,
     cam_misc::move_mol_to_cam,
     download_mols,
+    drawing::EntityClass,
+    drawing_wrappers,
     mol_lig::MoleculeSmall,
     molecule::{
         MoGenericRefMut, MolGenericRef, MolType, MoleculeCommon, MoleculeGeneric, MoleculePeptide,
@@ -31,7 +33,12 @@ use crate::{
 
 impl State {
     /// A single endpoint to open a number of file types
-    pub fn open(&mut self, path: &Path, scene: Option<&Scene>) -> io::Result<()> {
+    pub fn open(
+        &mut self,
+        path: &Path,
+        scene: Option<&mut Scene>,
+        engine_updates: &mut EngineUpdates,
+    ) -> io::Result<()> {
         match path
             .extension()
             .unwrap_or_default()
@@ -40,7 +47,9 @@ impl State {
             .unwrap_or_default()
         {
             // The cif branch here also handles 2fo-fc mmCIF files.
-            "sdf" | "mol2" | "pdbqt" | "pdb" | "cif" => self.open_molecule(path, scene)?,
+            "sdf" | "mol2" | "pdbqt" | "pdb" | "cif" => {
+                self.open_molecule(path, scene, engine_updates)?
+            }
             "prmtop" => {
                 // todo
             }
@@ -72,7 +81,12 @@ impl State {
     }
 
     /// For opening molecule files: Proteins, small organic molecules, nucleic acids etc.
-    pub fn open_molecule(&mut self, path: &Path, scene: Option<&Scene>) -> io::Result<()> {
+    pub fn open_molecule(
+        &mut self,
+        path: &Path,
+        scene: Option<&mut Scene>,
+        engine_updates: &mut EngineUpdates,
+    ) -> io::Result<()> {
         let binding = path.extension().unwrap_or_default().to_ascii_lowercase();
         let extension = binding;
 
@@ -172,32 +186,51 @@ impl State {
                         self.volatile.active_mol = Some((MolType::Ligand, self.ligands.len())); // Prior to push; no - 1
                         mol.update_aux(&self.volatile.active_mol, &mut self.lig_specific_params);
 
-                        if let Some(s) = scene {
+                        if let Some(ref s) = scene {
                             move_mol_to_cam(&mut mol.common, &s.camera);
                         }
                         self.ligands.push(mol);
 
+                        // Make sure to draw *after* loaded into state.
+                        if let Some(s) = scene {
+                            drawing_wrappers::draw_all_ligs(self, s);
+                        }
+
+                        engine_updates.entities =
+                            EntityUpdate::Classes(vec![EntityClass::Ligand as u32]);
                         self.update_history(path, OpenType::Ligand);
                     }
                     MoleculeGeneric::NucleicAcid(mut mol) => {
                         self.volatile.active_mol =
                             Some((MolType::NucleicAcid, self.nucleic_acids.len())); // Prior to push; no - 1
 
-                        if let Some(s) = scene {
+                        if let Some(ref s) = scene {
                             move_mol_to_cam(&mut mol.common, &s.camera);
                         }
                         self.nucleic_acids.push(mol);
 
+                        if let Some(s) = scene {
+                            drawing_wrappers::draw_all_nucleic_acids(self, s);
+                        }
+
+                        engine_updates.entities =
+                            EntityUpdate::Classes(vec![EntityClass::NucleicAcid as u32]);
                         self.update_history(path, OpenType::NucleicAcid);
                     }
                     MoleculeGeneric::Lipid(mut mol) => {
                         self.volatile.active_mol = Some((MolType::Lipid, self.nucleic_acids.len())); // Prior to push; no - 1
 
-                        if let Some(s) = scene {
+                        if let Some(ref s) = scene {
                             move_mol_to_cam(&mut mol.common, &s.camera);
                         }
                         self.lipids.push(mol);
 
+                        if let Some(s) = scene {
+                            drawing_wrappers::draw_all_lipids(self, s);
+                        }
+
+                        engine_updates.entities =
+                            EntityUpdate::Classes(vec![EntityClass::Lipid as u32]);
                         self.update_history(path, OpenType::Lipid);
                     }
                 }
@@ -400,6 +433,7 @@ impl State {
                 //     self.to_save.last_opened = Some(path.to_owned());
                 //     self.update_save_prefs()
                 // }
+                // We don't allow editing the protein files yet, so save the raw CIF.
                 if let Some(data) = &mut self.cif_pdb_raw {
                     fs::write(path, data)?;
 
@@ -420,8 +454,6 @@ impl State {
                 Some(lig) => {
                     lig.to_sdf().save(path)?;
 
-                    // self.to_save.last_ligand_opened = Some(path.to_owned());
-
                     self.update_history(path, OpenType::Ligand);
 
                     // Save the open history.
@@ -432,9 +464,6 @@ impl State {
             "mol2" => match self.active_mol() {
                 Some(lig) => {
                     lig.to_mol2().save(path)?;
-
-                    // self.to_save.last_ligand_opened = Some(path.to_owned());
-
                     self.update_history(path, OpenType::Ligand);
 
                     // Save the open history.
@@ -446,10 +475,6 @@ impl State {
             "pdbqt" => match self.active_mol() {
                 Some(lig) => {
                     lig.to_pdbqt().save(path)?;
-
-                    // self.to_save.last_ligand_opened = Some(path.to_owned());
-
-                    // self.update_history(path, OpenType::Ligand, &lig.common.ident);
                     self.update_history(path, OpenType::Ligand);
 
                     // Save the open history.
@@ -530,23 +555,19 @@ impl State {
 
             match history.type_ {
                 OpenType::Peptide => {
-                    if let Err(e) = self.open_molecule(&history.path, None) {
+                    if let Err(e) = self.open_molecule(&history.path, None, &mut Default::default())
+                    {
                         handle_err(&mut self.ui, e.to_string());
                     }
                 }
-                OpenType::Ligand => {
-                    if let Err(e) = self.open_molecule(&history.path, None) {
+                OpenType::Ligand | OpenType::NucleicAcid | OpenType::Lipid => {
+                    if let Err(e) = self.open_molecule(&history.path, None, &mut Default::default())
+                    {
                         handle_err(&mut self.ui, e.to_string());
                     }
-                }
-                OpenType::NucleicAcid => {
-                    // todo
-                }
-                OpenType::Lipid => {
-                    // todo
                 }
                 OpenType::Map => {
-                    if let Err(e) = self.open(&history.path, None) {
+                    if let Err(e) = self.open(&history.path, None, &mut Default::default()) {
                         handle_err(&mut self.ui, e.to_string());
                     }
                 }
@@ -560,7 +581,7 @@ impl State {
     }
 
     /// Keeps the history tidy.
-    fn update_history(&mut self, path: &Path, type_: OpenType) {
+    pub fn update_history(&mut self, path: &Path, type_: OpenType) {
         for item in &mut self.to_save.open_history {
             if item.path == *path {
                 item.last_session = true;
@@ -625,9 +646,9 @@ pub fn gemmi_path() -> Option<&'static Path> {
 impl MoleculeCommon {
     /// Save to disk.
     pub fn save(&self, dialog: &mut FileDialog) -> io::Result<()> {
-        let ext_default = "mol2"; // The default; more robust than SDF.
-
         let fname_default = {
+            let ext_default = "mol2"; // The default; more robust than SDF.
+
             let name = if self.ident.is_empty() {
                 "molecule".to_string()
             } else {

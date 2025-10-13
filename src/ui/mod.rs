@@ -21,19 +21,18 @@ pub static UI_HEIGHT_CHANGED: AtomicBool = AtomicBool::new(false);
 pub static UI_HEIGHT_CHANGE_DELAY: AtomicBool = AtomicBool::new(false);
 
 use bio_files::{DensityMap, ResidueType, density_from_2fo_fc_rcsb_gemmi};
-use lin_alg::f32::Vec3;
 use md::md_setup;
 use mol_data::display_mol_data;
 
 use crate::{
     CamSnapshot, MsaaSetting, OperatingMode, Selection, State, ViewSelLevel,
-    cam_misc::{cam_look_at_outside, move_mol_to_cam, reset_camera},
+    cam_misc::move_mol_to_cam,
     cli,
     cli::autocomplete_cli,
     docking_v2::dock,
     download_mols::{load_atom_coords_rcsb, load_sdf_drugbank, load_sdf_pubchem},
-    drawing::{EntityClass, MoleculeView, color_viridis, draw_peptide},
-    drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
+    drawing::{EntityClass, MoleculeView, color_viridis},
+    drawing_wrappers::draw_all_lipids,
     file_io::gemmi_path,
     inputs::{MOVEMENT_SENS, ROTATE_SENS, SENS_MOL_MOVE_SCROLL},
     lipid::{LipidShape, make_bacterial_lipids},
@@ -46,7 +45,7 @@ use crate::{
         misc::section_box,
         mol_data::display_mol_data_peptide,
         rama_plot::plot_rama,
-        util::{load_popups, update_file_dialogs},
+        util::{handle_redraw, load_file, load_popups, open_lig_from_input, update_file_dialogs},
         view::{ui_section_vis, view_settings},
     },
     util::{
@@ -54,7 +53,6 @@ use crate::{
         handle_err, handle_scene_flags, handle_success, orbit_center, select_from_search,
     },
 };
-use crate::ui::util::load_file;
 
 pub mod cam;
 mod md;
@@ -62,7 +60,7 @@ pub mod misc;
 mod mol_data;
 mod mol_editor;
 mod rama_plot;
-mod util;
+pub mod util;
 mod view;
 
 pub const ROW_SPACING: f32 = 10.;
@@ -78,13 +76,13 @@ pub const COLOR_INACTIVE: Color32 = Color32::GRAY;
 pub const COLOR_ACTIVE: Color32 = Color32::LIGHT_GREEN;
 pub const COLOR_HIGHLIGHT: Color32 = Color32::LIGHT_BLUE;
 pub const COLOR_ACTIVE_RADIO: Color32 = Color32::LIGHT_BLUE;
-pub const COLOR_ATTENTION: Color32 = Color32::ORANGE;
+pub const _COLOR_ATTENTION: Color32 = Color32::ORANGE;
 
 const COLOR_OUT_ERROR: Color32 = Color32::LIGHT_RED;
 const COLOR_OUT_NORMAL: Color32 = Color32::WHITE;
-const COLOR_OUT_SUCCESS: Color32 = Color32::LIGHT_GREEN; // Unused for now
+const _COLOR_OUT_SUCCESS: Color32 = Color32::LIGHT_GREEN; // Unused for now
 
-pub const COLOR_POPUP: Color32 = Color32::from_rgb(20, 20, 30);
+pub const _COLOR_POPUP: Color32 = Color32::from_rgb(20, 20, 30);
 
 // Number of characters to display. E.g. the molecular description. Often long.
 const MAX_TITLE_LEN: usize = 40;
@@ -93,21 +91,6 @@ const MAX_TITLE_LEN: usize = 40;
 fn set_window_title(title: &str, scene: &mut Scene) {
     scene.window_title = title.to_owned();
     // ui.ctx().send_viewport_cmd(ViewportCommand::Title(title.to_string()));
-}
-
-fn open_lig(state: &mut State, cam: &Camera, mut mol: MoleculeSmall) {
-    mol.update_aux(&state.volatile.active_mol, &mut state.lig_specific_params);
-
-    state.volatile.active_mol = Some((MolType::Ligand, state.ligands.len()));
-
-    // todo: Not working?
-    move_mol_to_cam(&mut mol.common, cam);
-
-    state.ligands.push(mol);
-
-    state.update_from_prefs();
-
-    state.ui.db_input = String::new();
 }
 
 pub fn num_field<T>(val: &mut T, label: &str, width: u16, ui: &mut Ui)
@@ -137,7 +120,7 @@ pub fn handle_input(
     redraw: &mut bool,
     reset_cam: &mut bool,
     engine_updates: &mut EngineUpdates,
-    scene: &Scene,
+    scene: &mut Scene,
 ) {
     ui.ctx().input(|ip| {
         // Check for file drop
@@ -924,7 +907,9 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         if state.volatile.operating_mode == OperatingMode::MolEditor {
             mol_editor::editor(state, scene, &mut engine_updates,ui);
 
-            update_file_dialogs(state, scene, ui, &mut false, &mut false, &mut engine_updates);
+            if let Err(e) = update_file_dialogs(state, scene, ui, &mut false, &mut false, &mut engine_updates) {
+                handle_err(&mut state.ui, format!("Problem saving file: {e:?}"));
+            }
             return;
         }
 
@@ -990,9 +975,9 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 let color = Color32::GRAY;
 
                 if ui.button(RichText::new("Save").color(color)).clicked() {
-                    let extension = "cif";
-
                     let filename = {
+                        let extension = "cif";
+
                         let name = if mol.common.ident.is_empty() {
                             "molecule".to_string()
                         } else {
@@ -1206,7 +1191,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     if ui.button("Load from DrugBank").clicked() {
                         match load_sdf_drugbank(&state.ui.db_input) {
                             Ok(mol) => {
-                                open_lig(state, &scene.camera, mol);
+                                open_lig_from_input(state, &scene.camera, mol);
                                 redraw_lig = true;
                                 reset_cam = true;
                             }
@@ -1221,7 +1206,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 if ui.button("Load from PubChem").clicked() {
                     match load_sdf_pubchem(&state.ui.db_input) {
                         Ok(mol) => {
-                            open_lig(state, &scene.camera, mol);
+                            open_lig_from_input(state, &scene.camera, mol);
                             redraw_lig = true;
                             reset_cam = true;
                         }
@@ -1355,7 +1340,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             ui,
         );
 
-       load_popups(state, scene, ui);
+       load_popups(state, scene, ui, &mut redraw_peptide, &mut redraw_lig, &mut reset_cam, &mut engine_updates);
 
         // -------UI above; clean-up items (based on flags) below
 
@@ -1365,54 +1350,14 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             }
         }
 
-        update_file_dialogs(state, scene, ui, &mut redraw_peptide, &mut update_cam, &mut engine_updates);
-
-        if redraw_peptide {
-            draw_peptide(state, scene);
-            // draw_all_ligs(state, scene); // todo: Hmm.
-
-            if let Some(mol) = &state.peptide {
-                set_window_title(&mol.common.ident, scene);
-            }
-
-            engine_updates.entities = EntityUpdate::All;
-            // engine_updates.entities.push_class(EntityClass::Peptide as u32);
-
-            // For docking light, but may be overkill here.
-            if state.active_mol().is_some() {
-                engine_updates.lighting = true;
-            }
+        if let Err(e) = update_file_dialogs(state, scene, ui, &mut redraw_peptide, &mut reset_cam, &mut engine_updates) {
+            handle_err(&mut state.ui, format!("Problem saving file: {e:?}"));
         }
 
-        if redraw_lig {
-            draw_all_ligs(state, scene);
-
-            engine_updates.entities = EntityUpdate::All;
-            // engine_updates.entities.push_class(EntityClass::Ligand as u32);
-
-            // For docking light, but may be overkill here.
-            if state.active_mol().is_some() {
-                engine_updates.lighting = true;
-            }
-        }
-
-        if redraw_na {
-            draw_all_nucleic_acids(state, scene);
-            engine_updates.entities = EntityUpdate::All;
-            // engine_updates.entities.push_class(EntityClass::NucleicAcid as u32);
-
-        }
-
-        if redraw_lipid {
-            draw_all_lipids(state, scene);
-            engine_updates.entities = EntityUpdate::All;
-            // engine_updates.entities.push_class(EntityClass::Lipid as u32);
-        }
-
-        // Perform cleanup.
-        if reset_cam {
-            reset_camera(state, scene, &mut engine_updates, FWD_VEC);
-        }
+        handle_redraw(
+            state,
+            scene, redraw_peptide, redraw_lig, redraw_na, redraw_lipid, reset_cam, &mut engine_updates
+        )
     });
 
     // todo: Appropriate place for this?
@@ -1438,30 +1383,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             state.volatile.ui_height = ctx.used_size().y;
         }
 
-        // todo: Move to new_mol_loaded code block?
         if state.peptide.is_some() {
-            // if let Some(mol) = &state.molecule {
-            // todo: What is this for? Should we add it back?
-
-            // if let Some(lig) = state.active_mol_mut() {
-            //     if let Some(data) = &mut lig.lig_data {
-            //         if data.anchor_atom >= lig.common.atoms.len() {
-            //             let msg = "Error positioning ligand atoms; anchor outside len".to_owned();
-            //             handle_err(&mut state.ui, msg);
-            //         } else {
-            //             lig.position_atoms(None);
-            //
-            //             let lig_pos: Vec3 = lig.common.atom_posits[data.anchor_atom].into();
-            //             let ctr: Vec3 = state.molecule.as_ref().unwrap().center.into();
-            //
-            //             cam_look_at_outside(&mut scene.camera, lig_pos, ctr);
-            //
-            //             engine_updates.camera = true;
-            //             state.ui.cam_snapshot = None;
-            //         }
-            //     }
-            // }
-
             set_static_light(
                 scene,
                 state.peptide.as_ref().unwrap().center.into(),

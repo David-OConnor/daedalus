@@ -1,4 +1,10 @@
-use std::{collections::HashMap, io, io::ErrorKind, path::Path, sync::atomic::Ordering};
+use std::{
+    collections::HashMap,
+    io,
+    io::ErrorKind,
+    path::Path,
+    sync::atomic::{AtomicU32, Ordering, Ordering::Relaxed},
+};
 
 use bio_files::{BondType, create_bonds};
 use dynamics::find_tetra_posits;
@@ -15,11 +21,11 @@ use na_seq::{
 use crate::{
     ManipMode, OperatingMode, Selection, State, StateUi, ViewSelLevel,
     drawing::{
-        COLOR_SELECTED, EntityClass, MESH_BALL_STICK_SPHERE, MESH_SPACEFILL_SPHERE, MoleculeView,
-        atom_color, bond_entities, draw_mol, draw_peptide,
+        EntityClass, MESH_BALL_STICK_SPHERE, MESH_SPACEFILL_SPHERE, MoleculeView, atom_color,
+        bond_entities, draw_mol, draw_peptide,
     },
     drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
-    mol_lig::{Ligand, MoleculeSmall},
+    mol_lig::MoleculeSmall,
     molecule::{Atom, Bond, MolGenericRef, MolType, MoleculeCommon},
     render::{ATOM_SHININESS, BALL_STICK_RADIUS, BALL_STICK_RADIUS_H, set_flashlight},
     ui::UI_HEIGHT_CHANGED,
@@ -27,6 +33,8 @@ use crate::{
 };
 
 pub const INIT_CAM_DIST: f32 = 20.;
+
+static NEXT_ATOM_SN: AtomicU32 = AtomicU32::new(0);
 
 /// For editing small organic molecules.
 #[derive(Debug, Default)]
@@ -370,7 +378,7 @@ pub fn add_atom(
         &mol.common.adjacency_list,
     );
 
-    let new_sn = 0; // todo A/R
+    let new_sn = NEXT_ATOM_SN.fetch_add(1, Ordering::AcqRel);
     let new_i = mol.common.atoms.len();
 
     mol.common.atoms.push(Atom {
@@ -587,4 +595,28 @@ fn find_appended_posit(
             unimplemented!()
         }
     }
+}
+
+/// Save the editor's molecule to disk.
+pub fn save(state: &mut State, path: &Path) -> io::Result<()> {
+    let mol = MolGenericRef::Ligand(&state.mol_editor.mol);
+
+    let binding = path.extension().unwrap_or_default().to_ascii_lowercase();
+    let extension = binding;
+
+    match extension.to_str().unwrap_or_default() {
+        "sdf" => mol.to_sdf().save(path)?,
+        "mol2" => mol.to_mol2().save(path)?,
+        "prmtop" => (), // todo
+        "pdbqt" => mol.to_pdbqt().save(path)?,
+        _ => unimplemented!(),
+    }
+
+    println!("Saving editor file!"); // todo tmep
+    // todo: A/R
+    // state.update_history(path, OpenType::Ligand);
+    // // Save the open history.
+    // state.update_save_prefs(false);
+
+    Ok(())
 }

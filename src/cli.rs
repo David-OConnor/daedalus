@@ -23,7 +23,7 @@ use crate::{
     download_mols,
     molecule::AtomRole,
     render::set_flashlight,
-    ui::load_file,
+    ui::util::load_file,
     util,
 };
 

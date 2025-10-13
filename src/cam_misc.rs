@@ -51,7 +51,7 @@ pub fn cam_look_at_outside(cam: &mut Camera, target: Vec3F32, alignment: Vec3F32
     cam.orientation = Quaternion::from_unit_vecs(FWD_VEC, -look_vec);
 }
 
-/// Resets the camera to the *front* view, and related settings. Its beahvior deepends
+/// Resets the camera to the *front* view, and related settings. Its behavior depends
 /// on the size and positions of open molecules.
 pub fn reset_camera(
     state: &mut State,

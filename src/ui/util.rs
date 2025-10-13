@@ -2,14 +2,19 @@ use std::{io, path::Path};
 
 use bio_apis::{amber_geostd, rcsb};
 use egui::{Color32, Popup, PopupAnchor, Pos2, RectAlign, RichText, Ui};
-use graphics::{EngineUpdates, EntityUpdate, Scene};
+use graphics::{Camera, EngineUpdates, EntityUpdate, FWD_VEC, Scene};
 
 use crate::{
-    State,
+    OperatingMode, State,
+    cam_misc::{move_mol_to_cam, reset_camera},
     download_mols::load_atom_coords_rcsb,
-    molecule::MolGenericRef,
+    drawing::draw_peptide,
+    drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
+    mol_editor,
+    mol_lig::MoleculeSmall,
+    molecule::{MolGenericRef, MolType},
     render::set_flashlight,
-    ui::{COL_SPACING, COLOR_HIGHLIGHT, ROW_SPACING},
+    ui::{COL_SPACING, COLOR_HIGHLIGHT, ROW_SPACING, set_window_title},
     util::handle_err,
 };
 
@@ -21,7 +26,7 @@ pub fn update_file_dialogs(
     redraw_peptide: &mut bool,
     reset_cam: &mut bool,
     engine_updates: &mut EngineUpdates,
-) {
+) -> io::Result<()> {
     let ctx = ui.ctx();
 
     state.volatile.dialogs.load.update(ctx);
@@ -45,11 +50,24 @@ pub fn update_file_dialogs(
     }
 
     if let Some(path) = &state.volatile.dialogs.save.take_picked() {
-        state.save(path).ok();
+        match state.volatile.operating_mode {
+            OperatingMode::Primary => state.save(path)?,
+            OperatingMode::MolEditor => mol_editor::save(state, path)?,
+        }
     }
+
+    Ok(())
 }
 
-pub fn load_popups(state: &mut State, scene: &mut Scene, ui: &mut Ui, redraw_lig: &mut bool) {
+pub fn load_popups(
+    state: &mut State,
+    scene: &mut Scene,
+    ui: &mut Ui,
+    redraw_peptide: &mut bool,
+    redraw_lig: &mut bool,
+    reset_cam: &mut bool,
+    engine_updates: &mut EngineUpdates,
+) {
     if state.ui.popup.show_get_geostd {
         let popup_id = ui.make_persistent_id("no_ff_params_popup");
 
@@ -183,9 +201,9 @@ pub fn load_popups(state: &mut State, scene: &mut Scene, ui: &mut Ui, redraw_lig
                                 &s.pdb_id,
                                 state,
                                 scene,
-                                &mut engine_updates,
-                                &mut redraw_peptide,
-                                &mut reset_cam,
+                                engine_updates,
+                                redraw_peptide,
+                                reset_cam,
                             );
                         }
                     });
@@ -215,18 +233,87 @@ pub fn load_file(
     redraw: &mut bool,
     reset_cam: &mut bool,
     engine_updates: &mut EngineUpdates,
-    scene: &graphics::Scene,
+    scene: &mut Scene,
 ) -> io::Result<()> {
-    state.open(path, Some(scene))?;
+    state.open(path, Some(scene), engine_updates)?;
 
     // Clear last map opened here, vice in `open_molecule`, to prevent it clearing the map
     // on init.
 
     *redraw = true;
     *reset_cam = true;
-    // engine_updates.entities = true;
+
     // todo: Overkill.
     engine_updates.entities = EntityUpdate::All;
 
     Ok(())
+}
+
+pub fn handle_redraw(
+    state: &mut State,
+    scene: &mut Scene,
+    peptide: bool,
+    lig: bool,
+    na: bool,
+    lipid: bool,
+    reset_cam: bool,
+    engine_updates: &mut EngineUpdates,
+) {
+    if peptide {
+        draw_peptide(state, scene);
+        // draw_all_ligs(state, scene); // todo: Hmm.
+
+        if let Some(mol) = &state.peptide {
+            set_window_title(&mol.common.ident, scene);
+        }
+
+        engine_updates.entities = EntityUpdate::All;
+        // engine_updates.entities.push_class(EntityClass::Peptide as u32);
+
+        // For docking light, but may be overkill here.
+        if state.active_mol().is_some() {
+            engine_updates.lighting = true;
+        }
+    }
+
+    if lig {
+        draw_all_ligs(state, scene);
+
+        engine_updates.entities = EntityUpdate::All;
+        // engine_updates.entities.push_class(EntityClass::Ligand as u32);
+
+        // For docking light, but may be overkill here.
+        if state.active_mol().is_some() {
+            engine_updates.lighting = true;
+        }
+    }
+
+    if na {
+        draw_all_nucleic_acids(state, scene);
+        engine_updates.entities = EntityUpdate::All;
+        // engine_updates.entities.push_class(EntityClass::NucleicAcid as u32);
+    }
+
+    if lipid {
+        draw_all_lipids(state, scene);
+        engine_updates.entities = EntityUpdate::All;
+        // engine_updates.entities.push_class(EntityClass::Lipid as u32);
+    }
+
+    // Perform cleanup.
+    if reset_cam {
+        reset_camera(state, scene, engine_updates, FWD_VEC);
+    }
+}
+
+pub fn open_lig_from_input(state: &mut State, cam: &Camera, mut mol: MoleculeSmall) {
+    mol.update_aux(&state.volatile.active_mol, &mut state.lig_specific_params);
+
+    state.volatile.active_mol = Some((MolType::Ligand, state.ligands.len()));
+    move_mol_to_cam(&mut mol.common, cam);
+
+    state.ligands.push(mol);
+    state.update_from_prefs();
+
+    state.ui.db_input = String::new();
 }
