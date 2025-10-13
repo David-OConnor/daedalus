@@ -597,7 +597,9 @@ pub fn display_mol_data(
             }
         }
 
-        if ui.button(RichText::new("Close").color(Color32::LIGHT_RED)).clicked() {
+        if ui.button(RichText::new("Close").color(Color32::LIGHT_RED))
+            .on_hover_text("(Hotkey: Delete) Close this molecule.")
+            .clicked() {
             *close = true;
         }
 

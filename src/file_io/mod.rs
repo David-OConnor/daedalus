@@ -187,8 +187,12 @@ impl State {
 
                         if let Some(ref mut s) = scene {
                             move_mol_to_cam(&mut mol.common, &s.camera);
-                            if let ControlScheme::Arc { center: _} = s.input_settings.control_scheme {
-                                s.input_settings.control_scheme = ControlScheme::Arc { center: mol.common.centroid().into() };
+                            if let ControlScheme::Arc { center: _ } =
+                                s.input_settings.control_scheme
+                            {
+                                s.input_settings.control_scheme = ControlScheme::Arc {
+                                    center: mol.common.centroid().into(),
+                                };
                             }
                         }
                         self.ligands.push(mol);
@@ -208,8 +212,12 @@ impl State {
 
                         if let Some(ref mut s) = scene {
                             move_mol_to_cam(&mut mol.common, &s.camera);
-                            if let ControlScheme::Arc { center: _} = s.input_settings.control_scheme {
-                                s.input_settings.control_scheme = ControlScheme::Arc { center: mol.common.centroid().into() };
+                            if let ControlScheme::Arc { center: _ } =
+                                s.input_settings.control_scheme
+                            {
+                                s.input_settings.control_scheme = ControlScheme::Arc {
+                                    center: mol.common.centroid().into(),
+                                };
                             }
                         }
                         self.nucleic_acids.push(mol);
@@ -227,8 +235,12 @@ impl State {
 
                         if let Some(ref mut s) = scene {
                             move_mol_to_cam(&mut mol.common, &s.camera);
-                            if let ControlScheme::Arc { center: _} = s.input_settings.control_scheme {
-                                s.input_settings.control_scheme = ControlScheme::Arc { center: mol.common.centroid().into() };
+                            if let ControlScheme::Arc { center: _ } =
+                                s.input_settings.control_scheme
+                            {
+                                s.input_settings.control_scheme = ControlScheme::Arc {
+                                    center: mol.common.centroid().into(),
+                                };
                             }
                         }
                         self.lipids.push(mol);

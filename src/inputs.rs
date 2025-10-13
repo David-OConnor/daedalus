@@ -1,5 +1,6 @@
 //! Handles user inputs, e.g. from keyboard and mouse.
 
+use egui::{Color32, RichText};
 use graphics::{
     ControlScheme, DeviceEvent, ElementState, EngineUpdates, EntityUpdate, FWD_VEC, Scene,
     WindowEvent,
@@ -18,7 +19,7 @@ use crate::{
     render::set_flashlight,
     selection::{find_selected_atom, points_along_ray},
     ui::cam::{FOG_DIST_MIN, set_fog_dist},
-    util::{cycle_selected, orbit_center},
+    util::{close_mol, cycle_selected, orbit_center},
 };
 
 // These are defaults; overridden by the user A/R, and saved to prefs.
@@ -265,6 +266,27 @@ pub fn event_dev_handler(
                             &mut redraw_lipid_inplace,
                             ManipMode::Rotate((mol_type, 0)),
                         );
+                    }
+                    Code(KeyCode::Delete) => {
+                        match state_.volatile.operating_mode {
+                            OperatingMode::Primary => {
+                                // Close the active mol?
+                                if let Some((mol_type, i)) = state_.volatile.active_mol {
+                                    close_mol(mol_type, i, state_, scene, &mut updates);
+                                }
+                            }
+                            OperatingMode::MolEditor => {
+                                // Delete the selected atom.
+
+                                if let Selection::AtomLig((_, i)) = state_.ui.selection {
+                                    if state_.mol_editor.delete_atom(i).is_err() {
+                                        eprintln!("Error deleting atom");
+                                    };
+
+                                    redraw_mol_editor = true;
+                                }
+                            }
+                        }
                     }
                     _ => (),
                 },

@@ -161,6 +161,10 @@ If *orbit sel* is set in the GUI, the orbit center will be the selected atom or 
 ![Surface example](screenshots/surface_a.png)
 
 
+### Hotkeys
+
+You can find hotkeys from the GUI's tooltips. See below for a reference.
+
 #### Mouse controls:
 - Hold the **left mouse button while dragging** to rotate the camera in pitch and yaw.
 - Hold the **middle mouse button while dragging** to move the camera left, right, up, and down.
@@ -201,6 +205,11 @@ If *orbit sel* is set in the GUI, the orbit center will be the selected atom or 
 - **Esc**: Clear selection, molecule manipulation modes etc.
 
 - **Ctrl + scroll**: Change the fog distance. (hide distant atoms)
+
+- **Delete**: Close the active molecule
+
+Note: The molecule editor has a different set of hot keys; see its tooltips for details.
+
 
 ![Protein B](screenshots/protein_b.png)
 

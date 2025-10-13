@@ -181,10 +181,7 @@ impl Default for FileDialogs {
         let load = FileDialog::with_config(cfg_all.clone()).default_file_filter("All");
         let save = FileDialog::with_config(cfg_all).default_save_extension("Protein");
 
-        Self {
-            load,
-            save,
-        }
+        Self { load, save }
     }
 }
 

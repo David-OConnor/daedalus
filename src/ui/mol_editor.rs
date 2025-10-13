@@ -142,35 +142,34 @@ pub fn editor(
         section_box().show(ui, |ui| {
             if ui
                 .button(RichText::new("↔ Move atom").color(Color32::LIGHT_RED))
-                .on_hover_text("(Hotkey: M) Delete the selected atom")
+                .on_hover_text("(Hotkey: M) Move the selected atom")
                 .clicked()
             {
-                // if state.mol_editor.delete_atom(i).is_err() {
-                //     eprintln!("Error deleting atom");
+                // if state.mol_editor.move_atom(i).is_err() {
+                //     eprintln!("Error moving atom");
                 // };
                 // redraw = true;
             }
         });
 
-        match state.ui.selection {
-            Selection::AtomLig((_, i)) => {
-                if ui
-                    .button(RichText::new("Delete atom").color(Color32::LIGHT_RED))
-                    .on_hover_text("Delete the selected atom")
-                    .clicked()
-                {
-                    if state.mol_editor.delete_atom(i).is_err() {
-                        eprintln!("Error deleting atom");
-                    };
-                    redraw = true;
-                }
+        if let Selection::AtomLig((_, i)) = state.ui.selection {
+            if ui
+                .button(RichText::new("Del atom").color(Color32::LIGHT_RED))
+                .on_hover_text("(Hotkey: Delete) Delete the selected atom")
+                .clicked()
+            {
+                if state.mol_editor.delete_atom(i).is_err() {
+                    eprintln!("Error deleting atom");
+                };
+                redraw = true;
             }
-            _ => (),
         }
 
         ui.add_space(COL_SPACING / 2.);
         // todo: implement
-        if ui.button("Edit metadata").clicked() {}
+        if ui.button("Metadata")
+            .on_hover_text("View and edit metadata for this molecule. This will be stored in the file when saved.")
+            .clicked() {}
 
         ui.add_space(COL_SPACING);
         if ui

@@ -6,8 +6,8 @@ use std::{
     sync::atomic::{AtomicU32, Ordering, Ordering::Relaxed},
 };
 
-use bio_files::{BondType, create_bonds, Mol2, Sdf, Pdbqt};
-use dynamics::find_tetra_posits;
+use bio_files::{BondType, Mol2, Pdbqt, Sdf, create_bonds};
+use dynamics::{find_planar_posit, find_tetra_posit_final, find_tetra_posits};
 use graphics::{ControlScheme, EngineUpdates, Entity, EntityUpdate, Scene};
 use lin_alg::{
     f32::{Quaternion, Vec3 as Vec3F32},
@@ -26,12 +26,11 @@ use crate::{
     },
     drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
     mol_lig::MoleculeSmall,
-    molecule::{Atom, Bond, MolGenericRef, MolType, MoleculeCommon},
+    molecule::{Atom, Bond, MolGenericRef, MolType, MoleculeCommon, MoleculeGeneric},
     render::{ATOM_SHININESS, BALL_STICK_RADIUS, BALL_STICK_RADIUS_H, set_flashlight},
     ui::UI_HEIGHT_CHANGED,
     util::find_neighbor_posit,
 };
-use crate::molecule::MoleculeGeneric;
 
 pub const INIT_CAM_DIST: f32 = 20.;
 
@@ -113,21 +112,24 @@ impl MolEditorState {
             // "cif" => {
             //     // todo
             // }
-            _ => return Err(io::Error::new(
-                ErrorKind::InvalidData,
-                "Invalid file extension",
-            )),
+            _ => {
+                return Err(io::Error::new(
+                    ErrorKind::InvalidData,
+                    "Invalid file extension",
+                ));
+            }
         };
 
         self.load_mol(&molecule.common, scene, engine_updates, state_ui);
         Ok(())
     }
 
-    pub fn load_mol(&mut self,
-                    mol: &MoleculeCommon,
-                    scene: &mut Scene,
-                    engine_updates: &mut EngineUpdates,
-                    state_ui: &StateUi,
+    pub fn load_mol(
+        &mut self,
+        mol: &MoleculeCommon,
+        scene: &mut Scene,
+        engine_updates: &mut EngineUpdates,
+        state_ui: &StateUi,
     ) {
         self.mol.common = mol.clone();
 
@@ -250,7 +252,7 @@ pub mod templates {
             Vec3::new(0.0000, 0.0000, 0.0), // C (carboxyl)
             Vec3::new(1.2290, 0.0000, 0.0), // O (carbonyl)
             Vec3::new(-0.6715, 1.1645, 0.0), // O (hydroxyl)
-            // Vec3::new(-1.0286, 1.7826, 0.0), // H (hydroxyl)
+                                            // Vec3::new(-1.0286, 1.7826, 0.0), // H (hydroxyl)
         ];
 
         // todo: Skip the H.
@@ -355,9 +357,16 @@ pub fn enter_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mu
     if let Some((mol_type, i)) = state.volatile.active_mol {
         if mol_type == MolType::Ligand {
             if i >= state.ligands.len() {
-                eprintln!("Expected a ligand at this index, but out of bounds when entering edit mode");
+                eprintln!(
+                    "Expected a ligand at this index, but out of bounds when entering edit mode"
+                );
             } else {
-                state.mol_editor.load_mol(&state.ligands[i].common, scene, engine_updates, &state.ui);
+                state.mol_editor.load_mol(
+                    &state.ligands[i].common,
+                    scene,
+                    engine_updates,
+                    &state.ui,
+                );
                 mol_loaded = true;
             }
         }
@@ -633,7 +642,9 @@ fn find_appended_posit(
         1 => {
             let adj = adj_list[i][0];
             let neighbor = atoms[adj].posit;
-            find_tetra_posits(posit_parent, neighbor, Vec3::new_zero())
+
+            // todo: This probably isn't what you want.
+            find_tetra_posits(posit_parent, neighbor, Vec3::new_zero()).0
         }
         2 => {
             // todo: Hmm. Need a better tetra fn.
@@ -643,10 +654,24 @@ fn find_appended_posit(
             let neighbor_1 = atoms[adj_1].posit;
 
             // If the incoming angles are ~τ/3, add in a planar config.
+            let bond_0 = neighbor_0 - posit_parent;
+            let bond_1 = neighbor_1 - posit_parent;
+            let angle = bond_1.to_normalized().dot(bond_0.to_normalized()).acos();
+            println!("ANGLE: {angle}");
 
-            // todo: Perhaps there, perhaps here, but a general "add atom" fn that
-            // automatically sets the posit based on neighbors
-            find_tetra_posits(posit_parent, neighbor_0, neighbor_1)
+            // Between tetra and planar geometry
+            if angle > 1.95 {
+                println!("Planar");
+                find_planar_posit(posit_parent, neighbor_0, neighbor_1)
+            } else {
+                println!("Tetra");
+                // todo: Perhaps there, perhaps here, but a general "add atom" fn that
+                // todo automatically sets the posit based on neighbors
+                let posits = find_tetra_posits(posit_parent, neighbor_0, neighbor_1);
+
+                // Arbitrary one. todo: Address?
+                posits.1
+            }
         }
         3 => {
             // todo: Hmm. Need a better tetra fn.
@@ -654,7 +679,9 @@ fn find_appended_posit(
             let neighbor_0 = atoms[adj_0].posit;
             let adj_1 = adj_list[i][1];
             let neighbor_1 = atoms[adj_1].posit;
-            find_tetra_posits(posit_parent, neighbor_0, neighbor_1)
+            let adj_2 = adj_list[i][2];
+            let neighbor_2 = atoms[adj_2].posit;
+            find_tetra_posit_final(posit_parent, neighbor_0, neighbor_1, neighbor_2)
         }
         _ => {
             unimplemented!()
@@ -685,6 +712,3 @@ pub fn save(state: &mut State, path: &Path) -> io::Result<()> {
 
     Ok(())
 }
-
-
-
