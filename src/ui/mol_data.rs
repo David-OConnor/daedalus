@@ -103,87 +103,87 @@ pub fn selected_data(
     ui: &mut Ui,
 ) {
     ui.horizontal(|ui| {
-    // ui.horizontal_wrapped(|ui| {
-    match selection {
-        Selection::AtomPeptide(sel_i) => {
-            if let Some(mol) = &state.peptide {
-                if *sel_i >= mol.common.atoms.len() {
+        // ui.horizontal_wrapped(|ui| {
+        match selection {
+            Selection::AtomPeptide(sel_i) => {
+                if let Some(mol) = &state.peptide {
+                    if *sel_i >= mol.common.atoms.len() {
+                        return;
+                    }
+
+                    let atom = &mol.common.atoms[*sel_i];
+                    disp_atom_data(atom, &mol.residues, None, ui);
+                }
+            }
+            Selection::AtomLig((lig_i, atom_i)) => {
+                if *lig_i >= ligands.len() {
+                    return;
+                }
+                let mol = &ligands[*lig_i];
+
+                if *atom_i >= mol.common.atoms.len() {
                     return;
                 }
 
-                let atom = &mol.common.atoms[*sel_i];
-                disp_atom_data(atom, &mol.residues, None, ui);
+                let atom = &mol.common.atoms[*atom_i];
+                let posit = mol.common.atom_posits[*atom_i];
+
+                disp_atom_data(atom, &[], Some(posit), ui);
             }
-        }
-        Selection::AtomLig((lig_i, atom_i)) => {
-            if *lig_i >= ligands.len() {
-                return;
-            }
-            let mol = &ligands[*lig_i];
+            // todo DRY
+            Selection::AtomNucleicAcid((mol_i, atom_i)) => {
+                if *mol_i >= nucleic_acids.len() {
+                    return;
+                }
+                let mol = &nucleic_acids[*mol_i];
 
-            if *atom_i >= mol.common.atoms.len() {
-                return;
-            }
-
-            let atom = &mol.common.atoms[*atom_i];
-            let posit = mol.common.atom_posits[*atom_i];
-
-            disp_atom_data(atom, &[], Some(posit), ui);
-        }
-        // todo DRY
-        Selection::AtomNucleicAcid((mol_i, atom_i)) => {
-            if *mol_i >= nucleic_acids.len() {
-                return;
-            }
-            let mol = &nucleic_acids[*mol_i];
-
-            if *atom_i >= mol.common.atoms.len() {
-                return;
-            }
-
-            let atom = &mol.common.atoms[*atom_i];
-            let posit = mol.common.atom_posits[*atom_i];
-
-            disp_atom_data(atom, &[], Some(posit), ui);
-        }
-        // todo DRY
-        Selection::AtomLipid((mol_i, atom_i)) => {
-            if *mol_i >= lipids.len() {
-                return;
-            }
-            let mol = &lipids[*mol_i];
-
-            if *atom_i >= mol.common.atoms.len() {
-                return;
-            }
-
-            let atom = &mol.common.atoms[*atom_i];
-            let posit = mol.common.atom_posits[*atom_i];
-
-            disp_atom_data(atom, &mol.residues, Some(posit), ui);
-        }
-        Selection::Residue(sel_i) => {
-            if let Some(mol) = &state.peptide {
-                if *sel_i >= mol.residues.len() {
+                if *atom_i >= mol.common.atoms.len() {
                     return;
                 }
 
-                let res = &mol.residues[*sel_i];
-                // todo: Color-coding by part like atom, to make easier to view.
+                let atom = &mol.common.atoms[*atom_i];
+                let posit = mol.common.atom_posits[*atom_i];
 
-                let mut res_color = COLOR_AA_NON_RESIDUE_EGUI;
-
-                if let ResidueType::AminoAcid(aa) = res.res_type {
-                    res_color = make_egui_color(aa_color(aa));
-                }
-                ui.label(RichText::new(res.to_string()).color(res_color));
+                disp_atom_data(atom, &[], Some(posit), ui);
             }
+            // todo DRY
+            Selection::AtomLipid((mol_i, atom_i)) => {
+                if *mol_i >= lipids.len() {
+                    return;
+                }
+                let mol = &lipids[*mol_i];
+
+                if *atom_i >= mol.common.atoms.len() {
+                    return;
+                }
+
+                let atom = &mol.common.atoms[*atom_i];
+                let posit = mol.common.atom_posits[*atom_i];
+
+                disp_atom_data(atom, &mol.residues, Some(posit), ui);
+            }
+            Selection::Residue(sel_i) => {
+                if let Some(mol) = &state.peptide {
+                    if *sel_i >= mol.residues.len() {
+                        return;
+                    }
+
+                    let res = &mol.residues[*sel_i];
+                    // todo: Color-coding by part like atom, to make easier to view.
+
+                    let mut res_color = COLOR_AA_NON_RESIDUE_EGUI;
+
+                    if let ResidueType::AminoAcid(aa) = res.res_type {
+                        res_color = make_egui_color(aa_color(aa));
+                    }
+                    ui.label(RichText::new(res.to_string()).color(res_color));
+                }
+            }
+            Selection::Atoms(is) => {
+                ui.label(RichText::new(format!("{} atoms", is.len())).color(Color32::GOLD));
+            }
+            Selection::None => (),
         }
-        Selection::Atoms(is) => {
-            ui.label(RichText::new(format!("{} atoms", is.len())).color(Color32::GOLD));
-        }
-        Selection::None => (),
-    }
     });
 }
 

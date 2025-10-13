@@ -1,20 +1,28 @@
 use std::{collections::HashMap, io, io::ErrorKind, path::Path};
 
 use bio_files::{BondType, create_bonds};
+use dynamics::find_tetra_posits;
 use graphics::{ControlScheme, EngineUpdates, Entity, EntityUpdate, Scene};
 use lin_alg::{
     f32::{Quaternion, Vec3 as Vec3F32},
     f64::Vec3,
 };
-use na_seq::{AtomTypeInRes, Element, Element::Carbon};
+use na_seq::{
+    AtomTypeInRes, Element,
+    Element::{Carbon, Hydrogen},
+};
 
 use crate::{
-    ManipMode, OperatingMode, Selection, State, StateUi,
-    drawing::{EntityClass, draw_mol, draw_peptide},
+    ManipMode, OperatingMode, Selection, State, StateUi, ViewSelLevel,
+    drawing::{
+        COLOR_SELECTED, EntityClass, MESH_BALL_STICK_SPHERE, MESH_SPACEFILL_SPHERE, MoleculeView,
+        atom_color, bond_entities, draw_mol, draw_peptide,
+    },
     drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
     mol_lig::{Ligand, MoleculeSmall},
     molecule::{Atom, Bond, MolType, MoleculeCommon, MoleculeGenericRef},
-    render::set_flashlight,
+    render::{ATOM_SHININESS, BALL_STICK_RADIUS, BALL_STICK_RADIUS_H, set_flashlight},
+    util::find_neighbor_posit,
 };
 
 pub const INIT_CAM_DIST: f32 = 20.;
@@ -334,11 +342,17 @@ pub fn redraw(entities: &mut Vec<Entity>, mol: &MoleculeSmall, ui: &StateUi) {
         ui,
         &None,
         ManipMode::None,
-       OperatingMode::MolEditor,
+        OperatingMode::MolEditor,
     ));
 }
 
-pub fn add_atom(entities: &mut Vec<Entity>, mol: &mut MoleculeSmall, element: Element, ui: &mut StateUi, updates: &mut EngineUpdates) {
+pub fn add_atom(
+    entities: &mut Vec<Entity>,
+    mol: &mut MoleculeSmall,
+    element: Element,
+    ui: &mut StateUi,
+    updates: &mut EngineUpdates,
+) {
     let Selection::AtomLig((_, i)) = ui.selection else {
         eprintln!("Attempting to add an atom with no parent to add it to");
         return;
@@ -346,7 +360,41 @@ pub fn add_atom(entities: &mut Vec<Entity>, mol: &mut MoleculeSmall, element: El
 
     let posit_parent = &mol.common.atom_posits[i];
 
-    let posit = *posit_parent + Vec3::new(1., 0., 0.); // todo temp
+    let mut neighbor_count = 0;
+    for j in &mol.common.adjacency_list[i] {
+        if mol.common.atoms[*j].element != Hydrogen {
+            neighbor_count += 1;
+        }
+    }
+
+    // todo: for now hard-coding tetra
+    let posit = match neighbor_count {
+        0 => Vec3::new(1.3, 0., 0.),
+        1 => {
+            let adj = mol.common.adjacency_list[i][0];
+            let neighbor = mol.common.atoms[adj].posit;
+            find_tetra_posits(*posit_parent, neighbor, Vec3::new_zero())
+        }
+        2 => {
+            // todo: Hmm. Need a better tetra fn.
+            let adj_0 = mol.common.adjacency_list[i][0];
+            let neighbor_0 = mol.common.atoms[adj_0].posit;
+            let adj_1 = mol.common.adjacency_list[i][1];
+            let neighbor_1 = mol.common.atoms[adj_1].posit;
+            find_tetra_posits(*posit_parent, neighbor_0, neighbor_1)
+        }
+        3 => {
+            // todo: Hmm. Need a better tetra fn.
+            let adj_0 = mol.common.adjacency_list[i][0];
+            let neighbor_0 = mol.common.atoms[adj_0].posit;
+            let adj_1 = mol.common.adjacency_list[i][1];
+            let neighbor_1 = mol.common.atoms[adj_1].posit;
+            find_tetra_posits(*posit_parent, neighbor_0, neighbor_1)
+        }
+        _ => {
+            return;
+        }
+    };
 
     let new_sn = 0; // todo A/R
     let new_i = mol.common.atoms.len();
@@ -357,7 +405,7 @@ pub fn add_atom(entities: &mut Vec<Entity>, mol: &mut MoleculeSmall, element: El
         element,
         type_in_res: None,
         force_field_type: Some("ca".to_owned()), // todo: A/R
-        partial_charge: Some(0.), // todo: A/R,
+        partial_charge: Some(0.),                // todo: A/R,
         ..Default::default()
     });
 
@@ -375,6 +423,144 @@ pub fn add_atom(entities: &mut Vec<Entity>, mol: &mut MoleculeSmall, element: El
     mol.common.adjacency_list[i].push(new_i);
     mol.common.adjacency_list.push(vec![i]);
 
-    redraw(entities, mol, ui);
+    draw_atom(entities, &mol.common.atoms[mol.common.atoms.len() - 1], ui);
+    draw_bond(
+        entities,
+        &mol.common.bonds[mol.common.bonds.len() - 1],
+        &mol.common.atoms,
+        &mol.common.adjacency_list,
+        ui,
+    );
+
+    // todo: Ideally just add the single entity, and add it to the
+    // index buffer.
     updates.entities = EntityUpdate::All;
+}
+
+/// Tailored function to prevent having to redraw the whole mol.
+fn draw_atom(entities: &mut Vec<Entity>, atom: &Atom, ui: &StateUi) {
+    if matches!(ui.mol_view, MoleculeView::BallAndStick) {
+        if ui.visibility.hide_hydrogen && atom.element == Element::Hydrogen {
+            return;
+        }
+
+        let color = atom_color(
+            atom,
+            0,
+            99999,
+            &[],
+            0,
+            &ui.selection,
+            ViewSelLevel::Atom, // Always color lipids by atom.
+            false,
+            ui.res_color_by_index,
+            ui.atom_color_by_charge,
+            MolType::Ligand,
+        );
+
+        let (radius, mesh) = match ui.mol_view {
+            MoleculeView::SpaceFill => (atom.element.vdw_radius(), MESH_SPACEFILL_SPHERE),
+            _ => match atom.element {
+                Element::Hydrogen => (BALL_STICK_RADIUS_H, MESH_BALL_STICK_SPHERE),
+                _ => (BALL_STICK_RADIUS, MESH_BALL_STICK_SPHERE),
+            },
+        };
+
+        let mut entity = Entity::new(
+            mesh,
+            // We assume atom.posit is synced with atom_posits here. (Not true generally)
+            atom.posit.into(),
+            Quaternion::new_identity(),
+            radius,
+            color,
+            ATOM_SHININESS,
+        );
+
+        entity.class = EntityClass::Ligand as u32;
+        entities.push(entity);
+    }
+}
+
+/// Tailored function to prevent having to draw the whole mol.
+fn draw_bond(
+    entities: &mut Vec<Entity>,
+    bond: &Bond,
+    atoms: &[Atom],
+    adj_list: &[Vec<usize>],
+    ui: &StateUi,
+) {
+    // todo: C+P from draw_molecule. With some removed, but much repeated.
+    let atom_0 = &atoms[bond.atom_0];
+    let atom_1 = &atoms[bond.atom_1];
+
+    if ui.visibility.hide_hydrogen
+        && (atom_0.element == Element::Hydrogen || atom_1.element == Element::Hydrogen)
+    {
+        return;
+    }
+
+    // We assume atom.posit is synced with atom_posits here. (Not true generally)
+    let posit_0: Vec3F32 = atoms[bond.atom_0].posit.into();
+    let posit_1: Vec3F32 = atoms[bond.atom_1].posit.into();
+
+    // For determining how to orient multiple-bonds. Only run for relevant bonds to save
+    // computation.
+    let neighbor_posit = match bond.bond_type {
+        BondType::Aromatic | BondType::Double | BondType::Triple => {
+            let mut hydrogen_is = Vec::with_capacity(atoms.len());
+            for atom in atoms {
+                hydrogen_is.push(atom.element == Element::Hydrogen);
+            }
+
+            let neighbor_i = find_neighbor_posit(adj_list, bond.atom_0, bond.atom_1, &hydrogen_is);
+            match neighbor_i {
+                Some((i, p1)) => (atoms[i].posit.into(), p1),
+                None => (atoms[0].posit.into(), false),
+            }
+        }
+        _ => (lin_alg::f32::Vec3::new_zero(), false),
+    };
+
+    let color_0 = crate::drawing::atom_color(
+        atom_0,
+        0,
+        bond.atom_0,
+        &[],
+        0,
+        &ui.selection,
+        ViewSelLevel::Atom, // Always color ligands by atom.
+        false,
+        ui.res_color_by_index,
+        ui.atom_color_by_charge,
+        MolType::Ligand,
+    );
+
+    let color_1 = crate::drawing::atom_color(
+        atom_1,
+        0,
+        bond.atom_1,
+        &[],
+        0,
+        &ui.selection,
+        ViewSelLevel::Atom, // Always color ligands by atom.
+        false,
+        ui.res_color_by_index,
+        ui.atom_color_by_charge,
+        MolType::Ligand,
+    );
+
+    let to_hydrogen = atom_0.element == Element::Hydrogen || atom_1.element == Element::Hydrogen;
+
+    entities.extend(bond_entities(
+        posit_0,
+        posit_1,
+        color_0,
+        color_1,
+        bond.bond_type,
+        MolType::Ligand,
+        true,
+        neighbor_posit,
+        false,
+        to_hydrogen,
+    ));
 }

@@ -45,6 +45,7 @@ and either installing the CUDA toolkit, or disabling CUDA.
 - View the 3D structure of proteins and small molecules
 - Molecular dynamics, using Amber force fields, and the OPC water model
 - Visualize ligand docking
+- Edit small molecules in 3D with integrated dynamics
 - Visualize electron density from crystallography and Cryo-Em data
 - WIP: This software is a platform for ab-initio simulations of electron density.
 
@@ -141,6 +142,9 @@ files as well, e.g. to load dihedral angles from *.frcmod* that aren't present i
 
 ## The camera
 
+The camera is set up with 6 degrees of freedom, using either keyboard + mouse, or mouse only. This makes
+it easy to get any view of the system you want.
+
 There are two camera control schemes, selectable using buttons in the *camera* section of the GUI.
 
 ### Free camera
@@ -148,6 +152,11 @@ The *free camera* mode is intended to be used with a keyboard and mouse together
 the viewer, vice the molecule. You can move and rotate and move the camera
 in 6 degrees of freedom, allowing you to easily view the molecule from any perspective.
 
+
+### Arc camera
+Similar to traditional molecular viewing software. The camera arcs (or orbits) around the molecule, when holding the left
+mouse button and dragging. Other controls, like scroll wheel and middle mouse, operate similar to the free camera.
+If *orbit sel* is set in the GUI, the orbit center will be the selected atom or residue, vice the molecule center.
 
 ![Surface example](screenshots/surface_a.png)
 
@@ -173,11 +182,6 @@ in 6 degrees of freedom, allowing you to easily view the molecule from any persp
 - **Shift** (left): Hold to increase camera movement and rotation speed.
 - **Scroll whlie holding left mouse**: Roll (Alternative to Q/R)
 
-
-### Arc camera
-Similar to traditional molecular viewing software. The camera arcs (or orbits) around the molecule, when holding the left
-mouse button and dragging. Other controls, like scroll wheel and middle mouse, operate similar to the free camera.
-If *orbit sel* is set in the GUI, the orbit center will be the selected atom or residue, vice the molecule center.
 
 
 ### Non-camera hotkeys

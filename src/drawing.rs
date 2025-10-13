@@ -42,7 +42,7 @@ const LIGAND_COLOR_FLEX: Color = (1., 1., 0.);
 pub const COLOR_AA_NON_RESIDUE: Color = (0., 0.8, 1.0);
 pub const COLOR_AA_NON_RESIDUE_EGUI: Color32 = Color32::from_rgb(0, 204, 255);
 
-const COLOR_SELECTED: Color = (1., 0., 0.);
+pub const COLOR_SELECTED: Color = (1., 0., 0.);
 const COLOR_H_BOND: Color = (1., 0.5, 0.1);
 const RADIUS_H_BOND: f32 = 0.2; // A scaler relative to covalent sticks.
 
@@ -96,12 +96,12 @@ pub const CHARGE_MAP_MIN: f32 = -0.9;
 pub const CHARGE_MAP_MAX: f32 = 0.65;
 
 // This allows us to more easily customize sphere mesh resolution.
-const MESH_BALL_STICK_SPHERE: usize = MESH_SPHERE_MEDRES;
+pub const MESH_BALL_STICK_SPHERE: usize = MESH_SPHERE_MEDRES;
 // todo: I believe this causes performance problems on many machines. But looks
 // todo much nicer.
-const MESH_SPACEFILL_SPHERE: usize = MESH_SPHERE_HIGHRES;
-const MESH_WATER_SPHERE: usize = MESH_SPHERE_MEDRES;
-const MESH_BOND_CAP: usize = MESH_SPHERE_LOWRES;
+pub const MESH_SPACEFILL_SPHERE: usize = MESH_SPHERE_HIGHRES;
+pub const MESH_WATER_SPHERE: usize = MESH_SPHERE_MEDRES;
+pub const MESH_BOND_CAP: usize = MESH_SPHERE_LOWRES;
 
 // This should ideally be high res, but we experience anomolies on viewing items inside it, while
 // the cam is outside.
@@ -311,7 +311,7 @@ pub fn color_viridis_float(i: f32, min: f32, max: f32) -> Color {
 
 /// A general function that sets color based criteria like element, partial charge,
 /// if selected or not etc.
-fn atom_color(
+pub fn atom_color(
     atom: &Atom,
     mol_i: usize,
     i: usize,
@@ -492,7 +492,7 @@ fn add_bond(
     result
 }
 
-fn bond_entities(
+pub fn bond_entities(
     posit_0: Vec3,
     posit_1: Vec3,
     mut color_0: Color,
@@ -881,7 +881,7 @@ pub fn draw_mol(
                             if mode == OperatingMode::Primary {
                                 color = mod_color_for_ligand(&color, atom.element)
                             }
-                        },
+                        }
                         // todo: Lipid and NA caches A/R
                         // todo: Color for NA
                         MolType::NucleicAcid => {
@@ -938,8 +938,12 @@ pub fn draw_mol(
                     hydrogen_is.push(atom.element == Element::Hydrogen);
                 }
 
-                let neighbor_i =
-                    find_neighbor_posit(&mol.common(), bond.atom_0, bond.atom_1, &hydrogen_is);
+                let neighbor_i = find_neighbor_posit(
+                    &mol.common().adjacency_list,
+                    bond.atom_0,
+                    bond.atom_1,
+                    &hydrogen_is,
+                );
                 match neighbor_i {
                     Some((i, p1)) => (mol.common().atom_posits[i].into(), p1),
                     None => (mol.common().atom_posits[0].into(), false),
@@ -1005,7 +1009,7 @@ pub fn draw_mol(
                         if mode == OperatingMode::Primary {
                             color_0 = mod_color_for_ligand(&color_0, atom_0.element)
                         }
-                    },
+                    }
                     // todo: Color for NA
                     MolType::NucleicAcid => {
                         color_0 = blend_color(color_0, LIPID_COLOR, LIPID_BLEND_AMT)
@@ -1554,7 +1558,12 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
         let posit_1: Vec3 = atom_1_posit.into();
 
         // For determining how to orient multiple-bonds.
-        let neighbor_i = find_neighbor_posit(&mol.common, bond.atom_0, bond.atom_1, &hydrogen_is);
+        let neighbor_i = find_neighbor_posit(
+            &mol.common.adjacency_list,
+            bond.atom_0,
+            bond.atom_1,
+            &hydrogen_is,
+        );
         let neighbor_posit = match neighbor_i {
             Some((i, p1)) => (mol.common.atoms[i].posit.into(), p1),
             None => (mol.common.atoms[0].posit.into(), false),

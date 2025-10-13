@@ -729,12 +729,13 @@ pub fn move_mol_to_res(
 ///
 /// Note: We don't take Hydrogens into account, because they confuse the situation of aromatic rings.
 pub fn find_neighbor_posit(
-    mol: &MoleculeCommon,
+    adj_list: &[Vec<usize>],
     atom_0: usize,
     atom_1: usize,
     hydrogen_is: &[bool],
 ) -> Option<(usize, bool)> {
-    let neighbors_0 = &mol.adjacency_list[atom_0];
+    // let neighbors_0 = &mol.adjacency_list[atom_0];
+    let neighbors_0 = &adj_list[atom_0];
 
     if neighbors_0.len() >= 2 {
         for neighbor in neighbors_0 {
@@ -745,7 +746,8 @@ pub fn find_neighbor_posit(
         }
     }
 
-    let neighbors_1 = &mol.adjacency_list[atom_1];
+    // let neighbors_1 = &mol.adjacency_list[atom_1];
+    let neighbors_1 = &adj_list[atom_1];
 
     if !neighbors_1.len() >= 2 {
         for neighbor in neighbors_1 {

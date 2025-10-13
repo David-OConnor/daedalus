@@ -2,14 +2,18 @@ use bio_files::BondType;
 use egui::{Color32, RichText, Ui};
 use graphics::{EngineUpdates, Entity, EntityUpdate, Scene};
 use lin_alg::{f32::Quaternion, f64::Vec3};
-use na_seq::Element;
-use na_seq::Element::{Carbon, Nitrogen, Oxygen};
-use crate::{Selection, State, mol_editor, mol_editor::{INIT_CAM_DIST, MolEditorState, exit_edit_mode, templates}, ui::{COL_SPACING, misc::section_box}, ViewSelLevel, StateUi};
-use crate::mol_editor::add_atom;
-use crate::mol_lig::MoleculeSmall;
-use crate::molecule::{Atom, Bond};
-use crate::ui::{COLOR_ACTIVE, COLOR_INACTIVE};
-use crate::ui::mol_data::selected_data;
+use na_seq::{
+    Element,
+    Element::{Carbon, Nitrogen, Oxygen},
+};
+
+use crate::{
+    Selection, State, StateUi, ViewSelLevel, mol_editor,
+    mol_editor::{INIT_CAM_DIST, MolEditorState, add_atom, exit_edit_mode, templates},
+    mol_lig::MoleculeSmall,
+    molecule::{Atom, Bond},
+    ui::{COL_SPACING, COLOR_ACTIVE, COLOR_INACTIVE, misc::section_box, mol_data::selected_data},
+};
 // todo: Check DBs (with a button maybe?) to see if the molecule exists in a DB already, or if
 // todo a similar one does.
 
@@ -39,7 +43,9 @@ pub fn editor(
                 };
                 if ui
                     .button(RichText::new("Color by q").color(color))
-                    .on_hover_text("Color the atom by partial charge, instead of element-specific colors")
+                    .on_hover_text(
+                        "Color the atom by partial charge, instead of element-specific colors",
+                    )
                     .clicked()
                 {
                     state.ui.atom_color_by_charge = !state.ui.atom_color_by_charge;
@@ -54,11 +60,23 @@ pub fn editor(
 
         section_box().show(ui, |ui| {
             if ui.button("C").on_hover_text("Add a Carbon atom").clicked() {
-                add_atom(&mut scene.entities, &mut state.mol_editor.mol,Carbon, &mut state.ui, engine_updates);
+                add_atom(
+                    &mut scene.entities,
+                    &mut state.mol_editor.mol,
+                    Carbon,
+                    &mut state.ui,
+                    engine_updates,
+                );
             }
 
             if ui.button("O").on_hover_text("Add an Oxygen atom").clicked() {
-                add_atom(&mut scene.entities, &mut state.mol_editor.mol, Oxygen, &mut state.ui, engine_updates);
+                add_atom(
+                    &mut scene.entities,
+                    &mut state.mol_editor.mol,
+                    Oxygen,
+                    &mut state.ui,
+                    engine_updates,
+                );
             }
 
             if ui
@@ -66,7 +84,13 @@ pub fn editor(
                 .on_hover_text("Add an Nitrogen atom")
                 .clicked()
             {
-                add_atom(&mut scene.entities, &mut state.mol_editor.mol, Nitrogen, &mut state.ui, engine_updates);
+                add_atom(
+                    &mut scene.entities,
+                    &mut state.mol_editor.mol,
+                    Nitrogen,
+                    &mut state.ui,
+                    engine_updates,
+                );
             }
         });
 
@@ -133,7 +157,14 @@ pub fn editor(
 
     // This trick prevents a clone.
     let mol = std::mem::take(&mut state.mol_editor.mol); // move out, leave default in place
-    selected_data(state, std::slice::from_ref(&&mol), &[], &[], &state.ui.selection, ui);
+    selected_data(
+        state,
+        std::slice::from_ref(&&mol),
+        &[],
+        &[],
+        &state.ui.selection,
+        ui,
+    );
     state.mol_editor.mol = mol;
 
     // Prevents the UI from jumping when going between a selection and none.
