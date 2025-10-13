@@ -67,7 +67,7 @@ pub struct MoleculeCommon {
     pub ident: String,
     pub atoms: Vec<Atom>,
     pub bonds: Vec<Bond>,
-    /// Relating covalent bonds. For each atom, a list of atoms bonded to it.
+    /// A fast lookup for finding atoms, by index, covalently bonded to each atom.
     pub adjacency_list: Vec<Vec<usize>>,
     /// For repositioning atoms, e.g. from dynamics or absolute positioning.
     ///

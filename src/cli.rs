@@ -413,7 +413,7 @@ pub fn handle_cmd(
 
         match action.as_ref() {
             "seq_view" => {
-                state.ui.show_aa_seq = match caps.get(2) {
+                state.ui.ui_vis.aa_seq = match caps.get(2) {
                     Some(action_2) => {
                         if action_2.as_str() == "off" {
                             false

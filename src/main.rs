@@ -273,10 +273,6 @@ struct StateVolatile {
     /// Ctrl, alt, shift etc.
     key_modifiers: Modifiers,
     operating_mode: OperatingMode,
-    operating_mode_prev: OperatingMode,
-    /// This allows us to wait a frame before getting the UI height after assessing
-    /// a mode change.
-    operating_mode_reset_next_frame: bool,
     /// Allows restoring after entering the mol edit mode.
     primary_mode_cam: Camera,
 }
@@ -301,8 +297,6 @@ impl Default for StateVolatile {
             md_peptide_selected: Default::default(),
             key_modifiers: Default::default(),
             operating_mode: Default::default(),
-            operating_mode_prev: Default::default(),
-            operating_mode_reset_next_frame: false,
             primary_mode_cam: Default::default(),
         }
     }
@@ -448,7 +442,7 @@ struct StateUi {
     cmd_line_output: String,
     /// Indicates CLI, or errors more broadly by changing its displayed color.
     cmd_line_out_is_err: bool,
-    show_aa_seq: bool,
+    ui_vis: UiVisibility,
     /// Use a viridis or simialar colr scheme to color residues gradually based on their
     /// position in the sequence.
     res_color_by_index: bool,
@@ -464,6 +458,23 @@ struct StateUi {
     lipid_to_add: usize,
     lipid_shape: LipidShape,
     lipid_mol_count: u16,
+}
+
+/// For showing and hiding UI sections.
+pub struct UiVisibility {
+    aa_seq: bool,
+    lipids: bool,
+    dynamics: bool
+}
+
+impl Default for UiVisibility {
+    fn default() -> Self {
+        Self {
+            aa_seq: false,
+            lipids: false,
+            dynamics: true,
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, Debug, Default, Encode, Decode)]

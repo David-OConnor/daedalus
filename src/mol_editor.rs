@@ -1,5 +1,5 @@
 use std::{collections::HashMap, io, io::ErrorKind, path::Path};
-
+use std::sync::atomic::Ordering;
 use bio_files::{BondType, create_bonds};
 use dynamics::find_tetra_posits;
 use graphics::{ControlScheme, EngineUpdates, Entity, EntityUpdate, Scene};
@@ -24,6 +24,7 @@ use crate::{
     render::{ATOM_SHININESS, BALL_STICK_RADIUS, BALL_STICK_RADIUS_H, set_flashlight},
     util::find_neighbor_posit,
 };
+use crate::ui::UI_HEIGHT_CHANGED;
 
 pub const INIT_CAM_DIST: f32 = 20.;
 
@@ -278,7 +279,7 @@ pub mod templates {
 // todo: Into a GUI util?
 pub fn enter_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mut EngineUpdates) {
     state.volatile.operating_mode = OperatingMode::MolEditor;
-    state.volatile.operating_mode_prev = OperatingMode::Primary;
+    UI_HEIGHT_CHANGED.store(true, Ordering::Release);
 
     match state.volatile.active_mol {
         Some((mol_type, i)) => {
@@ -314,7 +315,7 @@ pub fn enter_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mu
 // todo: Into a GUI util?
 pub fn exit_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mut EngineUpdates) {
     state.volatile.operating_mode = OperatingMode::Primary;
-    state.volatile.operating_mode_prev = OperatingMode::MolEditor;
+    UI_HEIGHT_CHANGED.store(true, Ordering::Release);
 
     // todo: Not necessarily zero!
     scene.input_settings.control_scheme = state.volatile.control_scheme_prev;
@@ -376,6 +377,8 @@ pub fn add_atom(
             find_tetra_posits(*posit_parent, neighbor, Vec3::new_zero())
         }
         2 => {
+            // If the incoming angles are ~τ/3, add in a planar config.
+
             // todo: Hmm. Need a better tetra fn.
             let adj_0 = mol.common.adjacency_list[i][0];
             let neighbor_0 = mol.common.atoms[adj_0].posit;

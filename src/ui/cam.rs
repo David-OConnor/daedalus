@@ -57,6 +57,32 @@ pub fn set_fog_dist(cam: &mut Camera, dist: u16) {
     cam.fog_end = fog_end;
 }
 
+pub fn cam_reset_controls(state: &mut State, scene: &mut Scene, ui: &mut Ui, engine_updates: &mut EngineUpdates, changed: &mut bool) {
+    ui.label("Cam:");
+
+    // Preset buttons
+    if ui.button("Front")
+        .on_hover_text("Reset the camera to look at the \"front\" of the molecule. (Y axis)")
+        .clicked() {
+        reset_camera(state, scene, engine_updates, FWD_VEC);
+        *changed = true;
+    }
+
+    if ui.button("Top")
+        .on_hover_text("Reset the camera to look at the \"top\" of the molecule. (Z axis)")
+        .clicked() {
+        reset_camera(state, scene, engine_updates, -UP_VEC);
+        *changed = true;
+    }
+
+    if ui.button("Left")
+        .on_hover_text("Reset the camera to look at the \"left\" of the molecule. (X axis)")
+        .clicked() {
+        reset_camera(state, scene, engine_updates, RIGHT_VEC);
+        *changed = true;
+    }
+}
+
 pub fn cam_controls(
     scene: &mut Scene,
     state: &mut State,
@@ -75,29 +101,7 @@ pub fn cam_controls(
     section_box()
         .show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.label("Cam:");
-
-                // Preset buttons
-                if ui.button("Front")
-                    .on_hover_text("Reset the camera to look at the \"front\" of the molecule. (Y axis)")
-                    .clicked() {
-                        reset_camera(state, scene, engine_updates, FWD_VEC);
-                        changed = true;
-                }
-
-                if ui.button("Top")
-                    .on_hover_text("Reset the camera to look at the \"top\" of the molecule. (Z axis)")
-                    .clicked() {
-                        reset_camera(state, scene, engine_updates, -UP_VEC);
-                        changed = true;
-                }
-
-                if ui.button("Left")
-                    .on_hover_text("Reset the camera to look at the \"left\" of the molecule. (X axis)")
-                    .clicked() {
-                        reset_camera(state, scene, engine_updates, RIGHT_VEC);
-                        changed = true;
-                }
+                cam_reset_controls(state, scene,  ui, engine_updates, &mut changed);
 
                 ui.add_space(COL_SPACING);
 
@@ -142,7 +146,7 @@ pub fn cam_controls(
                     }
                 }
 
-                    ui.add_space(COL_SPACING);
+                ui.add_space(COL_SPACING);
 
                 if state.ui.selection != Selection::None {
                     if ui

@@ -240,7 +240,7 @@ impl PerMolToSave {
             show_docking_tools: state.ui.show_docking_tools,
             res_color_by_index: state.ui.res_color_by_index,
             aatom_color_by_charge: state.ui.atom_color_by_charge,
-            show_aa_seq: state.ui.show_aa_seq,
+            show_aa_seq: state.ui.ui_vis.aa_seq,
             rcsb_data,
             rcsb_files_avail,
             docking_site_posit: lig_posit,
@@ -304,7 +304,7 @@ impl State {
                 self.ui.show_docking_tools = data.show_docking_tools;
                 self.ui.res_color_by_index = data.res_color_by_index;
                 self.ui.atom_color_by_charge = data.aatom_color_by_charge;
-                self.ui.show_aa_seq = data.show_aa_seq;
+                self.ui.ui_vis.aa_seq = data.show_aa_seq;
 
                 for (i, chain) in mol.chains.iter_mut().enumerate() {
                     if i < data.chain_vis.len() {

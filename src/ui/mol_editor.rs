@@ -14,6 +14,7 @@ use crate::{
     molecule::{Atom, Bond},
     ui::{COL_SPACING, COLOR_ACTIVE, COLOR_INACTIVE, misc::section_box, mol_data::selected_data},
 };
+use crate::ui::cam::cam_reset_controls;
 // todo: Check DBs (with a button maybe?) to see if the molecule exists in a DB already, or if
 // todo a similar one does.
 
@@ -23,17 +24,22 @@ pub fn editor(
     engine_updates: &mut EngineUpdates,
     ui: &mut Ui,
 ) {
-    // todo: New state for the WIp molecule. New struct for it.
-
     let mut redraw = false;
 
     ui.horizontal(|ui| {
         section_box().show(ui, |ui| {
             ui.horizontal(|ui| {
-                if ui.button("Reset cam").clicked() {
-                    scene.camera.position = lin_alg::f32::Vec3::new(0., 0., -INIT_CAM_DIST);
-                    scene.camera.orientation = Quaternion::new_identity();
-                }
+                let mut cam_changed = false;
+
+                // todo: The distances this function resets to may not be ideal for our use case
+                // todo here. Adjust A/R.
+                cam_reset_controls(state, scene,  ui, engine_updates, &mut cam_changed);
+                // if ui.button("Reset cam").clicked() {
+                //     scene.camera.position = lin_alg::f32::Vec3::new(0., 0., -INIT_CAM_DIST);
+                //     scene.camera.orientation = Quaternion::new_identity();
+                // }
+
+                ui.add_space(COL_SPACING / 2.);
 
                 // todo: This is a C+P from the main editor
                 let color = if state.ui.atom_color_by_charge {
@@ -56,7 +62,7 @@ pub fn editor(
             });
         });
 
-        ui.add_space(COL_SPACING);
+        ui.add_space(COL_SPACING / 2.);
 
         section_box().show(ui, |ui| {
             if ui.button("C").on_hover_text("Add a Carbon atom").clicked() {
@@ -94,7 +100,7 @@ pub fn editor(
             }
         });
 
-        ui.add_space(COL_SPACING);
+        ui.add_space(COL_SPACING /2.);
 
         section_box().show(ui, |ui| {
             if ui
@@ -129,6 +135,20 @@ pub fn editor(
         });
 
         ui.add_space(COL_SPACING);
+        
+        section_box().show(ui, |ui| {
+            if ui
+                .button(RichText::new("↔ Move atom").color(Color32::LIGHT_RED))
+                .on_hover_text("(Hotkey: M) Delete the selected atom")
+                .clicked()
+            {
+                // if state.mol_editor.delete_atom(i).is_err() {
+                //     eprintln!("Error deleting atom");
+                // };
+                // redraw = true;
+            }
+        });
+
 
         match state.ui.selection {
             Selection::AtomLig((_, i)) => {

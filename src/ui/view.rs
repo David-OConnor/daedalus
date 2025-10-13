@@ -1,3 +1,4 @@
+use std::sync::atomic::Ordering;
 use egui::{ComboBox, RichText, Slider, Ui};
 use graphics::{EngineUpdates, EntityUpdate, Scene};
 
@@ -10,6 +11,7 @@ use crate::{
     ui::{COL_SPACING, DENS_ISO_MAX, DENS_ISO_MIN, misc, misc::section_box},
     util::clear_mol_entity_indices,
 };
+use crate::ui::UI_HEIGHT_CHANGED;
 
 pub fn view_settings(
     state: &mut State,
@@ -180,17 +182,6 @@ pub fn view_settings(
                     state.ui.visibility.dim_peptide = !state.ui.visibility.dim_peptide;
                     *redraw_peptide = true;
                 }
-
-                ui.add_space(COL_SPACING / 2.);
-                let seq_text = if state.ui.show_aa_seq {
-                    "Hide seq"
-                } else {
-                    "Show seq"
-                };
-
-                if ui.button(RichText::new(seq_text)).clicked() {
-                    state.ui.show_aa_seq = !state.ui.show_aa_seq;
-                }
             }
 
             // ui.add_space(COL_SPACING);
@@ -281,4 +272,37 @@ pub fn view_settings(
             }
         });
     });
+}
+
+fn vis_helper(vis: &mut bool, name: &str, tooltip: &str, ui: &mut Ui) {
+    let seq_text = if *vis {
+        format!("Hide {name}")
+    } else {
+        format!("Show {name}")
+    };
+
+    if ui.button(RichText::new(seq_text))
+        .on_hover_text(tooltip)
+        .clicked() {
+        *vis = !*vis;
+        UI_HEIGHT_CHANGED.store(true, Ordering::Release);
+    }
+}
+
+/// For toggling on and off UI sections.
+pub fn ui_section_vis(state: &mut State, ui: &mut Ui) {
+    if state.peptide.is_some() {
+        let tooltip = "Show or hide the amino acid sequence of the currently opened protein \
+                    as single-letter identifiers. When in this mode, click the AA letter to select its residue.";
+
+        vis_helper(&mut state.ui.ui_vis.aa_seq, "seq", tooltip, ui);
+    }
+
+    ui.add_space(COL_SPACING / 2.);
+    let tooltip = "Show or hide tools for adding lipids";
+    vis_helper(&mut state.ui.ui_vis.lipids, "lipid tools", tooltip, ui);
+
+    ui.add_space(COL_SPACING / 2.);
+    let tooltip = "Show or hide the molecular dynamics section.";
+    vis_helper(&mut state.ui.ui_vis.dynamics, "dynamics", tooltip, ui);
 }
