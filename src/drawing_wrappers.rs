@@ -8,7 +8,7 @@ use graphics::{Entity, Scene};
 use crate::{
     OperatingMode, State, drawing,
     drawing::EntityClass,
-    molecule::{MolGenericTrait, MolType, MoleculeGenericRef},
+    molecule::{MolGenericRef, MolGenericTrait, MolType},
     util::clear_mol_entity_indices,
 };
 
@@ -78,7 +78,7 @@ pub fn draw_all_ligs(state: &mut State, scene: &mut Scene) {
         let start_i_mol = ent_i_start + entities.len();
 
         let ents_this_mol = drawing::draw_mol(
-            MoleculeGenericRef::Ligand(mol),
+            MolGenericRef::Ligand(mol),
             i_mol,
             &state.ui,
             &state.volatile.active_mol,
@@ -126,7 +126,7 @@ pub fn draw_all_nucleic_acids(state: &mut State, scene: &mut Scene) {
         let start_i_mol = ent_i_start + entities.len();
 
         let ents_this_mol = drawing::draw_mol(
-            MoleculeGenericRef::NucleicAcid(mol),
+            MolGenericRef::NucleicAcid(mol),
             i_mol,
             &state.ui,
             &state.volatile.active_mol,
@@ -174,7 +174,7 @@ pub fn draw_all_lipids(state: &mut State, scene: &mut Scene) {
         let start_i_mol = ent_i_start + entities.len();
 
         let ents_this_mol = drawing::draw_mol(
-            MoleculeGenericRef::Lipid(mol),
+            MolGenericRef::Lipid(mol),
             i_mol,
             &state.ui,
             &state.volatile.active_mol,
@@ -244,7 +244,7 @@ pub fn draw_all_mol_of_type<T: MolGenericTrait>(
 
 /// Updates a single molecule's entities.
 fn update_inplace_inner(
-    mol: MoleculeGenericRef,
+    mol: MolGenericRef,
     i: usize,
     ent_i_start: usize,
     ent_i_end: usize,
@@ -292,7 +292,7 @@ pub fn update_all_ligs_inplace(state: &State, scene: &mut Scene) {
             continue;
         };
 
-        let mol = MoleculeGenericRef::Ligand(lig);
+        let mol = MolGenericRef::Ligand(lig);
         update_inplace_inner(mol, i, ent_i_start, ent_i_end, state, scene);
     }
 }
@@ -304,7 +304,7 @@ pub fn update_all_na_inplace(state: &State, scene: &mut Scene) {
             continue;
         };
 
-        let mol = MoleculeGenericRef::NucleicAcid(na);
+        let mol = MolGenericRef::NucleicAcid(na);
         update_inplace_inner(mol, i, ent_i_start, ent_i_end, state, scene);
     }
 }
@@ -316,7 +316,7 @@ pub fn update_all_lipids_inplace(state: &State, scene: &mut Scene) {
             continue;
         };
 
-        let mol = MoleculeGenericRef::Lipid(lipid);
+        let mol = MolGenericRef::Lipid(lipid);
         update_inplace_inner(mol, i, ent_i_start, ent_i_end, state, scene);
     }
 }
@@ -328,7 +328,7 @@ pub fn update_single_ligand_inplace(i: usize, state: &State, scene: &mut Scene) 
         return;
     };
 
-    let mol = MoleculeGenericRef::Ligand(ligand);
+    let mol = MolGenericRef::Ligand(ligand);
     update_inplace_inner(mol, i, ent_i_start, ent_i_end, state, scene);
 }
 
@@ -339,7 +339,7 @@ pub fn update_single_nucleic_acid_inplace(i: usize, state: &State, scene: &mut S
         return;
     };
 
-    let mol = MoleculeGenericRef::NucleicAcid(na);
+    let mol = MolGenericRef::NucleicAcid(na);
     update_inplace_inner(mol, i, ent_i_start, ent_i_end, state, scene);
 }
 
@@ -350,6 +350,6 @@ pub fn update_single_lipid_inplace(i: usize, state: &State, scene: &mut Scene) {
         return;
     };
 
-    let mol = MoleculeGenericRef::Lipid(lipid);
+    let mol = MolGenericRef::Lipid(lipid);
     update_inplace_inner(mol, i, ent_i_start, ent_i_end, state, scene);
 }

@@ -16,9 +16,7 @@ use na_seq::Element;
 use crate::{
     ManipMode, OperatingMode, Selection, State, StateUi, ViewSelLevel,
     md::STATIC_ATOM_DIST_THRESH,
-    molecule::{
-        Atom, AtomRole, Chain, MolGenericTrait, MolType, MoleculeGenericRef, Residue, aa_color,
-    },
+    molecule::{Atom, AtomRole, Chain, MolGenericRef, MolGenericTrait, MolType, Residue, aa_color},
     reflection::ElectronDensity,
     render::{
         ATOM_SHININESS, BACKGROUND_COLOR, BALL_RADIUS_WATER_H, BALL_RADIUS_WATER_O,
@@ -798,7 +796,7 @@ pub fn draw_water(
 
 /// For all molecule types (for now, not including peptide)
 pub fn draw_mol(
-    mol: MoleculeGenericRef,
+    mol: MolGenericRef,
     mol_i: usize,
     ui: &StateUi,
     active_mol: &Option<(MolType, usize)>,

@@ -11,7 +11,7 @@ use crate::{
     State, StateUi,
     cam_misc::move_mol_to_cam,
     mol_lig::MoleculeSmall,
-    molecule::{MolType, MoleculeGenericRefMut, MoleculePeptide},
+    molecule::{MoGenericRefMut, MolType, MoleculePeptide},
     render::set_flashlight,
     util::handle_err,
 };
@@ -178,7 +178,7 @@ pub fn load_geostd2(
                         }
                     }
                     if let Some(lig) = state.active_mol_mut() {
-                        if let MoleculeGenericRefMut::Ligand(l) = lig {
+                        if let MoGenericRefMut::Ligand(l) = lig {
                             l.frcmod_loaded = true;
                         }
                     }

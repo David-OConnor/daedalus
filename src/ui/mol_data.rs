@@ -16,9 +16,7 @@ use crate::{
     lipid::MoleculeLipid,
     mol_lig::MoleculeSmall,
     mol_manip::set_manip,
-    molecule::{
-        Atom, MolType, MoleculeCommon, MoleculeGenericRef, MoleculeGenericRefMut, Residue, aa_color,
-    },
+    molecule::{Atom, MoGenericRefMut, MolGenericRef, MolType, MoleculeCommon, Residue, aa_color},
     nucleic_acid::MoleculeNucleicAcid,
     ui::{
         COL_SPACING, COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_HIGHLIGHT, COLOR_INACTIVE,
@@ -256,7 +254,7 @@ pub fn display_mol_data_peptide(
 
     ui.horizontal(|ui| {
         if let Some(pep) = &state.peptide {
-            mol_descrip(&MoleculeGenericRef::Peptide(pep), ui);
+            mol_descrip(&MolGenericRef::Peptide(pep), ui);
 
             if ui.button(RichText::new("Close").color(Color32::LIGHT_RED)).clicked() {
                 *close = true;
@@ -379,7 +377,7 @@ pub fn display_mol_data_peptide(
         if let Some((_, i)) = state.volatile.active_mol {
             let mol = &mut state.ligands[i];
             if let Some(pep) = &state.peptide {
-                move_mol_to_res(&mut MoleculeGenericRefMut::Ligand(mol), pep, &res);
+                move_mol_to_res(&mut MoGenericRefMut::Ligand(mol), pep, &res);
                 move_cam_to_active_mol(state, scene, pep.center, engine_updates);
             }
         }
@@ -605,8 +603,8 @@ pub fn display_mol_data(
 
         if let Some(mol) = state.active_mol() {
             match mol {
-                MoleculeGenericRef::Peptide(m) => {}
-                MoleculeGenericRef::Ligand(l) => {
+                MolGenericRef::Peptide(m) => {}
+                MolGenericRef::Ligand(l) => {
                     ui.add_space(COL_SPACING);
 
                     // todo status color helper?
@@ -673,7 +671,7 @@ pub fn display_mol_data(
                         }
                     }
                 }
-                MoleculeGenericRef::Lipid(l) => {
+                MolGenericRef::Lipid(l) => {
                     if ui.button("View on LMSD").clicked() {
                         lmsd::open_overview(&l.lmsd_id);
                     }

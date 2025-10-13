@@ -15,8 +15,7 @@ use crate::{
     State,
     docking_v2::{DockingSite, Pose},
     molecule::{
-        Atom, Bond, Chain, MolGenericTrait, MolType as Mt, MoleculeCommon, MoleculeGenericRef,
-        Residue,
+        Atom, Bond, Chain, MolGenericRef, MolGenericTrait, MolType as Mt, MoleculeCommon, Residue,
     },
     util::handle_err,
 };
@@ -95,8 +94,8 @@ impl MolGenericTrait for MoleculeSmall {
         &mut self.common
     }
 
-    fn to_ref(&self) -> MoleculeGenericRef<'_> {
-        MoleculeGenericRef::Ligand(self)
+    fn to_ref(&self) -> MolGenericRef<'_> {
+        MolGenericRef::Ligand(self)
     }
 
     fn mol_type(&self) -> crate::molecule::MolType {
@@ -124,6 +123,7 @@ impl Ligand {
             }
         }
 
+        // todo: What was your intent here? This doesn't do anything.
         let mut result = Self {
             ..Default::default()
         };

@@ -12,6 +12,7 @@ use bio_files::{
     DensityMap, MmCif, Mol2, Pdbqt, gemmi_sf_to_map, md_params::ForceFieldParams, sdf::Sdf,
 };
 use chrono::Utc;
+use egui_file_dialog::FileDialog;
 use graphics::{Camera, Scene};
 use na_seq::{AaIdent, Element};
 
@@ -20,7 +21,9 @@ use crate::{
     cam_misc::move_mol_to_cam,
     download_mols,
     mol_lig::MoleculeSmall,
-    molecule::{MolType, MoleculeGeneric, MoleculeGenericRefMut, MoleculePeptide},
+    molecule::{
+        MoGenericRefMut, MolGenericRef, MolType, MoleculeCommon, MoleculeGeneric, MoleculePeptide,
+    },
     prefs::{OpenHistory, OpenType},
     reflection::{DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityRect, ElectronDensity},
     util::{handle_err, handle_success},
@@ -618,3 +621,26 @@ pub fn gemmi_path() -> Option<&'static Path> {
 //
 //     Ok(result)
 // }
+
+impl MoleculeCommon {
+    /// Save to disk.
+    pub fn save(&self, dialog: &mut FileDialog) -> io::Result<()> {
+        let ext_default = "mol2"; // The default; more robust than SDF.
+
+        let fname_default = {
+            let name = if self.ident.is_empty() {
+                "molecule".to_string()
+            } else {
+                self.ident.clone()
+            };
+            format!("{name}.{ext_default}")
+        };
+
+        dialog.config_mut().default_file_name = fname_default.to_string();
+        dialog.config_mut().default_file_filter = Some("Molecule (small)".to_owned());
+
+        dialog.save_file();
+
+        Ok(())
+    }
+}

@@ -27,7 +27,7 @@ use mol_data::display_mol_data;
 
 use crate::{
     CamSnapshot, MsaaSetting, OperatingMode, Selection, State, ViewSelLevel,
-    cam_misc::{move_mol_to_cam, reset_camera},
+    cam_misc::{cam_look_at_outside, move_mol_to_cam, reset_camera},
     cli,
     cli::autocomplete_cli,
     docking_v2::dock,
@@ -39,22 +39,22 @@ use crate::{
     lipid::{LipidShape, make_bacterial_lipids},
     mol_editor::enter_edit_mode,
     mol_lig::MoleculeSmall,
-    molecule::{MolType, MoleculeGenericRef},
+    molecule::{MolGenericRef, MolType},
     render::{set_flashlight, set_static_light},
     ui::{
         cam::{cam_controls, cam_snapshots},
         misc::section_box,
         mol_data::display_mol_data_peptide,
         rama_plot::plot_rama,
-        view::view_settings,
+        util::{load_popups, update_file_dialogs},
+        view::{ui_section_vis, view_settings},
     },
     util::{
         check_prefs_save, clear_mol_entity_indices, close_mol, close_peptide, cycle_selected,
         handle_err, handle_scene_flags, handle_success, orbit_center, select_from_search,
     },
 };
-use crate::cam_misc::cam_look_at_outside;
-use crate::ui::view::ui_section_vis;
+use crate::ui::util::load_file;
 
 pub mod cam;
 mod md;
@@ -62,6 +62,7 @@ pub mod misc;
 mod mol_data;
 mod mol_editor;
 mod rama_plot;
+mod util;
 mod view;
 
 pub const ROW_SPACING: f32 = 10.;
@@ -107,28 +108,6 @@ fn open_lig(state: &mut State, cam: &Camera, mut mol: MoleculeSmall) {
     state.update_from_prefs();
 
     state.ui.db_input = String::new();
-}
-
-pub fn load_file(
-    path: &Path,
-    state: &mut State,
-    redraw: &mut bool,
-    reset_cam: &mut bool,
-    engine_updates: &mut EngineUpdates,
-    scene: &Scene,
-) -> io::Result<()> {
-    state.open(path, Some(scene))?;
-
-    // Clear last map opened here, vice in `open_molecule`, to prevent it clearing the map
-    // on init.
-
-    *redraw = true;
-    *reset_cam = true;
-    // engine_updates.entities = true;
-    // todo: Overkill.
-    engine_updates.entities = EntityUpdate::All;
-
-    Ok(())
 }
 
 pub fn num_field<T>(val: &mut T, label: &str, width: u16, ui: &mut Ui)
@@ -668,12 +647,12 @@ fn selection_section(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
     });
 }
 
-fn mol_descrip(mol: &MoleculeGenericRef, ui: &mut Ui) {
+fn mol_descrip(mol: &MolGenericRef, ui: &mut Ui) {
     ui.heading(RichText::new(mol.common().ident.clone()).color(Color32::GOLD));
 
     ui.label(format!("{} atoms", mol.common().atoms.len()));
 
-    if let MoleculeGenericRef::Peptide(m) = mol {
+    if let MolGenericRef::Peptide(m) = mol {
         if let Some(method) = m.experimental_method {
             ui.label(method.to_str_short());
         }
@@ -703,114 +682,114 @@ fn settings(state: &mut State, scene: &mut Scene, ui: &mut Ui) {
         PopupAnchor::Position(Pos2::new(60., 60.)),
         ui.layer_id(),
     )
-        .align(RectAlign::TOP)
-        .open(true)
-        .gap(4.0)
-        .show(|ui| {
-            ui.horizontal(|ui| {
-                ui.heading("Settings");
-                ui.add_space(COL_SPACING);
-                // todo: Make this consistent with your other controls.
-                ui.label("MSAA (Restart the program to take effect):");
+    .align(RectAlign::TOP)
+    .open(true)
+    .gap(4.0)
+    .show(|ui| {
+        ui.horizontal(|ui| {
+            ui.heading("Settings");
+            ui.add_space(COL_SPACING);
+            // todo: Make this consistent with your other controls.
+            ui.label("MSAA (Restart the program to take effect):");
 
-                let msaa_prev = state.to_save.msaa;
-                ComboBox::from_id_salt(10)
-                    .width(40.)
-                    .selected_text(state.to_save.msaa.to_str())
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(
-                            &mut state.to_save.msaa,
-                            MsaaSetting::None,
-                            MsaaSetting::None.to_str(),
-                        );
-                        ui.selectable_value(
-                            &mut state.to_save.msaa,
-                            MsaaSetting::Four,
-                            MsaaSetting::Four.to_str(),
-                        );
-                    });
+            let msaa_prev = state.to_save.msaa;
+            ComboBox::from_id_salt(10)
+                .width(40.)
+                .selected_text(state.to_save.msaa.to_str())
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(
+                        &mut state.to_save.msaa,
+                        MsaaSetting::None,
+                        MsaaSetting::None.to_str(),
+                    );
+                    ui.selectable_value(
+                        &mut state.to_save.msaa,
+                        MsaaSetting::Four,
+                        MsaaSetting::Four.to_str(),
+                    );
+                });
 
-                if state.to_save.msaa != msaa_prev {
-                    state.update_save_prefs(false);
-                }
+            if state.to_save.msaa != msaa_prev {
+                state.update_save_prefs(false);
+            }
 
-                ui.add_space(COL_SPACING);
-                ui.label("Cam move speed:");
-                if ui
-                    .add(TextEdit::singleline(&mut state.ui.movement_speed_input).desired_width(32.))
-                    .changed()
-                {
-                    if let Ok(v) = &mut state.ui.movement_speed_input.parse::<u8>() {
-                        state.to_save.movement_speed = *v;
-                        scene.input_settings.move_sens = *v as f32;
-
-                        state.update_save_prefs(false);
-                    } else {
-                        // reset
-                        state.ui.movement_speed_input = state.to_save.movement_speed.to_string();
-                    }
-                }
-
-                ui.add_space(COL_SPACING / 2.);
-                ui.label("Cam rot sensitivity:");
-                if ui
-                    .add(TextEdit::singleline(&mut state.ui.rotation_sens_input).desired_width(32.))
-                    .changed()
-                {
-                    if let Ok(v) = &mut state.ui.rotation_sens_input.parse::<u8>() {
-                        state.to_save.rotation_sens = *v;
-                        scene.input_settings.rotate_sens = *v as f32 / 100.;
-
-                        state.update_save_prefs(false);
-                    } else {
-                        // reset
-                        state.ui.rotation_sens_input = state.to_save.rotation_sens.to_string();
-                    }
-                }
-
-                ui.add_space(COL_SPACING);
-                ui.label("Mol scroll move speed:").on_hover_text(
-                    "When using the scroll wheel to move molecules, this controls how fast they move.",
-                );
-                if ui
-                    .add(TextEdit::singleline(&mut state.ui.mol_move_sens_input).desired_width(32.))
-                    .changed()
-                {
-                    if let Ok(v) = &mut state.ui.mol_move_sens_input.parse::<u8>() {
-                        state.to_save.mol_move_sens = *v;
-                        state.update_save_prefs(false);
-                    } else {
-                        // reset
-                        state.ui.mol_move_sens_input = state.to_save.mol_move_sens.to_string();
-                    }
-                }
-
-                ui.add_space(COL_SPACING / 2.);
-                if ui.button("Reset sensitivities").clicked() {
-                    state.to_save.movement_speed = MOVEMENT_SENS as u8;
-                    state.ui.movement_speed_input = state.to_save.movement_speed.to_string();
-                    scene.input_settings.move_sens = MOVEMENT_SENS;
-
-                    state.to_save.rotation_sens = (ROTATE_SENS * 100.) as u8;
-                    state.ui.rotation_sens_input = state.to_save.rotation_sens.to_string();
-                    scene.input_settings.rotate_sens = ROTATE_SENS;
-
-                    state.to_save.mol_move_sens = (SENS_MOL_MOVE_SCROLL * 1_000.) as u8;
-                    state.ui.mol_move_sens_input = state.to_save.mol_move_sens.to_string();
-
-                    state.update_save_prefs(false);
-                }
-            });
-
-            ui.add_space(ROW_SPACING);
-
+            ui.add_space(COL_SPACING);
+            ui.label("Cam move speed:");
             if ui
-                .button(RichText::new("Close").color(Color32::LIGHT_RED))
-                .clicked()
+                .add(TextEdit::singleline(&mut state.ui.movement_speed_input).desired_width(32.))
+                .changed()
             {
-                state.ui.popup.show_settings = false;
+                if let Ok(v) = &mut state.ui.movement_speed_input.parse::<u8>() {
+                    state.to_save.movement_speed = *v;
+                    scene.input_settings.move_sens = *v as f32;
+
+                    state.update_save_prefs(false);
+                } else {
+                    // reset
+                    state.ui.movement_speed_input = state.to_save.movement_speed.to_string();
+                }
+            }
+
+            ui.add_space(COL_SPACING / 2.);
+            ui.label("Cam rot sensitivity:");
+            if ui
+                .add(TextEdit::singleline(&mut state.ui.rotation_sens_input).desired_width(32.))
+                .changed()
+            {
+                if let Ok(v) = &mut state.ui.rotation_sens_input.parse::<u8>() {
+                    state.to_save.rotation_sens = *v;
+                    scene.input_settings.rotate_sens = *v as f32 / 100.;
+
+                    state.update_save_prefs(false);
+                } else {
+                    // reset
+                    state.ui.rotation_sens_input = state.to_save.rotation_sens.to_string();
+                }
+            }
+
+            ui.add_space(COL_SPACING);
+            ui.label("Mol scroll move speed:").on_hover_text(
+                "When using the scroll wheel to move molecules, this controls how fast they move.",
+            );
+            if ui
+                .add(TextEdit::singleline(&mut state.ui.mol_move_sens_input).desired_width(32.))
+                .changed()
+            {
+                if let Ok(v) = &mut state.ui.mol_move_sens_input.parse::<u8>() {
+                    state.to_save.mol_move_sens = *v;
+                    state.update_save_prefs(false);
+                } else {
+                    // reset
+                    state.ui.mol_move_sens_input = state.to_save.mol_move_sens.to_string();
+                }
+            }
+
+            ui.add_space(COL_SPACING / 2.);
+            if ui.button("Reset sensitivities").clicked() {
+                state.to_save.movement_speed = MOVEMENT_SENS as u8;
+                state.ui.movement_speed_input = state.to_save.movement_speed.to_string();
+                scene.input_settings.move_sens = MOVEMENT_SENS;
+
+                state.to_save.rotation_sens = (ROTATE_SENS * 100.) as u8;
+                state.ui.rotation_sens_input = state.to_save.rotation_sens.to_string();
+                scene.input_settings.rotate_sens = ROTATE_SENS;
+
+                state.to_save.mol_move_sens = (SENS_MOL_MOVE_SCROLL * 1_000.) as u8;
+                state.ui.mol_move_sens_input = state.to_save.mol_move_sens.to_string();
+
+                state.update_save_prefs(false);
             }
         });
+
+        ui.add_space(ROW_SPACING);
+
+        if ui
+            .button(RichText::new("Close").color(Color32::LIGHT_RED))
+            .clicked()
+        {
+            state.ui.popup.show_settings = false;
+        }
+    });
 }
 
 fn residue_selector(state: &mut State, scene: &mut Scene, ui: &mut Ui, redraw: &mut bool) {
@@ -821,91 +800,91 @@ fn residue_selector(state: &mut State, scene: &mut Scene, ui: &mut Ui, redraw: &
         PopupAnchor::Position(Pos2::new(60., 60.)),
         ui.layer_id(),
     )
-        .align(RectAlign::TOP)
-        .open(true)
-        .width(1_000.)
-        .gap(4.0)
-        .show(|ui| {
-            ui.with_layout(Layout::top_down(Align::RIGHT), |ui| {
-                if ui
-                    .button(RichText::new("Close").color(Color32::LIGHT_RED))
-                    .clicked()
-                {
-                    state.ui.popup.residue_selector = false;
-                    state.ui.chain_to_pick_res = None;
-                }
-            });
-            ui.add_space(ROW_SPACING);
-            // This is a bit fuzzy, as the size varies by residue name (Not always 1 for non-AAs), and index digits.
-
-            let mut update_arc_center = false;
-
-            if let Some(mol) = &state.peptide {
-                if let Some(chain_i) = state.ui.chain_to_pick_res {
-                    if chain_i >= mol.chains.len() {
-                        return;
-                    }
-                    let chain = &mol.chains[chain_i];
-
-                    ui.add_space(ROW_SPACING);
-
-                    // todo: Wrap not working in popup?
-                    ui.horizontal_wrapped(|ui| {
-                        ui.spacing_mut().item_spacing.x = 8.0;
-
-                        for (i, res) in mol.residues.iter().enumerate() {
-                            if i > 800 {
-                                break; // todo: Temp workaround to display blocking
-                            }
-                            // For now, peptide residues only.
-                            if let ResidueType::Water = res.res_type {
-                                continue;
-                            }
-
-                            // Only let the user select residue from the selected chain. This should keep
-                            // it more organized, and keep UI space used down.
-                            if !chain.residues.contains(&i) {
-                                continue;
-                            }
-
-                            let name = match &res.res_type {
-                                ResidueType::AminoAcid(aa) => aa.to_str(AaIdent::OneLetter),
-                                ResidueType::Water => "Water".to_owned(),
-                                ResidueType::Other(name) => name.clone(),
-                            };
-
-                            let mut color = Color32::GRAY;
-                            if let Selection::Residue(sel_i) = state.ui.selection {
-                                if sel_i == i {
-                                    color = COLOR_ACTIVE;
-                                }
-                            }
-                            if ui
-                                .button(
-                                    RichText::new(format!("{} {name}", res.serial_number))
-                                        .size(10.)
-                                        .color(color),
-                                )
-                                .clicked()
-                            {
-                                state.ui.view_sel_level = ViewSelLevel::Residue;
-                                state.ui.selection = Selection::Residue(i);
-
-                                update_arc_center = true; // Avoids borrow error.
-
-                                *redraw = true;
-                            }
-                        }
-                    });
-                }
-            }
-
-            if update_arc_center {
-                if let ControlScheme::Arc { center } = &mut scene.input_settings.control_scheme {
-                    *center = orbit_center(state);
-                }
+    .align(RectAlign::TOP)
+    .open(true)
+    .width(1_000.)
+    .gap(4.0)
+    .show(|ui| {
+        ui.with_layout(Layout::top_down(Align::RIGHT), |ui| {
+            if ui
+                .button(RichText::new("Close").color(Color32::LIGHT_RED))
+                .clicked()
+            {
+                state.ui.popup.residue_selector = false;
+                state.ui.chain_to_pick_res = None;
             }
         });
+        ui.add_space(ROW_SPACING);
+        // This is a bit fuzzy, as the size varies by residue name (Not always 1 for non-AAs), and index digits.
+
+        let mut update_arc_center = false;
+
+        if let Some(mol) = &state.peptide {
+            if let Some(chain_i) = state.ui.chain_to_pick_res {
+                if chain_i >= mol.chains.len() {
+                    return;
+                }
+                let chain = &mol.chains[chain_i];
+
+                ui.add_space(ROW_SPACING);
+
+                // todo: Wrap not working in popup?
+                ui.horizontal_wrapped(|ui| {
+                    ui.spacing_mut().item_spacing.x = 8.0;
+
+                    for (i, res) in mol.residues.iter().enumerate() {
+                        if i > 800 {
+                            break; // todo: Temp workaround to display blocking
+                        }
+                        // For now, peptide residues only.
+                        if let ResidueType::Water = res.res_type {
+                            continue;
+                        }
+
+                        // Only let the user select residue from the selected chain. This should keep
+                        // it more organized, and keep UI space used down.
+                        if !chain.residues.contains(&i) {
+                            continue;
+                        }
+
+                        let name = match &res.res_type {
+                            ResidueType::AminoAcid(aa) => aa.to_str(AaIdent::OneLetter),
+                            ResidueType::Water => "Water".to_owned(),
+                            ResidueType::Other(name) => name.clone(),
+                        };
+
+                        let mut color = Color32::GRAY;
+                        if let Selection::Residue(sel_i) = state.ui.selection {
+                            if sel_i == i {
+                                color = COLOR_ACTIVE;
+                            }
+                        }
+                        if ui
+                            .button(
+                                RichText::new(format!("{} {name}", res.serial_number))
+                                    .size(10.)
+                                    .color(color),
+                            )
+                            .clicked()
+                        {
+                            state.ui.view_sel_level = ViewSelLevel::Residue;
+                            state.ui.selection = Selection::Residue(i);
+
+                            update_arc_center = true; // Avoids borrow error.
+
+                            *redraw = true;
+                        }
+                    }
+                });
+            }
+        }
+
+        if update_arc_center {
+            if let ControlScheme::Arc { center } = &mut scene.input_settings.control_scheme {
+                *center = orbit_center(state);
+            }
+        }
+    });
 }
 
 /// This function draws the (immediate-mode) GUI.
@@ -944,9 +923,10 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         if state.volatile.operating_mode == OperatingMode::MolEditor {
             mol_editor::editor(state, scene, &mut engine_updates,ui);
+
+            update_file_dialogs(state, scene, ui, &mut false, &mut false, &mut engine_updates);
             return;
         }
-
 
         if state.ui.popup.show_settings {
             settings(state, scene, ui);
@@ -1150,7 +1130,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 state.load_density(dm);
             }
 
-            if let Some(lig) = &state.active_mol() {
+            let mut mol_to_save = None; // avoids dbl-borrow.
+            if let Some(mol) = state.active_mol() {
                 // Highlight the button if we haven't saved this to file, e.g. if opened from online.
                 // let color = if state.to_save.last_ligand_opened.is_none() {
                 //     COLOR_ATTENTION
@@ -1160,22 +1141,16 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 // todo: Put a form of this back.
                 let color = Color32::GRAY;
 
-                if ui.button(RichText::new("Save lig").color(color)).clicked() {
-                    let extension = "mol2"; // The default; more robust than SDF.
+                if ui.button(RichText::new("Save mol").color(color))
+                    .on_hover_text("Save the active small molecule, nucleic acid, or lipid to a file.")
+                    .clicked() {
 
-                    let filename = {
-                        let name = if lig.common().ident.is_empty() {
-                            "molecule".to_string()
-                        } else {
-                            lig.common().ident.clone()
-                        };
-                        format!("{name}.{extension}")
-                    };
-
-                    state.volatile.dialogs.save.config_mut().default_file_name =
-                        filename.to_string();
-
-                    state.volatile.dialogs.save.save_file();
+                    mol_to_save = Some(mol.common().clone());
+                }
+            }
+            if let Some(mol) = mol_to_save {
+                if mol.save(&mut state.volatile.dialogs.save).is_err() {
+                    handle_err(&mut state.ui, "Problem saving this file".to_owned());
                 }
             }
 
@@ -1311,7 +1286,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         ui.horizontal(|ui| {
             // ui.vertical(|ui| {
-                view_settings(state, scene, &mut engine_updates, &mut redraw_peptide, &mut redraw_lig, &mut redraw_na, &mut redraw_lipid, ui);
+            view_settings(state, scene, &mut engine_updates, &mut redraw_peptide, &mut redraw_lig, &mut redraw_na, &mut redraw_lipid, ui);
             // });
 
             ui.add_space(COL_SPACING);
@@ -1329,7 +1304,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             }
 
             if let Some(mol) = &state.active_mol() {
-                if let MoleculeGenericRef::Ligand(_) = mol {
+                if let MolGenericRef::Ligand(_) = mol {
                     ui.add_space(COL_SPACING);
 
                     ui.label("Docking");
@@ -1380,167 +1355,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             ui,
         );
 
-        if state.ui.popup.show_get_geostd {
-            let popup_id = ui.make_persistent_id("no_ff_params_popup");
-
-            Popup::new(
-                popup_id,
-                ui.ctx().clone(), // todo clone???
-                PopupAnchor::Position(Pos2::new(60., 60.)),
-                ui.layer_id(), // draw on top of the current layer
-            )
-                // .align(RectAlign::TOP)
-                .align(RectAlign::BOTTOM_START)
-                .open(true)
-                .gap(4.0)
-                .show(|ui| {
-                    let mut load_ff = false;
-                    let mut load_frcmod = false;
-                    // These vars avoid dbl borrow.
-                    // todo: Is this always the lig you want?
-                    if let Some(lig) = &state.active_mol() {
-                        if let MoleculeGenericRef::Ligand(l) = lig {
-                            load_ff = !l.ff_params_loaded;
-                            load_frcmod = !l.frcmod_loaded;
-
-                            // let Some(lig) = state.active_mol_mut() else {
-                            //     return;
-                            // };
-                            let mut msg = String::from("Not ready for dynamics: ");
-
-                            if !l.ff_params_loaded {
-                                msg += "No FF params or partial charges are present on this ligand."
-                            }
-
-                            // if !lig.frcmod_loaded {
-                            //     msg += "No FRCMOD parameters loaded for this ligand."
-                            // }
-
-                            ui.label(RichText::new(msg).color(Color32::LIGHT_RED));
-                        }
-
-                        ui.add_space(ROW_SPACING);
-
-                        // todo: What about cases where a SDF from pubchem or drugbank doesn't include teh name used by Amber?
-                        if ui.button("Check online").clicked() {
-                            // let Some(lig) = state.ligand.as_mut() else {
-                            //     return;
-                            // };
-
-                            match amber_geostd::find_mols(&lig.common().ident) {
-                                Ok(data) => {
-                                    state.ui.popup.get_geostd_items = data;
-                                }
-                                Err(e) => handle_err(
-                                    &mut state.ui,
-                                    format!("Problem loading mol data online: {e:?}"),
-                                ),
-                            }
-                        }
-
-
-                        // This clone is annoying; db borrow.
-                        let items = state.ui.popup.get_geostd_items.clone();
-                        for mol_data in items {
-                            if ui
-                                .button(
-                                    RichText::new(format!("Load params for {}", mol_data.ident_pdbe))
-                                        .color(COLOR_HIGHLIGHT),
-                                )
-                                .clicked()
-                            {
-                                state.load_geostd_mol_data(
-                                    &mol_data.ident_pdbe,
-                                    load_ff,
-                                    load_frcmod,
-                                    &mut redraw_lig,
-                                    &scene.camera,
-                                );
-
-                                state.ui.popup.show_get_geostd = false;
-                            }
-                        }
-                    }
-
-                    ui.add_space(ROW_SPACING);
-
-                    if ui
-                        .button(RichText::new("Close").color(Color32::LIGHT_RED))
-                        .clicked()
-                    {
-                        state.ui.popup.show_get_geostd = false;
-                    }
-                });
-        }
-
-        if state.ui.popup.show_associated_structures {
-            let mut associated_structs = Vec::new();
-            if let Some(lig) = state.active_mol() {
-                if let MoleculeGenericRef::Ligand(l) = lig {
-                    // todo: I don't like this clone, but not sure how else to do it.
-                    associated_structs = l.associated_structures.clone();
-                }
-            }
-
-            if state.active_mol().is_some() {
-                let popup_id = ui.make_persistent_id("associated_structs_popup");
-                Popup::new(
-                    popup_id,
-                    ui.ctx().clone(),
-                    PopupAnchor::Position(Pos2::new(300., 60.)),
-                    ui.layer_id(), // draw on top of the current layer
-                )
-                    .align(RectAlign::TOP)
-                    .open(true)
-                    .gap(4.0)
-                    .show(|ui| {
-                        for s in &associated_structs {
-                            ui.horizontal(|ui| {
-                                if ui
-                                    .button(
-                                        RichText::new(format!("{}", s.pdb_id)).color(COLOR_HIGHLIGHT),
-                                    )
-                                    .clicked()
-                                {
-                                    rcsb::open_overview(&s.pdb_id);
-                                }
-                                ui.add_space(COL_SPACING);
-
-                                if ui
-                                    .button(
-                                        RichText::new(format!("Open this protein"))
-                                            .color(COLOR_HIGHLIGHT),
-                                    )
-                                    .clicked()
-                                {
-                                    load_atom_coords_rcsb(
-                                        &s.pdb_id,
-                                        state,
-                                        scene,
-                                        &mut engine_updates,
-                                        &mut redraw_peptide,
-                                        &mut reset_cam,
-                                    );
-                                }
-                            });
-
-                            ui.label(RichText::new(format!("{}", s.description)));
-
-                            ui.add_space(ROW_SPACING);
-                        }
-
-                        ui.add_space(ROW_SPACING);
-                    });
-
-                ui.add_space(ROW_SPACING);
-                if ui
-                    .button(RichText::new("Close").color(Color32::LIGHT_RED))
-                    .clicked()
-                {
-                    state.ui.popup.show_associated_structures = false;
-                }
-            }
-        }
+       load_popups(state, scene, ui);
 
         // -------UI above; clean-up items (based on flags) below
 
@@ -1550,60 +1365,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             }
         }
 
-        if let Some(path) = &state.volatile.dialogs.load.take_picked() {
-            if let Err(e) = load_file(
-                path,
-                state,
-                &mut redraw_peptide,
-                &mut reset_cam,
-                &mut engine_updates,
-                scene,
-            ) {
-                handle_err(&mut state.ui, e.to_string());
-            }
-
-            set_flashlight(scene);
-            engine_updates.lighting = true;
-        }
-
-        if let Some(path) = &state.volatile.dialogs.save.take_picked() {
-            state.save(path).ok();
-        }
-
-        // if let Some(path) = &state.volatile.dialogs.autodock_path.take_picked() {
-        //     state.ui.autodock_path_valid = check_adv_avail(path);
-        //     if state.ui.autodock_path_valid {
-        //         state.to_save.autodock_vina_path = Some(path.to_owned());
-        //         state.update_save_prefs();
-        //     }
-        // }
-
-        // if let Some(path_dir) = &state.volatile.dialogs.save_pdbqt.take_picked() {
-        //     if let Some(mol) = &mut state.molecule {
-        //         let filename = format!("{}_target.pdbqt", mol.common.ident);
-        //         let path = Path::new(path_dir).join(filename);
-        //
-        //         // todo: You will likely need to add charges earlier, so you can view their data in the UI.
-        //         // setup_partial_charges(&mut mol.common.atoms, PartialChargeType::Gasteiger);
-        //         // create_partial_charges(&mut mol.common.atoms);
-        //
-        //         if mol.save_pdbqt(&path, None).is_err() {
-        //             eprintln!("Error saving PDBQT target");
-        //         }
-        //     }
-        //
-        //     if let Some(lig) = &mut state.ligand {
-        //         let filename = format!("{}_ligand.pdbqt", lig.molecule.ident);
-        //         let path = Path::new(path_dir).join(filename);
-        //
-        //         // create_partial_charges(&mut lig.molecule.atoms);
-        //         // setup_partial_charges(&mut lig.molecule.atoms, PartialChargeType::Gasteiger);
-        //
-        //         if lig.molecule.save_pdbqt(&path, None).is_err() {
-        //             eprintln!("Error saving PDBQT ligand");
-        //         }
-        //     }
-        // }
+        update_file_dialogs(state, scene, ui, &mut redraw_peptide, &mut update_cam, &mut engine_updates);
 
         if redraw_peptide {
             draw_peptide(state, scene);
@@ -1652,10 +1414,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             reset_camera(state, scene, &mut engine_updates, FWD_VEC);
         }
     });
-
-    state.volatile.dialogs.load.update(ctx);
-    state.volatile.dialogs.save.update(ctx);
-    state.volatile.dialogs.autodock_path.update(ctx);
 
     // todo: Appropriate place for this?
     if state.volatile.inputs_commanded.inputs_present() {
@@ -1787,7 +1545,7 @@ pub fn lipid_section(
                 // Place in front of the camera.
                 let center = scene.camera.position
                     + scene.camera.orientation.rotate_vec(FWD_VEC)
-                    * crate::cam_misc::MOVE_TO_CAM_DIST;
+                        * crate::cam_misc::MOVE_TO_CAM_DIST;
 
                 state.lipids.extend(make_bacterial_lipids(
                     state.ui.lipid_mol_count as usize,

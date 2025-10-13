@@ -57,27 +57,39 @@ pub fn set_fog_dist(cam: &mut Camera, dist: u16) {
     cam.fog_end = fog_end;
 }
 
-pub fn cam_reset_controls(state: &mut State, scene: &mut Scene, ui: &mut Ui, engine_updates: &mut EngineUpdates, changed: &mut bool) {
+pub fn cam_reset_controls(
+    state: &mut State,
+    scene: &mut Scene,
+    ui: &mut Ui,
+    engine_updates: &mut EngineUpdates,
+    changed: &mut bool,
+) {
     ui.label("Cam:");
 
     // Preset buttons
-    if ui.button("Front")
+    if ui
+        .button("Front")
         .on_hover_text("Reset the camera to look at the \"front\" of the molecule. (Y axis)")
-        .clicked() {
+        .clicked()
+    {
         reset_camera(state, scene, engine_updates, FWD_VEC);
         *changed = true;
     }
 
-    if ui.button("Top")
+    if ui
+        .button("Top")
         .on_hover_text("Reset the camera to look at the \"top\" of the molecule. (Z axis)")
-        .clicked() {
+        .clicked()
+    {
         reset_camera(state, scene, engine_updates, -UP_VEC);
         *changed = true;
     }
 
-    if ui.button("Left")
+    if ui
+        .button("Left")
         .on_hover_text("Reset the camera to look at the \"left\" of the molecule. (X axis)")
-        .clicked() {
+        .clicked()
+    {
         reset_camera(state, scene, engine_updates, RIGHT_VEC);
         *changed = true;
     }

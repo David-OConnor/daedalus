@@ -1,4 +1,5 @@
 use std::sync::atomic::Ordering;
+
 use egui::{ComboBox, RichText, Slider, Ui};
 use graphics::{EngineUpdates, EntityUpdate, Scene};
 
@@ -8,10 +9,9 @@ use crate::{
         EntityClass, MoleculeView, draw_density_point_cloud, draw_density_surface, draw_water,
     },
     drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
-    ui::{COL_SPACING, DENS_ISO_MAX, DENS_ISO_MIN, misc, misc::section_box},
+    ui::{COL_SPACING, DENS_ISO_MAX, DENS_ISO_MIN, UI_HEIGHT_CHANGED, misc, misc::section_box},
     util::clear_mol_entity_indices,
 };
-use crate::ui::UI_HEIGHT_CHANGED;
 
 pub fn view_settings(
     state: &mut State,
@@ -281,9 +281,11 @@ fn vis_helper(vis: &mut bool, name: &str, tooltip: &str, ui: &mut Ui) {
         format!("Show {name}")
     };
 
-    if ui.button(RichText::new(seq_text))
+    if ui
+        .button(RichText::new(seq_text))
         .on_hover_text(tooltip)
-        .clicked() {
+        .clicked()
+    {
         *vis = !*vis;
         UI_HEIGHT_CHANGED.store(true, Ordering::Release);
     }
@@ -296,9 +298,9 @@ pub fn ui_section_vis(state: &mut State, ui: &mut Ui) {
                     as single-letter identifiers. When in this mode, click the AA letter to select its residue.";
 
         vis_helper(&mut state.ui.ui_vis.aa_seq, "seq", tooltip, ui);
+        ui.add_space(COL_SPACING / 2.);
     }
 
-    ui.add_space(COL_SPACING / 2.);
     let tooltip = "Show or hide tools for adding lipids";
     vis_helper(&mut state.ui.ui_vis.lipids, "lipid tools", tooltip, ui);
 

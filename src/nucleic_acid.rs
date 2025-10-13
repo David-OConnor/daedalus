@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 //! For setting up and rendering nucleic acids: DNA and RNA.
 
 // todo: Load Amber FF params for nucleic acids.
@@ -15,7 +17,7 @@ use na_seq::{
 use crate::{
     mol_lig::MoleculeSmall,
     molecule::{
-        Atom, Bond, MolGenericTrait, MolType, MoleculeCommon, MoleculeGenericRef, MoleculePeptide,
+        Atom, Bond, MolGenericRef, MolGenericTrait, MolType, MoleculeCommon, MoleculePeptide,
     },
 };
 
@@ -235,8 +237,8 @@ impl MolGenericTrait for MoleculeNucleicAcid {
         &mut self.common
     }
 
-    fn to_ref(&self) -> MoleculeGenericRef<'_> {
-        MoleculeGenericRef::NucleicAcid(self)
+    fn to_ref(&self) -> MolGenericRef<'_> {
+        MolGenericRef::NucleicAcid(self)
     }
 
     fn mol_type(&self) -> MolType {

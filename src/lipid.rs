@@ -24,7 +24,7 @@ use na_seq::Element::{self, *};
 use rand::{Rng, distr::Uniform, rngs::ThreadRng};
 
 use crate::molecule::{
-    Atom, Bond, MolGenericTrait, MolType, MoleculeCommon, MoleculeGenericRef, Residue,
+    Atom, Bond, MolGenericRef, MolGenericTrait, MolType, MoleculeCommon, Residue,
 };
 
 // From Amber Lipid21.lib. This joins the phospholipid head to the tail.
@@ -607,8 +607,8 @@ impl MolGenericTrait for MoleculeLipid {
         &mut self.common
     }
 
-    fn to_ref(&self) -> MoleculeGenericRef<'_> {
-        MoleculeGenericRef::Lipid(self)
+    fn to_ref(&self) -> MolGenericRef<'_> {
+        MolGenericRef::Lipid(self)
     }
 
     fn mol_type(&self) -> MolType {

@@ -86,7 +86,7 @@ use molecule::MoleculePeptide;
 use crate::{
     lipid::{LipidShape, MoleculeLipid},
     mol_editor::MolEditorState,
-    molecule::{Bond, MolType, MoleculeCommon, MoleculeGenericRef, MoleculeGenericRefMut},
+    molecule::{Bond, MoGenericRefMut, MolGenericRef, MolType, MoleculeCommon},
     nucleic_acid::MoleculeNucleicAcid,
     prefs::ToSave,
     render::render,
@@ -156,11 +156,12 @@ impl Default for FileDialogs {
                 ],
             )
             .add_file_filter_extensions("Molecule (small)", vec!["mol2", "sdf", "pdbqt", "prmtop"])
-            .add_file_filter_extensions("Protein", vec!["cif"])
-            // .add_file_filter_extensions("Small mol", vec!["mol2", "sdf", "pdbqt"])
+            .add_file_filter_extensions("Protein (CIF)", vec!["cif"])
             .add_file_filter_extensions("Density", vec!["map", "mtz", "cif"])
             .add_file_filter_extensions("Mol dynamics", vec!["frcmod", "dat", "lib", "prmtop"])
-            .add_save_extension("CIF", "cif")
+            //
+            .add_file_filter_extensions("Molecule (small)", vec!["mol2", "sdf", "pdbqt", "prmtop"])
+            .add_save_extension("Protein (CIF)", "cif")
             .add_save_extension("Mol2", "mol2")
             .add_save_extension("SDF", "sdf")
             .add_save_extension("Pdbqt", "pdbqt")
@@ -464,7 +465,7 @@ struct StateUi {
 pub struct UiVisibility {
     aa_seq: bool,
     lipids: bool,
-    dynamics: bool
+    dynamics: bool,
 }
 
 impl Default for UiVisibility {
@@ -613,27 +614,27 @@ impl State {
     }
 
     /// Helper
-    pub fn active_mol(&self) -> Option<MoleculeGenericRef<'_>> {
+    pub fn active_mol(&self) -> Option<MolGenericRef<'_>> {
         match self.volatile.active_mol {
             Some((mol_type, i)) => match mol_type {
                 MolType::Peptide => None,
                 MolType::Ligand => {
                     if i < self.ligands.len() {
-                        Some(MoleculeGenericRef::Ligand(&self.ligands[i]))
+                        Some(MolGenericRef::Ligand(&self.ligands[i]))
                     } else {
                         None
                     }
                 }
                 MolType::NucleicAcid => {
                     if i < self.nucleic_acids.len() {
-                        Some(MoleculeGenericRef::NucleicAcid(&self.nucleic_acids[i]))
+                        Some(MolGenericRef::NucleicAcid(&self.nucleic_acids[i]))
                     } else {
                         None
                     }
                 }
                 MolType::Lipid => {
                     if i < self.lipids.len() {
-                        Some(MoleculeGenericRef::Lipid(&self.lipids[i]))
+                        Some(MolGenericRef::Lipid(&self.lipids[i]))
                     } else {
                         None
                     }
@@ -646,29 +647,27 @@ impl State {
 
     /// Helper
     /// todo: DRy with the non-mutable variant.
-    pub fn active_mol_mut(&mut self) -> Option<MoleculeGenericRefMut<'_>> {
+    pub fn active_mol_mut(&mut self) -> Option<MoGenericRefMut<'_>> {
         match self.volatile.active_mol {
             Some((mol_type, i)) => match mol_type {
                 MolType::Peptide => None,
                 MolType::Ligand => {
                     if i < self.ligands.len() {
-                        Some(MoleculeGenericRefMut::Ligand(&mut self.ligands[i]))
+                        Some(MoGenericRefMut::Ligand(&mut self.ligands[i]))
                     } else {
                         None
                     }
                 }
                 MolType::NucleicAcid => {
                     if i < self.nucleic_acids.len() {
-                        Some(MoleculeGenericRefMut::NucleicAcid(
-                            &mut self.nucleic_acids[i],
-                        ))
+                        Some(MoGenericRefMut::NucleicAcid(&mut self.nucleic_acids[i]))
                     } else {
                         None
                     }
                 }
                 MolType::Lipid => {
                     if i < self.lipids.len() {
-                        Some(MoleculeGenericRefMut::Lipid(&mut self.lipids[i]))
+                        Some(MoGenericRefMut::Lipid(&mut self.lipids[i]))
                     } else {
                         None
                     }

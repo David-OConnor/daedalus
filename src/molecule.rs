@@ -48,7 +48,7 @@ use crate::{
 pub trait MolGenericTrait {
     fn common(&self) -> &MoleculeCommon;
     fn common_mut(&mut self) -> &mut MoleculeCommon;
-    fn to_ref(&self) -> MoleculeGenericRef<'_>;
+    fn to_ref(&self) -> MolGenericRef<'_>;
     fn mol_type(&self) -> MolType;
 }
 
@@ -208,15 +208,15 @@ impl MoleculeGeneric {
 }
 
 /// We currently use this for mol description.
-#[derive(Debug)]
-pub enum MoleculeGenericRef<'a> {
+#[derive(Clone, Debug)]
+pub enum MolGenericRef<'a> {
     Peptide(&'a MoleculePeptide),
     Ligand(&'a MoleculeSmall),
     NucleicAcid(&'a MoleculeNucleicAcid),
     Lipid(&'a MoleculeLipid),
 }
 
-impl<'a> MoleculeGenericRef<'a> {
+impl<'a> MolGenericRef<'a> {
     pub fn common(&self) -> &MoleculeCommon {
         match self {
             Self::Peptide(m) => &m.common,
@@ -259,14 +259,14 @@ impl<'a> MoleculeGenericRef<'a> {
 
 /// We currently use this for mol description.
 #[derive(Debug)]
-pub enum MoleculeGenericRefMut<'a> {
+pub enum MoGenericRefMut<'a> {
     Peptide(&'a mut MoleculePeptide),
     Ligand(&'a mut MoleculeSmall),
     NucleicAcid(&'a mut MoleculeNucleicAcid),
     Lipid(&'a mut MoleculeLipid),
 }
 
-impl<'a> MoleculeGenericRefMut<'a> {
+impl<'a> MoGenericRefMut<'a> {
     pub fn common_mut(&mut self) -> &mut MoleculeCommon {
         match self {
             Self::Peptide(m) => &mut m.common,
@@ -799,14 +799,13 @@ pub struct Atom {
     /// e.g. "HA", "C", "N", "HB3" etc.
     pub type_in_res: Option<AtomTypeInRes>,
     /// There are too many variants of this (with different numbers) to use an enum effectively
+    /// Ideally, we would share a field between lipid and normal type in res, but don't due
+    /// to the different in inner type. (Maybe an outer enum?)
     pub type_in_res_lipid: Option<String>,
     /// "Type 2" for proteins/AA. For ligands and small molecules, this
     /// is a "Type 3".
     /// E.g. "c6", "ca", "n3", "ha", "h0" etc, as seen in Mol2 files from AMBER.
     pub force_field_type: Option<String>,
-    // todo: Review what DockType does.
-    /// todo: Consider a substruct for docking fields.
-    // pub dock_type: Option<DockType>,
     // todo: Note that `role` is a subset of `type_in_res`.
     pub role: Option<AtomRole>,
     /// We include these references to the residue and chain indices for speed; iterating through

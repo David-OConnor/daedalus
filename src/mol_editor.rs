@@ -1,5 +1,5 @@
-use std::{collections::HashMap, io, io::ErrorKind, path::Path};
-use std::sync::atomic::Ordering;
+use std::{collections::HashMap, io, io::ErrorKind, path::Path, sync::atomic::Ordering};
+
 use bio_files::{BondType, create_bonds};
 use dynamics::find_tetra_posits;
 use graphics::{ControlScheme, EngineUpdates, Entity, EntityUpdate, Scene};
@@ -20,11 +20,11 @@ use crate::{
     },
     drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
     mol_lig::{Ligand, MoleculeSmall},
-    molecule::{Atom, Bond, MolType, MoleculeCommon, MoleculeGenericRef},
+    molecule::{Atom, Bond, MolGenericRef, MolType, MoleculeCommon},
     render::{ATOM_SHININESS, BALL_STICK_RADIUS, BALL_STICK_RADIUS_H, set_flashlight},
+    ui::UI_HEIGHT_CHANGED,
     util::find_neighbor_posit,
 };
-use crate::ui::UI_HEIGHT_CHANGED;
 
 pub const INIT_CAM_DIST: f32 = 20.;
 
@@ -32,7 +32,6 @@ pub const INIT_CAM_DIST: f32 = 20.;
 #[derive(Debug, Default)]
 pub struct MolEditorState {
     pub mol: MoleculeSmall,
-    // atoms: Vec<Atom>,
 }
 
 impl MolEditorState {
@@ -338,7 +337,7 @@ pub fn redraw(entities: &mut Vec<Entity>, mol: &MoleculeSmall, ui: &StateUi) {
     *entities = Vec::new();
 
     entities.extend(draw_mol(
-        MoleculeGenericRef::Ligand(mol),
+        MolGenericRef::Ligand(mol),
         0,
         ui,
         &None,
@@ -359,45 +358,17 @@ pub fn add_atom(
         return;
     };
 
-    let posit_parent = &mol.common.atom_posits[i];
+    let posit_parent = mol.common.atom_posits[i];
+    let el_parent = mol.common.atoms[i].element;
 
-    let mut neighbor_count = 0;
-    for j in &mol.common.adjacency_list[i] {
-        if mol.common.atoms[*j].element != Hydrogen {
-            neighbor_count += 1;
-        }
-    }
-
-    // todo: for now hard-coding tetra
-    let posit = match neighbor_count {
-        0 => Vec3::new(1.3, 0., 0.),
-        1 => {
-            let adj = mol.common.adjacency_list[i][0];
-            let neighbor = mol.common.atoms[adj].posit;
-            find_tetra_posits(*posit_parent, neighbor, Vec3::new_zero())
-        }
-        2 => {
-            // If the incoming angles are ~τ/3, add in a planar config.
-
-            // todo: Hmm. Need a better tetra fn.
-            let adj_0 = mol.common.adjacency_list[i][0];
-            let neighbor_0 = mol.common.atoms[adj_0].posit;
-            let adj_1 = mol.common.adjacency_list[i][1];
-            let neighbor_1 = mol.common.atoms[adj_1].posit;
-            find_tetra_posits(*posit_parent, neighbor_0, neighbor_1)
-        }
-        3 => {
-            // todo: Hmm. Need a better tetra fn.
-            let adj_0 = mol.common.adjacency_list[i][0];
-            let neighbor_0 = mol.common.atoms[adj_0].posit;
-            let adj_1 = mol.common.adjacency_list[i][1];
-            let neighbor_1 = mol.common.atoms[adj_1].posit;
-            find_tetra_posits(*posit_parent, neighbor_0, neighbor_1)
-        }
-        _ => {
-            return;
-        }
-    };
+    let posit = find_appended_posit(
+        i,
+        posit_parent,
+        el_parent,
+        element,
+        &mol.common.atoms,
+        &mol.common.adjacency_list,
+    );
 
     let new_sn = 0; // todo A/R
     let new_i = mol.common.atoms.len();
@@ -566,4 +537,54 @@ fn draw_bond(
         false,
         to_hydrogen,
     ));
+}
+
+/// i is i_parent.
+fn find_appended_posit(
+    i: usize,
+    posit_parent: Vec3,
+    el_parent: Element,
+    element: Element,
+    atoms: &[Atom],
+    adj_list: &[Vec<usize>],
+) -> Vec3 {
+    let mut neighbor_count = 0;
+    for j in &adj_list[i] {
+        if atoms[*j].element != Hydrogen {
+            neighbor_count += 1;
+        }
+    }
+
+    match neighbor_count {
+        0 => Vec3::new(1.3, 0., 0.),
+        1 => {
+            let adj = adj_list[i][0];
+            let neighbor = atoms[adj].posit;
+            find_tetra_posits(posit_parent, neighbor, Vec3::new_zero())
+        }
+        2 => {
+            // todo: Hmm. Need a better tetra fn.
+            let adj_0 = adj_list[i][0];
+            let neighbor_0 = atoms[adj_0].posit;
+            let adj_1 = adj_list[i][1];
+            let neighbor_1 = atoms[adj_1].posit;
+
+            // If the incoming angles are ~τ/3, add in a planar config.
+
+            // todo: Perhaps there, perhaps here, but a general "add atom" fn that
+            // automatically sets the posit based on neighbors
+            find_tetra_posits(posit_parent, neighbor_0, neighbor_1)
+        }
+        3 => {
+            // todo: Hmm. Need a better tetra fn.
+            let adj_0 = adj_list[i][0];
+            let neighbor_0 = atoms[adj_0].posit;
+            let adj_1 = adj_list[i][1];
+            let neighbor_1 = atoms[adj_1].posit;
+            find_tetra_posits(posit_parent, neighbor_0, neighbor_1)
+        }
+        _ => {
+            unimplemented!()
+        }
+    }
 }

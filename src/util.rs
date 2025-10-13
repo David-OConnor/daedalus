@@ -19,8 +19,8 @@ use crate::{
     drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
     mol_lig::MoleculeSmall,
     molecule::{
-        Atom, Bond, MolType, MoleculeCommon, MoleculeGenericRef, MoleculeGenericRefMut,
-        MoleculePeptide, Residue,
+        Atom, Bond, MoGenericRefMut, MolGenericRef, MolType, MoleculeCommon, MoleculePeptide,
+        Residue,
     },
     prefs::OpenType,
     render::{
@@ -670,7 +670,7 @@ pub fn make_egui_color(color: Color) -> Color32 {
 /// Return a center suitable for docking.
 // pub fn move_mol_to_res(lig: &mut MoleculeSmall, mol: &MoleculePeptide, res: &Residue) -> Vec3 {
 pub fn move_mol_to_res(
-    mol: &mut MoleculeGenericRefMut,
+    mol: &mut MoGenericRefMut,
     peptide: &MoleculePeptide,
     res: &Residue,
 ) -> Vec3 {
@@ -828,7 +828,7 @@ pub fn make_lig_from_res(state: &mut State, res: &Residue, redraw_lig: &mut bool
     state.ui.visibility.hide_ligand = false;
 }
 
-fn find_nearest_mol_inner(mol: MoleculeGenericRef<'_>, cam: &Camera) -> Option<f32> {
+fn find_nearest_mol_inner(mol: MolGenericRef<'_>, cam: &Camera) -> Option<f32> {
     let posit: Vec3F32 = mol.common().atom_posits[0].into();
 
     // todo: Base the offset on the molecule size, e.g. atom count.
@@ -872,7 +872,7 @@ pub fn find_nearest_mol_dist_to_cam(state: &State, cam: &Camera) -> Option<f32> 
     }
 
     for mol in &state.ligands {
-        if let Some(v) = find_nearest_mol_inner(MoleculeGenericRef::Ligand(mol), cam) {
+        if let Some(v) = find_nearest_mol_inner(MolGenericRef::Ligand(mol), cam) {
             if v < nearest {
                 nearest = v;
             }
@@ -880,7 +880,7 @@ pub fn find_nearest_mol_dist_to_cam(state: &State, cam: &Camera) -> Option<f32> 
     }
 
     for mol in &state.nucleic_acids {
-        if let Some(v) = find_nearest_mol_inner(MoleculeGenericRef::NucleicAcid(mol), cam) {
+        if let Some(v) = find_nearest_mol_inner(MolGenericRef::NucleicAcid(mol), cam) {
             if v < nearest {
                 nearest = v;
             }
@@ -888,7 +888,7 @@ pub fn find_nearest_mol_dist_to_cam(state: &State, cam: &Camera) -> Option<f32> 
     }
 
     for mol in &state.lipids {
-        if let Some(v) = find_nearest_mol_inner(MoleculeGenericRef::Lipid(mol), cam) {
+        if let Some(v) = find_nearest_mol_inner(MolGenericRef::Lipid(mol), cam) {
             if v < nearest {
                 nearest = v;
             }
