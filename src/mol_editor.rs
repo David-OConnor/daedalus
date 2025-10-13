@@ -334,5 +334,47 @@ pub fn redraw(entities: &mut Vec<Entity>, mol: &MoleculeSmall, ui: &StateUi) {
         ui,
         &None,
         ManipMode::None,
+       OperatingMode::MolEditor,
     ));
+}
+
+pub fn add_atom(entities: &mut Vec<Entity>, mol: &mut MoleculeSmall, element: Element, ui: &mut StateUi, updates: &mut EngineUpdates) {
+    let Selection::AtomLig((_, i)) = ui.selection else {
+        eprintln!("Attempting to add an atom with no parent to add it to");
+        return;
+    };
+
+    let posit_parent = &mol.common.atom_posits[i];
+
+    let posit = *posit_parent + Vec3::new(1., 0., 0.); // todo temp
+
+    let new_sn = 0; // todo A/R
+    let new_i = mol.common.atoms.len();
+
+    mol.common.atoms.push(Atom {
+        serial_number: new_sn,
+        posit,
+        element,
+        type_in_res: None,
+        force_field_type: Some("ca".to_owned()), // todo: A/R
+        partial_charge: Some(0.), // todo: A/R,
+        ..Default::default()
+    });
+
+    mol.common.bonds.push(Bond {
+        bond_type: BondType::Single,
+        atom_0_sn: mol.common.atoms[i].serial_number,
+        atom_1_sn: new_sn,
+        atom_0: i,
+        atom_1: new_i,
+        is_backbone: false,
+    });
+
+    mol.common.atom_posits.push(posit);
+
+    mol.common.adjacency_list[i].push(new_i);
+    mol.common.adjacency_list.push(vec![i]);
+
+    redraw(entities, mol, ui);
+    updates.entities = EntityUpdate::All;
 }

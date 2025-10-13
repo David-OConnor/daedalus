@@ -102,6 +102,7 @@ pub fn selected_data(
     selection: &Selection,
     ui: &mut Ui,
 ) {
+    ui.horizontal(|ui| {
     // ui.horizontal_wrapped(|ui| {
     match selection {
         Selection::AtomPeptide(sel_i) => {
@@ -183,7 +184,7 @@ pub fn selected_data(
         }
         Selection::None => (),
     }
-    // });
+    });
 }
 
 fn mol_picker(

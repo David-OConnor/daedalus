@@ -1,12 +1,15 @@
+use bio_files::BondType;
 use egui::{Color32, RichText, Ui};
-use graphics::{EngineUpdates, EntityUpdate, Scene};
+use graphics::{EngineUpdates, Entity, EntityUpdate, Scene};
 use lin_alg::{f32::Quaternion, f64::Vec3};
-
-use crate::{
-    Selection, State, mol_editor,
-    mol_editor::{INIT_CAM_DIST, MolEditorState, exit_edit_mode, templates},
-    ui::{COL_SPACING, misc::section_box},
-};
+use na_seq::Element;
+use na_seq::Element::{Carbon, Nitrogen, Oxygen};
+use crate::{Selection, State, mol_editor, mol_editor::{INIT_CAM_DIST, MolEditorState, exit_edit_mode, templates}, ui::{COL_SPACING, misc::section_box}, ViewSelLevel, StateUi};
+use crate::mol_editor::add_atom;
+use crate::mol_lig::MoleculeSmall;
+use crate::molecule::{Atom, Bond};
+use crate::ui::{COLOR_ACTIVE, COLOR_INACTIVE};
+use crate::ui::mol_data::selected_data;
 // todo: Check DBs (with a button maybe?) to see if the molecule exists in a DB already, or if
 // todo a similar one does.
 
@@ -18,6 +21,8 @@ pub fn editor(
 ) {
     // todo: New state for the WIp molecule. New struct for it.
 
+    let mut redraw = false;
+
     ui.horizontal(|ui| {
         section_box().show(ui, |ui| {
             ui.horizontal(|ui| {
@@ -25,55 +30,78 @@ pub fn editor(
                     scene.camera.position = lin_alg::f32::Vec3::new(0., 0., -INIT_CAM_DIST);
                     scene.camera.orientation = Quaternion::new_identity();
                 }
-            });
 
-            ui.add_space(COL_SPACING);
-
-            section_box().show(ui, |ui| {
-                if ui.button("C").on_hover_text("Add a Carbon atom").clicked() {}
-
-                if ui.button("O").on_hover_text("Add an Oxygen atom").clicked() {}
-
+                // todo: This is a C+P from the main editor
+                let color = if state.ui.atom_color_by_charge {
+                    COLOR_ACTIVE
+                } else {
+                    COLOR_INACTIVE
+                };
                 if ui
-                    .button("N")
-                    .on_hover_text("Add an Nitrogen atom")
-                    .clicked()
-                {}
-            });
-
-            ui.add_space(COL_SPACING);
-
-            section_box().show(ui, |ui| {
-                if ui
-                    .button("−OH")
-                    .on_hover_text("Add a hydroxyl functional group")
-                    .clicked()
-                {}
-
-                if ui
-                    .button("−COOH")
-                    .on_hover_text("Add a carboxylic acid functional group")
+                    .button(RichText::new("Color by q").color(color))
+                    .on_hover_text("Color the atom by partial charge, instead of element-specific colors")
                     .clicked()
                 {
-                    let anchor = Vec3::new_zero();
-                    let atoms = templates::cooh_group(anchor, 0);
-                }
+                    state.ui.atom_color_by_charge = !state.ui.atom_color_by_charge;
+                    state.ui.view_sel_level = ViewSelLevel::Atom;
 
-                if ui
-                    .button("−NH₂")
-                    .on_hover_text("Add an admide functional group")
-                    .clicked()
-                {}
-
-                if ui
-                    .button("Ring")
-                    .on_hover_text("Add a benzene ring")
-                    .clicked()
-                {
-                    let anchor = Vec3::new_zero();
-                    let atoms = templates::benzene_ring(anchor, 0);
+                    redraw = true;
                 }
             });
+        });
+
+        ui.add_space(COL_SPACING);
+
+        section_box().show(ui, |ui| {
+            if ui.button("C").on_hover_text("Add a Carbon atom").clicked() {
+                add_atom(&mut scene.entities, &mut state.mol_editor.mol,Carbon, &mut state.ui, engine_updates);
+            }
+
+            if ui.button("O").on_hover_text("Add an Oxygen atom").clicked() {
+                add_atom(&mut scene.entities, &mut state.mol_editor.mol, Oxygen, &mut state.ui, engine_updates);
+            }
+
+            if ui
+                .button("N")
+                .on_hover_text("Add an Nitrogen atom")
+                .clicked()
+            {
+                add_atom(&mut scene.entities, &mut state.mol_editor.mol, Nitrogen, &mut state.ui, engine_updates);
+            }
+        });
+
+        ui.add_space(COL_SPACING);
+
+        section_box().show(ui, |ui| {
+            if ui
+                .button("−OH")
+                .on_hover_text("Add a hydroxyl functional group")
+                .clicked()
+            {}
+
+            if ui
+                .button("−COOH")
+                .on_hover_text("Add a carboxylic acid functional group")
+                .clicked()
+            {
+                let anchor = Vec3::new_zero();
+                let atoms = templates::cooh_group(anchor, 0);
+            }
+
+            if ui
+                .button("−NH₂")
+                .on_hover_text("Add an admide functional group")
+                .clicked()
+            {}
+
+            if ui
+                .button("Ring")
+                .on_hover_text("Add a benzene ring")
+                .clicked()
+            {
+                let anchor = Vec3::new_zero();
+                let atoms = templates::benzene_ring(anchor, 0);
+            }
         });
 
         ui.add_space(COL_SPACING);
@@ -88,8 +116,7 @@ pub fn editor(
                     if state.mol_editor.delete_atom(i).is_err() {
                         eprintln!("Error deleting atom");
                     };
-                    mol_editor::redraw(&mut scene.entities, &state.mol_editor.mol, &state.ui);
-                    engine_updates.entities = EntityUpdate::All;
+                    redraw = true;
                 }
             }
             _ => (),
@@ -103,4 +130,19 @@ pub fn editor(
             exit_edit_mode(state, scene, engine_updates);
         }
     });
+
+    // This trick prevents a clone.
+    let mol = std::mem::take(&mut state.mol_editor.mol); // move out, leave default in place
+    selected_data(state, std::slice::from_ref(&&mol), &[], &[], &state.ui.selection, ui);
+    state.mol_editor.mol = mol;
+
+    // Prevents the UI from jumping when going between a selection and none.
+    if state.ui.selection == Selection::None {
+        ui.add_space(6.);
+    }
+
+    if redraw {
+        mol_editor::redraw(&mut scene.entities, &state.mol_editor.mol, &state.ui);
+        engine_updates.entities = EntityUpdate::All;
+    }
 }

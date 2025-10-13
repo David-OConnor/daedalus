@@ -803,6 +803,7 @@ pub fn draw_mol(
     ui: &StateUi,
     active_mol: &Option<(MolType, usize)>,
     move_mol: ManipMode,
+    mode: OperatingMode,
 ) -> Vec<Entity> {
     let mut result = Vec::new();
 
@@ -876,7 +877,11 @@ pub fn draw_mol(
 
                 if color != COLOR_SELECTED {
                     match mol.mol_type() {
-                        MolType::Ligand => color = mod_color_for_ligand(&color, atom.element),
+                        MolType::Ligand => {
+                            if mode == OperatingMode::Primary {
+                                color = mod_color_for_ligand(&color, atom.element)
+                            }
+                        },
                         // todo: Lipid and NA caches A/R
                         // todo: Color for NA
                         MolType::NucleicAcid => {
@@ -996,7 +1001,11 @@ pub fn draw_mol(
 
             if color_0 != COLOR_SELECTED {
                 match mol.mol_type() {
-                    MolType::Ligand => color_0 = mod_color_for_ligand(&color_0, atom_0.element),
+                    MolType::Ligand => {
+                        if mode == OperatingMode::Primary {
+                            color_0 = mod_color_for_ligand(&color_0, atom_0.element)
+                        }
+                    },
                     // todo: Color for NA
                     MolType::NucleicAcid => {
                         color_0 = blend_color(color_0, LIPID_COLOR, LIPID_BLEND_AMT)
@@ -1007,7 +1016,11 @@ pub fn draw_mol(
             }
             if color_1 != COLOR_SELECTED {
                 match mol.mol_type() {
-                    MolType::Ligand => color_1 = mod_color_for_ligand(&color_1, atom_1.element),
+                    MolType::Ligand => {
+                        if mode == OperatingMode::Primary {
+                            color_1 = mod_color_for_ligand(&color_1, atom_1.element)
+                        }
+                    }
                     // todo: Color for NA
                     MolType::NucleicAcid => {
                         color_1 = blend_color(color_1, LIPID_COLOR, LIPID_BLEND_AMT)
