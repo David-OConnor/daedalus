@@ -12,9 +12,18 @@ use crate::{
     ui::{COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_INACTIVE, ROW_SPACING},
 };
 
-/// A checkbox to show or hide a category.
-pub fn vis_check(val: &mut bool, text: &str, ui: &mut Ui, redraw: &mut bool) {
+/// A box that shows its text highlighted if a flag is set.
+pub fn toggle_btn(val: &mut bool, text: &str, ui: &mut Ui, redraw: &mut bool) {
     let color = active_color(!*val);
+    if ui.button(RichText::new(text).color(color)).clicked() {
+        *val = !*val;
+        *redraw = true;
+    }
+}
+
+/// A box that shows its text highlighted if a flag is set.
+pub fn toggle_btn_not_inv(val: &mut bool, text: &str, ui: &mut Ui, redraw: &mut bool) {
+    let color = active_color(*val);
     if ui.button(RichText::new(text).color(color)).clicked() {
         *val = !*val;
         *redraw = true;

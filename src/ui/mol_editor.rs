@@ -1,5 +1,5 @@
 use bio_files::BondType;
-use egui::{Color32, ComboBox, RichText, Ui};
+use egui::{Color32, ComboBox, RichText, Slider, Ui};
 use graphics::{EngineUpdates, EntityUpdate, Scene};
 use lin_alg::f64::Vec3;
 use na_seq::Element::{Carbon, Nitrogen, Oxygen};
@@ -15,8 +15,12 @@ use crate::{
     },
     util::handle_err,
 };
+
 // todo: Check DBs (with a button maybe?) to see if the molecule exists in a DB already, or if
 // todo a similar one does.
+
+const DT_MIN: f32 = 0.00005;
+const DT_MAX: f32 = 0.0005; // No more than 0.002 for stability.
 
 pub fn editor(
     state: &mut State,
@@ -89,9 +93,18 @@ pub fn editor(
         section_box().show(ui, |ui| {
             ui.label("Vis:");
 
-            misc::vis_check(
+            misc::toggle_btn(
                 &mut state.ui.visibility.hide_hydrogen,
                 "H",
+                ui,
+                &mut redraw,
+            );
+        });
+
+        section_box().show(ui, |ui| {
+            misc::toggle_btn_not_inv(
+                &mut state.mol_editor.md_running,
+                "MD running",
                 ui,
                 &mut redraw,
             );
@@ -188,6 +201,17 @@ pub fn editor(
 
     ui.horizontal(|ui| {
         edit_tools(state, scene, ui, engine_updates);
+
+        section_box().show(ui, |ui| {
+            ui.label("MD speed:");
+
+            ui.spacing_mut().slider_width = 200.;
+            ui.add(Slider::new(
+                &mut state.mol_editor.dt_md,
+                DT_MIN..=DT_MAX,
+            ))
+                .on_hover_text("Set the simulation ratio compared to normal time.");
+        })
     });
 
     // This trick prevents a clone.

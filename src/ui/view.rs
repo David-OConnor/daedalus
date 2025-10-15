@@ -56,13 +56,13 @@ pub fn view_settings(
             ui.label("Vis:");
 
             if state.peptide.is_some() {
-                misc::vis_check(
+                misc::toggle_btn(
                     &mut state.ui.visibility.hide_protein,
                     "Peptide",
                     ui,
                     redraw_peptide,
                 );
-                misc::vis_check(
+                misc::toggle_btn(
                     &mut state.ui.visibility.hide_hetero,
                     "Hetero",
                     ui,
@@ -73,7 +73,7 @@ pub fn view_settings(
 
                 if !state.ui.visibility.hide_protein {
                     // Subset of peptide.
-                    misc::vis_check(
+                    misc::toggle_btn(
                         &mut state.ui.visibility.hide_sidechains,
                         "Sidechains",
                         ui,
@@ -83,7 +83,7 @@ pub fn view_settings(
             }
 
             let hide_hydrogen_prev = state.ui.visibility.hide_hydrogen;
-            misc::vis_check(
+            misc::toggle_btn(
                 &mut state.ui.visibility.hide_hydrogen,
                 "H",
                 ui,
@@ -102,7 +102,7 @@ pub fn view_settings(
             // if !state.ui.visibility.hide_hetero {
             // Subset of hetero.
             let water_prev = state.ui.visibility.hide_water;
-            misc::vis_check(
+            misc::toggle_btn(
                 &mut state.ui.visibility.hide_water,
                 "Water",
                 ui,
@@ -110,7 +110,7 @@ pub fn view_settings(
             );
 
             if !state.nucleic_acids.is_empty() {
-                misc::vis_check(
+                misc::toggle_btn(
                     &mut state.ui.visibility.hide_nucleic_acids,
                     "Nucleic acids",
                     ui,
@@ -163,7 +163,7 @@ pub fn view_settings(
                 }
             }
 
-            misc::vis_check(
+            misc::toggle_btn(
                 &mut state.ui.visibility.hide_h_bonds,
                 "H bonds",
                 ui,
@@ -214,7 +214,7 @@ pub fn view_settings(
             if let Some(mol) = &state.peptide {
                 if let Some(dens) = &mol.elec_density {
                     let mut redraw_dens = false;
-                    misc::vis_check(
+                    misc::toggle_btn(
                         &mut state.ui.visibility.hide_density_point_cloud,
                         "Density",
                         ui,
@@ -235,7 +235,7 @@ pub fn view_settings(
                     }
 
                     let mut redraw_dens_surface = false;
-                    misc::vis_check(
+                    misc::toggle_btn(
                         &mut state.ui.visibility.hide_density_surface,
                         "Density sfc",
                         ui,
