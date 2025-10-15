@@ -42,11 +42,15 @@ pub fn update_file_dialogs(
                 engine_updates,
                 scene,
             ),
-            OperatingMode::MolEditor => {
-                state
-                    .mol_editor
-                    .open_molecule(path, scene, engine_updates, &state.ui)
-            }
+            OperatingMode::MolEditor => state.mol_editor.open_molecule(
+                &state.dev,
+                &state.ff_param_set,
+                &state.to_save.md_config,
+                path,
+                scene,
+                engine_updates,
+                &mut state.ui,
+            ),
         } {
             handle_err(&mut state.ui, e.to_string());
         }

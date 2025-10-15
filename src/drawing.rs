@@ -215,6 +215,25 @@ impl MoleculeView {
             Self::Dots => Self::Surface,
         }
     }
+
+    pub fn next_editor(self) -> Self {
+        match self {
+            Self::Sticks => Self::BallAndStick,
+            Self::BallAndStick => Self::SpaceFill,
+            Self::SpaceFill => Self::Sticks,
+            _ => Self::Sticks,
+        }
+    }
+
+    // todo: repetitive
+    pub fn prev_editor(self) -> Self {
+        match self {
+            Self::Sticks => Self::SpaceFill,
+            Self::BallAndStick => Self::Sticks,
+            Self::SpaceFill => Self::BallAndStick,
+            _ => Self::Sticks,
+        }
+    }
 }
 
 impl FromStr for MoleculeView {
@@ -833,8 +852,15 @@ pub fn draw_mol(
         // });
     }
 
-    if matches!(ui.mol_view, MoleculeView::BallAndStick) {
+    if matches!(
+        ui.mol_view,
+        MoleculeView::BallAndStick | MoleculeView::SpaceFill
+    ) {
         for (i_atom, atom) in mol.common().atoms.iter().enumerate() {
+            if mode == OperatingMode::Primary && ui.mol_view == MoleculeView::SpaceFill {
+                break;
+            }
+
             if ui.visibility.hide_hydrogen && atom.element == Element::Hydrogen {
                 continue;
             }
@@ -1337,7 +1363,10 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
     }
 
     // Draw atoms.
-    if [MoleculeView::BallAndStick, MoleculeView::SpaceFill].contains(&ui.mol_view) {
+    if matches!(
+        ui.mol_view,
+        MoleculeView::BallAndStick | MoleculeView::SpaceFill
+    ) {
         for (i, atom) in mol.common.atoms.iter().enumerate() {
             // let atom_posit = get_atom_posit(
             //     state.ui.peptide_atom_posits,

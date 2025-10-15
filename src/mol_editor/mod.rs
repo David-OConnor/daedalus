@@ -1,50 +1,66 @@
+pub mod add_atoms;
+
 use std::{
     collections::HashMap,
     io,
     io::ErrorKind,
     path::Path,
-    sync::atomic::{AtomicU32, Ordering, Ordering::Relaxed},
+    sync::atomic::{AtomicU32, Ordering},
 };
 
-use bio_files::{BondType, Mol2, Pdbqt, Sdf, create_bonds};
-use dynamics::{find_planar_posit, find_tetra_posit_final, find_tetra_posits};
+use bio_files::{BondType, Mol2, Pdbqt, Sdf, md_params::ForceFieldParams};
+use dynamics::{
+    ComputationDevice, FfMolType, MdConfig, MdState, MolDynamics, ParamError, params::FfParamSet,
+};
 use graphics::{ControlScheme, EngineUpdates, Entity, EntityUpdate, Scene};
 use lin_alg::{
     f32::{Quaternion, Vec3 as Vec3F32},
     f64::Vec3,
 };
 use na_seq::{
-    AtomTypeInRes, Element,
-    Element::{Carbon, Hydrogen},
+    AtomTypeInRes,
+    Element::{Carbon, Hydrogen, Oxygen},
 };
 
 use crate::{
-    ManipMode, OperatingMode, Selection, State, StateUi, ViewSelLevel,
+    ManipMode, OperatingMode, State, StateUi, ViewSelLevel,
     drawing::{
         EntityClass, MESH_BALL_STICK_SPHERE, MESH_SPACEFILL_SPHERE, MoleculeView, atom_color,
         bond_entities, draw_mol, draw_peptide,
     },
     drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
     mol_lig::MoleculeSmall,
-    molecule::{Atom, Bond, MolGenericRef, MolType, MoleculeCommon, MoleculeGeneric},
-    render::{ATOM_SHININESS, BALL_STICK_RADIUS, BALL_STICK_RADIUS_H, set_flashlight},
+    molecule::{Atom, Bond, MolGenericRef, MolType, MoleculeCommon},
+    render::{
+        ATOM_SHININESS, BALL_STICK_RADIUS, BALL_STICK_RADIUS_H, set_flashlight, set_static_light,
+    },
     ui::UI_HEIGHT_CHANGED,
     util::find_neighbor_posit,
 };
 
 pub const INIT_CAM_DIST: f32 = 20.;
 
+// Set a higher value to place the light farther away. (More uniform, dimmer lighting)
+pub const STATIC_LIGHT_MOL_SIZE: f32 = 500.;
+
 static NEXT_ATOM_SN: AtomicU32 = AtomicU32::new(0);
 
 /// For editing small organic molecules.
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct MolEditorState {
     pub mol: MoleculeSmall,
+    pub md_state: Option<MdState>,
+    pub dt: f32, // ps.
 }
 
 impl MolEditorState {
     /// For now, sets up a pair of single-bonded carbon atoms.
-    pub fn clear_mol(&mut self) {
+    pub fn clear_mol(
+        &mut self,
+        dev: &ComputationDevice,
+        param_set: &FfParamSet,
+        md_cfg: &MdConfig,
+    ) {
         // todo: Change this dist; rough start.
         const DIST: f64 = 1.3;
 
@@ -80,15 +96,29 @@ impl MolEditorState {
 
         self.mol.common.atom_posits = self.mol.common.atoms.iter().map(|a| a.posit).collect();
         self.mol.common.build_adjacency_list();
+
+        match build_dynamics(
+            dev,
+            &self.mol,
+            param_set,
+            &HashMap::new(), // todo: A/R
+            md_cfg,
+        ) {
+            Ok(d) => self.md_state = Some(d),
+            Err(e) => eprintln!("Problem setting up dynamics: {e:?}"),
+        }
     }
 
     /// A simplified variant of our primary `open_molecule` function.
     pub fn open_molecule(
         &mut self,
+        dev: &ComputationDevice,
+        param_set: &FfParamSet,
+        md_cfg: &MdConfig,
         path: &Path,
         scene: &mut Scene,
         engine_updates: &mut EngineUpdates,
-        state_ui: &StateUi,
+        state_ui: &mut StateUi,
     ) -> io::Result<()> {
         let binding = path.extension().unwrap_or_default().to_ascii_lowercase();
         let extension = binding;
@@ -120,16 +150,27 @@ impl MolEditorState {
             }
         };
 
-        self.load_mol(&molecule.common, scene, engine_updates, state_ui);
+        self.load_mol(
+            dev,
+            &molecule.common,
+            param_set,
+            md_cfg,
+            scene,
+            engine_updates,
+            state_ui,
+        );
         Ok(())
     }
 
     pub fn load_mol(
         &mut self,
+        dev: &ComputationDevice,
         mol: &MoleculeCommon,
+        param_set: &FfParamSet,
+        md_cfg: &MdConfig,
         scene: &mut Scene,
         engine_updates: &mut EngineUpdates,
-        state_ui: &StateUi,
+        state_ui: &mut StateUi,
     ) {
         self.mol.common = mol.clone();
 
@@ -137,7 +178,7 @@ impl MolEditorState {
         self.mol.common.atoms = mol
             .atoms
             .iter()
-            .filter(|a| a.element != Element::Hydrogen)
+            .filter(|a| a.element != Hydrogen)
             .map(|a| a.clone())
             .collect();
 
@@ -174,6 +215,46 @@ impl MolEditorState {
         self.mol.common.atom_posits = self.mol.common.atoms.iter().map(|a| a.posit).collect();
         self.mol.common.build_adjacency_list();
 
+        // Re-populate hydrogens algorithmically. This assumes we trust our algorithm more than the
+        // initial molecule, which may or may not be true.
+        for (i, atom) in self.mol.common.atoms.clone().iter().enumerate() {
+            // todo. Don't clone!!! Find a better way to fix the borrow error.
+
+            let mut skip = false;
+            for bonded_i in &self.mol.common.adjacency_list[i] {
+                // Don't add H to oxygens double-bonded.
+                if self.mol.common.atoms[i].element == Oxygen {
+                    for bond in &self.mol.common.bonds {
+                        if bond.atom_0 == i && bond.atom_1 == *bonded_i
+                            || bond.atom_1 == i && bond.atom_0 == *bonded_i
+                        {
+                            if matches!(bond.bond_type, BondType::Double) {
+                                println!("FOUND IT!: {:?}", i);
+                                skip = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if !skip {
+                for (ff_type, bond_len) in hydrogens_avail(&atom.force_field_type) {
+                    add_atoms::add_atom(
+                        self,
+                        &mut scene.entities,
+                        i,
+                        Hydrogen,
+                        BondType::Single,
+                        Some(ff_type),
+                        Some(bond_len),
+                        state_ui,
+                        engine_updates,
+                    )
+                }
+            }
+        }
+
         let mut highest_sn = 0;
         for atom in &self.mol.common.atoms {
             if atom.serial_number > highest_sn {
@@ -188,6 +269,17 @@ impl MolEditorState {
         set_flashlight(scene);
         engine_updates.entities = EntityUpdate::All;
         engine_updates.lighting = true;
+
+        match build_dynamics(
+            dev,
+            &self.mol,
+            param_set,
+            &HashMap::new(), // todo: A/R
+            md_cfg,
+        ) {
+            Ok(d) => self.md_state = Some(d),
+            Err(e) => eprintln!("Problem setting up dynamics: {e:?}"),
+        }
     }
 
     pub fn delete_atom(&mut self, i: usize) -> io::Result<()> {
@@ -351,6 +443,9 @@ pub fn enter_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mu
     state.volatile.operating_mode = OperatingMode::MolEditor;
     UI_HEIGHT_CHANGED.store(true, Ordering::Release);
 
+    // Rebuilt shortly.
+    state.mol_editor.md_state = None;
+
     // This stays false under several conditions.
     let mut mol_loaded = false;
 
@@ -362,10 +457,13 @@ pub fn enter_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mu
                 );
             } else {
                 state.mol_editor.load_mol(
+                    &state.dev,
                     &state.ligands[i].common,
+                    &state.ff_param_set,
+                    &state.to_save.md_config,
                     scene,
                     engine_updates,
-                    &state.ui,
+                    &mut state.ui,
                 );
                 mol_loaded = true;
             }
@@ -373,7 +471,9 @@ pub fn enter_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mu
     }
 
     if !mol_loaded {
-        state.mol_editor.clear_mol();
+        state
+            .mol_editor
+            .clear_mol(&state.dev, &state.ff_param_set, &state.to_save.md_config);
     }
 
     state.volatile.control_scheme_prev = scene.input_settings.control_scheme;
@@ -385,9 +485,19 @@ pub fn enter_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mu
     scene.camera.position = Vec3F32::new(0., 0., -INIT_CAM_DIST);
     scene.camera.orientation = Quaternion::new_identity();
 
+    // Set to a view supported by the editor.
+    // todo: In this case, store the previous view, and re-set it upon exiting the editor.
+    if !matches!(
+        state.ui.mol_view,
+        MoleculeView::Sticks | MoleculeView::BallAndStick | MoleculeView::SpaceFill
+    ) {
+        state.ui.mol_view = MoleculeView::BallAndStick
+    }
+
     // Clear all entities for non-editor molecules.
     redraw(&mut scene.entities, &state.mol_editor.mol, &state.ui);
 
+    set_static_light(scene, Vec3F32::new_zero(), STATIC_LIGHT_MOL_SIZE);
     set_flashlight(scene);
     engine_updates.entities = EntityUpdate::All;
     engine_updates.lighting = true;
@@ -397,6 +507,8 @@ pub fn enter_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mu
 pub fn exit_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mut EngineUpdates) {
     state.volatile.operating_mode = OperatingMode::Primary;
     UI_HEIGHT_CHANGED.store(true, Ordering::Release);
+
+    state.mol_editor.md_state = None;
 
     // todo: Not necessarily zero!
     scene.input_settings.control_scheme = state.volatile.control_scheme_prev;
@@ -428,75 +540,10 @@ pub fn redraw(entities: &mut Vec<Entity>, mol: &MoleculeSmall, ui: &StateUi) {
     ));
 }
 
-pub fn add_atom(
-    entities: &mut Vec<Entity>,
-    mol: &mut MoleculeSmall,
-    element: Element,
-    ui: &mut StateUi,
-    updates: &mut EngineUpdates,
-) {
-    let Selection::AtomLig((_, i)) = ui.selection else {
-        eprintln!("Attempting to add an atom with no parent to add it to");
-        return;
-    };
-
-    let posit_parent = mol.common.atom_posits[i];
-    let el_parent = mol.common.atoms[i].element;
-
-    let posit = find_appended_posit(
-        i,
-        posit_parent,
-        el_parent,
-        element,
-        &mol.common.atoms,
-        &mol.common.adjacency_list,
-    );
-
-    let new_sn = NEXT_ATOM_SN.fetch_add(1, Ordering::AcqRel);
-    let new_i = mol.common.atoms.len();
-
-    mol.common.atoms.push(Atom {
-        serial_number: new_sn,
-        posit,
-        element,
-        type_in_res: None,
-        force_field_type: Some("ca".to_owned()), // todo: A/R
-        partial_charge: Some(0.),                // todo: A/R,
-        ..Default::default()
-    });
-
-    mol.common.bonds.push(Bond {
-        bond_type: BondType::Single,
-        atom_0_sn: mol.common.atoms[i].serial_number,
-        atom_1_sn: new_sn,
-        atom_0: i,
-        atom_1: new_i,
-        is_backbone: false,
-    });
-
-    mol.common.atom_posits.push(posit);
-
-    mol.common.adjacency_list[i].push(new_i);
-    mol.common.adjacency_list.push(vec![i]);
-
-    draw_atom(entities, &mol.common.atoms[mol.common.atoms.len() - 1], ui);
-    draw_bond(
-        entities,
-        &mol.common.bonds[mol.common.bonds.len() - 1],
-        &mol.common.atoms,
-        &mol.common.adjacency_list,
-        ui,
-    );
-
-    // todo: Ideally just add the single entity, and add it to the
-    // index buffer.
-    updates.entities = EntityUpdate::All;
-}
-
 /// Tailored function to prevent having to redraw the whole mol.
 fn draw_atom(entities: &mut Vec<Entity>, atom: &Atom, ui: &StateUi) {
     if matches!(ui.mol_view, MoleculeView::BallAndStick) {
-        if ui.visibility.hide_hydrogen && atom.element == Element::Hydrogen {
+        if ui.visibility.hide_hydrogen && atom.element == Hydrogen {
             return;
         }
 
@@ -517,7 +564,7 @@ fn draw_atom(entities: &mut Vec<Entity>, atom: &Atom, ui: &StateUi) {
         let (radius, mesh) = match ui.mol_view {
             MoleculeView::SpaceFill => (atom.element.vdw_radius(), MESH_SPACEFILL_SPHERE),
             _ => match atom.element {
-                Element::Hydrogen => (BALL_STICK_RADIUS_H, MESH_BALL_STICK_SPHERE),
+                Hydrogen => (BALL_STICK_RADIUS_H, MESH_BALL_STICK_SPHERE),
                 _ => (BALL_STICK_RADIUS, MESH_BALL_STICK_SPHERE),
             },
         };
@@ -549,9 +596,7 @@ fn draw_bond(
     let atom_0 = &atoms[bond.atom_0];
     let atom_1 = &atoms[bond.atom_1];
 
-    if ui.visibility.hide_hydrogen
-        && (atom_0.element == Element::Hydrogen || atom_1.element == Element::Hydrogen)
-    {
+    if ui.visibility.hide_hydrogen && (atom_0.element == Hydrogen || atom_1.element == Hydrogen) {
         return;
     }
 
@@ -565,7 +610,7 @@ fn draw_bond(
         BondType::Aromatic | BondType::Double | BondType::Triple => {
             let mut hydrogen_is = Vec::with_capacity(atoms.len());
             for atom in atoms {
-                hydrogen_is.push(atom.element == Element::Hydrogen);
+                hydrogen_is.push(atom.element == Hydrogen);
             }
 
             let neighbor_i = find_neighbor_posit(adj_list, bond.atom_0, bond.atom_1, &hydrogen_is);
@@ -577,7 +622,7 @@ fn draw_bond(
         _ => (lin_alg::f32::Vec3::new_zero(), false),
     };
 
-    let color_0 = crate::drawing::atom_color(
+    let color_0 = atom_color(
         atom_0,
         0,
         bond.atom_0,
@@ -591,7 +636,7 @@ fn draw_bond(
         MolType::Ligand,
     );
 
-    let color_1 = crate::drawing::atom_color(
+    let color_1 = atom_color(
         atom_1,
         0,
         bond.atom_1,
@@ -605,7 +650,7 @@ fn draw_bond(
         MolType::Ligand,
     );
 
-    let to_hydrogen = atom_0.element == Element::Hydrogen || atom_1.element == Element::Hydrogen;
+    let to_hydrogen = atom_0.element == Hydrogen || atom_1.element == Hydrogen;
 
     entities.extend(bond_entities(
         posit_0,
@@ -619,74 +664,6 @@ fn draw_bond(
         false,
         to_hydrogen,
     ));
-}
-
-/// i is i_parent.
-fn find_appended_posit(
-    i: usize,
-    posit_parent: Vec3,
-    el_parent: Element,
-    element: Element,
-    atoms: &[Atom],
-    adj_list: &[Vec<usize>],
-) -> Vec3 {
-    let mut neighbor_count = 0;
-    for j in &adj_list[i] {
-        if atoms[*j].element != Hydrogen {
-            neighbor_count += 1;
-        }
-    }
-
-    match neighbor_count {
-        0 => Vec3::new(1.3, 0., 0.),
-        1 => {
-            let adj = adj_list[i][0];
-            let neighbor = atoms[adj].posit;
-
-            // todo: This probably isn't what you want.
-            find_tetra_posits(posit_parent, neighbor, Vec3::new_zero()).0
-        }
-        2 => {
-            // todo: Hmm. Need a better tetra fn.
-            let adj_0 = adj_list[i][0];
-            let neighbor_0 = atoms[adj_0].posit;
-            let adj_1 = adj_list[i][1];
-            let neighbor_1 = atoms[adj_1].posit;
-
-            // If the incoming angles are ~τ/3, add in a planar config.
-            let bond_0 = neighbor_0 - posit_parent;
-            let bond_1 = neighbor_1 - posit_parent;
-            let angle = bond_1.to_normalized().dot(bond_0.to_normalized()).acos();
-            println!("ANGLE: {angle}");
-
-            // Between tetra and planar geometry
-            if angle > 1.95 {
-                println!("Planar");
-                find_planar_posit(posit_parent, neighbor_0, neighbor_1)
-            } else {
-                println!("Tetra");
-                // todo: Perhaps there, perhaps here, but a general "add atom" fn that
-                // todo automatically sets the posit based on neighbors
-                let posits = find_tetra_posits(posit_parent, neighbor_0, neighbor_1);
-
-                // Arbitrary one. todo: Address?
-                posits.1
-            }
-        }
-        3 => {
-            // todo: Hmm. Need a better tetra fn.
-            let adj_0 = adj_list[i][0];
-            let neighbor_0 = atoms[adj_0].posit;
-            let adj_1 = adj_list[i][1];
-            let neighbor_1 = atoms[adj_1].posit;
-            let adj_2 = adj_list[i][2];
-            let neighbor_2 = atoms[adj_2].posit;
-            find_tetra_posit_final(posit_parent, neighbor_0, neighbor_1, neighbor_2)
-        }
-        _ => {
-            unimplemented!()
-        }
-    }
 }
 
 /// Save the editor's molecule to disk.
@@ -711,4 +688,185 @@ pub fn save(state: &mut State, path: &Path) -> io::Result<()> {
     // state.update_save_prefs(false);
 
     Ok(())
+}
+
+/// This is built from Amber's gaff2.dat. Returns each H FF type that can be bound to a given atom
+/// (by force field type), and the bond distance in Å.
+/// todo: Can/should we get partial charges too
+pub fn hydrogens_avail(ff_type: &Option<String>) -> Vec<(String, f64)> {
+    let Some(f) = ff_type else { return Vec::new() };
+    match f.as_ref() {
+        // Water
+        "ow" => vec![("hw".to_owned(), 0.9572)],
+        "hw" => vec![("hw".to_owned(), 1.5136)],
+
+        // Generic sp carbon (c )
+        "c" => vec![
+            ("h4".to_owned(), 1.1123),
+            ("h5".to_owned(), 1.1053),
+            ("ha".to_owned(), 1.1010),
+        ],
+
+        // sp2 carbon families
+        "c1" => vec![("ha".to_owned(), 1.0666), ("hc".to_owned(), 1.0600)],
+        "c2" => vec![
+            ("h4".to_owned(), 1.0865),
+            ("h5".to_owned(), 1.0908),
+            ("ha".to_owned(), 1.0882),
+            ("hc".to_owned(), 1.0870),
+            ("hx".to_owned(), 1.0836),
+        ],
+        "c3" => vec![
+            ("h1".to_owned(), 1.0969),
+            ("h2".to_owned(), 1.0950),
+            ("h3".to_owned(), 1.0938),
+            ("hc".to_owned(), 1.0962),
+            ("hx".to_owned(), 1.0911),
+        ],
+        "c5" => vec![
+            ("h1".to_owned(), 1.0972),
+            ("h2".to_owned(), 1.0955),
+            ("h3".to_owned(), 1.0958),
+            ("hc".to_owned(), 1.0954),
+            ("hx".to_owned(), 1.0917),
+        ],
+        "c6" => vec![
+            ("h1".to_owned(), 1.0984),
+            ("h2".to_owned(), 1.0985),
+            ("h3".to_owned(), 1.0958),
+            ("hc".to_owned(), 1.0979),
+            ("hx".to_owned(), 1.0931),
+        ],
+
+        // Aromatic/condensed ring carbons
+        "ca" => vec![
+            ("ha".to_owned(), 1.0860),
+            ("h4".to_owned(), 1.0885),
+            ("h5".to_owned(), 1.0880),
+        ],
+        "cc" => vec![
+            ("h4".to_owned(), 1.0809),
+            ("h5".to_owned(), 1.0820),
+            ("ha".to_owned(), 1.0838),
+            ("hx".to_owned(), 1.0827),
+        ],
+        "cd" => vec![
+            ("h4".to_owned(), 1.0818),
+            ("h5".to_owned(), 1.0821),
+            ("ha".to_owned(), 1.0835),
+            ("hx".to_owned(), 1.0801),
+        ],
+        "ce" => vec![
+            ("h4".to_owned(), 1.0914),
+            ("h5".to_owned(), 1.0895),
+            ("ha".to_owned(), 1.0880),
+        ],
+        "cf" => vec![
+            ("h4".to_owned(), 1.0942),
+            ("ha".to_owned(), 1.0885),
+            // table also lists h5-cf (reverse order) at 1.0890
+            ("h5".to_owned(), 1.0890),
+        ],
+        "cg" => Vec::new(), // no H entries shown for cg in the provided snippet
+
+        // Other carbon families frequently seen
+        "cu" => vec![("ha".to_owned(), 1.0786)],
+        "cv" => vec![("ha".to_owned(), 1.0878)],
+        "cx" => vec![
+            ("h1".to_owned(), 1.0888),
+            ("h2".to_owned(), 1.0869),
+            ("hc".to_owned(), 1.0865),
+            ("hx".to_owned(), 1.0849),
+        ],
+        "cy" => vec![
+            ("h1".to_owned(), 1.0946),
+            ("h2".to_owned(), 1.0930),
+            ("hc".to_owned(), 1.0947),
+            ("hx".to_owned(), 1.0913),
+        ],
+
+        // Nitrogen families: protonated H type is "hn"
+        "n1" => vec![("hn".to_owned(), 0.9860)],
+        "n2" => vec![("hn".to_owned(), 1.0221)],
+        "n3" => vec![("hn".to_owned(), 1.0190)],
+        "n4" => vec![("hn".to_owned(), 1.0300)],
+        "n" => vec![("hn".to_owned(), 1.0130)],
+        "n5" => vec![("hn".to_owned(), 1.0211)],
+        "n6" => vec![("hn".to_owned(), 1.0183)],
+        "n7" => vec![("hn".to_owned(), 1.0195)],
+        "n8" => vec![("hn".to_owned(), 1.0192)],
+        "n9" => vec![("hn".to_owned(), 1.0192)],
+        "na" => vec![("hn".to_owned(), 1.0095)],
+        "nh" => vec![("hn".to_owned(), 1.0120)],
+        "nj" => vec![("hn".to_owned(), 1.0130)],
+        "nl" => vec![("hn".to_owned(), 1.0476)],
+        "no" => vec![("hn".to_owned(), 1.0440)],
+        "np" => vec![("hn".to_owned(), 1.0210)],
+        "nq" => vec![("hn".to_owned(), 1.0180)],
+        "ns" => vec![("hn".to_owned(), 1.0132)],
+        "nt" => vec![("hn".to_owned(), 1.0105)],
+        "nu" => vec![("hn".to_owned(), 1.0137)],
+        "nv" => vec![("hn".to_owned(), 1.0114)],
+        "nx" => vec![("hn".to_owned(), 1.0338)],
+        "ny" => vec![("hn".to_owned(), 1.0339)],
+        "nz" => vec![("hn".to_owned(), 1.0271)],
+
+        // Oxygen families: hydroxyl H type is "ho"
+        "o" => vec![("ho".to_owned(), 0.9810)],
+        "oh" => vec![("ho".to_owned(), 0.9725)],
+
+        // Sulfur families: thiol H type is "hs"
+        "s" => vec![("hs".to_owned(), 1.3530)],
+        "s4" => vec![("hs".to_owned(), 1.3928)],
+        "s6" => vec![("hs".to_owned(), 1.3709)],
+        "sh" => vec![("hs".to_owned(), 1.3503)],
+        "sy" => vec![("hs".to_owned(), 1.3716)],
+
+        // Phosphorus families: acidic phosphate H type is "hp"
+        "p2" => vec![("hp".to_owned(), 1.4272)],
+        "p3" => vec![("hp".to_owned(), 1.4256)],
+        "p4" => vec![("hp".to_owned(), 1.4271)],
+        "p5" => vec![("hp".to_owned(), 1.4205)],
+        "py" => vec![("hp".to_owned(), 1.4150)],
+
+        _ => Vec::new(),
+    }
+}
+
+/// Set up MD for the editor's molecule.
+fn build_dynamics(
+    dev: &ComputationDevice,
+    mol: &MoleculeSmall,
+    param_set: &FfParamSet,
+    mol_specific_params: &HashMap<String, ForceFieldParams>,
+    cfg: &MdConfig,
+) -> Result<MdState, ParamError> {
+    println!("Setting up dynamics for the mol editor...");
+
+    let atoms_gen: Vec<_> = mol.common.atoms.iter().map(|a| a.to_generic()).collect();
+    let bonds_gen: Vec<_> = mol.common.bonds.iter().map(|b| b.to_generic()).collect();
+
+    let mols = vec![MolDynamics {
+        ff_mol_type: FfMolType::SmallOrganic,
+        atoms: atoms_gen,
+        atom_posits: Some(mol.common.atom_posits.clone()),
+        bonds: bonds_gen,
+        adjacency_list: Some(mol.common.adjacency_list.clone()),
+        static_: false,
+        bonded_only: false,
+        // mol_specific_params: Some(msp.clone()),
+        mol_specific_params: None,
+    }];
+
+    let cfg = MdConfig {
+        max_init_relaxation_iters: None,
+        allow_missing_dihedral_params: true,
+        ..cfg.clone()
+    };
+
+    println!("Initializing MD state...");
+    let md_state = MdState::new(dev, &cfg, &mols, param_set)?;
+    println!("Done.");
+
+    Ok(md_state)
 }

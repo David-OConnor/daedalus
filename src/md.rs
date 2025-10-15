@@ -139,7 +139,7 @@ pub fn build_dynamics(
             static_: false,
             bonded_only: false,
             mol_specific_params: Some(msp.clone()),
-        })
+        });
     }
 
     // todo: DRY
@@ -159,7 +159,7 @@ pub fn build_dynamics(
             static_: false,
             bonded_only: false,
             mol_specific_params: None,
-        })
+        });
     }
 
     if let Some(p) = peptide {
@@ -179,7 +179,7 @@ pub fn build_dynamics(
             static_: static_peptide,
             bonded_only: false,
             mol_specific_params: None,
-        })
+        });
     }
 
     println!("Initializing MD state...");

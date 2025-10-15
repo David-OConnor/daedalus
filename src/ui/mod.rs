@@ -25,9 +25,7 @@ use md::md_setup;
 use mol_data::display_mol_data;
 
 use crate::{
-    CamSnapshot, MsaaSetting, OperatingMode, Selection, State, ViewSelLevel,
-    cam_misc::move_mol_to_cam,
-    cli,
+    CamSnapshot, MsaaSetting, OperatingMode, Selection, State, ViewSelLevel, cli,
     cli::autocomplete_cli,
     docking_v2::dock,
     download_mols::{load_atom_coords_rcsb, load_sdf_drugbank, load_sdf_pubchem},
@@ -37,8 +35,7 @@ use crate::{
     inputs::{MOVEMENT_SENS, ROTATE_SENS, SENS_MOL_MOVE_SCROLL},
     lipid::{LipidShape, make_bacterial_lipids},
     mol_editor::enter_edit_mode,
-    mol_lig::MoleculeSmall,
-    molecule::{MolGenericRef, MolType},
+    molecule::MolGenericRef,
     render::{set_flashlight, set_static_light},
     ui::{
         cam::{cam_controls, cam_snapshots},
@@ -910,6 +907,18 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             if let Err(e) = update_file_dialogs(state, scene, ui, &mut false, &mut false, &mut engine_updates) {
                 handle_err(&mut state.ui, format!("Problem saving file: {e:?}"));
             }
+
+            if let Some(md) = &mut state.mol_editor.md_state {
+                state.mol_editor.dt = 0.0001; // ps. todo: A.R
+                println!("STEP");
+                md.step(&state.dev, state.mol_editor.dt);
+
+                crate::mol_editor::redraw(
+                    &mut scene.entities, &state.mol_editor.mol, &state.ui
+                );
+                engine_updates.entities = EntityUpdate::All;
+            }
+
             return;
         }
 
@@ -1250,7 +1259,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 display_mol_data(state, scene, ui, &mut redraw_lig, &mut redraw_na, &mut redraw_lipid, &mut close_active_mol, &mut engine_updates);
             }
 
-            if ui.button(RichText::new("Edit mol").color(COLOR_HIGHLIGHT)).clicked() {
+            if ui.button(RichText::new("Mol editor").color(COLOR_HIGHLIGHT)).clicked() {
                 enter_edit_mode(state, scene, &mut engine_updates);
             }
         });

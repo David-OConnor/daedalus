@@ -1,20 +1,17 @@
-use bio_files::{BondType, Sdf};
-use egui::{Color32, RichText, Ui};
-use graphics::{EngineUpdates, Entity, EntityUpdate, Scene};
-use lin_alg::{f32::Quaternion, f64::Vec3};
-use na_seq::{
-    Element,
-    Element::{Carbon, Nitrogen, Oxygen},
-};
+use bio_files::BondType;
+use egui::{Color32, ComboBox, RichText, Ui};
+use graphics::{EngineUpdates, EntityUpdate, Scene};
+use lin_alg::f64::Vec3;
+use na_seq::Element::{Carbon, Nitrogen, Oxygen};
 
 use crate::{
-    Selection, State, StateUi, ViewSelLevel, mol_editor,
-    mol_editor::{INIT_CAM_DIST, MolEditorState, add_atom, exit_edit_mode, templates},
-    mol_lig::MoleculeSmall,
-    molecule::{Atom, Bond, MolGenericRef},
+    Selection, State, ViewSelLevel,
+    drawing::MoleculeView,
+    mol_editor,
+    mol_editor::{add_atoms::add_atom, exit_edit_mode, templates},
     ui::{
-        COL_SPACING, COLOR_ACTIVE, COLOR_INACTIVE, cam::cam_reset_controls, misc::section_box,
-        mol_data::selected_data,
+        COL_SPACING, COLOR_ACTIVE, COLOR_INACTIVE, cam::cam_reset_controls, misc,
+        misc::section_box, mol_data::selected_data,
     },
     util::handle_err,
 };
@@ -65,83 +62,46 @@ pub fn editor(
             });
         });
 
-        ui.add_space(COL_SPACING / 2.);
-
+        // C+P from main editor, with fewer options.
+        // todo: If on one of the unavail-here view modes when entering editor,
+        // todo: chagne it.
         section_box().show(ui, |ui| {
-            if ui.button("C").on_hover_text("Add a Carbon atom").clicked() {
-                add_atom(
-                    &mut scene.entities,
-                    &mut state.mol_editor.mol,
-                    Carbon,
-                    &mut state.ui,
-                    engine_updates,
-                );
-            }
+            ui.label("View:");
+            let prev_view = state.ui.mol_view;
+            ComboBox::from_id_salt(0)
+                .width(80.)
+                .selected_text(state.ui.mol_view.to_string())
+                .show_ui(ui, |ui| {
+                    for view in &[
+                        MoleculeView::Sticks,
+                        MoleculeView::BallAndStick,
+                        MoleculeView::SpaceFill,
+                    ] {
+                        ui.selectable_value(&mut state.ui.mol_view, *view, view.to_string());
+                    }
+                });
 
-            if ui.button("O").on_hover_text("Add an Oxygen atom").clicked() {
-                add_atom(
-                    &mut scene.entities,
-                    &mut state.mol_editor.mol,
-                    Oxygen,
-                    &mut state.ui,
-                    engine_updates,
-                );
-            }
-
-            if ui
-                .button("N")
-                .on_hover_text("Add an Nitrogen atom")
-                .clicked()
-            {
-                add_atom(
-                    &mut scene.entities,
-                    &mut state.mol_editor.mol,
-                    Nitrogen,
-                    &mut state.ui,
-                    engine_updates,
-                );
+            if state.ui.mol_view != prev_view {
+                redraw = true;
             }
         });
 
-        ui.add_space(COL_SPACING / 2.);
-
         section_box().show(ui, |ui| {
-            if ui
-                .button("−OH")
-                .on_hover_text("Add a hydroxyl functional group")
-                .clicked()
-            {}
+            ui.label("Vis:");
 
-            if ui
-                .button("−COOH")
-                .on_hover_text("Add a carboxylic acid functional group")
-                .clicked()
-            {
-                let anchor = Vec3::new_zero();
-                let atoms = templates::cooh_group(anchor, 0);
-            }
-
-            if ui
-                .button("−NH₂")
-                .on_hover_text("Add an admide functional group")
-                .clicked()
-            {}
-
-            if ui
-                .button("Ring")
-                .on_hover_text("Add a benzene ring")
-                .clicked()
-            {
-                let anchor = Vec3::new_zero();
-                let atoms = templates::benzene_ring(anchor, 0);
-            }
+            misc::vis_check(
+                &mut state.ui.visibility.hide_hydrogen,
+                "H",
+                ui,
+                &mut redraw,
+            );
         });
 
         ui.add_space(COL_SPACING);
 
         section_box().show(ui, |ui| {
             if ui
-                .button(RichText::new("↔ Move atom").color(Color32::LIGHT_RED))
+                .button(RichText::new("↔ Move atom"))
                 .on_hover_text("(Hotkey: M) Move the selected atom")
                 .clicked()
             {
@@ -226,6 +186,10 @@ pub fn editor(
         }
     });
 
+    ui.horizontal(|ui| {
+        edit_tools(state, scene, ui, engine_updates);
+    });
+
     // This trick prevents a clone.
     let mol = std::mem::take(&mut state.mol_editor.mol); // move out, leave default in place
     selected_data(
@@ -247,4 +211,131 @@ pub fn editor(
         mol_editor::redraw(&mut scene.entities, &state.mol_editor.mol, &state.ui);
         engine_updates.entities = EntityUpdate::All;
     }
+}
+
+fn edit_tools(
+    state: &mut State,
+    scene: &mut Scene,
+    ui: &mut Ui,
+    engine_updates: &mut EngineUpdates,
+) {
+    section_box().show(ui, |ui| {
+        if ui.button("C").on_hover_text("Add a Carbon atom").clicked() {
+            let Selection::AtomLig((_, i)) = state.ui.selection else {
+                eprintln!("Attempting to add an atom with no parent to add it to");
+                return;
+            };
+
+            add_atom(
+                &mut state.mol_editor,
+                &mut scene.entities,
+                i,
+                Carbon,
+                BondType::Single,
+                Some("ca".to_owned()), // todo
+                Some(1.4),             // todo
+                &mut state.ui,
+                engine_updates,
+            );
+        }
+
+        if ui.button("O").on_hover_text("Add an Oxygen atom").clicked() {
+            let Selection::AtomLig((_, i)) = state.ui.selection else {
+                eprintln!("Attempting to add an atom with no parent to add it to");
+                return;
+            };
+
+            add_atom(
+                &mut state.mol_editor,
+                &mut scene.entities,
+                i,
+                Oxygen,
+                BondType::Single,
+                Some("oh".to_owned()), // todo
+                Some(1.1377),          // todo
+                &mut state.ui,
+                engine_updates,
+            );
+        }
+
+        if ui
+            .button("O=")
+            .on_hover_text("Add an Oxygen atom double-bonded")
+            .clicked()
+        {
+            let Selection::AtomLig((_, i)) = state.ui.selection else {
+                eprintln!("Attempting to add an atom with no parent to add it to");
+                return;
+            };
+
+            add_atom(
+                &mut state.mol_editor,
+                &mut scene.entities,
+                i,
+                Oxygen,
+                BondType::Double,
+                Some("o".to_owned()),
+                Some(1.1377), // todo
+                &mut state.ui,
+                engine_updates,
+            );
+        }
+
+        if ui
+            .button("N")
+            .on_hover_text("Add an Nitrogen atom")
+            .clicked()
+        {
+            let Selection::AtomLig((_, i)) = state.ui.selection else {
+                eprintln!("Attempting to add an atom with no parent to add it to");
+                return;
+            };
+
+            add_atom(
+                &mut state.mol_editor,
+                &mut scene.entities,
+                i,
+                Nitrogen,
+                BondType::Single,
+                Some("n".to_owned()), // todo
+                Some(1.4),            // todo
+                &mut state.ui,
+                engine_updates,
+            );
+        }
+    });
+
+    ui.add_space(COL_SPACING / 2.);
+
+    section_box().show(ui, |ui| {
+        if ui
+            .button("−OH")
+            .on_hover_text("Add a hydroxyl functional group")
+            .clicked()
+        {}
+
+        if ui
+            .button("−COOH")
+            .on_hover_text("Add a carboxylic acid functional group")
+            .clicked()
+        {
+            let anchor = Vec3::new_zero();
+            let atoms = templates::cooh_group(anchor, 0);
+        }
+
+        if ui
+            .button("−NH₂")
+            .on_hover_text("Add an admide functional group")
+            .clicked()
+        {}
+
+        if ui
+            .button("Ring")
+            .on_hover_text("Add a benzene ring")
+            .clicked()
+        {
+            let anchor = Vec3::new_zero();
+            let atoms = templates::benzene_ring(anchor, 0);
+        }
+    });
 }

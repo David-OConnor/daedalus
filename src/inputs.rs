@@ -222,20 +222,34 @@ pub fn event_dev_handler(
                             &mut updates,
                         );
                     }
-                    Code(KeyCode::BracketLeft) => {
-                        state_.ui.mol_view = state_.ui.mol_view.prev();
-                        redraw_protein = true;
-                        redraw_lig = true;
-                        redraw_na = true;
-                        redraw_lipid = true;
-                    }
-                    Code(KeyCode::BracketRight) => {
-                        state_.ui.mol_view = state_.ui.mol_view.next();
-                        redraw_protein = true;
-                        redraw_lig = true;
-                        redraw_na = true;
-                        redraw_lipid = true;
-                    }
+                    Code(KeyCode::BracketLeft) => match state_.volatile.operating_mode {
+                        OperatingMode::Primary => {
+                            state_.ui.mol_view = state_.ui.mol_view.prev();
+
+                            redraw_protein = true;
+                            redraw_lig = true;
+                            redraw_na = true;
+                            redraw_lipid = true;
+                        }
+                        OperatingMode::MolEditor => {
+                            state_.ui.mol_view = state_.ui.mol_view.prev_editor();
+                            redraw_mol_editor = true;
+                        }
+                    },
+                    Code(KeyCode::BracketRight) => match state_.volatile.operating_mode {
+                        OperatingMode::Primary => {
+                            state_.ui.mol_view = state_.ui.mol_view.next();
+
+                            redraw_protein = true;
+                            redraw_lig = true;
+                            redraw_na = true;
+                            redraw_lipid = true;
+                        }
+                        OperatingMode::MolEditor => {
+                            state_.ui.mol_view = state_.ui.mol_view.next_editor();
+                            redraw_mol_editor = true;
+                        }
+                    },
 
                     Code(KeyCode::KeyM) => {
                         let mol_type = match state_.active_mol() {

@@ -90,8 +90,9 @@ pub fn view_settings(
                 redraw_peptide,
             );
 
+            // Hanndle the other redraws.
             if state.ui.visibility.hide_hydrogen != hide_hydrogen_prev {
-                *redraw_peptide = true;
+                // *redraw_peptide = true;
                 *redraw_lig = true;
                 *redraw_na = true;
                 *redraw_lipid = true;
