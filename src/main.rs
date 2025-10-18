@@ -129,6 +129,7 @@ pub enum ViewSelLevel {
     #[default]
     Atom,
     Residue,
+    Bond,
 }
 
 impl Display for ViewSelLevel {
@@ -136,6 +137,7 @@ impl Display for ViewSelLevel {
         match self {
             Self::Atom => write!(f, "Atom"),
             Self::Residue => write!(f, "Residue"),
+            Self::Bond => write!(f, "Bond"),
         }
     }
 }
@@ -485,13 +487,29 @@ pub enum Selection {
     /// Of the protein
     Residue(usize),
     /// Of the protein
-    Atoms(Vec<usize>),
+    AtomsPeptide(Vec<usize>),
     /// Molecule index, atom index
     AtomLig((usize, usize)),
     /// Molecule index, atom index
     AtomNucleicAcid((usize, usize)),
     /// Molecule index, atom index
     AtomLipid((usize, usize)),
+    BondPeptide(usize),
+    BondLig((usize, usize)),
+    BondNucleicAcid((usize, usize)),
+    BondLipid((usize, usize)),
+}
+
+impl Selection {
+    pub fn is_bond(&self) -> bool {
+        match self {
+            Self::BondPeptide(_)
+            | Self::BondLig(_)
+            | Self::BondNucleicAcid(_)
+            | Self::BondLipid(_) => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Encode, Decode)]
@@ -758,12 +776,10 @@ fn main() {
                         "Error loading CUDA module: {}; not using CUDA. Error: {e}",
                         dynamics::PTX
                     );
-                    // (ComputationDevice::Cpu, None)
                     ComputationDevice::Cpu
                 }
             }
         } else {
-            // (ComputationDevice::Cpu, None)
             ComputationDevice::Cpu
         }
     };

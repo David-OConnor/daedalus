@@ -31,7 +31,7 @@ EOF
 chmod +x "$DESKTOP_PATH"
 
 # If the cuda FFT lib is packaged with the download, move it to the correct place.
-cufft_lib="libcudafft.12.so"
+cufft_lib="libcudafft.so.12"
 if [[ -f "./$cufft_lib" ]]; then
   cp -n -- "./$cufft_lib" /usr/lib/
 fi

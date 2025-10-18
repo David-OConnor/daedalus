@@ -1,4 +1,6 @@
-use dynamics::{ComputationDevice, HydrogenConstraint, Integrator, SimBoxInit};
+use dynamics::{
+    ComputationDevice, HydrogenConstraint, Integrator, MdState, SimBoxInit, snapshot::Snapshot,
+};
 use egui::{Color32, ComboBox, RichText, TextEdit, Ui};
 use graphics::{EngineUpdates, EntityUpdate, Scene};
 use lin_alg::f64::Vec3;
@@ -273,23 +275,26 @@ pub fn md_setup(
             ui.label(format!("Runtime: {:.1} ps", state.volatile.md_runtime));
 
             if let Some(md) = &state.mol_dynamics {
-                let snap = &md.snapshots[state.ui.current_snapshot];
-
-                ui.add_space(COL_SPACING/2.);
-                ui.label("E (kcal/mol) KE: ");
-                ui.label(RichText::new(format!("{:.1}", snap.energy_kinetic as u32)).color(Color32::GOLD));
-
-                ui.label("E / atom: ");
-                // todo: Don't continuosly run this!
-                let e_per_atom = snap.energy_kinetic / ((snap.water_o_posits.len() * 3) as f32 + snap.atom_posits.len() as f32);
-                ui.label(RichText::new(format!("{:.1}", e_per_atom)).color(Color32::GOLD));
-
-                ui.label("PE: ");
-                ui.label(RichText::new(format!("{:.1}", snap.energy_potential as u32)).color(Color32::GOLD));
+               energy_disp(&md.snapshots[state.ui.current_snapshot], ui);
             }
 
         });
     });
 
     misc::dynamics_player(state, scene, engine_updates, ui);
+}
+
+pub fn energy_disp(snap: &Snapshot, ui: &mut Ui) {
+    ui.add_space(COL_SPACING / 2.);
+    ui.label("E (kcal/mol) KE: ");
+    ui.label(RichText::new(format!("{:.1}", snap.energy_kinetic as u32)).color(Color32::GOLD));
+
+    ui.label("E / atom: ");
+    // todo: Don't continuosly run this!
+    let e_per_atom = snap.energy_kinetic
+        / ((snap.water_o_posits.len() * 3) as f32 + snap.atom_posits.len() as f32);
+    ui.label(RichText::new(format!("{:.1}", e_per_atom)).color(Color32::GOLD));
+
+    ui.label("PE: ");
+    ui.label(RichText::new(format!("{:.1}", snap.energy_potential as u32)).color(Color32::GOLD));
 }

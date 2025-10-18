@@ -7,7 +7,7 @@ use na_seq::Element;
 use crate::{
     Selection, StateUi, ViewSelLevel,
     drawing::MoleculeView,
-    molecule::{Atom, AtomRole, Chain, MolType, Residue},
+    molecule::{Atom, AtomRole, Bond, Chain, MolType, Residue},
 };
 
 struct Nearest {
@@ -29,10 +29,10 @@ impl Nearest {
 ///
 /// Can select atoms from the protein, or ligand.
 pub fn find_selected_atom(
-    atoms_pep_along_ray: &[(usize, usize)],
-    atoms_lig_along_ray: &[(usize, usize)],
-    atoms_na_along_ray: &[(usize, usize)],
-    atoms_lipid_along_ray: &[(usize, usize)],
+    items_pep_along_ray: &[(usize, usize)],
+    items_lig_along_ray: &[(usize, usize)],
+    items_na_along_ray: &[(usize, usize)],
+    items_lipid_along_ray: &[(usize, usize)],
     atoms_pep: &[Atom],
     ress: &[Residue],
     atoms_lig: &[Vec<Atom>],
@@ -41,11 +41,17 @@ pub fn find_selected_atom(
     ray: &(Vec3F32, Vec3F32),
     ui: &StateUi,
     chains: &[Chain],
+    // These aren't required if not in bond mode.
+    bonds_pep: &[Bond],
+    bonds_lig: &[Vec<Bond>],
+    bonds_na: &[Vec<Bond>],
+    bonds_lipid: &[Vec<Bond>],
+    bond_mode: bool,
 ) -> Selection {
-    if atoms_pep_along_ray.is_empty()
-        && atoms_lig_along_ray.is_empty()
-        && atoms_na_along_ray.is_empty()
-        && atoms_lipid_along_ray.is_empty()
+    if items_pep_along_ray.is_empty()
+        && items_lig_along_ray.is_empty()
+        && items_na_along_ray.is_empty()
+        && items_lipid_along_ray.is_empty()
     {
         return Selection::None;
     }
@@ -62,7 +68,7 @@ pub fn find_selected_atom(
     };
     let mut near_dist = INIT_DIST;
 
-    for (_mol_i, atom_i) in atoms_pep_along_ray {
+    for (_mol_i, atom_i) in items_pep_along_ray {
         let chain_hidden = {
             let chains_this_atom: Vec<&Chain> =
                 chains.iter().filter(|c| c.atoms.contains(atom_i)).collect();
@@ -133,73 +139,41 @@ pub fn find_selected_atom(
 
     // Second pass for ligands; we skip most of the hidden checks here that apply to protein atoms.
 
-    // let mut near_i_lig_num = 0;
-    // let mut near_i_lig_atom = 0;
-    // let mut near_dist_lig = INIT_DIST;
+    nearest_in_group(
+        &items_lig_along_ray,
+        &atoms_lig,
+        &bonds_lig,
+        MolType::Ligand,
+        bond_mode,
+        ui.visibility.hide_hydrogen,
+        ray.0,
+        &mut nearest,
+        &mut near_dist,
+    );
 
-    for (i_mol, i_atom) in atoms_lig_along_ray.iter() {
-        let atom = &atoms_lig[*i_mol][*i_atom];
+    nearest_in_group(
+        &items_na_along_ray,
+        &atoms_na,
+        &bonds_na,
+        MolType::NucleicAcid,
+        bond_mode,
+        ui.visibility.hide_hydrogen,
+        ray.0,
+        &mut nearest,
+        &mut near_dist,
+    );
 
-        if ui.visibility.hide_hydrogen && atom.element == Element::Hydrogen {
-            continue;
-        }
-
-        let posit: Vec3F32 = atom.posit.into();
-        let dist = (posit - ray.0).magnitude();
-
-        if dist < near_dist {
-            nearest = Nearest {
-                mol_type: MolType::Ligand,
-                mol_i: *i_mol,
-                atom_i: *i_atom,
-            };
-
-            near_dist = dist;
-        }
-    }
-    // todo: DRY!
-    for (i_mol, i_atom) in atoms_na_along_ray.iter() {
-        let atom = &atoms_na[*i_mol][*i_atom];
-
-        if ui.visibility.hide_hydrogen && atom.element == Element::Hydrogen {
-            continue;
-        }
-
-        let posit: Vec3F32 = atom.posit.into();
-        let dist = (posit - ray.0).magnitude();
-
-        if dist < near_dist {
-            nearest = Nearest {
-                mol_type: MolType::NucleicAcid,
-                mol_i: *i_mol,
-                atom_i: *i_atom,
-            };
-
-            near_dist = dist;
-        }
-    }
-
-    // todo: DRY!
-    for (i_mol, i_atom) in atoms_lipid_along_ray.iter() {
-        let atom = &atoms_lipid[*i_mol][*i_atom];
-
-        if ui.visibility.hide_hydrogen && atom.element == Element::Hydrogen {
-            continue;
-        }
-
-        let posit: Vec3F32 = atom.posit.into();
-        let dist = (posit - ray.0).magnitude();
-
-        if dist < near_dist {
-            nearest = Nearest {
-                mol_type: MolType::Lipid,
-                mol_i: *i_mol,
-                atom_i: *i_atom,
-            };
-
-            near_dist = dist;
-        }
-    }
+    nearest_in_group(
+        &items_lipid_along_ray,
+        &atoms_lipid,
+        &bonds_lipid,
+        MolType::Lipid,
+        bond_mode,
+        ui.visibility.hide_hydrogen,
+        ray.0,
+        &mut nearest,
+        &mut near_dist,
+    );
 
     // This is equivalent to our empty check above, but catches the case of the atom count being
     // empty due to hidden chains.
@@ -236,6 +210,14 @@ pub fn find_selected_atom(
                 _ => unreachable!(),
             }
         }
+        ViewSelLevel::Bond => match nearest.mol_type {
+            // todo: Rework this (with appropriate steps upstream). Get bonds along ray.
+            MolType::Peptide => Selection::BondPeptide(nearest.atom_i),
+            MolType::Ligand => Selection::BondLig(indices),
+            MolType::NucleicAcid => Selection::BondNucleicAcid(indices),
+            MolType::Lipid => Selection::BondLipid(indices),
+            _ => unreachable!(),
+        },
     }
 }
 
@@ -246,32 +228,30 @@ pub fn points_along_ray_inner(
     ray_dir: Vec3F32,
     dist_thresh: f32,
     i_mol: usize,
-    i_atom: usize,
-    atom: &Atom,
+    i_atom_or_bond: usize,
+    posit: Vec3F32,
 ) {
-    let atom_pos: Vec3F32 = atom.posit.into();
-
     // Compute the closest point on the ray to the atom position
-    let to_atom: Vec3F32 = atom_pos - ray.0;
+    let to_atom: Vec3F32 = posit - ray.0;
     let t = to_atom.dot(ray_dir);
     let closest_point = ray.0 + ray_dir * t;
 
     // Compute the perpendicular distance to the ray
-    let dist_to_ray = (atom_pos - closest_point).magnitude();
+    let dist_to_ray = (posit - closest_point).magnitude();
 
     // todo: take atom radius into account. E.g. Hydrogens should required a smaller dist.
     // todo: This approach is a bit sloppy, but probably better than not including it.
-    if atom.element == Element::Hydrogen {
-        // todo: This seems to prevent selecting at all; not sure why.
-        // dist_thresh *= 0.9;
-    }
+    // if atom.element == Element::Hydrogen {
+    //     // todo: This seems to prevent selecting at all; not sure why.
+    //     // dist_thresh *= 0.9;
+    // }
     if dist_to_ray < dist_thresh {
-        result.push((i_mol, i_atom));
+        result.push((i_mol, i_atom_or_bond));
     }
 }
 
 /// Used for cursor selection. Returns (atom indices prot, atom indices lig)
-pub fn points_along_ray(
+pub fn points_along_ray_atom(
     ray: (Vec3F32, Vec3F32),
     atoms_peptide: &[Atom],
     atoms_lig: &[Vec<Atom>],
@@ -293,32 +273,140 @@ pub fn points_along_ray(
     let ray_dir = (ray.1 - ray.0).to_normalized();
 
     for (i, atom) in atoms_peptide.iter().enumerate() {
-        points_along_ray_inner(&mut result_prot, &ray, ray_dir, dist_thresh, 0, i, atom);
+        points_along_ray_inner(
+            &mut result_prot,
+            &ray,
+            ray_dir,
+            dist_thresh,
+            0,
+            i,
+            atom.posit.into(),
+        );
     }
 
-    for (i_mol, atoms) in atoms_lig.iter().enumerate() {
-        for (i, atom) in atoms.iter().enumerate() {
-            points_along_ray_inner(&mut result_lig, &ray, ray_dir, dist_thresh, i_mol, i, atom);
+    for (result, atoms_list) in [
+        (&mut result_lig, &atoms_lig),
+        (&mut result_na, &atoms_na),
+        (&mut result_lipid, &atoms_lipid),
+    ] {
+        for (i_mol, atoms) in atoms_list.iter().enumerate() {
+            for (i, atom) in atoms.iter().enumerate() {
+                points_along_ray_inner(
+                    result,
+                    &ray,
+                    ray_dir,
+                    dist_thresh,
+                    i_mol,
+                    i,
+                    atom.posit.into(),
+                );
+            }
         }
     }
 
-    for (i_mol, atoms) in atoms_na.iter().enumerate() {
-        for (i, atom) in atoms.iter().enumerate() {
-            points_along_ray_inner(&mut result_na, &ray, ray_dir, dist_thresh, i_mol, i, atom);
+    (result_prot, result_lig, result_na, result_lipid)
+}
+
+/// A helper
+fn nearest_in_group(
+    items: &[(usize, usize)],
+    atoms: &[Vec<Atom>],
+    bonds: &[Vec<Bond>],
+    mol_type: MolType,
+    bond_mode: bool,
+    hide_h: bool,
+    ray_origin: Vec3F32,
+    nearest: &mut Nearest,
+    near_dist: &mut f32,
+) {
+    for (i_mol, i_atom) in items.iter() {
+        let posit: Vec3F32 = if bond_mode {
+            let bond = &bonds[*i_mol][*i_atom];
+            let atom_0 = &atoms[*i_mol][bond.atom_0];
+            let atom_1 = &atoms[*i_mol][bond.atom_1];
+
+            if hide_h
+                && (atom_0.element == Element::Hydrogen || atom_1.element == Element::Hydrogen)
+            {
+                continue;
+            }
+
+            ((atom_0.posit + atom_1.posit) / 2.).into()
+        } else {
+            let atom = &atoms[*i_mol][*i_atom];
+
+            if hide_h && atom.element == Element::Hydrogen {
+                continue;
+            }
+
+            atom.posit.into()
+        };
+
+        let dist = (posit - ray_origin).magnitude();
+        if dist < *near_dist {
+            *nearest = Nearest {
+                mol_type,
+                mol_i: *i_mol,
+                atom_i: *i_atom,
+            };
+            *near_dist = dist;
         }
     }
+}
 
-    for (i_mol, atoms) in atoms_lipid.iter().enumerate() {
-        for (i, atom) in atoms.iter().enumerate() {
-            points_along_ray_inner(
-                &mut result_lipid,
-                &ray,
-                ray_dir,
-                dist_thresh,
-                i_mol,
-                i,
-                atom,
-            );
+/// Used for cursor selection. Returns (atom indices prot, atom indices lig)
+pub fn points_along_ray_bond(
+    ray: (Vec3F32, Vec3F32),
+    bonds_peptide: &[Bond],
+    bonds_lig: &[Vec<Bond>],
+    bonds_na: &[Vec<Bond>],
+    bonds_lipid: &[Vec<Bond>],
+    // We need atoms to get positions
+    atoms_peptide: &[Atom],
+    atoms_lig: &[Vec<Atom>],
+    atoms_na: &[Vec<Atom>],
+    atoms_lipid: &[Vec<Atom>],
+    dist_thresh: f32,
+    // Each tuple is (mol i, bondi in that mol)
+) -> (
+    Vec<(usize, usize)>,
+    Vec<(usize, usize)>,
+    Vec<(usize, usize)>,
+    Vec<(usize, usize)>,
+) {
+    let mut result_prot = Vec::new();
+    let mut result_lig = Vec::new();
+    let mut result_na = Vec::new();
+    let mut result_lipid = Vec::new();
+
+    let ray_dir = (ray.1 - ray.0).to_normalized();
+
+    for (i, bond) in bonds_peptide.iter().enumerate() {
+        let posit = (atoms_peptide[bond.atom_0].posit + atoms_peptide[bond.atom_0].posit) / 2.;
+        points_along_ray_inner(
+            &mut result_prot,
+            &ray,
+            ray_dir,
+            dist_thresh,
+            0,
+            i,
+            posit.into(),
+        );
+    }
+
+    for (result, atoms_list, bonds_list) in [
+        (&mut result_lig, &atoms_lig, &bonds_lig),
+        (&mut result_na, &atoms_na, &bonds_na),
+        (&mut result_lipid, &atoms_lipid, &bonds_lipid),
+    ] {
+        for (i_mol, bonds) in bonds_list.iter().enumerate() {
+            for (i, bond) in bonds.iter().enumerate() {
+                let a0 = atoms_list[i_mol][bond.atom_0].posit;
+                let a1 = atoms_list[i_mol][bond.atom_1].posit;
+                let posit = (a0 + a1) / 2.0;
+
+                points_along_ray_inner(result, &ray, ray_dir, dist_thresh, i_mol, i, posit.into());
+            }
         }
     }
 

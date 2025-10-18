@@ -61,7 +61,6 @@ pub fn select_from_search(state: &mut State) {
     match state.ui.view_sel_level {
         ViewSelLevel::Atom => {
             for (i, atom) in mol.common.atoms.iter().enumerate() {
-                // if query.contains(&atom.serial_number.to_string()) {
                 if query == &atom.serial_number.to_string() {
                     state.ui.selection = Selection::AtomPeptide(i);
                     return;
@@ -88,6 +87,14 @@ pub fn select_from_search(state: &mut State) {
                             return;
                         }
                     }
+                }
+            }
+        }
+        ViewSelLevel::Bond => {
+            for (i, bond) in mol.common.bonds.iter().enumerate() {
+                if query == &bond.atom_0_sn.to_string() || query == &bond.atom_1_sn.to_string() {
+                    state.ui.selection = Selection::AtomPeptide(i);
+                    return;
                 }
             }
         }
@@ -189,6 +196,49 @@ pub fn cycle_selected(state: &mut State, scene: &mut Scene, reverse: bool) {
                 }
             }
         }
+        ViewSelLevel::Bond => match state.ui.selection {
+            Selection::BondPeptide(bond_i) => {
+                let Some(mol) = &state.peptide else {
+                    return;
+                };
+
+                let new_bond_i = bond_i as isize + dir;
+                if new_bond_i < mol.common.bonds.len() as isize && new_bond_i >= 0 {
+                    state.ui.selection = Selection::BondPeptide(new_bond_i as usize);
+                }
+            }
+            Selection::BondLig((mol_i, bond_i)) => {
+                let Some(mol) = state.active_mol() else {
+                    return;
+                };
+
+                let new_bond_i = bond_i as isize + dir;
+                if new_bond_i < mol.common().bonds.len() as isize && new_bond_i >= 0 {
+                    state.ui.selection = Selection::BondLig((mol_i, new_bond_i as usize));
+                }
+            }
+            Selection::BondNucleicAcid((mol_i, bond_i)) => {
+                let Some(mol) = state.active_mol() else {
+                    return;
+                };
+
+                let new_bond_i = bond_i as isize + dir;
+                if new_bond_i < mol.common().bonds.len() as isize && new_bond_i >= 0 {
+                    state.ui.selection = Selection::BondNucleicAcid((mol_i, new_bond_i as usize));
+                }
+            }
+            Selection::BondLipid((mol_i, bond_i)) => {
+                let Some(mol) = state.active_mol() else {
+                    return;
+                };
+
+                let new_bond_i = bond_i as isize + dir;
+                if new_bond_i < mol.common().bonds.len() as isize && new_bond_i >= 0 {
+                    state.ui.selection = Selection::BondLipid((mol_i, new_bond_i as usize));
+                }
+            }
+            _ => (),
+        },
     }
 
     if let ControlScheme::Arc { center } = &mut scene.input_settings.control_scheme {
@@ -260,14 +310,14 @@ pub fn orbit_center(state: &State) -> Vec3F32 {
                     Vec3F32::new_zero()
                 }
             }
-            Selection::AtomLig((i_lig, i_atom)) => {
-                state.ligands[*i_lig].common.atom_posits[*i_atom].into()
+            Selection::AtomLig((i_mol, i_atom)) => {
+                state.ligands[*i_mol].common.atom_posits[*i_atom].into()
             }
-            Selection::AtomNucleicAcid((i_lig, i_atom)) => {
-                state.nucleic_acids[*i_lig].common.atom_posits[*i_atom].into()
+            Selection::AtomNucleicAcid((i_mol, i_atom)) => {
+                state.nucleic_acids[*i_mol].common.atom_posits[*i_atom].into()
             }
-            Selection::AtomLipid((i_lig, i_atom)) => {
-                state.lipids[*i_lig].common.atom_posits[*i_atom].into()
+            Selection::AtomLipid((i_mol, i_atom)) => {
+                state.lipids[*i_mol].common.atom_posits[*i_atom].into()
             }
 
             Selection::Residue(i) => {
@@ -288,7 +338,7 @@ pub fn orbit_center(state: &State) -> Vec3F32 {
                     Vec3F32::new_zero()
                 }
             }
-            Selection::Atoms(is) => {
+            Selection::AtomsPeptide(is) => {
                 if let Some(mol) = &state.peptide {
                     match mol.common.atoms.get(is[0]) {
                         Some(a) => a.posit.into(),
@@ -297,6 +347,37 @@ pub fn orbit_center(state: &State) -> Vec3F32 {
                 } else {
                     Vec3F32::new_zero()
                 }
+            }
+            Selection::BondPeptide(i_atom) => {
+                if let Some(mol) = &state.peptide {
+                    match mol.common.bonds.get(*i_atom) {
+                        Some(bond) => ((mol.common.atom_posits[bond.atom_0]
+                            + mol.common.atom_posits[bond.atom_1])
+                            / 2.)
+                            .into(),
+                        None => Vec3F32::new_zero(),
+                    }
+                } else {
+                    Vec3F32::new_zero()
+                }
+            }
+            Selection::BondLig((i_mol, i_bond)) => {
+                let mol = &state.ligands[*i_mol];
+                let bond = &mol.common.bonds[*i_bond];
+                ((mol.common.atom_posits[bond.atom_0] + mol.common.atom_posits[bond.atom_1]) / 2.)
+                    .into()
+            }
+            Selection::BondNucleicAcid((i_mol, i_bond)) => {
+                let mol = &state.nucleic_acids[*i_mol];
+                let bond = &mol.common.bonds[*i_bond];
+                ((mol.common.atom_posits[bond.atom_0] + mol.common.atom_posits[bond.atom_1]) / 2.)
+                    .into()
+            }
+            Selection::BondLipid((i_mol, i_bond)) => {
+                let mol = &state.lipids[*i_mol];
+                let bond = &mol.common.bonds[*i_bond];
+                ((mol.common.atom_posits[bond.atom_0] + mol.common.atom_posits[bond.atom_1]) / 2.)
+                    .into()
             }
             Selection::None => {
                 if let Some(mol) = &state.peptide {

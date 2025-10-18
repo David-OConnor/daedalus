@@ -16,7 +16,9 @@ use crate::{
     lipid::MoleculeLipid,
     mol_lig::MoleculeSmall,
     mol_manip::set_manip,
-    molecule::{Atom, MoGenericRefMut, MolGenericRef, MolType, MoleculeCommon, Residue, aa_color},
+    molecule::{
+        Atom, Bond, MoGenericRefMut, MolGenericRef, MolType, MoleculeCommon, Residue, aa_color,
+    },
     nucleic_acid::MoleculeNucleicAcid,
     ui::{
         COL_SPACING, COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_HIGHLIGHT, COLOR_INACTIVE,
@@ -91,6 +93,25 @@ fn disp_atom_data(atom: &Atom, residues: &[Residue], posit_override: Option<Vec3
     }
 }
 
+/// `posit_override` is for example, relative atom positions, such as a positioned ligand.
+fn disp_bond_data(bond: &Bond, atoms: &[Atom], ui: &mut Ui) {
+    ui.label("Bond");
+    ui.label(
+        RichText::new(format!("#{} - #{}", bond.atom_0_sn, bond.atom_1_sn)).color(Color32::WHITE),
+    );
+
+    ui.label(RichText::new(format!("{}", bond.bond_type)).color(Color32::LIGHT_YELLOW));
+
+    // todo: Cache??
+    let posit_0 = atoms[bond.atom_0].posit;
+    let posit_1 = atoms[bond.atom_1].posit;
+    let dist = (posit_1 - posit_0).magnitude();
+
+    ui.label(RichText::new(format!("{dist:.2}Å")).color(Color32::LIGHT_YELLOW));
+
+    // todo: Frequency (measured/actual), param dist, bond type
+}
+
 /// Display text of the selected atom or residue.
 pub fn selected_data(
     state: &State,
@@ -104,20 +125,19 @@ pub fn selected_data(
         // ui.horizontal_wrapped(|ui| {
         match selection {
             Selection::AtomPeptide(sel_i) => {
-                if let Some(mol) = &state.peptide {
-                    if *sel_i >= mol.common.atoms.len() {
-                        return;
-                    }
-
-                    let atom = &mol.common.atoms[*sel_i];
-                    disp_atom_data(atom, &mol.residues, None, ui);
-                }
-            }
-            Selection::AtomLig((lig_i, atom_i)) => {
-                if *lig_i >= ligands.len() {
+                let Some(mol) = &state.peptide else { return };
+                if *sel_i >= mol.common.atoms.len() {
                     return;
                 }
-                let mol = &ligands[*lig_i];
+
+                let atom = &mol.common.atoms[*sel_i];
+                disp_atom_data(atom, &mol.residues, None, ui);
+            }
+            Selection::AtomLig((mol_i, atom_i)) => {
+                if *mol_i >= ligands.len() {
+                    return;
+                }
+                let mol = &ligands[*mol_i];
 
                 if *atom_i >= mol.common.atoms.len() {
                     return;
@@ -177,10 +197,57 @@ pub fn selected_data(
                     ui.label(RichText::new(res.to_string()).color(res_color));
                 }
             }
-            Selection::Atoms(is) => {
+            Selection::AtomsPeptide(is) => {
                 ui.label(RichText::new(format!("{} atoms", is.len())).color(Color32::GOLD));
             }
-            Selection::None => (),
+            Selection::BondPeptide(bond_i) => {
+                let Some(mol) = &state.peptide else {
+                    return;
+                };
+                if *bond_i >= mol.common.bonds.len() {
+                    return;
+                }
+
+                let bond = &mol.common.bonds[*bond_i];
+                disp_bond_data(bond, &mol.common.atoms, ui);
+            }
+            Selection::BondLig((mol_i, bond_i)) => {
+                if *mol_i >= ligands.len() {
+                    return;
+                }
+                let mol = &ligands[*mol_i];
+                if *bond_i >= mol.common.bonds.len() {
+                    return;
+                }
+
+                let bond = &mol.common.bonds[*bond_i];
+                disp_bond_data(bond, &mol.common.atoms, ui);
+            }
+            Selection::BondNucleicAcid((mol_i, bond_i)) => {
+                if *mol_i >= nucleic_acids.len() {
+                    return;
+                }
+                let mol = &nucleic_acids[*mol_i];
+                if *bond_i >= mol.common.bonds.len() {
+                    return;
+                }
+
+                let bond = &mol.common.bonds[*bond_i];
+                disp_bond_data(bond, &mol.common.atoms, ui);
+            }
+            Selection::BondLipid((mol_i, bond_i)) => {
+                if *mol_i >= lipids.len() {
+                    return;
+                }
+                let mol = &lipids[*mol_i];
+                if *bond_i >= mol.common.bonds.len() {
+                    return;
+                }
+
+                let bond = &mol.common.bonds[*bond_i];
+                disp_bond_data(bond, &mol.common.atoms, ui);
+            }
+            Selection::None => {}
         }
     });
 }

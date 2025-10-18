@@ -293,7 +293,11 @@ pub fn reassign_snapshot_indices(
     println!("Done.");
 }
 
-pub fn change_snapshot_helper(posits: &mut [Vec3], start_i_this_mol: &mut usize, snapshot: &Snapshot) {
+pub fn change_snapshot_helper(
+    posits: &mut [Vec3],
+    start_i_this_mol: &mut usize,
+    snapshot: &Snapshot,
+) {
     // Unflatten.
     for (i_snap, posit) in snapshot.atom_posits.iter().enumerate() {
         if i_snap < *start_i_this_mol || i_snap >= posits.len() + *start_i_this_mol {

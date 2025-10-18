@@ -42,6 +42,7 @@ chrono = "0.4.41"
 # Note: This section must be at the bottom; applies to all elements below it.
 [target.'cfg(not(target_os = "windows"))'.dependencies]
 cudarc = { version = "0.17.2", default-features = false, features = ["std", "driver", "dynamic-linking", "cuda-13000"], optional=true }
+# Note: The non-cuda one seems to work on a non-nvidia Win with dynamic-linking.
 [target.'cfg(target_os = "windows")'.dependencies]
 cudarc = { version = "0.17.2", default-features = false, features = ["std", "driver", "dynamic-linking", "cuda-13000"], optional=true }
 

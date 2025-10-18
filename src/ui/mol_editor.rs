@@ -10,17 +10,21 @@ use crate::{
     mol_editor,
     mol_editor::{add_atoms::add_atom, exit_edit_mode, templates},
     ui::{
-        COL_SPACING, COLOR_ACTIVE, COLOR_INACTIVE, cam::cam_reset_controls, misc,
-        misc::section_box, mol_data::selected_data,
+        COL_SPACING, COLOR_ACTIVE, COLOR_INACTIVE, cam::cam_reset_controls, md::energy_disp, misc,
+        misc::section_box, mol_data::selected_data, view_sel_selector,
     },
     util::handle_err,
 };
-
 // todo: Check DBs (with a button maybe?) to see if the molecule exists in a DB already, or if
 // todo a similar one does.
 
+// These are in ps.
 const DT_MIN: f32 = 0.00005;
-const DT_MAX: f32 = 0.0005; // No more than 0.002 for stability.
+const DT_MAX: f32 = 0.0005; // No more than 0.002 for stability. currently 0.5fs.
+
+// Higher may be relax more, but takes longer. We aim for a small time so it can be done without
+// a noticeable lag.
+const MAX_RELAX_ITERS: usize = 20;
 
 pub fn editor(
     state: &mut State,
@@ -88,6 +92,8 @@ pub fn editor(
             if state.ui.mol_view != prev_view {
                 redraw = true;
             }
+
+            view_sel_selector(state, &mut redraw, ui, false);
         });
 
         section_box().show(ui, |ui| {
@@ -190,6 +196,16 @@ pub fn editor(
 
         }
 
+        if let Some(md) = &mut state.mol_editor.md_state {
+            if ui.button("Relax")
+                .on_hover_text("Relax geometry; adjust atom positions to mimimize energy.")
+                .clicked() {
+                md.minimize_energy(&state.dev, MAX_RELAX_ITERS); // todo: Iters A/R.
+
+                state.mol_editor.load_atom_posits_from_md(&mut scene.entities, &state.ui, engine_updates);
+            }
+        }
+
         ui.add_space(COL_SPACING);
         if ui
             .button(RichText::new("Exit editor").color(Color32::LIGHT_RED))
@@ -202,16 +218,36 @@ pub fn editor(
     ui.horizontal(|ui| {
         edit_tools(state, scene, ui, engine_updates);
 
-        section_box().show(ui, |ui| {
-            ui.label("MD speed:");
+        if state.mol_editor.md_state.is_some() {
+            section_box().show(ui, |ui| {
+                ui.label("MD speed:");
 
-            ui.spacing_mut().slider_width = 200.;
-            ui.add(Slider::new(
-                &mut state.mol_editor.dt_md,
-                DT_MIN..=DT_MAX,
-            ))
-                .on_hover_text("Set the simulation ratio compared to normal time.");
-        })
+                ui.spacing_mut().slider_width = 200.;
+                ui.add(Slider::new(
+                    &mut state.mol_editor.dt_md,
+                    DT_MIN..=DT_MAX,
+                ))
+                    .on_hover_text("Set the simulation ratio compared to normal time.");
+
+                ui.add_space(COL_SPACING);
+
+                if let Some(snap) = &state.mol_editor.snap {
+                    energy_disp(snap, ui);
+                }
+            });
+
+            let ratio_help = "The ratio of simulation time to real time. A higher value means \
+            the sim is running faster relative to reality. If 1×10-¹⁵, it means for every second viewing in real time,\
+            the simulation runs 10¹⁵ of computed time.";
+
+            // todo: Cache; don't compute each frame.
+            // See the dt field doc comments for how we get this computation. We insert an additional
+            // factor of 10e5 to make the value more readable.
+            // 10e5: 10e3 for ms run interval. 10e3 to get between 10e-12 (input dt) and 10e-15 (displayed value)
+            // todo: Still an unaccounted for factor of 10...
+            let ratio = state.mol_editor.dt_md * 10e5 / state.mol_editor.time_between_md_runs;
+            ui.label(format!("Ratio: {ratio:.1}×10-¹⁵")).on_hover_text(ratio_help);
+        }
     });
 
     // This trick prevents a clone.

@@ -410,7 +410,7 @@ impl MoleculePeptide {
                     None
                 }
             }
-            Selection::Atoms(is) => {
+            Selection::AtomsPeptide(is) => {
                 // todo temp?
                 self.common.atoms.get(is[0])
             }

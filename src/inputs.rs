@@ -10,14 +10,14 @@ use graphics::{
 use lin_alg::{f32::Vec3, map_linear};
 
 use crate::{
-    ManipMode, OperatingMode, Selection, State,
+    ManipMode, OperatingMode, Selection, State, ViewSelLevel,
     cam_misc::move_cam_to_sel,
     drawing,
     drawing::MoleculeView,
     drawing_wrappers, mol_editor, mol_manip,
     molecule::{Atom, MolType, MoleculeCommon},
     render::set_flashlight,
-    selection::{find_selected_atom, points_along_ray},
+    selection::{find_selected_atom, points_along_ray_atom, points_along_ray_bond},
     ui::cam::{FOG_DIST_MIN, set_fog_dist},
     util::{close_mol, cycle_selected, orbit_center},
 };
@@ -169,12 +169,16 @@ pub fn event_dev_handler(
                         cycle_selected(state_, scene, true);
 
                         match state_.ui.selection {
-                            Selection::AtomPeptide(_) | Selection::Residue(_) => {
-                                redraw_protein = true
+                            Selection::AtomPeptide(_)
+                            | Selection::Residue(_)
+                            | Selection::BondPeptide(_) => redraw_protein = true,
+                            Selection::AtomLig(_) | Selection::BondLig(_) => redraw_lig = true,
+                            Selection::AtomNucleicAcid(_) | Selection::BondNucleicAcid(_) => {
+                                redraw_na = true
                             }
-                            Selection::AtomLig(_) => redraw_lig = true,
-                            Selection::AtomNucleicAcid(_) => redraw_na = true,
-                            Selection::AtomLipid(_) => redraw_lipid = true,
+                            Selection::AtomLipid(_) | Selection::BondLipid(_) => {
+                                redraw_lipid = true
+                            }
                             _ => (),
                         }
                     }
@@ -182,12 +186,16 @@ pub fn event_dev_handler(
                         cycle_selected(state_, scene, false);
 
                         match state_.ui.selection {
-                            Selection::AtomPeptide(_) | Selection::Residue(_) => {
-                                redraw_protein = true
+                            Selection::AtomPeptide(_)
+                            | Selection::Residue(_)
+                            | Selection::BondPeptide(_) => redraw_protein = true,
+                            Selection::AtomLig(_) | Selection::BondLig(_) => redraw_lig = true,
+                            Selection::AtomNucleicAcid(_) | Selection::BondNucleicAcid(_) => {
+                                redraw_na = true
                             }
-                            Selection::AtomLig(_) => redraw_lig = true,
-                            Selection::AtomNucleicAcid(_) => redraw_na = true,
-                            Selection::AtomLipid(_) => redraw_lipid = true,
+                            Selection::AtomLipid(_) | Selection::BondLipid(_) => {
+                                redraw_lipid = true
+                            }
                             _ => (),
                         }
                     }
@@ -660,6 +668,7 @@ fn handle_selection_attempt(
 
     // todo: Lots of DRY here!
 
+    // todo: I don't like this rebuilding.
     fn get_atoms(mol: &MoleculeCommon) -> Vec<Atom> {
         // todo: I don't like this clone!
         mol.atoms
@@ -687,16 +696,39 @@ fn handle_selection_attempt(
         lipid_atoms.push(get_atoms(&mol.common));
     }
 
-    let selection = match &state.peptide {
-        Some(mol) => {
+    let (pep_atoms, pep_res) = match &state.peptide {
+        Some(p) => (&p.common.atoms, &p.residues),
+        None => (&Vec::new(), &Vec::new()),
+    };
+
+    let selection = match state.ui.view_sel_level {
+        ViewSelLevel::Bond => {
+            let mut lig_bonds = Vec::new();
+            // todo: I don' tlike these clones.
+            for mol in &state.ligands {
+                lig_bonds.push(mol.common.bonds.clone());
+            }
+
+            let mut na_bonds = Vec::new();
+            for mol in &state.nucleic_acids {
+                na_bonds.push(mol.common.bonds.clone());
+            }
+            let mut lipid_bonds = Vec::new();
+            for mol in &state.lipids {
+                lipid_bonds.push(mol.common.bonds.clone());
+            }
             let (
                 atoms_along_ray_pep,
                 atoms_along_ray_lig,
                 atoms_along_ray_na,
                 atoms_along_ray_lipid,
-            ) = points_along_ray(
+            ) = points_along_ray_bond(
                 selected_ray,
-                &mol.common.atoms,
+                &Vec::new(), // todo: Peptide bonds once ready.
+                &lig_bonds,
+                &na_bonds,
+                &lipid_bonds,
+                pep_atoms,
                 &lig_atoms,
                 &na_atoms,
                 &lipid_atoms,
@@ -708,25 +740,30 @@ fn handle_selection_attempt(
                 &atoms_along_ray_lig,
                 &atoms_along_ray_na,
                 &atoms_along_ray_lipid,
-                &mol.common.atoms,
-                &mol.residues,
+                pep_atoms,
+                &Vec::new(), // todo: Peptide bonds once ready.
                 &lig_atoms,
                 &na_atoms,
                 &lipid_atoms,
                 &selected_ray,
                 &state.ui,
-                &mol.chains,
+                &Vec::new(),
+                &Vec::new(),
+                &lig_bonds,
+                &na_bonds,
+                &lipid_bonds,
+                true,
             )
         }
-        None => {
+        _ => {
             let (
                 atoms_along_ray_pep,
                 atoms_along_ray_lig,
                 atoms_along_ray_na,
                 atoms_along_ray_lipid,
-            ) = points_along_ray(
+            ) = points_along_ray_atom(
                 selected_ray,
-                &Vec::new(),
+                pep_atoms,
                 &lig_atoms,
                 &na_atoms,
                 &lipid_atoms,
@@ -738,14 +775,19 @@ fn handle_selection_attempt(
                 &atoms_along_ray_lig,
                 &atoms_along_ray_na,
                 &atoms_along_ray_lipid,
-                &Vec::new(),
-                &Vec::new(),
+                pep_atoms,
+                pep_res,
                 &lig_atoms,
                 &na_atoms,
                 &lipid_atoms,
                 &selected_ray,
                 &state.ui,
                 &Vec::new(),
+                &Vec::new(),
+                &[],
+                &[],
+                &[],
+                false,
             )
         }
     };
@@ -816,30 +858,83 @@ fn handle_selection_attempt_mol_editor(state: &mut State, scene: &mut Scene, red
         })
         .collect();
 
-    let (atoms_along_ray_pep, atoms_along_ray_lig, atoms_along_ray_na, atoms_along_ray_lipid) =
-        points_along_ray(
-            selected_ray,
-            &Vec::new(),
-            &[atoms.clone()], // todo: This clone...
-            &[],
-            &[],
-            dist_thresh,
-        );
+    let selection = match state.ui.view_sel_level {
+        ViewSelLevel::Bond => {
+            let bonds = mol.common.bonds.clone(); // todo: This clone...
+            let (
+                bonds_along_ray_pep,
+                bonds_along_ray_lig,
+                bonds_along_ray_na,
+                bonds_along_ray_lipid,
+            ) = points_along_ray_bond(
+                selected_ray,
+                &Vec::new(),
+                &[bonds.clone()], // todo: CLone again...
+                &[],
+                &[],
+                &Vec::new(),
+                &[atoms.clone()], // todo: This clone...
+                &[],
+                &[],
+                dist_thresh,
+            );
 
-    let selection = find_selected_atom(
-        &atoms_along_ray_pep,
-        &atoms_along_ray_lig,
-        &atoms_along_ray_na,
-        &atoms_along_ray_lipid,
-        &Vec::new(),
-        &Vec::new(),
-        &[atoms],
-        &[],
-        &[],
-        &selected_ray,
-        &state.ui,
-        &Vec::new(),
-    );
+            find_selected_atom(
+                &bonds_along_ray_pep,
+                &bonds_along_ray_lig,
+                &bonds_along_ray_na,
+                &bonds_along_ray_lipid,
+                &Vec::new(),
+                &Vec::new(),
+                &[atoms],
+                &[],
+                &[],
+                &selected_ray,
+                &state.ui,
+                &Vec::new(),
+                &Vec::new(),
+                &[bonds],
+                &[],
+                &[],
+                true,
+            )
+        }
+        _ => {
+            let (
+                atoms_along_ray_pep,
+                atoms_along_ray_lig,
+                atoms_along_ray_na,
+                atoms_along_ray_lipid,
+            ) = points_along_ray_atom(
+                selected_ray,
+                &Vec::new(),
+                &[atoms.clone()], // todo: This clone...
+                &[],
+                &[],
+                dist_thresh,
+            );
+
+            find_selected_atom(
+                &atoms_along_ray_pep,
+                &atoms_along_ray_lig,
+                &atoms_along_ray_na,
+                &atoms_along_ray_lipid,
+                &Vec::new(),
+                &Vec::new(),
+                &[atoms],
+                &[],
+                &[],
+                &selected_ray,
+                &state.ui,
+                &Vec::new(),
+                &Vec::new(),
+                &[],
+                &[],
+                &[],
+                false,
+            )
+        }
+    };
 
     match selection {
         Selection::AtomLig((mol_i, _)) => {

@@ -367,7 +367,7 @@ pub fn handle_cmd(
                 }
             }
 
-            state.ui.selection = Selection::Atoms(result);
+            state.ui.selection = Selection::AtomsPeptide(result);
             *redraw = true;
             return Ok("Complete".to_owned());
         }
@@ -402,7 +402,7 @@ pub fn handle_cmd(
                 }
             }
 
-            state.ui.selection = Selection::Atoms(result);
+            state.ui.selection = Selection::AtomsPeptide(result);
             *redraw = true;
             return Ok("Complete".to_owned());
         }

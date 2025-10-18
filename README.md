@@ -7,12 +7,11 @@
 For viewing and exploring proteins and small molecules. View atom positions, bonds, solvent-accessible-surfaces, and
 electron density. Perform and visualize molecular dynamics using built-in [Amber](https://ambermd.org/) parameters.
 
-Blends functionality similar to [PyMol](https://www.pymol.org/), [Chimera](https://www.cgl.ucsf.edu/chimera/), [Coot](https://www2.mrc-lmb.cam.ac.uk/personal/pemsley/coot/), [VMD](https://www.ks.uiuc.edu/Research/vmd/), and [GROMACS](https://www.gromacs.org/).
+Blends functionality similar to [PyMol](https://www.pymol.org/), [Chimera](https://www.cgl.ucsf.edu/chimera/), [Coot](https://www2.mrc-lmb.cam.ac.uk/personal/pemsley/coot/), [VMD](https://www.ks.uiuc.edu/Research/vmd/), [GROMACS](https://www.gromacs.org/), and [Avogadro](https://avogadro.cc/).
 
 Designed to be as easy to use, and fast as possible. Has tight integration with online databases including [RSCB PDB](https://www.rcsb.org/),
 [Pubchem](https://pubchem.ncbi.nlm.nih.gov/), [drugbank](https://go.drugbank.com/), [PDBe](https://www.ebi.ac.uk/pdbe/),
-and [LMSD](https://www.lipidmaps.org/databases/lmsd/overview). Uses parallel computing to accelerate calculations. 
-(GPU, SIMD, and thread pools.)
+and [LMSD](https://www.lipidmaps.org/databases/lmsd/overview). Uses parallel computing to accelerate calculations. (GPU, SIMD, and thread pools.)
 
 
 ## Installation
@@ -20,15 +19,11 @@ and [LMSD](https://www.lipidmaps.org/databases/lmsd/overview). Uses parallel com
 ### Windows and Linux
 [Download, unzip, and run](https://github.com/David-OConnor/daedalus/releases).
 
-If using with GPU, you may need to download [libcufft.so.12](https://github.com/David-OConnor/daedalus/releases/download/0.2.0/cufft_linux.zip),
-and place it in `/usr/lib`. (Linux), or [cufft64_12.dll](https://github.com/David-OConnor/daedalus/releases/download/0.2.0/cufft_win.zip),
-and place it in next to the executable or system *Path*. (Windows) You will know if you need to do this if the application doesn't open from GUI, or
-you get an error mentioning this file name when running from CLI or GUI. If you have the Cuda toolklit installed, this isn't required.
-We intend to remove this requirement in the future by changing to a lighter GPU FFT lib.
 
 Notes:
 - On Linux distros that use Gnome (e.g. Ubuntu), run `setup_linux_desktop.sh`, included in the zip, to create a Desktop GUI entry.
-- On Windows, the first time you run the program, you may get the message *"Microsoft Defender prevented an unrecognized app from starting"*. To bypass this, click *More info*, then *Run Anyway*.
+- On Windows, the first time you run the program, you may get the message *"Microsoft Defender prevented an unrecognized app from starting"*. 
+To bypass this, click *More info*, then *Run Anyway*.
 
 
 ![Ligand dynamics](screenshots/docked_2.png)
@@ -47,7 +42,6 @@ and either installing the CUDA toolkit, or disabling CUDA.
 - Visualize ligand docking
 - Edit small molecules in 3D with integrated dynamics
 - Visualize electron density from crystallography and Cryo-Em data
-- WIP: This software is a platform for ab-initio simulations of electron density.
 
 
 ## Molecule types supported for viewing and dynamics
@@ -97,9 +91,7 @@ will be performed using the GPU (via CUDA kernels). If not, the CPU will be used
 and SIMD instructions. It uses all cores available, and either 512-bit, or 256-bit, SIMD instructions, depending
 on CPU capability.
 
-GPU use requires CUDA 13 support, which requires Nvidia driver version 580 or higher.
-
-We recommend running molecular dynamics on the GPU; it's much faster.
+GPU functionality requires Nvidia driver version 580 or higher.
 
 
 ## Molecular dynamics
@@ -113,7 +105,7 @@ Integrates the following [Amber parameters](https://ambermd.org/AmberModels.php)
 - Lipids: Lipid21
 - Water: [OPC](https://arxiv.org/abs/1408.1679)
 
-We plan to support carbohydrates and lipids later. If you're interested in these, please add a Github Issue.
+We plan to support carbohydrates in the future.
 
 These general parameters do not need to be loaded externally; they provide the information needed to perform
 MD with any amino acid sequence, and provide a baseline for dynamics of small organic molecules. You may wish to load
@@ -131,13 +123,18 @@ For details on how dynamics using this parameterized approach works, see the
 [Amber Reference Manual](https://ambermd.org/doc12/Amber25.pdf). Section 3 and 15 are of particular
 interest, regarding force field parameters.
 
-Moleucule-specific overrides to these general parameters can be loaded from *.frcmod* and *.dat* files.
+Moleucule-specific overrides to these general parameters can be loaded from *.frcmod*, *prmptom*, and *.dat* files.
 We delegate this to the [bio files](https://github.com/david-OConnor/bio_files) library.
 
-We load partial charges for ligands from *mol2*, *PDBQT* etc files. Protein dynamics and water can be simulated
+We load partial charges for ligands from *mol2*, *sdf*, and *pdbqt*  files. Protein dynamics and water can be simulated
 using parameters built-in to the program (The Amber one above). Simulating ligands requires the loaded
-file (e.g. *mol2*) include partial charges. we recommend including ligand-specific override
+file (e.g. *mol2*) include partial charges. We recommend including ligand-specific override
 files as well, e.g. to load dihedral angles from *.frcmod* that aren't present in *Gaff2*.
+
+
+## Editing molecules
+We provide an editor for small organic molecules. This is fully-3D, and has integrated dynamics, which can be run continuously
+while you edit. It ensures the molecules you create are realistic, and take the appropriate shape.
 
 
 ## The camera
@@ -146,6 +143,7 @@ The camera is set up with 6 degrees of freedom, using either keyboard + mouse, o
 it easy to get any view of the system you want.
 
 There are two camera control schemes, selectable using buttons in the *camera* section of the GUI.
+
 
 ### Free camera
 The *free camera* mode is intended to be used with a keyboard and mouse together. They operate on the perspective of 

@@ -36,6 +36,7 @@ use crate::{
     file_io::gemmi_path,
     inputs::{MOVEMENT_SENS, ROTATE_SENS, SENS_MOL_MOVE_SCROLL},
     lipid::{LipidShape, make_bacterial_lipids},
+    md::change_snapshot_helper,
     mol_editor::enter_edit_mode,
     molecule::MolGenericRef,
     render::{set_flashlight, set_static_light},
@@ -52,7 +53,6 @@ use crate::{
         handle_err, handle_scene_flags, handle_success, orbit_center, select_from_search,
     },
 };
-use crate::md::change_snapshot_helper;
 
 pub mod cam;
 mod md;
@@ -370,6 +370,7 @@ fn residue_search(
     let (btn_text_p, btn_text_n, search_text) = match state.ui.view_sel_level {
         ViewSelLevel::Atom => ("Prev atom", "Next atom", "Find atom:"),
         ViewSelLevel::Residue => ("Prev AA", "Next AA", "Find res:"),
+        ViewSelLevel::Bond => ("Prev bond", "Next bond", "Find bond:"),
     };
 
     ui.label(search_text);
@@ -390,10 +391,12 @@ fn residue_search(
             cycle_selected(state, scene, true);
 
             match state.ui.selection {
-                Selection::AtomPeptide(_) | Selection::Residue(_) => *redraw_pep = true,
-                Selection::AtomLig(_) => *redraw_lig = true,
-                Selection::AtomNucleicAcid(_) => *redraw_na = true,
-                Selection::AtomLipid(_) => *redraw_lipid = true,
+                Selection::AtomPeptide(_) | Selection::Residue(_) | Selection::BondPeptide(_) => {
+                    *redraw_pep = true
+                }
+                Selection::AtomLig(_) | Selection::BondLig(_) => *redraw_lig = true,
+                Selection::AtomNucleicAcid(_) | Selection::BondNucleicAcid(_) => *redraw_na = true,
+                Selection::AtomLipid(_) | Selection::BondLipid(_) => *redraw_lipid = true,
                 _ => (),
             }
         }
@@ -455,108 +458,128 @@ fn add_aa_seq(selection: &mut Selection, seq_text: &str, ui: &mut Ui, redraw: &m
     });
 }
 
+pub fn view_sel_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui, include_res: bool) {
+    let help_text = "(Hotkeys: square brackets [ ])";
+    ui.label("View/Select:").on_hover_text(help_text);
+    let prev_view = state.ui.view_sel_level;
+
+    let mut views = vec![ViewSelLevel::Atom, ViewSelLevel::Bond];
+
+    if include_res {
+        views.push(ViewSelLevel::Residue);
+    }
+
+    // Ideally hover text here too, but I'm not sure how.
+    ComboBox::from_id_salt(1)
+        .width(80.)
+        .selected_text(state.ui.view_sel_level.to_string())
+        .show_ui(ui, |ui| {
+            for view in &views {
+                ui.selectable_value(&mut state.ui.view_sel_level, *view, view.to_string());
+            }
+        })
+        .response
+        .on_hover_text(help_text);
+
+    if state.ui.view_sel_level != prev_view {
+        *redraw = true;
+        // If we change from atom to res, select the prev-selected atom's res. If vice-versa,
+        // select that residue's Cα.
+        // state.ui.selection = Selection::None;
+        // todo: This section needs some updates, but isn't critical.
+        if let Some(mol) = &state.peptide {
+            match state.ui.view_sel_level {
+                ViewSelLevel::Residue => {
+                    state.ui.selection = match state.ui.selection {
+                        Selection::AtomPeptide(i) => {
+                            Selection::Residue(mol.common.atoms[i].residue.unwrap_or_default())
+                        }
+                        _ => Selection::None,
+                    };
+                }
+                ViewSelLevel::Atom => {
+                    state.ui.selection = match state.ui.selection {
+                        // It seems [0] is often N, and [1] is Cα
+                        Selection::Residue(i) => {
+                            if i >= mol.residues.len() {
+                                handle_err(&mut state.ui, "Residue bounds problem".to_string());
+                                Selection::None
+                            } else {
+                                if mol.residues[i].atoms.len() <= 2 {
+                                    Selection::AtomPeptide(mol.residues[i].atoms[1])
+                                } else {
+                                    Selection::None
+                                }
+                            }
+                        }
+
+                        _ => Selection::None,
+                    };
+                }
+                ViewSelLevel::Bond => {}
+            }
+        }
+    }
+
+    // Buttons to alter the color profile, e.g. for res position, or partial charge.
+    ui.add_space(COL_SPACING / 2.);
+    match state.ui.view_sel_level {
+        ViewSelLevel::Atom => {
+            let color = if state.ui.atom_color_by_charge {
+                COLOR_ACTIVE
+            } else {
+                COLOR_INACTIVE
+            };
+
+            if ui
+                .button(RichText::new("Color by q").color(color))
+                .on_hover_text(
+                    "Color the atom by partial charge, instead of element-specific colors",
+                )
+                .clicked()
+            {
+                state.ui.atom_color_by_charge = !state.ui.atom_color_by_charge;
+                state.ui.view_sel_level = ViewSelLevel::Atom;
+                *redraw = true;
+            }
+        }
+        ViewSelLevel::Residue => {
+            let color = if state.ui.res_color_by_index {
+                COLOR_ACTIVE
+            } else {
+                COLOR_INACTIVE
+            };
+
+            if ui
+                .button(RichText::new("Color by res #").color(color))
+                .on_hover_text("Color the atom by its position in the primary sequence, instead of residue (e.g. AA) -specific colors")
+                .clicked()
+            {
+                state.ui.res_color_by_index = !state.ui.res_color_by_index;
+                state.ui.view_sel_level = ViewSelLevel::Residue;
+                *redraw = true;
+            }
+        }
+        // todo: We could color these based on current vs nominal length and/or frequency.
+        ViewSelLevel::Bond => (),
+    }
+
+    ui.add_space(COL_SPACING);
+}
+
 fn selection_section(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
     // todo: DRY with view.
     ui.horizontal_wrapped(|ui| {
         section_box().show(ui, |ui| {
-            let help_text = "(Hotkeys: square brackets [ ])";
-            ui.label("View/Select:").on_hover_text(help_text);
-            let prev_view = state.ui.view_sel_level;
-
-            // Ideally hover text here too, but I'm not sure how.
-            ComboBox::from_id_salt(1)
-                .width(80.)
-                .selected_text(state.ui.view_sel_level.to_string())
-                .show_ui(ui, |ui| {
-                    for view in &[ViewSelLevel::Atom, ViewSelLevel::Residue] {
-                        ui.selectable_value(&mut state.ui.view_sel_level, *view, view.to_string());
-                    }
-                }).response.on_hover_text(help_text);
-
-            if state.ui.view_sel_level != prev_view {
-                *redraw = true;
-                // If we change from atom to res, select the prev-selected atom's res. If vice-versa,
-                // select that residue's Cα.
-                // state.ui.selection = Selection::None;
-                if let Some(mol) = &state.peptide {
-                    match state.ui.view_sel_level {
-                        ViewSelLevel::Residue => {
-                            state.ui.selection = match state.ui.selection {
-                                Selection::AtomPeptide(i) => {
-                                    Selection::Residue(mol.common.atoms[i].residue.unwrap_or_default())
-                                }
-                                _ => Selection::None,
-                            };
-                        }
-                        ViewSelLevel::Atom => {
-                            state.ui.selection = match state.ui.selection {
-                                // It seems [0] is often N, and [1] is Cα
-                                Selection::Residue(i) => {
-                                    if i >= mol.residues.len() {
-                                        handle_err(&mut state.ui, "Residue bounds problem".to_string());
-                                        Selection::None
-                                    } else {
-                                        if mol.residues[i].atoms.len() <= 2 {
-                                            Selection::AtomPeptide(mol.residues[i].atoms[1])
-                                        } else {
-                                            Selection::None
-                                        }
-                                    }
-                                }
-
-                                _ => Selection::None,
-                            };
-                        }
-                    }
-                }
-            }
-
-            // Buttons to alter the color profile, e.g. for res position, or partial charge.
-            ui.add_space(COL_SPACING / 2.);
-            match state.ui.view_sel_level {
-                ViewSelLevel::Atom => {
-                    let color = if state.ui.atom_color_by_charge {
-                        COLOR_ACTIVE
-                    } else {
-                        COLOR_INACTIVE
-                    };
-
-                    if ui
-                        .button(RichText::new("Color by q").color(color))
-                        .on_hover_text("Color the atom by partial charge, instead of element-specific colors")
-                        .clicked()
-                    {
-                        state.ui.atom_color_by_charge = !state.ui.atom_color_by_charge;
-                        state.ui.view_sel_level = ViewSelLevel::Atom;
-                        *redraw = true;
-                    }
-                }
-                ViewSelLevel::Residue => {
-                    let color = if state.ui.res_color_by_index {
-                        COLOR_ACTIVE
-                    } else {
-                        COLOR_INACTIVE
-                    };
-
-                    if ui
-                        .button(RichText::new("Color by res #").color(color))
-                        .on_hover_text("Color the atom by its position in the primary sequence, instead of residue (e.g. AA) -specific colors")
-                        .clicked()
-                    {
-                        state.ui.res_color_by_index = !state.ui.res_color_by_index;
-                        state.ui.view_sel_level = ViewSelLevel::Residue;
-                        *redraw = true;
-                    }
-                }
-            }
-
-            ui.add_space(COL_SPACING);
+            view_sel_selector(state, redraw, ui, true);
 
             let help = "Hide all atoms not near the selection";
             ui.label("Nearby sel only:").on_hover_text(help);
-            if ui.checkbox(&mut state.ui.show_near_sel_only, "")
+            if ui
+                .checkbox(&mut state.ui.show_near_sel_only, "")
                 .on_hover_text(help)
-                .changed() {
+                .changed()
+            {
                 *redraw = true;
 
                 // todo: For now, only allow one of near sel/lig
@@ -568,9 +591,11 @@ fn selection_section(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
             if state.active_mol().is_some() {
                 let help = "Hide all atoms not near the ligand";
                 ui.label("Nearby lig only:").on_hover_text(help);
-                if ui.checkbox(&mut state.ui.show_near_lig_only, "")
+                if ui
+                    .checkbox(&mut state.ui.show_near_lig_only, "")
                     .on_hover_text(help)
-                    .changed() {
+                    .changed()
+                {
                     *redraw = true;
 
                     // todo: For now, only allow one of near sel/lig
@@ -582,10 +607,13 @@ fn selection_section(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
 
             ui.label("pH:");
             if ui
-                .add_sized([20., Ui::available_height(ui)], TextEdit::singleline(&mut state.ui.ph_input))
+                .add_sized(
+                    [20., Ui::available_height(ui)],
+                    TextEdit::singleline(&mut state.ui.ph_input),
+                )
                 .changed()
             {
-                if let Ok(v) =&mut state.ui.ph_input.parse::<f32>() {
+                if let Ok(v) = &mut state.ui.ph_input.parse::<f32>() {
                     state.to_save.ph = *v;
 
                     // Re-assign hydrogens, and redraw
@@ -622,11 +650,17 @@ fn selection_section(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
         if state.ui.selection != Selection::None {
             section_box().show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    mol_data::selected_data(&state, &state.ligands, &state.nucleic_acids, &state.lipids, &state.ui.selection, ui);
+                    mol_data::selected_data(
+                        &state,
+                        &state.ligands,
+                        &state.nucleic_acids,
+                        &state.lipids,
+                        &state.ui.selection,
+                        ui,
+                    );
                 });
             });
         }
-
     });
 }
 
@@ -665,114 +699,114 @@ fn settings(state: &mut State, scene: &mut Scene, ui: &mut Ui) {
         PopupAnchor::Position(Pos2::new(60., 60.)),
         ui.layer_id(),
     )
-        .align(RectAlign::TOP)
-        .open(true)
-        .gap(4.0)
-        .show(|ui| {
-            ui.horizontal(|ui| {
-                ui.heading("Settings");
-                ui.add_space(COL_SPACING);
-                // todo: Make this consistent with your other controls.
-                ui.label("MSAA (Restart the program to take effect):");
+    .align(RectAlign::TOP)
+    .open(true)
+    .gap(4.0)
+    .show(|ui| {
+        ui.horizontal(|ui| {
+            ui.heading("Settings");
+            ui.add_space(COL_SPACING);
+            // todo: Make this consistent with your other controls.
+            ui.label("MSAA (Restart the program to take effect):");
 
-                let msaa_prev = state.to_save.msaa;
-                ComboBox::from_id_salt(10)
-                    .width(40.)
-                    .selected_text(state.to_save.msaa.to_str())
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(
-                            &mut state.to_save.msaa,
-                            MsaaSetting::None,
-                            MsaaSetting::None.to_str(),
-                        );
-                        ui.selectable_value(
-                            &mut state.to_save.msaa,
-                            MsaaSetting::Four,
-                            MsaaSetting::Four.to_str(),
-                        );
-                    });
+            let msaa_prev = state.to_save.msaa;
+            ComboBox::from_id_salt(10)
+                .width(40.)
+                .selected_text(state.to_save.msaa.to_str())
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(
+                        &mut state.to_save.msaa,
+                        MsaaSetting::None,
+                        MsaaSetting::None.to_str(),
+                    );
+                    ui.selectable_value(
+                        &mut state.to_save.msaa,
+                        MsaaSetting::Four,
+                        MsaaSetting::Four.to_str(),
+                    );
+                });
 
-                if state.to_save.msaa != msaa_prev {
-                    state.update_save_prefs(false);
-                }
+            if state.to_save.msaa != msaa_prev {
+                state.update_save_prefs(false);
+            }
 
-                ui.add_space(COL_SPACING);
-                ui.label("Cam move speed:");
-                if ui
-                    .add(TextEdit::singleline(&mut state.ui.movement_speed_input).desired_width(32.))
-                    .changed()
-                {
-                    if let Ok(v) = &mut state.ui.movement_speed_input.parse::<u8>() {
-                        state.to_save.movement_speed = *v;
-                        scene.input_settings.move_sens = *v as f32;
-
-                        state.update_save_prefs(false);
-                    } else {
-                        // reset
-                        state.ui.movement_speed_input = state.to_save.movement_speed.to_string();
-                    }
-                }
-
-                ui.add_space(COL_SPACING / 2.);
-                ui.label("Cam rot sensitivity:");
-                if ui
-                    .add(TextEdit::singleline(&mut state.ui.rotation_sens_input).desired_width(32.))
-                    .changed()
-                {
-                    if let Ok(v) = &mut state.ui.rotation_sens_input.parse::<u8>() {
-                        state.to_save.rotation_sens = *v;
-                        scene.input_settings.rotate_sens = *v as f32 / 100.;
-
-                        state.update_save_prefs(false);
-                    } else {
-                        // reset
-                        state.ui.rotation_sens_input = state.to_save.rotation_sens.to_string();
-                    }
-                }
-
-                ui.add_space(COL_SPACING);
-                ui.label("Mol scroll move speed:").on_hover_text(
-                    "When using the scroll wheel to move molecules, this controls how fast they move.",
-                );
-                if ui
-                    .add(TextEdit::singleline(&mut state.ui.mol_move_sens_input).desired_width(32.))
-                    .changed()
-                {
-                    if let Ok(v) = &mut state.ui.mol_move_sens_input.parse::<u8>() {
-                        state.to_save.mol_move_sens = *v;
-                        state.update_save_prefs(false);
-                    } else {
-                        // reset
-                        state.ui.mol_move_sens_input = state.to_save.mol_move_sens.to_string();
-                    }
-                }
-
-                ui.add_space(COL_SPACING / 2.);
-                if ui.button("Reset sensitivities").clicked() {
-                    state.to_save.movement_speed = MOVEMENT_SENS as u8;
-                    state.ui.movement_speed_input = state.to_save.movement_speed.to_string();
-                    scene.input_settings.move_sens = MOVEMENT_SENS;
-
-                    state.to_save.rotation_sens = (ROTATE_SENS * 100.) as u8;
-                    state.ui.rotation_sens_input = state.to_save.rotation_sens.to_string();
-                    scene.input_settings.rotate_sens = ROTATE_SENS;
-
-                    state.to_save.mol_move_sens = (SENS_MOL_MOVE_SCROLL * 1_000.) as u8;
-                    state.ui.mol_move_sens_input = state.to_save.mol_move_sens.to_string();
-
-                    state.update_save_prefs(false);
-                }
-            });
-
-            ui.add_space(ROW_SPACING);
-
+            ui.add_space(COL_SPACING);
+            ui.label("Cam move speed:");
             if ui
-                .button(RichText::new("Close").color(Color32::LIGHT_RED))
-                .clicked()
+                .add(TextEdit::singleline(&mut state.ui.movement_speed_input).desired_width(32.))
+                .changed()
             {
-                state.ui.popup.show_settings = false;
+                if let Ok(v) = &mut state.ui.movement_speed_input.parse::<u8>() {
+                    state.to_save.movement_speed = *v;
+                    scene.input_settings.move_sens = *v as f32;
+
+                    state.update_save_prefs(false);
+                } else {
+                    // reset
+                    state.ui.movement_speed_input = state.to_save.movement_speed.to_string();
+                }
+            }
+
+            ui.add_space(COL_SPACING / 2.);
+            ui.label("Cam rot sensitivity:");
+            if ui
+                .add(TextEdit::singleline(&mut state.ui.rotation_sens_input).desired_width(32.))
+                .changed()
+            {
+                if let Ok(v) = &mut state.ui.rotation_sens_input.parse::<u8>() {
+                    state.to_save.rotation_sens = *v;
+                    scene.input_settings.rotate_sens = *v as f32 / 100.;
+
+                    state.update_save_prefs(false);
+                } else {
+                    // reset
+                    state.ui.rotation_sens_input = state.to_save.rotation_sens.to_string();
+                }
+            }
+
+            ui.add_space(COL_SPACING);
+            ui.label("Mol scroll move speed:").on_hover_text(
+                "When using the scroll wheel to move molecules, this controls how fast they move.",
+            );
+            if ui
+                .add(TextEdit::singleline(&mut state.ui.mol_move_sens_input).desired_width(32.))
+                .changed()
+            {
+                if let Ok(v) = &mut state.ui.mol_move_sens_input.parse::<u8>() {
+                    state.to_save.mol_move_sens = *v;
+                    state.update_save_prefs(false);
+                } else {
+                    // reset
+                    state.ui.mol_move_sens_input = state.to_save.mol_move_sens.to_string();
+                }
+            }
+
+            ui.add_space(COL_SPACING / 2.);
+            if ui.button("Reset sensitivities").clicked() {
+                state.to_save.movement_speed = MOVEMENT_SENS as u8;
+                state.ui.movement_speed_input = state.to_save.movement_speed.to_string();
+                scene.input_settings.move_sens = MOVEMENT_SENS;
+
+                state.to_save.rotation_sens = (ROTATE_SENS * 100.) as u8;
+                state.ui.rotation_sens_input = state.to_save.rotation_sens.to_string();
+                scene.input_settings.rotate_sens = ROTATE_SENS;
+
+                state.to_save.mol_move_sens = (SENS_MOL_MOVE_SCROLL * 1_000.) as u8;
+                state.ui.mol_move_sens_input = state.to_save.mol_move_sens.to_string();
+
+                state.update_save_prefs(false);
             }
         });
+
+        ui.add_space(ROW_SPACING);
+
+        if ui
+            .button(RichText::new("Close").color(Color32::LIGHT_RED))
+            .clicked()
+        {
+            state.ui.popup.show_settings = false;
+        }
+    });
 }
 
 fn residue_selector(state: &mut State, scene: &mut Scene, ui: &mut Ui, redraw: &mut bool) {
@@ -783,91 +817,91 @@ fn residue_selector(state: &mut State, scene: &mut Scene, ui: &mut Ui, redraw: &
         PopupAnchor::Position(Pos2::new(60., 60.)),
         ui.layer_id(),
     )
-        .align(RectAlign::TOP)
-        .open(true)
-        .width(1_000.)
-        .gap(4.0)
-        .show(|ui| {
-            ui.with_layout(Layout::top_down(Align::RIGHT), |ui| {
-                if ui
-                    .button(RichText::new("Close").color(Color32::LIGHT_RED))
-                    .clicked()
-                {
-                    state.ui.popup.residue_selector = false;
-                    state.ui.chain_to_pick_res = None;
-                }
-            });
-            ui.add_space(ROW_SPACING);
-            // This is a bit fuzzy, as the size varies by residue name (Not always 1 for non-AAs), and index digits.
-
-            let mut update_arc_center = false;
-
-            if let Some(mol) = &state.peptide {
-                if let Some(chain_i) = state.ui.chain_to_pick_res {
-                    if chain_i >= mol.chains.len() {
-                        return;
-                    }
-                    let chain = &mol.chains[chain_i];
-
-                    ui.add_space(ROW_SPACING);
-
-                    // todo: Wrap not working in popup?
-                    ui.horizontal_wrapped(|ui| {
-                        ui.spacing_mut().item_spacing.x = 8.0;
-
-                        for (i, res) in mol.residues.iter().enumerate() {
-                            if i > 800 {
-                                break; // todo: Temp workaround to display blocking
-                            }
-                            // For now, peptide residues only.
-                            if let ResidueType::Water = res.res_type {
-                                continue;
-                            }
-
-                            // Only let the user select residue from the selected chain. This should keep
-                            // it more organized, and keep UI space used down.
-                            if !chain.residues.contains(&i) {
-                                continue;
-                            }
-
-                            let name = match &res.res_type {
-                                ResidueType::AminoAcid(aa) => aa.to_str(AaIdent::OneLetter),
-                                ResidueType::Water => "Water".to_owned(),
-                                ResidueType::Other(name) => name.clone(),
-                            };
-
-                            let mut color = Color32::GRAY;
-                            if let Selection::Residue(sel_i) = state.ui.selection {
-                                if sel_i == i {
-                                    color = COLOR_ACTIVE;
-                                }
-                            }
-                            if ui
-                                .button(
-                                    RichText::new(format!("{} {name}", res.serial_number))
-                                        .size(10.)
-                                        .color(color),
-                                )
-                                .clicked()
-                            {
-                                state.ui.view_sel_level = ViewSelLevel::Residue;
-                                state.ui.selection = Selection::Residue(i);
-
-                                update_arc_center = true; // Avoids borrow error.
-
-                                *redraw = true;
-                            }
-                        }
-                    });
-                }
-            }
-
-            if update_arc_center {
-                if let ControlScheme::Arc { center } = &mut scene.input_settings.control_scheme {
-                    *center = orbit_center(state);
-                }
+    .align(RectAlign::TOP)
+    .open(true)
+    .width(1_000.)
+    .gap(4.0)
+    .show(|ui| {
+        ui.with_layout(Layout::top_down(Align::RIGHT), |ui| {
+            if ui
+                .button(RichText::new("Close").color(Color32::LIGHT_RED))
+                .clicked()
+            {
+                state.ui.popup.residue_selector = false;
+                state.ui.chain_to_pick_res = None;
             }
         });
+        ui.add_space(ROW_SPACING);
+        // This is a bit fuzzy, as the size varies by residue name (Not always 1 for non-AAs), and index digits.
+
+        let mut update_arc_center = false;
+
+        if let Some(mol) = &state.peptide {
+            if let Some(chain_i) = state.ui.chain_to_pick_res {
+                if chain_i >= mol.chains.len() {
+                    return;
+                }
+                let chain = &mol.chains[chain_i];
+
+                ui.add_space(ROW_SPACING);
+
+                // todo: Wrap not working in popup?
+                ui.horizontal_wrapped(|ui| {
+                    ui.spacing_mut().item_spacing.x = 8.0;
+
+                    for (i, res) in mol.residues.iter().enumerate() {
+                        if i > 800 {
+                            break; // todo: Temp workaround to display blocking
+                        }
+                        // For now, peptide residues only.
+                        if let ResidueType::Water = res.res_type {
+                            continue;
+                        }
+
+                        // Only let the user select residue from the selected chain. This should keep
+                        // it more organized, and keep UI space used down.
+                        if !chain.residues.contains(&i) {
+                            continue;
+                        }
+
+                        let name = match &res.res_type {
+                            ResidueType::AminoAcid(aa) => aa.to_str(AaIdent::OneLetter),
+                            ResidueType::Water => "Water".to_owned(),
+                            ResidueType::Other(name) => name.clone(),
+                        };
+
+                        let mut color = Color32::GRAY;
+                        if let Selection::Residue(sel_i) = state.ui.selection {
+                            if sel_i == i {
+                                color = COLOR_ACTIVE;
+                            }
+                        }
+                        if ui
+                            .button(
+                                RichText::new(format!("{} {name}", res.serial_number))
+                                    .size(10.)
+                                    .color(color),
+                            )
+                            .clicked()
+                        {
+                            state.ui.view_sel_level = ViewSelLevel::Residue;
+                            state.ui.selection = Selection::Residue(i);
+
+                            update_arc_center = true; // Avoids borrow error.
+
+                            *redraw = true;
+                        }
+                    }
+                });
+            }
+        }
+
+        if update_arc_center {
+            if let ControlScheme::Arc { center } = &mut scene.input_settings.control_scheme {
+                *center = orbit_center(state);
+            }
+        }
+    });
 }
 
 /// This function draws the (immediate-mode) GUI.
@@ -1469,7 +1503,7 @@ pub fn lipid_section(
                 // Place in front of the camera.
                 let center = scene.camera.position
                     + scene.camera.orientation.rotate_vec(FWD_VEC)
-                    * crate::cam_misc::MOVE_TO_CAM_DIST;
+                        * crate::cam_misc::MOVE_TO_CAM_DIST;
 
                 state.lipids.extend(make_bacterial_lipids(
                     state.ui.lipid_mol_count as usize,

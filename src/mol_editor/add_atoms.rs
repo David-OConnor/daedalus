@@ -15,7 +15,7 @@ use crate::{
 pub fn add_atom(
     editor: &mut MolEditorState,
     entities: &mut Vec<Entity>,
-    i: usize,
+    i_par: usize, // Of the parent atom
     element: Element,
     bond_type: BondType,
     ff_type: Option<String>,
@@ -26,13 +26,13 @@ pub fn add_atom(
     // todo: For readability, we really need somethign like this, but getter borrow errors:
     let common = &mut editor.mol.common;
 
-    let posit_parent = common.atom_posits[i];
-    let el_parent = common.atoms[i].element;
+    let posit_parent = common.atom_posits[i_par];
+    let el_parent = common.atoms[i_par].element;
 
     if element != Hydrogen {
         let mut h_to_del = Vec::new();
         // Remove Hydrogens; we'll add any back as applicable.
-        for j in &common.adjacency_list[i] {
+        for j in &common.adjacency_list[i_par] {
             if common.atoms[*j].element == Hydrogen {
                 h_to_del.push(*j);
             }
@@ -47,18 +47,11 @@ pub fn add_atom(
 
     // todo: Can't use `common` below here due to the delete_atom code and ownership.
 
-    let mut neighbor_count = 0;
-
+    let neighbor_count = editor.mol.common.adjacency_list[i_par].len();
     let adj_list = &editor.mol.common.adjacency_list;
-    // Note: Hydrogens may alreayd have been removed, immediately prior to this.
-    for j in &adj_list[i] {
-        if editor.mol.common.atoms[*j].element != Hydrogen {
-            neighbor_count += 1;
-        }
-    }
 
     let posit = match find_appended_posit(
-        i,
+        i_par,
         posit_parent,
         neighbor_count,
         &editor.mol.common.atoms,
@@ -73,8 +66,8 @@ pub fn add_atom(
     let new_sn = NEXT_ATOM_SN.fetch_add(1, Ordering::AcqRel);
     let new_i = editor.mol.common.atoms.len();
 
-    if i >= editor.mol.common.atoms.len() {
-        eprintln!("Index out of range when adding atoms: {i}");
+    if i_par >= editor.mol.common.atoms.len() {
+        eprintln!("Index out of range when adding atoms: {i_par}");
         return;
         // todo: This return and print are a workaround; find the root cause.
     }
@@ -91,17 +84,17 @@ pub fn add_atom(
 
     editor.mol.common.bonds.push(Bond {
         bond_type,
-        atom_0_sn: editor.mol.common.atoms[i].serial_number,
+        atom_0_sn: editor.mol.common.atoms[i_par].serial_number,
         atom_1_sn: new_sn,
-        atom_0: i,
+        atom_0: i_par,
         atom_1: new_i,
         is_backbone: false,
     });
 
     editor.mol.common.atom_posits.push(posit);
 
-    editor.mol.common.adjacency_list[i].push(new_i);
-    editor.mol.common.adjacency_list.push(vec![i]);
+    editor.mol.common.adjacency_list[i_par].push(new_i);
+    editor.mol.common.adjacency_list.push(vec![i_par]);
 
     mol_editor::draw_atom(
         entities,
@@ -116,21 +109,40 @@ pub fn add_atom(
         ui,
     );
 
-    // Up to one recursion to add hydrogens to this parent.
-
+    // Up to one recursion to add hydrogens to this parent and to the new atom.
     if element != Hydrogen {
-        for _ in mol_editor::hydrogens_avail(&editor.mol.common.atoms[i].force_field_type) {
+        // Back-fill hydrogens on the parent (it just lost one).
+        for (ff_h, bl_h) in
+            mol_editor::hydrogens_avail(&editor.mol.common.atoms[i_par].force_field_type)
+        {
             add_atom(
                 editor,
                 entities,
-                i,
+                i_par,
                 Hydrogen,
                 BondType::Single,
-                Some("ha".to_string()), // todo
-                Some(1.086),            // todo
+                Some(ff_h.clone()),
+                Some(bl_h),
                 ui,
                 updates,
-            )
+            );
+        }
+
+        // Populate hydrogens on the newly added heavy atom (eg, make CH3 if appropriate).
+        for (ff_h, bl_h) in
+            mol_editor::hydrogens_avail(&editor.mol.common.atoms[new_i].force_field_type)
+        {
+            add_atom(
+                editor,
+                entities,
+                new_i,
+                Hydrogen,
+                BondType::Single,
+                Some(ff_h.clone()),
+                Some(bl_h),
+                ui,
+                updates,
+            );
         }
     }
 
@@ -159,28 +171,27 @@ fn find_appended_posit(
             Some(find_tetra_posits(posit_parent, neighbor, Vec3::new_zero()).0)
         }
         2 => {
-            // todo: Hmm. Need a better tetra fn.
             let adj_0 = adj_list[i][0];
             let neighbor_0 = atoms[adj_0].posit;
             let adj_1 = adj_list[i][1];
             let neighbor_1 = atoms[adj_1].posit;
 
-            // If the incoming angles are ~τ/3, add in a planar config.
-            let bond_0 = neighbor_0 - posit_parent;
-            let bond_1 = neighbor_1 - posit_parent;
-            let angle = bond_1.to_normalized().dot(bond_0.to_normalized()).acos();
+            let (p0, p1) = find_tetra_posits(posit_parent, neighbor_0, neighbor_1);
 
-            // Between tetra and planar geometry
-            if angle > 1.95 {
-                Some(find_planar_posit(posit_parent, neighbor_0, neighbor_1))
-            } else {
-                // todo: Perhaps there, perhaps here, but a general "add atom" fn that
-                // todo automatically sets the posit based on neighbors
-                let posits = find_tetra_posits(posit_parent, neighbor_0, neighbor_1);
-
-                // Arbitrary one. todo: Address?
-                Some(posits.1)
-            }
+            // Score a candidate by its minimum distance to any existing neighbor; pick the larger score.
+            let neighbors: &[usize] = &adj_list[i];
+            let score = |p: Vec3| {
+                let mut best = f64::INFINITY;
+                for &ni in neighbors {
+                    let q = atoms[ni].posit;
+                    let d2 = (p - q).magnitude_squared();
+                    if d2 < best {
+                        best = d2;
+                    }
+                }
+                best
+            };
+            Some(if score(p0) >= score(p1) { p0 } else { p1 })
         }
         3 => {
             let adj_0 = adj_list[i][0];

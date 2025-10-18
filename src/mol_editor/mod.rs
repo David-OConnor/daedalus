@@ -9,9 +9,10 @@ use std::{
     time::Instant,
 };
 
-use bio_files::{md_params::ForceFieldParams, BondType, Mol2, Pdbqt, Sdf};
+use bio_files::{BondType, Mol2, Pdbqt, Sdf, md_params::ForceFieldParams};
 use dynamics::{
-    params::FfParamSet, ComputationDevice, FfMolType, MdConfig, MdState, MolDynamics, ParamError,
+    ComputationDevice, FfMolType, HydrogenConstraint, MdConfig, MdOverrides, MdState, MolDynamics,
+    ParamError, params::FfParamSet, snapshot::Snapshot,
 };
 use graphics::{ControlScheme, EngineUpdates, Entity, EntityUpdate, Scene};
 use lin_alg::{
@@ -23,21 +24,21 @@ use na_seq::{
     Element::{Carbon, Hydrogen, Oxygen},
 };
 
-use crate::md::change_snapshot_helper;
 use crate::{
+    ManipMode, OperatingMode, State, StateUi, ViewSelLevel,
     drawing::{
-        atom_color, bond_entities, draw_mol, draw_peptide, EntityClass,
-        MoleculeView, MESH_BALL_STICK_SPHERE, MESH_SPACEFILL_SPHERE,
-    }, drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids}, mol_lig::MoleculeSmall, molecule::{Atom, Bond, MolGenericRef, MolType, MoleculeCommon}, render::{
-        set_flashlight, set_static_light, ATOM_SHININESS, BALL_STICK_RADIUS, BALL_STICK_RADIUS_H,
+        EntityClass, MESH_BALL_STICK_SPHERE, MESH_SPACEFILL_SPHERE, MoleculeView, atom_color,
+        bond_entities, draw_mol, draw_peptide,
+    },
+    drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
+    md::change_snapshot_helper,
+    mol_lig::MoleculeSmall,
+    molecule::{Atom, Bond, MolGenericRef, MolType, MoleculeCommon},
+    render::{
+        ATOM_SHININESS, BALL_STICK_RADIUS, BALL_STICK_RADIUS_H, set_flashlight, set_static_light,
     },
     ui::UI_HEIGHT_CHANGED,
     util::find_neighbor_posit,
-    ManipMode,
-    OperatingMode,
-    State,
-    StateUi,
-    ViewSelLevel,
 };
 
 pub const INIT_CAM_DIST: f32 = 20.;
@@ -55,12 +56,12 @@ pub struct MolEditorState {
     /// the simulation from blowing up, but we have other concerns re frame rate and desired ratio.
     /// todo: Make this customizable in the UI, and display the ratio.
     pub dt_md: f32,
-    /// ms.
-    /// Sim time: real time ratio = dt_md x 1,000 / time_between_runs x 10^-12
+    /// ms. Sim time:real time ratio = dt_md x s x 10^-12 / (time_between_runs x s x 10^-3) = dt_md / time_between_runs * 10^-9)
     // ~30fps updates. Conservative. Should vary this based on how fast it's taking for the total
     // frame, including MD.
     pub time_between_md_runs: f32,
     pub md_running: bool,
+    pub snap: Option<Snapshot>,
     pub last_dt_run: Instant,
 }
 
@@ -73,6 +74,7 @@ impl Default for MolEditorState {
             time_between_md_runs: 33.333,
             md_running: Default::default(),
             last_dt_run: Instant::now(),
+            snap: None,
         }
     }
 }
@@ -262,18 +264,29 @@ impl MolEditorState {
             }
 
             if !skip {
+                let adj = &self.mol.common.adjacency_list[i];
+                let bonds_remaining = 4usize.saturating_sub(adj.len());
+
+                let mut j = 0;
                 for (ff_type, bond_len) in hydrogens_avail(&atom.force_field_type) {
-                    // add_atoms::add_atom(
-                    //     self,
-                    //     &mut scene.entities,
-                    //     i,
-                    //     Hydrogen,
-                    //     BondType::Single,
-                    //     Some(ff_type),
-                    //     Some(bond_len),
-                    //     state_ui,
-                    //     engine_updates,
-                    // )
+                    if j >= bonds_remaining {
+                        break;
+                    }
+                    if self.mol.common.atoms[i].serial_number == 3 {
+                        println!("Attempting to add 1 of {bonds_remaining} atoms...");
+                    }
+                    add_atoms::add_atom(
+                        self,
+                        &mut scene.entities,
+                        i,
+                        Hydrogen,
+                        BondType::Single,
+                        Some(ff_type),
+                        Some(bond_len),
+                        state_ui,
+                        engine_updates,
+                    );
+                    j += 1;
                 }
             }
         }
@@ -286,13 +299,6 @@ impl MolEditorState {
         }
         NEXT_ATOM_SN.store(highest_sn + 1, Ordering::Release);
 
-        // Clear all entities for non-editor molecules.
-        redraw(&mut scene.entities, &self.mol, state_ui);
-
-        set_flashlight(scene);
-        engine_updates.entities = EntityUpdate::All;
-        engine_updates.lighting = true;
-
         match build_dynamics(
             dev,
             &self.mol,
@@ -303,6 +309,16 @@ impl MolEditorState {
             Ok(d) => self.md_state = Some(d),
             Err(e) => eprintln!("Problem setting up dynamics: {e:?}"),
         }
+        // Load the initial relaxation into atom positions.
+        self.load_atom_posits_from_md(&mut scene.entities, state_ui, engine_updates);
+
+        // Clear all entities for non-editor molecules. And render the initial relaxation
+        // from building dynamics.
+        redraw(&mut scene.entities, &self.mol, state_ui);
+
+        set_flashlight(scene);
+        engine_updates.entities = EntityUpdate::All;
+        engine_updates.lighting = true;
     }
 
     pub fn delete_atom(&mut self, i: usize) -> io::Result<()> {
@@ -350,6 +366,48 @@ impl MolEditorState {
         Ok(())
     }
 
+    /// Load the latest snapshot into atom positions, and update entities.
+    pub fn load_atom_posits_from_snap(
+        &mut self,
+        entities: &mut Vec<Entity>,
+        state_ui: &StateUi,
+        engine_updates: &mut EngineUpdates,
+    ) {
+        let Some(snap) = self.md_state.as_ref().unwrap().snapshots.last() else {
+            return;
+        };
+
+        change_snapshot_helper(&mut self.mol.common.atom_posits, &mut 0, snap);
+
+        // Since we assume they're synced:
+        for (i, posit) in self.mol.common.atom_posits.iter().enumerate() {
+            self.mol.common.atoms[i].posit = *posit;
+        }
+        self.snap = Some(snap.clone());
+
+        self.md_state.as_mut().unwrap().snapshots = Vec::new();
+
+        redraw(entities, &self.mol, state_ui);
+        engine_updates.entities = EntityUpdate::All;
+    }
+
+    /// Load the latest md_posits into atom positions, and update entities.
+    pub fn load_atom_posits_from_md(
+        &mut self,
+        entities: &mut Vec<Entity>,
+        state_ui: &StateUi,
+        engine_updates: &mut EngineUpdates,
+    ) {
+        let Some(md) = &self.md_state else { return };
+        for (i, atom) in md.atoms.iter().enumerate() {
+            self.mol.common.atoms[i].posit = atom.posit.into();
+            self.mol.common.atom_posits[i] = atom.posit.into();
+        }
+
+        redraw(entities, &self.mol, state_ui);
+        engine_updates.entities = EntityUpdate::All;
+    }
+
     /// Run MD for a single step if ready, and update atom positions immediately after.
     pub fn md_step(
         &mut self,
@@ -360,12 +418,12 @@ impl MolEditorState {
     ) {
         static mut I: u32 = 0;
 
-        if !self.md_running || self.last_dt_run.elapsed().as_micros() as f32 * 1_000. < self.time_between_md_runs {
-            return
+        if !self.md_running
+            || self.last_dt_run.elapsed().as_micros() as f32 * 1_000. < self.time_between_md_runs
+        {
+            return;
         }
-        let Some(md) = &mut self.md_state else {
-            return
-        };
+        let Some(md) = &mut self.md_state else { return };
 
         self.last_dt_run = Instant::now();
 
@@ -379,36 +437,10 @@ impl MolEditorState {
             }
         }
 
-
         // Load the snapshot taken into current atom posits, and redraw.
         // Remove the snap from memory to prevent them from accumulating.
-
-        // todo: delegate this to a fn here or in dynamics A/R.
-        let snap = self.md_state.as_ref().unwrap().snapshots.last().unwrap();
-        change_snapshot_helper(
-            &mut self.mol.common.atom_posits,
-            &mut 0,
-            snap,
-        );
-
-        // Since we assume they're synced:
-        for (i, posit) in self.mol.common.atom_posits.iter().enumerate() {
-            self.mol.common.atoms[i].posit = *posit;
-        }
-
-        self.md_state.as_mut().unwrap().snapshots = Vec::new();
-
-        redraw(
-            entities, &self.mol, state_ui
-        );
-        engine_updates.entities = EntityUpdate::All;
-
-        unsafe {
-            if I.is_multiple_of(100) {
-                let elapsed = self.last_dt_run.elapsed().as_micros();
-                println!("DT + redraw ran in: {:?}μs", elapsed);
-            }
-        }
+        // todo: use our dynamics posit directly, and clear snapshots?
+        self.load_atom_posits_from_snap(entities, state_ui, engine_updates);
     }
 }
 
@@ -428,7 +460,7 @@ pub mod templates {
             Vec3::new(0.0000, 0.0000, 0.0), // C (carboxyl)
             Vec3::new(1.2290, 0.0000, 0.0), // O (carbonyl)
             Vec3::new(-0.6715, 1.1645, 0.0), // O (hydroxyl)
-            // Vec3::new(-1.0286, 1.7826, 0.0), // H (hydroxyl)
+                                            // Vec3::new(-1.0286, 1.7826, 0.0), // H (hydroxyl)
         ];
 
         // todo: Skip the H.
@@ -943,12 +975,15 @@ fn build_dynamics(
     }];
 
     let cfg = MdConfig {
-        max_init_relaxation_iters: None,
-        allow_missing_dihedral_params: true,
-        // todo: Eval. Water doesn't seem to increase comp time to an unacceptable level if long-range forces
-        // todo are disabled.
-        // skip_water: true,
-        skip_long_range_forces: true, // Likely too slow for real-time evaluation.
+        max_init_relaxation_iters: Some(100), // todo A/R
+        overrides: MdOverrides {
+            allow_missing_dihedral_params: true,
+            long_range_recip_disabled: true,
+            ..Default::default()
+        },
+        // We run slower time steps than in typical MD steps here, so this is OK, and may
+        // provide a more realistic visualization.
+        hydrogen_constraint: HydrogenConstraint::Flexible,
         ..cfg.clone()
     };
 

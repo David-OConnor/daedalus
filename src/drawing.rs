@@ -168,7 +168,11 @@ fn cache_lig_color(el: Element) -> Option<&'static OnceLock<Color>> {
 }
 
 /// Make ligands stand out visually, when colored by atom.
-fn mod_color_for_ligand(color: &Color, el: Element) -> Color {
+fn mod_color_for_ligand(color: &Color, el: Element, color_by_q: bool) -> Color {
+    if color_by_q {
+        return blend_color(*color, LIGAND_COLOR, LIGAND_BLEND_AMT);
+    }
+
     if let Some(slot) = cache_lig_color(el) {
         slot.get_or_init(|| blend_color(*color, LIGAND_COLOR, LIGAND_BLEND_AMT))
             .clone()
@@ -383,6 +387,7 @@ pub fn atom_color(
             }
             color
         }
+        ViewSelLevel::Bond => atom.element.color(), // Handled elsewhere.
     };
 
     // If selected, the selected color overrides the element or residue color.
@@ -399,7 +404,7 @@ pub fn atom_color(
                 }
             }
         }
-        Selection::Atoms(sel_is) => {
+        Selection::AtomsPeptide(sel_is) => {
             if sel_is.contains(&i) {
                 result = COLOR_SELECTED;
             }
@@ -419,6 +424,12 @@ pub fn atom_color(
                 result = COLOR_SELECTED;
             }
         }
+        Selection::BondLig((lig_i, sel_i)) => {
+            if mol_type == MolType::Ligand && *sel_i == i && *lig_i == mol_i {
+                result = COLOR_SELECTED;
+            }
+        }
+        _ => (), // Other bond types; impl A/R.
 
         Selection::None => (),
     }
@@ -852,6 +863,12 @@ pub fn draw_mol(
         // });
     }
 
+    let sel = if ui.selection.is_bond() {
+        &Selection::None
+    } else {
+        &ui.selection
+    };
+
     if matches!(
         ui.mol_view,
         MoleculeView::BallAndStick | MoleculeView::SpaceFill
@@ -891,7 +908,7 @@ pub fn draw_mol(
                     i_atom,
                     &[],
                     0,
-                    &ui.selection,
+                    sel,
                     ViewSelLevel::Atom, // Always color lipids by atom.
                     false,
                     ui.res_color_by_index,
@@ -903,7 +920,11 @@ pub fn draw_mol(
                     match mol.mol_type() {
                         MolType::Ligand => {
                             if mode == OperatingMode::Primary {
-                                color = mod_color_for_ligand(&color, atom.element)
+                                color = mod_color_for_ligand(
+                                    &color,
+                                    atom.element,
+                                    ui.atom_color_by_charge,
+                                )
                             }
                         }
                         // todo: Lipid and NA caches A/R
@@ -940,7 +961,7 @@ pub fn draw_mol(
     }
 
     // todo: C+P from draw_molecule. With some removed, but much repeated.
-    for bond in &mol.common().bonds {
+    for (i_bond, bond) in mol.common().bonds.iter().enumerate() {
         let atom_0 = &mol.common().atoms[bond.atom_0];
         let atom_1 = &mol.common().atoms[bond.atom_1];
 
@@ -1005,7 +1026,7 @@ pub fn draw_mol(
                 bond.atom_0,
                 &[],
                 0,
-                &ui.selection,
+                sel,                // ignores bond coloring by adjacent atom if in bond sel mode.
                 ViewSelLevel::Atom, // Always color ligands by atom.
                 false,
                 ui.res_color_by_index,
@@ -1018,8 +1039,7 @@ pub fn draw_mol(
                 bond.atom_1,
                 &[],
                 0,
-                &ui.selection,
-                // state.ui.view_sel_level,
+                sel,                // ignores bond coloring by adjacent atom if in bond sel mode.
                 ViewSelLevel::Atom, // Always color ligands by atom.
                 false,
                 ui.res_color_by_index,
@@ -1027,11 +1047,30 @@ pub fn draw_mol(
                 mol.mol_type(),
             );
 
+            // If in atom sel mode, we color bonds normally above (The  half of each bond connected
+            // to the selected atom). If in bond sel mode, we color the bond between two atoms below.
+
+            match ui.selection {
+                Selection::BondLig((mol_i, bond_i))
+                | Selection::BondNucleicAcid((mol_i, bond_i))
+                | Selection::BondLipid((mol_i, bond_i)) => {
+                    if bond_i == i_bond {
+                        color_0 = COLOR_SELECTED;
+                        color_1 = COLOR_SELECTED;
+                    }
+                }
+                _ => (),
+            };
+
             if color_0 != COLOR_SELECTED {
                 match mol.mol_type() {
                     MolType::Ligand => {
                         if mode == OperatingMode::Primary {
-                            color_0 = mod_color_for_ligand(&color_0, atom_0.element)
+                            color_0 = mod_color_for_ligand(
+                                &color_0,
+                                atom_0.element,
+                                ui.atom_color_by_charge,
+                            )
                         }
                     }
                     // todo: Color for NA
@@ -1046,7 +1085,11 @@ pub fn draw_mol(
                 match mol.mol_type() {
                     MolType::Ligand => {
                         if mode == OperatingMode::Primary {
-                            color_1 = mod_color_for_ligand(&color_1, atom_1.element)
+                            color_1 = mod_color_for_ligand(
+                                &color_1,
+                                atom_1.element,
+                                ui.atom_color_by_charge,
+                            )
                         }
                     }
                     // todo: Color for NA
@@ -1321,6 +1364,12 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
 
     let chains_invis: Vec<&Chain> = mol.chains.iter().filter(|c| !c.visible).collect();
 
+    let sel = if ui.selection.is_bond() {
+        &Selection::None
+    } else {
+        &ui.selection
+    };
+
     // If sticks view, draw water molecules as balls.
     if matches!(
         ui.mol_view,
@@ -1338,7 +1387,7 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
                             i,
                             &mol.residues,
                             aa_count,
-                            &state.ui.selection,
+                            sel,
                             state.ui.view_sel_level,
                             false,
                             false,
@@ -1467,7 +1516,7 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
                 i,
                 &mol.residues,
                 aa_count,
-                &state.ui.selection,
+                sel,
                 state.ui.view_sel_level,
                 dim_peptide,
                 state.ui.res_color_by_index,
@@ -1508,7 +1557,7 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
     }
 
     // Draw bonds.
-    for bond in &mol.common.bonds {
+    for (i_bond, bond) in mol.common.bonds.iter().enumerate() {
         if ui.mol_view == MoleculeView::Backbone && !bond.is_backbone {
             continue;
         }
@@ -1607,7 +1656,7 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
             bond.atom_0,
             &mol.residues,
             aa_count,
-            &state.ui.selection,
+            sel,
             state.ui.view_sel_level,
             dim_peptide_0,
             state.ui.res_color_by_index,
@@ -1620,13 +1669,20 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
             bond.atom_1,
             &mol.residues,
             aa_count,
-            &state.ui.selection,
+            sel,
             state.ui.view_sel_level,
             dim_peptide_1,
             state.ui.res_color_by_index,
             state.ui.atom_color_by_charge,
             MolType::Peptide,
         );
+
+        if let Selection::BondPeptide(bond_i) = ui.selection {
+            if bond_i == i_bond {
+                color_0 = COLOR_SELECTED;
+                color_1 = COLOR_SELECTED;
+            }
+        }
 
         if atom_0.hetero && color_0 != COLOR_SELECTED {
             color_0 = blend_color(color_0, COLOR_HETERO_RES, BLEND_AMT_HETERO_RES);
