@@ -231,6 +231,13 @@ pub enum OperatingMode {
     MolEditor,
 }
 
+// todo: Remove or augment A/R
+#[derive(Default)]
+pub struct MdStateLocal {
+    pub running: bool,
+    pub start: Option<Instant>,
+}
+
 /// Temporary, and generated state.
 struct StateVolatile {
     dialogs: FileDialogs,
@@ -276,6 +283,7 @@ struct StateVolatile {
     operating_mode: OperatingMode,
     /// Allows restoring after entering the mol edit mode.
     primary_mode_cam: Camera,
+    md_local: MdStateLocal,
 }
 
 impl Default for StateVolatile {
@@ -285,7 +293,7 @@ impl Default for StateVolatile {
             ui_height: Default::default(),
             inputs_commanded: Default::default(),
             mol_pending_data_avail: Default::default(),
-            prefs_dir: env::current_dir().unwrap(),
+            prefs_dir: env::current_dir().unwrap(), // This is why we can't derive.
             cli_input_history: Default::default(),
             cli_input_selected: Default::default(),
             aa_seq_text: Default::default(),
@@ -299,6 +307,7 @@ impl Default for StateVolatile {
             key_modifiers: Default::default(),
             operating_mode: Default::default(),
             primary_mode_cam: Default::default(),
+            md_local: Default::default(),
         }
     }
 }

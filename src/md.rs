@@ -2,29 +2,92 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    sync::Arc,
     time::Instant,
 };
 
 use bio_files::{AtomGeneric, create_bonds, md_params::ForceFieldParams};
-#[cfg(feature = "cuda")]
-use cudarc::driver::CudaModule;
 use dynamics::{
-    AtomDynamics, ComputationDevice, FfMolType, MdConfig, MdState, MolDynamics, ParamError,
-    params::FfParamSet, snapshot::Snapshot,
+    ComputationDevice, FfMolType, MdConfig, MdState, MolDynamics, ParamError, params::FfParamSet,
+    snapshot::Snapshot,
 };
+use graphics::{EngineUpdates, EntityUpdate, Scene};
 use lin_alg::f64::Vec3;
 
 use crate::{
+    MdStateLocal, State,
+    drawing::{draw_peptide, draw_water},
     lipid::MoleculeLipid,
-    mol_lig::{Ligand, MoleculeSmall},
+    mol_lig::MoleculeSmall,
     molecule::MoleculePeptide,
+    util::handle_success,
 };
 
 // Å. Static atoms must be at least this close to a dynamic atom at the start of MD to be counted.
 // Set this wide to take into account motion.
 pub const STATIC_ATOM_DIST_THRESH: f64 = 14.;
 
+// Run this many MD steps per frame. This is used to balance MD time with the rest of the application.
+// A higher value will reduce the overall MD computation time,
+// but make the UI laggier. If this is >= the number of steps, the whole MD operation will block
+// the rest of the program. For initial test, a value above ~10 doesn't seem to
+// noticeably increase total computation time. e.g. the frame time is small compared to this many
+// MD steps for a small molecule + water sim.
+const MD_STEPS_PER_APPLICATION_FRAME: usize = 10;
+
+fn post_run_cleanup(state: &mut State, scene: &mut Scene, engine_updates: &mut EngineUpdates) {
+    if state.mol_dynamics.is_none() {
+        eprintln!("Can't run MD cleanup; MD state is None");
+        return;
+    }
+
+    state.volatile.md_local.running = false;
+    state.volatile.md_local.start = None;
+
+    if let Some(p) = &state.peptide {
+        let ligs: Vec<_> = state
+            .ligands
+            .iter_mut()
+            .filter(|l| l.common.selected_for_md)
+            .collect();
+        let lipids: Vec<_> = state
+            .lipids
+            .iter_mut()
+            .filter(|l| l.common.selected_for_md)
+            .collect();
+
+        let md = state.mol_dynamics.as_mut().unwrap();
+        reassign_snapshot_indices(
+            p,
+            &ligs,
+            &lipids,
+            &mut md.snapshots,
+            &state.volatile.md_peptide_selected,
+        );
+    }
+
+    handle_success(&mut state.ui, "MD complete".to_string());
+
+    // Tricky behavior here to prevent a dbl-borrow.
+    {
+        let md = state.mol_dynamics.as_ref().unwrap();
+        let snap = &md.snapshots[0];
+
+        draw_water(
+            scene,
+            &snap.water_o_posits,
+            &snap.water_h0_posits,
+            &snap.water_h1_posits,
+            state.ui.visibility.hide_water,
+            // state,
+        );
+    }
+    draw_peptide(state, scene);
+
+    state.ui.current_snapshot = 0;
+
+    // engine_updates.entities = true;
+    engine_updates.entities = EntityUpdate::All;
+}
 pub fn build_and_run_dynamics(
     dev: &ComputationDevice,
     ligs: Vec<&mut MoleculeSmall>,
@@ -33,13 +96,12 @@ pub fn build_and_run_dynamics(
     param_set: &FfParamSet,
     mol_specific_params: &HashMap<String, ForceFieldParams>,
     cfg: &MdConfig,
-    n_steps: u32,
     static_peptide: bool,
     peptide_only_near_lig: bool,
-    dt: f32,
     pep_atom_set: &mut HashSet<(usize, usize)>,
+    md_local: &mut MdStateLocal,
 ) -> Result<MdState, ParamError> {
-    let mut md_state = build_dynamics(
+    let md_state = build_dynamics(
         dev,
         &ligs,
         &lipids,
@@ -52,11 +114,8 @@ pub fn build_and_run_dynamics(
         pep_atom_set,
     )?;
 
-    run_dynamics(&mut md_state, dev, dt, n_steps as usize);
-
-    if let Some(p) = peptide {
-        reassign_snapshot_indices(p, &ligs, &lipids, &mut md_state.snapshots, pep_atom_set);
-    }
+    md_local.start = Some(Instant::now());
+    md_local.running = true;
 
     Ok(md_state)
 }
@@ -189,6 +248,7 @@ pub fn build_dynamics(
     Ok(md_state)
 }
 
+/// Run the dynamics in one go. Blocking.
 pub fn run_dynamics(md_state: &mut MdState, dev: &ComputationDevice, dt: f32, n_steps: usize) {
     if n_steps == 0 {
         return;
@@ -329,5 +389,32 @@ pub fn change_snapshot(
 
     if let Some(mol) = peptide {
         change_snapshot_helper(&mut mol.common.atom_posits, &mut start_i_this_mol, snapshot);
+    }
+}
+
+impl State {
+    /// Run MD for a single step if ready, and update atom positions immediately after. Blocks for
+    /// a fixed number of steps only; intended to be run each frame until complete.
+    pub fn md_step(&mut self, scene: &mut Scene, engine_updates: &mut EngineUpdates) {
+        if !self.volatile.md_local.running {
+            return;
+        }
+        let Some(md) = &mut self.mol_dynamics else {
+            return;
+        };
+
+        for _ in 0..MD_STEPS_PER_APPLICATION_FRAME {
+            if md.step_count >= self.to_save.num_md_steps as usize {
+                println!(
+                    "\nMD computation time: {} \n Total run time: {} ms",
+                    md.computation_time().unwrap(),
+                    self.volatile.md_local.start.unwrap().elapsed().as_millis()
+                );
+
+                post_run_cleanup(self, scene, engine_updates);
+                break;
+            }
+            md.step(&self.dev, self.to_save.md_dt);
+        }
     }
 }

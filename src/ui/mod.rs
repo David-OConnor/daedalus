@@ -1437,6 +1437,9 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
     handle_scene_flags(state, scene, &mut engine_updates);
 
+    // Run one or more MD steps, if a MD computation is in progress.
+    state.md_step(scene, &mut engine_updates);
+
     engine_updates
 }
 

@@ -20,6 +20,7 @@ pub fn add_atom(
     bond_type: BondType,
     ff_type: Option<String>,
     bond_len: Option<f64>,
+    q: f32,
     ui: &mut StateUi,
     updates: &mut EngineUpdates,
 ) {
@@ -78,7 +79,7 @@ pub fn add_atom(
         element,
         type_in_res: None,
         force_field_type: ff_type,
-        partial_charge: Some(0.), // todo: A/R,
+        partial_charge: Some(q),
         ..Default::default()
     });
 
@@ -115,6 +116,12 @@ pub fn add_atom(
         for (ff_h, bl_h) in
             mol_editor::hydrogens_avail(&editor.mol.common.atoms[i_par].force_field_type)
         {
+            // todo: Rough
+            let q = match &editor.mol.common.atoms[i_par].element {
+                Element::Oxygen => 0.47,
+                _ => 0.03,
+            };
+
             add_atom(
                 editor,
                 entities,
@@ -123,6 +130,7 @@ pub fn add_atom(
                 BondType::Single,
                 Some(ff_h.clone()),
                 Some(bl_h),
+                q,
                 ui,
                 updates,
             );
@@ -132,6 +140,12 @@ pub fn add_atom(
         for (ff_h, bl_h) in
             mol_editor::hydrogens_avail(&editor.mol.common.atoms[new_i].force_field_type)
         {
+            // todo: Rough
+            let q = match &editor.mol.common.atoms[new_i].element {
+                Element::Oxygen => 0.47,
+                _ => 0.03, // higher in some cases like ring; 0.12?
+            };
+
             add_atom(
                 editor,
                 entities,
@@ -140,6 +154,7 @@ pub fn add_atom(
                 BondType::Single,
                 Some(ff_h.clone()),
                 Some(bl_h),
+                q,
                 ui,
                 updates,
             );

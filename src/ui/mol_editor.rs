@@ -24,7 +24,7 @@ const DT_MAX: f32 = 0.0005; // No more than 0.002 for stability. currently 0.5fs
 
 // Higher may be relax more, but takes longer. We aim for a small time so it can be done without
 // a noticeable lag.
-const MAX_RELAX_ITERS: usize = 20;
+const MAX_RELAX_ITERS: usize = 80;
 
 pub fn editor(
     state: &mut State,
@@ -294,6 +294,7 @@ fn edit_tools(
                 BondType::Single,
                 Some("ca".to_owned()), // todo
                 Some(1.4),             // todo
+                0.13,                  // todo
                 &mut state.ui,
                 engine_updates,
             );
@@ -313,6 +314,7 @@ fn edit_tools(
                 BondType::Single,
                 Some("oh".to_owned()), // todo
                 Some(1.1377),          // todo
+                -0.48,                 // todo
                 &mut state.ui,
                 engine_updates,
             );
@@ -336,6 +338,7 @@ fn edit_tools(
                 BondType::Double,
                 Some("o".to_owned()),
                 Some(1.1377), // todo
+                -0.53,        // todo
                 &mut state.ui,
                 engine_updates,
             );
@@ -359,6 +362,7 @@ fn edit_tools(
                 BondType::Single,
                 Some("n".to_owned()), // todo
                 Some(1.4),            // todo
+                -0.71,                // todo
                 &mut state.ui,
                 engine_updates,
             );

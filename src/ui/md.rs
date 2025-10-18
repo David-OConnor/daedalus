@@ -1,19 +1,16 @@
-use dynamics::{
-    ComputationDevice, HydrogenConstraint, Integrator, MdState, SimBoxInit, snapshot::Snapshot,
-};
+use dynamics::{ComputationDevice, HydrogenConstraint, Integrator, SimBoxInit, snapshot::Snapshot};
 use egui::{Color32, ComboBox, RichText, TextEdit, Ui};
-use graphics::{EngineUpdates, EntityUpdate, Scene};
+use graphics::{EngineUpdates, Scene};
 use lin_alg::f64::Vec3;
 
 use crate::{
     State,
-    drawing::{EntityClass, draw_peptide, draw_water},
-    md::{build_and_run_dynamics, build_dynamics},
+    md::build_and_run_dynamics,
     ui::{
-        COL_SPACING, COLOR_ACTIVE, COLOR_INACTIVE, cam::move_cam_to_active_mol, flag_btn, misc,
-        num_field,
+        COL_SPACING, COLOR_ACTIVE, COLOR_HIGHLIGHT, COLOR_INACTIVE, cam::move_cam_to_active_mol,
+        flag_btn, misc, num_field,
     },
-    util::{clear_cli_out, handle_err, handle_success},
+    util::{clear_cli_out, handle_err},
 };
 
 pub fn md_setup(
@@ -87,12 +84,6 @@ pub fn md_setup(
                         move_cam_to_active_mol(state, scene, center, engine_updates);
                     }
 
-                    // todo temp
-                    // state.to_save.md_config.snapshot_handlers.push(SnapshotHandler {
-                    //     ratio: 1,
-                    //     save_type: SaveType::Dcd(PathBuf::from("test.dcd")),
-                    // });
-
                     // Filter molecules for docking by if they're selected.
                     // mut so we can move their posits in the initial snapshot change.
                     let ligs: Vec<_> = state.ligands.iter_mut().filter(|l| l.common.selected_for_md).collect();
@@ -102,7 +93,6 @@ pub fn md_setup(
                         Some(m) => if m.common.selected_for_md { Some(m) } else { None },
                         None => None,
                     };
-
                     match build_and_run_dynamics(
                         &state.dev,
                         ligs,
@@ -111,35 +101,22 @@ pub fn md_setup(
                         &state.ff_param_set,
                         &state.lig_specific_params,
                         &state.to_save.md_config,
-                        state.to_save.num_md_steps,
                         state.ui.md.peptide_static,
                         state.ui.md.peptide_only_near_ligs,
-                        state.to_save.md_dt,
                         &mut state.volatile.md_peptide_selected,
+                        &mut state.volatile.md_local,
                     ) {
                         Ok(md) => {
-                            handle_success(&mut state.ui, "MD complete".to_string());
-                            let snap = &md.snapshots[0];
-
-                            draw_peptide(state, scene);
-                            draw_water(
-                                scene,
-                                &snap.water_o_posits,
-                                &snap.water_h0_posits,
-                                &snap.water_h1_posits,
-                                state.ui.visibility.hide_water,
-                                // state,
-                            );
-
-                            state.ui.current_snapshot = 0;
-
-                            // engine_updates.entities = true;
-                            engine_updates.entities = EntityUpdate::All;
-
                             state.mol_dynamics = Some(md);
                         }
                         Err(e) => handle_err(&mut state.ui, e.descrip),
                     }
+                }
+            }
+
+            if state.volatile.md_local.running {
+                if let Some(md) = &state.mol_dynamics {
+                    ui.label(RichText::new(format!("MD running. Step {} of {}", md.step_count + 1, state.to_save.num_md_steps)).color(COLOR_HIGHLIGHT));
                 }
             }
 
@@ -275,7 +252,9 @@ pub fn md_setup(
             ui.label(format!("Runtime: {:.1} ps", state.volatile.md_runtime));
 
             if let Some(md) = &state.mol_dynamics {
-               energy_disp(&md.snapshots[state.ui.current_snapshot], ui);
+                if state.ui.current_snapshot < md.snapshots.len() {
+                    energy_disp(&md.snapshots[state.ui.current_snapshot], ui);
+                }
             }
 
         });

@@ -20,7 +20,7 @@ use lin_alg::{
     f64::Vec3,
 };
 use na_seq::{
-    AtomTypeInRes,
+    AtomTypeInRes, Element,
     Element::{Carbon, Hydrogen, Oxygen},
 };
 
@@ -275,6 +275,12 @@ impl MolEditorState {
                     if self.mol.common.atoms[i].serial_number == 3 {
                         println!("Attempting to add 1 of {bonds_remaining} atoms...");
                     }
+                    // todo: Rough
+                    let q = match &self.mol.common.atoms[i].element {
+                        Element::Oxygen => 0.47,
+                        _ => 0.03,
+                    };
+
                     add_atoms::add_atom(
                         self,
                         &mut scene.entities,
@@ -283,6 +289,7 @@ impl MolEditorState {
                         BondType::Single,
                         Some(ff_type),
                         Some(bond_len),
+                        q,
                         state_ui,
                         engine_updates,
                     );
@@ -625,6 +632,7 @@ pub fn exit_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mut
     UI_HEIGHT_CHANGED.store(true, Ordering::Release);
 
     state.mol_editor.md_state = None;
+    state.mol_editor.md_running = false;
 
     // todo: Not necessarily zero!
     scene.input_settings.control_scheme = state.volatile.control_scheme_prev;
