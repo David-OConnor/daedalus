@@ -299,7 +299,7 @@ impl State {
             #[cfg(feature = "cuda")]
             let dens = dens_rect.make_densities(
                 &self.dev,
-                &self.cuda_modules,
+                &self.kernel_reflections,
                 &atom_posits,
                 &dens_map.cell,
                 DENSITY_MAX_DIST,

@@ -66,7 +66,7 @@ use bio_apis::{
 use bio_files::md_params::{ForceFieldParams, load_lipid_templates};
 #[cfg(feature = "cuda")]
 use cudarc::{
-    driver::{CudaContext, CudaModule, CudaStream},
+    driver::{CudaContext, CudaFunction, CudaModule, CudaStream},
     nvrtc::Ptx,
 };
 use drawing::MoleculeView;
@@ -110,9 +110,9 @@ const PREFS_SAVE_INTERVAL: u64 = 60; // Save user preferences this often, in sec
 
 /// The MdModule is owned by `dynamics::ComputationDevice`.
 #[cfg(feature = "cuda")]
-struct CudaModules {
+struct CudaFunctions {
     /// For processing as part of loading electron density data
-    pub reflections: Arc<CudaModule>,
+    pub reflections: Arc<CudaFunction>,
 }
 
 // /// This wraps `dyanmics::ComputationDevice`. It's a bit awkard, but for now
@@ -554,12 +554,10 @@ struct State {
     pub cam_snapshots: Vec<CamSnapshot>,
     /// This allows us to keep in-memory data for other molecules.
     pub to_save: ToSave,
-    // #[cfg(feature = "cuda")]
-    // pub dev: (ComputationDevice, Option<Arc<CudaModule>>),
     pub dev: ComputationDevice,
     /// This is None if Computation Device is CPU.
     #[cfg(feature = "cuda")]
-    pub cuda_modules: Option<CudaModules>,
+    pub kernel_reflections: Option<CudaFunction>,
     pub mol_dynamics: Option<MdState>,
     // todo: Combine these params in a single struct.
     pub ff_param_set: FfParamSet,
@@ -593,7 +591,7 @@ impl Default for State {
             to_save: Default::default(),
             dev: Default::default(),
             #[cfg(feature = "cuda")]
-            cuda_modules: None,
+            kernel_reflections: None,
             mol_dynamics: Default::default(),
             ff_param_set: Default::default(),
             lig_specific_params: Default::default(),
@@ -756,45 +754,7 @@ impl State {
 }
 
 fn main() {
-    #[cfg(feature = "cuda")]
-    let mut module_reflections = None;
-    #[cfg(feature = "cuda")]
-    let dev = {
-        if cudarc::driver::result::init().is_ok() {
-            // This is compiled in `build_`.
-            let ctx = CudaContext::new(0).unwrap();
-            let stream = ctx.default_stream();
-
-            // todo: Figure out how to handle multiple modules, given you've moved the ComputationDevice
-            // todo struct to dynamics. Your reflections GPU code will be broken until this is solved.
-            let module_dynamics = ctx.load_module(Ptx::from_src(dynamics::PTX));
-
-            match module_dynamics {
-                Ok(m) => {
-                    module_reflections = Some(ctx.load_module(Ptx::from_src(PTX)).unwrap());
-                    // todo: Store/cache these, likely.
-                    // let func_coulomb = module.load_function("coulomb_kernel").unwrap();
-                    // let func_lj_V = module.load_function("lj_V_kernel").unwrap();
-                    // let func_lj_force = module.load_function("lj_force_kernel").unwrap();
-
-                    // (ComputationDevice::Gpu((stream, m)), Some(module.unwrap()))
-                    ComputationDevice::Gpu((stream, m))
-                }
-                Err(e) => {
-                    eprintln!(
-                        "Error loading CUDA module: {}; not using CUDA. Error: {e}",
-                        dynamics::PTX
-                    );
-                    ComputationDevice::Cpu
-                }
-            }
-        } else {
-            ComputationDevice::Cpu
-        }
-    };
-
-    #[cfg(not(feature = "cuda"))]
-    let dev = ComputationDevice::Cpu;
+    let (dev, module_reflections) = util::get_computation_device();
     // let dev = ComputationDevice::Cpu;
 
     #[cfg(target_arch = "x86_64")]
@@ -815,11 +775,6 @@ fn main() {
         dev,
         ..Default::default()
     };
-
-    #[cfg(feature = "cuda")]
-    if let Some(m) = module_reflections {
-        state.cuda_modules = Some(CudaModules { reflections: m });
-    }
 
     // todo: Consider if you want this here. Currently required when adding H to a molecule.
     // In release mode, takes 20ms on a fast CPU. (todo: Test on a slow CPU.)

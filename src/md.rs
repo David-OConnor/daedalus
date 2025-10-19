@@ -7,8 +7,8 @@ use std::{
 
 use bio_files::{AtomGeneric, create_bonds, md_params::ForceFieldParams};
 use dynamics::{
-    ComputationDevice, FfMolType, MdConfig, MdState, MolDynamics, ParamError, params::FfParamSet,
-    snapshot::Snapshot,
+    ComputationDevice, FfMolType, MdConfig, MdOverrides, MdState, MolDynamics, ParamError,
+    params::FfParamSet, snapshot::Snapshot,
 };
 use graphics::{EngineUpdates, EntityUpdate, Scene};
 use lin_alg::f64::Vec3;
@@ -241,8 +241,24 @@ pub fn build_dynamics(
         });
     }
 
+    // todo temp!
+    // let cfg = MdConfig {
+    //     overrides: MdOverrides {
+    //         allow_missing_dihedral_params: true,
+    //         skip_water: true,
+    //         bonded_disabled: true,
+    //         coulomb_disabled: false,
+    //         lj_disabled: true,
+    //         long_range_recip_disabled: true,
+    //         thermo_disabled: true,
+    //         baro_disabled: true,
+    //     },
+    //     max_init_relaxation_iters: None,
+    //     ..cfg.clone()
+    // };
+
     println!("Initializing MD state...");
-    let md_state = MdState::new(dev, cfg, &mols, param_set)?;
+    let md_state = MdState::new(dev, &cfg, &mols, param_set)?;
     println!("Done.");
 
     Ok(md_state)

@@ -10,7 +10,7 @@ use std::{f64::consts::TAU, sync::Arc, time::Instant};
 use bio_apis::{ReqError, rcsb};
 use bio_files::{DensityMap, MapHeader, UnitCell};
 #[cfg(feature = "cuda")]
-use cudarc::driver::{CudaModule, CudaStream, LaunchConfig, PushKernelArg};
+use cudarc::driver::{CudaFunction, CudaModule, CudaStream, LaunchConfig, PushKernelArg};
 use dynamics::ForcesOnWaterMol;
 #[cfg(feature = "cuda")]
 use lin_alg::f32::{vec3s_from_dev, vec3s_to_dev};
@@ -18,8 +18,6 @@ use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 use mcubes::GridPoint;
 use rayon::prelude::*;
 
-#[cfg(feature = "cuda")]
-use crate::CudaModules;
 use crate::{ComputationDevice, molecule::Atom};
 
 pub const DENSITY_CELL_MARGIN: f64 = 2.0;
@@ -278,7 +276,7 @@ impl DensityRect {
     pub fn make_densities(
         &self,
         dev: &ComputationDevice,
-        #[cfg(feature = "cuda")] cuda_modules: &Option<CudaModules>,
+        #[cfg(feature = "cuda")] kernel: &Option<CudaFunction>,
         atom_posits: &[Vec3],
         cell: &UnitCell,
         dist_thresh: f64,
@@ -330,10 +328,10 @@ impl DensityRect {
                 ny,
             ),
             #[cfg(feature = "cuda")]
-            ComputationDevice::Gpu((stream, _mod_dynamics)) => self.make_densities_inner_gpu(
+            ComputationDevice::Gpu(stream) => self.make_densities_inner_gpu(
                 stream,
                 // Assume Some if on Device::Gpu.
-                &cuda_modules.as_ref().unwrap().reflections,
+                kernel.as_ref().unwrap(),
                 triplets,
                 &atom_posits_sample,
                 step_vecs,
@@ -354,7 +352,7 @@ impl DensityRect {
     fn make_densities_inner_gpu(
         &self,
         stream: &Arc<CudaStream>,
-        module: &Arc<CudaModule>,
+        kernel: &CudaFunction,
         triplets: Vec<(usize, usize, usize)>,
         atom_posits: &[Vec3],
         step_vecs: (Vec3, Vec3, Vec3),
@@ -396,8 +394,6 @@ impl DensityRect {
         let data_gpu = stream.memcpy_stod(&self.data).unwrap();
 
         let dist_thresh = dist_thresh as f32;
-
-        let kernel = module.load_function("make_densities_kernel").unwrap();
 
         let cfg = LaunchConfig::for_num_elems(n as u32);
 

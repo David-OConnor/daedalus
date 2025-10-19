@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use bio_files::BondType;
 use egui::{Color32, ComboBox, RichText, Slider, Ui};
 use graphics::{EngineUpdates, EntityUpdate, Scene};
@@ -8,7 +10,7 @@ use crate::{
     Selection, State, ViewSelLevel,
     drawing::MoleculeView,
     mol_editor,
-    mol_editor::{add_atoms::add_atom, exit_edit_mode, templates},
+    mol_editor::{exit_edit_mode, templates},
     ui::{
         COL_SPACING, COLOR_ACTIVE, COLOR_INACTIVE, cam::cam_reset_controls, md::energy_disp, misc,
         misc::section_box, mol_data::selected_data, view_sel_selector,
@@ -108,13 +110,30 @@ pub fn editor(
         });
 
         section_box().show(ui, |ui| {
+            let prev = state.mol_editor.md_running;
             misc::toggle_btn_not_inv(
                 &mut state.mol_editor.md_running,
                 "MD running",
                 ui,
                 &mut redraw,
             );
+
+
+            if !prev && state.mol_editor.md_running && state.mol_editor.md_rebuild_required {
+                match mol_editor::build_dynamics(
+                    &state.dev,
+                    &state.mol_editor.mol,
+                    &state.ff_param_set,
+                    &HashMap::new(), // todo: A/R
+                    &state.to_save.md_config,
+                ) {
+                    Ok(d) => state.mol_editor.md_state = Some(d),
+                    Err(e) => eprintln!("Problem setting up dynamics for the editor: {e:?}"),
+                }
+                state.mol_editor.md_rebuild_required = false;
+            }
         });
+
 
         ui.add_space(COL_SPACING);
 
@@ -279,6 +298,8 @@ fn edit_tools(
     ui: &mut Ui,
     engine_updates: &mut EngineUpdates,
 ) {
+    let mut rebuild_md = false;
+
     section_box().show(ui, |ui| {
         if ui.button("C").on_hover_text("Add a Carbon atom").clicked() {
             let Selection::AtomLig((_, i)) = state.ui.selection else {
@@ -286,8 +307,7 @@ fn edit_tools(
                 return;
             };
 
-            add_atom(
-                &mut state.mol_editor,
+            state.mol_editor.add_atom(
                 &mut scene.entities,
                 i,
                 Carbon,
@@ -298,6 +318,7 @@ fn edit_tools(
                 &mut state.ui,
                 engine_updates,
             );
+            rebuild_md = true;
         }
 
         if ui.button("O").on_hover_text("Add an Oxygen atom").clicked() {
@@ -306,8 +327,7 @@ fn edit_tools(
                 return;
             };
 
-            add_atom(
-                &mut state.mol_editor,
+            state.mol_editor.add_atom(
                 &mut scene.entities,
                 i,
                 Oxygen,
@@ -318,6 +338,7 @@ fn edit_tools(
                 &mut state.ui,
                 engine_updates,
             );
+            rebuild_md = true;
         }
 
         if ui
@@ -330,8 +351,7 @@ fn edit_tools(
                 return;
             };
 
-            add_atom(
-                &mut state.mol_editor,
+            state.mol_editor.add_atom(
                 &mut scene.entities,
                 i,
                 Oxygen,
@@ -342,6 +362,7 @@ fn edit_tools(
                 &mut state.ui,
                 engine_updates,
             );
+            rebuild_md = true;
         }
 
         if ui
@@ -354,8 +375,7 @@ fn edit_tools(
                 return;
             };
 
-            add_atom(
-                &mut state.mol_editor,
+            state.mol_editor.add_atom(
                 &mut scene.entities,
                 i,
                 Nitrogen,
@@ -366,6 +386,7 @@ fn edit_tools(
                 &mut state.ui,
                 engine_updates,
             );
+            rebuild_md = true;
         }
     });
 
@@ -402,4 +423,21 @@ fn edit_tools(
             let atoms = templates::benzene_ring(anchor, 0);
         }
     });
+
+    if rebuild_md && state.mol_editor.md_running {
+        // todo: Ideally don't rebuild the whole dynamics for performance reasons.
+        match mol_editor::build_dynamics(
+            &state.dev,
+            &state.mol_editor.mol,
+            &state.ff_param_set,
+            &HashMap::new(), // todo: A/R
+            &state.to_save.md_config,
+        ) {
+            Ok(d) => state.mol_editor.md_state = Some(d),
+            Err(e) => eprintln!("Problem setting up dynamics for the editor: {e:?}"),
+        }
+    } else if rebuild_md {
+        // Will be triggered next time MD  is started.
+        state.mol_editor.md_rebuild_required = true;
+    }
 }

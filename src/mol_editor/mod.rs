@@ -21,7 +21,7 @@ use lin_alg::{
 };
 use na_seq::{
     AtomTypeInRes, Element,
-    Element::{Carbon, Hydrogen, Oxygen},
+    Element::{Carbon, Hydrogen, Nitrogen, Oxygen},
 };
 
 use crate::{
@@ -63,6 +63,7 @@ pub struct MolEditorState {
     pub md_running: bool,
     pub snap: Option<Snapshot>,
     pub last_dt_run: Instant,
+    pub md_rebuild_required: bool,
 }
 
 impl Default for MolEditorState {
@@ -75,6 +76,7 @@ impl Default for MolEditorState {
             md_running: Default::default(),
             last_dt_run: Instant::now(),
             snap: None,
+            md_rebuild_required: false,
         }
     }
 }
@@ -131,7 +133,7 @@ impl MolEditorState {
             md_cfg,
         ) {
             Ok(d) => self.md_state = Some(d),
-            Err(e) => eprintln!("Problem setting up dynamics: {e:?}"),
+            Err(e) => eprintln!("Problem setting up dynamics for the editor: {e:?}"),
         }
     }
 
@@ -244,58 +246,7 @@ impl MolEditorState {
         // Re-populate hydrogens algorithmically. This assumes we trust our algorithm more than the
         // initial molecule, which may or may not be true.
         for (i, atom) in self.mol.common.atoms.clone().iter().enumerate() {
-            // todo. Don't clone!!! Find a better way to fix the borrow error.
-
-            let mut skip = false;
-            for bonded_i in &self.mol.common.adjacency_list[i] {
-                // Don't add H to oxygens double-bonded.
-                if self.mol.common.atoms[i].element == Oxygen {
-                    for bond in &self.mol.common.bonds {
-                        if bond.atom_0 == i && bond.atom_1 == *bonded_i
-                            || bond.atom_1 == i && bond.atom_0 == *bonded_i
-                        {
-                            if matches!(bond.bond_type, BondType::Double) {
-                                skip = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-
-            if !skip {
-                let adj = &self.mol.common.adjacency_list[i];
-                let bonds_remaining = 4usize.saturating_sub(adj.len());
-
-                let mut j = 0;
-                for (ff_type, bond_len) in hydrogens_avail(&atom.force_field_type) {
-                    if j >= bonds_remaining {
-                        break;
-                    }
-                    if self.mol.common.atoms[i].serial_number == 3 {
-                        println!("Attempting to add 1 of {bonds_remaining} atoms...");
-                    }
-                    // todo: Rough
-                    let q = match &self.mol.common.atoms[i].element {
-                        Element::Oxygen => 0.47,
-                        _ => 0.03,
-                    };
-
-                    add_atoms::add_atom(
-                        self,
-                        &mut scene.entities,
-                        i,
-                        Hydrogen,
-                        BondType::Single,
-                        Some(ff_type),
-                        Some(bond_len),
-                        q,
-                        state_ui,
-                        engine_updates,
-                    );
-                    j += 1;
-                }
-            }
+            self.populate_hydrogens_on_atom(i, atom, &mut scene.entities, state_ui, engine_updates);
         }
 
         let mut highest_sn = 0;
@@ -958,7 +909,7 @@ pub fn hydrogens_avail(ff_type: &Option<String>) -> Vec<(String, f64)> {
 }
 
 /// Set up MD for the editor's molecule.
-fn build_dynamics(
+pub(super) fn build_dynamics(
     dev: &ComputationDevice,
     mol: &MoleculeSmall,
     param_set: &FfParamSet,

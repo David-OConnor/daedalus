@@ -2,6 +2,7 @@
 
 #include "util.cu"
 
+// Currently unused
 // In this approach, we parallelize operations per sample, but run the
 // charge computations in serial, due to the cumulative addition step. This appears
 // to be much faster in practice, likely due to the addition being offloaded
@@ -35,7 +36,7 @@ void coulomb_force_kernel(
     }
 }
 
-// Currently  unused
+// Currently unused
 extern "C" __global__
 void lj_V_kernel(
     float* out,

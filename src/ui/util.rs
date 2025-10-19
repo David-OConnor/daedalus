@@ -5,7 +5,7 @@ use egui::{Color32, Popup, PopupAnchor, Pos2, RectAlign, RichText, Ui};
 use graphics::{Camera, EngineUpdates, EntityUpdate, FWD_VEC, Scene};
 
 use crate::{
-    OperatingMode, State,
+    OperatingMode, PTX, State,
     cam_misc::{move_mol_to_cam, reset_camera},
     download_mols::load_atom_coords_rcsb,
     drawing::draw_peptide,

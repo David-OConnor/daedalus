@@ -5,6 +5,11 @@
 use std::time::Instant;
 
 use bio_files::ResidueType;
+use cudarc::{
+    driver::{CudaContext, CudaFunction},
+    nvrtc::Ptx,
+};
+use dynamics::ComputationDevice;
 use egui::Color32;
 use graphics::{Camera, ControlScheme, EngineUpdates, EntityUpdate, FWD_VEC, Mesh, Scene, Vertex};
 use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
@@ -12,16 +17,14 @@ use mcubes::{MarchingCubes, MeshSide};
 use na_seq::{AaIdent, Element};
 
 use crate::{
-    CamSnapshot, ManipMode, PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel, cam_misc,
+    CamSnapshot, ManipMode, PREFS_SAVE_INTERVAL, PTX, Selection, State, StateUi, ViewSelLevel,
+    cam_misc,
     drawing::{
         EntityClass, MoleculeView, draw_density_point_cloud, draw_density_surface, draw_peptide,
     },
     drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
     mol_lig::MoleculeSmall,
-    molecule::{
-        Atom, Bond, MoGenericRefMut, MolGenericRef, MolType, MoleculeCommon, MoleculePeptide,
-        Residue,
-    },
+    molecule::{Atom, Bond, MoGenericRefMut, MolGenericRef, MolType, MoleculePeptide, Residue},
     prefs::OpenType,
     render::{
         Color, MESH_DENSITY_SURFACE, MESH_SECONDARY_STRUCTURE, MESH_SOLVENT_SURFACE, set_flashlight,
@@ -980,4 +983,34 @@ pub fn find_nearest_mol_dist_to_cam(state: &State, cam: &Camera) -> Option<f32> 
         return Some(nearest);
     }
     None
+}
+
+pub fn get_computation_device() -> (ComputationDevice, Option<CudaFunction>) {
+    #[cfg(not(feature = "cuda"))]
+    return (ComputationDevice::Cpu, None);
+
+    #[cfg(feature = "cuda")]
+    match cudarc::driver::result::init() {
+        Ok(_) => {
+            let ctx = CudaContext::new(0).unwrap();
+            let stream = ctx.default_stream();
+
+            let module_reflections = ctx.load_module(Ptx::from_src(PTX));
+
+            match module_reflections {
+                Ok(m) => {
+                    let function = m.load_function("reflection_transform_kernel").unwrap();
+                    (ComputationDevice::Gpu(stream), Some(function))
+                }
+                Err(e) => {
+                    eprintln!("Error loading CUDA module; not using CUDA. Error: {e}");
+                    (ComputationDevice::Cpu, None)
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("Unable to init Cuda module: {e:?}");
+            (ComputationDevice::Cpu, None)
+        }
+    }
 }
