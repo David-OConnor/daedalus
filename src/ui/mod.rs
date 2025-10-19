@@ -1349,7 +1349,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         engine_updates.lighting = true;
     }
 
-    state.ui.dt_render = start.elapsed().as_secs_f32();
 
     // This double-change variable logic is due to some cases needing to wait
     // an additional frame before the height takes effect.
@@ -1386,6 +1385,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
     // Run one or more MD steps, if a MD computation is in progress.
     state.md_step(scene, &mut engine_updates);
+
+    state.ui.dt_render = start.elapsed().as_secs_f32();
 
     engine_updates
 }

@@ -163,14 +163,14 @@ pub fn md_setup(
                     .show_ui(ui, |ui| {
                         // todo: More A/R
                         // todo: What should gamma be? And make it customizable in UI and state.
-                        for v in &[Integrator::LangevinMiddle { gamma: 0. }, Integrator::VerletVelocity, Integrator::Langevin { gamma: 0. }] {
+                        for v in &[Integrator::LangevinMiddle { gamma: 0. }, Integrator::VerletVelocity] {
                             ui.selectable_value(&mut state.to_save.md_config.integrator, v.clone(), v.to_string());
                         }
                     })
                     .response
                     .on_hover_text(help_text);
             }
-            if matches!(state.to_save.md_config.integrator, Integrator::Langevin { gamma: _ } | Integrator::LangevinMiddle { gamma: _ }) {
+            if matches!(state.to_save.md_config.integrator, | Integrator::LangevinMiddle { gamma: _ }) {
                 ui.label("γ:");
                 if ui
                     .add_sized([22., Ui::available_height(ui)], TextEdit::singleline(&mut state.ui.md.langevin_γ))
@@ -178,7 +178,7 @@ pub fn md_setup(
                 {
                     if let Ok(v) = &mut state.ui.md.langevin_γ.parse::<f32>() {
                         match state.to_save.md_config.integrator {
-                            Integrator::Langevin { gamma: _ } => state.to_save.md_config.integrator = Integrator::Langevin { gamma: *v},
+                            // Integrator::Langevin { gamma: _ } => state.to_save.md_config.integrator = Integrator::Langevin { gamma: *v},
                             Integrator::LangevinMiddle { gamma: _} => state.to_save.md_config.integrator = Integrator::Langevin { gamma: *v},
                             _ => ()
                         }

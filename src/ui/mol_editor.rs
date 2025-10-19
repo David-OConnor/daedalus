@@ -36,9 +36,9 @@ pub fn editor(
 ) {
     let mut redraw = false;
 
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         section_box().show(ui, |ui| {
-            ui.horizontal(|ui| {
+            // ui.horizontal_wrapped(|ui| {
                 let mut cam_changed = false;
 
                 // todo: The distances this function resets to may not be ideal for our use case
@@ -69,7 +69,7 @@ pub fn editor(
 
                     redraw = true;
                 }
-            });
+            // });
         });
 
         // C+P from main editor, with fewer options.

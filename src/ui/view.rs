@@ -12,6 +12,7 @@ use crate::{
     ui::{COL_SPACING, DENS_ISO_MAX, DENS_ISO_MIN, UI_HEIGHT_CHANGED, misc, misc::section_box},
     util::clear_mol_entity_indices,
 };
+use crate::mol_editor::redraw;
 
 pub fn view_settings(
     state: &mut State,
@@ -169,6 +170,21 @@ pub fn view_settings(
                 ui,
                 redraw_peptide,
             );
+
+            let prev = state.ui.visibility.labels_atom_sn;
+            misc::toggle_btn_not_inv(
+                &mut state.ui.visibility.labels_atom_sn,
+                "Lbl",
+                ui,
+                redraw_peptide,
+            );
+            if state.ui.visibility.labels_atom_sn != prev {
+                //todo: This isn't working; not redrawing?
+                *redraw_lig = true;
+                *redraw_na = true;
+                *redraw_lipid = true;
+            }
+
             // vis_check(&mut state.ui.visibility.dim_peptide, "Dim peptide", ui, redraw);
 
             if state.peptide.is_some() {

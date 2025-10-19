@@ -321,6 +321,11 @@ struct Visibility {
     dim_peptide: bool,
     hide_density_point_cloud: bool,
     hide_density_surface: bool,
+    labels_mol: bool,
+    labels_atom_sn: bool,
+    labels_atom_q: bool,
+    labels_atom_detailed: bool,
+    labels_bond: bool,
 }
 
 impl Default for Visibility {
@@ -338,6 +343,11 @@ impl Default for Visibility {
             dim_peptide: false,
             hide_density_point_cloud: false,
             hide_density_surface: false,
+            labels_mol: true,
+            labels_atom_sn: false,
+            labels_atom_q: false,
+            labels_atom_detailed: false,
+            labels_bond: false,
         }
     }
 }
