@@ -1,8 +1,8 @@
 use std::sync::atomic::Ordering;
 
 use bio_files::BondType;
-use dynamics::{find_planar_posit, find_tetra_posit_final, find_tetra_posits};
-use graphics::{EngineUpdates, Entity, EntityUpdate, Scene};
+use dynamics::{find_tetra_posit_final, find_tetra_posits};
+use graphics::{EngineUpdates, Entity, EntityUpdate};
 use lin_alg::f64::Vec3;
 use na_seq::{
     Element,
@@ -11,7 +11,7 @@ use na_seq::{
 
 use crate::{
     StateUi, mol_editor,
-    mol_editor::{MolEditorState, NEXT_ATOM_SN, add_atoms, hydrogens_avail},
+    mol_editor::{MolEditorState, NEXT_ATOM_SN, hydrogens_avail},
     molecule::{Atom, Bond},
 };
 

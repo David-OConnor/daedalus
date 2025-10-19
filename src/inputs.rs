@@ -1,6 +1,5 @@
 //! Handles user inputs, e.g. from keyboard and mouse.
 
-use egui::{Color32, RichText};
 use graphics::{
     ControlScheme, DeviceEvent, ElementState, EngineUpdates, EntityUpdate, FWD_VEC, Scene,
     WindowEvent,

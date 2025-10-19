@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use std::f64::consts::TAU;
 
 use na_seq::Element::{Fluorine, Hydrogen, Nitrogen, Oxygen, Sulfur};

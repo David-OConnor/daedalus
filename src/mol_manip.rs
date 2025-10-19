@@ -155,10 +155,7 @@ pub fn handle_mol_manip_in_out(
     redraw_lig: &mut bool,
     redraw_na: &mut bool,
     redraw_lipid: &mut bool,
-    // updates: &mut EngineUpdates,
 ) {
-    let mut counter_movement = false;
-
     // Move the molecule forward and backwards relative to the camera on scroll.
     match state.volatile.mol_manip.mol {
         ManipMode::Move((mol_type, mol_i)) => {
@@ -246,7 +243,6 @@ pub fn handle_mol_manip_in_out(
                 MolType::Lipid => *redraw_lipid = true,
                 _ => unimplemented!(),
             };
-            counter_movement = true;
         }
         ManipMode::Rotate((mol_type, mol_i)) => {
             let scroll: f32 = match delta {
@@ -276,7 +272,6 @@ pub fn handle_mol_manip_in_out(
                 MolType::Lipid => *redraw_lipid = true,
                 _ => unimplemented!(),
             };
-            counter_movement = true;
         }
         ManipMode::None => (),
     }

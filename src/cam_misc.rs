@@ -2,8 +2,8 @@
 
 use graphics::{Camera, EngineUpdates, FWD_VEC, Scene};
 use lin_alg::{
-    f32::{Quaternion, Vec3 as Vec3F32},
-    f64::Vec3,
+    f32::{Quaternion, Vec3},
+    f64::Vec3 as Vec3F64,
 };
 
 use crate::{
@@ -22,8 +22,8 @@ pub const MOVE_TO_CAM_DIST: f32 = 20.;
 
 /// Move the camera to look at a point of interest. Takes the starting location into account.
 /// todo: Smooth interpolated zoom.
-pub fn cam_look_at(cam: &mut Camera, target: Vec3) {
-    let tgt: Vec3F32 = target.into();
+pub fn cam_look_at(cam: &mut Camera, target: Vec3F64) {
+    let tgt: Vec3 = target.into();
     let diff = tgt - cam.position;
     let dir = diff.to_normalized();
     let dist = diff.magnitude();
@@ -39,7 +39,7 @@ pub fn cam_look_at(cam: &mut Camera, target: Vec3) {
     cam.position += dir * move_dist;
 }
 
-pub fn cam_look_at_outside(cam: &mut Camera, target: Vec3F32, alignment: Vec3F32, dist: f32) {
+pub fn cam_look_at_outside(cam: &mut Camera, target: Vec3, alignment: Vec3, dist: f32) {
     // Note: This is similar to `cam_look_at`, but we don't call that, as we're positioning
     // with an absolute orientation in mind, vice `cam_look_at`'s use of current cam LOS.
 
@@ -59,9 +59,9 @@ pub fn reset_camera(
     // view_depth: &mut (u16, u16),
     engine_updates: &mut EngineUpdates,
     // mol: &MoleculeCommon,
-    look_vec: Vec3F32, // unit vector the cam is pointing to.
+    look_vec: Vec3, // unit vector the cam is pointing to.
 ) {
-    let mut center = Vec3F32::new_zero();
+    let mut center = Vec3::new_zero();
     let mut size = 8.; // E.g. for small organic molecules.
 
     if let Some(mol) = &state.peptide {
@@ -74,14 +74,14 @@ pub fn reset_camera(
             // Leaving size at its default for now.
         } else {
             let mut n = 0;
-            let mut centroid = Vec3F32::new_zero();
+            let mut centroid = Vec3::new_zero();
             for mol in &state.ligands[0..10.min(state.ligands.len())] {
-                let c: Vec3F32 = mol.common.centroid().into();
+                let c: Vec3 = mol.common.centroid().into();
                 centroid += c;
                 n += 1;
             }
             for mol in &state.lipids[0..10.min(state.lipids.len())] {
-                let c: Vec3F32 = mol.common.centroid().into();
+                let c: Vec3 = mol.common.centroid().into();
                 centroid += c;
                 n += 1;
             }
@@ -93,7 +93,7 @@ pub fn reset_camera(
 
     let dist_fm_center = size + CAM_INIT_OFFSET;
 
-    // cam_look_at_outside(&mut scene.camera, center, Vec3F32::new_zero(), dist_fm_center);
+    // cam_look_at_outside(&mut scene.camera, center, Vec3::new_zero(), dist_fm_center);
     // let look_vec = (target - alignment).to_normalized();
 
     scene.camera.position = center - look_vec * dist_fm_center;

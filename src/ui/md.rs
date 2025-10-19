@@ -170,7 +170,7 @@ pub fn md_setup(
                     .response
                     .on_hover_text(help_text);
             }
-            if matches!(state.to_save.md_config.integrator, Integrator::Langevin { gamma } | Integrator::LangevinMiddle { gamma }) {
+            if matches!(state.to_save.md_config.integrator, Integrator::Langevin { gamma: _ } | Integrator::LangevinMiddle { gamma: _ }) {
                 ui.label("γ:");
                 if ui
                     .add_sized([22., Ui::available_height(ui)], TextEdit::singleline(&mut state.ui.md.langevin_γ))

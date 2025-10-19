@@ -1,8 +1,12 @@
 #![allow(non_snake_case)]
+#![allow(unused)]
 
 //! Force, acceleration, and related computations. There are general algorithms, and are called
 //! by our more specific ones in the docking and molecular dynamics modules. Includes CPU, SIMD,
 //! and CUDA where appropriate.
+//!
+//! Note: We don't use most (all?) of these: We use GPU kernels instead, or use a specific form
+//! while not using the others. We keep them for reference.
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use lin_alg::f32::{Vec3x8, f32x8};

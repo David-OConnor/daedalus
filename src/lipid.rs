@@ -440,11 +440,13 @@ pub fn make_bacterial_lipids(
     result
 }
 
+#[allow(unused)] // todo: As required later
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum LipidType {
     Phospholipid,
 }
 
+#[allow(unused)] // todo: As required later
 /// Used to create arbitrary lipids
 #[derive(Clone, Debug)]
 pub struct Lipid {

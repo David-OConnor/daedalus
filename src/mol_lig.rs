@@ -7,17 +7,13 @@ use bio_files::{
     ChargeType, Mol2, MolType, Pdbqt, Sdf,
     md_params::{ForceFieldParams, ForceFieldParamsVec},
 };
-use lin_alg::f64::{Quaternion, Vec3};
 use na_seq::Element;
-use rayon::prelude::*;
 
 use crate::{
-    State,
     docking_v2::{DockingSite, Pose},
     molecule::{
         Atom, Bond, Chain, MolGenericRef, MolGenericTrait, MolType as Mt, MoleculeCommon, Residue,
     },
-    util::handle_err,
 };
 
 const LIGAND_ABS_POSIT_OFFSET: f64 = 15.; // Å
@@ -105,16 +101,17 @@ impl MolGenericTrait for MoleculeSmall {
 
 /// This data is related specifically to docking.
 #[derive(Debug, Clone, Default)]
+// todo: It appears we use nothing in this struct!
 pub struct Ligand {
-    pub anchor_atom: usize, // Index.
+    pub _anchor_atom: usize, // Index.
     /// Note: We may deprecate this in favor of our Amber MD-based approach to flexibility.
-    pub flexible_bonds: Vec<usize>, // Index
-    pub pose: Pose,
-    pub docking_site: DockingSite,
+    pub _flexible_bonds: Vec<usize>, // Index
+    pub _pose: Pose,
+    pub _docking_site: DockingSite,
 }
 
 impl Ligand {
-    pub fn new(mol: &MoleculeSmall) -> Self {
+    pub fn _new(mol: &MoleculeSmall) -> Self {
         let mut ff_params_loaded = true;
         for atom in &mol.common.atoms {
             if atom.force_field_type.is_none() || atom.partial_charge.is_none() {
@@ -206,119 +203,9 @@ impl TryFrom<Pdbqt> for MoleculeSmall {
 }
 
 impl MoleculeSmall {
-    /// Creates global positions for all atoms. This takes into account position, orientation, and if applicable,
-    /// torsion angles from flexible bonds. Each pivot rotation rotates the side of the flexible bond that
-    /// has fewer atoms; the intent is to minimize the overall position changes for these flexible bond angle
-    /// changes.
-    ///
-    /// If we return None, use the existing atom_posits data; it has presumably been already set.
-    pub fn position_atoms(&mut self, pose: Option<&Pose>) {
-        let Some(data) = &self.lig_data else {
-            return;
-        };
-
-        let pose_ = match pose {
-            Some(p) => p,
-            None => &data.pose,
-        };
-
-        // match &pose_.conformation_type {
-        //     ConformationType::AbsolutePosits => {
-        //         // take no action; we are assigning and accessing the `atom_posits` field directly.
-        //     }
-        //     ConformationType::AssignedTorsions { torsions } => {
-        //         if data.anchor_atom >= self.common.atoms.len() {
-        //             eprintln!(
-        //                 "Error positioning ligand atoms: Anchor outside atom count. Atom cound: {:?}",
-        //                 self.common.atoms.len()
-        //             );
-        //             return;
-        //         }
-        //         let anchor = self.common.atoms[data.anchor_atom].posit;
-        //
-        //         let mut result: Vec<_> = self
-        //             .common
-        //             .atoms
-        //             .par_iter()
-        //             .map(|atom| {
-        //                 let posit_rel = atom.posit - anchor;
-        //                 pose_.anchor_posit + pose_.orientation.rotate_vec(posit_rel)
-        //             })
-        //             .collect();
-        //         // Second pass: Rotations. For each flexible bond, divide all atoms into two groups:
-        //         // those upstream of this bond, and those downstream. For all downstream atoms, rotate
-        //         // by `torsions[i]`: The dihedral angle along this bond. If there are ambiguities in this
-        //         // process, it may mean the bond should not have been marked as flexible.
-        //         for torsion in torsions {
-        //             let bond = &self.common.bonds[torsion.bond];
-        //
-        //             // -- Step 1: measure how many atoms would be "downstream" from each side
-        //             let side0_downstream = self.find_downstream_atoms(bond.atom_1, bond.atom_0);
-        //             let side1_downstream = self.find_downstream_atoms(bond.atom_0, bond.atom_1);
-        //
-        //             // -- Step 2: pick the pivot as the side with a larger subtree
-        //             let (pivot_idx, side_idx, downstream_atom_indices) =
-        //                 if side0_downstream.len() > side1_downstream.len() {
-        //                     // side0_downstream means "downstream from atom_1 ignoring bond to atom_0"
-        //                     // => so pivot is atom_0, side is atom_1
-        //                     (bond.atom_0, bond.atom_1, side1_downstream)
-        //                 } else {
-        //                     // side1_downstream has equal or more
-        //                     (bond.atom_1, bond.atom_0, side0_downstream)
-        //                 };
-        //
-        //             // pivot and side positions
-        //             let pivot_pos = result[pivot_idx];
-        //             let side_pos = result[side_idx];
-        //             let axis_vec = (side_pos - pivot_pos).to_normalized();
-        //
-        //             // Build the Quaternion for this rotation
-        //             let rotator =
-        //                 Quaternion::from_axis_angle(axis_vec, torsion.dihedral_angle as f64);
-        //
-        //             // Now apply the rotation to each downstream atom:
-        //             for &atom_idx in &downstream_atom_indices {
-        //                 let old_pos = result[atom_idx];
-        //                 let relative = old_pos - pivot_pos;
-        //                 let new_pos = pivot_pos + rotator.rotate_vec(relative);
-        //                 result[atom_idx] = new_pos;
-        //             }
-        //         }
-        //
-        //         self.common.atom_posits = result;
-        //     }
-        // }
-    }
-
-    /// Separate from constructor; run when the pose changes, for now.
-    pub fn set_anchor(&mut self) {
-        let Some(data) = &mut self.lig_data else {
-            return;
-        };
-
-        let mut center = Vec3::new_zero();
-        for atom in &self.common.atoms {
-            center += atom.posit;
-        }
-        center /= self.common.atoms.len() as f64;
-
-        let mut anchor_atom = 0;
-        let mut best_dist = 999999.;
-
-        for (i, atom) in self.common.atoms.iter().enumerate() {
-            let dist = (atom.posit - center).magnitude();
-            if dist < best_dist {
-                best_dist = dist;
-                anchor_atom = i;
-            }
-        }
-
-        data.anchor_atom = anchor_atom;
-    }
-
     /// We use this to rotate flexible molecules around torsion (e.g. dihedral) angles.
     /// `pivot` and `side` are atom indices in the molecule.
-    pub fn find_downstream_atoms(&self, pivot: usize, side: usize) -> Vec<usize> {
+    pub fn _find_downstream_atoms(&self, pivot: usize, side: usize) -> Vec<usize> {
         // adjacency_list[atom] -> list of neighbors
         // We want all atoms reachable from `side` when we remove the edge (side->pivot).
         let mut visited = vec![false; self.common.atoms.len()];

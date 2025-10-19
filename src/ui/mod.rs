@@ -1,30 +1,19 @@
 use std::{
-    io,
     io::Cursor,
-    path::Path,
     sync::atomic::{AtomicBool, Ordering},
     time::Instant,
 };
 
-use bio_apis::{amber_geostd, rcsb};
+use bio_apis::rcsb;
+use bio_files::{DensityMap, ResidueType, density_from_2fo_fc_rcsb_gemmi};
 use egui::{
     Align, Color32, ComboBox, Context, Key, Layout, Popup, PopupAnchor, Pos2, RectAlign, RichText,
     Slider, TextEdit, TopBottomPanel, Ui,
 };
-use graphics::{Camera, ControlScheme, EngineUpdates, EntityUpdate, FWD_VEC, Scene};
-use na_seq::AaIdent;
-
-static INIT_COMPLETE: AtomicBool = AtomicBool::new(false);
-// This allows us to wait a frame before getting the UI height. This affects the geometry
-// between 3d adn 2d  space, e.g. for selecting atoms with the mouse.
-pub static UI_HEIGHT_CHANGED: AtomicBool = AtomicBool::new(false);
-pub static UI_HEIGHT_CHANGE_DELAY: AtomicBool = AtomicBool::new(false);
-
-use bio_files::{DensityMap, ResidueType, density_from_2fo_fc_rcsb_gemmi};
-use dynamics::snapshot::Snapshot;
-use lin_alg::f64::Vec3;
+use graphics::{ControlScheme, EngineUpdates, EntityUpdate, FWD_VEC, Scene};
 use md::md_setup;
 use mol_data::display_mol_data;
+use na_seq::AaIdent;
 
 use crate::{
     CamSnapshot, MsaaSetting, OperatingMode, Selection, State, ViewSelLevel, cli,
@@ -36,7 +25,6 @@ use crate::{
     file_io::gemmi_path,
     inputs::{MOVEMENT_SENS, ROTATE_SENS, SENS_MOL_MOVE_SCROLL},
     lipid::{LipidShape, make_bacterial_lipids},
-    md::change_snapshot_helper,
     mol_editor::enter_edit_mode,
     molecule::MolGenericRef,
     render::{set_flashlight, set_static_light},
@@ -62,6 +50,12 @@ mod mol_editor;
 mod rama_plot;
 pub mod util;
 mod view;
+
+static INIT_COMPLETE: AtomicBool = AtomicBool::new(false);
+// This allows us to wait a frame before getting the UI height. This affects the geometry
+// between 3d adn 2d  space, e.g. for selecting atoms with the mouse.
+pub static UI_HEIGHT_CHANGED: AtomicBool = AtomicBool::new(false);
+pub static UI_HEIGHT_CHANGE_DELAY: AtomicBool = AtomicBool::new(false);
 
 pub const ROW_SPACING: f32 = 10.;
 pub const COL_SPACING: f32 = 30.;
@@ -307,55 +301,6 @@ fn draw_cli(
             ui,
         );
     });
-}
-
-fn docking(
-    state: &mut State,
-    scene: &mut Scene,
-    redraw_lig: &mut bool,
-    engine_updates: &mut EngineUpdates,
-    ui: &mut Ui,
-) {
-    // let (Some(mol), Some(lig)) = (&state.molecule, &mut state.ligand) else {
-    // // let Some(mol) = &state.molecule else {
-    //     return;
-    // };
-
-    if state.peptide.is_none() || state.active_mol().is_none() {
-        return;
-    }
-
-    // let mut docking_posit_update = None;
-
-    ui.horizontal(|ui| {
-        // let lig = state.active_lig_mut().unwrap();
-        //
-        // let Some(lig_data) = &mut lig.lig_data else {
-        //     return;
-        // };
-
-        // if ui.button("Find sites").clicked() {
-        //     // let sites = find_docking_sites(mol);
-        //     // for site in sites {
-        //     //     println!("Docking site: {:?}", site);
-        //     // }
-        // }
-
-        // if ui.button("Dock").clicked() {
-        //     handle_docking(state, scene, ui, engine_updates);
-        // }
-
-        // if docking_init_changed {
-        // *redraw_lig = true;
-        // set_docking_light(scene, Some(&lig.docking_site));
-        // engine_updates.lighting = true;
-        // }
-    });
-
-    // if let Some(posit) = docking_posit_update {
-    //     // state.update_docking_site(posit);
-    //     state.update_save_prefs(false);
-    // }
 }
 
 fn residue_search(
@@ -1337,7 +1282,9 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                             state.ui.mol_view = MoleculeView::Surface;
                         }
 
-                        dock(state, state.volatile.active_mol.unwrap().1);
+                        if let Err(e) = dock(state, state.volatile.active_mol.unwrap().1) {
+                            handle_err(&mut state.ui, format!("Problem setting up docking: {e:?}"));
+                        }
                     }
                 }
             }
