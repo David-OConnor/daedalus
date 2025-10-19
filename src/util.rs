@@ -985,6 +985,9 @@ pub fn find_nearest_mol_dist_to_cam(state: &State, cam: &Camera) -> Option<f32> 
     None
 }
 
+/// This enables GPU computation if the right compiler flag is set, and there aren't
+/// errors setting up the Cuda stream. It also handles loading cuda kernels used directly
+/// by this application. (Dynamics modules, for example, are handled by that library)
 pub fn get_computation_device() -> (ComputationDevice, Option<CudaFunction>) {
     #[cfg(not(feature = "cuda"))]
     return (ComputationDevice::Cpu, None);
