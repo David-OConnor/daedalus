@@ -80,7 +80,7 @@ use lin_alg::{
     f32::{Quaternion, Vec3},
     f64::Vec3 as Vec3F64,
 };
-use mol_lig::{Ligand, MoleculeSmall};
+use mol_lig::MoleculeSmall;
 use molecule::MoleculePeptide;
 
 use crate::{
@@ -178,8 +178,6 @@ impl Default for FileDialogs {
         }
         .add_file_filter_extensions("Executables", vec!["", "exe"]);
 
-        let autodock_path = FileDialog::with_config(cfg_vina).default_file_filter("Executables");
-
         let load = FileDialog::with_config(cfg_all.clone()).default_file_filter("All");
         let save = FileDialog::with_config(cfg_all).default_save_extension("Protein");
 
@@ -272,9 +270,6 @@ struct StateVolatile {
     mol_manip: MolManip,
     /// For restoring after temprarily disabling mouse look.
     control_scheme_prev: ControlScheme,
-    /// todo: Experimenting with a dynamic fog distance based on the nearest object to the camera.
-    /// Angstrom.
-    nearest_mol_dist_to_cam: Option<f32>,
     /// We maintain a set of atom indices of peptides that are used in MD. This for example, might
     /// exclude hetero atoms and atoms not near a docking site. (mol i, atom i)
     md_peptide_selected: HashSet<(usize, usize)>,
@@ -302,7 +297,6 @@ impl Default for StateVolatile {
             active_mol: Default::default(),
             mol_manip: Default::default(),
             control_scheme_prev: Default::default(),
-            nearest_mol_dist_to_cam: Default::default(),
             md_peptide_selected: Default::default(),
             key_modifiers: Default::default(),
             operating_mode: Default::default(),
@@ -511,13 +505,10 @@ pub enum Selection {
 
 impl Selection {
     pub fn is_bond(&self) -> bool {
-        match self {
-            Self::BondPeptide(_)
-            | Self::BondLig(_)
-            | Self::BondNucleicAcid(_)
-            | Self::BondLipid(_) => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            Self::BondPeptide(_) | Self::BondLig(_) | Self::BondNucleicAcid(_) | Self::BondLipid(_)
+        )
     }
 }
 
@@ -723,7 +714,7 @@ impl State {
                         residues: Vec::new(),
                     };
                     for atom in atoms {
-                        mol.common.atoms.push((&atom).try_into().unwrap());
+                        mol.common.atoms.push((&atom).into());
                     }
 
                     for bond in bonds {
@@ -754,7 +745,12 @@ impl State {
 }
 
 fn main() {
+    #[cfg(not(feature = "cuda"))]
+    let dev = ComputationDevice::Cpu;
+
+    #[cfg(feature = "cuda")]
     let (dev, module_reflections) = util::get_computation_device();
+
     // let dev = ComputationDevice::Cpu;
 
     #[cfg(target_arch = "x86_64")]

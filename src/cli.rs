@@ -360,10 +360,10 @@ pub fn handle_cmd(
             let mut result = Vec::new();
 
             for res in &mol.residues {
-                if let ResidueType::AminoAcid(aa_) = res.res_type {
-                    if aa_ == aa {
-                        result.extend(&res.atoms);
-                    }
+                if let ResidueType::AminoAcid(aa_) = res.res_type
+                    && aa_ == aa
+                {
+                    result.extend(&res.atoms);
                 }
             }
 
@@ -373,39 +373,39 @@ pub fn handle_cmd(
         }
     }
 
-    if let Some(caps) = re_sel_resi.captures(&input) {
-        if let Some(mol) = &state.peptide {
-            let i: u32 = caps[1]
-                .parse()
-                .map_err(|_| io::Error::new(ErrorKind::InvalidData, "Invalid index."))?;
+    if let Some(caps) = re_sel_resi.captures(&input)
+        && let Some(mol) = &state.peptide
+    {
+        let i: u32 = caps[1]
+            .parse()
+            .map_err(|_| io::Error::new(ErrorKind::InvalidData, "Invalid index."))?;
 
-            for (i_res, res) in mol.residues.iter().enumerate() {
-                if res.serial_number == i {
-                    state.ui.selection = Selection::Residue(i_res);
-                    *redraw = true;
-                    return Ok("Complete".to_owned());
-                }
+        for (i_res, res) in mol.residues.iter().enumerate() {
+            if res.serial_number == i {
+                state.ui.selection = Selection::Residue(i_res);
+                *redraw = true;
+                return Ok("Complete".to_owned());
             }
 
             return Err(new_invalid("Unable to find this residue"));
         }
     }
 
-    if let Some(caps) = re_sel_elem.captures(&input) {
-        if let Some(mol) = &state.peptide {
-            let el = Element::from_letter(&caps[1])?;
+    if let Some(caps) = re_sel_elem.captures(&input)
+        && let Some(mol) = &state.peptide
+    {
+        let el = Element::from_letter(&caps[1])?;
 
-            let mut result = Vec::new();
-            for (i, atom) in mol.common.atoms.iter().enumerate() {
-                if atom.element == el {
-                    result.push(i);
-                }
+        let mut result = Vec::new();
+        for (i, atom) in mol.common.atoms.iter().enumerate() {
+            if atom.element == el {
+                result.push(i);
             }
-
-            state.ui.selection = Selection::AtomsPeptide(result);
-            *redraw = true;
-            return Ok("Complete".to_owned());
         }
+
+        state.ui.selection = Selection::AtomsPeptide(result);
+        *redraw = true;
+        return Ok("Complete".to_owned());
     }
 
     if let Some(caps) = re_set.captures(&input) {
@@ -474,11 +474,11 @@ pub fn autocomplete_cli(input: &mut String) {
                     let fnames = get_files_curdir().unwrap_or_default();
                     for name in fnames {
                         // check if “name” is a directory on disk
-                        if Path::new(&name).is_dir() {
-                            if format!("{cmd} {name}").starts_with(&trimmed) {
-                                *input = format!("{cmd} {name}");
-                                break;
-                            }
+                        if Path::new(&name).is_dir()
+                            && format!("{cmd} {name}").starts_with(&trimmed)
+                        {
+                            *input = format!("{cmd} {name}");
+                            break;
                         }
                     }
                 }

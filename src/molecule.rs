@@ -197,7 +197,7 @@ impl MoleculeGeneric {
         }
     }
 
-    pub fn common_mut(&mut self) -> &mut MoleculeCommon {
+    pub fn _common_mut(&mut self) -> &mut MoleculeCommon {
         match self {
             Self::Peptide(m) => &mut m.common,
             Self::Ligand(m) => &mut m.common,
@@ -314,10 +314,10 @@ pub struct MoleculePeptide {
     /// We currently use this for aligning ligands to CIF etc data, where they may already be included
     /// in a protein/ligand complex as hetero atoms.
     pub het_residues: Vec<Residue>,
-    /// Solvent-accessible surface. Used as one of our visualization methods.
-    /// Current structure is a Vec of rings.
-    /// Initializes to empty; updated A/R when the appropriate view is selected.
-    pub sa_surface_pts: Option<Vec<Vec<Vec3F32>>>,
+    // /// Solvent-accessible surface. Used as one of our visualization methods.
+    // /// Current structure is a Vec of rings.
+    // /// Initializes to empty; updated A/R when the appropriate view is selected.
+    // pub sa_surface_pts: Option<Vec<Vec<Vec3F32>>>,
     pub secondary_structure: Vec<BackboneSS>,
     /// Center and size are used for lighting, and for rotating ligands.
     pub center: Vec3,
@@ -388,7 +388,6 @@ impl MoleculePeptide {
     pub fn get_sel_atom(&self, sel: &Selection) -> Option<&Atom> {
         match sel {
             Selection::AtomPeptide(i) => self.common.atoms.get(*i),
-            _ => None,
             // Selection::AtomLig((mol_i, atom_i)) => None,
             // Selection::AtomNucleicAcid((mol_i, atom_i)) => None,
             // Selection::AtomLipid((mol_i, atom_i)) => None,
@@ -415,6 +414,7 @@ impl MoleculePeptide {
                 self.common.atoms.get(is[0])
             }
             Selection::None => None,
+            _ => None, // Bonds
         }
     }
 
@@ -983,7 +983,7 @@ impl MoleculePeptide {
         // }
 
         println!("Populating protein hydrogens, dihedral angles, FF types and partial charges...");
-        let mut start = Instant::now();
+        let start = Instant::now();
 
         let (bonds_, dihedrals) = prepare_peptide_mmcif(&mut m, ff_map, ph)
             .map_err(|e| io::Error::new(ErrorKind::InvalidData, e.descrip))?;

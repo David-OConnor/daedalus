@@ -5,6 +5,7 @@
 use std::time::Instant;
 
 use bio_files::ResidueType;
+#[cfg(feature = "cudarc")]
 use cudarc::{
     driver::{CudaContext, CudaFunction},
     nvrtc::Ptx,
@@ -16,9 +17,10 @@ use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 use mcubes::{MarchingCubes, MeshSide};
 use na_seq::{AaIdent, Element};
 
+#[cfg(feature = "cudarc")]
+use crate::PTX;
 use crate::{
-    CamSnapshot, ManipMode, PREFS_SAVE_INTERVAL, PTX, Selection, State, StateUi, ViewSelLevel,
-    cam_misc,
+    CamSnapshot, ManipMode, PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel, cam_misc,
     drawing::{
         EntityClass, MoleculeView, draw_density_point_cloud, draw_density_surface, draw_peptide,
     },
@@ -32,6 +34,7 @@ use crate::{
     ribbon_mesh::build_cartoon_mesh,
     sa_surface::make_sas_mesh,
 };
+
 pub fn mol_center_size(atoms: &[Atom]) -> (Vec3, f32) {
     let mut sum = Vec3::new_zero();
     let mut max_dim = 0.;
@@ -660,17 +663,17 @@ pub fn handle_scene_flags(
     if state.volatile.flags.new_density_loaded {
         state.volatile.flags.new_density_loaded = false;
 
-        if let Some(mol) = &state.peptide {
-            if !state.ui.visibility.hide_density_point_cloud {
-                if let Some(density) = &mol.elec_density {
-                    draw_density_point_cloud(&mut scene.entities, density);
-                    clear_mol_entity_indices(state, None);
-                    engine_updates.entities = EntityUpdate::All;
-                    // engine_updates
-                    //     .entities
-                    //     .push_class(EntityClass::DensityPoint as u32);
-                    return;
-                }
+        if let Some(mol) = &state.peptide
+            && !state.ui.visibility.hide_density_point_cloud
+        {
+            if let Some(density) = &mol.elec_density {
+                draw_density_point_cloud(&mut scene.entities, density);
+                clear_mol_entity_indices(state, None);
+                engine_updates.entities = EntityUpdate::All;
+                // engine_updates
+                //     .entities
+                //     .push_class(EntityClass::DensityPoint as u32);
+                return;
             }
         }
     }
@@ -729,12 +732,11 @@ pub fn handle_scene_flags(
         }
     }
 
-    if state.volatile.mol_pending_data_avail.is_some() {
-        if let Some(mol) = &mut state.peptide {
-            if mol.poll_data_avail(&mut state.volatile.mol_pending_data_avail) {
-                state.update_save_prefs(false);
-            }
-        }
+    if state.volatile.mol_pending_data_avail.is_some()
+        && let Some(mol) = &mut state.peptide
+        && mol.poll_data_avail(&mut state.volatile.mol_pending_data_avail)
+    {
+        state.update_save_prefs(false);
     }
 }
 
@@ -823,7 +825,6 @@ pub fn find_neighbor_posit(
 
     if neighbors_0.len() >= 2 {
         for neighbor in neighbors_0 {
-            if !hydrogen_is[*neighbor] {}
             if *neighbor != atom_1 && !hydrogen_is[*neighbor] {
                 return Some((*neighbor, false));
             }
@@ -934,7 +935,7 @@ pub fn find_nearest_mol_dist_to_cam(state: &State, cam: &Camera) -> Option<f32> 
     // For the protein, rely on cached distances along a collection of radials.
     if let Some(pep) = &state.peptide {
         // todo: Very slow approach for now to demonstrate concept. Change this to use a cache!!
-        for (i, atom) in pep
+        for (i, _atom) in pep
             .common
             .atoms
             .iter()
@@ -956,26 +957,26 @@ pub fn find_nearest_mol_dist_to_cam(state: &State, cam: &Camera) -> Option<f32> 
     }
 
     for mol in &state.ligands {
-        if let Some(v) = find_nearest_mol_inner(MolGenericRef::Ligand(mol), cam) {
-            if v < nearest {
-                nearest = v;
-            }
+        if let Some(v) = find_nearest_mol_inner(MolGenericRef::Ligand(mol), cam)
+            && v < nearest
+        {
+            nearest = v;
         }
     }
 
     for mol in &state.nucleic_acids {
-        if let Some(v) = find_nearest_mol_inner(MolGenericRef::NucleicAcid(mol), cam) {
-            if v < nearest {
-                nearest = v;
-            }
+        if let Some(v) = find_nearest_mol_inner(MolGenericRef::NucleicAcid(mol), cam)
+            && v < nearest
+        {
+            nearest = v;
         }
     }
 
     for mol in &state.lipids {
-        if let Some(v) = find_nearest_mol_inner(MolGenericRef::Lipid(mol), cam) {
-            if v < nearest {
-                nearest = v;
-            }
+        if let Some(v) = find_nearest_mol_inner(MolGenericRef::Lipid(mol), cam)
+            && v < nearest
+        {
+            nearest = v;
         }
     }
 
@@ -988,11 +989,8 @@ pub fn find_nearest_mol_dist_to_cam(state: &State, cam: &Camera) -> Option<f32> 
 /// This enables GPU computation if the right compiler flag is set, and there aren't
 /// errors setting up the Cuda stream. It also handles loading cuda kernels used directly
 /// by this application. (Dynamics modules, for example, are handled by that library)
+#[cfg(feature = "cuda")]
 pub fn get_computation_device() -> (ComputationDevice, Option<CudaFunction>) {
-    #[cfg(not(feature = "cuda"))]
-    return (ComputationDevice::Cpu, None);
-
-    #[cfg(feature = "cuda")]
     match cudarc::driver::result::init() {
         Ok(_) => {
             let ctx = CudaContext::new(0).unwrap();

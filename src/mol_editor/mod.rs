@@ -20,7 +20,7 @@ use lin_alg::{
     f64::Vec3,
 };
 use na_seq::{
-    AtomTypeInRes, Element,
+    AtomTypeInRes,
     Element::{Carbon, Hydrogen, Nitrogen, Oxygen},
 };
 
@@ -32,6 +32,7 @@ use crate::{
     },
     drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
     md::change_snapshot_helper,
+    mol_editor,
     mol_lig::MoleculeSmall,
     molecule::{Atom, Bond, MolGenericRef, MolType, MoleculeCommon},
     render::{
@@ -83,12 +84,7 @@ impl Default for MolEditorState {
 
 impl MolEditorState {
     /// For now, sets up a pair of single-bonded carbon atoms.
-    pub fn clear_mol(
-        &mut self,
-        dev: &ComputationDevice,
-        param_set: &FfParamSet,
-        md_cfg: &MdConfig,
-    ) {
+    pub fn clear_mol(&mut self) {
         // todo: Change this dist; rough start.
         const DIST: f64 = 1.3;
 
@@ -124,17 +120,6 @@ impl MolEditorState {
 
         self.mol.common.atom_posits = self.mol.common.atoms.iter().map(|a| a.posit).collect();
         self.mol.common.build_adjacency_list();
-
-        match build_dynamics(
-            dev,
-            &self.mol,
-            param_set,
-            &HashMap::new(), // todo: A/R
-            md_cfg,
-        ) {
-            Ok(d) => self.md_state = Some(d),
-            Err(e) => eprintln!("Problem setting up dynamics for the editor: {e:?}"),
-        }
     }
 
     /// A simplified variant of our primary `open_molecule` function.
@@ -257,16 +242,6 @@ impl MolEditorState {
         }
         NEXT_ATOM_SN.store(highest_sn + 1, Ordering::Release);
 
-        match build_dynamics(
-            dev,
-            &self.mol,
-            param_set,
-            &HashMap::new(), // todo: A/R
-            md_cfg,
-        ) {
-            Ok(d) => self.md_state = Some(d),
-            Err(e) => eprintln!("Problem setting up dynamics: {e:?}"),
-        }
         // Load the initial relaxation into atom positions.
         self.load_atom_posits_from_md(&mut scene.entities, state_ui, engine_updates);
 
@@ -381,6 +356,7 @@ impl MolEditorState {
         {
             return;
         }
+
         let Some(md) = &mut self.md_state else { return };
 
         self.last_dt_run = Instant::now();
@@ -523,31 +499,27 @@ pub fn enter_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mu
     // This stays false under several conditions.
     let mut mol_loaded = false;
 
-    if let Some((mol_type, i)) = state.volatile.active_mol {
-        if mol_type == MolType::Ligand {
-            if i >= state.ligands.len() {
-                eprintln!(
-                    "Expected a ligand at this index, but out of bounds when entering edit mode"
-                );
-            } else {
-                state.mol_editor.load_mol(
-                    &state.dev,
-                    &state.ligands[i].common,
-                    &state.ff_param_set,
-                    &state.to_save.md_config,
-                    scene,
-                    engine_updates,
-                    &mut state.ui,
-                );
-                mol_loaded = true;
-            }
+    if let Some((mol_type, i)) = state.volatile.active_mol
+        && mol_type == MolType::Ligand
+    {
+        if i >= state.ligands.len() {
+            eprintln!("Expected a ligand at this index, but out of bounds when entering edit mode");
+        } else {
+            state.mol_editor.load_mol(
+                &state.dev,
+                &state.ligands[i].common,
+                &state.ff_param_set,
+                &state.to_save.md_config,
+                scene,
+                engine_updates,
+                &mut state.ui,
+            );
+            mol_loaded = true;
         }
     }
 
     if !mol_loaded {
-        state
-            .mol_editor
-            .clear_mol(&state.dev, &state.ff_param_set, &state.to_save.md_config);
+        state.mol_editor.clear_mol();
     }
 
     state.volatile.control_scheme_prev = scene.input_settings.control_scheme;

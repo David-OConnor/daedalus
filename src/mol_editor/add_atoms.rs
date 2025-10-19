@@ -1,8 +1,8 @@
 use std::sync::atomic::Ordering;
 
 use bio_files::BondType;
-use dynamics::{find_planar_posit, find_tetra_posit_final, find_tetra_posits};
-use graphics::{EngineUpdates, Entity, EntityUpdate, Scene};
+use dynamics::{find_tetra_posit_final, find_tetra_posits};
+use graphics::{EngineUpdates, Entity, EntityUpdate};
 use lin_alg::f64::Vec3;
 use na_seq::{
     Element,
@@ -11,7 +11,7 @@ use na_seq::{
 
 use crate::{
     StateUi, mol_editor,
-    mol_editor::{MolEditorState, NEXT_ATOM_SN, add_atoms, hydrogens_avail},
+    mol_editor::{MolEditorState, NEXT_ATOM_SN, hydrogens_avail},
     molecule::{Atom, Bond},
 };
 
@@ -146,13 +146,12 @@ impl MolEditorState {
             // Don't add H to oxygens double-bonded.
             if self.mol.common.atoms[i].element == Oxygen {
                 for bond in &self.mol.common.bonds {
-                    if bond.atom_0 == i && bond.atom_1 == *bonded_i
-                        || bond.atom_1 == i && bond.atom_0 == *bonded_i
+                    if (bond.atom_0 == i && bond.atom_1 == *bonded_i
+                        || bond.atom_1 == i && bond.atom_0 == *bonded_i)
+                        && matches!(bond.bond_type, BondType::Double)
                     {
-                        if matches!(bond.bond_type, BondType::Double) {
-                            skip = true;
-                            break;
-                        }
+                        skip = true;
+                        break;
                     }
                 }
             }

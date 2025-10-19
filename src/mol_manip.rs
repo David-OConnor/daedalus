@@ -54,12 +54,7 @@ pub fn handle_mol_manip_in_plane(
             if state.volatile.mol_manip.pivot.is_none() {
                 let pivot: Vec3 = mol.centroid().into();
 
-                let n = scene
-                    .camera
-                    .orientation
-                    .rotate_vec(FWD_VEC)
-                    .to_normalized()
-                    .into();
+                let n = scene.camera.orientation.rotate_vec(FWD_VEC).to_normalized();
 
                 state.volatile.mol_manip.pivot = Some(pivot);
                 state.volatile.mol_manip.view_dir = Some(n);
@@ -155,10 +150,7 @@ pub fn handle_mol_manip_in_out(
     redraw_lig: &mut bool,
     redraw_na: &mut bool,
     redraw_lipid: &mut bool,
-    // updates: &mut EngineUpdates,
 ) {
-    let mut counter_movement = false;
-
     // Move the molecule forward and backwards relative to the camera on scroll.
     match state.volatile.mol_manip.mol {
         ManipMode::Move((mol_type, mol_i)) => {
@@ -196,12 +188,10 @@ pub fn handle_mol_manip_in_out(
                 state.volatile.mol_manip.pivot,
                 state.volatile.mol_manip.view_dir,
             ) {
-                let cam_pos32: Vec3 = scene.camera.position.into();
-
-                let view_dir = (pivot - cam_pos32).to_normalized();
+                let view_dir = (pivot - scene.camera.position).to_normalized();
                 state.volatile.mol_manip.view_dir = Some(view_dir);
 
-                let dist = (pivot - cam_pos32).magnitude();
+                let dist = (pivot - scene.camera.position).magnitude();
                 let step = state.to_save.mol_move_sens as f32 / 1_000. * dist;
 
                 // let dv = pivot_norm * (scroll * step);
@@ -246,7 +236,6 @@ pub fn handle_mol_manip_in_out(
                 MolType::Lipid => *redraw_lipid = true,
                 _ => unimplemented!(),
             };
-            counter_movement = true;
         }
         ManipMode::Rotate((mol_type, mol_i)) => {
             let scroll: f32 = match delta {
@@ -276,7 +265,6 @@ pub fn handle_mol_manip_in_out(
                 MolType::Lipid => *redraw_lipid = true,
                 _ => unimplemented!(),
             };
-            counter_movement = true;
         }
         ManipMode::None => (),
     }

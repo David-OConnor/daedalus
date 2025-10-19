@@ -117,9 +117,9 @@ pub fn editor(
                 ui,
                 &mut redraw,
             );
+            let started = !prev && state.mol_editor.md_running;
 
-
-            if !prev && state.mol_editor.md_running && state.mol_editor.md_rebuild_required {
+            if started && (state.mol_editor.md_rebuild_required || state.mol_editor.md_state.is_none()) {
                 match mol_editor::build_dynamics(
                     &state.dev,
                     &state.mol_editor.mol,
@@ -234,7 +234,7 @@ pub fn editor(
         }
     });
 
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         edit_tools(state, scene, ui, engine_updates);
 
         if state.mol_editor.md_state.is_some() {

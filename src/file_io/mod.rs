@@ -22,9 +22,7 @@ use crate::{
     drawing::EntityClass,
     drawing_wrappers,
     mol_lig::MoleculeSmall,
-    molecule::{
-        MoGenericRefMut, MolGenericRef, MolType, MoleculeCommon, MoleculeGeneric, MoleculePeptide,
-    },
+    molecule::{MolType, MoleculeCommon, MoleculeGeneric, MoleculePeptide},
     prefs::{OpenHistory, OpenType},
     reflection::{DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityRect, ElectronDensity},
     util::{handle_err, handle_success},
@@ -416,7 +414,7 @@ impl State {
 
                 // Update the lig's FRCMOD status A/R, if the ligand is opened already.
                 for lig in &mut self.ligands {
-                    if &lig.common.ident.to_uppercase() == &mol_name.to_uppercase() {
+                    if lig.common.ident.to_uppercase() == mol_name.to_uppercase() {
                         lig.frcmod_loaded = true;
                     }
                 }

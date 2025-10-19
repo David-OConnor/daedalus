@@ -1,24 +1,20 @@
 //! Information and settings for the opened, or to-be opened molecules.
 
-use std::time::Instant;
-
-use bio_apis::{amber_geostd, drugbank, lmsd, pdbe, pubchem, rcsb};
+use bio_apis::{drugbank, lmsd, pdbe, pubchem, rcsb};
 use bio_files::ResidueType;
 use egui::{Color32, RichText, Ui};
-use graphics::{EngineUpdates, EntityUpdate, FWD_VEC, Scene};
+use graphics::{EngineUpdates, EntityUpdate, Scene};
 use lin_alg::f64::Vec3;
 
 use crate::{
     ManipMode, Selection, State,
     cam_misc::move_mol_to_cam,
     download_mols, drawing,
-    drawing::{CHARGE_MAP_MAX, CHARGE_MAP_MIN, COLOR_AA_NON_RESIDUE_EGUI, EntityClass},
+    drawing::{CHARGE_MAP_MAX, CHARGE_MAP_MIN, COLOR_AA_NON_RESIDUE_EGUI},
     lipid::MoleculeLipid,
     mol_lig::MoleculeSmall,
     mol_manip::set_manip,
-    molecule::{
-        Atom, Bond, MoGenericRefMut, MolGenericRef, MolType, MoleculeCommon, Residue, aa_color,
-    },
+    molecule::{Atom, Bond, MoGenericRefMut, MolGenericRef, MolType, Residue, aa_color},
     nucleic_acid::MoleculeNucleicAcid,
     ui::{
         COL_SPACING, COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_HIGHLIGHT, COLOR_INACTIVE,
@@ -254,10 +250,8 @@ pub fn selected_data(
 
 fn mol_picker(
     state: &mut State,
-    scene: &mut Scene,
     ui: &mut Ui,
     redraw_lig: &mut bool,
-    close_lig: &mut bool,
     engine_updates: &mut EngineUpdates,
 ) {
     // todo: Make this support other types.
@@ -580,7 +574,7 @@ pub fn display_mol_data(
     engine_updates: &mut EngineUpdates,
 ) {
     ui.horizontal(|ui| {
-        mol_picker(state, scene, ui, redraw_lig, close, engine_updates);
+        mol_picker(state, ui, redraw_lig, engine_updates);
 
         let Some((active_mol_type, active_mol_i)) = state.volatile.active_mol else {
             return
@@ -672,13 +666,13 @@ pub fn display_mol_data(
 
         if let Some(mol) = state.active_mol() {
             match mol {
-                MolGenericRef::Peptide(m) => {}
-                MolGenericRef::Ligand(l) => {
+                MolGenericRef::Peptide(_) => {}
+                MolGenericRef::Ligand(m) => {
                     ui.add_space(COL_SPACING);
 
                     // todo status color helper?
                     ui.label("Loaded:");
-                    let color = if l.ff_params_loaded {
+                    let color = if m.ff_params_loaded {
                         Color32::LIGHT_GREEN
                     } else {
                         Color32::LIGHT_RED
@@ -690,7 +684,7 @@ pub fn display_mol_data(
 
                     ui.add_space(COL_SPACING / 4.);
 
-                    let color = if l.frcmod_loaded {
+                    let color = if m.frcmod_loaded {
                         Color32::LIGHT_GREEN
                     } else {
                         Color32::LIGHT_RED
@@ -701,28 +695,28 @@ pub fn display_mol_data(
                 loaded for this ligand. Required for ligand molecular dynamics and docking.",
                         );
 
-                    if let Some(id) = &l.drugbank_id {
+                    if let Some(id) = &m.drugbank_id {
                         if ui.button("View on Drugbank").clicked() {
                             drugbank::open_overview(id);
                         }
                     }
 
-                    if let Some(id) = l.pubchem_cid {
+                    if let Some(id) = m.pubchem_cid {
                         if ui.button("View on PubChem").clicked() {
                             pubchem::open_overview(id);
                         }
                     }
 
-                    if let Some(id) = &l.pdbe_id {
+                    if let Some(id) = &m.pdbe_id {
                         if ui.button("View on PDBe").clicked() {
                             pdbe::open_overview(id);
                         }
                     }
 
-                    if let Some(cid) = l.pubchem_cid {
+                    if let Some(cid) = m.pubchem_cid {
                         if ui.button("Find associated structs").clicked() {
                             // todo: Don't block.
-                            if l.associated_structures.is_empty() {
+                            if m.associated_structures.is_empty() {
                                 match pubchem::load_associated_structures(cid) {
                                     Ok(data) => {
                                         // todo: Put back! Borrow issue.

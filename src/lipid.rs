@@ -114,8 +114,8 @@ fn find_atom_by_tir(m: &MoleculeLipid, name: &str) -> usize {
 /// Uses plane geometry to position the first carbon atom in the tail, C12.
 ///  todo: Base on valence angle and dihedral params instead.
 fn find_c12_pos(head: &MoleculeLipid, c11_posit: Vec3, o11_name: &str, o12_name: &str) -> Vec3 {
-    let o11 = find_atom_by_tir(&head, o11_name);
-    let o12 = find_atom_by_tir(&head, o12_name);
+    let o11 = find_atom_by_tir(head, o11_name);
+    let o12 = find_atom_by_tir(head, o12_name);
 
     let o11_posit = head.common.atoms[o11].posit;
     let o12_posit = head.common.atoms[o12].posit;
@@ -147,10 +147,10 @@ fn combine_head_tail(
 ) {
     // Head joining atoms.
     // todo: Rename everyone once you find teh actual idents.
-    let head_p = find_atom_by_tir(&head, "P31");
+    let head_p = find_atom_by_tir(head, "P31");
 
-    let head_anchor_0 = find_atom_by_tir(&head, "C11");
-    let head_anchor_1 = find_atom_by_tir(&head, "C21");
+    let head_anchor_0 = find_atom_by_tir(head, "C11");
+    let head_anchor_1 = find_atom_by_tir(head, "C21");
 
     let t0_anchor = find_atom_by_tir(&tail_0, "C12");
     let t1_anchor = find_atom_by_tir(&tail_1, "C12");
@@ -178,7 +178,7 @@ fn combine_head_tail(
             atom.posit = tail_1.common.atom_posits[i];
             // Convert C11 to C21 etc; this is consistent with the head naming of this chain.
             let mut tir = atom.type_in_res_lipid.clone().unwrap();
-            if tir.chars().next() == Some('C') {
+            if tir.starts_with('C') {
                 tir.replace_range(1..2, "2"); // Instead of 1.
             }
             atom.type_in_res_lipid = Some(tir);
@@ -198,8 +198,8 @@ fn combine_head_tail(
     let c11_pos = head.common.atoms[head_anchor_0].posit;
     let c21_pos = head.common.atoms[head_anchor_1].posit;
 
-    let posit_c12 = find_c12_pos(&head, c11_pos, "O11", "O12");
-    let posit_c22 = find_c12_pos(&head, c21_pos, "O21", "O22");
+    let posit_c12 = find_c12_pos(head, c11_pos, "O11", "O12");
+    let posit_c22 = find_c12_pos(head, c21_pos, "O21", "O22");
 
     // todo: You likely still have an alignment to perform. Get the initial dihedral right, by
     // todo rotating the chain along the C12/C13 bond.
@@ -440,11 +440,13 @@ pub fn make_bacterial_lipids(
     result
 }
 
+#[allow(unused)] // todo: As required later
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum LipidType {
     Phospholipid,
 }
 
+#[allow(unused)] // todo: As required later
 /// Used to create arbitrary lipids
 #[derive(Clone, Debug)]
 pub struct Lipid {
@@ -506,7 +508,7 @@ pub fn make_membrane(
 
     for i in 0..n_mols {
         // todo: DRy with above.
-        let mut mol = get_mol_from_distro(&pe, &pg, rng, &uni);
+        let mut mol = get_mol_from_distro(pe, pg, rng, &uni);
 
         // We rotate based on the original amber orientation, to have tails up and down
         // along the Y axis.

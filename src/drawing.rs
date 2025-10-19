@@ -15,7 +15,6 @@ use na_seq::Element;
 
 use crate::{
     ManipMode, OperatingMode, Selection, State, StateUi, ViewSelLevel,
-    md::STATIC_ATOM_DIST_THRESH,
     molecule::{Atom, AtomRole, Chain, MolGenericRef, MolGenericTrait, MolType, Residue, aa_color},
     reflection::ElectronDensity,
     render::{
@@ -28,7 +27,7 @@ use crate::{
     util::{clear_mol_entity_indices, find_neighbor_posit, orbit_center},
 };
 
-const LIGAND_COLOR_ANCHOR: Color = (1., 0., 1.);
+// const LIGAND_COLOR_ANCHOR: Color = (1., 0., 1.);
 
 const COLOR_MOL_MOVING: Color = (1., 1., 1.);
 const COLOR_MOL_ROTATE: Color = (0.65, 1., 0.65);
@@ -59,7 +58,7 @@ const LIPID_BLEND_AMT: f32 = 0.3;
 
 const COLOR_DOCKING_BOX: Color = (0.3, 0.3, 0.9);
 pub const COLOR_DOCKING_SITE_MESH: Color = (0.5, 0.5, 0.9);
-const DOCKING_SITE_OPACITY: f32 = 0.1;
+// const DOCKING_SITE_OPACITY: f32 = 0.1;
 
 const COLOR_SA_SURFACE: Color = (0.3, 0.2, 1.);
 
@@ -103,7 +102,7 @@ pub const MESH_BOND_CAP: usize = MESH_SPHERE_LOWRES;
 
 // This should ideally be high res, but we experience anomolies on viewing items inside it, while
 // the cam is outside.
-const MESH_DOCKING_SITE: usize = MESH_DOCKING_BOX;
+// const MESH_DOCKING_SITE: usize = MESH_DOCKING_BOX;
 
 // Spheres look slightly better when close, but even our coarsest one leads to performance problems.
 const MESH_SURFACE_DOT: usize = MESH_CUBE;
@@ -1742,25 +1741,25 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
 
             // todo: DRY with above.
             if state.ui.visibility.hide_sidechains || state.ui.mol_view == MoleculeView::Backbone {
-                if let Some(role_0) = atom_donor.role {
-                    if let Some(role_1) = atom_acceptor.role {
-                        if role_0 == AtomRole::Sidechain || role_1 == AtomRole::Sidechain {
+                if let Some(role_0) = atom_donor.role &&
+                    let Some(role_1) = atom_acceptor.role &&
+                    (role_0 == AtomRole::Sidechain || role_1 == AtomRole::Sidechain) {
                             continue;
                         }
-                    }
-                }
+
+
             }
 
             // todo: More DRY with cov bonds
             if ui.show_near_sel_only {
                 let atom_sel = mol.get_sel_atom(&state.ui.selection);
-                if let Some(a) = atom_sel {
-                    if (atom_donor.posit - a.posit).magnitude() as f32
+                if let Some(a) = atom_sel &&
+                     (atom_donor.posit - a.posit).magnitude() as f32
                         > ui.nearby_dist_thresh as f32
                     {
                         continue;
                     }
-                }
+
             }
             if let Some(mol_) = state.active_mol() {
                 if ui.show_near_lig_only {
@@ -1785,15 +1784,15 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
             }
 
             if state.ui.visibility.hide_water {
-                if let Some(role) = atom_donor.role {
-                    if role == AtomRole::Water {
+                if let Some(role) = atom_donor.role &&
+                    role == AtomRole::Water {
                         continue;
-                    }
+
                 }
-                if let Some(role) = atom_acceptor.role {
-                    if role == AtomRole::Water {
+                if let Some(role) = atom_acceptor.role &&
+                     role == AtomRole::Water {
                         continue;
-                    }
+
                 }
             }
 

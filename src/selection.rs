@@ -90,10 +90,10 @@ pub fn find_selected_atom(
         let atom = &atoms_pep[*atom_i];
 
         if ui.visibility.hide_sidechains || matches!(ui.mol_view, MoleculeView::Backbone) {
-            if let Some(role) = atom.role {
-                if role == AtomRole::Sidechain || role == AtomRole::H_Sidechain {
-                    continue;
-                }
+            if let Some(role) = atom.role
+                && (role == AtomRole::Sidechain || role == AtomRole::H_Sidechain)
+            {
+                continue;
             }
         }
 
@@ -140,9 +140,9 @@ pub fn find_selected_atom(
     // Second pass for ligands; we skip most of the hidden checks here that apply to protein atoms.
 
     nearest_in_group(
-        &items_lig_along_ray,
-        &atoms_lig,
-        &bonds_lig,
+        items_lig_along_ray,
+        atoms_lig,
+        bonds_lig,
         MolType::Ligand,
         bond_mode,
         ui.visibility.hide_hydrogen,
@@ -152,9 +152,9 @@ pub fn find_selected_atom(
     );
 
     nearest_in_group(
-        &items_na_along_ray,
-        &atoms_na,
-        &bonds_na,
+        items_na_along_ray,
+        atoms_na,
+        bonds_na,
         MolType::NucleicAcid,
         bond_mode,
         ui.visibility.hide_hydrogen,
@@ -164,9 +164,9 @@ pub fn find_selected_atom(
     );
 
     nearest_in_group(
-        &items_lipid_along_ray,
-        &atoms_lipid,
-        &bonds_lipid,
+        items_lipid_along_ray,
+        atoms_lipid,
+        bonds_lipid,
         MolType::Lipid,
         bond_mode,
         ui.visibility.hide_hydrogen,
@@ -195,10 +195,10 @@ pub fn find_selected_atom(
                 MolType::Peptide => {
                     for (i_res, _res) in ress.iter().enumerate() {
                         let atom_near = &atoms_pep[nearest.atom_i];
-                        if let Some(i) = atom_near.residue {
-                            if i == i_res {
-                                return Selection::Residue(i_res);
-                            }
+                        if let Some(i) = atom_near.residue
+                            && i == i_res
+                        {
+                            return Selection::Residue(i_res);
                         }
                     }
                     Selection::None // Selected atom is not in a residue.

@@ -49,8 +49,6 @@ pub struct OpenHistory {
     pub timestamp: DateTime<Utc>,
     pub path: PathBuf,
     pub type_: OpenType,
-    // /// e.g. RCSB, pubchem etc ident. Maches moleculeCommon.
-    // pub ident: String,
     /// For determining which to open at program start.
     pub last_session: bool,
 }
@@ -171,19 +169,11 @@ impl Default for ToSave {
     }
 }
 
-#[derive(Debug, Encode, Decode)]
-pub struct MolMetaData {
-    prim_cit_title: String,
-}
-
 /// Generally, data here only applies if a protein is present.
 #[derive(Debug, Encode, Decode)]
 pub struct PerMolToSave {
     chain_vis: Vec<bool>,
     chain_to_pick_res: Option<usize>,
-
-    // todo: A/R
-    // metadata: Option<MolMetaData>,
     pub docking_site: DockingSite,
     show_docking_tools: bool,
     res_color_by_index: bool,
@@ -200,7 +190,6 @@ pub struct PerMolToSave {
 impl PerMolToSave {
     pub fn from_state(state: &State, on_init: bool) -> Self {
         let mut chain_vis = Vec::new();
-        // let mut metadata = None;
         let mut rcsb_data = None;
         let mut rcsb_files_avail = None;
 
@@ -211,15 +200,12 @@ impl PerMolToSave {
             rcsb_files_avail = mol.rcsb_files_avail.clone();
         }
 
-        let mut docking_site = Default::default();
+        let docking_site = Default::default();
 
         let mut lig_posit = Vec3::new_zero();
         let mut lig_atom_positions = Vec::new();
 
         if let Some(mol) = state.active_mol() {
-            // docking_site = lig.docking_site.clone();
-            // lig_posit = lig.pose.anchor_posit;
-
             // Don't save this if on init; the data in lig is the default,
             // and we haven't loaded the posits to it yet.
             // todo: If you find a more robust way to handle saving order-dependent data,
@@ -279,8 +265,6 @@ impl State {
         self.to_save.nearby_dist_thresh = self.ui.nearby_dist_thresh;
         self.to_save.visibility = self.ui.visibility.clone();
 
-        // println!("Saving history: {:?}", self.to_save.open_history);
-
         if let Err(e) = save(
             &self.volatile.prefs_dir.join(DEFAULT_PREFS_FILE),
             &self.to_save,
@@ -317,30 +301,7 @@ impl State {
                 mol.rcsb_data = data.rcsb_data.clone();
                 mol.rcsb_files_avail = data.rcsb_files_avail.clone();
             }
-
-            // If loaded from file or not.
-            // if mol.metadata.is_none() {
-            //     println!("Getting MD");
-            //     match load_metadata(&mol.common.ident) {
-            //         Ok(md) => mol.metadata = Some(md),
-            //         Err(_) => eprintln!("Error loading metadata for: {}", mol.common.ident),
-            //     }
-            // }
         }
-
-        // if let Some(lig) = self.active_lig_mut() {
-        //     // lig.docking_site.site_center = data.docking_site_posit; // todo: Or docking site?
-        //
-        //     // todo: This check is a workaround for overal problems related to how we store molecules
-        //     // todo and ligands. Without it, we can desync the positions, and cause index-error crashes
-        //     if data.lig_atom_positions.len() == lig.common.atom_posits.len() {
-        //         lig.common.atom_posits = data.lig_atom_positions.clone();
-        //     } else {
-        //         eprintln!("Error loading ligand atom positions; look into this.")
-        //     }
-        //
-        //     // lig.pose.conformation_type = ConformationType::AbsolutePosits;
-        // }
 
         self.ui.selection = self.to_save.selection.clone();
         self.cam_snapshots = self.to_save.cam_snapshots.clone();
