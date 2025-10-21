@@ -68,7 +68,9 @@ winresource = "0.1.20"
 [features]
 default = ["cuda"]
 
-cuda = ["cuda_setup", "cudarc", "lin_alg/cuda", "dynamics/cuda"]
+#cuda = ["cuda_setup", "cudarc", "lin_alg/cuda", "dynamics/cuda"]
+#cuda = ["cuda_setup", "cudarc", "lin_alg/cuda", "dynamics/cuda", "dynamics/vkfft"]
+cuda = ["cuda_setup", "cudarc", "lin_alg/cuda", "dynamics/cuda", "dynamics/cufft"]
 
 
 [profile.release]

@@ -759,7 +759,8 @@ fn main() {
     let dev = ComputationDevice::Cpu;
 
     #[cfg(feature = "cuda")]
-    let (dev, module_reflections) = util::get_computation_device();
+    let (dev, kernel_reflections) = util::get_computation_device();
+
 
     // let dev = ComputationDevice::Cpu;
 
@@ -781,6 +782,11 @@ fn main() {
         dev,
         ..Default::default()
     };
+
+    #[cfg(feature = "cuda")]
+    if let Some(k) = kernel_reflections {
+        state.kernel_reflections = Some(k);
+    }
 
     // todo: Consider if you want this here. Currently required when adding H to a molecule.
     // In release mode, takes 20ms on a fast CPU. (todo: Test on a slow CPU.)

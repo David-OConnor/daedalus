@@ -241,21 +241,21 @@ pub fn build_dynamics(
         });
     }
 
-    // todo temp!
-    // let cfg = MdConfig {
-    //     overrides: MdOverrides {
-    //         allow_missing_dihedral_params: true,
-    //         skip_water: true,
-    //         bonded_disabled: true,
-    //         coulomb_disabled: false,
-    //         lj_disabled: true,
-    //         long_range_recip_disabled: true,
-    //         thermo_disabled: true,
-    //         baro_disabled: true,
-    //     },
-    //     max_init_relaxation_iters: None,
-    //     ..cfg.clone()
-    // };
+    // Uncomment as required for validating individual processes.
+    let cfg = MdConfig {
+        overrides: MdOverrides {
+            allow_missing_dihedral_params: true,
+            skip_water: true,
+            bonded_disabled: true,
+            coulomb_disabled: false,
+            lj_disabled: true,
+            long_range_recip_disabled: false,
+            thermo_disabled: true,
+            baro_disabled: true,
+        },
+        max_init_relaxation_iters: None,
+        ..cfg.clone()
+    };
 
     println!("Initializing MD state...");
     let md_state = MdState::new(dev, &cfg, &mols, param_set)?;

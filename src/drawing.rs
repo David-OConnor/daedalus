@@ -122,7 +122,7 @@ static LIG_N: OnceLock<Color> = OnceLock::new();
 fn text_overlay_atoms(entity: &mut Entity, mol_ident: &str, i_atom: usize, atom: &Atom, ui: &StateUi) {
     if ui.visibility.labels_atom_sn {
         entity.overlay_text = Some(TextOverlay {
-            text: format!("#{}", atom.serial_number),
+            text: format!("{}", atom.serial_number),
             size: LABEL_SIZE_ATOM,
             color: LABEL_COLOR_ATOM,
             font_family: FontFamily::Proportional,
@@ -143,7 +143,7 @@ fn text_overlay_bonds(entity: &mut Entity, mol_ident: &str, i_atom: usize, atom:
     if !matches!(ui.mol_view, MoleculeView::BallAndStick | MoleculeView::SpaceFill) {
         if ui.visibility.labels_atom_sn {
             entity.overlay_text = Some(TextOverlay {
-                text: format!("#{}", atom.serial_number),
+                text: format!("{}", atom.serial_number),
                 size: LABEL_SIZE_ATOM,
                 color: LABEL_COLOR_ATOM,
                 font_family: FontFamily::Proportional,
