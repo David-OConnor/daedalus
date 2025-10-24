@@ -6,9 +6,10 @@ use std::{
 };
 
 use bio_files::{AtomGeneric, create_bonds, md_params::ForceFieldParams};
+use cudarc::driver::HostSlice;
 use dynamics::{
-    ComputationDevice, FfMolType, MdConfig, MdOverrides, MdState, MolDynamics, ParamError,
-    params::FfParamSet, snapshot::Snapshot,
+    ComputationDevice, FfMolType, HydrogenConstraint, MdConfig, MdOverrides, MdState, MolDynamics,
+    ParamError, params::FfParamSet, snapshot::Snapshot,
 };
 use graphics::{EngineUpdates, EntityUpdate, Scene};
 use lin_alg::f64::Vec3;
@@ -167,11 +168,16 @@ pub fn build_dynamics(
     param_set: &FfParamSet,
     mol_specific_params: &HashMap<String, ForceFieldParams>,
     cfg: &MdConfig,
-    static_peptide: bool,
-    peptide_only_near_lig: bool,
+    mut static_peptide: bool,
+    mut peptide_only_near_lig: bool,
     pep_atom_set: &mut HashSet<(usize, usize)>,
 ) -> Result<MdState, ParamError> {
     println!("Setting up dynamics...");
+
+    if ligs.is_empty() && lipids.is_empty() {
+        static_peptide = false;
+        peptide_only_near_lig = false;
+    }
 
     let mut mols = Vec::new();
 
@@ -242,20 +248,32 @@ pub fn build_dynamics(
     }
 
     // Uncomment as required for validating individual processes.
-    let cfg = MdConfig {
-        overrides: MdOverrides {
-            allow_missing_dihedral_params: true,
-            skip_water: true,
-            bonded_disabled: true,
-            coulomb_disabled: false,
-            lj_disabled: true,
-            long_range_recip_disabled: false,
-            thermo_disabled: true,
-            baro_disabled: true,
-        },
-        max_init_relaxation_iters: None,
-        ..cfg.clone()
-    };
+    // let cfg = MdConfig {
+    //     overrides: MdOverrides {
+    //         allow_missing_dihedral_params: true,
+    //         skip_water: true,
+    //         bonded_disabled: true,
+    //         coulomb_disabled: false,
+    //         lj_disabled: true,
+    //         long_range_recip_disabled: false,
+    //         thermo_disabled: true,
+    //         baro_disabled: true,
+    //     },
+    //     max_init_relaxation_iters: None,
+    //     ..cfg.clone()
+    // };
+
+    // let cfg = MdConfig {
+    //     // todo: Temp until you fix shake/rattle
+    //     hydrogen_constraint: HydrogenConstraint::Flexible,
+    //     overrides: MdOverrides {
+    //         coulomb_disabled: false,
+    //         long_range_recip_disabled: false,
+    //         ..Default::default()
+    //     },
+    //     // max_init_relaxation_iters: None,
+    //     ..cfg.clone()
+    // };
 
     println!("Initializing MD state...");
     let md_state = MdState::new(dev, &cfg, &mols, param_set)?;

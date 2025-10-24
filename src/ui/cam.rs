@@ -146,12 +146,12 @@ pub fn cam_controls(
                     if ui
                         .button(
                             RichText::new("Orbit sel")
-                                .color(misc::active_color(state.ui.orbit_around_selection)),
+                                .color(misc::active_color(state.ui.orbit_selected_atom)),
                         )
                         .on_hover_text("Toggle whether the camera orbits around the selection, or the molecule center.")
                         .clicked()
                     {
-                        state.ui.orbit_around_selection = !state.ui.orbit_around_selection;
+                        state.ui.orbit_selected_atom = !state.ui.orbit_selected_atom;
 
                         let center = orbit_center(state);
                         scene.input_settings.control_scheme = ControlScheme::Arc { center };

@@ -1,7 +1,4 @@
 use super::*;
 
-
 #[test]
-fn test_basic_forces() {
-
-}
+fn test_basic_forces() {}

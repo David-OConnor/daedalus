@@ -33,12 +33,16 @@ use crate::{
         misc::section_box,
         mol_data::display_mol_data_peptide,
         rama_plot::plot_rama,
-        util::{handle_redraw, load_file, load_popups, open_lig_from_input, update_file_dialogs},
+        util::{
+            handle_redraw, init_with_scene, load_file, load_popups, open_lig_from_input,
+            update_file_dialogs,
+        },
         view::{ui_section_vis, view_settings},
     },
     util::{
         check_prefs_save, clear_mol_entity_indices, close_mol, close_peptide, cycle_selected,
-        handle_err, handle_scene_flags, handle_success, orbit_center, select_from_search,
+        handle_err, handle_scene_flags, handle_success, orbit_center, reset_orbit_center,
+        select_from_search,
     },
 };
 
@@ -1228,7 +1232,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         ui.horizontal(|ui| {
             // Show the picker, at least.
             if !state.ligands.is_empty() {
-                display_mol_data(state, scene, ui, &mut redraw_lig, &mut redraw_na, &mut redraw_lipid, &mut close_active_mol, &mut engine_updates);
+                display_mol_data(state, scene, ui, &mut redraw_peptide, &mut redraw_lig, &mut redraw_na, &mut redraw_lipid, &mut close_active_mol, &mut engine_updates);
             }
 
             if ui.button(RichText::new("Mol editor").color(COLOR_HIGHLIGHT)).clicked() {
@@ -1251,9 +1255,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         });
 
         ui.horizontal(|ui| {
-            // ui.vertical(|ui| {
             view_settings(state, scene, &mut engine_updates, &mut redraw_peptide, &mut redraw_lig, &mut redraw_na, &mut redraw_lipid, ui);
-            // });
 
             ui.add_space(COL_SPACING);
 
@@ -1349,7 +1351,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         engine_updates.lighting = true;
     }
 
-
     // This double-change variable logic is due to some cases needing to wait
     // an additional frame before the height takes effect.
     if UI_HEIGHT_CHANGE_DELAY.swap(false, Ordering::AcqRel) {
@@ -1360,25 +1361,9 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         UI_HEIGHT_CHANGE_DELAY.store(true, Ordering::Release);
     }
 
+    // We perform init items here that rely on the scene, or UI context.
     if !INIT_COMPLETE.swap(true, Ordering::AcqRel) {
-        if state.volatile.ui_height < f32::EPSILON {
-            state.volatile.ui_height = ctx.used_size().y;
-        }
-
-        if state.peptide.is_some() {
-            set_static_light(
-                scene,
-                state.peptide.as_ref().unwrap().center.into(),
-                state.peptide.as_ref().unwrap().size,
-            );
-        } else if !state.ligands.is_empty() {
-            let lig = &state.ligands[0];
-            set_static_light(
-                scene,
-                lig.common.centroid().into(),
-                3., // todo good enough?
-            );
-        }
+        init_with_scene(state, scene, ctx);
     }
 
     handle_scene_flags(state, scene, &mut engine_updates);

@@ -43,11 +43,13 @@ fn helper_b(
             .iter_mut()
             .enumerate()
         {
+            // This must include all fields which have changed.
             ent.position = entities[i].position;
             ent.orientation = entities[i].orientation;
             ent.scale = entities[i].scale;
             ent.scale_partial = entities[i].scale_partial;
             ent.color = entities[i].color;
+            ent.overlay_text = entities[i].overlay_text.clone();
         }
     } else {
         // Full rebuild
@@ -60,7 +62,6 @@ fn helper_b(
 
 pub fn draw_all_ligs(state: &mut State, scene: &mut Scene) {
     // draw_all_mol_of_type(state, scene, &mut state.ligands, MolType::ligand, state.ui.visibility.hide_ligands);
-    // return;
     let class = EntityClass::Ligand as u32;
     let (initial_ent_count, ent_i_start) = helper_a(scene, class);
 

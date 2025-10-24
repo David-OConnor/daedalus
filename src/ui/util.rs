@@ -13,9 +13,9 @@ use crate::{
     mol_editor,
     mol_lig::MoleculeSmall,
     molecule::{MolGenericRef, MolType},
-    render::set_flashlight,
+    render::{set_flashlight, set_static_light},
     ui::{COL_SPACING, COLOR_HIGHLIGHT, ROW_SPACING, set_window_title},
-    util::handle_err,
+    util::{handle_err, reset_orbit_center},
 };
 
 /// Run this each frame, after all UI elements that affect it are rendered.
@@ -326,4 +326,27 @@ pub fn open_lig_from_input(state: &mut State, cam: &Camera, mut mol: MoleculeSma
     state.update_from_prefs();
 
     state.ui.db_input = String::new();
+}
+
+pub fn init_with_scene(state: &mut State, scene: &mut Scene, ctx: &egui::Context) {
+    if state.volatile.ui_height < f32::EPSILON {
+        state.volatile.ui_height = ctx.used_size().y;
+    }
+
+    if state.peptide.is_some() {
+        set_static_light(
+            scene,
+            state.peptide.as_ref().unwrap().center.into(),
+            state.peptide.as_ref().unwrap().size,
+        );
+    } else if !state.ligands.is_empty() {
+        let lig = &state.ligands[0];
+        set_static_light(
+            scene,
+            lig.common.centroid().into(),
+            3., // todo good enough?
+        );
+    }
+
+    reset_orbit_center(state, scene);
 }

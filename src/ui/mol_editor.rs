@@ -26,7 +26,7 @@ const DT_MAX: f32 = 0.0005; // No more than 0.002 for stability. currently 0.5fs
 
 // Higher may be relax more, but takes longer. We aim for a small time so it can be done without
 // a noticeable lag.
-const MAX_RELAX_ITERS: usize = 80;
+const MAX_RELAX_ITERS: usize = 300;
 
 pub fn editor(
     state: &mut State,

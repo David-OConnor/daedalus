@@ -50,7 +50,9 @@ const COLOR_SFC_DOT: Color = (0.7, 0.7, 0.7);
 const LABEL_SIZE_ATOM: f32 = 16.;
 const LABEL_SIZE_MOL: f32 = 40.;
 const LABEL_COLOR_ATOM: (u8, u8, u8, u8) = (255, 60, 160, 255);
-const LABEL_COLOR_MOL: (u8, u8, u8, u8) = (255, 100, 100, 255);
+const LABEL_COLOR_ATOM_SEL: (u8, u8, u8, u8) = (255, 20, 20, 255);
+const LABEL_COLOR_MOL: (u8, u8, u8, u8) = (255, 100, 120, 255);
+const LABEL_COLOR_MOL_SEL: (u8, u8, u8, u8) = (255, 10, 10, 255);
 
 // Hetero residues in protein, so they stand out from the normal protein molecules.
 // Lower blend values mean more of the original color.
@@ -119,7 +121,16 @@ static LIG_O: OnceLock<Color> = OnceLock::new();
 static LIG_H: OnceLock<Color> = OnceLock::new();
 static LIG_N: OnceLock<Color> = OnceLock::new();
 
-fn text_overlay_atoms(entity: &mut Entity, mol_ident: &str, i_atom: usize, atom: &Atom, ui: &StateUi) {
+// todo: For this and overlay bonds: Make teh atom color based on if the atom is selected;
+// todo not if the bond is selected.
+fn text_overlay_atoms(
+    entity: &mut Entity,
+    mol_ident: &str,
+    i_atom: usize,
+    atom: &Atom,
+    sel: bool,
+    ui: &StateUi,
+) {
     if ui.visibility.labels_atom_sn {
         entity.overlay_text = Some(TextOverlay {
             text: format!("{}", atom.serial_number),
@@ -129,18 +140,40 @@ fn text_overlay_atoms(entity: &mut Entity, mol_ident: &str, i_atom: usize, atom:
         });
     }
 
+    let color = if sel {
+        LABEL_COLOR_MOL_SEL
+    } else {
+        LABEL_COLOR_MOL
+    };
+
     if ui.visibility.labels_mol && i_atom == 0 {
         entity.overlay_text = Some(TextOverlay {
             text: format!("{}", mol_ident),
             size: LABEL_SIZE_MOL,
-            color: LABEL_COLOR_MOL,
+            color,
             font_family: FontFamily::Proportional,
         });
     }
 }
 
-fn text_overlay_bonds(entity: &mut Entity, mol_ident: &str, i_atom: usize, atom: &Atom, ui: &StateUi) {
-    if !matches!(ui.mol_view, MoleculeView::BallAndStick | MoleculeView::SpaceFill) {
+fn text_overlay_bonds(
+    entity: &mut Entity,
+    mol_ident: &str,
+    i_atom: usize,
+    atom: &Atom,
+    sel: bool,
+    ui: &StateUi,
+) {
+    if !matches!(
+        ui.mol_view,
+        MoleculeView::BallAndStick | MoleculeView::SpaceFill
+    ) {
+        let color = if sel {
+            LABEL_COLOR_ATOM_SEL
+        } else {
+            LABEL_COLOR_ATOM
+        };
+
         if ui.visibility.labels_atom_sn {
             entity.overlay_text = Some(TextOverlay {
                 text: format!("{}", atom.serial_number),
@@ -150,11 +183,17 @@ fn text_overlay_bonds(entity: &mut Entity, mol_ident: &str, i_atom: usize, atom:
             });
         }
 
+        let color = if sel {
+            LABEL_COLOR_MOL_SEL
+        } else {
+            LABEL_COLOR_MOL
+        };
+
         if ui.visibility.labels_mol && i_atom == 0 {
             entity.overlay_text = Some(TextOverlay {
                 text: format!("{}", mol_ident),
                 size: LABEL_SIZE_MOL,
-                color: LABEL_COLOR_MOL,
+                color,
                 font_family: FontFamily::Proportional,
             });
         }
@@ -636,7 +675,7 @@ pub fn bond_entities(
                 } else {
                     diff.cross(neighbor.0 - posit_0)
                 }
-                    .to_normalized();
+                .to_normalized();
 
                 let dir_in = perp_vec.cross(diff.to_normalized()).to_normalized();
                 let offset = dir_in * AR_INNER_OFFSET;
@@ -1002,7 +1041,14 @@ pub fn draw_mol(
             );
 
             // Note: We draw these on the bond entities if not in a view that shows atoms.
-            text_overlay_atoms(&mut entity, &mol.common().ident, i_atom, &atom, ui);
+            text_overlay_atoms(
+                &mut entity,
+                &mol.common().ident,
+                i_atom,
+                &atom,
+                mol_active,
+                ui,
+            );
 
             entity.class = mol.mol_type().entity_type() as u32;
             result.push(entity);
@@ -1169,7 +1215,14 @@ pub fn draw_mol(
 
         // Draw atom-based labels on bonds if not in a view mode that shows atoms.
         if !entities.is_empty() {
-            text_overlay_bonds(&mut entities[0], &mol.common().ident, bond.atom_0, &atom_0, ui);
+            text_overlay_bonds(
+                &mut entities[0],
+                &mol.common().ident,
+                bond.atom_0,
+                &atom_0,
+                mol_active, // todo
+                ui,
+            );
         }
 
         result.extend(entities);
@@ -1354,6 +1407,14 @@ pub fn draw_secondary_structure(update_mesh: &mut bool, mesh_created: bool, scen
 pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
     // todo: You may wish to integrate Cartoon into this workflow.
     let initial_ent_count = scene.entities.len();
+
+    let mol_i = 0; // todo for now.
+
+    let mol_active = if let Some((active_mol_type, active_i)) = state.volatile.active_mol {
+        MolType::Peptide == active_mol_type && mol_i == active_i
+    } else {
+        false
+    };
 
     scene.entities.retain(|ent| {
         ent.class != EntityClass::Protein as u32
@@ -1604,7 +1665,14 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
             );
 
             // Note: We draw these on the bond entities if not in a view that shows atoms.
-            text_overlay_atoms(&mut entity, &mol.common.ident, i_atom, &atom, ui);
+            text_overlay_atoms(
+                &mut entity,
+                &mol.common.ident,
+                i_atom,
+                &atom,
+                mol_active,
+                ui,
+            );
 
             entity.class = EntityClass::Protein as u32;
             entities.push(entity);
@@ -1790,7 +1858,14 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
         );
 
         if !ents_new.is_empty() {
-            text_overlay_bonds(&mut ents_new[0], &mol.common.ident, bond.atom_0, &atom_0, ui);
+            text_overlay_bonds(
+                &mut ents_new[0],
+                &mol.common.ident,
+                bond.atom_0,
+                &atom_0,
+                mol_active,
+                ui,
+            );
         }
 
         entities.extend(ents_new);
@@ -1809,25 +1884,23 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
 
             // todo: DRY with above.
             if state.ui.visibility.hide_sidechains || state.ui.mol_view == MoleculeView::Backbone {
-                if let Some(role_0) = atom_donor.role &&
-                    let Some(role_1) = atom_acceptor.role &&
-                    (role_0 == AtomRole::Sidechain || role_1 == AtomRole::Sidechain) {
+                if let Some(role_0) = atom_donor.role
+                    && let Some(role_1) = atom_acceptor.role
+                    && (role_0 == AtomRole::Sidechain || role_1 == AtomRole::Sidechain)
+                {
                     continue;
                 }
-
-
             }
 
             // todo: More DRY with cov bonds
             if ui.show_near_sel_only {
                 let atom_sel = mol.get_sel_atom(&state.ui.selection);
-                if let Some(a) = atom_sel &&
-                    (atom_donor.posit - a.posit).magnitude() as f32
+                if let Some(a) = atom_sel
+                    && (atom_donor.posit - a.posit).magnitude() as f32
                         > ui.nearby_dist_thresh as f32
                 {
                     continue;
                 }
-
             }
             if let Some(mol_) = state.active_mol() {
                 if ui.show_near_lig_only {
@@ -1852,15 +1925,15 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
             }
 
             if state.ui.visibility.hide_water {
-                if let Some(role) = atom_donor.role &&
-                    role == AtomRole::Water {
+                if let Some(role) = atom_donor.role
+                    && role == AtomRole::Water
+                {
                     continue;
-
                 }
-                if let Some(role) = atom_acceptor.role &&
-                    role == AtomRole::Water {
+                if let Some(role) = atom_acceptor.role
+                    && role == AtomRole::Water
+                {
                     continue;
-
                 }
             }
 

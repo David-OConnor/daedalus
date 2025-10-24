@@ -115,6 +115,16 @@ pub fn md_setup(
             }
 
             if state.volatile.md_local.running {
+                if ui
+                    .button(RichText::new("Abort").color(Color32::LIGHT_RED))
+                    .on_hover_text("Stop the in-progress simulation")
+                    .clicked() {
+                    state.volatile.md_local.running = false;
+                    state.volatile.md_local.start = None;
+                }
+            }
+
+            if state.volatile.md_local.running {
                 if let Some(md) = &state.mol_dynamics {
                     let count = (md.step_count / 100) * 100;
                     ui.label(RichText::new(format!("MD running. Step {} of {}", count, state.to_save.num_md_steps)).color(COLOR_HIGHLIGHT));

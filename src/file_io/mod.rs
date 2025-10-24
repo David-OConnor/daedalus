@@ -25,7 +25,7 @@ use crate::{
     molecule::{MolType, MoleculeCommon, MoleculeGeneric, MoleculePeptide},
     prefs::{OpenHistory, OpenType},
     reflection::{DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityRect, ElectronDensity},
-    util::{handle_err, handle_success},
+    util::{handle_err, handle_success, orbit_center, reset_orbit_center},
 };
 
 impl State {
@@ -173,6 +173,9 @@ impl State {
 
                         self.volatile.flags.clear_density_drawing = true;
 
+                        self.volatile.active_mol = Some((MolType::Peptide, 0));
+                        self.volatile.orbit_center = Some((MolType::Peptide, 0));
+
                         self.peptide = Some(m);
 
                         self.update_history(path, OpenType::Peptide);
@@ -181,6 +184,8 @@ impl State {
                         self.mol_dynamics = None;
 
                         self.volatile.active_mol = Some((MolType::Ligand, self.ligands.len())); // Prior to push; no - 1
+                        self.volatile.orbit_center = Some((MolType::Ligand, self.ligands.len()));
+
                         mol.update_aux(&self.volatile.active_mol, &mut self.lig_specific_params);
 
                         if let Some(ref mut s) = scene {
@@ -192,6 +197,8 @@ impl State {
                                     center: mol.common.centroid().into(),
                                 };
                             }
+
+                            reset_orbit_center(self, s);
                         }
                         self.ligands.push(mol);
 
@@ -203,10 +210,15 @@ impl State {
                         engine_updates.entities =
                             EntityUpdate::Classes(vec![EntityClass::Ligand as u32]);
                         self.update_history(path, OpenType::Ligand);
+
+                        self.volatile.orbit_center =
+                            Some((MolType::Ligand, self.ligands.len() - 1));
                     }
                     MoleculeGeneric::NucleicAcid(mut mol) => {
                         self.volatile.active_mol =
                             Some((MolType::NucleicAcid, self.nucleic_acids.len())); // Prior to push; no - 1
+                        self.volatile.orbit_center =
+                            Some((MolType::NucleicAcid, self.nucleic_acids.len()));
 
                         if let Some(ref mut s) = scene {
                             move_mol_to_cam(&mut mol.common, &s.camera);
@@ -217,6 +229,8 @@ impl State {
                                     center: mol.common.centroid().into(),
                                 };
                             }
+
+                            reset_orbit_center(self, s);
                         }
                         self.nucleic_acids.push(mol);
 
@@ -229,7 +243,8 @@ impl State {
                         self.update_history(path, OpenType::NucleicAcid);
                     }
                     MoleculeGeneric::Lipid(mut mol) => {
-                        self.volatile.active_mol = Some((MolType::Lipid, self.nucleic_acids.len())); // Prior to push; no - 1
+                        self.volatile.active_mol = Some((MolType::Lipid, self.lipids.len())); // Prior to push; no - 1
+                        self.volatile.orbit_center = Some((MolType::Lipid, self.lipids.len()));
 
                         if let Some(ref mut s) = scene {
                             move_mol_to_cam(&mut mol.common, &s.camera);
@@ -240,6 +255,8 @@ impl State {
                                     center: mol.common.centroid().into(),
                                 };
                             }
+
+                            reset_orbit_center(self, s);
                         }
                         self.lipids.push(mol);
 

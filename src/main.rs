@@ -279,6 +279,7 @@ struct StateVolatile {
     /// Allows restoring after entering the mol edit mode.
     primary_mode_cam: Camera,
     md_local: MdStateLocal,
+    orbit_center: Option<(MolType, usize)>,
 }
 
 impl Default for StateVolatile {
@@ -302,6 +303,7 @@ impl Default for StateVolatile {
             operating_mode: Default::default(),
             primary_mode_cam: Default::default(),
             md_local: Default::default(),
+            orbit_center: None,
         }
     }
 }
@@ -442,7 +444,7 @@ struct StateUi {
     docking_site_z: String,
     docking_site_size: String,
     /// For the arc/orbit cam only.
-    orbit_around_selection: bool,
+    orbit_selected_atom: bool,
     // todo: Re-implement A/R
     // binding_energy_disp: Option<BindingEnergy>,
     current_snapshot: usize,
@@ -760,7 +762,6 @@ fn main() {
 
     #[cfg(feature = "cuda")]
     let (dev, kernel_reflections) = util::get_computation_device();
-
 
     // let dev = ComputationDevice::Cpu;
 

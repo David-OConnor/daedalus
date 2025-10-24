@@ -17,8 +17,6 @@ use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 use mcubes::{MarchingCubes, MeshSide};
 use na_seq::{AaIdent, Element};
 
-#[cfg(feature = "cudarc")]
-use crate::PTX;
 use crate::{
     CamSnapshot, ManipMode, PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel, cam_misc,
     drawing::{
@@ -302,28 +300,27 @@ pub fn bond_angle(atoms: &[Atom], bond_0: &Bond, bond_1: &Bond) -> f64 {
     }
 }
 
-/// Based on selection status and if a molecule is open, find the center for the orbit camera.
+/// Based on selection status and if a molecule is open, find the center for the orbit camera. This
+/// is generally around a specific atom, or a molecule's centroid.
 pub fn orbit_center(state: &State) -> Vec3F32 {
-    if state.ui.orbit_around_selection {
+    if state.ui.orbit_selected_atom {
         match &state.ui.selection {
             Selection::AtomPeptide(i) => {
                 if let Some(mol) = &state.peptide {
                     match mol.common.atoms.get(*i) {
-                        Some(a) => a.posit.into(),
-                        None => Vec3F32::new_zero(),
+                        Some(a) => return a.posit.into(),
+                        None => (),
                     }
-                } else {
-                    Vec3F32::new_zero()
                 }
             }
             Selection::AtomLig((i_mol, i_atom)) => {
-                state.ligands[*i_mol].common.atom_posits[*i_atom].into()
+                return state.ligands[*i_mol].common.atom_posits[*i_atom].into();
             }
             Selection::AtomNucleicAcid((i_mol, i_atom)) => {
-                state.nucleic_acids[*i_mol].common.atom_posits[*i_atom].into()
+                return state.nucleic_acids[*i_mol].common.atom_posits[*i_atom].into();
             }
             Selection::AtomLipid((i_mol, i_atom)) => {
-                state.lipids[*i_mol].common.atom_posits[*i_atom].into()
+                return state.lipids[*i_mol].common.atom_posits[*i_atom].into();
             }
 
             Selection::Residue(i) => {
@@ -331,75 +328,103 @@ pub fn orbit_center(state: &State) -> Vec3F32 {
                     match mol.residues.get(*i) {
                         Some(res) => {
                             match mol.common.atoms.get(match res.atoms.first() {
-                                Some(a) => *a,
+                                Some(a) => *a, // todo: What?
                                 None => return Vec3F32::new_zero(),
                             }) {
-                                Some(a) => a.posit.into(),
-                                None => Vec3F32::new_zero(),
+                                Some(a) => return a.posit.into(),
+                                None => return Vec3F32::new_zero(),
                             }
                         }
-                        None => Vec3F32::new_zero(),
+                        None => return Vec3F32::new_zero(),
                     }
-                } else {
-                    Vec3F32::new_zero()
                 }
             }
             Selection::AtomsPeptide(is) => {
                 if let Some(mol) = &state.peptide {
                     match mol.common.atoms.get(is[0]) {
-                        Some(a) => a.posit.into(),
-                        None => Vec3F32::new_zero(),
+                        Some(a) => return a.posit.into(),
+                        None => (),
                     }
-                } else {
-                    Vec3F32::new_zero()
                 }
             }
             Selection::BondPeptide(i_atom) => {
                 if let Some(mol) = &state.peptide {
                     match mol.common.bonds.get(*i_atom) {
-                        Some(bond) => ((mol.common.atom_posits[bond.atom_0]
-                            + mol.common.atom_posits[bond.atom_1])
-                            / 2.)
-                            .into(),
-                        None => Vec3F32::new_zero(),
+                        Some(bond) => {
+                            return ((mol.common.atom_posits[bond.atom_0]
+                                + mol.common.atom_posits[bond.atom_1])
+                                / 2.)
+                                .into();
+                        }
+                        None => (),
                     }
-                } else {
-                    Vec3F32::new_zero()
                 }
             }
             Selection::BondLig((i_mol, i_bond)) => {
                 let mol = &state.ligands[*i_mol];
                 let bond = &mol.common.bonds[*i_bond];
-                ((mol.common.atom_posits[bond.atom_0] + mol.common.atom_posits[bond.atom_1]) / 2.)
-                    .into()
+                return ((mol.common.atom_posits[bond.atom_0]
+                    + mol.common.atom_posits[bond.atom_1])
+                    / 2.)
+                    .into();
             }
             Selection::BondNucleicAcid((i_mol, i_bond)) => {
                 let mol = &state.nucleic_acids[*i_mol];
                 let bond = &mol.common.bonds[*i_bond];
-                ((mol.common.atom_posits[bond.atom_0] + mol.common.atom_posits[bond.atom_1]) / 2.)
-                    .into()
+                return ((mol.common.atom_posits[bond.atom_0]
+                    + mol.common.atom_posits[bond.atom_1])
+                    / 2.)
+                    .into();
             }
             Selection::BondLipid((i_mol, i_bond)) => {
                 let mol = &state.lipids[*i_mol];
                 let bond = &mol.common.bonds[*i_bond];
-                ((mol.common.atom_posits[bond.atom_0] + mol.common.atom_posits[bond.atom_1]) / 2.)
-                    .into()
+                return ((mol.common.atom_posits[bond.atom_0]
+                    + mol.common.atom_posits[bond.atom_1])
+                    / 2.)
+                    .into();
             }
             Selection::None => {
                 if let Some(mol) = &state.peptide {
-                    mol.center.into()
-                } else {
-                    lin_alg::f32::Vec3::new_zero()
+                    return mol.center.into();
                 }
             }
         }
+        // Orbit around the selected molecule's centroid. Failing that, the origin.
     } else {
-        if let Some(mol) = &state.peptide {
-            mol.center.into()
-        } else {
-            Vec3F32::new_zero()
+        let Some((mol_type, i)) = &state.volatile.orbit_center else {
+            return Vec3F32::new_zero();
+        };
+        let i = *i;
+
+        match mol_type {
+            MolType::Peptide => {
+                if let Some(mol) = &state.peptide {
+                    // Used the cached position, as computing centroid may be expensive
+                    // for large proteins.
+                    return mol.center.into();
+                }
+            }
+            MolType::Ligand => {
+                if i < state.ligands.len() {
+                    return state.ligands[i].common.centroid().into();
+                }
+            }
+            MolType::NucleicAcid => {
+                if i < state.nucleic_acids.len() {
+                    return state.nucleic_acids[i].common.centroid().into();
+                }
+            }
+            MolType::Lipid => {
+                if i < state.lipids.len() {
+                    return state.lipids[i].common.centroid().into();
+                }
+            }
+            MolType::Water => (),
         }
     }
+
+    Vec3F32::new_zero()
 }
 
 /// A helper fn. Maps from a global index, to a local atom from a subset.
@@ -500,6 +525,12 @@ pub fn close_peptide(state: &mut State, scene: &mut Scene, engine_updates: &mut 
 
     engine_updates.entities = EntityUpdate::All;
     // engine_updates.entities.push_class(EntityClass::Peptide as u32);
+
+    if let Some((orbit_mol_type, orbit_i)) = &state.volatile.orbit_center
+        && (*orbit_mol_type, *orbit_i) == (MolType::Peptide, 0)
+    {
+        reset_orbit_center(state, scene);
+    }
 }
 
 /// Close the active molecule.
@@ -514,6 +545,9 @@ pub fn close_mol(
     engine_updates.entities = EntityUpdate::All;
 
     match mol_type {
+        MolType::Peptide => {
+            close_peptide(state, scene, engine_updates);
+        }
         MolType::Ligand => {
             if i >= state.ligands.len() {
                 eprintln!("Error: Invalid lig index");
@@ -578,7 +612,31 @@ pub fn close_mol(
 
             draw_all_lipids(state, scene);
         }
-        _ => unimplemented!(),
+        MolType::Water => (),
+    }
+
+    if let Some((orbit_mol_type, orbit_i)) = &state.volatile.orbit_center
+        && (*orbit_mol_type, *orbit_i) == (mol_type, i)
+    {
+        reset_orbit_center(state, scene);
+    }
+}
+
+pub fn reset_orbit_center(state: &mut State, scene: &mut Scene) {
+    // Reset the arc center, if in that camera mode, and molecule was the active one.
+
+    if state.peptide.is_some() {
+        state.volatile.orbit_center = Some((MolType::Peptide, 0));
+    } else if !state.ligands.is_empty() {
+        state.volatile.orbit_center = Some((MolType::Ligand, state.ligands.len() - 1));
+    } else if !state.nucleic_acids.is_empty() {
+        state.volatile.orbit_center = Some((MolType::NucleicAcid, state.nucleic_acids.len() - 1));
+    } else if !state.lipids.is_empty() {
+        state.volatile.orbit_center = Some((MolType::Lipid, state.lipids.len() - 1));
+    }
+
+    if let ControlScheme::Arc { center } = &mut scene.input_settings.control_scheme {
+        *center = orbit_center(state);
     }
 }
 
@@ -996,7 +1054,7 @@ pub fn get_computation_device() -> (ComputationDevice, Option<CudaFunction>) {
             let ctx = CudaContext::new(0).unwrap();
             let stream = ctx.default_stream();
 
-            let module_reflections = ctx.load_module(Ptx::from_src(PTX));
+            let module_reflections = ctx.load_module(Ptx::from_src(crate::PTX));
 
             match module_reflections {
                 Ok(m) => {

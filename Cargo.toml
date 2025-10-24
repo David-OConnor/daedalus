@@ -59,7 +59,7 @@ dynamics = { path = "../dynamics" }
 
 
 [build-dependencies]
-cuda_setup = { version = "0.1.7", optional = true }
+cuda_setup = { version = "0.1.9", optional = true }
 # This is for embedding an application icon, on Windows.
 winresource = "0.1.20"
 
@@ -68,7 +68,6 @@ winresource = "0.1.20"
 [features]
 default = ["cuda"]
 
-#cuda = ["cuda_setup", "cudarc", "lin_alg/cuda", "dynamics/cuda"]
 #cuda = ["cuda_setup", "cudarc", "lin_alg/cuda", "dynamics/cuda", "dynamics/vkfft"]
 cuda = ["cuda_setup", "cudarc", "lin_alg/cuda", "dynamics/cuda", "dynamics/cufft"]
 

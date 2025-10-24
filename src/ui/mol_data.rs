@@ -3,7 +3,7 @@
 use bio_apis::{drugbank, lmsd, pdbe, pubchem, rcsb};
 use bio_files::ResidueType;
 use egui::{Color32, RichText, Ui};
-use graphics::{EngineUpdates, EntityUpdate, Scene};
+use graphics::{ControlScheme, EngineUpdates, EntityUpdate, Scene};
 use lin_alg::f64::Vec3;
 
 use crate::{
@@ -20,7 +20,10 @@ use crate::{
         COL_SPACING, COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_HIGHLIGHT, COLOR_INACTIVE,
         cam::move_cam_to_active_mol, mol_descrip,
     },
-    util::{handle_err, handle_success, make_egui_color, make_lig_from_res, move_mol_to_res},
+    util::{
+        handle_err, handle_success, make_egui_color, make_lig_from_res, move_mol_to_res,
+        orbit_center, reset_orbit_center,
+    },
 };
 
 /// `posit_override` is for example, relative atom positions, such as a positioned ligand.
@@ -250,11 +253,60 @@ pub fn selected_data(
 
 fn mol_picker(
     state: &mut State,
+    scene: &mut Scene,
     ui: &mut Ui,
+    redraw_pep: &mut bool,
     redraw_lig: &mut bool,
     engine_updates: &mut EngineUpdates,
 ) {
     // todo: Make this support other types.
+    let mut recenter_orbit = false;
+    if let Some(mol) = &mut state.peptide {
+        let i_mol = 0; // todo: A/R if you add more peptides.
+
+        let active = match state.volatile.active_mol {
+            Some((MolType::Peptide, i_)) => i_ == i_mol,
+            _ => false,
+        };
+
+        let color = if active {
+            COLOR_ACTIVE_RADIO
+        } else {
+            COLOR_INACTIVE
+        };
+
+        if ui
+            .button(RichText::new(&mol.common.ident).color(color))
+            .clicked()
+        {
+            if active && state.volatile.active_mol.is_some() {
+                state.volatile.active_mol = None;
+            } else {
+                state.volatile.active_mol = Some((MolType::Peptide, i_mol));
+                state.volatile.orbit_center = Some((MolType::Peptide, i_mol));
+
+                recenter_orbit = true;
+            }
+
+            *redraw_pep = true; // To reflect the change in thickness, color etc.
+
+            let color_vis = if mol.common.visible {
+                COLOR_ACTIVE
+            } else {
+                COLOR_INACTIVE
+            };
+
+            if ui.button(RichText::new("👁").color(color_vis)).clicked() {
+                mol.common.visible = !mol.common.visible;
+
+                *redraw_lig = true; // todo Overkill; only need to redraw (or even just clear) one.
+                // todo: Generalize.
+                engine_updates.entities = EntityUpdate::All;
+                // engine_updates.entities.push_class(EntityClass::Peptide as u32);
+            }
+        }
+    }
+
     for (i_mol, mol) in state.ligands.iter_mut().enumerate() {
         let active = match state.volatile.active_mol {
             Some((MolType::Ligand, i_)) => i_ == i_mol,
@@ -275,6 +327,9 @@ fn mol_picker(
                 state.volatile.active_mol = None;
             } else {
                 state.volatile.active_mol = Some((MolType::Ligand, i_mol));
+                state.volatile.orbit_center = Some((MolType::Ligand, i_mol));
+
+                recenter_orbit = true;
             }
 
             *redraw_lig = true; // To reflect the change in thickness, color etc.
@@ -293,6 +348,13 @@ fn mol_picker(
             // todo: Generalize.
             engine_updates.entities = EntityUpdate::All;
             // engine_updates.entities.push_class(EntityClass::Ligand as u32);
+        }
+    }
+
+    if recenter_orbit {
+        // reset_orbit_center(state, scene);
+        if let ControlScheme::Arc { center } = &mut scene.input_settings.control_scheme {
+            *center = orbit_center(state);
         }
     }
 }
@@ -567,6 +629,7 @@ pub fn display_mol_data(
     state: &mut State,
     scene: &mut Scene,
     ui: &mut Ui,
+    redraw_pep: &mut bool,
     redraw_lig: &mut bool,
     redraw_na: &mut bool,
     redraw_lipid: &mut bool,
@@ -574,7 +637,7 @@ pub fn display_mol_data(
     engine_updates: &mut EngineUpdates,
 ) {
     ui.horizontal(|ui| {
-        mol_picker(state, ui, redraw_lig, engine_updates);
+        mol_picker(state, scene, ui, redraw_pep, redraw_lig, engine_updates);
 
         let Some((active_mol_type, active_mol_i)) = state.volatile.active_mol else {
             return
