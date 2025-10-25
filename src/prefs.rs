@@ -44,7 +44,7 @@ pub enum OpenType {
     Frcmod,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct OpenHistory {
     pub timestamp: DateTime<Utc>,
     pub path: PathBuf,
@@ -113,7 +113,7 @@ impl OpenHistory {
 /// We maintain some of the state that is saved in the preferences file here, to keep
 /// the save/load state streamlined, instead of in an intermediate struct between main state, and
 /// saving/loading.
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Encode, Decode)]
 pub struct ToSave {
     pub per_mol: HashMap<String, PerMolToSave>,
     pub open_history: Vec<OpenHistory>,
@@ -170,7 +170,7 @@ impl Default for ToSave {
 }
 
 /// Generally, data here only applies if a protein is present.
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Encode, Decode)]
 pub struct PerMolToSave {
     chain_vis: Vec<bool>,
     chain_to_pick_res: Option<usize>,
@@ -264,6 +264,8 @@ impl State {
         self.to_save.near_lig_only = self.ui.show_near_lig_only;
         self.to_save.nearby_dist_thresh = self.ui.nearby_dist_thresh;
         self.to_save.visibility = self.ui.visibility.clone();
+
+        self.to_save_prev = self.to_save.clone();
 
         if let Err(e) = save(
             &self.volatile.prefs_dir.join(DEFAULT_PREFS_FILE),

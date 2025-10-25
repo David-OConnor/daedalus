@@ -16,7 +16,7 @@ pub struct Torsion {
     pub dihedral_angle: f32,
 }
 
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Encode, Decode)]
 /// Area IVO the docking site.
 pub struct DockingSite {
     pub site_center: Vec3,

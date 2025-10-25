@@ -40,7 +40,7 @@ use crate::{
     lipid::MoleculeLipid,
     mol_lig::MoleculeSmall,
     nucleic_acid::MoleculeNucleicAcid,
-    reflection::{DensityRect, DensityPt, ReflectionsData},
+    reflection::{DensityPt, DensityRect, ReflectionsData},
     util::mol_center_size,
 };
 

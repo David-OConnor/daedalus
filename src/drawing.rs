@@ -20,13 +20,12 @@ use crate::{
     render::{
         ATOM_SHININESS, BACKGROUND_COLOR, BALL_RADIUS_WATER_H, BALL_RADIUS_WATER_O,
         BALL_STICK_RADIUS, BALL_STICK_RADIUS_H, BODY_SHINYNESS, Color, MESH_BOND, MESH_CUBE,
-        MESH_DENSITY_SURFACE, MESH_SECONDARY_STRUCTURE, MESH_SOLVENT_SURFACE,
-        MESH_SPHERE_HIGHRES, MESH_SPHERE_LOWRES, MESH_SPHERE_MEDRES, WATER_BOND_THICKNESS,
-        WATER_OPACITY,
+        MESH_DENSITY_SURFACE, MESH_SECONDARY_STRUCTURE, MESH_SOLVENT_SURFACE, MESH_SPHERE_HIGHRES,
+        MESH_SPHERE_LOWRES, MESH_SPHERE_MEDRES, WATER_BOND_THICKNESS, WATER_OPACITY,
     },
     util::{clear_mol_entity_indices, find_neighbor_posit, orbit_center},
+    viridis_lut::VIRIDIS,
 };
-use crate::viridis_lut::VIRIDIS;
 // const LIGAND_COLOR_ANCHOR: Color = (1., 0., 1.);
 
 const COLOR_MOL_MOVING: Color = (1., 1., 1.);
@@ -1640,7 +1639,12 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
             if state.mol_dynamics.is_some()
                 && state.ui.md.peptide_only_near_ligs
                 && mol.common.selected_for_md
-                && state.ligands.iter().filter(|l| l.common.selected_for_md).count() != 0
+                && state
+                    .ligands
+                    .iter()
+                    .filter(|l| l.common.selected_for_md)
+                    .count()
+                    != 0
             {
                 if state.volatile.md_peptide_selected.contains(&(0, i_atom)) {
                     color_atom = blend_color(color_atom, COLOR_MD_NEAR_MOL, BLEND_AMT_MD_NEAR_MOL);
@@ -1816,7 +1820,12 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
         if state.mol_dynamics.is_some()
             && state.ui.md.peptide_only_near_ligs
             && mol.common.selected_for_md
-            && state.ligands.iter().filter(|l| l.common.selected_for_md).count() != 0
+            && state
+                .ligands
+                .iter()
+                .filter(|l| l.common.selected_for_md)
+                .count()
+                != 0
         {
             if state
                 .volatile

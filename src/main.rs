@@ -38,6 +38,7 @@ mod cam_misc;
 mod drawing_wrappers;
 mod lipid;
 mod md;
+mod mol_characterization;
 mod mol_editor;
 mod mol_lig;
 mod mol_manip;
@@ -46,7 +47,6 @@ mod selection;
 #[cfg(test)]
 mod tests;
 mod viridis_lut;
-mod mol_characterization;
 
 #[cfg(feature = "cuda")]
 use std::sync::Arc;
@@ -108,7 +108,9 @@ const PTX: &str = include_str!("../daedalus.ptx");
 
 // todo: Eventually, implement a system that automatically checks for changes, and don't
 // todo save to disk if there are no changes.
-const PREFS_SAVE_INTERVAL: u64 = 60; // Save user preferences this often, in seconds.
+// For now, we check for differences between to_save and to_save prev, and write to disk
+// if they're not equal.
+const PREFS_SAVE_INTERVAL: u64 = 20; // seconds
 
 /// The MdModule is owned by `dynamics::ComputationDevice`.
 #[cfg(feature = "cuda")]
@@ -310,7 +312,7 @@ impl Default for StateVolatile {
     }
 }
 
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Encode, Decode)]
 struct Visibility {
     hide_sidechains: bool,
     hide_water: bool,
@@ -384,6 +386,7 @@ struct PopupState {
     get_geostd_items: Vec<GeostdItem>,
     residue_selector: bool,
     rama_plot: bool,
+    recent_files: bool,
 }
 
 struct StateUiMd {
@@ -526,7 +529,7 @@ impl Selection {
     }
 }
 
-#[derive(Clone, Debug, Encode, Decode)]
+#[derive(Clone, Debug, PartialEq, Encode, Decode)]
 pub struct CamSnapshot {
     // We don't use camera directly, so we don't have to store the projection matrix, and so we can impl
     // Encode/Decode
@@ -559,6 +562,10 @@ struct State {
     pub cam_snapshots: Vec<CamSnapshot>,
     /// This allows us to keep in-memory data for other molecules.
     pub to_save: ToSave,
+    /// We store the previous ToSave, to know when we need to write to disk.
+    /// Note: This is simpler, but not as efficient as explicitly setting a flag
+    /// whenever we change state.
+    pub to_save_prev: ToSave,
     pub dev: ComputationDevice,
     /// This is None if Computation Device is CPU.
     #[cfg(feature = "cuda")]
@@ -594,6 +601,7 @@ impl Default for State {
             lipids: Default::default(),
             cam_snapshots: Default::default(),
             to_save: Default::default(),
+            to_save_prev: Default::default(),
             dev: Default::default(),
             #[cfg(feature = "cuda")]
             kernel_reflections: None,

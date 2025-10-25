@@ -16,6 +16,7 @@ use graphics::{Camera, ControlScheme, EngineUpdates, EntityUpdate, Scene};
 use lin_alg::f64::Vec3;
 use na_seq::{AaIdent, Element};
 use rand::Rng;
+
 use crate::{
     State,
     cam_misc::move_mol_to_cam,
@@ -25,13 +26,12 @@ use crate::{
     mol_lig::MoleculeSmall,
     molecule::{MolType, MoleculeCommon, MoleculeGeneric, MoleculePeptide},
     prefs::{OpenHistory, OpenType},
-    reflection::{DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityRect, DensityPt},
+    reflection::{DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityPt, DensityRect},
     util::{handle_err, handle_success},
 };
 
 // When opening molecules deconflict; don't allow a mol to be closer than this to another.
 const MOL_MIN_DIST_OPEN: f64 = 12.;
-
 
 impl State {
     /// A single endpoint to open a number of file types
@@ -200,29 +200,25 @@ impl State {
                             // If there is already a molecule here, offset.
                             // todo: Apply this logic to other mol types A/R
                             for mol_other in &self.ligands {
-                                if (mol_other.common.centroid() - centroid).magnitude() < MOL_MIN_DIST_OPEN {
+                                if (mol_other.common.centroid() - centroid).magnitude()
+                                    < MOL_MIN_DIST_OPEN
+                                {
                                     let mut rng = rand::rng();
-                                    let dir = Vec3::new(
-                                        rng.random(),
-                                        rng.random(),
-                                        rng.random(),
-                                    ).to_normalized();
+                                    let dir = Vec3::new(rng.random(), rng.random(), rng.random())
+                                        .to_normalized();
 
                                     let pos_new = centroid + dir * MOL_MIN_DIST_OPEN;
 
                                     mol.common.move_to(pos_new);
-                                        // Note: No further safeguard in this case.
+                                    // Note: No further safeguard in this case.
                                     break;
                                 }
                             }
 
-
-                            if let ControlScheme::Arc { center: _ } =
-                                s.input_settings.control_scheme
+                            if let ControlScheme::Arc { center } =
+                                &mut s.input_settings.control_scheme
                             {
-                                s.input_settings.control_scheme = ControlScheme::Arc {
-                                    center: centroid.into(),
-                                };
+                                *center = centroid.into();
                             }
                         }
 
@@ -248,12 +244,11 @@ impl State {
 
                         if let Some(ref mut s) = scene {
                             move_mol_to_cam(&mut mol.common, &s.camera);
-                            if let ControlScheme::Arc { center: _ } =
-                                s.input_settings.control_scheme
+
+                            if let ControlScheme::Arc { center } =
+                                &mut s.input_settings.control_scheme
                             {
-                                s.input_settings.control_scheme = ControlScheme::Arc {
-                                    center: mol.common.centroid().into(),
-                                };
+                                *center = mol.common.centroid().into();
                             }
                         }
                         self.nucleic_acids.push(mol);
@@ -272,12 +267,11 @@ impl State {
 
                         if let Some(ref mut s) = scene {
                             move_mol_to_cam(&mut mol.common, &s.camera);
-                            if let ControlScheme::Arc { center: _ } =
-                                s.input_settings.control_scheme
+
+                            if let ControlScheme::Arc { center } =
+                                &mut s.input_settings.control_scheme
                             {
-                                s.input_settings.control_scheme = ControlScheme::Arc {
-                                    center: mol.common.centroid().into(),
-                                };
+                                *center = mol.common.centroid().into();
                             }
                         }
                         self.lipids.push(mol);
@@ -586,13 +580,13 @@ impl State {
         load_mol2: bool,
         load_frcmod: bool,
         redraw_lig: &mut bool,
-        cam: &Camera,
+        scene: &mut Scene,
     ) {
         let start = Instant::now();
         println!("Loading mol files from Amber Geostd...");
 
         let ident = ident.trim().to_owned();
-        download_mols::load_geostd2(self, cam, &ident, load_mol2, load_frcmod, redraw_lig);
+        download_mols::load_geostd2(self, scene, &ident, load_mol2, load_frcmod, redraw_lig);
 
         let elapsed = start.elapsed().as_millis();
         println!("Loaded Amber Geostd in {elapsed:.1}ms");

@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use bio_apis::{ReqError, amber_geostd, amber_geostd::GeostdItem, drugbank, pubchem, rcsb};
 use bio_files::{MmCif, Mol2, Sdf, md_params::ForceFieldParams};
-use graphics::{Camera, EngineUpdates, Scene};
+use graphics::{Camera, ControlScheme, EngineUpdates, Scene};
 use na_seq::AaIdent;
 
 use crate::{
@@ -123,6 +123,11 @@ pub fn load_atom_coords_rcsb(
                     .push_str(&aa.to_str(AaIdent::OneLetter));
             }
 
+            state.volatile.orbit_center = Some((MolType::Peptide, 0));
+            if let ControlScheme::Arc { center } = &mut scene.input_settings.control_scheme {
+                *center = mol.center.into();
+            }
+
             state.volatile.flags.ss_mesh_created = false;
             state.volatile.flags.sas_mesh_created = false;
             state.volatile.flags.clear_density_drawing = true;
@@ -158,7 +163,7 @@ pub fn load_atom_coords_rcsb(
 
 pub fn load_geostd2(
     state: &mut State,
-    cam: &Camera,
+    scene: &mut Scene,
     ident: &str,
     load_mol2: bool,
     load_frcmod: bool,
@@ -198,7 +203,14 @@ pub fn load_geostd2(
 
                         mol.update_aux(&state.volatile.active_mol, &mut state.lig_specific_params);
 
-                        move_mol_to_cam(&mut mol.common, cam);
+                        move_mol_to_cam(&mut mol.common, &scene.camera);
+
+                        state.volatile.orbit_center = Some((MolType::Ligand, state.ligands.len()));
+                        if let ControlScheme::Arc { center } =
+                            &mut scene.input_settings.control_scheme
+                        {
+                            *center = mol.common.centroid().into();
+                        }
 
                         state.ligands.push(mol);
 

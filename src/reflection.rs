@@ -1,7 +1,6 @@
 //! For displaying electron density as measured by crytalography and Cryo-EM reflection data. From precomputed
 //! data, or Miller indices.
 
-
 #![allow(unused)]
 
 use std::{sync::Arc, time::Instant};
@@ -9,15 +8,16 @@ use std::{sync::Arc, time::Instant};
 use bio_files::{DensityMap, UnitCell};
 #[cfg(feature = "cuda")]
 use cudarc::driver::{CudaFunction, CudaStream, LaunchConfig, PushKernelArg};
+use graphics::{EngineUpdates, EntityUpdate, Mesh, Scene, Vertex};
 #[cfg(feature = "cuda")]
 use lin_alg::f32::{vec3s_from_dev, vec3s_to_dev};
 use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 use mcubes::{MarchingCubes, MeshSide};
 use rayon::prelude::*;
-use graphics::{EngineUpdates, EntityUpdate, Mesh, Scene, Vertex};
-use crate::{util, ComputationDevice, State};
-use crate::drawing::draw_density_surface;
-use crate::render::MESH_DENSITY_SURFACE;
+
+use crate::{
+    ComputationDevice, State, drawing::draw_density_surface, render::MESH_DENSITY_SURFACE, util,
+};
 
 pub const DENSITY_CELL_MARGIN: f64 = 2.0;
 
@@ -507,13 +507,7 @@ pub fn make_density_mesh(state: &mut State, scene: &mut Scene, engine_updates: &
         (step[2] * dims.2 as f64) as f32,
     );
 
-    let sampling_interval = (
-        dims.0 as f32,
-        dims.1 as f32,
-        dims.2 as f32,
-    );
-
-    
+    let sampling_interval = (dims.0 as f32, dims.1 as f32, dims.2 as f32);
 
     let density: Vec<_> = density_pts.iter().map(|p| p.density as f32).collect();
     match MarchingCubes::new(

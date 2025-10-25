@@ -151,7 +151,7 @@ pub fn load_popups(
                             load_ff,
                             load_frcmod,
                             redraw_lig,
-                            &scene.camera,
+                            scene,
                         );
 
                         state.ui.popup.show_get_geostd = false;
@@ -330,7 +330,7 @@ pub fn open_lig_from_input(state: &mut State, cam: &Camera, mut mol: MoleculeSma
 
 pub fn init_with_scene(state: &mut State, scene: &mut Scene, ctx: &egui::Context) {
     if state.volatile.ui_height < f32::EPSILON {
-        state.volatile.ui_height = ctx.used_size().y / ctx.pixels_per_point();
+        state.volatile.ui_height = ctx.used_size().y;
     }
 
     if state.peptide.is_some() {

@@ -33,6 +33,7 @@ use crate::{
         misc::section_box,
         mol_data::display_mol_data_peptide,
         rama_plot::plot_rama,
+        recent_files::recent_files,
         util::{
             handle_redraw, init_with_scene, load_file, load_popups, open_lig_from_input,
             update_file_dialogs,
@@ -52,6 +53,7 @@ pub mod misc;
 mod mol_data;
 mod mol_editor;
 mod rama_plot;
+mod recent_files;
 pub mod util;
 mod view;
 
@@ -193,7 +195,8 @@ fn chain_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
         if state.ui.chain_to_pick_res.is_some() {
             if ui.button("(None)").clicked() {
                 state.ui.chain_to_pick_res = None;
-                state.volatile.ui_height = ui.ctx().used_size().y  / ui.ctx().pixels_per_point();
+                // state.volatile.ui_height = ui.ctx().used_size().y  * ui.ctx().pixels_per_point();
+                state.volatile.ui_height = ui.ctx().used_size().y;
             }
         }
     });
@@ -898,6 +901,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             return;
         }
 
+        // Launch popups as required ----------
         if state.ui.popup.show_settings {
             settings(state, scene, ui);
         }
@@ -907,11 +911,17 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             residue_selector(state, scene, ui, &mut redraw_peptide);
         }
 
+        if state.ui.popup.recent_files {
+            recent_files(state, scene, ui);
+        }
+
         if state.ui.popup.rama_plot {
             if let Some(mol) = &state.peptide {
                 plot_rama(&mol.residues, &mol.common.ident, ui, &mut state.ui.popup.rama_plot);
             }
         }
+
+        // -----------
 
         ui.horizontal(|ui| {
             let color_settings = if state.ui.popup.show_settings {
@@ -1165,7 +1175,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
                 if button_clicked || enter_pressed {
                     let db_input = &state.ui.db_input.clone(); // Avoids a double borrow.
-                    state.load_geostd_mol_data(&db_input,true, true, &mut redraw_lig, &scene.camera);
+                    state.load_geostd_mol_data(&db_input, true, true, &mut redraw_lig, scene);
 
                     state.ui.db_input = String::new();
                 }
@@ -1354,7 +1364,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
     // This double-change variable logic is due to some cases needing to wait
     // an additional frame before the height takes effect.
     if UI_HEIGHT_CHANGE_DELAY.swap(false, Ordering::AcqRel) {
-        state.volatile.ui_height = ctx.used_size().y / ctx.pixels_per_point();
+        // state.volatile.ui_height = ctx.used_size().y * ctx.pixels_per_point();
+        state.volatile.ui_height = ctx.used_size().y;
     }
 
     if UI_HEIGHT_CHANGED.swap(false, Ordering::AcqRel) {

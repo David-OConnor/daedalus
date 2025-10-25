@@ -12,15 +12,22 @@ use cudarc::{
 };
 use dynamics::ComputationDevice;
 use egui::Color32;
-use graphics::{Camera, ControlScheme, EngineUpdates, EntityUpdate, Scene, FWD_VEC};
+use graphics::{Camera, ControlScheme, EngineUpdates, EntityUpdate, FWD_VEC, Scene};
 use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 use na_seq::{AaIdent, Element};
 
-use crate::{cam_misc, drawing::{
-    draw_density_point_cloud, draw_peptide, EntityClass, MoleculeView,
-}, drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids}, mol_lig::MoleculeSmall, molecule::{Atom, Bond, MoGenericRefMut, MolGenericRef, MolType, MoleculePeptide, Residue}, prefs::OpenType, reflection, render::{
-    set_flashlight, Color, MESH_SECONDARY_STRUCTURE, MESH_SOLVENT_SURFACE,
-}, ribbon_mesh::build_cartoon_mesh, sa_surface::make_sas_mesh, CamSnapshot, ManipMode, Selection, State, StateUi, ViewSelLevel, PREFS_SAVE_INTERVAL};
+use crate::{
+    CamSnapshot, ManipMode, PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel, cam_misc,
+    drawing::{EntityClass, MoleculeView, draw_density_point_cloud, draw_peptide},
+    drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
+    mol_lig::MoleculeSmall,
+    molecule::{Atom, Bond, MoGenericRefMut, MolGenericRef, MolType, MoleculePeptide, Residue},
+    prefs::OpenType,
+    reflection,
+    render::{Color, MESH_SECONDARY_STRUCTURE, MESH_SOLVENT_SURFACE, set_flashlight},
+    ribbon_mesh::build_cartoon_mesh,
+    sa_surface::make_sas_mesh,
+};
 
 pub fn mol_center_size(atoms: &[Atom]) -> (Vec3, f32) {
     let mut sum = Vec3::new_zero();
@@ -240,18 +247,21 @@ pub fn cycle_selected(state: &mut State, scene: &mut Scene, reverse: bool) {
 }
 
 pub fn check_prefs_save(state: &mut State) {
-    static mut LAST_PREF_SAVE: Option<Instant> = None;
+    static mut LAST_PREF_SAVE_CHECK: Option<Instant> = None;
     let now = Instant::now();
 
     unsafe {
-        if let Some(last_save) = LAST_PREF_SAVE {
+        if let Some(last_save) = LAST_PREF_SAVE_CHECK {
             if (now - last_save).as_secs() > PREFS_SAVE_INTERVAL {
-                LAST_PREF_SAVE = Some(now);
-                state.update_save_prefs(false)
+                LAST_PREF_SAVE_CHECK = Some(now);
+
+                if state.to_save != state.to_save_prev {
+                    state.update_save_prefs(false)
+                }
             }
         } else {
             // Initialize LAST_PREF_SAVE the first time it's accessed
-            LAST_PREF_SAVE = Some(now);
+            LAST_PREF_SAVE_CHECK = Some(now);
         }
     }
 }
@@ -902,7 +912,7 @@ fn find_nearest_mol_inner(mol: MolGenericRef<'_>, cam: &Camera) -> Option<f32> {
     let posit: Vec3F32 = mol.common().atom_posits[0].into();
 
     // todo: Base the offset on the molecule size, e.g. atom count.
-    if cam.in_view(posit) {
+    if cam.in_view(posit).0 {
         return Some((cam.position - posit).magnitude() - 4.);
     }
 
@@ -932,7 +942,7 @@ pub fn find_nearest_mol_dist_to_cam(state: &State, cam: &Camera) -> Option<f32> 
             }
 
             let posit: Vec3F32 = pep.common.atom_posits[i].into();
-            if cam.in_view(posit.into()) {
+            if cam.in_view(posit.into()).0 {
                 let dist = (cam.position - posit).magnitude() - 4.;
                 if dist < nearest {
                     nearest = dist;
