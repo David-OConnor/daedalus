@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-version=0_2_0
+version=0_2_1
 outdir=target/release
 exe="$outdir/daedalus"
 gemmi="/mnt/c/Users/the_a/Program Files/gemmi"
