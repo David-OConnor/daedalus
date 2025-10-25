@@ -31,9 +31,10 @@ EOF
 chmod +x "$DESKTOP_PATH"
 
 # If the cuda FFT lib is packaged with the download, move it to the correct place.
-cufft_lib="libcudafft.so.12"
-if [[ -f "./$cufft_lib" ]]; then
-  cp -n -- "./$cufft_lib" /usr/lib/
+cufft_lib="libcufft.so.12"
+if [ -f "./$cufft_lib" ]; then
+  sudo cp "./$cufft_lib" /usr/lib/
+  printf "Moved the libcufft.so.12 library (for the cuFFT dependency)  to /usr/lib."
 fi
 
 printf "Moved the ${NAME_UPPER} executable and icon to ${APP_DIR}."

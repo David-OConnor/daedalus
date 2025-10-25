@@ -6,6 +6,7 @@ use std::{
 };
 
 use bio_files::{AtomGeneric, create_bonds, md_params::ForceFieldParams};
+#[cfg(feature = "cuda")]
 use cudarc::driver::HostSlice;
 use dynamics::{
     ComputationDevice, FfMolType, HydrogenConstraint, MdConfig, MdOverrides, MdState, MolDynamics,
