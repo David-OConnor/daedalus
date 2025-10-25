@@ -45,6 +45,8 @@ mod nucleic_acid;
 mod selection;
 #[cfg(test)]
 mod tests;
+mod viridis_lut;
+mod mol_characterization;
 
 #[cfg(feature = "cuda")]
 use std::sync::Arc;

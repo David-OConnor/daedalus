@@ -40,7 +40,7 @@ use crate::{
     lipid::MoleculeLipid,
     mol_lig::MoleculeSmall,
     nucleic_acid::MoleculeNucleicAcid,
-    reflection::{DensityRect, ElectronDensity, ReflectionsData},
+    reflection::{DensityRect, DensityPt, ReflectionsData},
     util::mol_center_size,
 };
 
@@ -327,7 +327,7 @@ pub struct MoleculePeptide {
     pub rcsb_files_avail: Option<FilesAvailable>,
     pub reflections_data: Option<ReflectionsData>,
     /// E.g. from a MAP file, MTX, or 2fo-fc header.
-    pub elec_density: Option<Vec<ElectronDensity>>,
+    pub elec_density: Option<Vec<DensityPt>>,
     pub density_map: Option<DensityMap>,
     pub density_rect: Option<DensityRect>,
     pub aa_seq: Vec<AminoAcid>,

@@ -25,7 +25,7 @@ use crate::{
     mol_lig::MoleculeSmall,
     molecule::{MolType, MoleculeCommon, MoleculeGeneric, MoleculePeptide},
     prefs::{OpenHistory, OpenType},
-    reflection::{DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityRect, ElectronDensity},
+    reflection::{DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityRect, DensityPt},
     util::{handle_err, handle_success},
 };
 
@@ -321,6 +321,7 @@ impl State {
 
     pub fn load_density(&mut self, dens_map: DensityMap) {
         if let Some(mol) = &mut self.peptide {
+            // Sample atoms, so we know where to draw the (periodic) density data.
             // We are filtering for backbone atoms of one type for now, for performance reasons. This is
             // a sample. Good enough?
             let atom_posits: Vec<_> = mol
@@ -348,7 +349,7 @@ impl State {
 
             let elec_dens: Vec<_> = dens
                 .iter()
-                .map(|d| ElectronDensity {
+                .map(|d| DensityPt {
                     coords: d.coords,
                     density: d.density,
                 })

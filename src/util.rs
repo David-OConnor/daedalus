@@ -12,26 +12,15 @@ use cudarc::{
 };
 use dynamics::ComputationDevice;
 use egui::Color32;
-use graphics::{Camera, ControlScheme, EngineUpdates, EntityUpdate, FWD_VEC, Mesh, Scene, Vertex};
+use graphics::{Camera, ControlScheme, EngineUpdates, EntityUpdate, Scene, FWD_VEC};
 use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
-use mcubes::{MarchingCubes, MeshSide};
 use na_seq::{AaIdent, Element};
 
-use crate::{
-    CamSnapshot, ManipMode, PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel, cam_misc,
-    drawing::{
-        EntityClass, MoleculeView, draw_density_point_cloud, draw_density_surface, draw_peptide,
-    },
-    drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
-    mol_lig::MoleculeSmall,
-    molecule::{Atom, Bond, MoGenericRefMut, MolGenericRef, MolType, MoleculePeptide, Residue},
-    prefs::OpenType,
-    render::{
-        Color, MESH_DENSITY_SURFACE, MESH_SECONDARY_STRUCTURE, MESH_SOLVENT_SURFACE, set_flashlight,
-    },
-    ribbon_mesh::build_cartoon_mesh,
-    sa_surface::make_sas_mesh,
-};
+use crate::{cam_misc, drawing::{
+    draw_density_point_cloud, draw_peptide, EntityClass, MoleculeView,
+}, drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids}, mol_lig::MoleculeSmall, molecule::{Atom, Bond, MoGenericRefMut, MolGenericRef, MolType, MoleculePeptide, Residue}, prefs::OpenType, reflection, render::{
+    set_flashlight, Color, MESH_SECONDARY_STRUCTURE, MESH_SOLVENT_SURFACE,
+}, ribbon_mesh::build_cartoon_mesh, sa_surface::make_sas_mesh, CamSnapshot, ManipMode, Selection, State, StateUi, ViewSelLevel, PREFS_SAVE_INTERVAL};
 
 pub fn mol_center_size(atoms: &[Atom]) -> (Vec3, f32) {
     let mut sum = Vec3::new_zero();
@@ -640,68 +629,6 @@ pub fn reset_orbit_center(state: &mut State, scene: &mut Scene) {
     }
 }
 
-/// Populate the electron-density mesh (isosurface). This assumes the density_rect is already set up.
-pub fn make_density_mesh(state: &mut State, scene: &mut Scene, engine_updates: &mut EngineUpdates) {
-    let Some(mol) = &state.peptide else {
-        return;
-    };
-    let Some(rect) = &mol.density_rect else {
-        return;
-    };
-    let Some(density) = &mol.elec_density else {
-        return;
-    };
-
-    let dims = (rect.dims[0], rect.dims[1], rect.dims[2]); // (nx, ny, nz)
-
-    let size = (
-        (rect.step[0] * rect.dims[0] as f64) as f32, // Δx * nx  (Å)
-        (rect.step[1] * rect.dims[1] as f64) as f32,
-        (rect.step[2] * rect.dims[2] as f64) as f32,
-    );
-
-    let sampling_interval = (
-        rect.dims[0] as f32,
-        rect.dims[1] as f32,
-        rect.dims[2] as f32,
-    );
-
-    match MarchingCubes::from_gridpoints(
-        dims,
-        size,
-        sampling_interval,
-        rect.origin_cart.into(),
-        density,
-        state.ui.density_iso_level,
-    ) {
-        Ok(mc) => {
-            let mesh = mc.generate(MeshSide::OutsideOnly);
-
-            // Convert from `mcubes::Mesh` to `graphics::Mesh`.
-            let vertices = mesh
-                .vertices
-                .iter()
-                .map(|v| Vertex::new(v.posit.to_arr(), v.normal))
-                .collect();
-
-            scene.meshes[MESH_DENSITY_SURFACE] = Mesh {
-                vertices,
-                indices: mesh.indices,
-                material: 0,
-            };
-
-            if !state.ui.visibility.hide_density_surface {
-                draw_density_surface(&mut scene.entities, state);
-            }
-
-            engine_updates.meshes = true;
-            engine_updates.entities = EntityUpdate::All;
-            // engine_updates.entities.push_class(EntityClass::SaSurface as u32);
-        }
-        Err(e) => handle_err(&mut state.ui, e.to_string()),
-    }
-}
-
 /// Code here is activated by flags. It's organized here, where we have access to the Scene.
 /// These flags are set in places that don't have access to the scene.
 pub fn handle_scene_flags(
@@ -748,7 +675,7 @@ pub fn handle_scene_flags(
 
     if state.volatile.flags.make_density_iso_mesh {
         state.volatile.flags.make_density_iso_mesh = false;
-        make_density_mesh(state, scene, engine_updates);
+        reflection::make_density_mesh(state, scene, engine_updates);
     }
 
     if state.volatile.flags.update_ss_mesh {
@@ -1058,7 +985,7 @@ pub fn get_computation_device() -> (ComputationDevice, Option<CudaFunction>) {
 
             match module_reflections {
                 Ok(m) => {
-                    let function = m.load_function("reflection_transform_kernel").unwrap();
+                    let function = m.load_function("make_densities_kernel").unwrap();
                     (ComputationDevice::Gpu(stream), Some(function))
                 }
                 Err(e) => {

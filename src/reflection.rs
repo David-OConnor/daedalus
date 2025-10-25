@@ -1,24 +1,23 @@
-//! For displaying electron density as measured by crytalographics reflection data. From precomputed
+//! For displaying electron density as measured by crytalography and Cryo-EM reflection data. From precomputed
 //! data, or Miller indices.
-//!
-//! Note: We currently
+
 
 #![allow(unused)]
 
-use std::{f64::consts::TAU, sync::Arc, time::Instant};
+use std::{sync::Arc, time::Instant};
 
-use bio_apis::{ReqError, rcsb};
-use bio_files::{DensityMap, MapHeader, UnitCell};
+use bio_files::{DensityMap, UnitCell};
 #[cfg(feature = "cuda")]
-use cudarc::driver::{CudaFunction, CudaModule, CudaStream, LaunchConfig, PushKernelArg};
-use dynamics::ForcesOnWaterMol;
+use cudarc::driver::{CudaFunction, CudaStream, LaunchConfig, PushKernelArg};
 #[cfg(feature = "cuda")]
 use lin_alg::f32::{vec3s_from_dev, vec3s_to_dev};
 use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
-use mcubes::GridPoint;
+use mcubes::{MarchingCubes, MeshSide};
 use rayon::prelude::*;
-
-use crate::{ComputationDevice, molecule::Atom};
+use graphics::{EngineUpdates, EntityUpdate, Mesh, Scene, Vertex};
+use crate::{util, ComputationDevice, State};
+use crate::drawing::draw_density_surface;
+use crate::render::MESH_DENSITY_SURFACE;
 
 pub const DENSITY_CELL_MARGIN: f64 = 2.0;
 
@@ -141,32 +140,28 @@ impl ReflectionsData {
     // }
 }
 
+/// Electron density at a single point in space.
 #[derive(Clone, Debug)]
-pub struct ElectronDensity {
+pub struct DensityPt {
     /// In Å
     pub coords: Vec3,
     /// Normalized, using the unit cell volume, as reported in the reflection data.
     pub density: f64,
 }
 
-impl GridPoint for ElectronDensity {
-    // fn coords(&self) -> Vec3 {self.coords}
-    fn value(&self) -> f64 {
-        self.density
-    }
-}
-
 /// One dense 3-D brick of map values. We use this struct to handle symmetry: ensuring full coverage
 /// of all atoms.
 #[derive(Clone, Debug)]
 pub struct DensityRect {
-    /// Cartesian coordinate of the *centre* of voxel (0,0,0)
+    /// Cartesian coordinate of the center of voxel (0,0,0)
     pub origin_cart: Vec3,
-    /// Size of one voxel along a,b,c in Å
+    /// Size of one voxel along a, b, c in Å
     pub step: [f64; 3],
     /// (nx, ny, nz) – number of voxels stored
     pub dims: [usize; 3],
-    /// Row-major file-order data: z → y → x fastest
+    /// See the header for the dimension breakdown. Usually:
+    /// X is the fast (contiguous) dimension. Z is the slow (strided) dimension.
+    /// See the Mapc/Mapr/Maps fields. If 1/2/3, it's as above.
     pub data: Vec<f32>,
 }
 
@@ -280,7 +275,7 @@ impl DensityRect {
         atom_posits: &[Vec3],
         cell: &UnitCell,
         dist_thresh: f64,
-    ) -> Vec<ElectronDensity> {
+    ) -> Vec<DensityPt> {
         // todo: Use GPU for this. It is very slow for large sets.
         println!("Making electron densities...");
         let start = Instant::now();
@@ -292,6 +287,7 @@ impl DensityRect {
         let step_vec_a = cols.0 * (self.step[0] / cell.a); //  = a_vec / mx
         let step_vec_b = cols.1 * (self.step[1] / cell.b); //  = b_vec / my
         let step_vec_c = cols.2 * (self.step[2] / cell.c); //  = c_vec / mz
+
         let step_vecs = (step_vec_a, step_vec_b, step_vec_c);
 
         let (nx, ny, nz) = (self.dims[0], self.dims[1], self.dims[2]);
@@ -305,7 +301,7 @@ impl DensityRect {
             }
         }
 
-        // Convert to f64, and don't example every atom. The latter reduces computation time, roughly
+        // Convert to f64, and don't use every atom. The latter reduces computation time, roughly
         // by a factor of `SAMPLE_RATIO`.
         let atom_posits_sample: Vec<Vec3> = atom_posits
             .iter()
@@ -359,7 +355,7 @@ impl DensityRect {
         dist_thresh: f64,
         nx: usize,
         ny: usize,
-    ) -> Vec<ElectronDensity> {
+    ) -> Vec<DensityPt> {
         let n = triplets.len();
         let n_atom_posits = atom_posits.len();
 
@@ -425,7 +421,7 @@ impl DensityRect {
 
         let mut result = Vec::with_capacity(n);
         for i in 0..n {
-            result.push(ElectronDensity {
+            result.push(DensityPt {
                 coords: coords[i].into(),
                 density: densities[i] as f64,
             })
@@ -443,7 +439,7 @@ impl DensityRect {
         dist_thresh: f64,
         nx: usize,
         ny: usize,
-    ) -> Vec<ElectronDensity> {
+    ) -> Vec<DensityPt> {
         let dist_thresh_sq = dist_thresh * dist_thresh;
 
         // Note: We get a big speedup from using rayon here. For example, 200ms vs 5s, or 2.5s vs 70s
@@ -477,8 +473,81 @@ impl DensityRect {
                     density = 0.;
                 }
 
-                ElectronDensity { coords, density }
+                DensityPt { coords, density }
             })
             .collect()
+    }
+}
+
+/// Populate the electron-density mesh (isosurface). This assumes the density_rect is already set up.
+pub fn make_density_mesh(state: &mut State, scene: &mut Scene, engine_updates: &mut EngineUpdates) {
+    let Some(mol) = &state.peptide else {
+        return;
+    };
+    let Some(rect) = &mol.density_rect else {
+        return;
+    };
+    let Some(density_pts) = &mol.elec_density else {
+        return;
+    };
+    let Some(map) = &mol.density_map else {
+        return;
+    };
+
+    println!("MAP: {:?}", map.hdr);
+
+    // todo: Sort this out; the order changes depending on the mesh.
+    // let dims = (rect.dims[0], rect.dims[1], rect.dims[2]); // (nx, ny, nz)
+    let dims = (rect.dims[2], rect.dims[1], rect.dims[0]); // (nx, ny, nz)
+    let step = [rect.step[2], rect.step[1], rect.step[0]];
+
+    let size = (
+        (step[0] * dims.0 as f64) as f32, // Δx * nx  (Å)
+        (step[1] * dims.1 as f64) as f32,
+        (step[2] * dims.2 as f64) as f32,
+    );
+
+    let sampling_interval = (
+        dims.0 as f32,
+        dims.1 as f32,
+        dims.2 as f32,
+    );
+
+    
+
+    let density: Vec<_> = density_pts.iter().map(|p| p.density as f32).collect();
+    match MarchingCubes::new(
+        dims,
+        size,
+        sampling_interval,
+        rect.origin_cart.into(),
+        density,
+        state.ui.density_iso_level,
+    ) {
+        Ok(mc) => {
+            let mesh = mc.generate(MeshSide::OutsideOnly);
+
+            // Convert from `mcubes::Mesh` to `graphics::Mesh`.
+            let vertices = mesh
+                .vertices
+                .iter()
+                .map(|v| Vertex::new(v.posit.to_arr(), v.normal))
+                .collect();
+
+            scene.meshes[MESH_DENSITY_SURFACE] = Mesh {
+                vertices,
+                indices: mesh.indices,
+                material: 0,
+            };
+
+            if !state.ui.visibility.hide_density_surface {
+                draw_density_surface(&mut scene.entities, state);
+            }
+
+            engine_updates.meshes = true;
+            engine_updates.entities = EntityUpdate::All;
+            // engine_updates.entities.push_class(EntityClass::SaSurface as u32);
+        }
+        Err(e) => util::handle_err(&mut state.ui, e.to_string()),
     }
 }

@@ -59,12 +59,12 @@ pub fn make_sas_mesh(atoms: &[&Atom], mut precision: f32) -> Mesh {
         dim_v.z.ceil() as usize + 1,
     );
 
-    let nvox = grid_dim.0 * grid_dim.1 * grid_dim.2;
+    let n_voxels = grid_dim.0 * grid_dim.1 * grid_dim.2;
 
     // This can be any that is guaranteed to be well outside the SAS surface.
     // It prevents holes from appearing in the mesh due to not having a value outside to compare to.
     let far_val = (r_max + precision).powi(2) + 1.0;
-    let mut field = vec![far_val; nvox];
+    let mut field = vec![far_val; n_voxels];
 
     // Helper to flatten (x, y, z)
     let idx = |x: usize, y: usize, z: usize| -> usize { (z * grid_dim.1 + y) * grid_dim.0 + x };
@@ -105,7 +105,6 @@ pub fn make_sas_mesh(atoms: &[&Atom], mut precision: f32) -> Mesh {
     }
 
     // Convert to a mesh using Marchine Cubes.
-
     let sampling_interval = (
         grid_dim.0 as f32 - 1.0,
         grid_dim.1 as f32 - 1.0,
@@ -129,7 +128,7 @@ pub fn make_sas_mesh(atoms: &[&Atom], mut precision: f32) -> Mesh {
     let vertices: Vec<Vertex> = mc_mesh
         .vertices
         .iter()
-        // todo: I'm not sure why we need to invert the normal here; same reason we use InsideOnly above.
+        // I'm not sure why we need to invert the normal here; same reason we use InsideOnly above.
         .map(|v| Vertex::new([v.posit.x, v.posit.y, v.posit.z], -v.normal))
         .collect();
 

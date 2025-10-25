@@ -16,17 +16,17 @@ use na_seq::Element;
 use crate::{
     ManipMode, OperatingMode, Selection, State, StateUi, ViewSelLevel,
     molecule::{Atom, AtomRole, Chain, MolGenericRef, MolGenericTrait, MolType, Residue, aa_color},
-    reflection::ElectronDensity,
+    reflection::DensityPt,
     render::{
         ATOM_SHININESS, BACKGROUND_COLOR, BALL_RADIUS_WATER_H, BALL_RADIUS_WATER_O,
         BALL_STICK_RADIUS, BALL_STICK_RADIUS_H, BODY_SHINYNESS, Color, MESH_BOND, MESH_CUBE,
-        MESH_DENSITY_SURFACE, MESH_DOCKING_BOX, MESH_SECONDARY_STRUCTURE, MESH_SOLVENT_SURFACE,
+        MESH_DENSITY_SURFACE, MESH_SECONDARY_STRUCTURE, MESH_SOLVENT_SURFACE,
         MESH_SPHERE_HIGHRES, MESH_SPHERE_LOWRES, MESH_SPHERE_MEDRES, WATER_BOND_THICKNESS,
         WATER_OPACITY,
     },
     util::{clear_mol_entity_indices, find_neighbor_posit, orbit_center},
 };
-
+use crate::viridis_lut::VIRIDIS;
 // const LIGAND_COLOR_ANCHOR: Color = (1., 0., 1.);
 
 const COLOR_MOL_MOVING: Color = (1., 1., 1.);
@@ -362,7 +362,7 @@ impl Display for MoleculeView {
     }
 }
 
-/// A linear color map using the viridis scheme.
+/// A linear color map using the viridis scheme. Uses a LUT.
 pub fn color_viridis(i: usize, min: usize, max: usize) -> Color {
     // Normalize i to [0.0, 1.0]
     let t = if max > min {
@@ -372,15 +372,6 @@ pub fn color_viridis(i: usize, min: usize, max: usize) -> Color {
     } else {
         0.0
     };
-
-    // A small set of Viridis control points (R, G, B), from t=0.0 to t=1.0
-    const VIRIDIS: [(f32, f32, f32); 5] = [
-        (0.267004, 0.004874, 0.329415), // t = 0.00
-        (0.229739, 0.322361, 0.545706), // t = 0.25
-        (0.127568, 0.566949, 0.550556), // t = 0.50
-        (0.369214, 0.788888, 0.382914), // t = 0.75
-        (0.993248, 0.906157, 0.143936), // t = 1.00
-    ];
 
     // Scale t into the control‐point index range [0 .. VIRIDIS.len()-1]
     let n_pts = VIRIDIS.len();
@@ -1260,7 +1251,7 @@ pub fn draw_mol(
 /// A visual representation of volumetric electron density,
 /// as loaded from .map files or similar. This is our point-based approach; not the isosurface.
 /// We change size based on density, and not linearly, for visual effect.
-pub fn draw_density_point_cloud(entities: &mut Vec<Entity>, density: &[ElectronDensity]) {
+pub fn draw_density_point_cloud(entities: &mut Vec<Entity>, density: &[DensityPt]) {
     entities.retain(|ent| ent.class != EntityClass::DensityPoint as u32);
     // clear_mol_entity_indices(state); // todo: Borrow mut problem.
 
