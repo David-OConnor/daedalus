@@ -58,9 +58,6 @@ pub fn find_selected_atom(
 
     const INIT_DIST: f32 = f32::INFINITY;
 
-    // todo: Also consider togglign between ones under the cursor near the front,
-    // todo and picking the one closest to the ray.
-
     let mut nearest = Nearest {
         mol_type: MolType::Peptide,
         mol_i: 0,
@@ -68,10 +65,10 @@ pub fn find_selected_atom(
     };
     let mut near_dist = INIT_DIST;
 
-    for (_mol_i, atom_i) in items_pep_along_ray {
+    for (i_mol, i_atom) in items_pep_along_ray {
         let chain_hidden = {
             let chains_this_atom: Vec<&Chain> =
-                chains.iter().filter(|c| c.atoms.contains(atom_i)).collect();
+                chains.iter().filter(|c| c.atoms.contains(i_atom)).collect();
 
             let mut hidden = false;
             for chain in &chains_this_atom {
@@ -87,7 +84,7 @@ pub fn find_selected_atom(
             continue;
         }
 
-        let atom = &atoms_pep[*atom_i];
+        let atom = &atoms_pep[*i_atom];
 
         if ui.visibility.hide_sidechains || matches!(ui.mol_view, MoleculeView::Backbone) {
             if let Some(role) = atom.role
@@ -124,14 +121,35 @@ pub fn find_selected_atom(
             continue;
         }
 
-        let posit: Vec3F32 = atom.posit.into();
+        let posit: Vec3F32 = if bond_mode {
+            let bond = &bonds_pep[*i_atom];
+            let atom_0 = &atoms_pep[bond.atom_0];
+            let atom_1 = &atoms_pep[bond.atom_1];
+
+            if ui.visibility.hide_hydrogen
+                && (atom_0.element == Element::Hydrogen || atom_1.element == Element::Hydrogen)
+            {
+                continue;
+            }
+
+            ((atom_0.posit + atom_1.posit) / 2.).into()
+        } else {
+            let atom = &atoms_pep[*i_atom];
+
+            if ui.visibility.hide_hydrogen && atom.element == Element::Hydrogen {
+                continue;
+            }
+
+            atom.posit.into()
+        };
+
         let dist = (posit - ray.0).magnitude();
 
         if dist < near_dist {
             nearest = Nearest {
                 mol_type: MolType::Peptide,
                 mol_i: 0,
-                atom_i: *atom_i,
+                atom_i: *i_atom,
             };
             near_dist = dist;
         }

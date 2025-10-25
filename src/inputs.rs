@@ -702,6 +702,12 @@ fn handle_selection_attempt(
 
     let selection = match state.ui.view_sel_level {
         ViewSelLevel::Bond => {
+            let mut pep_bonds = Vec::new();
+            // todo: I don' tlike these clones.
+            if let Some(mol) = &state.peptide {
+                pep_bonds = mol.common.bonds.clone();
+            }
+
             let mut lig_bonds = Vec::new();
             // todo: I don' tlike these clones.
             for mol in &state.ligands {
@@ -723,7 +729,7 @@ fn handle_selection_attempt(
                 atoms_along_ray_lipid,
             ) = points_along_ray_bond(
                 selected_ray,
-                &Vec::new(), // todo: Peptide bonds once ready.
+                &pep_bonds,
                 &lig_bonds,
                 &na_bonds,
                 &lipid_bonds,
@@ -747,7 +753,7 @@ fn handle_selection_attempt(
                 &selected_ray,
                 &state.ui,
                 &Vec::new(),
-                &Vec::new(),
+                &pep_bonds,
                 &lig_bonds,
                 &na_bonds,
                 &lipid_bonds,
@@ -782,7 +788,7 @@ fn handle_selection_attempt(
                 &selected_ray,
                 &state.ui,
                 &Vec::new(),
-                &Vec::new(),
+                &[],
                 &[],
                 &[],
                 &[],
