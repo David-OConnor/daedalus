@@ -330,7 +330,7 @@ pub fn open_lig_from_input(state: &mut State, cam: &Camera, mut mol: MoleculeSma
 
 pub fn init_with_scene(state: &mut State, scene: &mut Scene, ctx: &egui::Context) {
     if state.volatile.ui_height < f32::EPSILON {
-        state.volatile.ui_height = ctx.used_size().y;
+        state.volatile.ui_height = ctx.used_size().y / ctx.pixels_per_point();
     }
 
     if state.peptide.is_some() {
