@@ -56,9 +56,7 @@ pub fn cam_look_at_outside(cam: &mut Camera, target: Vec3, alignment: Vec3, dist
 pub fn reset_camera(
     state: &mut State,
     scene: &mut Scene,
-    // view_depth: &mut (u16, u16),
     engine_updates: &mut EngineUpdates,
-    // mol: &MoleculeCommon,
     look_vec: Vec3, // unit vector the cam is pointing to.
 ) {
     let mut center = Vec3::new_zero();
@@ -92,9 +90,6 @@ pub fn reset_camera(
     }
 
     let dist_fm_center = size + CAM_INIT_OFFSET;
-
-    // cam_look_at_outside(&mut scene.camera, center, Vec3::new_zero(), dist_fm_center);
-    // let look_vec = (target - alignment).to_normalized();
 
     scene.camera.position = center - look_vec * dist_fm_center;
     scene.camera.orientation = Quaternion::from_unit_vecs(FWD_VEC, look_vec);

@@ -1649,6 +1649,7 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
             if state.mol_dynamics.is_some()
                 && state.ui.md.peptide_only_near_ligs
                 && mol.common.selected_for_md
+                && state.ligands.iter().filter(|l| l.common.selected_for_md).count() != 0
             {
                 if state.volatile.md_peptide_selected.contains(&(0, i_atom)) {
                     color_atom = blend_color(color_atom, COLOR_MD_NEAR_MOL, BLEND_AMT_MD_NEAR_MOL);
@@ -1824,6 +1825,7 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
         if state.mol_dynamics.is_some()
             && state.ui.md.peptide_only_near_ligs
             && mol.common.selected_for_md
+            && state.ligands.iter().filter(|l| l.common.selected_for_md).count() != 0
         {
             if state
                 .volatile

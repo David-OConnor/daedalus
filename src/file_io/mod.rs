@@ -13,8 +13,9 @@ use bio_files::{
 use chrono::Utc;
 use egui_file_dialog::FileDialog;
 use graphics::{Camera, ControlScheme, EngineUpdates, EntityUpdate, Scene};
+use lin_alg::f64::Vec3;
 use na_seq::{AaIdent, Element};
-
+use rand::Rng;
 use crate::{
     State,
     cam_misc::move_mol_to_cam,
@@ -25,8 +26,12 @@ use crate::{
     molecule::{MolType, MoleculeCommon, MoleculeGeneric, MoleculePeptide},
     prefs::{OpenHistory, OpenType},
     reflection::{DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityRect, ElectronDensity},
-    util::{handle_err, handle_success, orbit_center, reset_orbit_center},
+    util::{handle_err, handle_success},
 };
+
+// When opening molecules deconflict; don't allow a mol to be closer than this to another.
+const MOL_MIN_DIST_OPEN: f64 = 12.;
+
 
 impl State {
     /// A single endpoint to open a number of file types
@@ -190,16 +195,37 @@ impl State {
 
                         if let Some(ref mut s) = scene {
                             move_mol_to_cam(&mut mol.common, &s.camera);
+
+                            let centroid = mol.common.centroid();
+                            // If there is already a molecule here, offset.
+                            // todo: Apply this logic to other mol types A/R
+                            for mol_other in &self.ligands {
+                                if (mol_other.common.centroid() - centroid).magnitude() < MOL_MIN_DIST_OPEN {
+                                    let mut rng = rand::rng();
+                                    let dir = Vec3::new(
+                                        rng.random(),
+                                        rng.random(),
+                                        rng.random(),
+                                    ).to_normalized();
+
+                                    let pos_new = centroid + dir * MOL_MIN_DIST_OPEN;
+
+                                    mol.common.move_to(pos_new);
+                                        // Note: No further safeguard in this case.
+                                    break;
+                                }
+                            }
+
+
                             if let ControlScheme::Arc { center: _ } =
                                 s.input_settings.control_scheme
                             {
                                 s.input_settings.control_scheme = ControlScheme::Arc {
-                                    center: mol.common.centroid().into(),
+                                    center: centroid.into(),
                                 };
                             }
-
-                            reset_orbit_center(self, s);
                         }
+
                         self.ligands.push(mol);
 
                         // Make sure to draw *after* loaded into state.
@@ -229,8 +255,6 @@ impl State {
                                     center: mol.common.centroid().into(),
                                 };
                             }
-
-                            reset_orbit_center(self, s);
                         }
                         self.nucleic_acids.push(mol);
 
@@ -255,8 +279,6 @@ impl State {
                                     center: mol.common.centroid().into(),
                                 };
                             }
-
-                            reset_orbit_center(self, s);
                         }
                         self.lipids.push(mol);
 

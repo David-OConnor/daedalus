@@ -50,6 +50,7 @@ fn post_run_cleanup(state: &mut State, scene: &mut Scene, engine_updates: &mut E
             .iter_mut()
             .filter(|l| l.common.selected_for_md)
             .collect();
+
         let lipids: Vec<_> = state
             .lipids
             .iter_mut()
@@ -264,14 +265,13 @@ pub fn build_dynamics(
     // };
 
     // let cfg = MdConfig {
-    //     // todo: Temp until you fix shake/rattle
-    //     hydrogen_constraint: HydrogenConstraint::Flexible,
     //     overrides: MdOverrides {
     //         coulomb_disabled: false,
     //         long_range_recip_disabled: false,
+    //         lj_disabled: false,
     //         ..Default::default()
     //     },
-    //     // max_init_relaxation_iters: None,
+    //     max_init_relaxation_iters: None,
     //     ..cfg.clone()
     // };
 
