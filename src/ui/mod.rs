@@ -193,7 +193,7 @@ fn chain_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
         if state.ui.chain_to_pick_res.is_some() {
             if ui.button("(None)").clicked() {
                 state.ui.chain_to_pick_res = None;
-                state.volatile.ui_height = ui.ctx().used_size().y;
+                state.volatile.ui_height = ui.ctx().used_size().y  / ui.ctx().pixels_per_point();
             }
         }
     });
@@ -1354,7 +1354,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
     // This double-change variable logic is due to some cases needing to wait
     // an additional frame before the height takes effect.
     if UI_HEIGHT_CHANGE_DELAY.swap(false, Ordering::AcqRel) {
-        state.volatile.ui_height = ctx.used_size().y;
+        state.volatile.ui_height = ctx.used_size().y / ctx.pixels_per_point();
     }
 
     if UI_HEIGHT_CHANGED.swap(false, Ordering::AcqRel) {
