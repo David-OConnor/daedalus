@@ -590,7 +590,7 @@ pub fn display_mol_data_peptide(
 
         // Crude check for success.
         // let lig_count_prev = state.ligands.len();
-        state.load_geostd_mol_data(&data.ident_pdbe, true, data.frcmod_avail, redraw_lig, scene);
+        state.load_geostd_mol_data(&data.ident_pdbe, true, data.frcmod_avail, engine_updates, scene);
 
         // Move camera to ligand; not ligand to camera, since we are generating a ligand
         // that may already be docked to the protein.

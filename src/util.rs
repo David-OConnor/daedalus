@@ -735,7 +735,6 @@ pub fn handle_scene_flags(
 /// Poll receivers for data on potentially long-running calls. E.g. HTTP.
 pub fn handle_thread_rx(state: &mut State) {
     if let Some(rx) = &mut state.volatile.smiles_pending_data_avail {
-        println!("Rx is Some");
         match rx.try_recv() {
             Ok((ident_type, ident, http_result)) => {
                 let mut mol = None;
@@ -777,9 +776,8 @@ pub fn handle_thread_rx(state: &mut State) {
                 }
                 state.volatile.smiles_pending_data_avail = None;
             }
-            Err(e) => {
-                println!("No results yet on thread"); // todo temp
-            }
+            // E.g. no results. COuld handle explicit errors too.
+            Err(e) => {}
         }
     }
 

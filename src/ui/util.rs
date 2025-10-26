@@ -151,7 +151,7 @@ pub fn load_popups(
                             &mol_data.ident_pdbe,
                             load_ff,
                             load_frcmod,
-                            redraw_lig,
+                            engine_updates,
                             scene,
                         );
 

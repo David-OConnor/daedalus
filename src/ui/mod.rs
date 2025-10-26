@@ -1179,7 +1179,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
                 if button_clicked || enter_pressed {
                     let db_input = &state.ui.db_input.clone(); // Avoids a double borrow.
-                    state.load_geostd_mol_data(&db_input, true, true, &mut redraw_lig, scene);
+                    state.load_geostd_mol_data(&db_input, true, true, &mut engine_updates, scene);
 
                     state.ui.db_input = String::new();
                 }

@@ -15,6 +15,7 @@ use crate::{
     render::set_flashlight,
     util::handle_err,
 };
+use crate::molecule::MoleculeGeneric;
 
 /// Download mmCIF file from the RSCB, parse into a struct.
 pub fn load_cif_rcsb(ident: &str) -> Result<(MmCif, String), ReqError> {
@@ -48,6 +49,7 @@ pub fn load_sdf_pubchem(ident: &str) -> Result<MoleculeSmall, ReqError> {
     }
 }
 
+// todo: Diff between this and the 2 variant?
 pub fn load_geostd(ident: &str, load_data: &mut Option<GeostdItem>, state_ui: &mut StateUi) {
     println!("Loading Amber Geostd data...");
     let start = Instant::now();
@@ -161,13 +163,14 @@ pub fn load_atom_coords_rcsb(
         .updates_rcsb_data(&mut state.volatile.mol_pending_data_avail);
 }
 
+// todo: DIff between this and the non-2 variant?
 pub fn load_geostd2(
     state: &mut State,
     scene: &mut Scene,
     ident: &str,
     load_mol2: bool,
     load_frcmod: bool,
-    redraw_lig: &mut bool,
+    engine_updates: &mut EngineUpdates,
 ) {
     match amber_geostd::load_mol_files(ident) {
         Ok(data) => {
@@ -202,23 +205,7 @@ pub fn load_geostd2(
                         mol.pubchem_cid = data.pubchem_cid;
 
                         // mol.update_aux(&state.volatile.active_mol, &mut state.lig_specific_params);
-
-                        move_mol_to_cam(&mut mol.common, &scene.camera);
-
-                        state.volatile.orbit_center = Some((MolType::Ligand, state.ligands.len()));
-                        if let ControlScheme::Arc { center } =
-                            &mut scene.input_settings.control_scheme
-                        {
-                            *center = mol.common.centroid().into();
-                        }
-
-                        state.ligands.push(mol);
-
-                        state.volatile.active_mol =
-                            Some((MolType::Ligand, state.ligands.len() - 1));
-                        state.mol_dynamics = None;
-
-                        *redraw_lig = true;
+                        state.load_mol_to_state(MoleculeGeneric::Ligand(mol), Some(scene), engine_updates, None);
                     }
                     Err(e) => handle_err(
                         &mut state.ui,

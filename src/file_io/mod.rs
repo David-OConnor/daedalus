@@ -440,14 +440,14 @@ impl State {
         ident: &str,
         load_mol2: bool,
         load_frcmod: bool,
-        redraw_lig: &mut bool,
+        engine_updates: & mut EngineUpdates,
         scene: &mut Scene,
     ) {
         let start = Instant::now();
         println!("Loading mol files from Amber Geostd...");
 
         let ident = ident.trim().to_owned();
-        download_mols::load_geostd2(self, scene, &ident, load_mol2, load_frcmod, redraw_lig);
+        download_mols::load_geostd2(self, scene, &ident, load_mol2, load_frcmod, engine_updates);
 
         let elapsed = start.elapsed().as_millis();
         println!("Loaded Amber Geostd in {elapsed:.1}ms");
@@ -583,7 +583,7 @@ impl State {
                     }
                 }
 
-                if let Some(ident) = &mol.pdbe_id.clone() {
+                if let Some(ident) = mol.pdbe_id.clone() {
                     // todo: Should we use the pubchem ID? Be flexible? Check both?
                     let ident_type = MolIdentType::PdbeAmber; // todo: A/R.
                     println!(
@@ -598,9 +598,11 @@ impl State {
                         }
                         None => {
                             let (tx, rx) = mpsc::channel(); // one-shot channel
+                            let ident_for_thread = ident.clone();
+
                             thread::spawn(move || {
-                                let data = pubchem::get_smiles(ident);
-                                let _ = tx.send((ident_type, ident.to_owned(), data));
+                                let data = pubchem::get_smiles(&ident_for_thread);
+                                let _ = tx.send((ident_type, ident_for_thread, data));
                                 println!("Sent thread"); // todo temp.
                             });
 
