@@ -8,14 +8,16 @@ use std::{
 };
 
 use bio_files::{
-    DensityMap, MmCif, Mol2, Pdbqt, gemmi_sf_to_map, md_params::ForceFieldParams, sdf::Sdf,
+    DensityMap, MmCif, Mol2, Pdbqt, cif_sf::CifStructureFactors, gemmi_sf_to_map,
+    md_params::ForceFieldParams, sdf::Sdf,
 };
 use chrono::Utc;
 use egui_file_dialog::FileDialog;
-use graphics::{Camera, ControlScheme, EngineUpdates, EntityUpdate, Scene};
+use graphics::{ControlScheme, EngineUpdates, EntityUpdate, Scene};
 use lin_alg::f64::Vec3;
 use na_seq::{AaIdent, Element};
 use rand::Rng;
+use rustfft::FftPlanner;
 
 use crate::{
     State,
@@ -26,7 +28,9 @@ use crate::{
     mol_lig::MoleculeSmall,
     molecule::{MolType, MoleculeCommon, MoleculeGeneric, MoleculePeptide},
     prefs::{OpenHistory, OpenType},
-    reflection::{DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityPt, DensityRect},
+    reflection::{
+        DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityPt, DensityRect, density_map_from_mmcif,
+    },
     util::{handle_err, handle_success},
 };
 
@@ -118,9 +122,22 @@ impl State {
                     // so we handle here. We handle map and MTZ files elsewhere, even though they use a
                     // similar pipeline.
                     if name.contains("2fo") && name.contains("fc") {
-                        gemmi_sf_to_map(path, gemmi_path())?;
-                        let dm = gemmi_sf_to_map(path, gemmi_path())?;
+                        // todo: Experimenting with a local impl.
+                        // gemmi_sf_to_map(path, gemmi_path())?;
+                        // let dm = gemmi_sf_to_map(path, gemmi_path())?;
+
+                        // println!("Gemmi impl");
+
+                        let mut fft_planner = FftPlanner::new();
+                        let data = CifStructureFactors::new_from_path(path)?;
+
+                        println!("\n\nLoaded cif SF: {}", data);
+
+                        let dm = density_map_from_mmcif(&data, &mut fft_planner)?;
+
                         self.load_density(dm);
+
+                        return Ok(());
                     }
                 }
 
@@ -222,6 +239,8 @@ impl State {
                             }
                         }
 
+                        mol.smiles = Some(mol.common.to_smiles());
+                        
                         self.ligands.push(mol);
 
                         // Make sure to draw *after* loaded into state.
@@ -333,7 +352,7 @@ impl State {
                 &self.dev,
                 &self.kernel_reflections,
                 &atom_posits,
-                &dens_map.cell,
+                &dens_map.hdr.inner.cell,
                 DENSITY_MAX_DIST,
             );
 
@@ -660,40 +679,6 @@ pub fn gemmi_path() -> Option<&'static Path> {
         None
     }
 }
-
-// // todo:
-// /// Load general parameter files for proteins, and small organic molecules.
-// /// This also populates ff type and charge for protein atoms. These are built into the application
-// /// as static strings.
-// ///
-// /// This is similar to `FfParamSet::new()`, but using static strings.
-// pub fn load_ffs_general() -> io::Result<FfParamSet> {
-//     let mut result = FfParamSet::default();
-//
-//     let peptide = ForceFieldParamsKeyed::new(&ForceFieldParams::from_dat(PARM_19)?);
-//     let peptide_frcmod = ForceFieldParamsKeyed::new(&ForceFieldParams::from_frcmod(FRCMOD_FF19SB)?);
-//     result.peptide = Some(merge_params(&peptide, Some(&peptide_frcmod)));
-//
-//     let internal = parse_amino_charges(AMINO_19)?;
-//     let n_terminus = parse_amino_charges(AMINO_NT12)?;
-//     let c_terminus = parse_amino_charges(AMINO_CT12)?;
-//
-//     result.peptide_ff_q_map = Some(ProtFFTypeChargeMap {
-//         internal,
-//         n_terminus,
-//         c_terminus,
-//     });
-//
-//     result.small_mol = Some(ForceFieldParamsKeyed::new(&ForceFieldParams::from_dat(GAFF2)?));
-//
-//     let dna = ForceFieldParamsKeyed::new(&ForceFieldParams::from_dat(OL24_LIB)?);
-//     let dna_frcmod = ForceFieldParamsKeyed::new(&ForceFieldParams::from_frcmod(OL24_FRCMOD)?);
-//     result.dna = Some(merge_params(&dna, Some(&dna_frcmod)));
-//
-//     result.rna = Some(ForceFieldParamsKeyed::new(&ForceFieldParams::from_dat(RNA_LIB)?));
-//
-//     Ok(result)
-// }
 
 impl MoleculeCommon {
     /// Save to disk.

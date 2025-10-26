@@ -237,6 +237,10 @@ pub fn editor(
     ui.horizontal_wrapped(|ui| {
         edit_tools(state, scene, ui, engine_updates);
 
+        if let Some(sm) = &state.mol_editor.mol.smiles {
+            ui.label(RichText::new(sm));
+        }
+
         if state.mol_editor.md_state.is_some() {
             section_box().show(ui, |ui| {
                 ui.label("MD speed:");

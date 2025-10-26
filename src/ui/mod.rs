@@ -954,9 +954,18 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             };
             if ui
                 .button(RichText::new("Open").color(color_open_tools))
+                .on_hover_text("Open a molecule, electron density, or other file from disk.")
                 .clicked()
             {
                 state.volatile.dialogs.load.pick_file();
+            }
+
+            if ui
+                .button(RichText::new("Open recent").color(color_open_tools))
+                .on_hover_text("Select a recently-opened file to open")
+                .clicked()
+            {
+                state.ui.popup.recent_files = !state.ui.popup.recent_files;
             }
 
             let mut dm_loaded = None; // avoids a double-borrow error.
@@ -1081,7 +1090,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                             match rcsb::load_map(&mol.common.ident) {
                                 Ok(data) => {
                                     let mut cursor = Cursor::new(data);
-                                    match DensityMap::new(&mut cursor) {
+                                    match DensityMap::open(&mut cursor) {
                                         Ok(dm) => {
                                             dm_loaded = Some(dm);
                                             println!("Succsesfully loaded Map rom RSCB.");

@@ -168,10 +168,10 @@ impl MolEditorState {
 
             let bonds_remaining = bonds_avail.saturating_sub(adj.len());
 
-            println!(
-                "AVAIL. Atom: {} re: {bonds_remaining}. Adj: {adj:?}",
-                atom.element
-            );
+            // println!(
+            //     "AVAIL. Atom: {} re: {bonds_remaining}. Adj: {adj:?}",
+            //     atom.element
+            // );
 
             let mut j = 0;
             for (ff_type, bond_len) in hydrogens_avail(&atom.force_field_type) {

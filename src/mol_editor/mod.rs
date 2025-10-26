@@ -245,6 +245,8 @@ impl MolEditorState {
         // Load the initial relaxation into atom positions.
         self.load_atom_posits_from_md(&mut scene.entities, state_ui, engine_updates);
 
+        self.mol.smiles = Some(self.mol.common.to_smiles());
+
         // Clear all entities for non-editor molecules. And render the initial relaxation
         // from building dynamics.
         redraw(&mut scene.entities, &self.mol, state_ui);

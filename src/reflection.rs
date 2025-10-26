@@ -1,19 +1,22 @@
 //! For displaying electron density as measured by crytalography and Cryo-EM reflection data. From precomputed
 //! data, or Miller indices.
 
-#![allow(unused)]
+// todo: This is currently a disorganized dumping ground of related data. Organize it,
+// todo, move to bio_files as requried, and add cuFFT.
 
-use std::{sync::Arc, time::Instant};
+use std::{fs, io, path::Path, sync::Arc, time::Instant};
 
-use bio_files::{DensityMap, UnitCell};
+use bio_files::{DensityHeaderInner, DensityMap, MapHeader, UnitCell, cif_sf::CifStructureFactors};
 #[cfg(feature = "cuda")]
 use cudarc::driver::{CudaFunction, CudaStream, LaunchConfig, PushKernelArg};
+use ewald::{fft3d_c2r, fft3d_r2c};
 use graphics::{EngineUpdates, EntityUpdate, Mesh, Scene, Vertex};
 #[cfg(feature = "cuda")]
 use lin_alg::f32::{vec3s_from_dev, vec3s_to_dev};
 use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 use mcubes::{MarchingCubes, MeshSide};
 use rayon::prelude::*;
+use rustfft::{FftPlanner, num_complex::Complex};
 
 use crate::{
     ComputationDevice, State, drawing::draw_density_surface, render::MESH_DENSITY_SURFACE, util,
@@ -170,7 +173,8 @@ impl DensityRect {
     /// `margin = 0.0` means “touch each atom’s centre”.
     pub fn new(atom_posits: &[Vec3], map: &DensityMap, margin: f64) -> Self {
         let hdr = &map.hdr;
-        let cell = &map.cell;
+        let inner = &hdr.inner;
+        let cell = &inner.cell;
 
         // Atom bounds in fractional coords, relative to map origin
         let mut min_r = Vec3::new(f64::INFINITY, f64::INFINITY, f64::INFINITY);
@@ -196,14 +200,14 @@ impl DensityRect {
         let to_idx = |fr: f64, n: i32| -> isize { (fr * n as f64 - 0.5).floor() as isize };
 
         let lo_i = [
-            to_idx(min_r.x, hdr.mx),
-            to_idx(min_r.y, hdr.my),
-            to_idx(min_r.z, hdr.mz),
+            to_idx(min_r.x, inner.mx),
+            to_idx(min_r.y, inner.my),
+            to_idx(min_r.z, inner.mz),
         ];
         let hi_i = [
-            to_idx(max_r.x, hdr.mx),
-            to_idx(max_r.y, hdr.my),
-            to_idx(max_r.z, hdr.mz),
+            to_idx(max_r.x, inner.mx),
+            to_idx(max_r.y, inner.my),
+            to_idx(max_r.z, inner.mz),
         ];
 
         // inclusive → dims       (now guaranteed hi_i ≥ lo_i)
@@ -214,18 +218,18 @@ impl DensityRect {
         ];
 
         let lo_frac = Vec3::new(
-            (lo_i[0] as f64 + 0.5) / hdr.mx as f64,
-            (lo_i[1] as f64 + 0.5) / hdr.my as f64,
-            (lo_i[2] as f64 + 0.5) / hdr.mz as f64,
+            (lo_i[0] as f64 + 0.5) / inner.mx as f64,
+            (lo_i[1] as f64 + 0.5) / inner.my as f64,
+            (lo_i[2] as f64 + 0.5) / inner.mz as f64,
         ) + map.origin_frac; // back to absolute fractional
 
         let origin_cart = cell.fractional_to_cartesian(lo_frac);
 
         // Voxel step vectors in Å
         let step = [
-            cell.a / hdr.mx as f64,
-            cell.b / hdr.my as f64,
-            cell.c / hdr.mz as f64,
+            cell.a / inner.mx as f64,
+            cell.b / inner.my as f64,
+            cell.c / inner.mz as f64,
         ];
 
         let mut data = Vec::with_capacity(dims[0] * dims[1] * dims[2]);
@@ -242,9 +246,9 @@ impl DensityRect {
                     // Crystallographic → Cartesian center of this voxel
                     let frac = map.origin_frac
                         + Vec3::new(
-                            (idx_c[0] as f64 + 0.5) / hdr.mx as f64,
-                            (idx_c[1] as f64 + 0.5) / hdr.my as f64,
-                            (idx_c[2] as f64 + 0.5) / hdr.mz as f64,
+                            (idx_c[0] as f64 + 0.5) / inner.mx as f64,
+                            (idx_c[1] as f64 + 0.5) / inner.my as f64,
+                            (idx_c[2] as f64 + 0.5) / inner.mz as f64,
                         );
                     let cart = cell.fractional_to_cartesian(frac);
 
@@ -544,4 +548,179 @@ pub fn make_density_mesh(state: &mut State, scene: &mut Scene, engine_updates: &
         }
         Err(e) => util::handle_err(&mut state.ui, e.to_string()),
     }
+}
+
+// todo: Code below represents a local implementation of creating a map from 2fo-fc
+//----------------------------------------------
+
+fn phase_to_complex(amp: f32, phase: f32) -> Complex<f32> {
+    Complex::from_polar(amp, phase)
+}
+
+fn wrap_idx(i: i32, n: usize) -> usize {
+    let n_i32 = n as i32;
+    let m = i % n_i32;
+    if m < 0 {
+        (m + n_i32) as usize
+    } else {
+        m as usize
+    }
+}
+
+fn inv_perm(p: [usize; 3]) -> [usize; 3] {
+    let mut q = [0; 3];
+    q[p[0]] = 0;
+    q[p[1]] = 1;
+    q[p[2]] = 2;
+
+    q
+}
+
+fn lin3(i: usize, j: usize, k: usize, nx: usize, ny: usize) -> usize {
+    i + nx * (j + ny * k)
+}
+
+fn idx_zfast(ix: usize, iy: usize, iz: usize, nx: usize, ny: usize, nz: usize) -> usize {
+    // crystal order (X,Y,Z) with Z contiguous, X slowest
+    iz + nz * (iy + ny * ix)
+}
+
+fn idx_file(i_f: usize, j_f: usize, k_f: usize, nx: usize, ny: usize) -> usize {
+    // file order (fast, medium, slow) with FAST contiguous (as before)
+    i_f + nx * (j_f + ny * k_f)
+}
+
+// todo: Use cuFFT if in GPU mode.
+pub fn density_map_from_mmcif(
+    src: &CifStructureFactors,
+    planner: &mut FftPlanner<f32>,
+) -> io::Result<DensityMap> {
+    println!("Computing electron density from mmCIF 2fo-fc data...");
+    let start = Instant::now();
+    let (mx, my, mz) = (
+        src.header.mx as usize,
+        src.header.my as usize,
+        src.header.mz as usize,
+    );
+
+    let perm_f2c = [
+        (src.header.mapc - 1) as usize,
+        (src.header.mapr - 1) as usize,
+        (src.header.maps - 1) as usize,
+    ];
+    let perm_c2f = inv_perm(perm_f2c);
+
+    // --- reciprocal grid in CRYSTAL order with Z-fast layout ---
+    let mut data_k = vec![Complex::<f32>::new(0.0, 0.0); mx * my * mz];
+
+    for r in &src.miller_indices {
+        let c = if let (Some(re), Some(im)) = (r.re, r.im) {
+            Complex::new(re, im)
+        } else {
+            let amp = r.amp.expect("amp missing");
+            let ph = r.phase.expect("phase missing");
+            phase_to_complex(amp, ph)
+        };
+
+        // crystal grid indices
+        let u = wrap_idx(r.h, mx);
+        let v = wrap_idx(r.k, my);
+        let w = wrap_idx(r.l, mz);
+
+        // place at (u,v,w) and its conjugate at (-u,-v,-w) in Z-fast layout
+        let i0 = idx_zfast(u, v, w, mx, my, mz);
+        data_k[i0] = c;
+
+        let u2 = wrap_idx(-r.h, mx);
+        let v2 = wrap_idx(-r.k, my);
+        let w2 = wrap_idx(-r.l, mz);
+        let i1 = idx_zfast(u2, v2, w2, mx, my, mz);
+        if i1 != i0 && data_k[i1] == Complex::new(0.0, 0.0) {
+            data_k[i1] = c.conj();
+        }
+    }
+
+    // --- inverse FFT on Z-fast layout; dims are crystal (mx,my,mz) ---
+    let mut rho_crystal = fft3d_c2r(&mut data_k, (mx, my, mz), planner);
+
+    // If your FFT is unscaled, divide by N
+    let nvox = (mx * my * mz) as f32;
+    for v in &mut rho_crystal {
+        *v /= nvox;
+    }
+
+    // --- remap to FILE order buffer if you want DensityMap.data in file order ---
+    let mut rho_file = vec![0f32; mx * my * mz];
+
+    // file indices → crystal indices → pull from rho_crystal (Z-fast) → store in file buffer
+    for k_f in 0..mz {
+        for j_f in 0..my {
+            for i_f in 0..mx {
+                let mut ic = [0usize; 3];
+                ic[perm_f2c[0]] = i_f; // crystal X index
+                ic[perm_f2c[1]] = j_f; // crystal Y index
+                ic[perm_f2c[2]] = k_f; // crystal Z index
+
+                let src_idx = idx_zfast(ic[0], ic[1], ic[2], mx, my, mz);
+                let dst_idx = idx_file(i_f, j_f, k_f, mx, my);
+                rho_file[dst_idx] = rho_crystal[src_idx];
+            }
+        }
+    }
+
+    // stats on rho_file
+    let mut sum = 0.0f64;
+    let mut sum2 = 0.0f64;
+    let mut min_v = f32::INFINITY;
+    let mut max_v = f32::NEG_INFINITY;
+    for &x in &rho_file {
+        let xd = x as f64;
+        sum += xd;
+        sum2 += xd * xd;
+        if x < min_v {
+            min_v = x;
+        }
+        if x > max_v {
+            max_v = x;
+        }
+    }
+    let mean = (sum / (nvox as f64)) as f32;
+
+    // todo: Adjust A/R.
+    let inner = src.header.clone();
+    // let inner = DensityHeaderInner {
+    //     nxstart: src.header.nxstart,
+    //     nystart: src.header.nystart,
+    //     nzstart: src.header.nzstart,
+    //     mx: mx as i32,
+    //     my: my as i32,
+    //     mz: mz as i32,
+    //     cell: src.header.cell.clone(),
+    //     mapc: src.header.mapc,
+    //     mapr: src.header.mapr,
+    //     maps: src.header.maps,
+    //     ispg: src.header.ispg,
+    //     nsymbt: src.header.nsymbt,
+    //     version: src.header.version,
+    //     xorigin: src.header.xorigin,
+    //     yorigin: src.header.yorigin,
+    //     zorigin: src.header.zorigin,
+    // };
+
+    let hdr = MapHeader {
+        inner,
+        nx: mx as i32,
+        ny: my as i32,
+        nz: mz as i32,
+        mode: 2,
+
+        dmin: min_v,
+        dmax: max_v,
+        dmean: mean,
+    };
+
+    let elapsed = start.elapsed().as_millis();
+    println!("Complete in {elapsed} ms");
+
+    DensityMap::new(hdr, rho_file)
 }
