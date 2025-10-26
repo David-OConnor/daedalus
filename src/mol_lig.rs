@@ -36,7 +36,7 @@ pub struct MoleculeSmall {
     pub associated_structures: Vec<ProteinStructure>,
     /// Simplified Molecular Input Line Entry System
     /// A cache for display as required. This is a text representation of a molecular formula.
-    pub smiles: Option<String>
+    pub smiles: Option<String>,
 }
 
 impl MoleculeSmall {

@@ -218,18 +218,6 @@ pub enum EntityClass {
     Other = 11,
 }
 
-impl MolType {
-    pub fn entity_type(&self) -> EntityClass {
-        match self {
-            Self::Peptide => EntityClass::Protein,
-            Self::Ligand => EntityClass::Ligand,
-            Self::NucleicAcid => EntityClass::NucleicAcid,
-            Self::Lipid => EntityClass::Lipid,
-            Self::Water => EntityClass::Protein, // todo for now
-        }
-    }
-}
-
 // todo: For ligands that are flexible, highlight the fleixble bonds in a bright color.
 
 fn blend_color(color_0: Color, color_1: Color, portion: f32) -> Color {

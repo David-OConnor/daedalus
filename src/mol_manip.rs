@@ -1,8 +1,6 @@
 //! Handles logic for moving and rotating molecules from user inputs.
 
-use graphics::{
-    ControlScheme, EngineUpdates, FWD_VEC, RIGHT_VEC, Scene, UP_VEC, event::MouseScrollDelta,
-};
+use graphics::{ControlScheme, FWD_VEC, RIGHT_VEC, Scene, UP_VEC, event::MouseScrollDelta};
 use lin_alg::{
     f32::{Quaternion, Vec3},
     f64::Vec3 as Vec3F64,
@@ -11,12 +9,12 @@ use lin_alg::{
 
 use crate::{
     ManipMode, State, StateVolatile,
-    inputs::{SCROLL_MOVE_AMT, SENS_MOL_MOVE_SCROLL, SENS_MOL_ROT_MOUSE, SENS_MOL_ROT_SCROLL},
+    inputs::{SENS_MOL_ROT_MOUSE, SENS_MOL_ROT_SCROLL},
     molecule::MolType,
 };
 
 /// Blender-style mouse dragging of the molecule. For movement, creates a plane of the camera view,
-/// at the molecules depth. The mouse cursor projects to this plane, moving the molecule
+/// at the molecule's depth. The mouse cursor projects to this plane, moving the molecule
 /// along it. (Movement). Handles rotation in a straightforward manner. This is for motion relative
 /// to the 2D screen, e.g. from mouse movement.
 pub fn handle_mol_manip_in_plane(

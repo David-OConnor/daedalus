@@ -23,7 +23,6 @@ use crate::{
     download_mols,
     molecule::AtomRole,
     render::set_flashlight,
-    ui::util::load_file,
     util,
 };
 
@@ -135,7 +134,7 @@ pub fn handle_cmd(
         let filename = &caps[1];
         let path = PathBuf::from_str(filename).unwrap();
 
-        load_file(&path, state, redraw, reset_cam, engine_updates, scene)?;
+        state.open_mol_from_file(&path, Some(scene), engine_updates)?;
 
         set_flashlight(scene);
         engine_updates.lighting = true;

@@ -93,7 +93,7 @@ use crate::{
     nucleic_acid::MoleculeNucleicAcid,
     prefs::ToSave,
     render::render,
-    ui::cam::{FOG_DIST_DEFAULT, FOG_DIST_MAX, FOG_DIST_MIN, VIEW_DEPTH_NEAR_MIN},
+    ui::cam::{FOG_DIST_DEFAULT, VIEW_DEPTH_NEAR_MIN},
     util::handle_err,
 };
 // ------Including files into the executable

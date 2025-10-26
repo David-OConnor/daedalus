@@ -11,6 +11,7 @@ use std::{
     thread,
     time::Instant,
 };
+
 use bincode::{Decode, Encode};
 // todo: TO simplify various APIs, we may need a wrapped Molecule Enum that
 // todo has a variant for each molecule type.
@@ -27,19 +28,18 @@ use dynamics::{
     params::{ProtFfChargeMapSet, prepare_peptide_mmcif},
     populate_hydrogens_dihedrals,
 };
-use lin_alg::{
-    f32::Vec3 as Vec3F32,
-    f64::{Quaternion, Vec3},
-};
+use lin_alg::f64::{Quaternion, Vec3};
 use na_seq::{AminoAcid, AtomTypeInRes, Element};
 use rayon::prelude::*;
 
 use crate::{
     Selection,
     bond_inference::create_hydrogen_bonds,
+    drawing::EntityClass,
     lipid::MoleculeLipid,
     mol_lig::MoleculeSmall,
     nucleic_acid::MoleculeNucleicAcid,
+    prefs::OpenType,
     reflection::{DensityPt, DensityRect, ReflectionsData},
     util::mol_center_size,
 };
@@ -59,6 +59,28 @@ pub enum MolType {
     NucleicAcid,
     Lipid,
     Water,
+}
+
+impl MolType {
+    pub fn to_open_type(self) -> OpenType {
+        match self {
+            Self::Peptide => OpenType::Peptide,
+            Self::Ligand => OpenType::Ligand,
+            Self::NucleicAcid => OpenType::NucleicAcid,
+            Self::Lipid => OpenType::Lipid,
+            Self::Water => panic!("Can't convert water to open type"),
+        }
+    }
+
+    pub fn entity_type(&self) -> EntityClass {
+        match self {
+            Self::Peptide => EntityClass::Protein,
+            Self::Ligand => EntityClass::Ligand,
+            Self::NucleicAcid => EntityClass::NucleicAcid,
+            Self::Lipid => EntityClass::Lipid,
+            Self::Water => EntityClass::Protein, // todo for now
+        }
+    }
 }
 
 /// Contains fields shared by all molecule types.
@@ -188,7 +210,7 @@ pub enum MoleculeGeneric {
 }
 
 impl MoleculeGeneric {
-    pub fn _common(&self) -> &MoleculeCommon {
+    pub fn common(&self) -> &MoleculeCommon {
         match self {
             Self::Peptide(m) => &m.common,
             Self::Ligand(m) => &m.common,
@@ -197,12 +219,21 @@ impl MoleculeGeneric {
         }
     }
 
-    pub fn _common_mut(&mut self) -> &mut MoleculeCommon {
+    pub fn common_mut(&mut self) -> &mut MoleculeCommon {
         match self {
             Self::Peptide(m) => &mut m.common,
             Self::Ligand(m) => &mut m.common,
             Self::NucleicAcid(m) => &mut m.common,
             Self::Lipid(m) => &mut m.common,
+        }
+    }
+
+    pub fn mol_type(&self) -> MolType {
+        match self {
+            Self::Peptide(_) => MolType::Peptide,
+            Self::Ligand(_) => MolType::Ligand,
+            Self::NucleicAcid(_) => MolType::NucleicAcid,
+            Self::Lipid(_) => MolType::Lipid,
         }
     }
 }

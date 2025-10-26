@@ -27,7 +27,7 @@ use crate::{
     lipid::{LipidShape, make_bacterial_lipids},
     mol_editor::enter_edit_mode,
     molecule::MolGenericRef,
-    render::{set_flashlight, set_static_light},
+    render::set_flashlight,
     ui::{
         cam::{cam_controls, cam_snapshots},
         misc::section_box,
@@ -35,8 +35,7 @@ use crate::{
         rama_plot::plot_rama,
         recent_files::recent_files,
         util::{
-            handle_redraw, init_with_scene, load_file, load_popups, open_lig_from_input,
-            update_file_dialogs,
+            handle_redraw, init_with_scene, load_popups, open_lig_from_input, update_file_dialogs,
         },
         view::{ui_section_vis, view_settings},
     },
@@ -117,8 +116,6 @@ where
 pub fn handle_input(
     state: &mut State,
     ui: &mut Ui,
-    redraw: &mut bool,
-    reset_cam: &mut bool,
     engine_updates: &mut EngineUpdates,
     scene: &mut Scene,
 ) {
@@ -126,7 +123,7 @@ pub fn handle_input(
         // Check for file drop
         if let Some(dropped_files) = ip.raw.dropped_files.first() {
             if let Some(path) = &dropped_files.path {
-                if let Err(e) = load_file(path, state, redraw, reset_cam, engine_updates, scene) {
+                if let Err(e) = state.open(path, Some(scene), engine_updates) {
                     handle_err(&mut state.ui, e.to_string());
                 }
             }
@@ -884,8 +881,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         handle_input(
             state,
             ui,
-            &mut redraw_peptide,
-            &mut reset_cam,
             &mut engine_updates,
             scene,
         );
@@ -1195,7 +1190,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     if ui.button("Load from DrugBank").clicked() {
                         match load_sdf_drugbank(&state.ui.db_input) {
                             Ok(mol) => {
-                                open_lig_from_input(state, &scene.camera, mol);
+                                open_lig_from_input(state, mol, scene, &mut engine_updates);
                                 redraw_lig = true;
                                 reset_cam = true;
                             }
@@ -1210,7 +1205,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 if ui.button("Load from PubChem").clicked() {
                     match load_sdf_pubchem(&state.ui.db_input) {
                         Ok(mol) => {
-                            open_lig_from_input(state, &scene.camera, mol);
+                            open_lig_from_input(state, mol, scene, &mut engine_updates);
                             redraw_lig = true;
                             reset_cam = true;
                         }

@@ -1,11 +1,4 @@
-use std::{
-    fs,
-    fs::File,
-    io,
-    io::{ErrorKind, Read},
-    path::Path,
-    time::Instant,
-};
+use std::{fs, io, io::ErrorKind, path::Path, time::Instant};
 
 use bio_files::{
     DensityMap, MmCif, Mol2, Pdbqt, cif_sf::CifStructureFactors, gemmi_sf_to_map,
@@ -26,7 +19,7 @@ use crate::{
     drawing::EntityClass,
     drawing_wrappers,
     mol_lig::MoleculeSmall,
-    molecule::{MolType, MoleculeCommon, MoleculeGeneric, MoleculePeptide},
+    molecule::{MolGenericTrait, MolType, MoleculeCommon, MoleculeGeneric, MoleculePeptide},
     prefs::{OpenHistory, OpenType},
     reflection::{
         DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityPt, DensityRect, density_map_from_mmcif,
@@ -38,7 +31,8 @@ use crate::{
 const MOL_MIN_DIST_OPEN: f64 = 12.;
 
 impl State {
-    /// A single endpoint to open a number of file types
+    /// A single endpoint to open a number of file types. Delegats to functions that handle
+    /// specific classes of file to open.
     pub fn open(
         &mut self,
         path: &Path,
@@ -54,7 +48,7 @@ impl State {
         {
             // The cif branch here also handles 2fo-fc mmCIF files.
             "sdf" | "mol2" | "pdbqt" | "pdb" | "cif" => {
-                self.open_molecule(path, scene, engine_updates)?
+                self.open_mol_from_file(path, scene, engine_updates)?
             }
             "prmtop" => {
                 // todo
@@ -87,10 +81,10 @@ impl State {
     }
 
     /// For opening molecule files: Proteins, small organic molecules, nucleic acids etc.
-    pub fn open_molecule(
+    pub fn open_mol_from_file(
         &mut self,
         path: &Path,
-        mut scene: Option<&mut Scene>,
+        scene: Option<&mut Scene>,
         engine_updates: &mut EngineUpdates,
     ) -> io::Result<()> {
         let binding = path.extension().unwrap_or_default().to_ascii_lowercase();
@@ -126,8 +120,6 @@ impl State {
                         // gemmi_sf_to_map(path, gemmi_path())?;
                         // let dm = gemmi_sf_to_map(path, gemmi_path())?;
 
-                        // println!("Gemmi impl");
-
                         let mut fft_planner = FftPlanner::new();
                         let data = CifStructureFactors::new_from_path(path)?;
 
@@ -141,13 +133,8 @@ impl State {
                     }
                 }
 
-                let mut file = File::open(path)?;
-
-                let mut data_str = String::new();
-                file.read_to_string(&mut data_str)?;
-
+                let data_str = fs::read_to_string(path)?;
                 let cif_data = MmCif::new(&data_str)?;
-                // let mut mol: Molecule = cif_data.try_into()?;
 
                 let Some(ff_map) = &self.ff_param_set.peptide_ff_q_map else {
                     return Err(io::Error::new(
@@ -164,13 +151,6 @@ impl State {
                 )?;
                 self.cif_pdb_raw = Some(data_str);
 
-                // Mark all other peptides as not last session.
-                for history in &mut self.to_save.open_history {
-                    if let OpenType::Peptide = history.type_ {
-                        history.last_session = false;
-                    }
-                }
-
                 Ok(MoleculeGeneric::Peptide(mol))
             }
             _ => Err(io::Error::new(
@@ -180,153 +160,8 @@ impl State {
         };
 
         match molecule {
-            Ok(mol_gen) => {
-                match mol_gen {
-                    MoleculeGeneric::Peptide(m) => {
-                        self.volatile.aa_seq_text = String::with_capacity(m.common.atoms.len());
-                        for aa in &m.aa_seq {
-                            self.volatile
-                                .aa_seq_text
-                                .push_str(&aa.to_str(AaIdent::OneLetter));
-                        }
-
-                        self.volatile.flags.ss_mesh_created = false;
-                        self.volatile.flags.sas_mesh_created = false;
-
-                        self.volatile.flags.clear_density_drawing = true;
-
-                        self.volatile.active_mol = Some((MolType::Peptide, 0));
-                        self.volatile.orbit_center = Some((MolType::Peptide, 0));
-
-                        self.peptide = Some(m);
-
-                        self.update_history(path, OpenType::Peptide);
-                    }
-                    MoleculeGeneric::Ligand(mut mol) => {
-                        self.mol_dynamics = None;
-
-                        self.volatile.active_mol = Some((MolType::Ligand, self.ligands.len())); // Prior to push; no - 1
-                        self.volatile.orbit_center = Some((MolType::Ligand, self.ligands.len()));
-
-                        mol.update_aux(&self.volatile.active_mol, &mut self.lig_specific_params);
-
-                        if let Some(ref mut s) = scene {
-                            move_mol_to_cam(&mut mol.common, &s.camera);
-
-                            let centroid = mol.common.centroid();
-                            // If there is already a molecule here, offset.
-                            // todo: Apply this logic to other mol types A/R
-                            for mol_other in &self.ligands {
-                                if (mol_other.common.centroid() - centroid).magnitude()
-                                    < MOL_MIN_DIST_OPEN
-                                {
-                                    let mut rng = rand::rng();
-                                    let dir = Vec3::new(rng.random(), rng.random(), rng.random())
-                                        .to_normalized();
-
-                                    let pos_new = centroid + dir * MOL_MIN_DIST_OPEN;
-
-                                    mol.common.move_to(pos_new);
-                                    // Note: No further safeguard in this case.
-                                    break;
-                                }
-                            }
-
-                            if let ControlScheme::Arc { center } =
-                                &mut s.input_settings.control_scheme
-                            {
-                                *center = centroid.into();
-                            }
-                        }
-
-                        mol.smiles = Some(mol.common.to_smiles());
-                        
-                        self.ligands.push(mol);
-
-                        // Make sure to draw *after* loaded into state.
-                        if let Some(s) = scene {
-                            drawing_wrappers::draw_all_ligs(self, s);
-                        }
-
-                        engine_updates.entities =
-                            EntityUpdate::Classes(vec![EntityClass::Ligand as u32]);
-                        self.update_history(path, OpenType::Ligand);
-
-                        self.volatile.orbit_center =
-                            Some((MolType::Ligand, self.ligands.len() - 1));
-                    }
-                    MoleculeGeneric::NucleicAcid(mut mol) => {
-                        self.volatile.active_mol =
-                            Some((MolType::NucleicAcid, self.nucleic_acids.len())); // Prior to push; no - 1
-                        self.volatile.orbit_center =
-                            Some((MolType::NucleicAcid, self.nucleic_acids.len()));
-
-                        if let Some(ref mut s) = scene {
-                            move_mol_to_cam(&mut mol.common, &s.camera);
-
-                            if let ControlScheme::Arc { center } =
-                                &mut s.input_settings.control_scheme
-                            {
-                                *center = mol.common.centroid().into();
-                            }
-                        }
-                        self.nucleic_acids.push(mol);
-
-                        if let Some(s) = scene {
-                            drawing_wrappers::draw_all_nucleic_acids(self, s);
-                        }
-
-                        engine_updates.entities =
-                            EntityUpdate::Classes(vec![EntityClass::NucleicAcid as u32]);
-                        self.update_history(path, OpenType::NucleicAcid);
-                    }
-                    MoleculeGeneric::Lipid(mut mol) => {
-                        self.volatile.active_mol = Some((MolType::Lipid, self.lipids.len())); // Prior to push; no - 1
-                        self.volatile.orbit_center = Some((MolType::Lipid, self.lipids.len()));
-
-                        if let Some(ref mut s) = scene {
-                            move_mol_to_cam(&mut mol.common, &s.camera);
-
-                            if let ControlScheme::Arc { center } =
-                                &mut s.input_settings.control_scheme
-                            {
-                                *center = mol.common.centroid().into();
-                            }
-                        }
-                        self.lipids.push(mol);
-
-                        if let Some(s) = scene {
-                            drawing_wrappers::draw_all_lipids(self, s);
-                        }
-
-                        engine_updates.entities =
-                            EntityUpdate::Classes(vec![EntityClass::Lipid as u32]);
-                        self.update_history(path, OpenType::Lipid);
-                    }
-                }
-                // Save the open history.
-                self.update_save_prefs(false);
-
-                if let Some(mol) = &mut self.peptide {
-                    // Only after updating from prefs (to prevent unnecessary loading) do we update data avail.
-                    mol.updates_rcsb_data(&mut self.volatile.mol_pending_data_avail);
-                }
-
-                // Now, save prefs: This is to save last opened. Note that anomolies happen
-                // if we update the molecule here, e.g. with docking site posit.
-                self.update_save_prefs_no_mol();
-
-                // if self.ligand.is_some() {
-                //     if self.get_make_docking_setup().is_none() {
-                //         eprintln!("Problem making or getting docking setup.");
-                //     }
-                // }
-
-                self.volatile.flags.new_mol_loaded = true;
-            }
-            Err(e) => {
-                return Err(e);
-            }
+            Ok(mol_gen) => self.load_mol_to_state(mol_gen, scene, engine_updates, Some(path)),
+            Err(e) => return Err(e),
         }
 
         Ok(())
@@ -357,8 +192,12 @@ impl State {
             );
 
             #[cfg(not(feature = "cuda"))]
-            let dens =
-                dens_rect.make_densities(&self.dev, &atom_posits, &dens_map.cell, DENSITY_MAX_DIST);
+            let dens = dens_rect.make_densities(
+                &self.dev,
+                &atom_posits,
+                &dens_map.hdr.inner.cell,
+                DENSITY_MAX_DIST,
+            );
 
             let elec_dens: Vec<_> = dens
                 .iter()
@@ -626,13 +465,15 @@ impl State {
 
             match history.type_ {
                 OpenType::Peptide => {
-                    if let Err(e) = self.open_molecule(&history.path, None, &mut Default::default())
+                    if let Err(e) =
+                        self.open_mol_from_file(&history.path, None, &mut Default::default())
                     {
                         handle_err(&mut self.ui, e.to_string());
                     }
                 }
                 OpenType::Ligand | OpenType::NucleicAcid | OpenType::Lipid => {
-                    if let Err(e) = self.open_molecule(&history.path, None, &mut Default::default())
+                    if let Err(e) =
+                        self.open_mol_from_file(&history.path, None, &mut Default::default())
                     {
                         handle_err(&mut self.ui, e.to_string());
                     }
@@ -664,6 +505,162 @@ impl State {
         self.to_save
             .open_history
             .push(OpenHistory::new(path, type_));
+    }
+
+    /// This is a central point for loading a molecule into state. It handles the cases
+    /// of loading from file, and online sources. All cases of opening a molecule pass through this.
+    ///
+    /// It centralizes steps that should be completed upon molecule open, and attempts to conslidate
+    /// between different molecule types.
+    pub fn load_mol_to_state(
+        &mut self,
+        mut mol: MoleculeGeneric,
+        mut scene: Option<&mut Scene>,
+        engine_updates: &mut EngineUpdates,
+        path: Option<&Path>,
+    ) {
+        let mol_type = mol.mol_type();
+        let entity_class = mol_type.entity_type() as u32;
+        let open_type = mol_type.to_open_type();
+
+        let mut centroid = Vec3::new_zero();
+
+        // The pre-push index.
+        let mol_i = match mol_type {
+            MolType::Peptide => 0,
+            MolType::Ligand => self.ligands.len(),
+            MolType::NucleicAcid => self.nucleic_acids.len(),
+            MolType::Lipid => self.lipids.len(),
+            MolType::Water => unreachable!(),
+        };
+
+        match mol {
+            MoleculeGeneric::Peptide(m) => {
+                self.volatile.aa_seq_text = String::with_capacity(m.common.atoms.len());
+                for aa in &m.aa_seq {
+                    self.volatile
+                        .aa_seq_text
+                        .push_str(&aa.to_str(AaIdent::OneLetter));
+                }
+
+                self.volatile.flags.ss_mesh_created = false;
+                self.volatile.flags.sas_mesh_created = false;
+
+                self.volatile.flags.clear_density_drawing = true;
+
+                centroid = m.center;
+                self.peptide = Some(m);
+            }
+            MoleculeGeneric::Ligand(mut mol) => {
+                if let Some(ref mut s) = scene {
+                    move_mol_to_cam(&mut mol.common_mut(), &s.camera);
+                }
+
+                self.mol_dynamics = None;
+
+                mol.update_aux(&self.volatile.active_mol, &mut self.lig_specific_params);
+
+                if let Some(ref mut s) = scene {
+                    let centroid = mol.common.centroid();
+                    // If there is already a molecule here, offset.
+                    // todo: Apply this logic to other mol types A/R
+                    for mol_other in &self.ligands {
+                        if (mol_other.common.centroid() - centroid).magnitude() < MOL_MIN_DIST_OPEN
+                        {
+                            let mut rng = rand::rng();
+                            let dir =
+                                Vec3::new(rng.random(), rng.random(), rng.random()).to_normalized();
+
+                            let pos_new = centroid + dir * MOL_MIN_DIST_OPEN;
+
+                            mol.common.move_to(pos_new);
+                            // Note: No further safeguard in this case.
+                            break;
+                        }
+                    }
+                }
+
+                centroid = mol.common.centroid();
+                mol.smiles = Some(mol.common.to_smiles());
+                self.ligands.push(mol);
+
+                // Make sure to draw *after* loaded into state.
+                if let Some(ref mut s) = scene {
+                    drawing_wrappers::draw_all_ligs(self, s);
+                }
+            }
+            MoleculeGeneric::NucleicAcid(mut mol) => {
+                if let Some(ref mut s) = scene {
+                    move_mol_to_cam(&mut mol.common_mut(), &s.camera);
+                }
+
+                centroid = mol.common.centroid();
+                self.nucleic_acids.push(mol);
+
+                if let Some(ref mut s) = scene {
+                    drawing_wrappers::draw_all_nucleic_acids(self, s);
+                }
+
+                engine_updates.entities = EntityUpdate::Classes(vec![entity_class]);
+            }
+            MoleculeGeneric::Lipid(mut mol) => {
+                if let Some(ref mut s) = scene {
+                    move_mol_to_cam(&mut mol.common_mut(), &s.camera);
+                }
+
+                centroid = mol.common.centroid();
+                self.lipids.push(mol);
+
+                if let Some(ref mut s) = scene {
+                    drawing_wrappers::draw_all_lipids(self, s);
+                }
+            }
+        }
+
+        engine_updates.entities = EntityUpdate::Classes(vec![entity_class]);
+
+        self.volatile.active_mol = Some((mol_type, mol_i));
+        self.volatile.orbit_center = Some((mol_type, mol_i));
+
+        if let Some(ref mut s) = scene {
+            if let ControlScheme::Arc { center } = &mut s.input_settings.control_scheme {
+                *center = centroid.into();
+            }
+        }
+
+        if let Some(p) = path {
+            self.update_history(p, open_type);
+        }
+
+        // Save the open history.
+        self.update_save_prefs(false);
+
+        if mol_type == MolType::Peptide {
+            // todo: Apply this to non-peptides?
+            // Mark all other peptides as not last session.
+            for history in &mut self.to_save.open_history {
+                if let OpenType::Peptide = history.type_ {
+                    history.last_session = false;
+                }
+            }
+
+            if let Some(mol) = &mut self.peptide {
+                // Only after updating from prefs (to prevent unnecessary loading) do we update data avail.
+                mol.updates_rcsb_data(&mut self.volatile.mol_pending_data_avail);
+            }
+        }
+
+        // Now, save prefs: This is to save last opened. Note that anomolies happen
+        // if we update the molecule here, e.g. with docking site posit.
+        self.update_save_prefs_no_mol();
+
+        // if self.ligand.is_some() {
+        //     if self.get_make_docking_setup().is_none() {
+        //         eprintln!("Problem making or getting docking setup.");
+        //     }
+        // }
+
+        self.volatile.flags.new_mol_loaded = true;
     }
 }
 

@@ -12,7 +12,7 @@ use crate::{
     drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
     mol_editor,
     mol_lig::MoleculeSmall,
-    molecule::{MolGenericRef, MolType},
+    molecule::{MolGenericRef, MolType, MoleculeGeneric},
     render::{set_flashlight, set_static_light},
     ui::{COL_SPACING, COLOR_HIGHLIGHT, ROW_SPACING, set_window_title},
     util::{handle_err, reset_orbit_center},
@@ -34,14 +34,15 @@ pub fn update_file_dialogs(
 
     if let Some(path) = &state.volatile.dialogs.load.take_picked() {
         if let Err(e) = match state.volatile.operating_mode {
-            OperatingMode::Primary => load_file(
-                path,
-                state,
-                redraw_peptide,
-                reset_cam,
-                engine_updates,
-                scene,
-            ),
+            // OperatingMode::Primary => load_file(
+            //     path,
+            //     state,
+            //     redraw_peptide,
+            //     reset_cam,
+            //     engine_updates,
+            //     scene,
+            // ),
+            OperatingMode::Primary => state.open(path, Some(scene), engine_updates),
             OperatingMode::MolEditor => state.mol_editor.open_molecule(
                 &state.dev,
                 &state.ff_param_set,
@@ -237,27 +238,24 @@ pub fn load_popups(
     }
 }
 
-pub fn load_file(
-    path: &Path,
-    state: &mut State,
-    redraw: &mut bool,
-    reset_cam: &mut bool,
-    engine_updates: &mut EngineUpdates,
-    scene: &mut Scene,
-) -> io::Result<()> {
-    state.open(path, Some(scene), engine_updates)?;
-
-    // Clear last map opened here, vice in `open_molecule`, to prevent it clearing the map
-    // on init.
-
-    *redraw = true;
-    *reset_cam = true;
-
-    // todo: Overkill.
-    engine_updates.entities = EntityUpdate::All;
-
-    Ok(())
-}
+// pub fn load_file(
+//     path: &Path,
+//     state: &mut State,
+//     redraw: &mut bool,
+//     reset_cam: &mut bool,
+//     engine_updates: &mut EngineUpdates,
+//     scene: &mut Scene,
+// ) -> io::Result<()> {
+//     state.open(path, Some(scene), engine_updates)?;
+//
+//     // Clear last map opened here, vice in `open_molecule`, to prevent it clearing the map
+//     // on init.
+//
+//     *redraw = true;
+//     *reset_cam = true;
+//
+//     Ok(())
+// }
 
 pub fn handle_redraw(
     state: &mut State,
@@ -316,14 +314,20 @@ pub fn handle_redraw(
     }
 }
 
-pub fn open_lig_from_input(state: &mut State, cam: &Camera, mut mol: MoleculeSmall) {
+/// Handles the case of opening a ligand remotely using the text input.
+pub fn open_lig_from_input(
+    state: &mut State,
+    mut mol: MoleculeSmall,
+    scene: &mut Scene,
+    engine_updates: &mut EngineUpdates,
+) {
     mol.update_aux(&state.volatile.active_mol, &mut state.lig_specific_params);
-
-    state.volatile.active_mol = Some((MolType::Ligand, state.ligands.len()));
-    move_mol_to_cam(&mut mol.common, cam);
-
-    state.ligands.push(mol);
-    state.update_from_prefs();
+    state.load_mol_to_state(
+        MoleculeGeneric::Ligand(mol),
+        Some(scene),
+        engine_updates,
+        None,
+    );
 
     state.ui.db_input = String::new();
 }

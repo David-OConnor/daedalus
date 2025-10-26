@@ -10,6 +10,7 @@ use cudarc::{
     driver::{CudaContext, CudaFunction},
     nvrtc::Ptx,
 };
+#[cfg(feature = "cuda")]
 use dynamics::ComputationDevice;
 use egui::Color32;
 use graphics::{Camera, ControlScheme, EngineUpdates, EntityUpdate, FWD_VEC, Scene};

@@ -30,11 +30,11 @@ use crate::{
     drawing::MoleculeView,
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
 };
-use crate::{docking_v2::DockingSite, inputs::SENS_MOL_MOVE_SCROLL};
-use crate::molecule::MolIdentType;
+use crate::{docking_v2::DockingSite, inputs::SENS_MOL_MOVE_SCROLL, molecule::MolIdentType};
 
 pub const DEFAULT_PREFS_FILE: &str = "daedalus_prefs.dae";
 
+/// Used to sequence how we handle each file type.
 #[derive(Clone, Copy, PartialEq, Debug, Encode, Decode)]
 pub enum OpenType {
     Peptide,

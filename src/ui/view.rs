@@ -9,7 +9,6 @@ use crate::{
         EntityClass, MoleculeView, draw_density_point_cloud, draw_density_surface, draw_water,
     },
     drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
-    mol_editor::redraw,
     ui::{COL_SPACING, DENS_ISO_MAX, DENS_ISO_MIN, UI_HEIGHT_CHANGED, misc, misc::section_box},
     util::clear_mol_entity_indices,
 };
