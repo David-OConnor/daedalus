@@ -321,7 +321,7 @@ pub fn open_lig_from_input(
     scene: &mut Scene,
     engine_updates: &mut EngineUpdates,
 ) {
-    mol.update_aux(&state.volatile.active_mol, &mut state.lig_specific_params);
+    // mol.update_aux(&state.volatile.active_mol, &mut state.lig_specific_params);
     state.load_mol_to_state(
         MoleculeGeneric::Ligand(mol),
         Some(scene),

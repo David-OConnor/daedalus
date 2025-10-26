@@ -89,7 +89,7 @@ use molecule::MoleculePeptide;
 use crate::{
     lipid::{LipidShape, MoleculeLipid},
     mol_editor::MolEditorState,
-    molecule::{Bond, MoGenericRefMut, MolGenericRef, MolType, MoleculeCommon},
+    molecule::{Bond, MoGenericRefMut, MolGenericRef, MolIdentType, MolType, MoleculeCommon},
     nucleic_acid::MoleculeNucleicAcid,
     prefs::ToSave,
     render::render,
@@ -254,13 +254,15 @@ struct StateVolatile {
     inputs_commanded: InputsCommanded,
     // todo: Replace with the V2 version A/R
     // docking_setup: Option<DockingSetup>,
-    /// e.g. waiting for the data avail thread to return
+    /// Receives thread data upon an HTTP result completion.
     mol_pending_data_avail: Option<
         Receiver<(
             Result<PdbDataResults, ReqError>,
             Result<FilesAvailable, ReqError>,
         )>,
     >,
+    /// Receives thread data upon an HTTP result completion.
+    smiles_pending_data_avail: Option<Receiver<(MolIdentType, String, Result<String, ReqError>)>>,
     /// We may change CWD during CLI navigation; keep prefs directory constant.
     prefs_dir: PathBuf,
     /// Entered by the user, for this session.
@@ -293,6 +295,7 @@ impl Default for StateVolatile {
             dialogs: Default::default(),
             ui_height: Default::default(),
             inputs_commanded: Default::default(),
+            smiles_pending_data_avail: Default::default(),
             mol_pending_data_avail: Default::default(),
             prefs_dir: env::current_dir().unwrap(), // This is why we can't derive.
             cli_input_history: Default::default(),
@@ -846,14 +849,6 @@ fn main() {
     // todo to double-load prefs.
     state.load_prefs();
 
-    // Update ligand positions, e.g. from the docking position site center loaded from prefs.
-    // if let Some(lig) = &mut state.ligand {
-    //     if let Some(data) = &mut lig.lig_data {
-    //         data.pose.anchor_posit = data.docking_site.site_center;
-    //         lig.position_atoms(None);
-    //     }
-    // }
-
     if let Some(mol) = &state.peptide {
         let posit = state.to_save.per_mol[&mol.common.ident]
             .docking_site
@@ -865,23 +860,6 @@ fn main() {
     if !state.ligands.is_empty() {
         state.volatile.active_mol = Some((MolType::Ligand, 0));
     }
-
-    // if let Err(e) = state.load_aa_charges_ff() {
-    //     handle_err(
-    //         &mut state.ui,
-    //         format!("Unable to load protein charges (static): {e}"),
-    //     );
-    // }
-
-    // todo temp
-    // let (atoms, params) = bio_files::prmtop::load_prmtop(std::path::Path::new("./molecules/str1.prmtop")).unwrap();
-    //
-    // println!("Loaded atoms:");
-    // for at in atoms {
-    //     println!("{at}");
-    // }
-    //
-    // println!("\n\n\n params: {:?}", params);
 
     state.load_lipid_templates();
 

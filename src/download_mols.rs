@@ -201,7 +201,7 @@ pub fn load_geostd2(
                         mol.pdbe_id = Some(ident.to_owned());
                         mol.pubchem_cid = data.pubchem_cid;
 
-                        mol.update_aux(&state.volatile.active_mol, &mut state.lig_specific_params);
+                        // mol.update_aux(&state.volatile.active_mol, &mut state.lig_specific_params);
 
                         move_mol_to_cam(&mut mol.common, &scene.camera);
 

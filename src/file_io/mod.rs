@@ -1,5 +1,6 @@
-use std::{fs, io, io::ErrorKind, path::Path, time::Instant};
+use std::{fs, io, io::ErrorKind, path::Path, sync::mpsc, thread, time::Instant};
 
+use bio_apis::pubchem;
 use bio_files::{
     DensityMap, MmCif, Mol2, Pdbqt, cif_sf::CifStructureFactors, gemmi_sf_to_map,
     md_params::ForceFieldParams, sdf::Sdf,
@@ -19,7 +20,9 @@ use crate::{
     drawing::EntityClass,
     drawing_wrappers,
     mol_lig::MoleculeSmall,
-    molecule::{MolGenericTrait, MolType, MoleculeCommon, MoleculeGeneric, MoleculePeptide},
+    molecule::{
+        MolGenericTrait, MolIdentType, MolType, MoleculeCommon, MoleculeGeneric, MoleculePeptide,
+    },
     prefs::{OpenHistory, OpenType},
     reflection::{
         DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityPt, DensityRect, density_map_from_mmcif,
@@ -31,7 +34,7 @@ use crate::{
 const MOL_MIN_DIST_OPEN: f64 = 12.;
 
 impl State {
-    /// A single endpoint to open a number of file types. Delegats to functions that handle
+    /// A single endpoint to open a number of file types. Delegates to functions that handle
     /// specific classes of file to open.
     pub fn open(
         &mut self,
@@ -510,7 +513,7 @@ impl State {
     /// This is a central point for loading a molecule into state. It handles the cases
     /// of loading from file, and online sources. All cases of opening a molecule pass through this.
     ///
-    /// It centralizes steps that should be completed upon molecule open, and attempts to conslidate
+    /// It centralizes steps that should be completed upon molecule open, and attempts to consolidate
     /// between different molecule types.
     pub fn load_mol_to_state(
         &mut self,
@@ -580,8 +583,33 @@ impl State {
                     }
                 }
 
+                if let Some(ident) = &mol.pdbe_id.clone() {
+                    // todo: Should we use the pubchem ID? Be flexible? Check both?
+                    let ident_type = MolIdentType::PdbeAmber; // todo: A/R.
+                    println!(
+                        "PDBe ID: {:?}. Pubchem: {:?}, common ident: {}",
+                        ident, mol.pubchem_cid, mol.common.ident
+                    ); // todo: to qc what you're actually storing...
+
+                    match self.to_save.smiles_map.get(&(ident_type, ident.clone())) {
+                        Some(v) => {
+                            println!("Loaded smiles for {ident} from our local DB: {v}");
+                            mol.smiles = Some(v.clone());
+                        }
+                        None => {
+                            let (tx, rx) = mpsc::channel(); // one-shot channel
+                            thread::spawn(move || {
+                                let data = pubchem::get_smiles(ident);
+                                let _ = tx.send((ident_type, ident.to_owned(), data));
+                                println!("Sent thread"); // todo temp.
+                            });
+
+                            self.volatile.smiles_pending_data_avail = Some(rx);
+                        }
+                    }
+                }
+
                 centroid = mol.common.centroid();
-                mol.smiles = Some(mol.common.to_smiles());
                 self.ligands.push(mol);
 
                 // Make sure to draw *after* loaded into state.
@@ -636,8 +664,8 @@ impl State {
         self.update_save_prefs(false);
 
         if mol_type == MolType::Peptide {
-            // todo: Apply this to non-peptides?
             // Mark all other peptides as not last session.
+            // We do this as we currently only support one peptide at a time.
             for history in &mut self.to_save.open_history {
                 if let OpenType::Peptide = history.type_ {
                     history.last_session = false;
@@ -650,7 +678,7 @@ impl State {
             }
         }
 
-        // Now, save prefs: This is to save last opened. Note that anomolies happen
+        // Now, save prefs: This is to save last opened. Note that anomalies happen
         // if we update the molecule here, e.g. with docking site posit.
         self.update_save_prefs_no_mol();
 

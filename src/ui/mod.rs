@@ -41,8 +41,8 @@ use crate::{
     },
     util::{
         check_prefs_save, clear_mol_entity_indices, close_mol, close_peptide, cycle_selected,
-        handle_err, handle_scene_flags, handle_success, orbit_center, reset_orbit_center,
-        select_from_search,
+        handle_err, handle_scene_flags, handle_success, handle_thread_rx, orbit_center,
+        reset_orbit_center, select_from_search,
     },
 };
 
@@ -1382,6 +1382,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
     }
 
     handle_scene_flags(state, scene, &mut engine_updates);
+    handle_thread_rx(state);
 
     // Run one or more MD steps, if a MD computation is in progress.
     state.md_step(scene, &mut engine_updates);

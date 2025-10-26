@@ -22,7 +22,10 @@ use crate::{
     drawing::{EntityClass, MoleculeView, draw_density_point_cloud, draw_peptide},
     drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
     mol_lig::MoleculeSmall,
-    molecule::{Atom, Bond, MoGenericRefMut, MolGenericRef, MolType, MoleculePeptide, Residue},
+    molecule::{
+        Atom, Bond, MoGenericRefMut, MolGenericRef, MolIdentType, MolType, MoleculeGeneric,
+        MoleculePeptide, Residue,
+    },
     prefs::OpenType,
     reflection,
     render::{Color, MESH_SECONDARY_STRUCTURE, MESH_SOLVENT_SURFACE, set_flashlight},
@@ -727,6 +730,58 @@ pub fn handle_scene_flags(
             engine_updates.meshes = true;
         }
     }
+}
+
+/// Poll receivers for data on potentially long-running calls. E.g. HTTP.
+pub fn handle_thread_rx(state: &mut State) {
+    if let Some(rx) = &mut state.volatile.smiles_pending_data_avail {
+        println!("Rx is Some");
+        match rx.try_recv() {
+            Ok((ident_type, ident, http_result)) => {
+                let mut mol = None;
+                for mol_ in &mut state.ligands {
+                    match ident_type {
+                        MolIdentType::PdbeAmber => {
+                            if let Some(id) = &mol_.pdbe_id {
+                                if *id == ident {
+                                    mol = Some(mol_);
+                                    break;
+                                }
+                            }
+                        }
+                        _ => unimplemented!(),
+                    }
+                }
+
+                let Some(mol) = mol else {
+                    state.volatile.smiles_pending_data_avail = None;
+                    eprintln!("Unable to find the mol we requested smiles for: {ident}");
+                    return;
+                };
+
+                match http_result {
+                    Ok(smiles) => {
+                        println!("Loaded smiles for {ident} from Pubchem: {smiles}");
+                        mol.smiles = Some(smiles.clone());
+                        state
+                            .to_save
+                            .smiles_map
+                            .insert((MolIdentType::PdbeAmber, ident.clone()), smiles.clone());
+                    }
+                    Err(_) => {
+                        // Note: This is currently broken.
+                        println!("Unable to find Smiles for ident {ident}, generating one.");
+                        // todo: Not saving to cache; not confident enough.
+                        mol.smiles = Some(mol.common.to_smiles());
+                    }
+                }
+                state.volatile.smiles_pending_data_avail = None;
+            }
+            Err(e) => {
+                println!("No results yet on thread"); // todo temp
+            }
+        }
+    }
 
     if state.volatile.mol_pending_data_avail.is_some()
         && let Some(mol) = &mut state.peptide
@@ -890,20 +945,21 @@ pub fn clear_mol_entity_indices(state: &mut State, exempt: Option<MolType>) {
 }
 
 // pub fn make_lig_from_res(state: &mut State, res: &Residue, redraw_lig: &mut bool, lig_to_cam: Option<&Camera>) {
-pub fn make_lig_from_res(state: &mut State, res: &Residue, redraw_lig: &mut bool) {
+pub fn make_lig_from_res(
+    state: &mut State,
+    res: &Residue,
+    scene: &mut Scene,
+    engine_updates: &mut EngineUpdates,
+) {
     let mol = &state.peptide.as_ref().unwrap().common;
-    let mut mol_fm_res = MoleculeSmall::from_res(res, &mol.atoms, &mol.bonds);
+    let mol_fm_res = MoleculeSmall::from_res(res, &mol.atoms, &mol.bonds);
 
-    mol_fm_res.update_aux(&state.volatile.active_mol, &mut state.lig_specific_params);
-
-    state.ligands.push(mol_fm_res);
-
-    *redraw_lig = true;
-    state.mol_dynamics = None;
-
-    // We leave the new ligand in place, overlapping the residue we created it from.
-
-    state.volatile.active_mol = Some((MolType::Ligand, state.ligands.len() - 1));
+    state.load_mol_to_state(
+        MoleculeGeneric::Ligand(mol_fm_res),
+        Some(scene),
+        engine_updates,
+        None,
+    );
 
     // Make it clear that we've added the ligand by showing it, and hiding hetero (if creating from Hetero)
     state.ui.visibility.hide_ligand = false;

@@ -490,10 +490,10 @@ pub fn display_mol_data_peptide(
     });
 
     if let Some(res) = res_to_make {
-        make_lig_from_res(state, &res, redraw_lig);
-        if let Some(pep) = &state.peptide {
-            move_cam_to_active_mol(state, scene, pep.center, engine_updates);
-        }
+        make_lig_from_res(state, &res, scene, engine_updates);
+        // if let Some(pep) = &state.peptide {
+        //     move_cam_to_active_mol(state, scene, pep.center, engine_updates);
+        // }
     }
 
     if let Some(res) = move_lig_to_res {
@@ -601,8 +601,7 @@ pub fn display_mol_data_peptide(
     } else {
         if let Some(res) = res_to_load {
             // Use our normal "Lig from" logic.
-            // make_lig_from_res(state, &res, redraw_lig, None);
-            make_lig_from_res(state, &res, redraw_lig);
+            make_lig_from_res(state, &res, scene, engine_updates);
 
             move_cam_to_active_mol(
                 state,
