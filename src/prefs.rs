@@ -31,6 +31,7 @@ use crate::{
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
 };
 use crate::{docking_v2::DockingSite, inputs::SENS_MOL_MOVE_SCROLL};
+use crate::molecule::MolIdentType;
 
 pub const DEFAULT_PREFS_FILE: &str = "daedalus_prefs.dae";
 
@@ -140,6 +141,7 @@ pub struct ToSave {
     pub near_sel_only: bool,
     pub near_lig_only: bool,
     pub nearby_dist_thresh: u16,
+    pub smiles_map: HashMap<(MolIdentType, String), String>,
 }
 
 impl Default for ToSave {
@@ -165,6 +167,7 @@ impl Default for ToSave {
             near_lig_only: Default::default(),
             nearby_dist_thresh: Default::default(),
             visibility: Default::default(),
+            smiles_map: Default::default(),
         }
     }
 }

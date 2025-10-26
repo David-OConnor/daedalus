@@ -11,7 +11,7 @@ use std::{
     thread,
     time::Instant,
 };
-
+use bincode::{Decode, Encode};
 // todo: TO simplify various APIs, we may need a wrapped Molecule Enum that
 // todo has a variant for each molecule type.
 use bio_apis::{
@@ -1155,4 +1155,12 @@ fn init_bonds_chains_res(
     }
 
     Ok((atoms, bonds, residues, chains))
+}
+
+/// For small organic molecules
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Decode, Encode)]
+pub enum MolIdentType {
+    PubChem,
+    DrugBank,
+    PdbeAmber,
 }
