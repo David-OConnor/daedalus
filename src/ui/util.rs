@@ -42,7 +42,7 @@ pub fn update_file_dialogs(
             //     engine_updates,
             //     scene,
             // ),
-            OperatingMode::Primary => state.open(path, Some(scene), engine_updates),
+            OperatingMode::Primary => state.open_file(path, Some(scene), engine_updates),
             OperatingMode::MolEditor => state.mol_editor.open_molecule(
                 &state.dev,
                 &state.ff_param_set,

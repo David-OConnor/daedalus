@@ -21,7 +21,7 @@ use crate::{
     drawing_wrappers,
     mol_lig::MoleculeSmall,
     molecule::{
-        MolGenericTrait, MolIdentType, MolType, MoleculeCommon, MoleculeGeneric, MoleculePeptide,
+        MolGenericTrait, MolIdent, MolType, MoleculeCommon, MoleculeGeneric, MoleculePeptide,
     },
     prefs::{OpenHistory, OpenType},
     reflection::{
@@ -36,7 +36,7 @@ const MOL_MIN_DIST_OPEN: f64 = 12.;
 impl State {
     /// A single endpoint to open a number of file types. Delegates to functions that handle
     /// specific classes of file to open.
-    pub fn open(
+    pub fn open_file(
         &mut self,
         path: &Path,
         scene: Option<&mut Scene>,
@@ -440,7 +440,7 @@ impl State {
         ident: &str,
         load_mol2: bool,
         load_frcmod: bool,
-        engine_updates: & mut EngineUpdates,
+        engine_updates: &mut EngineUpdates,
         scene: &mut Scene,
     ) {
         let start = Instant::now();
@@ -482,7 +482,7 @@ impl State {
                     }
                 }
                 OpenType::Map => {
-                    if let Err(e) = self.open(&history.path, None, &mut Default::default()) {
+                    if let Err(e) = self.open_file(&history.path, None, &mut Default::default()) {
                         handle_err(&mut self.ui, e.to_string());
                     }
                 }
@@ -527,6 +527,7 @@ impl State {
         let open_type = mol_type.to_open_type();
 
         let mut centroid = Vec3::new_zero();
+        let mut ident = String::new();
 
         // The pre-push index.
         let mol_i = match mol_type {
@@ -552,6 +553,7 @@ impl State {
                 self.volatile.flags.clear_density_drawing = true;
 
                 centroid = m.center;
+                ident = m.common.ident.clone();
                 self.peptide = Some(m);
             }
             MoleculeGeneric::Ligand(mut mol) => {
@@ -583,26 +585,25 @@ impl State {
                     }
                 }
 
-                if let Some(ident) = mol.pdbe_id.clone() {
+                for ident in &mol.idents {
                     // todo: Should we use the pubchem ID? Be flexible? Check both?
-                    let ident_type = MolIdentType::PdbeAmber; // todo: A/R.
-                    println!(
-                        "PDBe ID: {:?}. Pubchem: {:?}, common ident: {}",
-                        ident, mol.pubchem_cid, mol.common.ident
-                    ); // todo: to qc what you're actually storing...
+                    if !matches!(ident, MolIdent::PdbeAmber(_)) {
+                        continue;
+                    }
 
-                    match self.to_save.smiles_map.get(&(ident_type, ident.clone())) {
+                    match self.to_save.smiles_map.get(&ident) {
                         Some(v) => {
-                            println!("Loaded smiles for {ident} from our local DB: {v}");
+                            println!("Loaded smiles for {ident:?} from our local DB: {v}");
                             mol.smiles = Some(v.clone());
+                            break;
                         }
                         None => {
                             let (tx, rx) = mpsc::channel(); // one-shot channel
                             let ident_for_thread = ident.clone();
 
                             thread::spawn(move || {
-                                let data = pubchem::get_smiles(&ident_for_thread);
-                                let _ = tx.send((ident_type, ident_for_thread, data));
+                                let data = pubchem::get_smiles(&ident_for_thread.to_str());
+                                let _ = tx.send((ident_for_thread, data));
                                 println!("Sent thread"); // todo temp.
                             });
 
@@ -612,6 +613,8 @@ impl State {
                 }
 
                 centroid = mol.common.centroid();
+                ident = mol.common.ident.clone();
+
                 self.ligands.push(mol);
 
                 // Make sure to draw *after* loaded into state.
@@ -625,6 +628,8 @@ impl State {
                 }
 
                 centroid = mol.common.centroid();
+                ident = mol.common.ident.clone();
+
                 self.nucleic_acids.push(mol);
 
                 if let Some(ref mut s) = scene {
@@ -639,6 +644,8 @@ impl State {
                 }
 
                 centroid = mol.common.centroid();
+                ident = mol.common.ident.clone();
+
                 self.lipids.push(mol);
 
                 if let Some(ref mut s) = scene {
@@ -691,6 +698,9 @@ impl State {
         // }
 
         self.volatile.flags.new_mol_loaded = true;
+
+        // Note: This may be overwritten by `load_file` with the full file path.
+        handle_success(&mut self.ui, format!("Loaded molecule {ident}"));
     }
 }
 

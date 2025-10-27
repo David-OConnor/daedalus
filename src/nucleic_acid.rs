@@ -219,9 +219,9 @@ impl MoleculeNucleicAcid {
     ) -> Self {
         let mut seq = Vec::with_capacity(&peptide.residues.len() * 3);
         for res in &peptide.residues {
-            seq.push(Nucleotide::A);
-            seq.push(Nucleotide::A);
-            seq.push(Nucleotide::A);
+            seq.push(A);
+            seq.push(A);
+            seq.push(A);
         }
 
         Self::from_seq(&seq, na_type, strands)

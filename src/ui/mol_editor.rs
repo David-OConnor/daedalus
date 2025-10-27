@@ -104,6 +104,7 @@ pub fn editor(
             misc::toggle_btn(
                 &mut state.ui.visibility.hide_hydrogen,
                 "H",
+                "Show or hide Hydrogen atoms",
                 ui,
                 &mut redraw,
             );
@@ -114,6 +115,7 @@ pub fn editor(
             misc::toggle_btn_not_inv(
                 &mut state.mol_editor.md_running,
                 "MD running",
+                "Start a molecular dynamics simulation of the selected molecules",
                 ui,
                 &mut redraw,
             );

@@ -11,11 +11,10 @@ use crate::{
     State, StateUi,
     cam_misc::move_mol_to_cam,
     mol_lig::MoleculeSmall,
-    molecule::{MoGenericRefMut, MolType, MoleculePeptide},
+    molecule::{MoGenericRefMut, MolIdent, MolType, MoleculeGeneric, MoleculePeptide},
     render::set_flashlight,
     util::handle_err,
 };
-use crate::molecule::MoleculeGeneric;
 
 /// Download mmCIF file from the RSCB, parse into a struct.
 pub fn load_cif_rcsb(ident: &str) -> Result<(MmCif, String), ReqError> {
@@ -201,11 +200,18 @@ pub fn load_geostd2(
                 match Mol2::new(&data.mol2) {
                     Ok(mol2) => {
                         let mut mol: MoleculeSmall = mol2.try_into().unwrap();
-                        mol.pdbe_id = Some(ident.to_owned());
-                        mol.pubchem_cid = data.pubchem_cid;
+                        mol.idents.push(MolIdent::PdbeAmber(ident.to_owned()));
+                        if let Some(cid) = data.pubchem_cid {
+                            mol.idents.push(MolIdent::PubChem(cid));
+                        }
 
                         // mol.update_aux(&state.volatile.active_mol, &mut state.lig_specific_params);
-                        state.load_mol_to_state(MoleculeGeneric::Ligand(mol), Some(scene), engine_updates, None);
+                        state.load_mol_to_state(
+                            MoleculeGeneric::Ligand(mol),
+                            Some(scene),
+                            engine_updates,
+                            None,
+                        );
                     }
                     Err(e) => handle_err(
                         &mut state.ui,

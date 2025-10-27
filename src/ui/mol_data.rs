@@ -14,7 +14,7 @@ use crate::{
     lipid::MoleculeLipid,
     mol_lig::MoleculeSmall,
     mol_manip::set_manip,
-    molecule::{Atom, Bond, MoGenericRefMut, MolGenericRef, MolType, Residue, aa_color},
+    molecule::{Atom, Bond, MoGenericRefMut, MolGenericRef, MolIdent, MolType, Residue, aa_color},
     nucleic_acid::MoleculeNucleicAcid,
     ui::{
         COL_SPACING, COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_HIGHLIGHT, COLOR_INACTIVE,
@@ -590,7 +590,13 @@ pub fn display_mol_data_peptide(
 
         // Crude check for success.
         // let lig_count_prev = state.ligands.len();
-        state.load_geostd_mol_data(&data.ident_pdbe, true, data.frcmod_avail, engine_updates, scene);
+        state.load_geostd_mol_data(
+            &data.ident_pdbe,
+            true,
+            data.frcmod_avail,
+            engine_updates,
+            scene,
+        );
 
         // Move camera to ligand; not ligand to camera, since we are generating a ligand
         // that may already be docked to the protein.
@@ -751,25 +757,30 @@ pub fn display_mol_data(
                 loaded for this ligand. Required for ligand molecular dynamics and docking.",
                         );
 
-                    if let Some(id) = &m.drugbank_id {
-                        if ui.button("View on Drugbank").clicked() {
-                            drugbank::open_overview(id);
+                    let mut pubchem_cid = None;
+                    for ident in &m.idents {
+                        match ident {
+                            MolIdent::DrugBank(id) => {
+                                if ui.button("View on Drugbank").clicked() {
+                                    drugbank::open_overview(id);
+                                }
+                            }
+                            MolIdent::PubChem(cid) => {
+                                if ui.button("View on PubChem").clicked() {
+                                    pubchem::open_overview(*cid);
+                                }
+                                pubchem_cid = Some(*cid);
+                            }
+                            MolIdent::PdbeAmber(id) => {
+                                if ui.button("View on PDBe").clicked() {
+                                    pdbe::open_overview(id);
+                                }
+                            }
                         }
+
                     }
 
-                    if let Some(id) = m.pubchem_cid {
-                        if ui.button("View on PubChem").clicked() {
-                            pubchem::open_overview(id);
-                        }
-                    }
-
-                    if let Some(id) = &m.pdbe_id {
-                        if ui.button("View on PDBe").clicked() {
-                            pdbe::open_overview(id);
-                        }
-                    }
-
-                    if let Some(cid) = m.pubchem_cid {
+                    if let Some(cid) = pubchem_cid {
                         if ui.button("Find associated structs").clicked() {
                             // todo: Don't block.
                             if m.associated_structures.is_empty() {

@@ -9,6 +9,7 @@ use crate::{
         EntityClass, MoleculeView, draw_density_point_cloud, draw_density_surface, draw_water,
     },
     drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
+    molecule::MolType,
     ui::{COL_SPACING, DENS_ISO_MAX, DENS_ISO_MIN, UI_HEIGHT_CHANGED, misc, misc::section_box},
     util::clear_mol_entity_indices,
 };
@@ -59,12 +60,14 @@ pub fn view_settings(
                 misc::toggle_btn(
                     &mut state.ui.visibility.hide_protein,
                     "Peptide",
+                    "Show or hide the protein/peptide",
                     ui,
                     redraw_peptide,
                 );
                 misc::toggle_btn(
                     &mut state.ui.visibility.hide_hetero,
                     "Hetero",
+                    "Show or hide non-amino-acid atoms in the protein/peptide",
                     ui,
                     redraw_peptide,
                 );
@@ -76,6 +79,7 @@ pub fn view_settings(
                     misc::toggle_btn(
                         &mut state.ui.visibility.hide_sidechains,
                         "Sidechains",
+                        "Show or sidechains in the protein/peptide",
                         ui,
                         redraw_peptide,
                     );
@@ -86,6 +90,7 @@ pub fn view_settings(
             misc::toggle_btn(
                 &mut state.ui.visibility.hide_hydrogen,
                 "H",
+                "Show or hide non-amino-acid atoms in the protein/peptide",
                 ui,
                 redraw_peptide,
             );
@@ -105,6 +110,7 @@ pub fn view_settings(
             misc::toggle_btn(
                 &mut state.ui.visibility.hide_water,
                 "Water",
+                "Show or hide water molecules",
                 ui,
                 redraw_peptide,
             );
@@ -113,6 +119,7 @@ pub fn view_settings(
                 misc::toggle_btn(
                     &mut state.ui.visibility.hide_nucleic_acids,
                     "Nucleic acids",
+                    "Show or hide nucleic acis",
                     ui,
                     redraw_peptide,
                 );
@@ -166,6 +173,7 @@ pub fn view_settings(
             misc::toggle_btn(
                 &mut state.ui.visibility.hide_h_bonds,
                 "H bonds",
+                "Showh or hide Hydrogen bonds",
                 ui,
                 redraw_peptide,
             );
@@ -174,6 +182,7 @@ pub fn view_settings(
             misc::toggle_btn_not_inv(
                 &mut state.ui.visibility.labels_atom_sn,
                 "Lbl",
+                "Show or hide atom serial numbers overlaid on their positions",
                 ui,
                 redraw_peptide,
             );
@@ -232,6 +241,7 @@ pub fn view_settings(
                     misc::toggle_btn(
                         &mut state.ui.visibility.hide_density_point_cloud,
                         "Density",
+                        "Show or hide the electron density point cloud visualization",
                         ui,
                         &mut redraw_dens,
                     );
@@ -253,6 +263,7 @@ pub fn view_settings(
                     misc::toggle_btn(
                         &mut state.ui.visibility.hide_density_surface,
                         "Density sfc",
+                        "Show or hide the electron density isosurface visualization",
                         ui,
                         &mut redraw_dens_surface,
                     );
@@ -291,18 +302,10 @@ pub fn view_settings(
 }
 
 fn vis_helper(vis: &mut bool, name: &str, tooltip: &str, ui: &mut Ui) {
-    let seq_text = if *vis {
-        format!("Hide {name}")
-    } else {
-        format!("Show {name}")
-    };
+    let prev = *vis;
+    misc::toggle_btn_not_inv(vis, name, tooltip, ui, &mut false);
 
-    if ui
-        .button(RichText::new(seq_text))
-        .on_hover_text(tooltip)
-        .clicked()
-    {
-        *vis = !*vis;
+    if *vis != prev {
         UI_HEIGHT_CHANGED.store(true, Ordering::Release);
     }
 }
@@ -313,14 +316,33 @@ pub fn ui_section_vis(state: &mut State, ui: &mut Ui) {
         let tooltip = "Show or hide the amino acid sequence of the currently opened protein \
                     as single-letter identifiers. When in this mode, click the AA letter to select its residue.";
 
-        vis_helper(&mut state.ui.ui_vis.aa_seq, "seq", tooltip, ui);
-        ui.add_space(COL_SPACING / 2.);
+        vis_helper(&mut state.ui.ui_vis.aa_seq, "Seq", tooltip, ui);
+    }
+
+    if let Some(mol) = &state.active_mol()
+        && mol.mol_type() == MolType::Ligand
+    {
+        vis_helper(
+            &mut state.ui.ui_vis.smiles,
+            "SMILES",
+            "Show or hide the SMILES text representation of the molecular formula",
+            ui,
+        );
+    }
+
+    // todo: Not working for proteins? Button not showing, and /or MD not showing.
+    if state.volatile.active_mol.is_some() {
+        vis_helper(
+            &mut state.ui.ui_vis.metadata,
+            "Metadata",
+            "Show or hide metadata for this molecule",
+            ui,
+        );
     }
 
     let tooltip = "Show or hide tools for adding lipids";
-    vis_helper(&mut state.ui.ui_vis.lipids, "lipid tools", tooltip, ui);
+    vis_helper(&mut state.ui.ui_vis.lipids, "Lipid tools", tooltip, ui);
 
-    ui.add_space(COL_SPACING / 2.);
     let tooltip = "Show or hide the molecular dynamics section.";
-    vis_helper(&mut state.ui.ui_vis.dynamics, "dynamics", tooltip, ui);
+    vis_helper(&mut state.ui.ui_vis.dynamics, "Dynamics", tooltip, ui);
 }

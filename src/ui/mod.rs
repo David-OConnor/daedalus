@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     io::Cursor,
     sync::atomic::{AtomicBool, Ordering},
     time::Instant,
@@ -8,12 +9,12 @@ use bio_apis::rcsb;
 use bio_files::{DensityMap, ResidueType, density_from_2fo_fc_rcsb_gemmi};
 use egui::{
     Align, Color32, ComboBox, Context, Key, Layout, Popup, PopupAnchor, Pos2, RectAlign, RichText,
-    Slider, TextEdit, TopBottomPanel, Ui,
+    Slider, TextEdit, TextFormat, TextStyle, TopBottomPanel, Ui, text::LayoutJob,
 };
 use graphics::{ControlScheme, EngineUpdates, EntityUpdate, FWD_VEC, Scene};
 use md::md_setup;
 use mol_data::display_mol_data;
-use na_seq::AaIdent;
+use na_seq::{AaIdent, Element};
 
 use crate::{
     CamSnapshot, MsaaSetting, OperatingMode, Selection, State, ViewSelLevel, cli,
@@ -123,7 +124,7 @@ pub fn handle_input(
         // Check for file drop
         if let Some(dropped_files) = ip.raw.dropped_files.first() {
             if let Some(path) = &dropped_files.path {
-                if let Err(e) = state.open(path, Some(scene), engine_updates) {
+                if let Err(e) = state.open_file(path, Some(scene), engine_updates) {
                     handle_err(&mut state.ui, e.to_string());
                 }
             }
@@ -956,7 +957,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             }
 
             if ui
-                .button(RichText::new("Open recent").color(color_open_tools))
+                .button(RichText::new("Recent").color(color_open_tools))
                 .on_hover_text("Select a recently-opened file to open")
                 .clicked()
             {
@@ -1327,6 +1328,23 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             }
         }
 
+        if state.ui.ui_vis.smiles {
+            if let Some(mol) = &state.active_mol() &&
+                let MolGenericRef::Ligand(m) = mol {
+                if let Some(smiles) = &m.smiles {
+                    draw_smiles(smiles, ui);
+                }
+            }
+        }
+
+        if state.ui.ui_vis.metadata {
+            if let Some(mol) = &state.active_mol() {
+                if !mol.common().metadata.is_empty() {
+                    draw_metadata(&mol.common().metadata, ui);
+                }
+            }
+        }
+
         draw_cli(
             state,
             scene,
@@ -1490,5 +1508,75 @@ pub fn lipid_section(
                 }
             }
         });
+    });
+}
+
+fn draw_smiles(v: &str, ui: &mut Ui) {
+    ui.horizontal(|ui| {
+        ui.label("SMILES: ");
+
+        let font_id = TextStyle::Body.resolve(ui.style());
+
+        let mut job = LayoutJob::default();
+        for ch in v.chars() {
+            let mut color = match Element::from_letter(&ch.to_string()) {
+                Ok(e) => {
+                    // Lighter color; N is showing too dark.
+                    if e == Element::Nitrogen {
+                        Color32::from_rgb(110, 110, 255)
+                    } else {
+                        let (r, g, b) = e.color();
+                        Color32::from_rgb((r * 255.) as u8, (g * 255.) as u8, (b * 255.) as u8)
+                    }
+                }
+                _ => Color32::GRAY,
+            };
+
+            if ch.is_ascii_digit() {
+                println!("UHOH");
+                color = Color32::from_rgb(255, 180, 50);
+            }
+
+            if ch == '@' {
+                color = Color32::from_rgb(150, 170, 255);
+            }
+
+            job.append(
+                &ch.to_string(),
+                0.0,
+                TextFormat {
+                    font_id: font_id.clone(),
+                    color,
+                    ..Default::default()
+                },
+            );
+        }
+
+        ui.label(job);
+
+        // for char in v.chars() {
+        //     let color = match Element::from_letter(&char.to_string()) {
+        //         Ok(e) => {
+        //             let (r, g, b) = e.color();
+        //             Color32::from_rgb(
+        //                 (r * 255.) as u8,
+        //                 (g * 255.) as u8,
+        //                 (b * 255.) as u8,
+        //             )
+        //         },
+        //         _ => Color32::GRAY
+        //     };
+        //
+        //     ui.label(RichText::new(char).color(color));
+        // }
+    });
+}
+
+fn draw_metadata(metadata: &HashMap<String, String>, ui: &mut Ui) {
+    ui.horizontal_wrapped(|ui| {
+        for (key, v) in metadata {
+            ui.label(RichText::new(format!("{key}: ")).color(Color32::LIGHT_BLUE));
+            ui.label(RichText::new(format!("{v}: ")).color(Color32::LIGHT_GREEN));
+        }
     });
 }

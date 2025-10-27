@@ -12,7 +12,8 @@ use na_seq::Element;
 use crate::{
     docking_v2::{DockingSite, Pose},
     molecule::{
-        Atom, Bond, Chain, MolGenericRef, MolGenericTrait, MolType as Mt, MoleculeCommon, Residue,
+        Atom, Bond, Chain, MolGenericRef, MolGenericTrait, MolIdent, MolType as Mt, MoleculeCommon,
+        Residue,
     },
 };
 
@@ -23,10 +24,7 @@ const LIGAND_ABS_POSIT_OFFSET: f64 = 15.; // Å
 pub struct MoleculeSmall {
     pub common: MoleculeCommon,
     pub lig_data: Option<Ligand>,
-    /// Also used for Amber Geostd.
-    pub pdbe_id: Option<String>,
-    pub pubchem_cid: Option<u32>,
-    pub drugbank_id: Option<String>,
+    pub idents: Vec<MolIdent>,
     /// FF type and partial charge on all atoms. Quick lookup flag.
     pub ff_params_loaded: bool,
     /// E.g., overrides for dihedral angles (part of the *bonded* dynamics calculation) for this
@@ -49,36 +47,34 @@ impl MoleculeSmall {
         metadata: HashMap<String, String>,
         path: Option<PathBuf>,
     ) -> Self {
-        let mut pdbe_id = None;
-        let mut pubchem_cid = None;
-        let mut drugbank_id = None;
+        let mut idents = Vec::new();
 
         if let Some(id) = metadata.get("PUBCHEM_COMPOUND_CID") {
-            pubchem_cid = Some(id.parse::<u32>().unwrap_or_default());
+            if let Ok(cid) = id.parse::<u32>() {
+                idents.push(MolIdent::PubChem(cid));
+            };
         }
 
         if let Some(db_name) = metadata.get("DATABASE_NAME") {
             if db_name.to_lowercase() == "drugbank" {
                 if let Some(id) = metadata.get("DATABASE_ID") {
-                    drugbank_id = Some(id.clone());
+                    idents.push(MolIdent::DrugBank(id.clone()));
                 }
                 // This seems to be valid for Drugbank-sourced molecules.
                 if let Ok(id) = ident.parse::<u32>() {
-                    pubchem_cid = Some(id);
+                    idents.push(MolIdent::PubChem(id));
                 }
             }
         }
 
         if ident.len() <= 4 {
             // This is a guess
-            pdbe_id = Some(ident.clone());
+            idents.push(MolIdent::PdbeAmber(ident.clone()));
         }
 
         Self {
             common: MoleculeCommon::new(ident, atoms, bonds, metadata, path),
-            pdbe_id,
-            pubchem_cid,
-            drugbank_id,
+            idents,
             ..Default::default()
         }
     }
@@ -257,13 +253,18 @@ impl MoleculeSmall {
         let mut metadata = self.common.metadata.clone();
 
         // Note: These may be redundant with metadata already loaded.
-        if let Some(id) = &self.pubchem_cid {
-            metadata.insert("PUBCHEM_COMPOUND_CID".to_string(), id.to_string());
-        }
 
-        if let Some(id) = &self.drugbank_id {
-            metadata.insert("DATABASE_ID".to_string(), id.clone());
-            metadata.insert("DATABASE_NAME".to_string(), "drugbank".to_string());
+        for ident in &self.idents {
+            match ident {
+                MolIdent::PubChem(cid) => {
+                    metadata.insert("PUBCHEM_COMPOUND_CID".to_string(), cid.to_string());
+                }
+                MolIdent::DrugBank(id) => {
+                    metadata.insert("DATABASE_ID".to_string(), id.clone());
+                    metadata.insert("DATABASE_NAME".to_string(), "drugbank".to_string());
+                }
+                _ => (),
+            }
         }
 
         Sdf {
@@ -362,7 +363,8 @@ impl MoleculeSmall {
         let name = res.res_type.to_string();
         let mut result = Self::new(name.clone(), atoms_this, bonds_new, HashMap::new(), None);
 
-        result.pdbe_id = Some(name);
+        result.idents.push(MolIdent::PdbeAmber(name));
+
         result
     }
 
@@ -496,8 +498,12 @@ impl MoleculeSmall {
             // The reason for our current approach is that a pubchem ID is always valid, but the ident
             // may not be. (e.g. in the case of DrugBank). For Geostd, the Ident is valid.
             let mut ident = self.common.ident.clone();
-            if let Some(cid) = &self.pubchem_cid {
-                ident = cid.to_string();
+
+            for ident_ in &self.idents {
+                if let MolIdent::PubChem(cid) = ident_ {
+                    ident = ident_.to_str();
+                    break;
+                }
             }
 
             self.replace_with_geostd(&ident, lig_specific);

@@ -89,7 +89,7 @@ use molecule::MoleculePeptide;
 use crate::{
     lipid::{LipidShape, MoleculeLipid},
     mol_editor::MolEditorState,
-    molecule::{Bond, MoGenericRefMut, MolGenericRef, MolIdentType, MolType, MoleculeCommon},
+    molecule::{Bond, MoGenericRefMut, MolGenericRef, MolIdent, MolType, MoleculeCommon},
     nucleic_acid::MoleculeNucleicAcid,
     prefs::ToSave,
     render::render,
@@ -262,7 +262,7 @@ struct StateVolatile {
         )>,
     >,
     /// Receives thread data upon an HTTP result completion.
-    smiles_pending_data_avail: Option<Receiver<(MolIdentType, String, Result<String, ReqError>)>>,
+    smiles_pending_data_avail: Option<Receiver<(MolIdent, Result<String, ReqError>)>>,
     /// We may change CWD during CLI navigation; keep prefs directory constant.
     prefs_dir: PathBuf,
     /// Entered by the user, for this session.
@@ -487,7 +487,9 @@ struct StateUi {
 
 /// For showing and hiding UI sections.
 pub struct UiVisibility {
+    metadata: bool,
     aa_seq: bool,
+    smiles: bool,
     lipids: bool,
     dynamics: bool,
 }
@@ -495,7 +497,9 @@ pub struct UiVisibility {
 impl Default for UiVisibility {
     fn default() -> Self {
         Self {
+            metadata: false,
             aa_seq: false,
+            smiles: false,
             lipids: false,
             dynamics: true,
         }

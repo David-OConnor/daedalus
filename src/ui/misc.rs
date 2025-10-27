@@ -13,18 +13,32 @@ use crate::{
 };
 
 /// A box that shows its text highlighted if a flag is set.
-pub fn toggle_btn(val: &mut bool, text: &str, ui: &mut Ui, redraw: &mut bool) {
+pub fn toggle_btn(val: &mut bool, text: &str, tooltip: &str, ui: &mut Ui, redraw: &mut bool) {
     let color = active_color(!*val);
-    if ui.button(RichText::new(text).color(color)).clicked() {
+    if ui
+        .button(RichText::new(text).color(color))
+        .on_hover_text(tooltip)
+        .clicked()
+    {
         *val = !*val;
         *redraw = true;
     }
 }
 
 /// A box that shows its text highlighted if a flag is set.
-pub fn toggle_btn_not_inv(val: &mut bool, text: &str, ui: &mut Ui, redraw: &mut bool) {
+pub fn toggle_btn_not_inv(
+    val: &mut bool,
+    text: &str,
+    tooltip: &str,
+    ui: &mut Ui,
+    redraw: &mut bool,
+) {
     let color = active_color(*val);
-    if ui.button(RichText::new(text).color(color)).clicked() {
+    if ui
+        .button(RichText::new(text).color(color))
+        .on_hover_text(tooltip)
+        .clicked()
+    {
         *val = !*val;
         *redraw = true;
     }

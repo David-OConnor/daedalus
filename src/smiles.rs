@@ -10,6 +10,8 @@ use crate::molecule::{Atom, Bond, MoleculeCommon};
 
 impl MoleculeCommon {
     pub fn to_smiles(&self) -> String {
+        return String::new(); // todo temp
+
         if self.atoms.is_empty() {
             return String::new();
         }

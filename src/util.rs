@@ -23,7 +23,7 @@ use crate::{
     drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
     mol_lig::MoleculeSmall,
     molecule::{
-        Atom, Bond, MoGenericRefMut, MolGenericRef, MolIdentType, MolType, MoleculeGeneric,
+        Atom, Bond, MoGenericRefMut, MolGenericRef, MolIdent, MolType, MoleculeGeneric,
         MoleculePeptide, Residue,
     },
     prefs::OpenType,
@@ -736,40 +736,36 @@ pub fn handle_scene_flags(
 pub fn handle_thread_rx(state: &mut State) {
     if let Some(rx) = &mut state.volatile.smiles_pending_data_avail {
         match rx.try_recv() {
-            Ok((ident_type, ident, http_result)) => {
+            Ok((ident_type, http_result)) => {
                 let mut mol = None;
                 for mol_ in &mut state.ligands {
-                    match ident_type {
-                        MolIdentType::PdbeAmber => {
-                            if let Some(id) = &mol_.pdbe_id {
-                                if *id == ident {
-                                    mol = Some(mol_);
-                                    break;
-                                }
-                            }
+                    for ident_ in &mol_.idents {
+                        if ident_ == &ident_type {
+                            mol = Some(mol_);
+                            break;
                         }
-                        _ => unimplemented!(),
                     }
                 }
 
                 let Some(mol) = mol else {
                     state.volatile.smiles_pending_data_avail = None;
-                    eprintln!("Unable to find the mol we requested smiles for: {ident}");
+                    eprintln!("Unable to find the mol we requested smiles for: {ident_type:?}");
                     return;
                 };
 
                 match http_result {
                     Ok(smiles) => {
-                        println!("Loaded smiles for {ident} from Pubchem: {smiles}");
+                        println!("Loaded smiles for {ident_type:?} from Pubchem: {smiles}");
                         mol.smiles = Some(smiles.clone());
+
                         state
                             .to_save
                             .smiles_map
-                            .insert((MolIdentType::PdbeAmber, ident.clone()), smiles.clone());
+                            .insert(ident_type.clone(), smiles.clone());
                     }
                     Err(_) => {
                         // Note: This is currently broken.
-                        println!("Unable to find Smiles for ident {ident}, generating one.");
+                        println!("Unable to find Smiles for ident {ident_type:?}, generating one.");
                         // todo: Not saving to cache; not confident enough.
                         mol.smiles = Some(mol.common.to_smiles());
                     }

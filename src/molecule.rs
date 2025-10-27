@@ -1188,13 +1188,23 @@ fn init_bonds_chains_res(
     Ok((atoms, bonds, residues, chains))
 }
 
-/// For small organic molecules. todo: inner value is the ident, then store vecs of these.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Decode, Encode)]
-pub enum MolIdentType {
-    PubChem,
-    DrugBank,
-    PdbeAmber,
-    // PubChem(u32),
-    // DrugBank(String),
-    // PdbeAmber(String),
+/// For small organic molecules.
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Decode, Encode)]
+pub enum MolIdent {
+    /// Known as CID.
+    PubChem(u32),
+    DrugBank(String),
+    /// PDBe, or Amber Geostd
+    PdbeAmber(String),
+}
+
+impl MolIdent {
+    /// Useful for some APIs, for example.
+    pub fn to_str(&self) -> String {
+        match self {
+            Self::PubChem(cid) => cid.to_string(),
+            Self::DrugBank(v) => v.clone(),
+            Self::PdbeAmber(v) => v.clone(),
+        }
+    }
 }
