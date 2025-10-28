@@ -142,7 +142,7 @@ pub fn editor(
         section_box().show(ui, |ui| {
             if ui
                 .button(RichText::new("↔ Move atom"))
-                .on_hover_text("(Hotkey: M) Move the selected atom")
+                .on_hover_text("(Hotkey: M. M or Esc to stop) Move the selected atom")
                 .clicked()
             {
                 // if state.mol_editor.move_atom(i).is_err() {

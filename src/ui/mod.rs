@@ -908,7 +908,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         }
 
         if state.ui.popup.recent_files {
-            recent_files(state, scene, ui);
+            recent_files(state, scene, ui, &mut engine_updates);
         }
 
         if state.ui.popup.rama_plot {
@@ -932,22 +932,12 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 state.ui.popup.show_settings = !state.ui.popup.show_settings;
             }
 
-            let metadata_loaded = false; // avoids borrow error.
-
-            {
-                let mut close = false;
-                display_mol_data_peptide(state, scene, ui, &mut redraw_peptide, &mut redraw_lig, &mut close, &mut engine_updates);
-
-                if close {
-                    close_peptide(state, scene, &mut engine_updates);
-                }
-            }
-
-            let color_open_tools = if state.peptide.is_none() {
+            let color_open_tools = if state.peptide.is_none() && state.ligands.is_empty() {
                 Color32::GOLD
             } else {
                 COLOR_INACTIVE
             };
+
             if ui
                 .button(RichText::new("Open").color(color_open_tools))
                 .on_hover_text("Open a molecule, electron density, or other file from disk.")
@@ -962,6 +952,17 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 .clicked()
             {
                 state.ui.popup.recent_files = !state.ui.popup.recent_files;
+            }
+
+            let metadata_loaded = false; // avoids borrow error.
+
+            {
+                let mut close = false;
+                display_mol_data_peptide(state, scene, ui, &mut redraw_peptide, &mut redraw_lig, &mut close, &mut engine_updates);
+
+                if close {
+                    close_peptide(state, scene, &mut engine_updates);
+                }
             }
 
             let mut dm_loaded = None; // avoids a double-borrow error.

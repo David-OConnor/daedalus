@@ -4,12 +4,12 @@
 // todo: This is currently a disorganized dumping ground of related data. Organize it,
 // todo, move to bio_files as requried, and add cuFFT.
 
-use std::{fs, io, path::Path, sync::Arc, time::Instant};
+use std::{io, sync::Arc, time::Instant};
 
-use bio_files::{DensityHeaderInner, DensityMap, MapHeader, UnitCell, cif_sf::CifStructureFactors};
+use bio_files::{DensityMap, MapHeader, UnitCell, cif_sf::CifStructureFactors};
 #[cfg(feature = "cuda")]
 use cudarc::driver::{CudaFunction, CudaStream, LaunchConfig, PushKernelArg};
-use ewald::{fft3d_c2r, fft3d_r2c};
+use ewald::fft3d_c2r;
 use graphics::{EngineUpdates, EntityUpdate, Mesh, Scene, Vertex};
 #[cfg(feature = "cuda")]
 use lin_alg::f32::{vec3s_from_dev, vec3s_to_dev};
@@ -22,7 +22,7 @@ use crate::{
     ComputationDevice, State, drawing::draw_density_surface, render::MESH_DENSITY_SURFACE, util,
 };
 
-pub const DENSITY_CELL_MARGIN: f64 = 2.0;
+pub const DENSITY_CELL_MARGIN: f64 = 3.0;
 
 // Density points must be within this distance in Å of a protein atom to be generated.
 // This prevents displaying shapes from the neighbor
@@ -105,44 +105,6 @@ pub struct ReflectionsData {
     pub points: Vec<Reflection>,
 }
 
-impl ReflectionsData {
-    // /// Load reflections data from RCSB, then parse. (SF, 2fo_fc, and fo_fc)
-    // pub fn load_from_rcsb(ident: &str) -> Result<Self, ReqError> {
-    //     println!("Downloading structure factors and Map data for {ident}...");
-    //
-    //     let sf = match rcsb::load_structure_factors_cif(ident) {
-    //         Ok(m) => Some(m),
-    //         Err(_) => {
-    //             eprintln!("Error loading structure factors CIF");
-    //             None
-    //         }
-    //     };
-    //
-    //     let map_2fo_fc = match rcsb::load_validation_2fo_fc_cif(ident) {
-    //         Ok(m) => Some(m),
-    //         Err(_) => {
-    //             eprintln!("Error loading 2fo_fc map");
-    //             None
-    //         }
-    //     };
-    //
-    //     let map_fo_fc = match rcsb::load_validation_fo_fc_cif(ident) {
-    //         Ok(m) => Some(m),
-    //         Err(_) => {
-    //             eprintln!("Error loading fo_fc map");
-    //             None
-    //         }
-    //     };
-    //
-    //     println!("Download complete. Parsing...");
-    //     Ok(Self::from_cifs(
-    //         sf.as_deref(),
-    //         map_2fo_fc.as_deref(),
-    //         map_fo_fc.as_deref(),
-    //     ))
-    // }
-}
-
 /// Electron density at a single point in space.
 #[derive(Clone, Debug)]
 pub struct DensityPt {
@@ -152,6 +114,7 @@ pub struct DensityPt {
     pub density: f64,
 }
 
+// todo: I'm not sure I like this. I think we should remove it.
 /// One dense 3-D brick of map values. We use this struct to handle symmetry: ensuring full coverage
 /// of all atoms.
 #[derive(Clone, Debug)]
@@ -181,12 +144,12 @@ impl DensityRect {
         let mut max_r = Vec3::new(f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
 
         for p in atom_posits {
-            // (a) Cartesian → absolute fractional
+            // Cartesian to absolute fractional
             let mut f = cell.cartesian_to_fractional(*p);
-            // (b) shift so that origin_frac becomes (0,0,0)
+            // Shift so that origin_frac becomes (0,0,0)
             f -= map.origin_frac;
 
-            // keep *unwrapped* values (they can be <0 or >1)
+            // keep unwrapped values (they can be < 0 or > 1)
             min_r = Vec3::new(min_r.x.min(f.x), min_r.y.min(f.y), min_r.z.min(f.z));
             max_r = Vec3::new(max_r.x.max(f.x), max_r.y.max(f.y), max_r.z.max(f.z));
         }
@@ -280,7 +243,6 @@ impl DensityRect {
         cell: &UnitCell,
         dist_thresh: f64,
     ) -> Vec<DensityPt> {
-        // todo: Use GPU for this. It is very slow for large sets.
         println!("Making electron densities...");
         let start = Instant::now();
 
@@ -297,9 +259,9 @@ impl DensityRect {
         let (nx, ny, nz) = (self.dims[0], self.dims[1], self.dims[2]);
 
         let mut triplets = Vec::with_capacity(nx * ny * nz);
-        for kx in 0..nx {
+        for kz in 0..nz {
             for ky in 0..ny {
-                for kz in 0..nz {
+                for kx in 0..nx {
                     triplets.push((kx, ky, kz));
                 }
             }
@@ -310,7 +272,7 @@ impl DensityRect {
         let atom_posits_sample: Vec<Vec3> = atom_posits
             .iter()
             .enumerate()
-            .filter(|(i, _)| i % DIST_TO_ATOMS_SAMPLE_RATIO == 0)
+            .filter(|(i, _)| i.is_multiple_of(DIST_TO_ATOMS_SAMPLE_RATIO))
             .map(|(_, a)| (*a).into())
             .collect();
 
@@ -498,12 +460,9 @@ pub fn make_density_mesh(state: &mut State, scene: &mut Scene, engine_updates: &
         return;
     };
 
-    println!("MAP: {:?}", map.hdr);
-
-    // todo: Sort this out; the order changes depending on the mesh.
-    // let dims = (rect.dims[0], rect.dims[1], rect.dims[2]); // (nx, ny, nz)
-    let dims = (rect.dims[2], rect.dims[1], rect.dims[0]); // (nx, ny, nz)
-    let step = [rect.step[2], rect.step[1], rect.step[0]];
+    // Our marching cubes function requires Z to be the fast axis; convert to that instead of X fastest.
+    let dims = (rect.dims[0], rect.dims[1], rect.dims[2]); // (nx, ny, nz)
+    let step = [rect.step[0], rect.step[1], rect.step[2]]; // (nx, ny, nz)
 
     let size = (
         (step[0] * dims.0 as f64) as f32, // Δx * nx  (Å)
@@ -580,6 +539,11 @@ fn lin3(i: usize, j: usize, k: usize, nx: usize, ny: usize) -> usize {
     i + nx * (j + ny * k)
 }
 
+fn idx_xfast(ix: usize, iy: usize, iz: usize, nx: usize, ny: usize, nz: usize) -> usize {
+    // crystal order (X,Y,Z) with Z contiguous, X slowest
+    ix + nx * (iy + ny * iz)
+}
+
 fn idx_zfast(ix: usize, iy: usize, iz: usize, nx: usize, ny: usize, nz: usize) -> usize {
     // crystal order (X,Y,Z) with Z contiguous, X slowest
     iz + nz * (iy + ny * ix)
@@ -597,6 +561,7 @@ pub fn density_map_from_mmcif(
 ) -> io::Result<DensityMap> {
     println!("Computing electron density from mmCIF 2fo-fc data...");
     let start = Instant::now();
+
     let (mx, my, mz) = (
         src.header.mx as usize,
         src.header.my as usize,
@@ -628,20 +593,34 @@ pub fn density_map_from_mmcif(
         let w = wrap_idx(r.l, mz);
 
         // place at (u,v,w) and its conjugate at (-u,-v,-w) in Z-fast layout
-        let i0 = idx_zfast(u, v, w, mx, my, mz);
+        let i0 = idx_xfast(u, v, w, mx, my, mz);
+        // let i0 = idx_zfast(u, v, w, mx, my, mz);
         data_k[i0] = c;
 
         let u2 = wrap_idx(-r.h, mx);
         let v2 = wrap_idx(-r.k, my);
         let w2 = wrap_idx(-r.l, mz);
+
         let i1 = idx_zfast(u2, v2, w2, mx, my, mz);
+        // let i1 = idx_xfast(u2, v2, w2, mx, my, mz);
+
         if i1 != i0 && data_k[i1] == Complex::new(0.0, 0.0) {
             data_k[i1] = c.conj();
         }
     }
 
+    // todo exeperimenting ------
+
+    // let mut data_k = xfast_to_zfast(&data_k, mx, my, mz);
+    // let mut rho_xfast = fft3d_c2r(&mut data_k_xfast, (mx, my, mz), planner);
+    // let rho_crystal = xfast_to_zfast(&rho_xfast, mx, my, mz);
+
+    // todo --------
+
     // --- inverse FFT on Z-fast layout; dims are crystal (mx,my,mz) ---
     let mut rho_crystal = fft3d_c2r(&mut data_k, (mx, my, mz), planner);
+
+    // let mut rho_crystal = zfast_to_xfast(&rho_crystal, mx, my, mz);
 
     // If your FFT is unscaled, divide by N
     let nvox = (mx * my * mz) as f32;
@@ -650,12 +629,15 @@ pub fn density_map_from_mmcif(
     }
 
     // --- remap to FILE order buffer if you want DensityMap.data in file order ---
-    let mut rho_file = vec![0f32; mx * my * mz];
+    // let mut rho_file = vec![0f32; mx * my * mz];
+    let mut rho_file = vec![0f32; mz * my * mx];
 
     // file indices → crystal indices → pull from rho_crystal (Z-fast) → store in file buffer
-    for k_f in 0..mz {
+    // todo: Experiment with order here too
+
+    for i_f in 0..mx {
         for j_f in 0..my {
-            for i_f in 0..mx {
+            for k_f in 0..mz {
                 let mut ic = [0usize; 3];
                 ic[perm_f2c[0]] = i_f; // crystal X index
                 ic[perm_f2c[1]] = j_f; // crystal Y index
@@ -663,6 +645,7 @@ pub fn density_map_from_mmcif(
 
                 let src_idx = idx_zfast(ic[0], ic[1], ic[2], mx, my, mz);
                 let dst_idx = idx_file(i_f, j_f, k_f, mx, my);
+
                 rho_file[dst_idx] = rho_crystal[src_idx];
             }
         }
@@ -673,6 +656,7 @@ pub fn density_map_from_mmcif(
     let mut sum2 = 0.0f64;
     let mut min_v = f32::INFINITY;
     let mut max_v = f32::NEG_INFINITY;
+
     for &x in &rho_file {
         let xd = x as f64;
         sum += xd;
@@ -686,29 +670,8 @@ pub fn density_map_from_mmcif(
     }
     let mean = (sum / (nvox as f64)) as f32;
 
-    // todo: Adjust A/R.
-    let inner = src.header.clone();
-    // let inner = DensityHeaderInner {
-    //     nxstart: src.header.nxstart,
-    //     nystart: src.header.nystart,
-    //     nzstart: src.header.nzstart,
-    //     mx: mx as i32,
-    //     my: my as i32,
-    //     mz: mz as i32,
-    //     cell: src.header.cell.clone(),
-    //     mapc: src.header.mapc,
-    //     mapr: src.header.mapr,
-    //     maps: src.header.maps,
-    //     ispg: src.header.ispg,
-    //     nsymbt: src.header.nsymbt,
-    //     version: src.header.version,
-    //     xorigin: src.header.xorigin,
-    //     yorigin: src.header.yorigin,
-    //     zorigin: src.header.zorigin,
-    // };
-
     let hdr = MapHeader {
-        inner,
+        inner: src.header.clone(),
         nx: mx as i32,
         ny: my as i32,
         nz: mz as i32,
@@ -723,4 +686,35 @@ pub fn density_map_from_mmcif(
     println!("Complete in {elapsed} ms");
 
     DensityMap::new(hdr, rho_file)
+}
+
+fn xfast_to_zfast<T: Copy>(src: &[T], nx: usize, ny: usize, nz: usize) -> Vec<T> {
+    // src is X-fast: i + nx*(j + ny*k)
+    // dst is Z-fast: k + nz*(j + ny*i)
+    let mut dst = vec![src[0]; nx * ny * nz];
+    for i in 0..nx {
+        for j in 0..ny {
+            for k in 0..nz {
+                let sx = i + nx * (j + ny * k);
+                let sz = k + nz * (j + ny * i);
+                dst[sz] = src[sx];
+            }
+        }
+    }
+    dst
+}
+
+fn zfast_to_xfast<T: Copy>(src: &[T], nx: usize, ny: usize, nz: usize) -> Vec<T> {
+    // inverse of the above
+    let mut dst = vec![src[0]; nx * ny * nz];
+    for i in 0..nx {
+        for j in 0..ny {
+            for k in 0..nz {
+                let sx = k + nz * (j + ny * i);
+                let sz = i + nx * (j + ny * k);
+                dst[sz] = src[sx];
+            }
+        }
+    }
+    dst
 }

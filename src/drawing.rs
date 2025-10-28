@@ -50,7 +50,7 @@ const LABEL_SIZE_ATOM: f32 = 16.;
 const LABEL_SIZE_MOL: f32 = 40.;
 const LABEL_COLOR_ATOM: (u8, u8, u8, u8) = (255, 60, 160, 255);
 const LABEL_COLOR_ATOM_SEL: (u8, u8, u8, u8) = (255, 20, 20, 255);
-const LABEL_COLOR_MOL: (u8, u8, u8, u8) = (255, 100, 120, 255);
+const LABEL_COLOR_MOL: (u8, u8, u8, u8) = (255, 120, 150, 255);
 const LABEL_COLOR_MOL_SEL: (u8, u8, u8, u8) = (255, 10, 10, 255);
 
 // Hetero residues in protein, so they stand out from the normal protein molecules.
@@ -1246,7 +1246,7 @@ pub fn draw_density_point_cloud(entities: &mut Vec<Entity>, density: &[DensityPt
 
     for point in density {
         // For example, points we filter out for not being near the atoms; we set them to 0 density,
-        // vice ommitting them. Skipping them here makes rendering more efficient.
+        // vice omitting them. Skipping them here makes rendering more efficient.
         if point.density.abs() < EPS {
             continue;
         }

@@ -2,6 +2,7 @@
 
 use std::{
     collections::HashMap,
+    fmt::Display,
     path::{Path, PathBuf},
 };
 
@@ -45,6 +46,20 @@ pub enum OpenType {
     Frcmod,
 }
 
+impl Display for OpenType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let v = match self {
+            Self::Peptide => "Peptide",
+            Self::Ligand => "Small mol",
+            Self::NucleicAcid => "Nucleic Acid",
+            Self::Lipid => "Lipid",
+            Self::Map => "Density map",
+            Self::Frcmod => "Frcmod",
+        };
+        write!(f, "{v}")
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct OpenHistory {
     pub timestamp: DateTime<Utc>,
@@ -63,7 +78,6 @@ impl Encode for OpenHistory {
 
         self.path.encode(encoder)?;
         self.type_.encode(encoder)?;
-        // self.ident.encode(encoder)?;
         self.last_session.encode(encoder)?;
 
         Ok(())
@@ -84,7 +98,6 @@ impl<T> Decode<T> for OpenHistory {
                 .ok_or_else(|| DecodeError::OtherString("invalid timestamp".to_string()))?,
             path,
             type_,
-            // ident,
             last_session,
         })
     }
@@ -105,7 +118,6 @@ impl OpenHistory {
             timestamp: Utc::now(),
             path: path.to_owned(),
             type_,
-            // ident,
             last_session: true,
         }
     }
@@ -253,6 +265,7 @@ impl State {
     /// todo: See the note in PerMolsave::from_state. Workaround for order-related bugs.
     pub fn update_save_prefs(&mut self, on_init: bool) {
         println!("Saving state to prefs file.");
+
         if let Some(mol) = &self.peptide {
             let data = PerMolToSave::from_state(self, on_init);
 
@@ -327,7 +340,9 @@ impl State {
     pub fn load_prefs(&mut self) {
         match load(&PathBuf::from(DEFAULT_PREFS_FILE)) {
             Ok(p) => self.to_save = p,
-            Err(_) => eprintln!("Unable to load save file; possibly the first time running."),
+            Err(e) => {
+                eprintln!("Unable to load save file; possibly the first time running: {e:?}.")
+            }
         }
 
         self.update_from_prefs();

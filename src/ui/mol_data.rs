@@ -668,14 +668,15 @@ pub fn display_mol_data(
 
             // ✥ doesn't work in EGUI.
             if ui.button(RichText::new("↔").color(color_move))
-                .on_hover_text("(Hotkey: M) Move the active molecule by clicking and dragging with the mouse. Scroll to move it forward and back.")
+                .on_hover_text("(Hotkey: M. M or Esc to stop)) Move the active molecule by clicking and dragging with \
+                the mouse. Scroll to move it forward and back.")
                 .clicked() {
 
                 set_manip(&mut state.volatile, scene, redraw_lig, redraw_na, redraw_lipid, ManipMode::Move((active_mol_type, active_mol_i)));
             }
 
             if ui.button(RichText::new("⟳").color(color_rotate))
-                .on_hover_text("(Hotkey: R) Rotate the active molecule by clicking and dragging with the mouse. Scroll to roll.")
+                .on_hover_text("(Hotkey: R. R or Esc to stop) Rotate the active molecule by clicking and dragging with the mouse. Scroll to roll.")
                 .clicked() {
 
                 set_manip(&mut state.volatile, scene, redraw_lig,redraw_na, redraw_lipid, ManipMode::Rotate((active_mol_type, active_mol_i)));

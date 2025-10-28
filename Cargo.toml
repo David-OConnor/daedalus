@@ -44,7 +44,6 @@ cudarc = { version = "0.17.2", default-features = false, features = ["std", "dri
 [target.'cfg(target_os = "windows")'.dependencies]
 cudarc = { version = "0.17.2", default-features = false, features = ["std", "driver", "dynamic-linking", "cuda-13000"], optional=true }
 
-
 # We use these when developing locally to reduce friction.
 [patch.crates-io]
 #graphics = { path = "../graphics" }

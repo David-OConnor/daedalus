@@ -10,6 +10,18 @@
 //! - Staphy aureus: PG:CL: 80:20
 //! Bacillus subtilis: PE:PG:CL: 40-60%, 5-40%, 8-18%
 
+// notes for when constructing liposomes and LNPs:
+// "
+// Classic liposomes are almost always built from “normal” phospholipids (PC, PE, PS, PG, sometimes PA),
+// often with cholesterol, and (for “stealth” liposomes) a small % of a PEG-lipid such as DSPE-PEG2000.
+// • mRNA LNPs are a different class: a 4-component mix — an ionizable cationic lipid
+// (e.g., MC3/ALC-0315/SM-102), cholesterol, a helper phospholipid (usually DSPC, i.e., a PC),
+// and a PEG-lipid — at ~50/40/10/1–2 mol% respectively.
+//
+// Neutral “liposome” (drug-delivery style): DSPC:CHOL:DSPE-PEG2000 = 55:40:5 (mol%) (or any 56:38:5 Doxil-like recipe).
+// Use LIPID21 for DSPC/CHL; GAFF2 for PEG.
+//"
+
 use std::{
     f64::consts::TAU,
     fmt::{Display, Formatter},
@@ -57,6 +69,7 @@ pub enum LipidShape {
     Free,
     #[default]
     Membrane,
+    Liposome,
     Lnp,
 }
 
@@ -65,6 +78,7 @@ impl Display for LipidShape {
         let s = match self {
             Self::Free => "Free",
             Self::Membrane => "Membrane",
+            Self::Liposome => "Liposome",
             Self::Lnp => "Lnp",
         };
 
@@ -434,6 +448,7 @@ pub fn make_bacterial_lipids(
         LipidShape::Membrane => {
             result = make_membrane(n_mols, center, &pe, &pg, &mut rng, &uni);
         }
+        LipidShape::Liposome => {}
         LipidShape::Lnp => {}
     }
 
@@ -582,6 +597,32 @@ pub fn make_membrane(
         other_side.push(mirror);
     }
     result.append(&mut other_side);
+
+    result
+}
+
+pub fn make_liposome(
+    center: Vec3,
+    radius_outer: f32,
+    pe: &MoleculeLipid,
+    pg: &MoleculeLipid,
+    rng: &mut ThreadRng,
+    uni: &Uniform<f32>,
+) -> Vec<MoleculeLipid> {
+    let mut result = Vec::new();
+
+    result
+}
+
+pub fn make_lnp(
+    center: Vec3,
+    radius_outer: f32,
+    pe: &MoleculeLipid,
+    pg: &MoleculeLipid,
+    rng: &mut ThreadRng,
+    uni: &Uniform<f32>,
+) -> Vec<MoleculeLipid> {
+    let mut result = Vec::new();
 
     result
 }

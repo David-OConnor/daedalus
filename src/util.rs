@@ -317,12 +317,24 @@ pub fn orbit_center(state: &State) -> Vec3F32 {
                 }
             }
             Selection::AtomLig((i_mol, i_atom)) => {
+                if *i_atom >= state.ligands.len() {
+                    eprintln!("Error: Invalid lig index for orbit center");
+                    return Vec3F32::new_zero();
+                }
                 return state.ligands[*i_mol].common.atom_posits[*i_atom].into();
             }
             Selection::AtomNucleicAcid((i_mol, i_atom)) => {
+                if *i_atom >= state.nucleic_acids.len() {
+                    eprintln!("Error: Invalid NA index for orbit center");
+                    return Vec3F32::new_zero();
+                }
                 return state.nucleic_acids[*i_mol].common.atom_posits[*i_atom].into();
             }
             Selection::AtomLipid((i_mol, i_atom)) => {
+                if *i_atom >= state.lipids.len() {
+                    eprintln!("Error: Invalid lipid index for orbit center");
+                    return Vec3F32::new_zero();
+                }
                 return state.lipids[*i_mol].common.atom_posits[*i_atom].into();
             }
 
@@ -516,10 +528,8 @@ pub fn close_peptide(state: &mut State, scene: &mut Scene, engine_updates: &mut 
 
     if let Some(path) = path {
         for history in &mut state.to_save.open_history {
-            if let OpenType::Peptide = history.type_ {
-                if history.path == path {
-                    history.last_session = false;
-                }
+            if matches!(history.type_, OpenType::Peptide | OpenType::Map) && history.path == path {
+                history.last_session = false;
             }
         }
     }

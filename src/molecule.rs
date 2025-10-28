@@ -357,10 +357,14 @@ pub struct MoleculePeptide {
     pub rcsb_data: Option<PdbDataResults>,
     pub rcsb_files_avail: Option<FilesAvailable>,
     pub reflections_data: Option<ReflectionsData>,
-    /// E.g. from a MAP file, MTX, or 2fo-fc header.
+    /// This is the processed collection of electron density points, ready to be mapped
+    /// to entities, with some amplitude processing. It not not explicitly grid or unit-cell based,
+    /// although it was likely created from unit cell data.
+    /// E.g. from a MAP or MTX file directly, or processed from raw reflections data
+    /// in a 2fo-fc file.
     pub elec_density: Option<Vec<DensityPt>>,
     pub density_map: Option<DensityMap>,
-    pub density_rect: Option<DensityRect>,
+    pub density_rect: Option<DensityRect>, // todo: Remove?
     pub aa_seq: Vec<AminoAcid>,
     pub experimental_method: Option<ExperimentalMethod>,
     /// E.g: ["A", "B"]. Inferred from atoms.

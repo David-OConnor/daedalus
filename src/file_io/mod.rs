@@ -17,7 +17,7 @@ use crate::{
     State,
     cam_misc::move_mol_to_cam,
     download_mols,
-    drawing::EntityClass,
+    drawing::draw_peptide,
     drawing_wrappers,
     mol_lig::MoleculeSmall,
     molecule::{
@@ -126,11 +126,15 @@ impl State {
                         let mut fft_planner = FftPlanner::new();
                         let data = CifStructureFactors::new_from_path(path)?;
 
-                        println!("\n\nLoaded cif SF: {}", data);
+                        // println!("\n\nLoaded cif SF: {}", data);
 
                         let dm = density_map_from_mmcif(&data, &mut fft_planner)?;
 
                         self.load_density(dm);
+
+                        self.update_history(path, OpenType::Map);
+                        // Save the open history.
+                        self.update_save_prefs(false);
 
                         return Ok(());
                     }
@@ -175,6 +179,7 @@ impl State {
             // Sample atoms, so we know where to draw the (periodic) density data.
             // We are filtering for backbone atoms of one type for now, for performance reasons. This is
             // a sample. Good enough?
+
             let atom_posits: Vec<_> = mol
                 .common
                 .atoms
@@ -210,6 +215,8 @@ impl State {
                 })
                 .collect();
 
+            // println!("Rect: {:?}", dens_rect);
+
             mol.density_map = Some(dens_map);
             mol.density_rect = Some(dens_rect);
             mol.elec_density = Some(elec_dens);
@@ -225,10 +232,7 @@ impl State {
         let ident = String::new(); // todo: Set this up.
         self.load_density(dm);
 
-        // self.to_save.last_map_opened = Some(path.to_owned());
-        // self.update_history(path, OpenType::Map, &ident);
         self.update_history(path, OpenType::Map);
-
         // Save the open history.
         self.update_save_prefs(false);
 
@@ -239,6 +243,10 @@ impl State {
     pub fn open_mtz(&mut self, path: &Path) -> io::Result<()> {
         let dm = gemmi_sf_to_map(path, gemmi_path())?;
         self.load_density(dm);
+
+        self.update_history(path, OpenType::Map);
+        // Save the open history.
+        self.update_save_prefs(false);
 
         Ok(())
     }
@@ -495,19 +503,40 @@ impl State {
         }
     }
 
-    /// Keeps the history tidy.
+    /// Add a history event, or update its timestamp and restor the list.
     pub fn update_history(&mut self, path: &Path, type_: OpenType) {
-        for item in &mut self.to_save.open_history {
+        let mut first_i = None;
+        let mut to_delete = Vec::new();
+
+        for (i, item) in self.to_save.open_history.iter_mut().enumerate() {
             if item.path == *path {
-                item.last_session = true;
-                item.timestamp = Utc::now();
-                return;
+                println!("Updating last for history: {:?}", path);
+                if first_i.is_none() {
+                    item.last_session = true;
+                    item.timestamp = Utc::now();
+                    first_i = Some(i);
+                }
+                to_delete.push(i);
             }
         }
 
-        self.to_save
-            .open_history
-            .push(OpenHistory::new(path, type_));
+        to_delete.sort_unstable_by(|a, b| b.cmp(a));
+
+        let mut moved_item = None;
+        for i in to_delete {
+            let item = self.to_save.open_history.remove(i);
+            if Some(i) == first_i {
+                moved_item = Some(item);
+            }
+        }
+
+        if let Some(item) = moved_item {
+            self.to_save.open_history.push(item);
+        } else {
+            self.to_save
+                .open_history
+                .push(OpenHistory::new(path, type_));
+        }
     }
 
     /// This is a central point for loading a molecule into state. It handles the cases
@@ -555,6 +584,10 @@ impl State {
                 centroid = m.center;
                 ident = m.common.ident.clone();
                 self.peptide = Some(m);
+
+                if let Some(ref mut s) = scene {
+                    draw_peptide(self, s);
+                }
             }
             MoleculeGeneric::Ligand(mut mol) => {
                 if let Some(ref mut s) = scene {
@@ -665,18 +698,11 @@ impl State {
             }
         }
 
-        if let Some(p) = path {
-            self.update_history(p, open_type);
-        }
-
-        // Save the open history.
-        self.update_save_prefs(false);
-
         if mol_type == MolType::Peptide {
             // Mark all other peptides as not last session.
             // We do this as we currently only support one peptide at a time.
             for history in &mut self.to_save.open_history {
-                if let OpenType::Peptide = history.type_ {
+                if matches!(history.type_, OpenType::Peptide | OpenType::Map) {
                     history.last_session = false;
                 }
             }
@@ -686,6 +712,13 @@ impl State {
                 mol.updates_rcsb_data(&mut self.volatile.mol_pending_data_avail);
             }
         }
+
+        if let Some(p) = path {
+            self.update_history(p, open_type);
+        }
+
+        // Save the open history.
+        self.update_save_prefs(false);
 
         // Now, save prefs: This is to save last opened. Note that anomalies happen
         // if we update the molecule here, e.g. with docking site posit.
