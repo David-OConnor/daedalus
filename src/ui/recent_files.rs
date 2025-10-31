@@ -6,6 +6,8 @@ use graphics::{EngineUpdates, Scene};
 
 use crate::{
     State,
+    molecule::MolType,
+    prefs::OpenType,
     ui::{COL_SPACING, ROW_SPACING},
     util::handle_err,
 };
@@ -53,7 +55,15 @@ pub(super) fn recent_files(
                     .unwrap();
 
                 // todo: Make the whole row clickable?
-                if ui.button(RichText::new(filename)).clicked() {
+                let (r, g, b) = match file.type_ {
+                    OpenType::Peptide => MolType::Peptide.color(),
+                    OpenType::Ligand => MolType::Ligand.color(),
+                    OpenType::NucleicAcid => MolType::NucleicAcid.color(),
+                    OpenType::Lipid => MolType::Lipid.color(),
+                    _ => (255, 255, 255),
+                };
+                let color = Color32::from_rgb(r, g, b);
+                if ui.button(RichText::new(filename).color(color)).clicked() {
                     open = Some(file.path.clone());
                 }
 

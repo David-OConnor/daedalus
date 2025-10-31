@@ -1,25 +1,14 @@
 //! Handles user inputs, e.g. from keyboard and mouse.
 
 use graphics::{
-    ControlScheme, DeviceEvent, ElementState, EngineUpdates, EntityUpdate, FWD_VEC, Scene,
+    event::MouseScrollDelta, winit::keyboard::{KeyCode, PhysicalKey::Code}, ControlScheme, DeviceEvent, ElementState, EngineUpdates, EntityUpdate,
+    Scene,
     WindowEvent,
-    event::MouseScrollDelta,
-    winit::keyboard::{KeyCode, PhysicalKey::Code},
+    FWD_VEC,
 };
-use lin_alg::{f32::Vec3, map_linear};
+use lin_alg::f32::Vec3;
 
-use crate::{
-    ManipMode, OperatingMode, Selection, State, ViewSelLevel,
-    cam_misc::move_cam_to_sel,
-    drawing,
-    drawing::MoleculeView,
-    drawing_wrappers, mol_editor, mol_manip,
-    molecule::{Atom, MolType, MoleculeCommon},
-    render::set_flashlight,
-    selection::{find_selected_atom, points_along_ray_atom, points_along_ray_bond},
-    ui::cam::{FOG_DIST_MIN, set_fog_dist},
-    util::{close_mol, cycle_selected, orbit_center},
-};
+use crate::{cam_misc::move_cam_to_sel, drawing, drawing_wrappers, mol_editor, mol_manip, molecule::MolType, render::set_flashlight, selection, ui::cam::{set_fog_dist, FOG_DIST_MIN}, util::{close_mol, cycle_selected}, ManipMode, OperatingMode, Selection, State};
 
 // These are defaults; overridden by the user A/R, and saved to prefs.
 pub const MOVEMENT_SENS: f32 = 12.;
@@ -28,14 +17,6 @@ pub const RUN_FACTOR: f32 = 6.; // i.e. shift key multiplier
 
 pub const SCROLL_MOVE_AMT: f32 = 4.;
 pub const SCROLL_ROTATE_AMT: f32 = 12.;
-
-const SELECTION_DIST_THRESH_SMALL: f32 = 0.7; // e.g. ball + stick, or stick.
-// Setting this high rel to `THRESH_SMALL` will cause more accidental selections of nearby atoms that
-// the cursor is closer to the center of, but are behind the desired one.
-// Setting it too low will cause the selector to "miss", even though the cursor is on an atom visual.
-const SELECTION_DIST_THRESH_LARGE: f32 = 1.1; // e.g. VDW views like spheres.
-
-const SEL_NEAR_PAD: f32 = 4.;
 
 // Sensitives for mol manip.
 pub const SENS_MOL_MOVE_SCROLL: f32 = 2.5e-2;
@@ -133,7 +114,7 @@ pub fn event_dev_handler(
                 match state {
                     ElementState::Pressed => match state_.volatile.operating_mode {
                         OperatingMode::Primary => {
-                            handle_selection_attempt(
+                            selection::handle_selection_attempt(
                                 state_,
                                 scene,
                                 &mut redraw_protein,
@@ -143,7 +124,7 @@ pub fn event_dev_handler(
                             );
                         }
                         OperatingMode::MolEditor => {
-                            handle_selection_attempt_mol_editor(
+                            selection::handle_selection_attempt_mol_editor(
                                 state_,
                                 scene,
                                 &mut redraw_mol_editor,
@@ -627,333 +608,3 @@ fn redraw_inplace_helper(
     };
 }
 
-fn handle_selection_attempt(
-    state: &mut State,
-    scene: &mut Scene,
-    redraw_protein: &mut bool,
-    redraw_lig: &mut bool,
-    redraw_na: &mut bool,
-    redraw_lipid: &mut bool,
-) {
-    let Some(mut cursor) = state.ui.cursor_pos else {
-        return;
-    };
-    // Due to a quirk of some combination of our graphics engine and the egui
-    // integration lib in it, we need this vertical offset for the UI; otherwise,
-    // the higher up we click, the more the projected ray will be below the one
-    // indicated by the cursor. (Rays will only be accurate if clicked at the bottom of the screen).
-    // todo: It may be worth addressing upstream.
-    cursor.1 -= map_linear(
-        cursor.1,
-        (scene.window_size.1, state.volatile.ui_height),
-        (0., state.volatile.ui_height),
-    );
-
-    let mut selected_ray = scene.screen_to_render(cursor);
-
-    // Clip the near end of this to prevent false selections that seem to the user
-    // to be behind the camera.
-    let diff = selected_ray.1 - selected_ray.0;
-
-    selected_ray.0 += diff.to_normalized() * SEL_NEAR_PAD;
-
-    // If we don't scale the selection distance appropriately, an atom etc
-    // behind the desired one, but closer to the ray, may be selected; likely
-    // this is undesired.
-    let dist_thresh = match state.ui.mol_view {
-        MoleculeView::SpaceFill => SELECTION_DIST_THRESH_LARGE,
-        _ => SELECTION_DIST_THRESH_SMALL,
-    };
-
-    // todo: Lots of DRY here!
-
-    // todo: I don't like this rebuilding.
-    fn get_atoms(mol: &MoleculeCommon) -> Vec<Atom> {
-        // todo: I don't like this clone!
-        mol.atoms
-            .iter()
-            .enumerate()
-            .map(|(i, a)| Atom {
-                posit: mol.atom_posits[i],
-                element: a.element,
-                ..Default::default()
-            })
-            .collect()
-    }
-
-    let mut lig_atoms = Vec::new();
-    for mol in &state.ligands {
-        lig_atoms.push(get_atoms(&mol.common));
-    }
-
-    let mut na_atoms = Vec::new();
-    for mol in &state.nucleic_acids {
-        na_atoms.push(get_atoms(&mol.common));
-    }
-    let mut lipid_atoms = Vec::new();
-    for mol in &state.lipids {
-        lipid_atoms.push(get_atoms(&mol.common));
-    }
-
-    let (pep_atoms, pep_res) = match &state.peptide {
-        Some(p) => (&p.common.atoms, &p.residues),
-        None => (&Vec::new(), &Vec::new()),
-    };
-
-    let selection = match state.ui.view_sel_level {
-        ViewSelLevel::Bond => {
-            let mut pep_bonds = Vec::new();
-            // todo: I don' tlike these clones.
-            if let Some(mol) = &state.peptide {
-                pep_bonds = mol.common.bonds.clone();
-            }
-
-            let mut lig_bonds = Vec::new();
-            // todo: I don' tlike these clones.
-            for mol in &state.ligands {
-                lig_bonds.push(mol.common.bonds.clone());
-            }
-
-            let mut na_bonds = Vec::new();
-            for mol in &state.nucleic_acids {
-                na_bonds.push(mol.common.bonds.clone());
-            }
-            let mut lipid_bonds = Vec::new();
-            for mol in &state.lipids {
-                lipid_bonds.push(mol.common.bonds.clone());
-            }
-            let (
-                atoms_along_ray_pep,
-                atoms_along_ray_lig,
-                atoms_along_ray_na,
-                atoms_along_ray_lipid,
-            ) = points_along_ray_bond(
-                selected_ray,
-                &pep_bonds,
-                &lig_bonds,
-                &na_bonds,
-                &lipid_bonds,
-                pep_atoms,
-                &lig_atoms,
-                &na_atoms,
-                &lipid_atoms,
-                dist_thresh,
-            );
-
-            find_selected_atom(
-                &atoms_along_ray_pep,
-                &atoms_along_ray_lig,
-                &atoms_along_ray_na,
-                &atoms_along_ray_lipid,
-                pep_atoms,
-                &Vec::new(), // todo: Peptide bonds once ready.
-                &lig_atoms,
-                &na_atoms,
-                &lipid_atoms,
-                &selected_ray,
-                &state.ui,
-                &Vec::new(),
-                &pep_bonds,
-                &lig_bonds,
-                &na_bonds,
-                &lipid_bonds,
-                true,
-            )
-        }
-        _ => {
-            let (
-                atoms_along_ray_pep,
-                atoms_along_ray_lig,
-                atoms_along_ray_na,
-                atoms_along_ray_lipid,
-            ) = points_along_ray_atom(
-                selected_ray,
-                pep_atoms,
-                &lig_atoms,
-                &na_atoms,
-                &lipid_atoms,
-                dist_thresh,
-            );
-
-            find_selected_atom(
-                &atoms_along_ray_pep,
-                &atoms_along_ray_lig,
-                &atoms_along_ray_na,
-                &atoms_along_ray_lipid,
-                pep_atoms,
-                pep_res,
-                &lig_atoms,
-                &na_atoms,
-                &lipid_atoms,
-                &selected_ray,
-                &state.ui,
-                &Vec::new(),
-                &[],
-                &[],
-                &[],
-                &[],
-                false,
-            )
-        }
-    };
-
-    match selection {
-        Selection::AtomLig((mol_i, _)) => {
-            state.volatile.active_mol = Some((MolType::Ligand, mol_i));
-        }
-        Selection::AtomNucleicAcid((mol_i, _)) => {
-            state.volatile.active_mol = Some((MolType::NucleicAcid, mol_i));
-        }
-        Selection::AtomLipid((mol_i, _)) => {
-            state.volatile.active_mol = Some((MolType::Lipid, mol_i));
-        }
-        _ => (),
-    }
-
-    if selection == state.ui.selection {
-        // Toggle.
-        state.ui.selection = Selection::None;
-    } else {
-        state.ui.selection = selection;
-    }
-
-    if let ControlScheme::Arc { center } = &mut scene.input_settings.control_scheme {
-        *center = orbit_center(state);
-    }
-
-    *redraw_protein = true;
-    *redraw_lig = true;
-    *redraw_na = true;
-    *redraw_lipid = true;
-}
-
-/// A stripped-down version, for the mol editor. See notes there where applicable.
-fn handle_selection_attempt_mol_editor(state: &mut State, scene: &mut Scene, redraw: &mut bool) {
-    let Some(mut cursor) = state.ui.cursor_pos else {
-        return;
-    };
-    cursor.1 -= map_linear(
-        cursor.1,
-        (scene.window_size.1, state.volatile.ui_height),
-        (0., state.volatile.ui_height),
-    );
-
-    let mut selected_ray = scene.screen_to_render(cursor);
-
-    let diff = selected_ray.1 - selected_ray.0;
-
-    selected_ray.0 += diff.to_normalized() * SEL_NEAR_PAD;
-
-    let dist_thresh = match state.ui.mol_view {
-        MoleculeView::SpaceFill => SELECTION_DIST_THRESH_LARGE,
-        _ => SELECTION_DIST_THRESH_SMALL,
-    };
-
-    let mol = &state.mol_editor.mol;
-
-    let atoms: Vec<_> = mol
-        .common
-        .atoms
-        .iter()
-        .enumerate()
-        .map(|(i, a)| Atom {
-            posit: mol.common.atom_posits[i],
-            element: a.element,
-            ..Default::default()
-        })
-        .collect();
-
-    let selection = match state.ui.view_sel_level {
-        ViewSelLevel::Bond => {
-            let bonds = mol.common.bonds.clone(); // todo: This clone...
-            let (
-                bonds_along_ray_pep,
-                bonds_along_ray_lig,
-                bonds_along_ray_na,
-                bonds_along_ray_lipid,
-            ) = points_along_ray_bond(
-                selected_ray,
-                &Vec::new(),
-                &[bonds.clone()], // todo: CLone again...
-                &[],
-                &[],
-                &Vec::new(),
-                &[atoms.clone()], // todo: This clone...
-                &[],
-                &[],
-                dist_thresh,
-            );
-
-            find_selected_atom(
-                &bonds_along_ray_pep,
-                &bonds_along_ray_lig,
-                &bonds_along_ray_na,
-                &bonds_along_ray_lipid,
-                &Vec::new(),
-                &Vec::new(),
-                &[atoms],
-                &[],
-                &[],
-                &selected_ray,
-                &state.ui,
-                &Vec::new(),
-                &Vec::new(),
-                &[bonds],
-                &[],
-                &[],
-                true,
-            )
-        }
-        _ => {
-            let (
-                atoms_along_ray_pep,
-                atoms_along_ray_lig,
-                atoms_along_ray_na,
-                atoms_along_ray_lipid,
-            ) = points_along_ray_atom(
-                selected_ray,
-                &Vec::new(),
-                &[atoms.clone()], // todo: This clone...
-                &[],
-                &[],
-                dist_thresh,
-            );
-
-            find_selected_atom(
-                &atoms_along_ray_pep,
-                &atoms_along_ray_lig,
-                &atoms_along_ray_na,
-                &atoms_along_ray_lipid,
-                &Vec::new(),
-                &Vec::new(),
-                &[atoms],
-                &[],
-                &[],
-                &selected_ray,
-                &state.ui,
-                &Vec::new(),
-                &Vec::new(),
-                &[],
-                &[],
-                &[],
-                false,
-            )
-        }
-    };
-
-    match selection {
-        Selection::AtomLig((mol_i, _)) => {
-            state.volatile.active_mol = Some((MolType::Ligand, mol_i));
-        }
-        _ => (),
-    }
-
-    if selection == state.ui.selection {
-        // Toggle.
-        state.ui.selection = Selection::None;
-    } else {
-        state.ui.selection = selection;
-    }
-
-    *redraw = true;
-}

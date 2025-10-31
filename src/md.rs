@@ -239,7 +239,6 @@ pub fn build_dynamics(
         mols.push(MolDynamics {
             ff_mol_type: FfMolType::Peptide,
             atoms,
-            // todo: A/R if you allow moving the peptide.
             atom_posits: None,
             bonds,
             adjacency_list: None,

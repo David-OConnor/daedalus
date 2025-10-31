@@ -120,15 +120,13 @@ impl State {
                     // similar pipeline.
                     if name.contains("2fo") && name.contains("fc") {
                         // todo: Experimenting with a local impl.
-                        // gemmi_sf_to_map(path, gemmi_path())?;
-                        // let dm = gemmi_sf_to_map(path, gemmi_path())?;
+                        gemmi_sf_to_map(path, gemmi_path())?;
+                        let dm = gemmi_sf_to_map(path, gemmi_path())?;
 
-                        let mut fft_planner = FftPlanner::new();
-                        let data = CifStructureFactors::new_from_path(path)?;
+                        // let mut fft_planner = FftPlanner::new();
+                        // let data = CifStructureFactors::new_from_path(path)?;
 
-                        // println!("\n\nLoaded cif SF: {}", data);
-
-                        let dm = density_map_from_mmcif(&data, &mut fft_planner)?;
+                        // let dm = density_map_from_mmcif(&data, &mut fft_planner)?;
 
                         self.load_density(dm);
 
@@ -510,7 +508,6 @@ impl State {
 
         for (i, item) in self.to_save.open_history.iter_mut().enumerate() {
             if item.path == *path {
-                println!("Updating last for history: {:?}", path);
                 if first_i.is_none() {
                     item.last_session = true;
                     item.timestamp = Utc::now();

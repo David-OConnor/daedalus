@@ -1,7 +1,8 @@
 //! Information and settings for the opened, or to-be opened molecules.
 
 use bio_apis::{drugbank, lmsd, pdbe, pubchem, rcsb};
-use bio_files::ResidueType;
+use bio_files::{ResidueType, md_params::ForceFieldParams};
+use dynamics::params::FfParamSet;
 use egui::{Color32, RichText, Ui};
 use graphics::{ControlScheme, EngineUpdates, EntityUpdate, Scene};
 use lin_alg::f64::Vec3;
@@ -92,23 +93,64 @@ fn disp_atom_data(atom: &Atom, residues: &[Residue], posit_override: Option<Vec3
     }
 }
 
+// todo: This would ideally be a method on FfParamSet, but that lib doesn't have access to our MolType enum.
+/// Get params for a single molecule type.
+pub fn get_params(set: &FfParamSet, mol_type: MolType) -> &Option<ForceFieldParams> {
+    match mol_type {
+        MolType::Peptide => &set.peptide,
+        MolType::Ligand => &set.small_mol,
+        MolType::NucleicAcid => &set.dna, // todo: Could be RNA
+        MolType::Lipid => &set.lipids,
+        _ => &None,
+    }
+}
+
 /// `posit_override` is for example, relative atom positions, such as a positioned ligand.
-fn disp_bond_data(bond: &Bond, atoms: &[Atom], ui: &mut Ui) {
+fn disp_bond_data(
+    bond: &Bond,
+    atoms: &[Atom],
+    mol_type: MolType,
+    params: &FfParamSet,
+    ui: &mut Ui,
+) {
+    let atom_0 = &atoms[bond.atom_0];
+    let atom_1 = &atoms[bond.atom_1];
+
     ui.label("Bond");
     ui.label(
         RichText::new(format!("#{} - #{}", bond.atom_0_sn, bond.atom_1_sn)).color(Color32::WHITE),
     );
 
-    ui.label(RichText::new(format!("{}", bond.bond_type)).color(Color32::LIGHT_YELLOW));
+    ui.label(
+        RichText::new(format!(
+            "{} {} {}",
+            atom_0.element.to_letter(),
+            bond.bond_type.to_visual_str(),
+            atom_1.element.to_letter()
+        ))
+            .color(Color32::LIGHT_BLUE),
+    );
 
     // todo: Cache??
-    let posit_0 = atoms[bond.atom_0].posit;
-    let posit_1 = atoms[bond.atom_1].posit;
+    let posit_0 = atom_0.posit;
+    let posit_1 = atom_1.posit;
     let dist = (posit_1 - posit_0).magnitude();
 
-    ui.label(RichText::new(format!("{dist:.2}Å")).color(Color32::LIGHT_YELLOW));
+    ui.label(RichText::new(format!("{dist:.3} Å")).color(Color32::LIGHT_YELLOW));
 
-    // todo: Frequency (measured/actual), param dist, bond type
+    if let Some(p) = get_params(params, mol_type) {
+        if let (Some(ff_0), Some(ff_1)) = (
+            atom_0.force_field_type.as_deref(),
+            atom_1.force_field_type.as_deref(),
+        ) {
+            if let Some(b) = p.get_bond(&(ff_0.to_string(), ff_1.to_string())) {
+                ui.label(RichText::new("Param len:"));
+                ui.label(RichText::new(format!("{:.3} Å", b.r_0)).color(Color32::LIGHT_BLUE));
+            }
+        }
+    }
+
+    // todo: Frequency (measured/actual)
 }
 
 /// Display text of the selected atom or residue.
@@ -208,7 +250,13 @@ pub fn selected_data(
                 }
 
                 let bond = &mol.common.bonds[*bond_i];
-                disp_bond_data(bond, &mol.common.atoms, ui);
+                disp_bond_data(
+                    bond,
+                    &mol.common.atoms,
+                    MolType::Peptide,
+                    &state.ff_param_set,
+                    ui,
+                );
             }
             Selection::BondLig((mol_i, bond_i)) => {
                 if *mol_i >= ligands.len() {
@@ -220,7 +268,13 @@ pub fn selected_data(
                 }
 
                 let bond = &mol.common.bonds[*bond_i];
-                disp_bond_data(bond, &mol.common.atoms, ui);
+                disp_bond_data(
+                    bond,
+                    &mol.common.atoms,
+                    MolType::Ligand,
+                    &state.ff_param_set,
+                    ui,
+                );
             }
             Selection::BondNucleicAcid((mol_i, bond_i)) => {
                 if *mol_i >= nucleic_acids.len() {
@@ -232,7 +286,13 @@ pub fn selected_data(
                 }
 
                 let bond = &mol.common.bonds[*bond_i];
-                disp_bond_data(bond, &mol.common.atoms, ui);
+                disp_bond_data(
+                    bond,
+                    &mol.common.atoms,
+                    MolType::NucleicAcid,
+                    &state.ff_param_set,
+                    ui,
+                );
             }
             Selection::BondLipid((mol_i, bond_i)) => {
                 if *mol_i >= lipids.len() {
@@ -244,7 +304,13 @@ pub fn selected_data(
                 }
 
                 let bond = &mol.common.bonds[*bond_i];
-                disp_bond_data(bond, &mol.common.atoms, ui);
+                disp_bond_data(
+                    bond,
+                    &mol.common.atoms,
+                    MolType::Lipid,
+                    &state.ff_param_set,
+                    ui,
+                );
             }
             Selection::None => {}
         }
@@ -719,6 +785,48 @@ pub fn display_mol_data(
                     _ => unimplemented!()
                 }
             }
+
+            if active_mol_type == MolType::Ligand {
+                if ui
+                    .button(RichText::new("Similar mols").color(COLOR_HIGHLIGHT))
+                    .on_hover_text(
+                        "Using PubChem, find, download, and open similar molecules to this one.",
+                    )
+                    .clicked()
+                {
+                    let mol = &state.ligands[active_mol_i];
+
+                    // todo: This needs to be in its own thread; long-running blockign call.
+
+                    // todo: Support more than CID. Requires a mode to rcsb api.
+                    for ident in &mol.idents {
+                        if let MolIdent::PubChem(cid) = ident {
+                            // todo: This doesn't show because it doesn't get a chance to render prior to the block.
+                            handle_success(&mut state.ui, "Searching for similar molecules...".to_string());
+                            match pubchem::find_similar_mols(*cid) {
+                                Ok(cids) => {
+                                    // todo: This is temp
+                                    println!("Similar mols to {cid}: {:?}", cids);
+                                    let max_results = 20;
+                                    let cids_str = cids
+                                        .iter()
+                                        .take(max_results)
+                                        .map(|x| x.to_string())
+                                        .collect::<Vec<_>>()
+                                        .join(", ");
+
+                                    handle_success(&mut state.ui, format!("Similar PubChem CIDs: {cids_str}..."));
+                                }
+
+                                Err(e) => {
+                                    handle_err(&mut state.ui, "Problem finding similar molecules on PubChem".to_owned());
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
         }
 
         if ui.button(RichText::new("Close").color(Color32::LIGHT_RED))
@@ -762,18 +870,18 @@ pub fn display_mol_data(
                     for ident in &m.idents {
                         match ident {
                             MolIdent::DrugBank(id) => {
-                                if ui.button("View on Drugbank").clicked() {
+                                if ui.button(format!("DrugBank: {id}")).clicked() {
                                     drugbank::open_overview(id);
                                 }
                             }
                             MolIdent::PubChem(cid) => {
-                                if ui.button("View on PubChem").clicked() {
+                                if ui.button(format!("PubChem: {cid}")).clicked() {
                                     pubchem::open_overview(*cid);
                                 }
                                 pubchem_cid = Some(*cid);
                             }
                             MolIdent::PdbeAmber(id) => {
-                                if ui.button("View on PDBe").clicked() {
+                                if ui.button(format!("PDBe: {id}")).clicked() {
                                     pdbe::open_overview(id);
                                 }
                             }

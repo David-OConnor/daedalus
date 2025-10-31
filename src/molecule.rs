@@ -81,6 +81,17 @@ impl MolType {
             Self::Water => EntityClass::Protein, // todo for now
         }
     }
+
+    pub fn color(self) -> (u8, u8, u8) {
+        match self {
+            // todo: Update A/R
+            Self::Peptide => (0, 255, 255),
+            Self::Ligand => (0, 255, 0),
+            Self::NucleicAcid => (255, 255, 0),
+            Self::Lipid => (255, 0, 255),
+            Self::Water => (0, 0, 0),
+        }
+    }
 }
 
 /// Contains fields shared by all molecule types.

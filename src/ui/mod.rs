@@ -66,7 +66,7 @@ pub static UI_HEIGHT_CHANGE_DELAY: AtomicBool = AtomicBool::new(false);
 pub const ROW_SPACING: f32 = 10.;
 pub const COL_SPACING: f32 = 30.;
 
-const DENS_ISO_MIN: f32 = 1.0;
+const DENS_ISO_MIN: f32 = 0.6;
 const DENS_ISO_MAX: f32 = 3.0;
 
 const NEARBY_THRESH_MIN: u16 = 5;

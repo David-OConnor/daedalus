@@ -9,7 +9,7 @@ use std::{io, sync::Arc, time::Instant};
 use bio_files::{DensityMap, MapHeader, UnitCell, cif_sf::CifStructureFactors};
 #[cfg(feature = "cuda")]
 use cudarc::driver::{CudaFunction, CudaStream, LaunchConfig, PushKernelArg};
-use ewald::fft3d_c2r;
+use ewald::{fft3d_c2r, fft3d_c2r_xfast};
 use graphics::{EngineUpdates, EntityUpdate, Mesh, Scene, Vertex};
 #[cfg(feature = "cuda")]
 use lin_alg::f32::{vec3s_from_dev, vec3s_to_dev};
@@ -512,9 +512,6 @@ pub fn make_density_mesh(state: &mut State, scene: &mut Scene, engine_updates: &
 // todo: Code below represents a local implementation of creating a map from 2fo-fc
 //----------------------------------------------
 
-fn phase_to_complex(amp: f32, phase: f32) -> Complex<f32> {
-    Complex::from_polar(amp, phase)
-}
 
 fn wrap_idx(i: i32, n: usize) -> usize {
     let n_i32 = n as i32;
@@ -540,7 +537,7 @@ fn lin3(i: usize, j: usize, k: usize, nx: usize, ny: usize) -> usize {
 }
 
 fn idx_xfast(ix: usize, iy: usize, iz: usize, nx: usize, ny: usize, nz: usize) -> usize {
-    // crystal order (X,Y,Z) with Z contiguous, X slowest
+    // crystal order (X,Y,Z) with X contiguous, Z slowest
     ix + nx * (iy + ny * iz)
 }
 
@@ -556,97 +553,88 @@ fn idx_file(i_f: usize, j_f: usize, k_f: usize, nx: usize, ny: usize) -> usize {
 
 // todo: Use cuFFT if in GPU mode.
 pub fn density_map_from_mmcif(
-    src: &CifStructureFactors,
+    sf: &CifStructureFactors,
     planner: &mut FftPlanner<f32>,
 ) -> io::Result<DensityMap> {
     println!("Computing electron density from mmCIF 2fo-fc data...");
     let start = Instant::now();
 
-    let (mx, my, mz) = (
-        src.header.mx as usize,
-        src.header.my as usize,
-        src.header.mz as usize,
+    let (nx, ny, nz) = (
+        sf.header.mx as usize,
+        sf.header.my as usize,
+        sf.header.mz as usize,
     );
 
     let perm_f2c = [
-        (src.header.mapc - 1) as usize,
-        (src.header.mapr - 1) as usize,
-        (src.header.maps - 1) as usize,
+        (sf.header.mapc - 1) as usize,
+        (sf.header.mapr - 1) as usize,
+        (sf.header.maps - 1) as usize,
     ];
-    let perm_c2f = inv_perm(perm_f2c);
 
-    // --- reciprocal grid in CRYSTAL order with Z-fast layout ---
-    let mut data_k = vec![Complex::<f32>::new(0.0, 0.0); mx * my * mz];
+    // Reciprocal grid in CRYSTAL order with X-fast layout ---
+    let mut data_k = vec![Complex::<f32>::new(0.0, 0.0); nx * ny * nz];
 
-    for r in &src.miller_indices {
+    for r in &sf.miller_indices {
         let c = if let (Some(re), Some(im)) = (r.re, r.im) {
             Complex::new(re, im)
         } else {
-            let amp = r.amp.expect("amp missing");
-            let ph = r.phase.expect("phase missing");
-            phase_to_complex(amp, ph)
+            let Some(amp) = r.amp else {
+                return Err(io::Error::new(io::ErrorKind::InvalidData, "Miller index out of bounds"));
+            };
+            let Some(phase) = r.phase else {
+                return Err(io::Error::new(io::ErrorKind::InvalidData, "Miller index out of bounds"));
+            };
+            Complex::from_polar(amp, phase)
         };
 
-        // crystal grid indices
-        let u = wrap_idx(r.h, mx);
-        let v = wrap_idx(r.k, my);
-        let w = wrap_idx(r.l, mz);
+        // Crystal grid indices
+        let u = wrap_idx(r.h, nx);
+        let v = wrap_idx(r.k, ny);
+        let w = wrap_idx(r.l, nz);
 
-        // place at (u,v,w) and its conjugate at (-u,-v,-w) in Z-fast layout
-        let i0 = idx_xfast(u, v, w, mx, my, mz);
-        // let i0 = idx_zfast(u, v, w, mx, my, mz);
+        // place at (u,v,w) and its conjugate at (-u,-v,-w) in X-fast layout
+        let i0 = idx_xfast(u, v, w, nx, ny, nz);
         data_k[i0] = c;
 
-        let u2 = wrap_idx(-r.h, mx);
-        let v2 = wrap_idx(-r.k, my);
-        let w2 = wrap_idx(-r.l, mz);
+        let u2 = wrap_idx(-r.h, nx);
+        let v2 = wrap_idx(-r.k, ny);
+        let w2 = wrap_idx(-r.l, nz);
 
-        let i1 = idx_zfast(u2, v2, w2, mx, my, mz);
-        // let i1 = idx_xfast(u2, v2, w2, mx, my, mz);
+        let i1 = idx_xfast(u2, v2, w2, nx, ny, nz);
 
         if i1 != i0 && data_k[i1] == Complex::new(0.0, 0.0) {
             data_k[i1] = c.conj();
         }
     }
 
-    // todo exeperimenting ------
-
-    // let mut data_k = xfast_to_zfast(&data_k, mx, my, mz);
-    // let mut rho_xfast = fft3d_c2r(&mut data_k_xfast, (mx, my, mz), planner);
-    // let rho_crystal = xfast_to_zfast(&rho_xfast, mx, my, mz);
-
-    // todo --------
-
-    // --- inverse FFT on Z-fast layout; dims are crystal (mx,my,mz) ---
-    let mut rho_crystal = fft3d_c2r(&mut data_k, (mx, my, mz), planner);
-
-    // let mut rho_crystal = zfast_to_xfast(&rho_crystal, mx, my, mz);
+    // --- inverse FFT on X-fast layout; dims are crystal (mx,my,mz) ---
+    let mut rho_crystal = fft3d_c2r_xfast(&mut data_k, (nx, ny, nz), planner);
 
     // If your FFT is unscaled, divide by N
-    let nvox = (mx * my * mz) as f32;
+    let nvox = (nx * ny * nz) as f32;
     for v in &mut rho_crystal {
         *v /= nvox;
     }
 
     // --- remap to FILE order buffer if you want DensityMap.data in file order ---
     // let mut rho_file = vec![0f32; mx * my * mz];
-    let mut rho_file = vec![0f32; mz * my * mx];
+    let mut density_data = vec![0f32; nz * ny * nx];
 
     // file indices → crystal indices → pull from rho_crystal (Z-fast) → store in file buffer
     // todo: Experiment with order here too
 
-    for i_f in 0..mx {
-        for j_f in 0..my {
-            for k_f in 0..mz {
+    for i_f in 0..nx {
+        for j_f in 0..ny {
+            for k_f in 0..nz {
                 let mut ic = [0usize; 3];
                 ic[perm_f2c[0]] = i_f; // crystal X index
                 ic[perm_f2c[1]] = j_f; // crystal Y index
                 ic[perm_f2c[2]] = k_f; // crystal Z index
 
-                let src_idx = idx_zfast(ic[0], ic[1], ic[2], mx, my, mz);
-                let dst_idx = idx_file(i_f, j_f, k_f, mx, my);
+                let src_idx = idx_xfast(ic[0], ic[1], ic[2], nx, ny, nz);
+                let dst_idx = idx_file(i_f, j_f, k_f, nx, ny);
 
-                rho_file[dst_idx] = rho_crystal[src_idx];
+                density_data[dst_idx] = rho_crystal[src_idx];
             }
         }
     }
@@ -657,7 +645,7 @@ pub fn density_map_from_mmcif(
     let mut min_v = f32::INFINITY;
     let mut max_v = f32::NEG_INFINITY;
 
-    for &x in &rho_file {
+    for &x in &density_data {
         let xd = x as f64;
         sum += xd;
         sum2 += xd * xd;
@@ -671,11 +659,11 @@ pub fn density_map_from_mmcif(
     let mean = (sum / (nvox as f64)) as f32;
 
     let hdr = MapHeader {
-        inner: src.header.clone(),
-        nx: mx as i32,
-        ny: my as i32,
-        nz: mz as i32,
-        mode: 2,
+        inner: sf.header.clone(),
+        nx: nx as i32,
+        ny: ny as i32,
+        nz: nz as i32,
+        mode: 2, // f32
 
         dmin: min_v,
         dmax: max_v,
@@ -685,7 +673,9 @@ pub fn density_map_from_mmcif(
     let elapsed = start.elapsed().as_millis();
     println!("Complete in {elapsed} ms");
 
-    DensityMap::new(hdr, rho_file)
+    // let density_data = xfast_to_zfast(&density_data, nx, ny, nz);
+
+    DensityMap::new(hdr, density_data)
 }
 
 fn xfast_to_zfast<T: Copy>(src: &[T], nx: usize, ny: usize, nz: usize) -> Vec<T> {
