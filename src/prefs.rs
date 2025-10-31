@@ -65,6 +65,9 @@ pub struct OpenHistory {
     pub timestamp: DateTime<Utc>,
     pub path: PathBuf,
     pub type_: OpenType,
+    /// Only applicable for molecules and similar. A single central position.
+    /// todo: We may wish to add per-atom positions later.
+    pub position: Option<Vec3>,
     /// For determining which to open at program start.
     pub last_session: bool,
 }
@@ -78,6 +81,7 @@ impl Encode for OpenHistory {
 
         self.path.encode(encoder)?;
         self.type_.encode(encoder)?;
+        self.position.encode(encoder)?;
         self.last_session.encode(encoder)?;
 
         Ok(())
@@ -89,6 +93,7 @@ impl<T> Decode<T> for OpenHistory {
         let ts = i64::decode(decoder)?;
         let path = PathBuf::decode(decoder)?;
         let type_ = OpenType::decode(decoder)?;
+        let position = Option::<Vec3>::decode(decoder)?;
         let last_session = bool::decode(decoder)?;
 
         Ok(OpenHistory {
@@ -98,6 +103,7 @@ impl<T> Decode<T> for OpenHistory {
                 .ok_or_else(|| DecodeError::OtherString("invalid timestamp".to_string()))?,
             path,
             type_,
+            position,
             last_session,
         })
     }
@@ -113,11 +119,13 @@ impl<'de, C> BorrowDecode<'de, C> for OpenHistory {
 }
 
 impl OpenHistory {
+    // pub fn new(path: &Path, type_: OpenType, position: Option<Vec3>) -> Self {
     pub fn new(path: &Path, type_: OpenType) -> Self {
         Self {
             timestamp: Utc::now(),
             path: path.to_owned(),
             type_,
+            position: None,
             last_session: true,
         }
     }
@@ -220,18 +228,19 @@ impl PerMolToSave {
         let mut lig_posit = Vec3::new_zero();
         let mut lig_atom_positions = Vec::new();
 
-        if let Some(mol) = state.active_mol() {
-            // Don't save this if on init; the data in lig is the default,
-            // and we haven't loaded the posits to it yet.
-            // todo: If you find a more robust way to handle saving order-dependent data,
-            // todo: remove this.
-            if !on_init {
-                lig_atom_positions = mol.common().atom_posits.clone();
-                if !mol.common().atom_posits.is_empty() {
-                    println!("\nSaving atom posits: {:?}", mol.common().atom_posits[0]); // todo temp
-                }
-            }
-        }
+        // todo: Hmm. No longer needed? Never worked?
+        // if let Some(mol) = state.active_mol() {
+        //     // Don't save this if on init; the data in lig is the default,
+        //     // and we haven't loaded the posits to it yet.
+        //     // todo: If you find a more robust way to handle saving order-dependent data,
+        //     // todo: remove this.
+        //     if !on_init {
+        //         lig_atom_positions = mol.common().atom_posits.clone();
+        //         if !mol.common().atom_posits.is_empty() {
+        //             println!("\nSaving atom posits: {:?}", mol.common().atom_posits[0]); // todo temp
+        //         }
+        //     }
+        // }
 
         Self {
             chain_vis,
@@ -265,6 +274,20 @@ impl State {
     /// todo: See the note in PerMolsave::from_state. Workaround for order-related bugs.
     pub fn update_save_prefs(&mut self, on_init: bool) {
         println!("Saving state to prefs file.");
+
+        // Sync molecule positions.
+        // todo: Consider the same for proteins.
+        for lig in &self.ligands {
+            for oh in &mut self.to_save.open_history {
+                if let Some(p) = &lig.common.path {
+                    println!("Path checks: {:?}\n\n", p);
+                    if &oh.path == p {
+                        println!("Path match. Saving: {:?}", lig.common.centroid()); // todo temp
+                        oh.position = Some(lig.common.centroid());
+                    }
+                }
+            }
+        }
 
         if let Some(mol) = &self.peptide {
             let data = PerMolToSave::from_state(self, on_init);

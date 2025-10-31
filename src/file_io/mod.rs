@@ -478,6 +478,10 @@ impl State {
                         self.open_mol_from_file(&history.path, None, &mut Default::default())
                     {
                         handle_err(&mut self.ui, e.to_string());
+                    } else {
+                        if let Some(p) = &history.position {
+                            self.peptide.as_mut().unwrap().common.move_to(p.clone());
+                        }
                     }
                 }
                 OpenType::Ligand | OpenType::NucleicAcid | OpenType::Lipid => {
@@ -485,6 +489,12 @@ impl State {
                         self.open_mol_from_file(&history.path, None, &mut Default::default())
                     {
                         handle_err(&mut self.ui, e.to_string());
+                    } else {
+                        if let Some(p) = &history.position {
+                            println!("\n\n Hist pos: {:?}", p); // todo temp
+                            let i = self.ligands.len() - 1;
+                            self.ligands[i].common.move_to(p.clone());
+                        }
                     }
                 }
                 OpenType::Map => {
