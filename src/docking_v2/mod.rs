@@ -82,12 +82,11 @@ pub fn dock(state: &mut State, mol_i: usize) -> Result<(), ParamError> {
     mol.common.selected_for_md = true; // Required to not get filtered out in `build_dynamics`.
 
     let start_dist = 8.;
-    let speed = 1_000.; // Å/ps
+    let speed = 100.; // Å/ps
 
     let docking_site = mol.common.centroid(); // for now
 
-    // let dir = (mol.common.centroid() - state.volatile.docking_site_center).to_normalized();
-    let dir = (docking_site - peptide.common.centroid()).to_normalized();
+    let dir = (peptide.common.centroid() - docking_site).to_normalized();
 
     let vel = dir * speed;
 
@@ -98,6 +97,8 @@ pub fn dock(state: &mut State, mol_i: usize) -> Result<(), ParamError> {
 
     let cfg = MdConfig {
         zero_com_drift: false, // May already be false.
+        // Currently we must skip this for Velocity to not be 0ed. This is fixable.
+        max_init_relaxation_iters: None,
         ..state.to_save.md_config.clone()
     };
 
