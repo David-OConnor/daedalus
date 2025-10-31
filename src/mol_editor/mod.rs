@@ -899,6 +899,7 @@ pub(super) fn build_dynamics(
         ff_mol_type: FfMolType::SmallOrganic,
         atoms: atoms_gen,
         atom_posits: Some(mol.common.atom_posits.clone()),
+        atom_init_velocities: None,
         bonds: bonds_gen,
         adjacency_list: Some(mol.common.adjacency_list.clone()),
         static_: false,

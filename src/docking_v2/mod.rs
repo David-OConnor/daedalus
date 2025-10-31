@@ -1,13 +1,22 @@
 //! A new approach, leveraging our molecular dynamics state and processes.
 
+use std::collections::{HashMap, HashSet};
 use bincode::{Decode, Encode};
-use dynamics::{MdConfig, ParamError};
+use bio_files::create_bonds;
+use bio_files::md_params::ForceFieldParams;
+use dynamics::{ComputationDevice, FfMolType, MdConfig, MdState, MolDynamics, ParamError};
+use dynamics::params::FfParamSet;
 use lin_alg::f64::Vec3;
+use lin_alg::f32::Vec3 as Vec3F32;
 
 use crate::{
     State,
     md::{build_dynamics, reassign_snapshot_indices, run_dynamics},
 };
+use crate::lipid::MoleculeLipid;
+use crate::md::filter_peptide_atoms;
+use crate::mol_lig::MoleculeSmall;
+use crate::molecule::MoleculePeptide;
 
 #[derive(Clone, Debug, Default)]
 /// Bonds that are marked as flexible, using a semi-rigid conformation.
@@ -87,18 +96,16 @@ pub fn dock(state: &mut State, mol_i: usize) -> Result<(), ParamError> {
 
     mol.common.move_to(starting_posit);
 
-    let ligs = vec![mol];
-
     let cfg = MdConfig {
         zero_com_drift: false, // May already be false.
         ..state.to_save.md_config.clone()
     };
 
-    let mut md_state = build_dynamics(
+    let mut md_state = build_dynamics_docking(
         &state.dev,
-        &ligs,
-        &Vec::new(),
+        &mol,
         Some(peptide),
+        starting_vel.into(),
         &state.ff_param_set,
         &state.lig_specific_params,
         &cfg,
@@ -115,7 +122,7 @@ pub fn dock(state: &mut State, mol_i: usize) -> Result<(), ParamError> {
 
     reassign_snapshot_indices(
         peptide,
-        &ligs,
+        &[mol],
         &Vec::new(),
         &mut md_state.snapshots,
         &state.volatile.md_peptide_selected,
@@ -124,4 +131,75 @@ pub fn dock(state: &mut State, mol_i: usize) -> Result<(), ParamError> {
     state.mol_dynamics = Some(md_state);
 
     Ok(())
+}
+
+
+// todo: DRy with the primary MD setup fn.
+fn build_dynamics_docking(
+    dev: &ComputationDevice,
+    mol: &MoleculeSmall,
+    peptide: Option<&MoleculePeptide>,
+    starting_vel: Vec3F32,
+    param_set: &FfParamSet,
+    mol_specific_params: &HashMap<String, ForceFieldParams>,
+    cfg: &MdConfig,
+    mut static_peptide: bool,
+    mut peptide_only_near_lig: bool,
+    pep_atom_set: &mut HashSet<(usize, usize)>,
+) -> Result<MdState, ParamError> {
+    println!("Setting up docking dynamics...");
+
+    let mut mols = Vec::new();
+
+    let atoms_gen: Vec<_> = mol.common.atoms.iter().map(|a| a.to_generic()).collect();
+    let bonds_gen: Vec<_> = mol.common.bonds.iter().map(|b| b.to_generic()).collect();
+
+    let Some(msp) = mol_specific_params.get(&mol.common.ident) else {
+        return Err(ParamError::new(&format!(
+            "Missing molecule-specific parameters for  {}",
+            mol.common.ident
+        )));
+    };
+
+    let atom_initial_velocities = vec![starting_vel; mol.common.atoms.len()];
+
+    mols.push(MolDynamics {
+        ff_mol_type: FfMolType::SmallOrganic,
+        atoms: atoms_gen,
+        atom_posits: Some(mol.common.atom_posits.clone()),
+        atom_init_velocities: Some(atom_initial_velocities),
+        bonds: bonds_gen,
+        adjacency_list: Some(mol.common.adjacency_list.clone()),
+        static_: false,
+        bonded_only: false,
+        mol_specific_params: Some(msp.clone()),
+    });
+
+
+    if let Some(p) = peptide {
+        // We assume hetero atoms are ligands, water etc, and are not part of the protein.
+        let atoms = filter_peptide_atoms(pep_atom_set, p, &[mol], peptide_only_near_lig);
+        println!("Peptide atom count: {}", atoms.len());
+
+        let bonds = create_bonds(&atoms);
+
+        mols.push(MolDynamics {
+            ff_mol_type: FfMolType::Peptide,
+            atoms,
+            atom_posits: None,
+            atom_init_velocities: None,
+            bonds,
+            adjacency_list: None,
+            static_: static_peptide,
+            bonded_only: false,
+            mol_specific_params: None,
+        });
+    }
+
+    //
+    println!("Initializing docking MD state...");
+    let md_state = MdState::new(dev, &cfg, &mols, param_set)?;
+    println!("Done.");
+
+    Ok(md_state)
 }

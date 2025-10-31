@@ -9,7 +9,7 @@ use std::{io, sync::Arc, time::Instant};
 use bio_files::{DensityMap, MapHeader, UnitCell, cif_sf::CifStructureFactors};
 #[cfg(feature = "cuda")]
 use cudarc::driver::{CudaFunction, CudaStream, LaunchConfig, PushKernelArg};
-use ewald::{fft3d_c2r, fft3d_c2r_xfast};
+use ewald::{fft3d_c2r};
 use graphics::{EngineUpdates, EntityUpdate, Mesh, Scene, Vertex};
 #[cfg(feature = "cuda")]
 use lin_alg::f32::{vec3s_from_dev, vec3s_to_dev};

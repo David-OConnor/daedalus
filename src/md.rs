@@ -93,8 +93,8 @@ fn post_run_cleanup(state: &mut State, scene: &mut Scene, engine_updates: &mut E
 }
 pub fn build_and_run_dynamics(
     dev: &ComputationDevice,
-    ligs: Vec<&mut MoleculeSmall>,
-    lipids: Vec<&mut MoleculeLipid>,
+    ligs: Vec<&MoleculeSmall>,
+    lipids: Vec<&MoleculeLipid>,
     peptide: Option<&MoleculePeptide>,
     param_set: &FfParamSet,
     mol_specific_params: &HashMap<String, ForceFieldParams>,
@@ -123,10 +123,10 @@ pub fn build_and_run_dynamics(
     Ok(md_state)
 }
 
-fn filter_peptide_atoms(
+pub fn filter_peptide_atoms(
     set: &mut HashSet<(usize, usize)>,
     pep: &MoleculePeptide,
-    ligs: &[&mut MoleculeSmall],
+    ligs: &[&MoleculeSmall],
     only_near_lig: bool,
 ) -> Vec<AtomGeneric> {
     *set = HashSet::new();
@@ -164,8 +164,8 @@ fn filter_peptide_atoms(
 /// Set up MD for selected molecules.
 pub fn build_dynamics(
     dev: &ComputationDevice,
-    ligs: &[&mut MoleculeSmall],
-    lipids: &[&mut MoleculeLipid],
+    ligs: &[&MoleculeSmall],
+    lipids: &[&MoleculeLipid],
     peptide: Option<&MoleculePeptide>,
     param_set: &FfParamSet,
     mol_specific_params: &HashMap<String, ForceFieldParams>,
@@ -201,6 +201,7 @@ pub fn build_dynamics(
             ff_mol_type: FfMolType::SmallOrganic,
             atoms: atoms_gen,
             atom_posits: Some(mol.common.atom_posits.clone()),
+            atom_init_velocities: None,
             bonds: bonds_gen,
             adjacency_list: Some(mol.common.adjacency_list.clone()),
             static_: false,
@@ -221,6 +222,7 @@ pub fn build_dynamics(
             ff_mol_type: FfMolType::Lipid,
             atoms: atoms_gen,
             atom_posits: Some(mol.common.atom_posits.clone()),
+            atom_init_velocities: None,
             bonds: bonds_gen,
             adjacency_list: Some(mol.common.adjacency_list.clone()),
             static_: false,
@@ -240,6 +242,7 @@ pub fn build_dynamics(
             ff_mol_type: FfMolType::Peptide,
             atoms,
             atom_posits: None,
+            atom_init_velocities: None,
             bonds,
             adjacency_list: None,
             static_: static_peptide,

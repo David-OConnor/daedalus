@@ -86,8 +86,8 @@ pub fn md_setup(
 
                     // Filter molecules for docking by if they're selected.
                     // mut so we can move their posits in the initial snapshot change.
-                    let ligs: Vec<_> = state.ligands.iter_mut().filter(|l| l.common.selected_for_md).collect();
-                    let lipids: Vec<_> = state.lipids.iter_mut().filter(|l| l.common.selected_for_md).collect();
+                    let ligs: Vec<_> = state.ligands.iter().filter(|l| l.common.selected_for_md).collect();
+                    let lipids: Vec<_> = state.lipids.iter().filter(|l| l.common.selected_for_md).collect();
 
                     let mol = match &state.peptide {
                         Some(m) => if m.common.selected_for_md { Some(m) } else { None },
