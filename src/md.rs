@@ -152,6 +152,8 @@ pub fn filter_peptide_atoms(
             };
 
             if pass {
+                // The initial 0 is for the peptide mol number; we may support multiple
+                // peptides in the future.
                 set.insert((0, i));
                 Some(a.to_generic())
             } else {
@@ -234,7 +236,11 @@ pub fn build_dynamics(
     if let Some(p) = peptide {
         // We assume hetero atoms are ligands, water etc, and are not part of the protein.
         let atoms = filter_peptide_atoms(pep_atom_set, p, ligs, peptide_only_near_lig);
-        println!("Peptide atom count: {}", atoms.len());
+        println!(
+            "Peptide atom count: {}. Set count: {}",
+            atoms.len(),
+            pep_atom_set.len()
+        );
 
         let bonds = create_bonds(&atoms);
 
@@ -322,11 +328,11 @@ pub fn reassign_snapshot_indices(
     ligs: &[&mut MoleculeSmall],
     lipids: &[&mut MoleculeLipid],
     snapshots: &mut [Snapshot],
-    included_set: &HashSet<(usize, usize)>,
+    pep_atom_set: &HashSet<(usize, usize)>,
 ) {
     println!("Re-assigning snapshot indices to match atoms excluded for MD...");
 
-    let n_included = included_set.len();
+    let pep_count = pep_atom_set.len();
 
     // Count how many ligand atoms precede the peptide in the snapshot ordering.
     let lig_atom_count: usize = ligs
@@ -345,12 +351,21 @@ pub fn reassign_snapshot_indices(
 
     // Rebuild each snapshot's atom_posits: [ligands as-is] + [full peptide with holes filled]
     for snap in snapshots {
+        if pep_start_i + pep_count > snap.atom_posits.len() {
+            eprintln!(
+                "Error: Invalid index when reassigning snapshot posits. \
+            Snap atom count: {}, lig count {lig_atom_count} Pep start: {pep_start_i}, Pep count: {pep_count}",
+                snap.atom_posits.len()
+            );
+            continue;
+        }
+
         // Iterator over the peptide positions that actually participated in MD
-        let mut pept_md_posits = snap.atom_posits[pep_start_i..pep_start_i + n_included]
+        let mut pept_md_posits = snap.atom_posits[pep_start_i..pep_start_i + pep_count]
             .iter()
             .cloned();
 
-        let mut pept_md_vels = snap.atom_velocities[pep_start_i..pep_start_i + n_included]
+        let mut pept_md_vels = snap.atom_velocities[pep_start_i..pep_start_i + pep_count]
             .iter()
             .cloned();
 
@@ -363,7 +378,7 @@ pub fn reassign_snapshot_indices(
 
         // Reinsert peptide atoms in their original order
         for (i, atom) in pep.common.atoms.iter().enumerate() {
-            let is_included = included_set.contains(&(0, i));
+            let is_included = pep_atom_set.contains(&(0, i));
 
             if is_included {
                 new_posits.push(

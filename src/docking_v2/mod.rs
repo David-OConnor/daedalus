@@ -1,22 +1,21 @@
 //! A new approach, leveraging our molecular dynamics state and processes.
 
 use std::collections::{HashMap, HashSet};
+
 use bincode::{Decode, Encode};
-use bio_files::create_bonds;
-use bio_files::md_params::ForceFieldParams;
-use dynamics::{ComputationDevice, FfMolType, MdConfig, MdState, MolDynamics, ParamError};
-use dynamics::params::FfParamSet;
-use lin_alg::f64::Vec3;
-use lin_alg::f32::Vec3 as Vec3F32;
+use bio_files::{create_bonds, md_params::ForceFieldParams};
+use dynamics::{
+    ComputationDevice, FfMolType, MdConfig, MdState, MolDynamics, ParamError, params::FfParamSet,
+};
+use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 
 use crate::{
     State,
-    md::{build_dynamics, reassign_snapshot_indices, run_dynamics},
+    lipid::MoleculeLipid,
+    md::{build_dynamics, filter_peptide_atoms, reassign_snapshot_indices, run_dynamics},
+    mol_lig::MoleculeSmall,
+    molecule::MoleculePeptide,
 };
-use crate::lipid::MoleculeLipid;
-use crate::md::filter_peptide_atoms;
-use crate::mol_lig::MoleculeSmall;
-use crate::molecule::MoleculePeptide;
 
 #[derive(Clone, Debug, Default)]
 /// Bonds that are marked as flexible, using a semi-rigid conformation.
@@ -75,23 +74,22 @@ pub struct DockingPose {
 pub struct DockingState {}
 
 pub fn dock(state: &mut State, mol_i: usize) -> Result<(), ParamError> {
-    let peptide = state.peptide.as_ref().unwrap(); // ?
+    let peptide = state.peptide.as_mut().unwrap(); // ?
     let mol = &mut state.ligands[mol_i];
     // Move the ligand away from the docking site prior to vectoring it towards it.
 
+    peptide.common.selected_for_md = true; // Required to properly re-assign snapshot indices.
     mol.common.selected_for_md = true; // Required to not get filtered out in `build_dynamics`.
 
-    let start_dist = 8.;
-    let speed = 100.; // Å/ps
+    let start_dist = 10.;
+    let speed = 60.; // Å/ps
 
     let docking_site = mol.common.centroid(); // for now
 
-    let dir = (peptide.common.centroid() - docking_site).to_normalized();
-
-    let vel = dir * speed;
+    let dir = (docking_site - peptide.common.centroid()).to_normalized();
 
     let starting_posit = docking_site + dir * start_dist;
-    let starting_vel = dir * speed;
+    let starting_vel = -dir * speed;
 
     mol.common.move_to(starting_posit);
 
@@ -101,6 +99,8 @@ pub fn dock(state: &mut State, mol_i: usize) -> Result<(), ParamError> {
         max_init_relaxation_iters: None,
         ..state.to_save.md_config.clone()
     };
+
+    // todo: Examine and revamp which peptide atoms are included in the sim.
 
     let mut md_state = build_dynamics_docking(
         &state.dev,
@@ -115,10 +115,14 @@ pub fn dock(state: &mut State, mol_i: usize) -> Result<(), ParamError> {
         &mut state.volatile.md_peptide_selected,
     )?;
 
+    // todo: We may opt for a higher-than-normal DT here.
     let dt = 0.002;
-    let n_steps = 100;
+    let n_steps = 1_000;
 
-    println!("Running dynamics..."); // todo temp
+    // todo: We may need to interrupt periodically e.g. to relax once close.
+
+    // todo: You need a binding energy computation each step.
+
     run_dynamics(&mut md_state, &state.dev, dt, n_steps);
 
     reassign_snapshot_indices(
@@ -134,7 +138,6 @@ pub fn dock(state: &mut State, mol_i: usize) -> Result<(), ParamError> {
     Ok(())
 }
 
-
 // todo: DRy with the primary MD setup fn.
 fn build_dynamics_docking(
     dev: &ComputationDevice,
@@ -145,7 +148,7 @@ fn build_dynamics_docking(
     mol_specific_params: &HashMap<String, ForceFieldParams>,
     cfg: &MdConfig,
     mut static_peptide: bool,
-    mut peptide_only_near_lig: bool,
+    peptide_only_near_lig: bool,
     pep_atom_set: &mut HashSet<(usize, usize)>,
 ) -> Result<MdState, ParamError> {
     println!("Setting up docking dynamics...");
@@ -176,8 +179,9 @@ fn build_dynamics_docking(
         mol_specific_params: Some(msp.clone()),
     });
 
-
     if let Some(p) = peptide {
+        // todo: Make sure you're filtering nearby based on the docking config; not hte initial one
+        // tood if moving towards it
         // We assume hetero atoms are ligands, water etc, and are not part of the protein.
         let atoms = filter_peptide_atoms(pep_atom_set, p, &[mol], peptide_only_near_lig);
         println!("Peptide atom count: {}", atoms.len());
