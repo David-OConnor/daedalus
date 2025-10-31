@@ -1,13 +1,16 @@
 //! For determining which items the user has selected using the mouse cursor. Involves
 //! mapping 2D to 3D coordinates, and choosing the right item from what's open and visible.
 
-use lin_alg::f32::Vec3 as Vec3F32;
-use na_seq::Element;
 use graphics::{ControlScheme, Scene};
-use lin_alg::map_linear;
-use crate::{drawing::MoleculeView, molecule::{Atom, AtomRole, Bond, Chain, MolType, Residue}, Selection, State, StateUi, ViewSelLevel};
-use crate::molecule::MoleculeCommon;
-use crate::util::orbit_center;
+use lin_alg::{f32::Vec3 as Vec3F32, map_linear};
+use na_seq::Element;
+
+use crate::{
+    Selection, State, StateUi, ViewSelLevel,
+    drawing::MoleculeView,
+    molecule::{Atom, AtomRole, Bond, Chain, MolType, MoleculeCommon, Residue},
+    util::orbit_center,
+};
 
 const SELECTION_DIST_THRESH_SMALL: f32 = 0.7; // e.g. ball + stick, or stick.
 // Setting this high rel to `THRESH_SMALL` will cause more accidental selections of nearby atoms that
@@ -612,10 +615,10 @@ pub(crate) fn handle_selection_attempt(
         Selection::AtomLig((mol_i, _)) | Selection::BondLig((mol_i, _)) => {
             state.volatile.active_mol = Some((MolType::Ligand, mol_i));
         }
-        Selection::AtomNucleicAcid((mol_i, _))| Selection::BondNucleicAcid((mol_i, _)) => {
+        Selection::AtomNucleicAcid((mol_i, _)) | Selection::BondNucleicAcid((mol_i, _)) => {
             state.volatile.active_mol = Some((MolType::NucleicAcid, mol_i));
         }
-        Selection::AtomLipid((mol_i, _))| Selection::BondLipid((mol_i, _)) => {
+        Selection::AtomLipid((mol_i, _)) | Selection::BondLipid((mol_i, _)) => {
             state.volatile.active_mol = Some((MolType::Lipid, mol_i));
         }
         _ => (),
@@ -639,7 +642,11 @@ pub(crate) fn handle_selection_attempt(
 }
 
 /// A stripped-down version, for the mol editor. See notes there where applicable.
-pub fn handle_selection_attempt_mol_editor(state: &mut State, scene: &mut Scene, redraw: &mut bool) {
+pub fn handle_selection_attempt_mol_editor(
+    state: &mut State,
+    scene: &mut Scene,
+    redraw: &mut bool,
+) {
     let Some(mut cursor) = state.ui.cursor_pos else {
         return;
     };

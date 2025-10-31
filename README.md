@@ -215,9 +215,9 @@ Note: The molecule editor has a different set of hot keys; see its tooltips for 
 ## Reflections and electron density
 Supports volumetric and isosurface views for electron density data, e.g. from Cryo-EM and X-Ray crystallography data. 
 It can download this data from RCSB PDB, or load files directly. To open *2fo-fc* and *MTZ* files, we use the
- [Gemmi](https://gemmi.readthedocs.io/en/latest/install.html) program. For convenience, we package it with the program's releases. For this to work, the `gemmi` folder
-we include must remain co-located with the program's executable. If not there, the program will attempt to run Gemmi
-from the system path. (E.g., installed as part of [CCP4](https://www.ccp4.ac.uk/)).
+ [Gemmi](https://gemmi.readthedocs.io/en/latest/install.html) program. For this to work, the `gemmi` folder
+we include must remain co-located with the program's executable, or be on the system path.  For convenience, we package 
+it with the Windows release, and the linux install script optionally installs it with `apt`.
 
 Can import Map files directly, and save load density to Map format.
 

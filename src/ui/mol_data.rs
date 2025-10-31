@@ -128,7 +128,7 @@ fn disp_bond_data(
             bond.bond_type.to_visual_str(),
             atom_1.element.to_letter()
         ))
-            .color(Color32::LIGHT_BLUE),
+        .color(Color32::LIGHT_BLUE),
     );
 
     // todo: Cache??

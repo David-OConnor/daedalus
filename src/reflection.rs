@@ -512,7 +512,6 @@ pub fn make_density_mesh(state: &mut State, scene: &mut Scene, engine_updates: &
 // todo: Code below represents a local implementation of creating a map from 2fo-fc
 //----------------------------------------------
 
-
 fn wrap_idx(i: i32, n: usize) -> usize {
     let n_i32 = n as i32;
     let m = i % n_i32;
@@ -551,8 +550,11 @@ fn idx_file(i_f: usize, j_f: usize, k_f: usize, nx: usize, ny: usize) -> usize {
     i_f + nx * (j_f + ny * k_f)
 }
 
+/// Load electron density from Structure Factors (reflections) data, using a FFT. This is currently broken; we use
+/// Gemmi instead.
+// todo: This currently isn't working.
 // todo: Use cuFFT if in GPU mode.
-pub fn density_map_from_mmcif(
+pub fn density_map_from_sf(
     sf: &CifStructureFactors,
     planner: &mut FftPlanner<f32>,
 ) -> io::Result<DensityMap> {
@@ -579,10 +581,16 @@ pub fn density_map_from_mmcif(
             Complex::new(re, im)
         } else {
             let Some(amp) = r.amp else {
-                return Err(io::Error::new(io::ErrorKind::InvalidData, "Miller index out of bounds"));
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "Miller index out of bounds",
+                ));
             };
             let Some(phase) = r.phase else {
-                return Err(io::Error::new(io::ErrorKind::InvalidData, "Miller index out of bounds"));
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "Miller index out of bounds",
+                ));
             };
             Complex::from_polar(amp, phase)
         };
@@ -608,7 +616,7 @@ pub fn density_map_from_mmcif(
     }
 
     // --- inverse FFT on X-fast layout; dims are crystal (mx,my,mz) ---
-    let mut rho_crystal = fft3d_c2r_xfast(&mut data_k, (nx, ny, nz), planner);
+    let mut rho_crystal = fft3d_c2r(&mut data_k, (nx, ny, nz), planner);
 
     // If your FFT is unscaled, divide by N
     let nvox = (nx * ny * nz) as f32;

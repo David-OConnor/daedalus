@@ -1,14 +1,23 @@
 //! Handles user inputs, e.g. from keyboard and mouse.
 
 use graphics::{
-    event::MouseScrollDelta, winit::keyboard::{KeyCode, PhysicalKey::Code}, ControlScheme, DeviceEvent, ElementState, EngineUpdates, EntityUpdate,
-    Scene,
+    ControlScheme, DeviceEvent, ElementState, EngineUpdates, EntityUpdate, FWD_VEC, Scene,
     WindowEvent,
-    FWD_VEC,
+    event::MouseScrollDelta,
+    winit::keyboard::{KeyCode, PhysicalKey::Code},
 };
 use lin_alg::f32::Vec3;
 
-use crate::{cam_misc::move_cam_to_sel, drawing, drawing_wrappers, mol_editor, mol_manip, molecule::MolType, render::set_flashlight, selection, ui::cam::{set_fog_dist, FOG_DIST_MIN}, util::{close_mol, cycle_selected}, ManipMode, OperatingMode, Selection, State};
+use crate::{
+    ManipMode, OperatingMode, Selection, State,
+    cam_misc::move_cam_to_sel,
+    drawing, drawing_wrappers, mol_editor, mol_manip,
+    molecule::MolType,
+    render::set_flashlight,
+    selection,
+    ui::cam::{FOG_DIST_MIN, set_fog_dist},
+    util::{close_mol, cycle_selected},
+};
 
 // These are defaults; overridden by the user A/R, and saved to prefs.
 pub const MOVEMENT_SENS: f32 = 12.;
@@ -607,4 +616,3 @@ fn redraw_inplace_helper(
         }
     };
 }
-

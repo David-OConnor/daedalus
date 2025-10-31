@@ -25,7 +25,7 @@ use crate::{
     },
     prefs::{OpenHistory, OpenType},
     reflection::{
-        DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityPt, DensityRect, density_map_from_mmcif,
+        DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityPt, DensityRect, density_map_from_sf,
     },
     util::{handle_err, handle_success},
 };
