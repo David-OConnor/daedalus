@@ -48,6 +48,7 @@ mod smiles;
 #[cfg(test)]
 mod tests;
 mod viridis_lut;
+mod drug_design;
 
 #[cfg(feature = "cuda")]
 use std::sync::Arc;
@@ -490,6 +491,7 @@ pub struct UiVisibility {
     metadata: bool,
     aa_seq: bool,
     smiles: bool,
+    selfies: bool,
     lipids: bool,
     dynamics: bool,
 }
@@ -500,6 +502,7 @@ impl Default for UiVisibility {
             metadata: false,
             aa_seq: false,
             smiles: false,
+            selfies: false,
             lipids: false,
             dynamics: true,
         }

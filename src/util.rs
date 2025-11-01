@@ -544,6 +544,11 @@ pub fn close_peptide(state: &mut State, scene: &mut Scene, engine_updates: &mut 
     {
         reset_orbit_center(state, scene);
     }
+
+    // Prevents out of bounds.
+    if matches!(state.ui.selection, Selection::AtomPeptide(_) | Selection::AtomsPeptide(_) | Selection::BondPeptide(_)) {
+        state.ui.selection = Selection::None;
+    }
 }
 
 /// Close the active molecule.
@@ -633,6 +638,12 @@ pub fn close_mol(
     {
         reset_orbit_center(state, scene);
     }
+
+    // Prevents out of bounds.
+    // todo: This is overkill, but a safe option for now.
+    // if matches!(self.ui.selection, Selection::AtomPeptide(_) | Selection::AtomsPeptide(_) | Selection::BondPeptide(_)) {
+    state.ui.selection = Selection::None;
+    // }
 }
 
 pub fn reset_orbit_center(state: &mut State, scene: &mut Scene) {

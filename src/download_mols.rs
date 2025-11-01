@@ -20,7 +20,7 @@ use crate::{
 pub fn load_cif_rcsb(ident: &str) -> Result<(MmCif, String), ReqError> {
     let cif_text = rcsb::load_cif(ident)?;
 
-    let mmcif = MmCif::new(&cif_text).map_err(|e| {
+    let mmcif = MmCif::load_rcsb(&cif_text).map_err(|e| {
         eprintln!("Error parsing mmCIF file: {e}");
         e
     });
@@ -30,19 +30,15 @@ pub fn load_cif_rcsb(ident: &str) -> Result<(MmCif, String), ReqError> {
 
 /// Download an SDF file from DrugBank, and parse as a molecule.
 pub fn load_sdf_drugbank(ident: &str) -> Result<MoleculeSmall, ReqError> {
-    let sdf_data = drugbank::load_sdf(ident)?;
-
-    match Sdf::new(&sdf_data) {
+    match Sdf::load_drugbank(ident) {
         Ok(m) => Ok(m.try_into().map_err(|e| ReqError::from(e))?),
         Err(_) => Err(ReqError::Http),
     }
 }
 
-/// Download an SDF file from DrugBank, and parse as a molecule.
-pub fn load_sdf_pubchem(ident: &str) -> Result<MoleculeSmall, ReqError> {
-    let sdf_data = pubchem::load_sdf(ident)?;
-
-    match Sdf::new(&sdf_data) {
+/// Download an SDF file from PubChem, and parse as a molecule.
+pub fn load_sdf_pubchem(cid: u32) -> Result<MoleculeSmall, ReqError> {
+    match Sdf::load_pubchem(cid) {
         Ok(m) => Ok(m.try_into().map_err(|e| ReqError::from(e))?),
         Err(_) => Err(ReqError::Http),
     }

@@ -1204,16 +1204,18 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                     }
                 }
 
-                if ui.button("Load from PubChem").clicked() {
-                    match load_sdf_pubchem(&state.ui.db_input) {
-                        Ok(mol) => {
-                            open_lig_from_input(state, mol, scene, &mut engine_updates);
-                            redraw_lig = true;
-                            reset_cam = true;
-                        }
-                        Err(e) => {
-                            let msg = format!("Error loading SDF file: {e:?}");
-                            handle_err(&mut state.ui, msg);
+                if let Ok(cid) = state.ui.db_input.parse::<u32>() {
+                    if ui.button("Load from PubChem").clicked() {
+                        match load_sdf_pubchem(cid) {
+                            Ok(mol) => {
+                                open_lig_from_input(state, mol, scene, &mut engine_updates);
+                                redraw_lig = true;
+                                reset_cam = true;
+                            }
+                            Err(e) => {
+                                let msg = format!("Error loading SDF file: {e:?}");
+                                handle_err(&mut state.ui, msg);
+                            }
                         }
                     }
                 }

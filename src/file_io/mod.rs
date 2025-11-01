@@ -13,22 +13,11 @@ use na_seq::{AaIdent, Element};
 use rand::Rng;
 use rustfft::FftPlanner;
 
-use crate::{
-    State,
-    cam_misc::move_mol_to_cam,
-    download_mols,
-    drawing::draw_peptide,
-    drawing_wrappers,
-    mol_lig::MoleculeSmall,
-    molecule::{
-        MolGenericTrait, MolIdent, MolType, MoleculeCommon, MoleculeGeneric, MoleculePeptide,
-    },
-    prefs::{OpenHistory, OpenType},
-    reflection::{
-        DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityPt, DensityRect, density_map_from_sf,
-    },
-    util::{handle_err, handle_success},
-};
+use crate::{State, cam_misc::move_mol_to_cam, download_mols, drawing::draw_peptide, drawing_wrappers, mol_lig::MoleculeSmall, molecule::{
+    MolGenericTrait, MolIdent, MolType, MoleculeCommon, MoleculeGeneric, MoleculePeptide,
+}, prefs::{OpenHistory, OpenType}, reflection::{
+    DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityPt, DensityRect, density_map_from_sf,
+}, util::{handle_err, handle_success}, Selection};
 
 // When opening molecules deconflict; don't allow a mol to be closer than this to another.
 const MOL_MIN_DIST_OPEN: f64 = 12.;
@@ -712,6 +701,13 @@ impl State {
                 if matches!(history.type_, OpenType::Peptide | OpenType::Map) {
                     history.last_session = false;
                 }
+            }
+
+            // todo: As long as we can only have one peptide, should we just call `close_peptide` from here?
+
+            // Prevents out of bounds.
+            if matches!(self.ui.selection, Selection::AtomPeptide(_) | Selection::AtomsPeptide(_) | Selection::BondPeptide(_)) {
+                self.ui.selection = Selection::None;
             }
 
             if let Some(mol) = &mut self.peptide {
