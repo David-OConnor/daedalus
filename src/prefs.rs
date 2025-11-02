@@ -280,7 +280,7 @@ impl State {
         for lig in &self.ligands {
             for oh in &mut self.to_save.open_history {
                 if let Some(p) = &lig.common.path {
-                    println!("Path checks: {:?}\n\n", p);
+                    // println!("Path checks: {:?}\n\n", p);
                     if &oh.path == p {
                         println!("Path match. Saving: {:?}", lig.common.centroid()); // todo temp
                         oh.position = Some(lig.common.centroid());

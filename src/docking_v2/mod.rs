@@ -110,8 +110,6 @@ pub fn dock(state: &mut State, mol_i: usize) -> Result<(), ParamError> {
         &state.ff_param_set,
         &state.lig_specific_params,
         &cfg,
-        true,
-        true,
         &mut state.volatile.md_peptide_selected,
     )?;
 
@@ -147,8 +145,6 @@ fn build_dynamics_docking(
     param_set: &FfParamSet,
     mol_specific_params: &HashMap<String, ForceFieldParams>,
     cfg: &MdConfig,
-    mut static_peptide: bool,
-    peptide_only_near_lig: bool,
     pep_atom_set: &mut HashSet<(usize, usize)>,
 ) -> Result<MdState, ParamError> {
     println!("Setting up docking dynamics...");
@@ -179,32 +175,79 @@ fn build_dynamics_docking(
         mol_specific_params: Some(msp.clone()),
     });
 
-    if let Some(p) = peptide {
-        // todo: Make sure you're filtering nearby based on the docking config; not hte initial one
-        // tood if moving towards it
-        // We assume hetero atoms are ligands, water etc, and are not part of the protein.
-        let atoms = filter_peptide_atoms(pep_atom_set, p, &[mol], peptide_only_near_lig);
-        println!("Peptide atom count: {}", atoms.len());
+    // todo: Let's try: Use all protein atoms, but make all but the ones near the docking site
+    // todo both static, and bonded only. This should perhaps anchor the docking site ones in position,
+    // todo while allowing their outside area to move?
+    //
+    // todo: Perhaps mod Dynamics for this case specifically: Make sure all forces
+    // todo are skipped for atoms marked as both static and bonded only, except for the bonded
+    // todo forces between them and non-static atoms.
 
-        let bonds = create_bonds(&atoms);
+    // todo: Looks like with your current dynamics setup,
 
-        mols.push(MolDynamics {
-            ff_mol_type: FfMolType::Peptide,
-            atoms,
-            atom_posits: None,
-            atom_init_velocities: None,
-            bonds,
-            adjacency_list: None,
-            static_: static_peptide,
-            bonded_only: false,
-            mol_specific_params: None,
-        });
+    let Some(pep) = peptide else {
+        return Err(ParamError::new("No peptide; can't dock."));
+    };
+
+    // todo: Make sure you're filtering nearby based on the docking config; not hte initial one
+    // tood if moving towards it
+    // We assume hetero atoms are ligands, water etc, and are not part of the protein.
+
+    // let atoms = filter_peptide_atoms(pep_atom_set, p, &[mol], peptide_only_near_lig);
+    // println!("Peptide atom count: {}", atoms.len());
+    // let bonds = create_bonds(&atoms);
+
+    // todo: Let's try using all peptide atoms, but assigning certain
+    // todo AtomsDynamics to be static and bonded only.
+    let atoms = pep.common.atoms.iter().map(|a| a.to_generic()).collect();
+    let bonds = pep.common.bonds.iter().map(|a| a.to_generic()).collect();
+
+    // todo: Now: How to mark certain *atoms* vs molecules as bonded nly and static.
+
+    mols.push(MolDynamics {
+        ff_mol_type: FfMolType::Peptide,
+        atoms,
+        atom_posits: None,
+        atom_init_velocities: None,
+        bonds,
+        adjacency_list: None,
+        static_: false,
+        bonded_only: false,
+        mol_specific_params: None,
+    });
+
+    // All peptide atoms are included, for the purposes of un-flattening snapshot atoms.
+    for i in 0..pep.common.atoms.len() {
+        pep_atom_set.insert((0, i));
     }
 
     //
     println!("Initializing docking MD state...");
-    let md_state = MdState::new(dev, &cfg, &mols, param_set)?;
+    let mut md_state = MdState::new(dev, &cfg, &mols, param_set)?;
     println!("Done.");
+
+    // todo: This is a bit awkward location-wise, but ok for now. Consider adding this directly to Dynamics,
+    // todo if it makes sense
+
+    // todo: Make sure this doesn't make minimize_energy take too long.
+    // Mark atoms not near the ligand as static and bonded-forces only. These anchor
+    // the non-static ones. Bonded force computations are (unnecessarily) run on them, but this is cheap,
+    // and scales linearly with atom count.
+    let mut pep_set_near = HashSet::new();
+    let _ = filter_peptide_atoms(&mut pep_set_near, pep, &[mol], true);
+
+    for (i, atom) in md_state.atoms.iter_mut().enumerate() {
+        if i < mol.common.atoms.len() {
+            continue;
+        }
+
+        // todo: QC this. (And test it)
+        let i_pep = i - mol.common.atoms.len();
+        if pep_set_near.contains(&(0, i_pep)) {
+            atom.bonded_only = true;
+            atom.static_ = true;
+        }
+    }
 
     Ok(md_state)
 }

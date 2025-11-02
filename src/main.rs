@@ -36,6 +36,7 @@ mod reflection;
 
 mod cam_misc;
 mod drawing_wrappers;
+mod drug_design;
 mod lipid;
 mod md;
 mod mol_characterization;
@@ -48,7 +49,6 @@ mod smiles;
 #[cfg(test)]
 mod tests;
 mod viridis_lut;
-mod drug_design;
 
 #[cfg(feature = "cuda")]
 use std::sync::Arc;

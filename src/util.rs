@@ -546,7 +546,10 @@ pub fn close_peptide(state: &mut State, scene: &mut Scene, engine_updates: &mut 
     }
 
     // Prevents out of bounds.
-    if matches!(state.ui.selection, Selection::AtomPeptide(_) | Selection::AtomsPeptide(_) | Selection::BondPeptide(_)) {
+    if matches!(
+        state.ui.selection,
+        Selection::AtomPeptide(_) | Selection::AtomsPeptide(_) | Selection::BondPeptide(_)
+    ) {
         state.ui.selection = Selection::None;
     }
 }

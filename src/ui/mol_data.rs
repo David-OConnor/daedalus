@@ -22,7 +22,7 @@ use crate::{
         cam::move_cam_to_active_mol, mol_descrip,
     },
     util::{
-        handle_err, handle_success, make_egui_color, make_lig_from_res, move_mol_to_res,
+        close_mol, handle_err, handle_success, make_egui_color, make_lig_from_res, move_mol_to_res,
         orbit_center, reset_orbit_center,
     },
 };
@@ -341,10 +341,12 @@ fn mol_picker(
             COLOR_INACTIVE
         };
 
-        if ui
+        let sel_btn = ui
             .button(RichText::new(&mol.common.ident).color(color))
-            .clicked()
-        {
+            .on_hover_text(
+                "Make this molecule the active / selected one. Middle click to close it.",
+            );
+        if sel_btn.clicked() {
             if active && state.volatile.active_mol.is_some() {
                 state.volatile.active_mol = None;
             } else {
@@ -371,7 +373,13 @@ fn mol_picker(
                 // engine_updates.entities.push_class(EntityClass::Peptide as u32);
             }
         }
+
+        if sel_btn.middle_clicked() {
+            close_mol(MolType::Peptide, i_mol, state, scene, engine_updates);
+        }
     }
+
+    let mut close = None; // Avoids borrow error.
 
     for (i_mol, mol) in state.ligands.iter_mut().enumerate() {
         let active = match state.volatile.active_mol {
@@ -385,10 +393,12 @@ fn mol_picker(
             COLOR_INACTIVE
         };
 
-        if ui
+        let sel_btn = ui
             .button(RichText::new(&mol.common.ident).color(color))
-            .clicked()
-        {
+            .on_hover_text(
+                "Make this molecule the active / selected one. Middle click to close it.",
+            );
+        if sel_btn.clicked() {
             if active && state.volatile.active_mol.is_some() {
                 state.volatile.active_mol = None;
             } else {
@@ -399,6 +409,10 @@ fn mol_picker(
             }
 
             *redraw_lig = true; // To reflect the change in thickness, color etc.
+        }
+
+        if sel_btn.middle_clicked() {
+            close = Some(i_mol);
         }
 
         let color_vis = if mol.common.visible {
@@ -415,6 +429,10 @@ fn mol_picker(
             engine_updates.entities = EntityUpdate::All;
             // engine_updates.entities.push_class(EntityClass::Ligand as u32);
         }
+    }
+
+    if let Some(i_mol) = close {
+        close_mol(MolType::Ligand, i_mol, state, scene, engine_updates);
     }
 
     if recenter_orbit {
@@ -708,6 +726,12 @@ pub fn display_mol_data(
             return
         };
 
+        if ui.button(RichText::new("Close").color(Color32::LIGHT_RED))
+            .on_hover_text("(Hotkey: Delete) Close this molecule.")
+            .clicked() {
+            *close = true;
+        }
+
         ui.add_space(COL_SPACING);
 
         if let Some(mol) = state.active_mol() {
@@ -827,12 +851,6 @@ pub fn display_mol_data(
                     }
                 }
             }
-        }
-
-        if ui.button(RichText::new("Close").color(Color32::LIGHT_RED))
-            .on_hover_text("(Hotkey: Delete) Close this molecule.")
-            .clicked() {
-            *close = true;
         }
 
         if let Some(mol) = state.active_mol() {

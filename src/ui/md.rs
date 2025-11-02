@@ -277,7 +277,7 @@ pub fn md_setup(
 pub fn energy_disp(snap: &Snapshot, ui: &mut Ui) {
     ui.add_space(COL_SPACING / 2.);
     ui.label("E (kcal/mol) KE: ");
-    ui.label(RichText::new(format!("{:.1}", snap.energy_kinetic as f32)).color(Color32::GOLD));
+    ui.label(RichText::new(format!("{:.1}", snap.energy_kinetic)).color(Color32::GOLD));
 
     ui.label("E / atom: ");
     // todo: Don't continuously run this!
@@ -286,11 +286,20 @@ pub fn energy_disp(snap: &Snapshot, ui: &mut Ui) {
     ui.label(RichText::new(format!("{:.1}", e_per_atom)).color(Color32::GOLD));
 
     ui.label("PE: ");
-    ui.label(RichText::new(format!("{:.1}", snap.energy_potential as f32)).color(Color32::GOLD));
+    ui.label(RichText::new(format!("{:.1}", snap.energy_potential)).color(Color32::GOLD));
+
+    // todo: One pair only for now
+    if snap.energy_potential_between_mols.len() >= 2 {
+        // todo: Which index?
+        ui.label(
+            RichText::new(format!("{:.2}", snap.energy_potential_between_mols[1]))
+                .color(Color32::GOLD),
+        );
+    }
 
     ui.label("Temp: ");
-    ui.label(RichText::new(format!("{:.1} K", snap.temperature as f32)).color(Color32::GOLD));
+    ui.label(RichText::new(format!("{:.1} K", snap.temperature)).color(Color32::GOLD));
 
     ui.label("P: ");
-    ui.label(RichText::new(format!("{:.1} bar", snap.pressure as f32)).color(Color32::GOLD));
+    ui.label(RichText::new(format!("{:.1} bar", snap.pressure)).color(Color32::GOLD));
 }
