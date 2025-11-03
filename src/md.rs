@@ -123,6 +123,7 @@ pub fn build_and_run_dynamics(
     Ok(md_state)
 }
 
+/// Filter out hetero atoms, and if necessary, atoms not close to a ligand.
 pub fn filter_peptide_atoms(
     set: &mut HashSet<(usize, usize)>,
     pep: &MoleculePeptide,
@@ -273,16 +274,19 @@ pub fn build_dynamics(
     //     ..cfg.clone()
     // };
 
-    // let cfg = MdConfig {
-    //     overrides: MdOverrides {
-    //         coulomb_disabled: false,
-    //         long_range_recip_disabled: false,
-    //         lj_disabled: false,
-    //         ..Default::default()
-    //     },
-    //     max_init_relaxation_iters: None,
-    //     ..cfg.clone()
-    // };
+    // todo temp
+    let cfg = MdConfig {
+        overrides: MdOverrides {
+            // coulomb_disabled: false,
+            // long_range_recip_disabled: false,
+            // lj_disabled: false,
+            // skip_water: true,
+            ..Default::default()
+        },
+        // max_init_relaxation_iters: None,
+        ..cfg.clone()
+    };
+
 
     println!("Initializing MD state...");
     let md_state = MdState::new(dev, &cfg, &mols, param_set)?;

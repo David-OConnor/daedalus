@@ -146,11 +146,17 @@ fn disp_bond_data(
             if let Some(b) = p.get_bond(&(ff_0.to_string(), ff_1.to_string())) {
                 ui.label(RichText::new("Param len:"));
                 ui.label(RichText::new(format!("{:.3} Å", b.r_0)).color(Color32::LIGHT_BLUE));
+
+                // todo: Cache this; don't compute in the UI.
+                let m0 = atom_0.element.atomic_weight();
+                let m1 = atom_1.element.atomic_weight();
+                let mu_amu = (m0 * m1) / (m0 + m1);
+                // todo: QC this.
+                let freq = 3.2555 * (b.k_b / mu_amu).sqrt(); // 1/ps
+                ui.label(format!("Freq: {freq:.1}ps^-1"));
             }
         }
     }
-
-    // todo: Frequency (measured/actual)
 }
 
 /// Display text of the selected atom or residue.

@@ -134,8 +134,27 @@ struct CudaFunctions {
 pub enum ViewSelLevel {
     #[default]
     Atom,
-    Residue,
     Bond,
+    Residue,
+}
+
+impl ViewSelLevel {
+    pub fn next(self) -> Self {
+        match self {
+            Self::Atom => Self::Bond,
+            Self::Bond => Self::Residue,
+            Self::Residue => Self::Atom,
+        }
+    }
+
+    // todo: repetitive
+    pub fn prev(self) -> Self {
+        match self {
+            Self::Atom => Self::Residue,
+            Self::Bond => Self::Atom,
+            Self::Residue => Self::Bond,
+        }
+    }
 }
 
 impl Display for ViewSelLevel {

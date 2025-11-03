@@ -161,7 +161,9 @@ If *orbit sel* is set in the GUI, the orbit center will be the selected atom or 
 
 ### Hotkeys
 
-You can find hotkeys from the GUI's tooltips. See below for a reference.
+Most of this functionality is also available in the GUI, and you can find hotkeys from the GUI's tooltips. We recommend
+starting with the GUI, and integrating hotkeys into your workflow as you go, using tooltips.
+See below for a reference.
 
 #### Mouse controls:
 - Hold the **left mouse button while dragging** to rotate the camera in pitch and yaw.
@@ -184,8 +186,6 @@ You can find hotkeys from the GUI's tooltips. See below for a reference.
 - **Shift** (left): Hold to increase camera movement and rotation speed.
 - **Scroll whlie holding left mouse**: Roll (Alternative to Q/R)
 
-
-
 ### Non-camera hotkeys
 - **Left arrow**: select previous residue
 - **Right arrow**: select next residue
@@ -195,6 +195,9 @@ You can find hotkeys from the GUI's tooltips. See below for a reference.
 
 - **Left backet**: Previous view mode (sticks, surface mesh etc)
 - **Right bracket**: Next view mode
+- 
+- **;**: View/select level (Atoms, bonds, residues)
+- **'Right bracket'**: Next view/select level
 
 - **M**: Move a molecule with the mouse and scroll wheel
 - **R**: Rotate a molecule with the mouse and scroll wheel
@@ -259,6 +262,14 @@ Daedalus supports a very limited subset of PyMol's CLI interface. Supported comm
 - `reset`
 
 ![Protein A](screenshots/protein_a.png)
+
+
+### Selection modes
+Using a dropdown in the UI, you can change selection mode between *Atom*, (covalent) *Bond*, and *Residue*. These are mostly self-explanatory.
+When selecting a component using *right click*, or toggling using the UI buttons or arrow keys, this changes
+what is selected, and the nature of information displayed. For example, in *Bond* mode, you can see bond length,
+elements of the atoms connected, and the expected oscillation frequency of the bond. In *Atom* mode, you can see
+dihedral angles, the atom name as part of its residue, the atom's force field name, and its partial charge.
 
 
 ### Adding nucleic acids and lipids

@@ -409,7 +409,7 @@ fn add_aa_seq(selection: &mut Selection, seq_text: &str, ui: &mut Ui, redraw: &m
 }
 
 pub fn view_sel_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui, include_res: bool) {
-    let help_text = "(Hotkeys: square brackets [ ])";
+    let help_text = "(Hotkeys:  ;  and  '  )";
     ui.label("View/Select:").on_hover_text(help_text);
     let prev_view = state.ui.view_sel_level;
 
@@ -1289,7 +1289,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 lipid_section(state, scene, &mut engine_updates, ui);
             }
 
-            if let Some(mol) = &state.active_mol() {
+            if let Some(mol) = &state.active_mol() && state.peptide.is_some() {
                 if let MolGenericRef::Ligand(_) = mol {
                     ui.add_space(COL_SPACING);
 
@@ -1409,6 +1409,12 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
     state.md_step(scene, &mut engine_updates);
 
     state.ui.dt_render = start.elapsed().as_secs_f32();
+
+    // Without this, no computation will happen while minimized.
+    // todo: Not working.
+    if state.volatile.md_local.running {
+        ctx.request_repaint();
+    }
 
     engine_updates
 }

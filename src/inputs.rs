@@ -247,7 +247,34 @@ pub fn event_dev_handler(
                             redraw_mol_editor = true;
                         }
                     },
+                    Code(KeyCode::Semicolon) => match state_.volatile.operating_mode {
+                        OperatingMode::Primary => {
+                            state_.ui.view_sel_level = state_.ui.view_sel_level.prev();
 
+                            redraw_protein = true;
+                            redraw_lig = true;
+                            redraw_na = true;
+                            redraw_lipid = true;
+                        }
+                        OperatingMode::MolEditor => {
+                            state_.ui.view_sel_level = state_.ui.view_sel_level.prev();
+                            redraw_mol_editor = true;
+                        }
+                    },
+                    Code(KeyCode::Quote) => match state_.volatile.operating_mode {
+                        OperatingMode::Primary => {
+                            state_.ui.view_sel_level = state_.ui.view_sel_level.next();
+
+                            redraw_protein = true;
+                            redraw_lig = true;
+                            redraw_na = true;
+                            redraw_lipid = true;
+                        }
+                        OperatingMode::MolEditor => {
+                            state_.ui.view_sel_level = state_.ui.view_sel_level.next();
+                            redraw_mol_editor = true;
+                        }
+                    },
                     Code(KeyCode::KeyM) => {
                         let mol_type = match state_.active_mol() {
                             Some(m) => m.mol_type(),

@@ -1,4 +1,4 @@
-use dynamics::{ComputationDevice, HydrogenConstraint, Integrator, SimBoxInit, snapshot::Snapshot};
+use dynamics::{ComputationDevice, HydrogenConstraint, Integrator, SimBoxInit, snapshot::Snapshot, MdConfig};
 use egui::{Color32, ComboBox, RichText, TextEdit, Ui};
 use graphics::{EngineUpdates, Scene};
 use lin_alg::f64::Vec3;
@@ -243,6 +243,19 @@ pub fn md_setup(
             // num_field(&mut state.to_save.md_config.snapshot_ratio_memory, "Snapshot ratio:", 22, ui);
 
             // int_field_usize(&mut state.to_save.md_config.snapshot_ratio_file, "Snapshot ratio:", ui);
+
+            let mut relax = state.to_save.md_config.max_init_relaxation_iters.is_some();
+            let relax_prev = relax;
+            ui.label("Relax:");
+            ui.checkbox(&mut relax, "").on_hover_text("Perform an initial relaxation of atom positions prior to starting MD. \
+            This minimizes energy, and can take some time.");
+            if relax != relax_prev {
+                if relax {
+                    state.to_save.md_config.max_init_relaxation_iters = MdConfig::default().max_init_relaxation_iters;
+                } else {
+                    state.to_save.md_config.max_init_relaxation_iters = None;
+                }
+            }
 
 
             let hover_text = "Set the minimum distance to pad the molecule in water atoms. Large values \

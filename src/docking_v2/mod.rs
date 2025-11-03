@@ -4,15 +4,12 @@ use std::collections::{HashMap, HashSet};
 
 use bincode::{Decode, Encode};
 use bio_files::{create_bonds, md_params::ForceFieldParams};
-use dynamics::{
-    ComputationDevice, FfMolType, MdConfig, MdState, MolDynamics, ParamError, params::FfParamSet,
-};
+use dynamics::{ComputationDevice, FfMolType, MdConfig, MdState, MolDynamics, ParamError, params::FfParamSet, HydrogenConstraint};
 use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 
 use crate::{
     State,
-    lipid::MoleculeLipid,
-    md::{build_dynamics, filter_peptide_atoms, reassign_snapshot_indices, run_dynamics},
+    md::{ filter_peptide_atoms, reassign_snapshot_indices, run_dynamics},
     mol_lig::MoleculeSmall,
     molecule::MoleculePeptide,
 };
@@ -74,19 +71,21 @@ pub struct DockingPose {
 pub struct DockingState {}
 
 pub fn dock(state: &mut State, mol_i: usize) -> Result<(), ParamError> {
-    let peptide = state.peptide.as_mut().unwrap(); // ?
+    let Some(pep) = state.peptide.as_ref() else {
+        return Err(ParamError::new("No peptide; can't dock."));
+    };
     let mol = &mut state.ligands[mol_i];
     // Move the ligand away from the docking site prior to vectoring it towards it.
 
-    peptide.common.selected_for_md = true; // Required to properly re-assign snapshot indices.
-    mol.common.selected_for_md = true; // Required to not get filtered out in `build_dynamics`.
+    // pep.common.selected_for_md = true; // Required to properly re-assign snapshot indices.
+    // mol.common.selected_for_md = true; // Required to not get filtered out in `build_dynamics`.
 
     let start_dist = 10.;
     let speed = 60.; // Å/ps
 
     let docking_site = mol.common.centroid(); // for now
 
-    let dir = (docking_site - peptide.common.centroid()).to_normalized();
+    let dir = (docking_site - pep.common.centroid()).to_normalized();
 
     let starting_posit = docking_site + dir * start_dist;
     let starting_vel = -dir * speed;
@@ -95,8 +94,12 @@ pub fn dock(state: &mut State, mol_i: usize) -> Result<(), ParamError> {
 
     let cfg = MdConfig {
         zero_com_drift: false, // May already be false.
+        // todo: Problem here. relaxation kills our initial velocity, but is required on proteins generally.
         // Currently we must skip this for Velocity to not be 0ed. This is fixable.
-        max_init_relaxation_iters: None,
+        // max_init_relaxation_iters: None,
+        // For now at least. Constrained seems to be blowing up proteins in general, not just
+        // for docking.
+        hydrogen_constraint: HydrogenConstraint::Flexible,
         ..state.to_save.md_config.clone()
     };
 
@@ -105,7 +108,7 @@ pub fn dock(state: &mut State, mol_i: usize) -> Result<(), ParamError> {
     let mut md_state = build_dynamics_docking(
         &state.dev,
         &mol,
-        Some(peptide),
+        Some(pep),
         starting_vel.into(),
         &state.ff_param_set,
         &state.lig_specific_params,
@@ -115,7 +118,7 @@ pub fn dock(state: &mut State, mol_i: usize) -> Result<(), ParamError> {
 
     // todo: We may opt for a higher-than-normal DT here.
     let dt = 0.002;
-    let n_steps = 1_000;
+    let n_steps = 100;
 
     // todo: We may need to interrupt periodically e.g. to relax once close.
 
@@ -124,7 +127,7 @@ pub fn dock(state: &mut State, mol_i: usize) -> Result<(), ParamError> {
     run_dynamics(&mut md_state, &state.dev, dt, n_steps);
 
     reassign_snapshot_indices(
-        peptide,
+        pep,
         &[mol],
         &Vec::new(),
         &mut md_state.snapshots,
@@ -197,16 +200,20 @@ fn build_dynamics_docking(
     // println!("Peptide atom count: {}", atoms.len());
     // let bonds = create_bonds(&atoms);
 
+    // Filter out hetero atoms.
+    let pep_atoms = filter_peptide_atoms(pep_atom_set, pep, &[], false);
+
     // todo: Let's try using all peptide atoms, but assigning certain
     // todo AtomsDynamics to be static and bonded only.
-    let atoms = pep.common.atoms.iter().map(|a| a.to_generic()).collect();
-    let bonds = pep.common.bonds.iter().map(|a| a.to_generic()).collect();
+    let bonds = create_bonds(&pep_atoms);
 
     // todo: Now: How to mark certain *atoms* vs molecules as bonded nly and static.
 
+
+
     mols.push(MolDynamics {
         ff_mol_type: FfMolType::Peptide,
-        atoms,
+        atoms: pep_atoms,
         atom_posits: None,
         atom_init_velocities: None,
         bonds,
@@ -236,16 +243,17 @@ fn build_dynamics_docking(
     let mut pep_set_near = HashSet::new();
     let _ = filter_peptide_atoms(&mut pep_set_near, pep, &[mol], true);
 
+    let pep_start_i = mol.common.atoms.len();
     for (i, atom) in md_state.atoms.iter_mut().enumerate() {
-        if i < mol.common.atoms.len() {
+        if i < pep_start_i {
             continue;
         }
 
-        // todo: QC this. (And test it)
-        let i_pep = i - mol.common.atoms.len();
+        let i_pep = i - pep_start_i;
         if pep_set_near.contains(&(0, i_pep)) {
-            atom.bonded_only = true;
-            atom.static_ = true;
+            // TODO TEmp rm
+            // atom.bonded_only = true;
+            // atom.static_ = true;
         }
     }
 

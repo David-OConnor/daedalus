@@ -26,7 +26,9 @@ pub fn view_settings(
 ) {
     section_box().show(ui, |ui| {
         ui.horizontal(|ui| {
-            ui.label("View:");
+            let help_text = "(Hotkeys: square brackets [ ]). Change the way we display molecules";
+
+            ui.label("View:").on_hover_text(help_text);
             let prev_view = state.ui.mol_view;
             ComboBox::from_id_salt(0)
                 .width(80.)
@@ -43,7 +45,9 @@ pub fn view_settings(
                     ] {
                         ui.selectable_value(&mut state.ui.mol_view, *view, view.to_string());
                     }
-                });
+                })
+                .response
+                .on_hover_text(help_text);
 
             if state.ui.mol_view != prev_view {
                 *redraw_peptide = true;

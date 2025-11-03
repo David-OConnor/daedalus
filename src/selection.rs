@@ -13,6 +13,7 @@ use crate::{
 };
 
 const SELECTION_DIST_THRESH_SMALL: f32 = 0.7; // e.g. ball + stick, or stick.
+const SELECTION_DIST_THRESH_BOND: f32 = 0.5; // e.g. ball + stick, or stick.
 // Setting this high rel to `THRESH_SMALL` will cause more accidental selections of nearby atoms that
 // the cursor is closer to the center of, but are behind the desired one.
 // Setting it too low will cause the selector to "miss", even though the cursor is on an atom visual.
@@ -20,6 +21,7 @@ const SELECTION_DIST_THRESH_LARGE: f32 = 1.1; // e.g. VDW views like spheres.
 
 const SEL_NEAR_PAD: f32 = 4.;
 
+#[derive(Debug)]
 struct Nearest {
     mol_type: MolType,
     mol_i: usize,
@@ -158,7 +160,7 @@ pub fn find_selected_atom(
         if dist < near_dist {
             nearest = Nearest {
                 mol_type: MolType::Peptide,
-                mol_i: 0,
+                mol_i: *i_mol,
                 atom_i: *i_atom,
             };
             near_dist = dist;
@@ -347,9 +349,9 @@ fn nearest_in_group(
     nearest: &mut Nearest,
     near_dist: &mut f32,
 ) {
-    for (i_mol, i_atom) in items.iter() {
+    for (i_mol, i_atom_bond) in items.iter() {
         let posit: Vec3F32 = if bond_mode {
-            let bond = &bonds[*i_mol][*i_atom];
+            let bond = &bonds[*i_mol][*i_atom_bond];
             let atom_0 = &atoms[*i_mol][bond.atom_0];
             let atom_1 = &atoms[*i_mol][bond.atom_1];
 
@@ -361,7 +363,7 @@ fn nearest_in_group(
 
             ((atom_0.posit + atom_1.posit) / 2.).into()
         } else {
-            let atom = &atoms[*i_mol][*i_atom];
+            let atom = &atoms[*i_mol][*i_atom_bond];
 
             if hide_h && atom.element == Element::Hydrogen {
                 continue;
@@ -375,7 +377,7 @@ fn nearest_in_group(
             *nearest = Nearest {
                 mol_type,
                 mol_i: *i_mol,
-                atom_i: *i_atom,
+                atom_i: *i_atom_bond,
             };
             *near_dist = dist;
         }
@@ -410,7 +412,7 @@ pub fn points_along_ray_bond(
     let ray_dir = (ray.1 - ray.0).to_normalized();
 
     for (i, bond) in bonds_peptide.iter().enumerate() {
-        let posit = (atoms_peptide[bond.atom_0].posit + atoms_peptide[bond.atom_0].posit) / 2.;
+        let posit = (atoms_peptide[bond.atom_0].posit + atoms_peptide[bond.atom_1].posit) / 2.;
         points_along_ray_inner(
             &mut result_prot,
             &ray,
@@ -476,8 +478,12 @@ pub(crate) fn handle_selection_attempt(
     // this is undesired.
     let dist_thresh = match state.ui.mol_view {
         MoleculeView::SpaceFill => SELECTION_DIST_THRESH_LARGE,
-        _ => SELECTION_DIST_THRESH_SMALL,
+        _ => match state.ui.view_sel_level {
+            ViewSelLevel::Bond => SELECTION_DIST_THRESH_BOND,
+            _ => SELECTION_DIST_THRESH_SMALL,
+        }
     };
+
 
     // todo: Lots of DRY here!
 
@@ -560,7 +566,7 @@ pub(crate) fn handle_selection_attempt(
                 &atoms_along_ray_na,
                 &atoms_along_ray_lipid,
                 pep_atoms,
-                &Vec::new(), // todo: Peptide bonds once ready.
+                &Vec::new(), // todo: Peptide residues. once ready.
                 &lig_atoms,
                 &na_atoms,
                 &lipid_atoms,
