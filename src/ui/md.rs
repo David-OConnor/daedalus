@@ -1,11 +1,13 @@
-use dynamics::{ComputationDevice, HydrogenConstraint, Integrator, SimBoxInit, snapshot::Snapshot, MdConfig};
+use dynamics::{
+    ComputationDevice, HydrogenConstraint, Integrator, MdConfig, SimBoxInit, snapshot::Snapshot,
+};
 use egui::{Color32, ComboBox, RichText, TextEdit, Ui};
 use graphics::{EngineUpdates, Scene};
 use lin_alg::f64::Vec3;
 
 use crate::{
     State,
-    md::build_and_run_dynamics,
+    md::{build_and_run_dynamics, reassign_snapshot_indices},
     ui::{
         COL_SPACING, COLOR_ACTIVE, COLOR_HIGHLIGHT, COLOR_INACTIVE, cam::move_cam_to_active_mol,
         flag_btn, misc, num_field,
@@ -119,8 +121,7 @@ pub fn md_setup(
                     .button(RichText::new("Abort").color(Color32::LIGHT_RED))
                     .on_hover_text("Stop the in-progress simulation")
                     .clicked() {
-                    state.volatile.md_local.running = false;
-                    state.volatile.md_local.start = None;
+                    crate::md::post_run_cleanup(state, scene, engine_updates);
                 }
             }
 

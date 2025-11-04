@@ -481,9 +481,8 @@ pub(crate) fn handle_selection_attempt(
         _ => match state.ui.view_sel_level {
             ViewSelLevel::Bond => SELECTION_DIST_THRESH_BOND,
             _ => SELECTION_DIST_THRESH_SMALL,
-        }
+        },
     };
-
 
     // todo: Lots of DRY here!
 

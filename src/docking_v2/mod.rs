@@ -4,12 +4,16 @@ use std::collections::{HashMap, HashSet};
 
 use bincode::{Decode, Encode};
 use bio_files::{create_bonds, md_params::ForceFieldParams};
-use dynamics::{ComputationDevice, FfMolType, MdConfig, MdState, MolDynamics, ParamError, params::FfParamSet, HydrogenConstraint};
+use dynamics::{
+    ComputationDevice, FfMolType, HydrogenConstraint, MdConfig, MdState, MolDynamics, ParamError,
+    params::FfParamSet,
+};
+use graphics::{EngineUpdates, Scene};
 use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 
 use crate::{
     State,
-    md::{ filter_peptide_atoms, reassign_snapshot_indices, run_dynamics},
+    md::{filter_peptide_atoms, post_run_cleanup, reassign_snapshot_indices, run_dynamics},
     mol_lig::MoleculeSmall,
     molecule::MoleculePeptide,
 };
@@ -70,15 +74,21 @@ pub struct DockingPose {
 #[derive(Debug, Default)]
 pub struct DockingState {}
 
-pub fn dock(state: &mut State, mol_i: usize) -> Result<(), ParamError> {
-    let Some(pep) = state.peptide.as_ref() else {
+pub fn dock(
+    state: &mut State,
+    mol_i: usize,
+    scene: &mut Scene,
+    engine_updates: &mut EngineUpdates,
+) -> Result<(), ParamError> {
+    let Some(pep) = state.peptide.as_mut() else {
         return Err(ParamError::new("No peptide; can't dock."));
     };
     let mol = &mut state.ligands[mol_i];
     // Move the ligand away from the docking site prior to vectoring it towards it.
 
-    // pep.common.selected_for_md = true; // Required to properly re-assign snapshot indices.
-    // mol.common.selected_for_md = true; // Required to not get filtered out in `build_dynamics`.
+    // todo: QC if you need these.
+    pep.common.selected_for_md = true; // Required to properly re-assign snapshot indices.
+    mol.common.selected_for_md = true; // Required to not get filtered out in `build_dynamics`.
 
     let start_dist = 10.;
     let speed = 60.; // Å/ps
@@ -94,9 +104,9 @@ pub fn dock(state: &mut State, mol_i: usize) -> Result<(), ParamError> {
 
     let cfg = MdConfig {
         zero_com_drift: false, // May already be false.
-        // todo: Problem here. relaxation kills our initial velocity, but is required on proteins generally.
-        // Currently we must skip this for Velocity to not be 0ed. This is fixable.
-        // max_init_relaxation_iters: None,
+        // todo: A/R. Have to relax proteins currently, or hydrogens are likely to end up
+        // todo too close to one another.
+        max_init_relaxation_iters: Some(300),
         // For now at least. Constrained seems to be blowing up proteins in general, not just
         // for docking.
         hydrogen_constraint: HydrogenConstraint::Flexible,
@@ -126,13 +136,15 @@ pub fn dock(state: &mut State, mol_i: usize) -> Result<(), ParamError> {
 
     run_dynamics(&mut md_state, &state.dev, dt, n_steps);
 
-    reassign_snapshot_indices(
-        pep,
-        &[mol],
-        &Vec::new(),
-        &mut md_state.snapshots,
-        &state.volatile.md_peptide_selected,
-    );
+    post_run_cleanup(state, scene, engine_updates);
+
+    // reassign_snapshot_indices(
+    //     pep,
+    //     &[mol],
+    //     &Vec::new(),
+    //     &mut md_state.snapshots,
+    //     &state.volatile.md_peptide_selected,
+    // );
 
     state.mol_dynamics = Some(md_state);
 
@@ -208,8 +220,6 @@ fn build_dynamics_docking(
     let bonds = create_bonds(&pep_atoms);
 
     // todo: Now: How to mark certain *atoms* vs molecules as bonded nly and static.
-
-
 
     mols.push(MolDynamics {
         ff_mol_type: FfMolType::Peptide,

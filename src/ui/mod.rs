@@ -1297,12 +1297,12 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
                     if ui.button(RichText::new("Dock").color(Color32::GOLD)).clicked() {
                         // The other views make it tough to see the ligand rel the protein.
-                        if !matches!(state.ui.mol_view, MoleculeView::SpaceFill | MoleculeView::Surface) {
-                            // todo: Dim peptide?
-                            state.ui.mol_view = MoleculeView::Surface;
-                        }
+                        // if !matches!(state.ui.mol_view, MoleculeView::SpaceFill | MoleculeView::Surface) {
+                        //     // todo: Dim peptide?
+                        //     state.ui.mol_view = MoleculeView::Surface;
+                        // }
 
-                        if let Err(e) = dock(state, state.volatile.active_mol.unwrap().1) {
+                        if let Err(e) = dock(state, state.volatile.active_mol.unwrap().1, scene, &mut engine_updates) {
                             handle_err(&mut state.ui, format!("Problem setting up docking: {e:?}"));
                         }
                     }

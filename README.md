@@ -310,4 +310,5 @@ on RCSB, vice created from 2fo-fc) may crash the program.
 - Opening electron density files in general can be slow. This can lead to the program starting slowly if it was
 last shut down with electron density data open.
 - The GUI doesn't handle proteins with many chains well.
-- On some displays, dragging the MD time slider may also move the camera. To workaround, click the slider instead of dragging.
+- Minimizing may pause molecular dynamics computations.
+- On some displays (Ones with pixel scaling), dragging the MD time slider may also move the camera. To workaround, click the slider instead of dragging.
