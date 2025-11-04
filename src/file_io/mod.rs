@@ -491,7 +491,6 @@ impl State {
                         handle_err(&mut self.ui, e.to_string());
                     } else {
                         if let Some(p) = &history.position {
-                            println!("\n\n Hist pos: {:?}", p); // todo temp
                             let i = self.ligands.len() - 1;
                             self.ligands[i].common.move_to(p.clone());
                         }

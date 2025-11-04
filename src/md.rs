@@ -289,7 +289,7 @@ pub fn build_dynamics(
 
     println!("Initializing MD state...");
     let md_state = MdState::new(dev, &cfg, &mols, param_set)?;
-    println!("Done.");
+    println!("MD init done.");
 
     Ok(md_state)
 }

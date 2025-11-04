@@ -1,130 +1,31 @@
-#![allow(non_snake_case)]
+//! A new approach, leveraging our molecular dynamics state and processes.
 
-//! Example docking software:
-//!
-//! [Autodock Vina](https://vina.scripps.edu/): Popular CLI tool, integrated into several GUI-based applications.
-//! An improvement over Autodock 4 in speed and quality. Probably the best free Docking program; comparable in capability to commercial
-//! solutions. (But maybe not in user experience?) Autodock GPU is another modern imrpovement over Autodock 4.
-//!
-//!
-//! Chimera, with Autodock Vina integeration. [Open source](https://www.cgl.ucsf.edu/chimera/docs/sourcecode.html)
-//!
-//! AutoDock (4? Racoon, and Vision?;  PyRx?)
-//! Mgl tools: Python Molecular viewer (PMV), Auto dock Tools.
-//!
-//! [Gnina](https://github.com/gnina/gnina?tab=readme-ov-file#usage) is another tool that may have some promising
-//! reasons to consider over Vina. Based on a fork of a fork of Vina. Uses ML.
-//!
-//! Schrodinger Maestro: The one to beat.
-//!
-//! BIOVIA Discovery Studio Visualizer: Free viewer from Dassault (SolidWorks maker): https://discover.3ds.com/discovery-studio-visualizer-download
-//!
-//! //! Haddock: Server: https://rascar.science.uu.nl/haddock2.4/
-//!
-//!
-//! Molecule databases:
-//! - [Drugbank](https://go.drugbank.com/)
-//! - [Pubchem](https://pubchem.ncbi.nlm.nih.gov/)
-//! - [Available Chemicals Database](https://www.psds.ac.uk/) // todo: Login required?
-//! - Roche compound inventory?
-//! - [Zinc](https://zinc.docking.org/)
-//!
-//!
-//! Docking formats: Autodock Vina uses PDBQT files for both target and ligand. The targets, compared
-//! to PDB and mmCIF files, have hydrogens added and charges computed. The ligands define which bonds
-//! are rotatable. This format is specialized for docking operations.
+use std::collections::{HashMap, HashSet};
 
-// todo: Shower thought: Shoot ligands at the dockign site from various angles, in various conformations
-// todo etc.
-
-// 4MZI/160355 docking example: https://www.youtube.com/watch?v=vU2aNuP3Y8I
-
-use std::{f32::consts::TAU, time::Instant};
-use std::sync::Arc;
 use bincode::{Decode, Encode};
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-use lin_alg::f32::{f32x8, pack_vec3x8, pack_x8};
-use lin_alg::{
-    f32::Vec3 as Vec3F32,
-    f64::{Quaternion, Vec3, X_VEC, Y_VEC, Z_VEC},
-    linspace,
+use bio_files::{create_bonds, md_params::ForceFieldParams};
+use dynamics::{
+    ComputationDevice, FfMolType, HydrogenConstraint, MdConfig, MdState, MolDynamics, ParamError,
+    params::FfParamSet,
 };
-use na_seq::Element;
-use rand::Rng;
-use rayon::prelude::*;
+use graphics::{EngineUpdates, Scene};
+use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 
 use crate::{
-    ComputationDevice,
-    bond_inference::create_hydrogen_bonds_one_way,
-    docking::prep::{DockingSetup, LIGAND_SAMPLE_RATIO, Torsion},
-    dynamics::prep::build_dynamics_docking,
-    forces,
-    forces::{V_lj, V_lj_x8},
-    mol_lig::{Ligand, MoleculeSmall},
-    molecule::Atom,
+    State,
+    md::{filter_peptide_atoms, post_run_cleanup, reassign_snapshot_indices, run_dynamics},
+    mol_lig::MoleculeSmall,
+    molecule::MoleculePeptide,
 };
 
-pub mod find_sites;
-pub mod prep;
-
-const GRID_SPACING_SITE_FINDING: f64 = 5.0;
-
-// Don't take into account target atoms that are not within this distance of the docking site center x
-// docking site size. Keep in mind, the difference between side len (e.g. of the box drawn), and dist
-// from center.
-const ATOM_NEAR_SITE_DIST_THRESH: f64 = 1.4;
-
-const HYDROPHOBIC_CUTOFF: f32 = 4.25; // 3.5 - 5 angstrom?
-
-// const SOFTENING_FACTOR_SQ_ELECTROSTATIC: f32 = 1e-6;
-const SOFTENING_FACTOR_SQ_ELECTROSTATIC: f32 = 1e-6;
-
-const Q: f32 = 1.; // elementary charge.
-
-#[derive(Clone, Copy, PartialEq)]
-enum GaCrossoverMode {
-    Twopt,
+#[derive(Clone, Debug, Default)]
+/// Bonds that are marked as flexible, using a semi-rigid conformation.
+pub struct Torsion {
+    pub bond: usize, // Index.
+    pub dihedral_angle: f32,
 }
 
-/// todo: Figure this out
-/// taken from a screenshot of an application that uses TK. (One of the ones you DLed?)
-pub struct GeneticAlgorithmParameters {
-    pub num_runs: usize,
-    pub population_size: u32, // todo: usize?
-    pub max_num_evals: u32,
-    pub max_num_gens: u32,
-    /// Maximum number of top individuals that automatically survive.
-    pub max_num_top_individuals: u16,
-    pub rate_of_gene_mutation: f32,
-    pub rate_of_crossover: f32,
-    pub ga_crossover_mode: GaCrossoverMode,
-    /// Mean of Cauchy distribution for gene mutation.
-    pub cauchy_mean: f32,
-    /// Variance of Cauchy distribution for gene mutation.
-    pub cauchy_variance: f32,
-    /// Number of generations for picking worst individual
-    pub num_gens_worst: u16,
-}
-
-impl Default for GeneticAlgorithmParameters {
-    fn default() -> Self {
-        Self {
-            num_runs: 10,
-            population_size: 150,
-            max_num_evals: 25_000_000,
-            max_num_gens: 27_000,
-            max_num_top_individuals: 1,
-            rate_of_gene_mutation: 0.02,
-            rate_of_crossover: 0.8,
-            ga_crossover_mode: GaCrossoverMode::Twopt,
-            cauchy_mean: 0.,
-            cauchy_variance: 1.,
-            num_gens_worst: 10,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Encode, Decode)]
 /// Area IVO the docking site.
 pub struct DockingSite {
     pub site_center: Vec3,
@@ -140,631 +41,220 @@ impl Default for DockingSite {
     }
 }
 
+// // todo: Rem if not used.
+// #[derive(Clone, Debug, Default)]
+// pub enum ConformationType {
+//     #[default]
+//     /// Don't reposition atoms based on the pose. This is what we use when assigning each atom
+//     /// a position using molecular dynamics.
+//     AbsolutePosits,
+//     // Rigid,
+//     /// Certain bonds are marked as flexible, with rotation allowed around them.
+//     AssignedTorsions { torsions: Vec<Torsion> },
+// }
 
-
-#[derive(Clone, Debug, Default)]
-pub enum ConformationType {
-    #[default]
-    /// Don't reposition atoms based on the pose. This is what we use when assigning each atom
-    /// a position using molecular dynamics.
-    AbsolutePosits,
-    // Rigid,
-    /// Certain bonds are marked as flexible, with rotation allowed around them.
-    AssignedTorsions { torsions: Vec<Torsion> },
-}
-
+// todo: Rem if not used.
 #[derive(Clone, Debug, Default)]
 pub struct Pose {
-    pub conformation_type: ConformationType,
-    /// The offset of the ligand's anchor atom from the docking center.
-    /// Only for rigid and torsion-set-based conformations.
-    /// todo: Consider normalizing positions to be around the origin, for numerical precision issues.
-    pub anchor_posit: Vec3,
-    /// Only for rigid and torsion-set-based conformations.
-    pub orientation: Quaternion,
+    // pub conformation_type: ConformationType,
+    // /// The offset of the ligand's anchor atom from the docking center.
+    // /// Only for rigid and torsion-set-based conformations.
+    // /// todo: Consider normalizing positions to be around the origin, for numerical precision issues.
+    // pub anchor_posit: Vec3,
+    // /// Only for rigid and torsion-set-based conformations.
+    // pub orientation: Quaternion,
+    pub posits: Vec<Vec3>,
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct BindingEnergy {
-    vdw: f32,
-    h_bond_count: usize,
-    h_bond: f32, // score
-    hydrophobic: f32,
-    electrostatic: f32,
-    /// An ad-hoc metric of making sure the ligand is close to molecules.
-    /// a geometric method?
-    proximity: f32,
-    score: f32,
+pub struct DockingPose {
+    lig_atom_posits: Vec<Vec3>,
+    potential_energy: f64,
 }
 
-impl BindingEnergy {
-    pub fn new(vdw: f32, h_bond_count: usize, hydrophobic: f32, electrostatic: f32) -> Self {
-        const E_PER_H_BOND: f32 = -1.2; // todo A/R.
+#[derive(Debug, Default)]
+pub struct DockingState {}
 
-        let h_bond = h_bond_count as f32 * E_PER_H_BOND;
+pub fn dock(
+    state: &mut State,
+    mol_i: usize,
+    scene: &mut Scene,
+    engine_updates: &mut EngineUpdates,
+) -> Result<(), ParamError> {
+    let Some(pep) = state.peptide.as_mut() else {
+        return Err(ParamError::new("No peptide; can't dock."));
+    };
+    let mol = &mut state.ligands[mol_i];
+    // Move the ligand away from the docking site prior to vectoring it towards it.
 
-        let weight_vdw = 1.;
-        let weight_hydrophobic = 1.;
-        let weight_electrostatic = 10.;
+    // todo: QC if you need these.
+    pep.common.selected_for_md = true; // Required to properly re-assign snapshot indices.
+    mol.common.selected_for_md = true; // Required to not get filtered out in `build_dynamics`.
 
-        // A low score is considered to be a better pose.
-        let score = weight_vdw * vdw
-            + h_bond
-            + weight_hydrophobic * hydrophobic
-            + weight_electrostatic * electrostatic;
+    let start_dist = 10.;
+    let speed = 60.; // Å/ps
 
-        let proximity = 0.; // todo temp
+    let docking_site = mol.common.centroid(); // for now
 
-        Self {
-            vdw,
-            h_bond_count,
-            h_bond,
-            hydrophobic,
-            electrostatic,
-            score,
-            proximity,
-        }
-    }
-}
+    let dir = (docking_site - pep.common.centroid()).to_normalized();
 
-/// todo: Improve this.
-fn is_hydrophobic(atom: &Atom) -> bool {
-    matches!(atom.element, Element::Carbon)
-}
+    let starting_posit = docking_site + dir * start_dist;
+    let starting_vel = -dir * speed;
 
-/// Calculate binding energy, in kcal/mol. The result will be negative. The maximum (negative) binding
-/// energy may be the ideal conformation. This is used as a scoring metric.
-pub fn calc_binding_energy(
-    setup: &DockingSetup,
-    lig: &Ligand,
-    lig_posits: &[Vec3F32],
-) -> Option<BindingEnergy> {
-    // todo: Integrate CUDA
+    mol.common.move_to(starting_posit);
 
-    let len_rec = setup.rec_atoms_near_site.len();
-    let len_lig = lig_posits.len();
-
-    // Cache distances.
-    let mut distances = Vec::with_capacity(len_rec * len_lig);
-    for i_rec in 0..len_rec {
-        for i_lig in 0..len_lig {
-            let posit_rec: Vec3F32 = setup.rec_atoms_near_site[i_rec].posit.into();
-            let posit_lig = lig_posits[i_lig];
-
-            distances.push((posit_rec - posit_lig).magnitude());
-        }
-    }
-
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    let (distances_x8, valid_lanes_last_dist) = pack_x8(&distances);
-
-    // Prevents duplicates between compile-time, and runtime SIMD missing code.
-    fn scalar_vdw(distances: &[f32], sigma: &[f32], eps: &[f32]) -> f32 {
-        distances
-            .par_iter()
-            .enumerate()
-            .map(|(i, &r)| V_lj(r, sigma[i], eps[i]))
-            .sum()
-    }
-
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    let vdw = if !is_x86_feature_detected!("avx") {
-        // todo: Use a neighbor grid or similar? Set it up so there are two separate sides?
-        scalar_vdw(&distances, &setup.lj_sigma, &setup.lj_eps)
-    } else {
-        let vdw_x8: f32x8 = distances_x8
-            .par_iter()
-            .enumerate()
-            .map(|(i, r)| {
-                let sigma = setup.lj_sigma_x8[i];
-                let eps = setup.lj_eps_x8[i];
-                V_lj_x8(*r, sigma, eps)
-            })
-            .sum();
-
-        vdw_x8.to_array().iter().sum()
+    let cfg = MdConfig {
+        zero_com_drift: false, // May already be false.
+        // todo: A/R. Have to relax proteins currently, or hydrogens are likely to end up
+        // todo too close to one another.
+        max_init_relaxation_iters: Some(300),
+        // For now at least. Constrained seems to be blowing up proteins in general, not just
+        // for docking.
+        hydrogen_constraint: HydrogenConstraint::Flexible,
+        ..state.to_save.md_config.clone()
     };
 
-    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
-    let vdw = scalar_vdw(&distances, &setup.lj_sigma, &setup.lj_eps);
+    // todo: Examine and revamp which peptide atoms are included in the sim.
 
-    let h_bond_count = {
-        // Calculate hydrogen bonds
-        let lig_indices: Vec<usize> = (0..len_lig).collect();
+    let mut md_state = build_dynamics_docking(
+        &state.dev,
+        &mol,
+        Some(pep),
+        starting_vel.into(),
+        &state.ff_param_set,
+        &state.lig_specific_params,
+        &cfg,
+        &mut state.volatile.md_peptide_selected,
+    )?;
 
-        // todo: THis is not efficient; work-in for now.
-        let mut lig_atoms_positioned = lig.common.atoms.clone();
-        for (i, atom) in lig_atoms_positioned.iter_mut().enumerate() {
-            atom.posit = lig_posits[i].into();
-        }
+    // todo: We may opt for a higher-than-normal DT here.
+    let dt = 0.002;
+    let n_steps = 600;
 
-        // todo: Use pre-computed dists in H bonds if able.
+    // todo: We may need to interrupt periodically e.g. to relax once close.
 
-        // todo: Given you're using a relaxed distance thresh for H bonds, adjust the score
-        // todo based on the actual distance of the bond.
-        // We keep these separate, so the bond indices are meaningful.
-        let h_bonds_rec_donor = create_hydrogen_bonds_one_way(
-            &setup.rec_atoms_near_site,
-            &setup.rec_indices,
-            &setup.rec_bonds_near_site,
-            // &ligand.molecule.atoms,
-            &lig_atoms_positioned,
-            &lig_indices,
-            true,
-        );
+    // todo: You need a binding energy computation each step.
 
-        let h_bonds_lig_donor = create_hydrogen_bonds_one_way(
-            &lig_atoms_positioned,
-            &lig_indices,
-            &lig.common.bonds,
-            &setup.rec_atoms_near_site,
-            &setup.rec_indices,
-            true,
-        );
+    run_dynamics(&mut md_state, &state.dev, dt, n_steps);
+    post_run_cleanup(state, scene, engine_updates);
 
-        h_bonds_rec_donor.len() + h_bonds_lig_donor.len()
+    state.mol_dynamics = Some(md_state);
+
+    Ok(())
+}
+
+// todo: DRy with the primary MD setup fn.
+fn build_dynamics_docking(
+    dev: &ComputationDevice,
+    mol: &MoleculeSmall,
+    peptide: Option<&MoleculePeptide>,
+    starting_vel: Vec3F32,
+    param_set: &FfParamSet,
+    mol_specific_params: &HashMap<String, ForceFieldParams>,
+    cfg: &MdConfig,
+    pep_atom_set: &mut HashSet<(usize, usize)>,
+) -> Result<MdState, ParamError> {
+    println!("Setting up docking dynamics...");
+
+    let mut mols = Vec::new();
+
+    let atoms_gen: Vec<_> = mol.common.atoms.iter().map(|a| a.to_generic()).collect();
+    let bonds_gen: Vec<_> = mol.common.bonds.iter().map(|b| b.to_generic()).collect();
+
+    let Some(msp) = mol_specific_params.get(&mol.common.ident) else {
+        return Err(ParamError::new(&format!(
+            "Missing molecule-specific parameters for  {}",
+            mol.common.ident
+        )));
     };
 
-    // Calculate Hydrophobic (solvation) interactions
-    // -- HYDROPHOBIC INTERACTION TERM -- //
-    // Example: We’ll collect a simple sum of energies for hydrophobic pairs.
-    // For a more advanced approach, you might do a distance-based well function, etc.
-    let hydrophobic_score = distances
-        .par_iter()
-        .enumerate()
-        .filter_map(|(i, &r)| {
-            if setup.hydrophobic[i] {
-                if r < HYDROPHOBIC_CUTOFF {
-                    // Simple approach: add a small negative (favorable) energy
-                    // or some distance-dependent function:
-                    // E = -k * (1 - r/CUTOFF) for example
-                    let k = 0.2; // scale factor in kcal/mol
-                    let scaled = 1.0 - (r / HYDROPHOBIC_CUTOFF);
-                    return Some(-k * scaled.max(0.0));
-                }
-            }
-            None
-        })
-        .sum();
+    let atom_initial_velocities = vec![starting_vel; mol.common.atoms.len()];
 
-    // Handle partial charges between target, and ligand. This is a standard electrostatics calculation.
-    // We use Barnes Hut to provide an approximate solution at higher speed.
-    // todo: Determine if you want to use Rayon, for the expected partial charge count.
-    // todo: Rayon.
+    mols.push(MolDynamics {
+        ff_mol_type: FfMolType::SmallOrganic,
+        atoms: atoms_gen,
+        atom_posits: Some(mol.common.atom_posits.clone()),
+        atom_init_velocities: Some(atom_initial_velocities),
+        bonds: bonds_gen,
+        adjacency_list: Some(mol.common.adjacency_list.clone()),
+        static_: false,
+        bonded_only: false,
+        mol_specific_params: Some(msp.clone()),
+    });
 
-    // todo: Your barnes_hut lib is only set up up for a single set where everything interacts.
-    // todo: how do you set things up so one set interacts with the other?
+    // todo: Let's try: Use all protein atoms, but make all but the ones near the docking site
+    // todo both static, and bonded only. This should perhaps anchor the docking site ones in position,
+    // todo while allowing their outside area to move?
+    //
+    // todo: Perhaps mod Dynamics for this case specifically: Make sure all forces
+    // todo are skipped for atoms marked as both static and bonded only, except for the bonded
+    // todo forces between them and non-static atoms.
 
-    // todo: Sort out f32 vs f64 for this.
-    let electrostatic = {
-        let mut force = Vec3F32::new_zero();
+    // todo: Looks like with your current dynamics setup,
 
-        // In the barnes_hut etc nomenclature, we are iterating over *target* bodies. (Not associated
-        // with target=protein=receptor; actually, the opposite!)
-
-        // Note: Ligand positions are already positioned for the pose, by the time they enter this function.
-        for (i, lig_atom) in lig.common.atoms.iter().enumerate() {
-            // Our bh algorithm is currently hard-coded to f64.
-            let force_fn = |dir: Vec3, q_src: f64, dist: f64| {
-                forces::force_coulomb_f32(
-                    dir.into(),
-                    dist as f32,
-                    q_src as f32,
-                    lig_atom.partial_charge.unwrap_or_default(),
-                    SOFTENING_FACTOR_SQ_ELECTROSTATIC,
-                )
-                .into()
-            };
-
-            let f: Vec3F32 = barnes_hut::run_bh(
-                lig.common.atom_posits[i],
-                999_999, // N/A, since we're comparing separate sets.
-                &setup.charge_tree,
-                &setup.bh_config,
-                &force_fn,
-            )
-            .into();
-
-            force += f;
-
-            // force += barnes_hut::run_bh(
-            //     q_lig.posit.into(),
-            //     999_999, // N/A, since we're comparing separate sets.
-            //     charge_tree,
-            //     bh_config,
-            //     &force_fn,
-            // )
-            // .into();
-        }
-
-        // Force magnitude. Closest to 0 is best, indicating stability?
-        force.magnitude()
+    let Some(pep) = peptide else {
+        return Err(ParamError::new("No peptide; can't dock."));
     };
 
-    Some(BindingEnergy::new(
-        vdw,
-        h_bond_count,
-        hydrophobic_score,
-        electrostatic,
-    ))
-}
+    // todo: Make sure you're filtering nearby based on the docking config; not hte initial one
+    // tood if moving towards it
+    // We assume hetero atoms are ligands, water etc, and are not part of the protein.
 
-/// Brute-force, naive iteration of combinations. (For now)
-fn make_posits_orientations(
-    init: &DockingSite,
-    posit_val: usize,
-    num_orientations: usize,
-) -> (Vec<Vec3>, Vec<Quaternion>) {
-    // We'll break the box into 4 × 5 × 5 = 100 points
-    // so that we fill out 'num_posits' exactly:
-    let (nx, ny, nz) = (posit_val, posit_val, posit_val);
-    let num_posits = nx * ny * nz;
+    // let atoms = filter_peptide_atoms(pep_atom_set, p, &[mol], peptide_only_near_lig);
+    // println!("Peptide atom count: {}", atoms.len());
+    // let bonds = create_bonds(&atoms);
 
-    // The total extent along each axis is 2*site_box_size.
-    // We'll divide that into nx, ny, nz intervals respectively.
-    let dx = (2.0 * init.site_radius) / nx as f64;
-    let dy = (2.0 * init.site_radius) / ny as f64;
-    let dz = (2.0 * init.site_radius) / nz as f64;
+    // Filter out hetero atoms.
+    let pep_atoms = filter_peptide_atoms(pep_atom_set, pep, &[], false);
 
-    // Pre-allocate for efficiency
-    let mut ligand_posits = Vec::with_capacity(num_posits);
+    // todo: Let's try using all peptide atoms, but assigning certain
+    // todo AtomsDynamics to be static and bonded only.
+    let bonds = create_bonds(&pep_atoms);
 
-    // Create points on a regular 3D grid:
-    for i in 0..nx {
-        for j in 0..ny {
-            for k in 0..nz {
-                let x = init.site_center.x - init.site_radius + (i as f64 + 0.5) * dx;
-                let y = init.site_center.y - init.site_radius + (j as f64 + 0.5) * dy;
-                let z = init.site_center.z - init.site_radius + (k as f64 + 0.5) * dz;
-                ligand_posits.push(Vec3::new(x, y, z));
-            }
+    // todo: Now: How to mark certain *atoms* vs molecules as bonded nly and static.
+
+    mols.push(MolDynamics {
+        ff_mol_type: FfMolType::Peptide,
+        atoms: pep_atoms,
+        atom_posits: None,
+        atom_init_velocities: None,
+        bonds,
+        adjacency_list: None,
+        static_: false,
+        bonded_only: false,
+        mol_specific_params: None,
+    });
+
+    // All peptide atoms are included, for the purposes of un-flattening snapshot atoms.
+    for i in 0..pep.common.atoms.len() {
+        pep_atom_set.insert((0, i));
+    }
+
+    //
+    println!("Initializing docking MD state...");
+    let mut md_state = MdState::new(dev, &cfg, &mols, param_set)?;
+    println!("MD init done.");
+
+    // todo: This is a bit awkward location-wise, but ok for now. Consider adding this directly to Dynamics,
+    // todo if it makes sense
+
+    // Mark atoms not near the ligand as static and bonded-forces only. These anchor
+    // the non-static ones. Bonded force computations are (unnecessarily) run on them, but this is cheap,
+    // and scales linearly with atom count.
+    let mut pep_set_near = HashSet::new();
+    let _ = filter_peptide_atoms(&mut pep_set_near, pep, &[mol], true);
+
+    let pep_start_i = mol.common.atoms.len();
+    for (i, atom) in md_state.atoms.iter_mut().enumerate() {
+        if i < pep_start_i {
+            continue;
+        }
+
+        let i_pep = i - pep_start_i;
+        if !pep_set_near.contains(&(0, i_pep)) {
+            atom.bonded_only = true;
+            atom.static_ = true;
         }
     }
 
-    let n_lats = ((num_orientations as f32 / 2.).powf(1. / 3.)) as usize;
-    let n_lons = n_lats * 2;
-    let n_rolls = n_lons;
-
-    let n_orientations = n_lats * n_lons * n_rolls;
-    let mut orientations = Vec::with_capacity(n_orientations);
-
-    for i_lat in 0..n_lats {
-        let frac = (i_lat as f32 + 0.5) / n_lats as f32;
-        let mu = -1.0 + 2.0 * frac;
-        let φ = mu.acos();
-
-        for i_lon in 0..n_lons {
-            let θ = (i_lon as f32 + 0.5) * TAU / (n_lons as f32);
-
-            // Convert spherical to Cartesian
-            let x = φ.sin() * θ.cos();
-            let y = φ.sin() * θ.sin();
-            let z = mu;
-
-            let lat_lon_vec = Vec3F32::new(x, y, z).to_normalized();
-
-            let or = Quaternion::from_unit_vecs(Vec3::new(0., 0., 1.), lat_lon_vec.into());
-
-            for roll in 0..n_rolls {
-                let angle = roll as f32 * TAU / n_rolls as f32;
-                let rotator = Quaternion::from_axis_angle(lat_lon_vec.into(), angle as f64);
-                orientations.push(rotator * or);
-            }
-        }
-    }
-
-    (ligand_posits, orientations)
+    Ok(md_state)
 }
-
-/// Pre-generate poses, for a naive system.
-pub(crate) fn init_poses(
-    site: &DockingSite,
-    flexible_bonds: &[usize],
-    num_posits: usize,
-    num_orientations: usize,
-    angles_per_bond: usize,
-) -> Vec<Pose> {
-    // These positions are of the ligand's anchor atom.
-    let (anchor_posits, orientations) =
-        make_posits_orientations(site, num_posits, num_orientations);
-
-    let angles = linspace(0., TAU, angles_per_bond);
-
-    let mut result = Vec::new();
-
-    for &anchor_posit in &anchor_posits {
-        for &orientation in &orientations {
-            // Build all angle-combos across all flexible bonds
-            let mut all_combos = vec![Vec::new()]; // start with 1 empty combo
-
-            for &bond_i in flexible_bonds {
-                let mut new_combos = Vec::new();
-                for existing_combo in &all_combos {
-                    for &angle in &angles {
-                        let mut extended = existing_combo.clone();
-                        extended.push(Torsion {
-                            bond: bond_i,
-                            dihedral_angle: angle,
-                        });
-                        new_combos.push(extended);
-                    }
-                }
-                all_combos = new_combos;
-            }
-
-            // Produce a Pose for each full combination of angles
-            for torsions in all_combos {
-                result.push(Pose {
-                    conformation_type: ConformationType::AssignedTorsions { torsions },
-                    anchor_posit,
-                    orientation,
-                });
-            }
-        }
-    }
-
-    result
-}
-
-/// Contains code that is specific to a set of poses. This includes low-cost filters that reduce
-/// the downstream number of poses to match.
-fn process_poses(
-    poses: &[Pose],
-    setup: &DockingSetup,
-    lig: &mut Ligand,
-) -> Vec<(usize, BindingEnergy)> {
-    // todo: Currently an outer/inner dynamic.
-    // Set up the ligand atom positions for each pose; that's all that matters re the pose for now.
-    let mut lig_posits = Vec::new();
-
-    // todo: This approach of skipping atoms during iteration isn't great, as it depends on the order
-    // todo the atoms are in the Vecs.
-
-    // Optimization; Hydrogens are always close to another atom, and we have many; we can likely rely
-    // on that other atom, and save ~n^2 computation here.
-    println!("Eliminating poses with atoms too close together...");
-
-    let mut geometry_poses_skip = Vec::new();
-
-    for (i_pose, pose) in poses.iter().enumerate() {
-        lig.position_atoms(Some(&pose));
-
-        // todo: Cache distances here?
-        let posits_this_pose: Vec<_> = lig
-            .mol
-            .common
-            .atom_posits
-            .iter()
-            .map(|p| (*p).into())
-            .collect();
-
-        // A smaller subset, used for some processes to improve performance.
-        let lig_posits_sample: Vec<Vec3F32> = posits_this_pose
-            .iter()
-            .enumerate()
-            .filter(|(i, _)| {
-                let atom = &lig.common.atoms[*i];
-                atom.element == Element::Carbon && i % LIGAND_SAMPLE_RATIO == 0
-            })
-            .map(|(_, v)| *v)
-            .collect();
-
-        lig_posits.push(posits_this_pose);
-
-        // Remove pose that have any ligand atoms *intersecting* the receptor. We could possibly
-        // use a surface mesh of some sort for this. For now, use VDW spheres. Crude, and probably good enough.
-        // This pose reduction may significantly speed up the algorithm by discarding unsuitable poses
-        // early.
-
-        for rec_atom in &setup.rec_atoms_sample {
-            let rec_posit: Vec3F32 = rec_atom.posit.into();
-
-            let vdw_radius = rec_atom.element.vdw_radius() * 1.1;
-
-            let mut end_loop = false;
-            for lig_pos in &lig_posits_sample {
-                let dist = (rec_posit - *lig_pos).magnitude();
-
-                // todo: We should probably build an ASA surface, then assess if inside or outside of
-                // todo that instead of this approach.
-
-                if dist < vdw_radius {
-                    geometry_poses_skip.push(i_pose);
-                    end_loop = true;
-                    break;
-                }
-            }
-            if end_loop {
-                break;
-            }
-        }
-
-        // todo: Not matching scalar results.
-        //     for (i_rec, rec_posit) in rec_posits_sample_x8.iter().enumerate() {
-        //         let vdw_radius = rec_vdw_sample_x8[i_rec];
-        //
-        //         let lanes_rec = if i_rec == rec_posits_sample_x8.len() - 1 {
-        //             valid_lanes_rec_sample
-        //         } else {
-        //             8
-        //         };
-        //
-        //         let mut end_loop = false;
-        //         for (i_lig, lig_pos) in posits_sample_x8.iter().enumerate() {
-        //             let lanes_lig = if i_lig == posits_sample_x8.len() - 1 {
-        //                 valid_lanes_lig
-        //             } else {
-        //                 8
-        //             };
-        //
-        //             let dist = (*rec_posit - *lig_pos).magnitude();
-        //
-        //             // todo: We should probably build an ASA surface, then assess if inside or outside of
-        //             // todo that instead of this approach.
-        //
-        //             // println!("DIST: {:?} d: {:.2?}, v: {:.2?}, ANY: {:?}", dist.lt(f32x8::splat(5.)), dist.to_array(),
-        //                      // vdw_radius.to_array(), dist.lt(f32x8::splat(5.)).any());
-        //
-        //             // We don't use SIMD any compare, to properly handle the last lane.
-        //             let valid_lanes = lanes_rec.min(lanes_lig);
-        //             let vdw = vdw_radius.to_array();
-        //             for (i_d, dist) in dist.to_array()[..valid_lanes].iter().enumerate() {
-        //                 if *dist < vdw[i_d] {
-        //                     geometry_poses_skip.push(i_pose);
-        //                     end_loop = true;
-        //                     break;
-        //                 }
-        //             }
-        //         }
-        //         if end_loop {
-        //             break;
-        //         }
-        //     }
-
-        // We use distances in multiple locations; cache here.
-        // todo: Note that above, we compute distances, but for sample only.
-        // todo: Put this back when ready.
-        // let mut distances = Vec::with_capacity(&setup.rec_atoms_sample.len() * lig_posits[i_pose].len());
-        // for (i_rec, posit_rec) in &setup.rec_atoms_sample.iter().enumerate() {
-        //     for (i_lig, posit_lig) in lig_posits[i_pose].iter().enumerate() {
-        //         let dist = (*posit_rec - *posit_lig).magnitude();
-        //         distances.push((i_rec, i_lig, dist));
-        //     }
-        // }
-    }
-
-    println!(
-        "Complete. iterating through {} poses...",
-        poses.len() - geometry_poses_skip.len()
-    );
-
-    let result: Vec<_> = poses
-        .par_iter()
-        .enumerate()
-        .filter(|(i_pose, _)| !geometry_poses_skip.contains(i_pose))
-        .filter_map(|(i_pose, _pose)| {
-            let energy = calc_binding_energy(setup, lig, &lig_posits[i_pose]);
-            if let Some(e) = energy {
-                Some((i_pose, e))
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    result
-}
-
-fn vary_pose(pose: &Pose) -> Vec<Pose> {
-    let mut result = Vec::new();
-
-    for i in -30..30 {
-        if let ConformationType::AssignedTorsions { torsions } = &pose.conformation_type {
-            let rot_amt = TAU as f64 / 200. * i as f64;
-
-            let rotator_up = Quaternion::from_axis_angle(Z_VEC, rot_amt);
-            let rotator_right = Quaternion::from_axis_angle(X_VEC, rot_amt);
-            let rotator_fwd = Quaternion::from_axis_angle(Y_VEC, rot_amt);
-
-            // todo: Try combinations of the above.
-
-            for rot_a in &[rotator_up, rotator_right, rotator_fwd] {
-                for rot_b in &[rotator_up, rotator_right, rotator_fwd] {
-                    for rot_c in &[rotator_up, rotator_right, rotator_fwd] {
-                        result.push(Pose {
-                            conformation_type: ConformationType::AssignedTorsions {
-                                torsions: torsions.clone(),
-                            },
-                            anchor_posit: pose.anchor_posit,
-                            orientation: *rot_a * *rot_b * *rot_c * pose.orientation,
-                        });
-                    }
-                }
-            }
-        }
-    }
-
-    result
-}
-
-/// Return best pose, and energy.
-///
-/// Note: We use the term `receptor` here vice `target`, as `target` is also used in terms of
-/// calculating forces between pairs. (These targets may or may not align!)
-pub fn find_optimal_pose(
-    dev: &(ComputationDevice, Option<Arc<CudaModule>>),
-    setup: &DockingSetup,
-    lig: &mut MoleculeSmall,
-) -> (Pose, BindingEnergy) {
-    // todo: Consider another fn for this part of the setup, so you can re-use it more easily.
-
-    // todo: Evaluate if you can cache EEM charges. Look into how position-dependent they are between ligand flexible
-    // todo bond conformations, and lig/receptor interactions.
-
-    println!(
-        "Atom counts. Rec: {} Lig: {}",
-        setup.rec_atoms_near_site.len(),
-        lig.common.atoms.len()
-    );
-
-    let start = Instant::now();
-
-    let num_posits = 8; // Gets cubed, although many of these are eliminated.
-    let num_orientations = 60;
-    let angles_per_bond = 3;
-
-    let poses = init_poses(
-        &lig.docking_site,
-        &lig.flexible_bonds,
-        num_posits,
-        num_orientations,
-        angles_per_bond,
-    );
-    println!("Initial pose count: {} poses...", poses.len());
-
-    // todo: Increase.
-    let top_pose_count = 10;
-
-    // Now process them in parallel and reduce to the single best pose:
-    let mut pose_energies = process_poses(&poses, setup, lig);
-
-    pose_energies.sort_by(|a, b| a.1.score.partial_cmp(&b.1.score).unwrap());
-    let best_pose = &poses[pose_energies[0].0];
-    let best_energy = pose_energies[0].1.clone();
-
-    let num_vdw_steps = 30;
-
-    // Conduct a molecular dynamics sim on the best poses, refining them further.
-    // todo: This appears to not be doing much.
-    for (pose_i, energy) in &pose_energies[0..top_pose_count] {
-        // continue; // todo: Put back when ready.
-
-        let mut lig_this = lig.clone(); //  todo: DOn't like this clone.
-        lig_this.pose = poses[*pose_i].clone();
-
-        // let snapshots = build_dock_dynamics(dev, &mut lig_this, setup, num_vdw_steps);
-        // let final_snap = &snapshots[snapshots.len() - 1];
-
-        // println!(
-        //     "Updated snap: {:?}",
-        //     final_snap.energy.as_ref().unwrap().score
-        // );
-    }
-
-    println!("Complete. \n\nBest pose init: {best_pose:?} \n\nScores: {best_energy:.3?}\n\n");
-
-    // Vary orientations and positiosn of the best poses, pre and/or pose md sim?
-
-    println!("\nBest initial pose: {best_pose:?} \nScores: {best_energy:.3?}\n");
-
-    // Some ad-hoc tweaking.
-    //let new_poses = vary_pose(best_pose);
-
-    let elapsed = start.elapsed();
-    println!("Time: {}ms", elapsed.as_millis());
-    println!("Complete. \n\nBest pose: {best_pose:?} \n\nScores: {best_energy:.3?}\n\n");
-    (best_pose.clone(), best_energy.clone())
-}
-
-// Find hydrogen bond interaction, hydrophobic interactions between ligand and protein.
-// Find the "perfect" "Het" or "lead" molecule that will act as drug receptor

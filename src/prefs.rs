@@ -31,7 +31,7 @@ use crate::{
     drawing::MoleculeView,
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
 };
-use crate::{docking_v2::DockingSite, inputs::SENS_MOL_MOVE_SCROLL, molecule::MolIdent};
+use crate::{docking::DockingSite, inputs::SENS_MOL_MOVE_SCROLL, molecule::MolIdent};
 
 pub const DEFAULT_PREFS_FILE: &str = "daedalus_prefs.dae";
 
@@ -282,7 +282,6 @@ impl State {
                 if let Some(p) = &lig.common.path {
                     // println!("Path checks: {:?}\n\n", p);
                     if &oh.path == p {
-                        println!("Path match. Saving: {:?}", lig.common.centroid()); // todo temp
                         oh.position = Some(lig.common.centroid());
                     }
                 }

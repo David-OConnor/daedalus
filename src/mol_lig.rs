@@ -10,7 +10,7 @@ use bio_files::{
 use na_seq::Element;
 
 use crate::{
-    docking_v2::{DockingSite, Pose},
+    docking::{DockingSite, Pose},
     molecule::{
         Atom, Bond, Chain, MolGenericRef, MolGenericTrait, MolIdent, MolType as Mt, MoleculeCommon,
         Residue,

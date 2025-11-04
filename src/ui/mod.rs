@@ -19,7 +19,7 @@ use na_seq::{AaIdent, Element};
 use crate::{
     CamSnapshot, MsaaSetting, OperatingMode, Selection, State, ViewSelLevel, cli,
     cli::autocomplete_cli,
-    docking_v2::dock,
+    docking::dock,
     download_mols::{load_atom_coords_rcsb, load_sdf_drugbank, load_sdf_pubchem},
     drawing::{EntityClass, MoleculeView, color_viridis},
     drawing_wrappers::draw_all_lipids,
