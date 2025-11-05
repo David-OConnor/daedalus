@@ -1,7 +1,10 @@
 //! A new approach, leveraging our molecular dynamics state and processes.
 
-use std::collections::{HashMap, HashSet};
-use std::time::Instant;
+use std::{
+    collections::{HashMap, HashSet},
+    time::Instant,
+};
+
 use bincode::{Decode, Encode};
 use bio_files::{create_bonds, md_params::ForceFieldParams};
 use dynamics::{

@@ -29,6 +29,10 @@ Cargo.lock
 *.dcd
 *.prmtop
 
+# ML models
+*.pt
+*.safetensors
+
 # Our prefs format.
 *.dae
 

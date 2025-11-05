@@ -163,24 +163,13 @@ impl MolEditorState {
             }
         };
 
-        self.load_mol(
-            dev,
-            &molecule.common,
-            param_set,
-            md_cfg,
-            scene,
-            engine_updates,
-            state_ui,
-        );
+        self.load_mol(&molecule.common, scene, engine_updates, state_ui);
         Ok(())
     }
 
     pub fn load_mol(
         &mut self,
-        dev: &ComputationDevice,
         mol: &MoleculeCommon,
-        param_set: &FfParamSet,
-        md_cfg: &MdConfig,
         scene: &mut Scene,
         engine_updates: &mut EngineUpdates,
         state_ui: &mut StateUi,
@@ -508,10 +497,7 @@ pub fn enter_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mu
             eprintln!("Expected a ligand at this index, but out of bounds when entering edit mode");
         } else {
             state.mol_editor.load_mol(
-                &state.dev,
                 &state.ligands[i].common,
-                &state.ff_param_set,
-                &state.to_save.md_config,
                 scene,
                 engine_updates,
                 &mut state.ui,

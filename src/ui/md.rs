@@ -7,14 +7,13 @@ use lin_alg::f64::Vec3;
 
 use crate::{
     State,
-    md::{build_and_run_dynamics, reassign_snapshot_indices},
+    md::{STATIC_ATOM_DIST_THRESH, build_and_run_dynamics, reassign_snapshot_indices},
     ui::{
         COL_SPACING, COLOR_ACTIVE, COLOR_HIGHLIGHT, COLOR_INACTIVE, cam::move_cam_to_active_mol,
         flag_btn, misc, num_field,
     },
     util::{clear_cli_out, handle_err},
 };
-use crate::md::STATIC_ATOM_DIST_THRESH;
 
 pub fn md_setup(
     state: &mut State,
@@ -96,7 +95,7 @@ pub fn md_setup(
                         Some(m) => if m.common.selected_for_md { Some(m) } else { None },
                         None => None,
                     };
-                    
+
                     let near_lig_thresh = if state.ui.md.peptide_only_near_ligs {
                         Some(STATIC_ATOM_DIST_THRESH)
                     } else {

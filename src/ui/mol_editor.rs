@@ -4,21 +4,23 @@ use bio_files::BondType;
 use egui::{Color32, ComboBox, RichText, Slider, Ui};
 use graphics::{EngineUpdates, EntityUpdate, Scene};
 use lin_alg::f64::Vec3;
-use na_seq::Element;
-use na_seq::Element::{Carbon, Chlorine, Nitrogen, Oxygen, Phosphorus, Sulfur};
+use na_seq::{
+    Element,
+    Element::{Carbon, Chlorine, Nitrogen, Oxygen, Phosphorus, Sulfur},
+};
 
 use crate::{
     Selection, State, ViewSelLevel,
     drawing::MoleculeView,
     mol_editor,
     mol_editor::{exit_edit_mode, templates},
+    molecule::Atom,
     ui::{
         COL_SPACING, COLOR_ACTIVE, COLOR_INACTIVE, cam::cam_reset_controls, md::energy_disp, misc,
         misc::section_box, mol_data::selected_data, view_sel_selector,
     },
     util::handle_err,
 };
-use crate::molecule::Atom;
 // todo: Check DBs (with a button maybe?) to see if the molecule exists in a DB already, or if
 // todo a similar one does.
 
@@ -30,15 +32,24 @@ const DT_MAX: f32 = 0.0005; // No more than 0.002 for stability. currently 0.5fs
 // a noticeable lag.
 const MAX_RELAX_ITERS: usize = 300;
 
-fn change_el_button(atoms: &mut [Atom], sel: &Selection, el: Element, ui: &mut Ui, rebuild: &mut bool) {
+fn change_el_button(
+    atoms: &mut [Atom],
+    sel: &Selection,
+    el: Element,
+    ui: &mut Ui,
+    rebuild: &mut bool,
+) {
     let (r, g, b) = el.color();
     let r = (r * 255.) as u8;
     let g = (g * 255.) as u8;
     let b = (b * 255.) as u8;
     let color = Color32::from_rgb(r, g, b);
 
-    if ui.button(RichText::new(el.to_letter()).color(color))
-        .on_hover_text(format!("Change the selected atom's element to {el}")).clicked() {
+    if ui
+        .button(RichText::new(el.to_letter()).color(color))
+        .on_hover_text(format!("Change the selected atom's element to {el}"))
+        .clicked()
+    {
         let Selection::AtomLig((_, i)) = sel else {
             eprintln!("Attempting to change an element with no atom selected.");
             return;
@@ -331,7 +342,11 @@ fn edit_tools(
     let mut rebuild_md = false;
 
     section_box().show(ui, |ui| {
-        if ui.button("Add C").on_hover_text("Add a Carbon atom").clicked() {
+        if ui
+            .button("Add C")
+            .on_hover_text("Add a Carbon atom")
+            .clicked()
+        {
             let Selection::AtomLig((_, i)) = state.ui.selection else {
                 eprintln!("Attempting to add an atom with no parent to add it to");
                 return;
@@ -351,7 +366,11 @@ fn edit_tools(
             rebuild_md = true;
         }
 
-        if ui.button("Add, sel C").on_hover_text("Add a Carbon atom, and select it. Useful for adding chains.").clicked() {
+        if ui
+            .button("Add, sel C")
+            .on_hover_text("Add a Carbon atom, and select it. Useful for adding chains.")
+            .clicked()
+        {
             let Selection::AtomLig((mol_i, i)) = state.ui.selection else {
                 eprintln!("Attempting to add an atom with no parent to add it to");
                 return;
@@ -396,12 +415,48 @@ fn edit_tools(
         //     engine_updates,
         // );
 
-        change_el_button(&mut state.mol_editor.mol.common.atoms, &state.ui.selection, Carbon, ui, &mut rebuild_md);
-        change_el_button(&mut state.mol_editor.mol.common.atoms, &state.ui.selection, Oxygen, ui, &mut rebuild_md);
-        change_el_button(&mut state.mol_editor.mol.common.atoms, &state.ui.selection, Nitrogen, ui, &mut rebuild_md);
-        change_el_button(&mut state.mol_editor.mol.common.atoms, &state.ui.selection, Sulfur, ui, &mut rebuild_md);
-        change_el_button(&mut state.mol_editor.mol.common.atoms, &state.ui.selection, Phosphorus, ui, &mut rebuild_md);
-        change_el_button(&mut state.mol_editor.mol.common.atoms, &state.ui.selection, Chlorine, ui, &mut rebuild_md);
+        change_el_button(
+            &mut state.mol_editor.mol.common.atoms,
+            &state.ui.selection,
+            Carbon,
+            ui,
+            &mut rebuild_md,
+        );
+        change_el_button(
+            &mut state.mol_editor.mol.common.atoms,
+            &state.ui.selection,
+            Oxygen,
+            ui,
+            &mut rebuild_md,
+        );
+        change_el_button(
+            &mut state.mol_editor.mol.common.atoms,
+            &state.ui.selection,
+            Nitrogen,
+            ui,
+            &mut rebuild_md,
+        );
+        change_el_button(
+            &mut state.mol_editor.mol.common.atoms,
+            &state.ui.selection,
+            Sulfur,
+            ui,
+            &mut rebuild_md,
+        );
+        change_el_button(
+            &mut state.mol_editor.mol.common.atoms,
+            &state.ui.selection,
+            Phosphorus,
+            ui,
+            &mut rebuild_md,
+        );
+        change_el_button(
+            &mut state.mol_editor.mol.common.atoms,
+            &state.ui.selection,
+            Chlorine,
+            ui,
+            &mut rebuild_md,
+        );
     });
 
     ui.add_space(COL_SPACING / 2.);

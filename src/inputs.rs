@@ -158,7 +158,7 @@ pub fn event_dev_handler(
                         cycle_selected(state_, scene, true);
 
                         match state_.volatile.operating_mode {
-                            OperatingMode::Primary =>  match state_.ui.selection {
+                            OperatingMode::Primary => match state_.ui.selection {
                                 Selection::AtomPeptide(_)
                                 | Selection::Residue(_)
                                 | Selection::BondPeptide(_) => redraw_protein = true,
@@ -170,10 +170,9 @@ pub fn event_dev_handler(
                                     redraw_lipid = true
                                 }
                                 _ => (),
-                            }
+                            },
                             OperatingMode::MolEditor => redraw_mol_editor = true,
                         }
-
                     }
                     Code(KeyCode::ArrowRight) => {
                         cycle_selected(state_, scene, false);
@@ -191,10 +190,9 @@ pub fn event_dev_handler(
                                     redraw_lipid = true
                                 }
                                 _ => (),
-                            }
+                            },
                             OperatingMode::MolEditor => redraw_mol_editor = true,
                         }
-
                     }
                     Code(KeyCode::Escape) => {
                         // If in manip mode, exit that, but don't remove selections.
