@@ -100,7 +100,7 @@ pub fn build_and_run_dynamics(
     mol_specific_params: &HashMap<String, ForceFieldParams>,
     cfg: &MdConfig,
     static_peptide: bool,
-    peptide_only_near_lig: bool,
+    peptide_only_near_lig: Option<f64>,
     pep_atom_set: &mut HashSet<(usize, usize)>,
     md_local: &mut MdStateLocal,
 ) -> Result<MdState, ParamError> {
@@ -128,7 +128,7 @@ pub fn filter_peptide_atoms(
     set: &mut HashSet<(usize, usize)>,
     pep: &MoleculePeptide,
     ligs: &[&MoleculeSmall],
-    only_near_lig: bool,
+    only_near_lig: Option<f64>,
 ) -> Vec<AtomGeneric> {
     *set = HashSet::new();
 
@@ -137,9 +137,7 @@ pub fn filter_peptide_atoms(
         .iter()
         .enumerate()
         .filter_map(|(i, a)| {
-            let pass = if !only_near_lig {
-                !a.hetero
-            } else {
+            let pass = if let Some(thresh) = only_near_lig {
                 let mut closest_dist = f64::MAX;
                 for lig in ligs {
                     for p in &lig.common.atom_posits {
@@ -149,7 +147,9 @@ pub fn filter_peptide_atoms(
                         }
                     }
                 }
-                !a.hetero && closest_dist < STATIC_ATOM_DIST_THRESH
+                !a.hetero && closest_dist < thresh
+            } else {
+                !a.hetero
             };
 
             if pass {
@@ -174,14 +174,14 @@ pub fn build_dynamics(
     mol_specific_params: &HashMap<String, ForceFieldParams>,
     cfg: &MdConfig,
     mut static_peptide: bool,
-    mut peptide_only_near_lig: bool,
+    mut peptide_only_near_lig: Option<f64>,
     pep_atom_set: &mut HashSet<(usize, usize)>,
 ) -> Result<MdState, ParamError> {
     println!("Setting up dynamics...");
 
     if ligs.is_empty() && lipids.is_empty() {
         static_peptide = false;
-        peptide_only_near_lig = false;
+        peptide_only_near_lig = None;
     }
 
     let mut mols = Vec::new();

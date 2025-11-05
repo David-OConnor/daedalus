@@ -4,7 +4,8 @@ use bio_files::BondType;
 use egui::{Color32, ComboBox, RichText, Slider, Ui};
 use graphics::{EngineUpdates, EntityUpdate, Scene};
 use lin_alg::f64::Vec3;
-use na_seq::Element::{Carbon, Nitrogen, Oxygen};
+use na_seq::Element;
+use na_seq::Element::{Carbon, Chlorine, Nitrogen, Oxygen, Phosphorus, Sulfur};
 
 use crate::{
     Selection, State, ViewSelLevel,
@@ -17,6 +18,7 @@ use crate::{
     },
     util::handle_err,
 };
+use crate::molecule::Atom;
 // todo: Check DBs (with a button maybe?) to see if the molecule exists in a DB already, or if
 // todo a similar one does.
 
@@ -27,6 +29,25 @@ const DT_MAX: f32 = 0.0005; // No more than 0.002 for stability. currently 0.5fs
 // Higher may be relax more, but takes longer. We aim for a small time so it can be done without
 // a noticeable lag.
 const MAX_RELAX_ITERS: usize = 300;
+
+fn change_el_button(atoms: &mut [Atom], sel: &Selection, el: Element, ui: &mut Ui, rebuild: &mut bool) {
+    let (r, g, b) = el.color();
+    let r = (r * 255.) as u8;
+    let g = (g * 255.) as u8;
+    let b = (b * 255.) as u8;
+    let color = Color32::from_rgb(r, g, b);
+
+    if ui.button(RichText::new(el.to_letter()).color(color))
+        .on_hover_text(format!("Change the selected atom's element to {el}")).clicked() {
+        let Selection::AtomLig((_, i)) = sel else {
+            eprintln!("Attempting to change an element with no atom selected.");
+            return;
+        };
+
+        atoms[*i].element = el;
+        *rebuild = true;
+    }
+}
 
 pub fn editor(
     state: &mut State,
@@ -39,36 +60,36 @@ pub fn editor(
     ui.horizontal_wrapped(|ui| {
         section_box().show(ui, |ui| {
             // ui.horizontal_wrapped(|ui| {
-                let mut cam_changed = false;
+            let mut cam_changed = false;
 
-                // todo: The distances this function resets to may not be ideal for our use case
-                // todo here. Adjust A/R.
-                cam_reset_controls(state, scene, ui, engine_updates, &mut cam_changed);
-                // if ui.button("Reset cam").clicked() {
-                //     scene.camera.position = lin_alg::f32::Vec3::new(0., 0., -INIT_CAM_DIST);
-                //     scene.camera.orientation = Quaternion::new_identity();
-                // }
+            // todo: The distances this function resets to may not be ideal for our use case
+            // todo here. Adjust A/R.
+            cam_reset_controls(state, scene, ui, engine_updates, &mut cam_changed);
+            // if ui.button("Reset cam").clicked() {
+            //     scene.camera.position = lin_alg::f32::Vec3::new(0., 0., -INIT_CAM_DIST);
+            //     scene.camera.orientation = Quaternion::new_identity();
+            // }
 
-                ui.add_space(COL_SPACING / 2.);
+            ui.add_space(COL_SPACING / 2.);
 
-                // todo: This is a C+P from the main editor
-                let color = if state.ui.atom_color_by_charge {
-                    COLOR_ACTIVE
-                } else {
-                    COLOR_INACTIVE
-                };
-                if ui
-                    .button(RichText::new("Color by q").color(color))
-                    .on_hover_text(
-                        "Color the atom by partial charge, instead of element-specific colors",
-                    )
-                    .clicked()
-                {
-                    state.ui.atom_color_by_charge = !state.ui.atom_color_by_charge;
-                    state.ui.view_sel_level = ViewSelLevel::Atom;
+            // todo: This is a C+P from the main editor
+            let color = if state.ui.atom_color_by_charge {
+                COLOR_ACTIVE
+            } else {
+                COLOR_INACTIVE
+            };
+            if ui
+                .button(RichText::new("Color by q").color(color))
+                .on_hover_text(
+                    "Color the atom by partial charge, instead of element-specific colors",
+                )
+                .clicked()
+            {
+                state.ui.atom_color_by_charge = !state.ui.atom_color_by_charge;
+                state.ui.view_sel_level = ViewSelLevel::Atom;
 
-                    redraw = true;
-                }
+                redraw = true;
+            }
             // });
         });
 
@@ -236,9 +257,12 @@ pub fn editor(
         }
     });
 
-    ui.horizontal_wrapped(|ui| {
+    ui.horizontal(|ui| {
         edit_tools(state, scene, ui, engine_updates);
+    });
 
+    // ui.horizontal_wrapped(|ui| {
+    ui.horizontal(|ui| {
         if let Some(sm) = &state.mol_editor.mol.smiles {
             ui.label(RichText::new(sm));
         }
@@ -307,7 +331,7 @@ fn edit_tools(
     let mut rebuild_md = false;
 
     section_box().show(ui, |ui| {
-        if ui.button("C").on_hover_text("Add a Carbon atom").clicked() {
+        if ui.button("Add C").on_hover_text("Add a Carbon atom").clicked() {
             let Selection::AtomLig((_, i)) = state.ui.selection else {
                 eprintln!("Attempting to add an atom with no parent to add it to");
                 return;
@@ -327,73 +351,57 @@ fn edit_tools(
             rebuild_md = true;
         }
 
-        if ui.button("O").on_hover_text("Add an Oxygen atom").clicked() {
-            let Selection::AtomLig((_, i)) = state.ui.selection else {
+        if ui.button("Add, sel C").on_hover_text("Add a Carbon atom, and select it. Useful for adding chains.").clicked() {
+            let Selection::AtomLig((mol_i, i)) = state.ui.selection else {
                 eprintln!("Attempting to add an atom with no parent to add it to");
                 return;
             };
 
-            state.mol_editor.add_atom(
+            let new_i = state.mol_editor.add_atom(
                 &mut scene.entities,
                 i,
-                Oxygen,
+                Carbon,
                 BondType::Single,
-                Some("oh".to_owned()), // todo
-                Some(1.1377),          // todo
-                -0.48,                 // todo
+                Some("ca".to_owned()), // todo
+                Some(1.4),             // todo
+                0.13,                  // todo
                 &mut state.ui,
                 engine_updates,
             );
+
+            if let Some(i) = new_i {
+                state.ui.selection = Selection::AtomLig((mol_i, i));
+
+                // `add_atom` handles individual redrawing, but here we need something, or the previous
+                // atom will still show as the selected color.
+                // todo better. (todo: More specific than this redraw all?)
+                mol_editor::redraw(&mut scene.entities, &state.mol_editor.mol, &state.ui);
+            }
+
             rebuild_md = true;
         }
 
-        if ui
-            .button("O=")
-            .on_hover_text("Add an Oxygen atom double-bonded")
-            .clicked()
-        {
-            let Selection::AtomLig((_, i)) = state.ui.selection else {
-                eprintln!("Attempting to add an atom with no parent to add it to");
-                return;
-            };
+        ui.add_space(COL_SPACING / 2.);
 
-            state.mol_editor.add_atom(
-                &mut scene.entities,
-                i,
-                Oxygen,
-                BondType::Double,
-                Some("o".to_owned()),
-                Some(1.1377), // todo
-                -0.53,        // todo
-                &mut state.ui,
-                engine_updates,
-            );
-            rebuild_md = true;
-        }
+        //
+        // state.mol_editor.add_atom(
+        //     &mut scene.entities,
+        //     i,
+        //     Carbon,
+        //     BondType::Single,
+        //     Some("ca".to_owned()), // todo
+        //     Some(1.4),             // todo
+        //     0.13,                  // todo
+        //     &mut state.ui,
+        //     engine_updates,
+        // );
 
-        if ui
-            .button("N")
-            .on_hover_text("Add an Nitrogen atom")
-            .clicked()
-        {
-            let Selection::AtomLig((_, i)) = state.ui.selection else {
-                eprintln!("Attempting to add an atom with no parent to add it to");
-                return;
-            };
-
-            state.mol_editor.add_atom(
-                &mut scene.entities,
-                i,
-                Nitrogen,
-                BondType::Single,
-                Some("n".to_owned()), // todo
-                Some(1.4),            // todo
-                -0.71,                // todo
-                &mut state.ui,
-                engine_updates,
-            );
-            rebuild_md = true;
-        }
+        change_el_button(&mut state.mol_editor.mol.common.atoms, &state.ui.selection, Carbon, ui, &mut rebuild_md);
+        change_el_button(&mut state.mol_editor.mol.common.atoms, &state.ui.selection, Oxygen, ui, &mut rebuild_md);
+        change_el_button(&mut state.mol_editor.mol.common.atoms, &state.ui.selection, Nitrogen, ui, &mut rebuild_md);
+        change_el_button(&mut state.mol_editor.mol.common.atoms, &state.ui.selection, Sulfur, ui, &mut rebuild_md);
+        change_el_button(&mut state.mol_editor.mol.common.atoms, &state.ui.selection, Phosphorus, ui, &mut rebuild_md);
+        change_el_button(&mut state.mol_editor.mol.common.atoms, &state.ui.selection, Chlorine, ui, &mut rebuild_md);
     });
 
     ui.add_space(COL_SPACING / 2.);

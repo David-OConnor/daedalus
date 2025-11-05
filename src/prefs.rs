@@ -162,6 +162,10 @@ pub struct ToSave {
     pub near_lig_only: bool,
     pub nearby_dist_thresh: u16,
     pub smiles_map: HashMap<MolIdent, String>,
+    /// We use this to mark that we should perform a save, even if one
+    /// of the fields here didn't change. E.g. after moving a molecule.
+    /// This is caught during our periodic check for changes in this struct.
+    pub save_flag: bool,
 }
 
 impl Default for ToSave {
@@ -188,6 +192,7 @@ impl Default for ToSave {
             nearby_dist_thresh: Default::default(),
             visibility: Default::default(),
             smiles_map: Default::default(),
+            save_flag: false,
         }
     }
 }

@@ -271,6 +271,7 @@ pub fn handle_mol_manip_in_out(
 /// Sets the manipulation mode, and adjusts camera controls A/R. Called from inputs, or the UI.
 pub fn set_manip(
     vol: &mut StateVolatile,
+    save_flag: &mut bool,
     scene: &mut Scene,
     redraw_lig: &mut bool,
     redraw_na: &mut bool,

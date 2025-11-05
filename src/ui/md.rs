@@ -14,6 +14,7 @@ use crate::{
     },
     util::{clear_cli_out, handle_err},
 };
+use crate::md::STATIC_ATOM_DIST_THRESH;
 
 pub fn md_setup(
     state: &mut State,
@@ -95,6 +96,12 @@ pub fn md_setup(
                         Some(m) => if m.common.selected_for_md { Some(m) } else { None },
                         None => None,
                     };
+                    
+                    let near_lig_thresh = if state.ui.md.peptide_only_near_ligs {
+                        Some(STATIC_ATOM_DIST_THRESH)
+                    } else {
+                        None
+                    };
                     match build_and_run_dynamics(
                         &state.dev,
                         ligs,
@@ -104,7 +111,7 @@ pub fn md_setup(
                         &state.lig_specific_params,
                         &state.to_save.md_config,
                         state.ui.md.peptide_static,
-                        state.ui.md.peptide_only_near_ligs,
+                        near_lig_thresh,
                         &mut state.volatile.md_peptide_selected,
                         &mut state.volatile.md_local,
                     ) {
@@ -293,15 +300,21 @@ pub fn energy_disp(snap: &Snapshot, ui: &mut Ui) {
     ui.label("E (kcal/mol) KE: ");
     ui.label(RichText::new(format!("{:.1}", snap.energy_kinetic)).color(Color32::GOLD));
 
-    ui.label("E / atom: ");
-    // todo: Don't continuously run this!
-    let e_per_atom = snap.energy_kinetic
-        / ((snap.water_o_posits.len() * 3) as f32 + snap.atom_posits.len() as f32);
-    ui.label(RichText::new(format!("{:.1}", e_per_atom)).color(Color32::GOLD));
+    ui.label("KE/atom: ");
+    // todo: Don't continuously run these computations!
+    let atom_count = (snap.water_o_posits.len() * 3) as f32 + snap.atom_posits.len() as f32;
+    let ke_per_atom = snap.energy_kinetic / atom_count;
+    ui.label(RichText::new(format!("{:.1}", ke_per_atom)).color(Color32::GOLD));
 
     ui.label("PE: ");
-    ui.label(RichText::new(format!("{:.1}", snap.energy_potential)).color(Color32::GOLD));
+    ui.label(RichText::new(format!("{:.2}", snap.energy_potential)).color(Color32::GOLD));
 
+    ui.label("PE/atom: ");
+    // todo: Don't continuously run this!
+    let pe_per_atom = snap.energy_potential / atom_count;
+    ui.label(RichText::new(format!("{:.3}", pe_per_atom)).color(Color32::GOLD));
+
+    ui.label("PE between mols:");
     // todo: One pair only for now
     if snap.energy_potential_between_mols.len() >= 2 {
         // todo: Which index?

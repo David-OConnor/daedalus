@@ -1287,13 +1287,12 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         ui.horizontal(|ui| {
             if state.ui.ui_vis.lipids {
                 lipid_section(state, scene, &mut engine_updates, ui);
+                ui.add_space(COL_SPACING);
             }
 
             if let Some(mol) = &state.active_mol() && state.peptide.is_some() {
                 if let MolGenericRef::Ligand(_) = mol {
-                    ui.add_space(COL_SPACING);
-
-                    ui.label("Docking");
+                    ui.label("Docking:");
 
                     if ui.button(RichText::new("Dock").color(Color32::GOLD)).clicked() {
                         // The other views make it tough to see the ligand rel the protein.

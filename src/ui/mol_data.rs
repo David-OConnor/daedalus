@@ -768,14 +768,14 @@ pub fn display_mol_data(
                 the mouse. Scroll to move it forward and back.")
                 .clicked() {
 
-                set_manip(&mut state.volatile, scene, redraw_lig, redraw_na, redraw_lipid, ManipMode::Move((active_mol_type, active_mol_i)));
+                set_manip(&mut state.volatile,&mut state.to_save.save_flag, scene, redraw_lig, redraw_na, redraw_lipid, ManipMode::Move((active_mol_type, active_mol_i)));
             }
 
             if ui.button(RichText::new("⟳").color(color_rotate))
                 .on_hover_text("(Hotkey: R. R or Esc to stop) Rotate the active molecule by clicking and dragging with the mouse. Scroll to roll.")
                 .clicked() {
 
-                set_manip(&mut state.volatile, scene, redraw_lig,redraw_na, redraw_lipid, ManipMode::Rotate((active_mol_type, active_mol_i)));
+                set_manip(&mut state.volatile,&mut state.to_save.save_flag, scene, redraw_lig,redraw_na, redraw_lipid, ManipMode::Rotate((active_mol_type, active_mol_i)));
             }
         }
 

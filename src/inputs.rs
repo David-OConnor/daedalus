@@ -157,36 +157,44 @@ pub fn event_dev_handler(
                     Code(KeyCode::ArrowLeft) => {
                         cycle_selected(state_, scene, true);
 
-                        match state_.ui.selection {
-                            Selection::AtomPeptide(_)
-                            | Selection::Residue(_)
-                            | Selection::BondPeptide(_) => redraw_protein = true,
-                            Selection::AtomLig(_) | Selection::BondLig(_) => redraw_lig = true,
-                            Selection::AtomNucleicAcid(_) | Selection::BondNucleicAcid(_) => {
-                                redraw_na = true
+                        match state_.volatile.operating_mode {
+                            OperatingMode::Primary =>  match state_.ui.selection {
+                                Selection::AtomPeptide(_)
+                                | Selection::Residue(_)
+                                | Selection::BondPeptide(_) => redraw_protein = true,
+                                Selection::AtomLig(_) | Selection::BondLig(_) => redraw_lig = true,
+                                Selection::AtomNucleicAcid(_) | Selection::BondNucleicAcid(_) => {
+                                    redraw_na = true
+                                }
+                                Selection::AtomLipid(_) | Selection::BondLipid(_) => {
+                                    redraw_lipid = true
+                                }
+                                _ => (),
                             }
-                            Selection::AtomLipid(_) | Selection::BondLipid(_) => {
-                                redraw_lipid = true
-                            }
-                            _ => (),
+                            OperatingMode::MolEditor => redraw_mol_editor = true,
                         }
+
                     }
                     Code(KeyCode::ArrowRight) => {
                         cycle_selected(state_, scene, false);
 
-                        match state_.ui.selection {
-                            Selection::AtomPeptide(_)
-                            | Selection::Residue(_)
-                            | Selection::BondPeptide(_) => redraw_protein = true,
-                            Selection::AtomLig(_) | Selection::BondLig(_) => redraw_lig = true,
-                            Selection::AtomNucleicAcid(_) | Selection::BondNucleicAcid(_) => {
-                                redraw_na = true
+                        match state_.volatile.operating_mode {
+                            OperatingMode::Primary => match state_.ui.selection {
+                                Selection::AtomPeptide(_)
+                                | Selection::Residue(_)
+                                | Selection::BondPeptide(_) => redraw_protein = true,
+                                Selection::AtomLig(_) | Selection::BondLig(_) => redraw_lig = true,
+                                Selection::AtomNucleicAcid(_) | Selection::BondNucleicAcid(_) => {
+                                    redraw_na = true
+                                }
+                                Selection::AtomLipid(_) | Selection::BondLipid(_) => {
+                                    redraw_lipid = true
+                                }
+                                _ => (),
                             }
-                            Selection::AtomLipid(_) | Selection::BondLipid(_) => {
-                                redraw_lipid = true
-                            }
-                            _ => (),
+                            OperatingMode::MolEditor => redraw_mol_editor = true,
                         }
+
                     }
                     Code(KeyCode::Escape) => {
                         // If in manip mode, exit that, but don't remove selections.
@@ -283,6 +291,7 @@ pub fn event_dev_handler(
 
                         mol_manip::set_manip(
                             &mut state_.volatile,
+                            &mut state_.to_save.save_flag,
                             scene,
                             &mut redraw_ligs_inplace,
                             &mut redraw_na_inplace,
@@ -298,6 +307,7 @@ pub fn event_dev_handler(
 
                         mol_manip::set_manip(
                             &mut state_.volatile,
+                            &mut state_.to_save.save_flag,
                             scene,
                             &mut redraw_ligs_inplace,
                             &mut redraw_na_inplace,

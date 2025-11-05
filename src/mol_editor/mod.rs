@@ -739,6 +739,7 @@ pub fn save(state: &mut State, path: &Path) -> io::Result<()> {
     Ok(())
 }
 
+// todo: I think this approach is wrong. You can add multiple of the same one...
 /// This is built from Amber's gaff2.dat. Returns each H FF type that can be bound to a given atom
 /// (by force field type), and the bond distance in Å.
 /// todo: Can/should we get partial charges too
@@ -904,7 +905,7 @@ pub(super) fn build_dynamics(
         adjacency_list: Some(mol.common.adjacency_list.clone()),
         static_: false,
         bonded_only: false,
-        // mol_specific_params: Some(msp.clone()),
+        // mol_specific_params: Some(mol_specific_params["CPB"].clone()),
         mol_specific_params: None,
     }];
 

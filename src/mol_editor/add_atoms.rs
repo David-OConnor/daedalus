@@ -16,6 +16,7 @@ use crate::{
 };
 
 impl MolEditorState {
+    /// Returns the index of the atom added.
     pub fn add_atom(
         &mut self,
         entities: &mut Vec<Entity>,
@@ -27,7 +28,7 @@ impl MolEditorState {
         q: f32,
         ui: &mut StateUi,
         updates: &mut EngineUpdates,
-    ) {
+    ) -> Option<usize> {
         // todo: For readability, we really need somethign like this, but getter borrow errors:
         let common = &mut self.mol.common;
 
@@ -35,7 +36,7 @@ impl MolEditorState {
         let el_parent = common.atoms[i_par].element;
 
         if el_parent == Hydrogen {
-            return; // Not supported in our current iteration.
+            return None; // Not supported in our current iteration.
         }
 
         // Delete hydrogens; we'll add back if required.
@@ -70,7 +71,7 @@ impl MolEditorState {
         ) {
             Some(p) => p,
             // Can't add an atom; already too many atoms bonded.
-            None => return,
+            None => return None,
         };
 
         let new_sn = NEXT_ATOM_SN.fetch_add(1, Ordering::AcqRel);
@@ -78,7 +79,7 @@ impl MolEditorState {
 
         if i_par >= self.mol.common.atoms.len() {
             eprintln!("Index out of range when adding atoms: {i_par}");
-            return;
+            return None;
             // todo: This return and print are a workaround; find the root cause.
         }
 
@@ -128,6 +129,8 @@ impl MolEditorState {
         // todo: Ideally just add the single entity, and add it to the
         // index buffer.
         updates.entities = EntityUpdate::All;
+
+        Some(new_i)
     }
 
     /// Populate hydrogens on a single atom.

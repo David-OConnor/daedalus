@@ -1,7 +1,7 @@
 //! A new approach, leveraging our molecular dynamics state and processes.
 
 use std::collections::{HashMap, HashSet};
-
+use std::time::Instant;
 use bincode::{Decode, Encode};
 use bio_files::{create_bonds, md_params::ForceFieldParams};
 use dynamics::{
@@ -126,6 +126,9 @@ pub fn dock(
         &mut state.volatile.md_peptide_selected,
     )?;
 
+    state.volatile.md_local.start = Some(Instant::now());
+    state.volatile.md_local.running = true;
+
     // todo: We may opt for a higher-than-normal DT here.
     let dt = 0.002;
     let n_steps = 600;
@@ -134,6 +137,7 @@ pub fn dock(
 
     // todo: You need a binding energy computation each step.
 
+    // Blocking for now.
     run_dynamics(&mut md_state, &state.dev, dt, n_steps);
     post_run_cleanup(state, scene, engine_updates);
 
@@ -204,7 +208,7 @@ fn build_dynamics_docking(
     // let bonds = create_bonds(&atoms);
 
     // Filter out hetero atoms.
-    let pep_atoms = filter_peptide_atoms(pep_atom_set, pep, &[], false);
+    let pep_atoms = filter_peptide_atoms(pep_atom_set, pep, &[], None);
 
     // todo: Let's try using all peptide atoms, but assigning certain
     // todo AtomsDynamics to be static and bonded only.
@@ -241,7 +245,9 @@ fn build_dynamics_docking(
     // the non-static ones. Bonded force computations are (unnecessarily) run on them, but this is cheap,
     // and scales linearly with atom count.
     let mut pep_set_near = HashSet::new();
-    let _ = filter_peptide_atoms(&mut pep_set_near, pep, &[mol], true);
+
+    let near_lig_thresh: f64 = 20.; // todo: Experiment
+    let _ = filter_peptide_atoms(&mut pep_set_near, pep, &[mol], Some(near_lig_thresh));
 
     let pep_start_i = mol.common.atoms.len();
     for (i, atom) in md_state.atoms.iter_mut().enumerate() {
