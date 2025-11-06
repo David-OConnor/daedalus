@@ -3,133 +3,65 @@
 //!
 //! todo: Use this to handle frcmod data as well.
 
+pub mod files; // Pub so the training program can access it.
+
 use std::{
-    collections::HashMap,
-    fs,
+    collections::{BTreeSet, HashMap},
     path::{Path, PathBuf},
 };
 
+use bincode::{Decode, Encode};
 use bio_files::{AtomGeneric, BondGeneric, mol2::Mol2};
-use candle_core::{DType, Device, IndexOp, Module, Tensor};
+use candle_core::{CudaDevice, DType, Device, IndexOp, Module, Tensor};
 use candle_nn as nn;
 use candle_nn::{Embedding, Linear, VarBuilder, ops::sigmoid};
+use graphics::app_utils::load;
 
-pub const MODEL_PATH: &str = "geostd_model.safetensors";
-pub const GEOSTD_PATH: &str = "C:/users/the_a/Desktop/bio_misc/amber_geostd_test";
+use crate::param_inference::files::{MODEL_PATH, VOCAB_PATH};
 
-pub struct GeoStdMol2Dataset {
-    mol2_paths: Vec<PathBuf>,
-    atom_type_vocab: HashMap<String, usize>,
-    elem_vocab: HashMap<String, usize>,
+/// We save this to file during training, and load it during inference.
+#[derive(Debug, Encode, Decode)]
+pub struct Vocabs {
+    pub el: HashMap<String, usize>,
+    pub atom_type: HashMap<String, usize>,
 }
 
-impl GeoStdMol2Dataset {
-    pub fn new(
-        mol2_paths: &[PathBuf],
-        // todo: frcmod here?
-        atom_type_vocab: HashMap<String, usize>,
-        elem_vocab: HashMap<String, usize>,
-    ) -> candle_core::Result<Self> {
+impl Vocabs {
+    pub fn new(mol2_paths: &[PathBuf]) -> candle_core::Result<Self> {
+        let mut elems: BTreeSet<String> = BTreeSet::new();
+        let mut ff_types: BTreeSet<String> = BTreeSet::new();
+
+        for path in mol2_paths {
+            let mol = Mol2::load(path)?;
+
+            for atom in mol.atoms.iter() {
+                elems.insert(atom.element.to_letter());
+
+                // Ideally we won't encounter this with the Geostd data set.
+                let Some(ff) = &atom.force_field_type else {
+                    eprintln!("Error: Missing FF type on Geostd atom: {atom}");
+                    continue;
+                };
+
+                ff_types.insert(ff.clone());
+            }
+        }
+
+        let mut el_map = HashMap::new();
+        for (i, el) in elems.into_iter().enumerate() {
+            el_map.insert(el, i);
+        }
+
+        let mut atom_type_map = HashMap::new();
+        for (i, t) in ff_types.into_iter().enumerate() {
+            atom_type_map.insert(t, i);
+        }
+
         Ok(Self {
-            mol2_paths: mol2_paths.to_vec(),
-            atom_type_vocab,
-            elem_vocab,
+            el: el_map,
+            atom_type: atom_type_map,
         })
     }
-
-    pub fn len(&self) -> usize {
-        self.mol2_paths.len()
-    }
-
-    pub fn get(&self, idx: usize, device: &Device) -> candle_core::Result<Batch> {
-        let mol = Mol2::load(&self.mol2_paths[idx])?;
-        let atoms = &mol.atoms;
-        let bonds = &mol.bonds;
-        let n = atoms.len();
-
-        let mut elem_ids = Vec::with_capacity(n);
-        let mut has_type = Vec::with_capacity(n);
-        let mut type_ids = Vec::with_capacity(n);
-        let mut charges = Vec::with_capacity(n);
-        let mut coords = Vec::with_capacity(n * 3);
-
-        let oov_elem_id = self.elem_vocab.len();
-
-        for atom in atoms.iter() {
-            let el_id = self
-                .elem_vocab
-                .get(&atom.element.to_letter())
-                .cloned()
-                .unwrap_or(oov_elem_id);
-            elem_ids.push(el_id as i64);
-
-            coords.push(atom.posit.x as f32);
-            coords.push(atom.posit.y as f32);
-            coords.push(atom.posit.z as f32);
-
-            if let Some(ff) = &atom.force_field_type {
-                if let Some(tid) = self.atom_type_vocab.get(ff) {
-                    has_type.push(1.0f32);
-                    type_ids.push(*tid as i64);
-                } else {
-                    has_type.push(0.0f32);
-                    type_ids.push(-1);
-                }
-            } else {
-                has_type.push(0.0f32);
-                type_ids.push(-1);
-            }
-
-            if let Some(pc) = atom.partial_charge {
-                charges.push(pc);
-            } else {
-                charges.push(0.0);
-            }
-        }
-
-        let mut edge_index_vec: Vec<i64> = Vec::new();
-        for bond in bonds.iter() {
-            let i = (bond.atom_0_sn - 1) as i64;
-            let j = (bond.atom_1_sn - 1) as i64;
-            edge_index_vec.push(i);
-            edge_index_vec.push(j);
-            edge_index_vec.push(j);
-            edge_index_vec.push(i);
-        }
-
-        let elem_ids = Tensor::from_slice(&elem_ids, (n,), device)?;
-        let coords = Tensor::from_slice(&coords, (n, 3), device)?;
-        let type_ids = Tensor::from_slice(&type_ids, (n,), device)?;
-        let has_type = Tensor::from_slice(&has_type, (n,), device)?;
-        let charges = Tensor::from_slice(&charges, (n,), device)?;
-
-        let edge_index = if edge_index_vec.is_empty() {
-            Tensor::zeros((0, 2), DType::I64, device)?
-        } else {
-            let m = edge_index_vec.len() / 2;
-            Tensor::from_slice(&edge_index_vec, (m, 2), device)?
-        };
-
-        Ok(Batch {
-            elem_ids,
-            coords,
-            edge_index,
-            type_ids,
-            has_type,
-            charges,
-            num_atoms: n,
-        })
-    }
-}
-
-pub struct Batch {
-    pub elem_ids: Tensor,
-    pub coords: Tensor,
-    pub edge_index: Tensor,
-    pub type_ids: Tensor,
-    pub has_type: Tensor,
-    pub charges: Tensor,
-    pub num_atoms: usize,
 }
 
 // -------- GRU cell (hidden_dim -> hidden_dim) --------
@@ -239,6 +171,7 @@ impl MolGNN {
         hidden_dim: usize,
     ) -> candle_core::Result<Self> {
         let elem_emb = nn::embedding(n_elems + 1, hidden_dim, vb.pp("elem_emb"))?;
+
         let coord_lin = nn::linear(3, hidden_dim, vb.pp("coord_lin"))?;
         let mp1 = MessagePassingLayer::new(vb.pp("mp1"), hidden_dim)?;
         let mp2 = MessagePassingLayer::new(vb.pp("mp2"), hidden_dim)?;
@@ -280,22 +213,21 @@ impl MolGNN {
 
 pub fn run_inference(
     model: &MolGNN,
-    atom_type_vocab: &HashMap<String, usize>,
-    elem_vocab: &HashMap<String, usize>,
+    vocabs: &Vocabs,
     atoms: &[AtomGeneric],
     bonds: &[BondGeneric],
     device: &Device,
 ) -> candle_core::Result<Vec<(String, f32)>> {
-    // ) -> candle_core::Result<Vec<Atom>> {
     let mut elem_ids = Vec::with_capacity(atoms.len());
     let mut coords = Vec::with_capacity(atoms.len() * 3);
 
-    let oov_elem_id = elem_vocab.len();
+    let oov_elem_id = vocabs.el.len();
 
     for atom in atoms.iter() {
         let el = &atom.element;
         elem_ids.push(
-            elem_vocab
+            vocabs
+                .el
                 .get(&el.to_letter())
                 .cloned()
                 .unwrap_or(oov_elem_id) as i64,
@@ -332,7 +264,8 @@ pub fn run_inference(
     let type_ids: Vec<i64> = type_ids.to_vec1()?;
     let charges: Vec<f32> = charges.to_vec1()?;
 
-    let inv_type_vocab: HashMap<usize, String> = atom_type_vocab
+    let inv_type_vocab: HashMap<usize, String> = vocabs
+        .atom_type
         .iter()
         .map(|(k, v)| (*v, k.clone()))
         .collect();
@@ -347,4 +280,39 @@ pub fn run_inference(
     }
 
     Ok(result)
+}
+
+pub fn test_inference() {
+    let mol = Mol2::load(Path::new("./molecules/CPB.mol2")).unwrap();
+
+    // todo
+    // #[cfg(feature = "cuda")]
+    // let dev_candle = Device::Cuda(CudaDevice::new_with_stream(0).unwrap());
+    // #[cfg(not(feature = "cuda"))]
+    let dev_candle = Device::Cpu;
+
+    println!("Running inference on GeoStd data with device: {dev_candle:?}");
+
+    // let paths = find_paths(&mol2_dir).unwrap();
+    // let (el_vocab, atom_type_vocab) = build_vocabs(&paths).unwrap();
+    let vocabs: Vocabs = load(&Path::new(VOCAB_PATH)).unwrap();
+
+    let n_elems = vocabs.el.len();
+    let n_atom_types = vocabs.atom_type.len();
+    let hidden_dim = 128;
+
+    // Make a varmap and LOAD the trained weights
+    let mut varmap = candle_nn::VarMap::new();
+
+    // Build the model from the loaded varmap
+    let vb = VarBuilder::from_varmap(&mut varmap, DType::F32, &dev_candle);
+    let model = MolGNN::new(vb, n_elems, n_atom_types, hidden_dim).unwrap();
+    varmap.load(MODEL_PATH).unwrap();
+
+    // Run inference
+    let preds = run_inference(&model, &vocabs, &mol.atoms, &mol.bonds, &dev_candle).unwrap();
+
+    for (i, (ff, q)) in preds.iter().enumerate() {
+        println!("SN: {}: {ff}  q={q}", i + 1);
+    }
 }

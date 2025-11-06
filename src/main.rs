@@ -56,17 +56,26 @@ mod viridis_lut;
 
 #[cfg(feature = "cuda")]
 use std::sync::Arc;
-use std::{collections::{HashMap, HashSet}, env, fmt, fmt::Display, fs, io, path::PathBuf, sync::mpsc::Receiver, time::Instant};
-use std::collections::BTreeSet;
-use std::path::Path;
+use std::{
+    collections::{BTreeSet, HashMap, HashSet},
+    env, fmt,
+    fmt::Display,
+    fs, io,
+    path::{Path, PathBuf},
+    sync::mpsc::Receiver,
+    time::Instant,
+};
+
 use bincode::{Decode, Encode};
 use bio_apis::{
     ReqError,
     amber_geostd::GeostdItem,
     rcsb::{FilesAvailable, PdbDataResults},
 };
-use bio_files::md_params::{ForceFieldParams, load_lipid_templates};
-use bio_files::{AtomGeneric, BondGeneric, Mol2};
+use bio_files::{
+    AtomGeneric, BondGeneric, Mol2,
+    md_params::{ForceFieldParams, load_lipid_templates},
+};
 use candle_core::{CudaDevice, DType, Device};
 use candle_nn::VarBuilder;
 #[cfg(feature = "cuda")]
@@ -93,18 +102,23 @@ use crate::{
     mol_editor::MolEditorState,
     molecule::{Bond, MoGenericRefMut, MolGenericRef, MolIdent, MolType, MoleculeCommon},
     nucleic_acid::MoleculeNucleicAcid,
+    param_inference::{GEOSTD_PATH, MolGNN, run_inference},
     prefs::ToSave,
     render::render,
     ui::cam::{FOG_DIST_DEFAULT, VIEW_DEPTH_NEAR_MIN},
     util::handle_err,
 };
-use crate::param_inference::{run_inference, MolGNN, GEOSTD_PATH};
 // ------Including files into the executable
 
 // Note: If you haven't generated this file yet when compiling (e.g. from a freshly-cloned repo),
 // make an edit to one of the CUDA files (e.g. add a newline), then run, to create this file.
 #[cfg(feature = "cuda")]
 const PTX: &str = include_str!("../daedalus.ptx");
+
+// todo: This is duplicate with the definitions in param_inference mod.
+// Model: ~1.5Mb. Vocab: ~440 bytes.
+// const PARAM_INFERENCE_MODEL: &str = include_str!("../geostd_model.safetensors");
+// const PARAM_INFERENCE_VOCAB: &str = include_str!("../geostd_model.vocab");
 
 // Note: Water parameters are concise; we store them directly.
 
@@ -203,7 +217,7 @@ impl Default for FileDialogs {
         let cfg_vina = FileDialogConfig {
             ..Default::default()
         }
-            .add_file_filter_extensions("Executables", vec!["", "exe"]);
+        .add_file_filter_extensions("Executables", vec!["", "exe"]);
 
         let load = FileDialog::with_config(cfg_all.clone()).default_file_filter("All");
         let save = FileDialog::with_config(cfg_all).default_save_extension("Protein");
@@ -400,7 +414,7 @@ impl MsaaSetting {
             // Self::Two => "2×",
             Self::Four => "4×",
         }
-            .to_owned()
+        .to_owned()
     }
 }
 
@@ -892,118 +906,7 @@ fn main() {
     state.load_lipid_templates();
 
     // todo temp testing inference
-    test_inference();
+    param_inference::test_inference();
 
     render(state);
-}
-
-fn test_inference() {
-    let mol = Mol2::load(Path::new("./molecules/CPB.mol2")).unwrap();
-
-    // #[cfg(feature = "cuda")]
-    // let dev_candle = Device::Cuda(CudaDevice::new_with_stream(0).unwrap());
-    // #[cfg(not(feature = "cuda"))]
-    let dev_candle = Device::Cpu;
-
-    // todo: Don't keep rebuilding these vocabs!!
-    // Rebuild vocabs the same way as training (same path!)
-    let mol2_dir = Path::new(GEOSTD_PATH);
-    let paths = find_paths(&mol2_dir).unwrap();
-    let (el_vocab, atom_type_vocab) = build_vocabs(&paths).unwrap();
-
-    let n_elems = el_vocab.len();
-    let n_atom_types = atom_type_vocab.len();
-    let hidden_dim = 128;
-
-    // Make a varmap and LOAD the trained weights
-    let mut varmap = candle_nn::VarMap::new();
-    varmap.load("geostd_model.safetensors").unwrap();
-
-    // Build the model from the loaded varmap
-    let vb = VarBuilder::from_varmap(&mut varmap, DType::F32, &dev_candle);
-    let model = MolGNN::new(vb, n_elems, n_atom_types, hidden_dim).unwrap();
-
-    // Run inference
-    let preds = run_inference(
-        &model,
-        &atom_type_vocab,
-        &el_vocab,
-        &mol.atoms,
-        &mol.bonds,
-        &dev_candle,
-    ).unwrap();
-
-    for (i, (ff, q)) in preds.iter().enumerate() {
-        println!("SN: {}: {ff}  q={q}", i + 1);
-    }
-}
-
-// todo: C+P for now; having structure problems
-
-/// Find Mol2 paths. Assumes there are per-letter subfolders one-layer deep.
-/// todo: FRCmod as well
-pub fn find_paths(geostd_dir: &Path) -> io::Result<Vec<PathBuf>> {
-    let mut result = Vec::new();
-
-    for entry in fs::read_dir(geostd_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-
-        if path.is_dir() {
-            for subentry in fs::read_dir(&path)? {
-                let subentry = subentry?;
-                let subpath = subentry.path();
-
-                if subpath
-                    .extension()
-                    .map(|e| e.to_string_lossy().to_lowercase())
-                    != Some("mol2".to_string())
-                {
-                    continue;
-                }
-
-                result.push(subpath);
-            }
-        }
-    }
-
-    Ok(result)
-}
-
-/// (Element, atom type) maps.
-pub fn build_vocabs(
-    mol2_paths: &[PathBuf],
-) -> candle_core::Result<(HashMap<String, usize>, HashMap<String, usize>)> {
-    let mut elems: BTreeSet<String> = BTreeSet::new();
-    let mut ff_types: BTreeSet<String> = BTreeSet::new();
-
-    for path in mol2_paths {
-        let mol = Mol2::load(path)?;
-
-        let mut skip_mol = false;
-        for atom in mol.atoms.iter() {
-            let Some(ff) = &atom.force_field_type else {
-                skip_mol = true;
-                break;
-            };
-
-            elems.insert(atom.element.to_letter());
-            ff_types.insert(ff.clone());
-        }
-        if skip_mol {
-            continue;
-        }
-    }
-
-    let mut el_map = HashMap::new();
-    for (i, el) in elems.into_iter().enumerate() {
-        el_map.insert(el, i);
-    }
-
-    let mut atom_type_map = HashMap::new();
-    for (i, t) in ff_types.into_iter().enumerate() {
-        atom_type_map.insert(t, i);
-    }
-
-    Ok((el_map, atom_type_map))
 }

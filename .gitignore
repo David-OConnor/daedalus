@@ -32,6 +32,7 @@ Cargo.lock
 # ML models
 *.pt
 *.safetensors
+*.vocab
 
 # Our prefs format.
 *.dae
