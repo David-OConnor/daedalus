@@ -811,7 +811,7 @@ pub fn handle_thread_rx(state: &mut State) {
     if let Some(rx) = &mut state.volatile.amber_geostd_data_avail {
         match rx.try_recv() {
             Ok((i, data)) => {
-                println!("Geostd thread returned: {:?}", data); // todo temp
+                println!("Geostd thread returned"); // todo temp
 
                 match data {
                     Ok(d) => {
@@ -824,7 +824,11 @@ pub fn handle_thread_rx(state: &mut State) {
                         mol.apply_geostd_data(d, &mut state.lig_specific_params);
                     }
                     Err(e) => {
-                        eprintln!("Error: Unable to load GeoStd data for this molecule");
+                        eprintln!(
+                            " Unable to load GeoStd data for this molecule (Likely not in the data set.))"
+                        );
+
+                        // todo: Inference here?
                     }
                 }
                 state.volatile.amber_geostd_data_avail = None;

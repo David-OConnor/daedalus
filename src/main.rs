@@ -68,10 +68,9 @@ use std::{
 use bincode::{Decode, Encode};
 use bio_apis::{
     ReqError,
-    amber_geostd::GeostdItem,
+    amber_geostd::{GeostdData, GeostdItem},
     rcsb::{FilesAvailable, PdbDataResults},
 };
-use bio_apis::amber_geostd::GeostdData;
 use bio_files::{
     AtomGeneric, BondGeneric, Mol2,
     md_params::{ForceFieldParams, load_lipid_templates},
@@ -897,11 +896,11 @@ fn main() {
 
     // todo temp testing inference
     let mol = Mol2::load(Path::new("molecules/CPB.mol2")).unwrap();
-    let (ff_type, charge, dihedrals) = dynamics::param_inference::infer_params(&mol.atoms, &mol.bonds).unwrap();
-
-    for i in 0..mol.atoms.len() {
-        println!("SN: {} {}, {}", i + 1, ff_type[i], charge[i]);
-    }
+    // let (ff_type, charge, dihedrals) = dynamics::param_inference::infer_params(&mol.atoms, &mol.bonds).unwrap();
+    //
+    // for i in 0..mol.atoms.len() {
+    //     println!("SN: {} {}, {}", i + 1, ff_type[i], charge[i]);
+    // }
 
     render(state);
 }

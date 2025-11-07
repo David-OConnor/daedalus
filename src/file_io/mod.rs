@@ -602,7 +602,12 @@ impl State {
 
                 self.mol_dynamics = None;
 
-                mol.update_aux(&self.volatile.active_mol, &mut self.lig_specific_params, &mut self.volatile.amber_geostd_data_avail);
+                mol.update_aux(
+                    &self.volatile.active_mol,
+                    &mut self.lig_specific_params,
+                    &mut self.volatile.amber_geostd_data_avail,
+                    self.ligands.len(),
+                );
 
                 if let Some(ref mut s) = scene {
                     let centroid = mol.common.centroid();

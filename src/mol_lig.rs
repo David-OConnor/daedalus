@@ -1,10 +1,17 @@
 //! Fundamental data structures for small organic molecules / ligands
 
-use std::{collections::HashMap, io, path::PathBuf, thread, time::Instant};
-use std::sync::mpsc;
-use std::sync::mpsc::Receiver;
-use bio_apis::{amber_geostd, pubchem, pubchem::ProteinStructure, ReqError};
-use bio_apis::amber_geostd::GeostdData;
+use std::{
+    collections::HashMap,
+    io,
+    path::PathBuf,
+    sync::{mpsc, mpsc::Receiver},
+    thread,
+    time::Instant,
+};
+
+use bio_apis::{
+    ReqError, amber_geostd, amber_geostd::GeostdData, pubchem, pubchem::ProteinStructure,
+};
 use bio_files::{
     ChargeType, Mol2, MolType, Pdbqt, Sdf,
     md_params::{ForceFieldParams, ForceFieldParamsVec},
@@ -370,7 +377,11 @@ impl MoleculeSmall {
         result
     }
 
-    pub fn apply_geostd_data(&mut self, data: GeostdData, lig_specific: &mut HashMap<String, ForceFieldParams>,) {
+    pub fn apply_geostd_data(
+        &mut self,
+        data: GeostdData,
+        lig_specific: &mut HashMap<String, ForceFieldParams>,
+    ) {
         if !self.ff_params_loaded {
             let Ok(mol2) = Mol2::new(&data.mol2) else {
                 eprintln!("Error: No Mol2 available from Geostd");
@@ -415,6 +426,15 @@ impl MoleculeSmall {
                     "Unable to load Amber Geostd data for this molecule; atom count mismatch."
                 );
 
+                println!("Inferring parameter data using ML");
+                let atoms_gen: Vec<_> = self.common.atoms.iter().map(|a| a.to_generic()).collect();
+                let bonds_gen: Vec<_> = self.common.bonds.iter().map(|a| a.to_generic()).collect();
+                let (ff_type, charge, dihedrals) =
+                    dynamics::param_inference::infer_params(&atoms_gen, &bonds_gen).unwrap();
+
+                for i in 0..self.common.atoms.len() {
+                    println!("SN: {} {}, {}", i + 1, ff_type[i], charge[i]);
+                }
                 return;
             }
 
@@ -432,7 +452,6 @@ impl MoleculeSmall {
             self.common.adjacency_list = mol.common.adjacency_list;
 
             self.ff_params_loaded = true;
-
             println!("Loaded Amber Geostd FF data for {}", self.common.ident);
         }
 
@@ -442,6 +461,8 @@ impl MoleculeSmall {
             {
                 lig_specific.insert(self.common.ident.clone(), ForceFieldParams::new(&frcmod));
                 self.frcmod_loaded = true;
+
+                println!("Loaded Amber FRCMOD data for {}", self.common.ident);
             }
         }
     }
@@ -462,9 +483,10 @@ impl MoleculeSmall {
         println!("Attempting to load Amber Geostd dynamics data for this molecule...");
 
         let (tx, rx) = mpsc::channel(); // one-shot channel
+        let ident_for_thread = ident.to_string();
 
         thread::spawn(move || {
-            let data = amber_geostd::load_mol_files(&ident);
+            let data = amber_geostd::load_mol_files(&ident_for_thread);
             let _ = tx.send((mol_i, data));
             println!("Sent thread"); // todo temp.
         });
