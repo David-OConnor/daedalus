@@ -44,7 +44,6 @@ mod mol_editor;
 mod mol_lig;
 mod mol_manip;
 mod nucleic_acid;
-mod param_inference;
 mod selection;
 mod smiles;
 #[cfg(test)]
@@ -72,12 +71,11 @@ use bio_apis::{
     amber_geostd::GeostdItem,
     rcsb::{FilesAvailable, PdbDataResults},
 };
+use bio_apis::amber_geostd::GeostdData;
 use bio_files::{
     AtomGeneric, BondGeneric, Mol2,
     md_params::{ForceFieldParams, load_lipid_templates},
 };
-use candle_core::{CudaDevice, DType, Device};
-use candle_nn::VarBuilder;
 #[cfg(feature = "cuda")]
 use cudarc::{
     driver::{CudaContext, CudaFunction, CudaModule, CudaStream},
@@ -102,27 +100,16 @@ use crate::{
     mol_editor::MolEditorState,
     molecule::{Bond, MoGenericRefMut, MolGenericRef, MolIdent, MolType, MoleculeCommon},
     nucleic_acid::MoleculeNucleicAcid,
-    param_inference::{GEOSTD_PATH, MolGNN, run_inference},
     prefs::ToSave,
     render::render,
     ui::cam::{FOG_DIST_DEFAULT, VIEW_DEPTH_NEAR_MIN},
     util::handle_err,
 };
-// ------Including files into the executable
 
 // Note: If you haven't generated this file yet when compiling (e.g. from a freshly-cloned repo),
 // make an edit to one of the CUDA files (e.g. add a newline), then run, to create this file.
 #[cfg(feature = "cuda")]
 const PTX: &str = include_str!("../daedalus.ptx");
-
-// todo: This is duplicate with the definitions in param_inference mod.
-// Model: ~1.5Mb. Vocab: ~440 bytes.
-// const PARAM_INFERENCE_MODEL: &str = include_str!("../geostd_model.safetensors");
-// const PARAM_INFERENCE_VOCAB: &str = include_str!("../geostd_model.vocab");
-
-// Note: Water parameters are concise; we store them directly.
-
-// ------ End file includes.
 
 // todo: Eventually, implement a system that automatically checks for changes, and don't
 // todo save to disk if there are no changes.
@@ -299,6 +286,8 @@ struct StateVolatile {
     >,
     /// Receives thread data upon an HTTP result completion.
     smiles_pending_data_avail: Option<Receiver<(MolIdent, Result<String, ReqError>)>>,
+    /// The first param is the index.
+    amber_geostd_data_avail: Option<Receiver<(usize, Result<GeostdData, ReqError>)>>,
     /// We may change CWD during CLI navigation; keep prefs directory constant.
     prefs_dir: PathBuf,
     /// Entered by the user, for this session.
@@ -333,6 +322,7 @@ impl Default for StateVolatile {
             inputs_commanded: Default::default(),
             smiles_pending_data_avail: Default::default(),
             mol_pending_data_avail: Default::default(),
+            amber_geostd_data_avail: Default::default(),
             prefs_dir: env::current_dir().unwrap(), // This is why we can't derive.
             cli_input_history: Default::default(),
             cli_input_selected: Default::default(),
@@ -906,7 +896,12 @@ fn main() {
     state.load_lipid_templates();
 
     // todo temp testing inference
-    param_inference::test_inference();
+    let mol = Mol2::load(Path::new("molecules/CPB.mol2")).unwrap();
+    let (ff_type, charge, dihedrals) = dynamics::param_inference::infer_params(&mol.atoms, &mol.bonds).unwrap();
+
+    for i in 0..mol.atoms.len() {
+        println!("SN: {} {}, {}", i + 1, ff_type[i], charge[i]);
+    }
 
     render(state);
 }

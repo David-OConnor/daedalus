@@ -501,7 +501,7 @@ impl MoleculePeptide {
 
     /// Call this periodically from the UI/event loop; it’s non-blocking.
     /// Returns if it updated, e.g. so we can update prefs.
-    pub fn poll_data_avail(
+    pub fn poll_mol_pending_data(
         &mut self,
         pending_data_avail: &mut Option<
             Receiver<(

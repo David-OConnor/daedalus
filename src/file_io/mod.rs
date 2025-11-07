@@ -602,7 +602,7 @@ impl State {
 
                 self.mol_dynamics = None;
 
-                mol.update_aux(&self.volatile.active_mol, &mut self.lig_specific_params);
+                mol.update_aux(&self.volatile.active_mol, &mut self.lig_specific_params, &mut self.volatile.amber_geostd_data_avail);
 
                 if let Some(ref mut s) = scene {
                     let centroid = mol.common.centroid();
@@ -643,7 +643,6 @@ impl State {
                             thread::spawn(move || {
                                 let data = pubchem::get_smiles(&ident_for_thread.to_str());
                                 let _ = tx.send((ident_for_thread, data));
-                                println!("Sent thread"); // todo temp.
                             });
 
                             self.volatile.smiles_pending_data_avail = Some(rx);

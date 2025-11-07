@@ -1,8 +1,10 @@
 //! Fundamental data structures for small organic molecules / ligands
 
-use std::{collections::HashMap, io, path::PathBuf, time::Instant};
-
-use bio_apis::{amber_geostd, pubchem::ProteinStructure};
+use std::{collections::HashMap, io, path::PathBuf, thread, time::Instant};
+use std::sync::mpsc;
+use std::sync::mpsc::Receiver;
+use bio_apis::{amber_geostd, pubchem, pubchem::ProteinStructure, ReqError};
+use bio_apis::amber_geostd::GeostdData;
 use bio_files::{
     ChargeType, Mol2, MolType, Pdbqt, Sdf,
     md_params::{ForceFieldParams, ForceFieldParamsVec},
@@ -368,26 +370,10 @@ impl MoleculeSmall {
         result
     }
 
-    /// Unfortunately, we can't directly map atoms from our original molecule to
-    /// the Geostd one. We could do this with coordinates, but that might be complicated.
-    /// For now, we perform a sanity check about atom count by element. If it passes,
-    /// we replace molecule atom and bond data with that loaded from the mol2.
-    fn replace_with_geostd(
-        &mut self,
-        ident: &str,
-        lig_specific: &mut HashMap<String, ForceFieldParams>,
-    ) {
-        println!("Attempting to load Amber Geostd dynamics data for this molecule...");
-        let start = Instant::now();
-
-        let Ok(data) = amber_geostd::load_mol_files(&ident) else {
-            let elapsed = start.elapsed().as_millis();
-            println!("Unable to find data, took {elapsed:.1}ms");
-            return;
-        };
-
+    pub fn apply_geostd_data(&mut self, data: GeostdData, lig_specific: &mut HashMap<String, ForceFieldParams>,) {
         if !self.ff_params_loaded {
             let Ok(mol2) = Mol2::new(&data.mol2) else {
+                eprintln!("Error: No Mol2 available from Geostd");
                 return;
             };
 
@@ -447,8 +433,7 @@ impl MoleculeSmall {
 
             self.ff_params_loaded = true;
 
-            let elapsed = start.elapsed().as_millis();
-            println!("Loaded Amber Geostd in {elapsed:.1}ms");
+            println!("Loaded Amber Geostd FF data for {}", self.common.ident);
         }
 
         if !self.frcmod_loaded {
@@ -461,11 +446,39 @@ impl MoleculeSmall {
         }
     }
 
+    /// Attempt to find FF type, partial charge, and FRCMOD overrides for a given molecule.
+    /// Launch this in a thread.
+    ///
+    /// Unfortunately, we can't directly map atoms from our original molecule to
+    /// the Geostd one. We could do this with coordinates, but that might be complicated.
+    /// For now, we perform a sanity check about atom count by element. If it passes,
+    /// we replace molecule atom and bond data with that loaded from the mol2.
+    fn search_geostd(
+        &mut self,
+        ident: &str,
+        geostd_thread: &mut Option<Receiver<(usize, Result<GeostdData, ReqError>)>>,
+        mol_i: usize,
+    ) {
+        println!("Attempting to load Amber Geostd dynamics data for this molecule...");
+
+        let (tx, rx) = mpsc::channel(); // one-shot channel
+
+        thread::spawn(move || {
+            let data = amber_geostd::load_mol_files(&ident);
+            let _ = tx.send((mol_i, data));
+            println!("Sent thread"); // todo temp.
+        });
+
+        *geostd_thread = Some(rx);
+    }
+
     /// Updates we wish to do shortly after load, but need access to State for.
     pub fn update_aux(
         &mut self,
         active_mol: &Option<(Mt, usize)>,
         lig_specific: &mut HashMap<String, ForceFieldParams>,
+        geostd_thread: &mut Option<Receiver<(usize, Result<GeostdData, ReqError>)>>,
+        mol_i: usize,
     ) {
         if let Some((_, i)) = active_mol {
             let offset = LIGAND_ABS_POSIT_OFFSET * (*i as f64);
@@ -506,7 +519,9 @@ impl MoleculeSmall {
                 }
             }
 
-            self.replace_with_geostd(&ident, lig_specific);
+            // Attempt to find parameters in the Amber Geostd data set. If that fails,
+            // infer using machine learning.
+            self.search_geostd(&ident, geostd_thread, mol_i);
         }
     }
 }

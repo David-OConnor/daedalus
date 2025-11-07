@@ -803,9 +803,35 @@ pub fn handle_thread_rx(state: &mut State) {
 
     if state.volatile.mol_pending_data_avail.is_some()
         && let Some(mol) = &mut state.peptide
-        && mol.poll_data_avail(&mut state.volatile.mol_pending_data_avail)
+        && mol.poll_mol_pending_data(&mut state.volatile.mol_pending_data_avail)
     {
         state.update_save_prefs(false);
+    }
+
+    if let Some(rx) = &mut state.volatile.amber_geostd_data_avail {
+        match rx.try_recv() {
+            Ok((i, data)) => {
+                println!("Geostd thread returned: {:?}", data); // todo temp
+
+                match data {
+                    Ok(d) => {
+                        if i >= state.ligands.len() {
+                            eprintln!("Uhoh: Can't find a ligand we loaded Geostd data for");
+                            state.volatile.amber_geostd_data_avail = None;
+                            return;
+                        }
+                        let mol = &mut state.ligands[i];
+                        mol.apply_geostd_data(d, &mut state.lig_specific_params);
+                    }
+                    Err(e) => {
+                        eprintln!("Error: Unable to load GeoStd data for this molecule");
+                    }
+                }
+                state.volatile.amber_geostd_data_avail = None;
+            }
+
+            Err(e) => {}
+        }
     }
 }
 
