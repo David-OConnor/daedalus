@@ -2,9 +2,12 @@
 //! For example, we may call some of these from the GUI, but they won't have any EGUI-specific
 //! logic in them.
 
-use std::time::Instant;
+use std::{collections::HashSet, io, time::Instant};
 
-use bio_files::ResidueType;
+use bio_files::{
+    ResidueType,
+    md_params::{DihedralParams, ForceFieldParams},
+};
 #[cfg(feature = "cudarc")]
 use cudarc::{
     driver::{CudaContext, CudaFunction},
@@ -12,6 +15,7 @@ use cudarc::{
 };
 #[cfg(feature = "cuda")]
 use dynamics::ComputationDevice;
+use dynamics::ParamError;
 use egui::Color32;
 use graphics::{Camera, ControlScheme, EngineUpdates, EntityUpdate, FWD_VEC, Scene};
 use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
@@ -23,8 +27,8 @@ use crate::{
     drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
     mol_lig::MoleculeSmall,
     molecule::{
-        Atom, Bond, MoGenericRefMut, MolGenericRef, MolIdent, MolType, MoleculeGeneric,
-        MoleculePeptide, Residue,
+        Atom, Bond, MoGenericRefMut, MolGenericRef, MolIdent, MolType, MoleculeCommon,
+        MoleculeGeneric, MoleculePeptide, Residue,
     },
     prefs::OpenType,
     reflection,
@@ -1137,4 +1141,121 @@ pub fn get_computation_device() -> (ComputationDevice, Option<CudaFunction>) {
             (ComputationDevice::Cpu, None)
         }
     }
+}
+
+/// Find proper and improper dihedral angles that this molecule has, but are not included in gaff2.dat.
+/// Overrides are required for these. `params` passed should be from Gaff2.
+/// We may integrate this into our FRCMOD inference pipeline.
+/// todo: Missing valance and bond params too A/R
+// todo: Not sure where this will go
+fn find_missing_dihedrals(
+    mol: &MoleculeSmall,
+    params: ForceFieldParams,
+) -> io::Result<(
+    Vec<(String, String, String, String)>,
+    Vec<(String, String, String, String)>,
+)> {
+    // todo: This is a copy+paste+modify from FFParamsIndexed::new() for now.
+    // Proper and improper dihedral angles.
+    let mut seen = HashSet::<(usize, usize, usize, usize)>::new();
+
+    let mut result = (Vec::new(), Vec::new());
+
+    // Proper dihedrals: Atoms 1-2-3-4 bonded linearly
+    for (i1, nbr_j) in mol.common.adjacency_list.iter().enumerate() {
+        for &i2 in nbr_j {
+            if i1 >= i2 {
+                continue;
+            } // handle each j-k bond once
+
+            for &i0 in mol.common.adjacency_list[i1].iter().filter(|&&x| x != i2) {
+                for &i3 in mol.common.adjacency_list[i2].iter().filter(|&&x| x != i1) {
+                    if i0 == i3 {
+                        continue;
+                    }
+
+                    // Canonicalise so (i1, i2) is always (min, max)
+                    let idx_key = if i1 < i2 {
+                        (i0, i1, i2, i3)
+                    } else {
+                        (i3, i2, i1, i0)
+                    };
+                    if !seen.insert(idx_key) {
+                        continue;
+                    }
+
+                    // todo: Return error if missing.
+                    let type_0 = mol.common.atoms[i0].force_field_type.as_ref().unwrap();
+                    let type_1 = mol.common.atoms[i1].force_field_type.as_ref().unwrap();
+                    let type_2 = mol.common.atoms[i2].force_field_type.as_ref().unwrap();
+                    let type_3 = mol.common.atoms[i3].force_field_type.as_ref().unwrap();
+
+                    let key = (
+                        type_0.clone(),
+                        type_1.clone(),
+                        type_2.clone(),
+                        type_3.clone(),
+                    );
+
+                    if params.get_dihedral(&key, true).is_none() {
+                        result.0.push(key);
+                    }
+                }
+            }
+        }
+    }
+
+    // Improper dihedrals 2-1-3-4. Atom 3 is the hub, with the other 3 atoms bonded to it.
+    // The order of the others in the angle calculation affects the sign of the result.
+    // Generally only for planar configs.
+    //
+    // Note: The sattelites are expected to be in alphabetical order, re their FF types.
+    // So, for the hub of "ca" with sattelites of "ca", "ca", and "os", the correct combination
+    // to look for in the params is "ca-ca-ca-os"
+    for (ctr, satellites) in mol.common.adjacency_list.iter().enumerate() {
+        if satellites.len() < 3 {
+            continue;
+        }
+
+        // Unique unordered triples of neighbours
+        for a in 0..satellites.len() - 2 {
+            for b in a + 1..satellites.len() - 1 {
+                for d in b + 1..satellites.len() {
+                    let (sat0, sat1, sat2) = (satellites[a], satellites[b], satellites[d]);
+
+                    let idx_key = (sat0, sat1, ctr, sat2); // order is fixed → no swap
+                    if !seen.insert(idx_key) {
+                        continue;
+                    }
+
+                    let type_0 = mol.common.atoms[sat0].force_field_type.as_ref().unwrap();
+                    let type_1 = mol.common.atoms[sat1].force_field_type.as_ref().unwrap();
+                    let type_ctr = mol.common.atoms[ctr].force_field_type.as_ref().unwrap();
+                    let type_2 = mol.common.atoms[sat2].force_field_type.as_ref().unwrap();
+
+                    // Sort satellites alphabetically; required to ensure we don't miss combinations.
+                    let mut sat_types = [type_0.clone(), type_1.clone(), type_2.clone()];
+                    sat_types.sort();
+
+                    let key = (
+                        sat_types[0].clone(),
+                        sat_types[1].clone(),
+                        type_ctr.clone(),
+                        sat_types[2].clone(),
+                    );
+
+                    // todo: Re this note: it may be tough to determine which impropers we need.
+                    // In the case of improper, unlike all other param types, we are allowed to
+                    // have missing values. Impropers areonly, by Amber convention, for planar
+                    // hub and spoke setups, so non-planar ones will be omitted. These may occur,
+                    // for example, at ring intersections.
+                    if params.get_dihedral(&key, false).is_none() {
+                        result.1.push(key);
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(result)
 }
