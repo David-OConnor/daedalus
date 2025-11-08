@@ -839,22 +839,64 @@ pub fn handle_thread_rx(state: &mut State) {
                         let bonds_gen: Vec<_> =
                             mol.common.bonds.iter().map(|a| a.to_generic()).collect();
 
-                        let (ff_type, charge, params) =
-                            dynamics::param_inference::infer_params(&atoms_gen, &bonds_gen)
-                                .unwrap();
+                        // Two passes: One to get FF types and charge. Then, once we have FF types, a second
+                        // to get dihedrals.
+                        // todo: You're running the logic on FF type/charge twice; find a better way
+                        // todo to prevent this, to improve performance.
+
+                        let (ff_type, charge, _params) = match
+                            dynamics::param_inference::infer_params(
+                                &atoms_gen,
+                                &bonds_gen,
+                                Vec::new(),
+                                Vec::new(),
+                                state.ff_param_set.small_mol.as_ref().unwrap()
+                            ) {
+                            Ok(v) => v,
+                            Err(e) => {
+                                eprintln!("Error inferring params: {e:?}");
+                                return;
+                            }
+                        };
 
                         if !mol.ff_params_loaded {
                             for i in 0..mol.common.atoms.len() {
                                 mol.common.atoms[i].force_field_type = Some(ff_type[i].clone());
                                 mol.common.atoms[i].partial_charge = Some(charge[i]);
 
-                                println!("Loaded: SN: {} {}, {}", i + 1, ff_type[i], charge[i]);
+                                mol.ff_params_loaded = true;
+
+                                println!("Loaded FF/Q SN: {} {}, {}", i + 1, ff_type[i], charge[i]);
                             }
                         }
 
                         if !mol.frcmod_loaded {
                             // todo: Once working
-                            // state.lig_specific_params.insert(mol.common.ident.to_owned(), params);
+                            // We only find missing dihedrals once FF types are populated.
+                            let (dihedrals_missing, improper_missing) = find_missing_dihedrals(mol, state.ff_param_set.small_mol.as_ref().unwrap()).unwrap();
+
+                            let (_ff_type, _charge, params) =
+                                dynamics::param_inference::infer_params(
+                                    &atoms_gen,
+                                    &bonds_gen,
+                                    // todo: These are not used... If we truly don't need them, we
+                                    // todo can do it in one pass, and remove the logic that builds them.
+                                    dihedrals_missing,
+                                    improper_missing,
+                                    state.ff_param_set.small_mol.as_ref().unwrap()
+                                )
+                                    .unwrap();
+
+                            for p in &params.dihedral {
+                                println!("Dihe inferred: {:?}", p);
+                            }
+
+                            for p in &params.improper {
+                                println!("Improper inferred: {:?}", p);
+                            }
+
+                            state.lig_specific_params.insert(mol.common.ident.to_owned(), params);
+                            mol.frcmod_loaded = true;
                         }
                     }
                 }
@@ -1145,12 +1187,15 @@ pub fn get_computation_device() -> (ComputationDevice, Option<CudaFunction>) {
 
 /// Find proper and improper dihedral angles that this molecule has, but are not included in gaff2.dat.
 /// Overrides are required for these. `params` passed should be from Gaff2.
+///
+/// Returns (dihedral, improper). Force field combinations present in the molecule, but not
+/// gaff2.dat.
 /// We may integrate this into our FRCMOD inference pipeline.
 /// todo: Missing valance and bond params too A/R
 // todo: Not sure where this will go
 fn find_missing_dihedrals(
     mol: &MoleculeSmall,
-    params: ForceFieldParams,
+    params: &ForceFieldParams,
 ) -> io::Result<(
     Vec<(String, String, String, String)>,
     Vec<(String, String, String, String)>,
@@ -1161,6 +1206,8 @@ fn find_missing_dihedrals(
 
     let mut result = (Vec::new(), Vec::new());
 
+    let atoms = &mol.common.atoms;
+    
     // Proper dihedrals: Atoms 1-2-3-4 bonded linearly
     for (i1, nbr_j) in mol.common.adjacency_list.iter().enumerate() {
         for &i2 in nbr_j {
@@ -1184,11 +1231,17 @@ fn find_missing_dihedrals(
                         continue;
                     }
 
-                    // todo: Return error if missing.
-                    let type_0 = mol.common.atoms[i0].force_field_type.as_ref().unwrap();
-                    let type_1 = mol.common.atoms[i1].force_field_type.as_ref().unwrap();
-                    let type_2 = mol.common.atoms[i2].force_field_type.as_ref().unwrap();
-                    let type_3 = mol.common.atoms[i3].force_field_type.as_ref().unwrap();
+                    
+                    if atoms[i0].force_field_type.is_none() || atoms[i1].force_field_type.is_none() ||
+                        atoms[i2].force_field_type.is_none() || atoms[i3].force_field_type.is_none() {
+                        eprintln!("Error finding missing dihedrals for param inference: Missing FF type.");
+                        return Err(io::Error::new(io::ErrorKind::Other, "Missing FF type"));
+                    }
+
+                    let type_0 = atoms[i0].force_field_type.as_ref().unwrap();
+                    let type_1 = atoms[i1].force_field_type.as_ref().unwrap();
+                    let type_2 = atoms[i2].force_field_type.as_ref().unwrap();
+                    let type_3 = atoms[i3].force_field_type.as_ref().unwrap();
 
                     let key = (
                         type_0.clone(),
@@ -1228,10 +1281,16 @@ fn find_missing_dihedrals(
                         continue;
                     }
 
-                    let type_0 = mol.common.atoms[sat0].force_field_type.as_ref().unwrap();
-                    let type_1 = mol.common.atoms[sat1].force_field_type.as_ref().unwrap();
-                    let type_ctr = mol.common.atoms[ctr].force_field_type.as_ref().unwrap();
-                    let type_2 = mol.common.atoms[sat2].force_field_type.as_ref().unwrap();
+                    if atoms[sat0].force_field_type.is_none() || atoms[sat1].force_field_type.is_none() ||
+                        atoms[ctr].force_field_type.is_none() || atoms[sat2].force_field_type.is_none() {
+                        eprintln!("Error finding missing improper dihedrals for param inference: Missing FF type.");
+                        return Err(io::Error::new(io::ErrorKind::Other, "Missing FF type"));
+                    }
+
+                    let type_0 = atoms[sat0].force_field_type.as_ref().unwrap();
+                    let type_1 = atoms[sat1].force_field_type.as_ref().unwrap();
+                    let type_ctr = atoms[ctr].force_field_type.as_ref().unwrap();
+                    let type_2 = atoms[sat2].force_field_type.as_ref().unwrap();
 
                     // Sort satellites alphabetically; required to ensure we don't miss combinations.
                     let mut sat_types = [type_0.clone(), type_1.clone(), type_2.clone()];
