@@ -3,7 +3,7 @@
 use bio_apis::{drugbank, lmsd, pdbe, pubchem, rcsb};
 use bio_files::{ResidueType, md_params::ForceFieldParams};
 use dynamics::params::FfParamSet;
-use egui::{Color32, RichText, Ui};
+use egui::{Align, Color32, Layout, Popup, PopupAnchor, Pos2, RectAlign, RichText, ScrollArea, Ui};
 use graphics::{ControlScheme, EngineUpdates, EntityUpdate, Scene};
 use lin_alg::f64::Vec3;
 
@@ -12,6 +12,7 @@ use crate::{
     cam_misc::move_mol_to_cam,
     download_mols, drawing,
     drawing::{CHARGE_MAP_MAX, CHARGE_MAP_MIN, COLOR_AA_NON_RESIDUE_EGUI},
+    label,
     lipid::MoleculeLipid,
     mol_lig::MoleculeSmall,
     mol_manip::set_manip,
@@ -19,11 +20,11 @@ use crate::{
     nucleic_acid::MoleculeNucleicAcid,
     ui::{
         COL_SPACING, COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_HIGHLIGHT, COLOR_INACTIVE,
-        cam::move_cam_to_active_mol, mol_descrip,
+        ROW_SPACING, cam::move_cam_to_active_mol, mol_descrip,
     },
     util::{
         close_mol, handle_err, handle_success, make_egui_color, make_lig_from_res, move_mol_to_res,
-        orbit_center, reset_orbit_center,
+        orbit_center,
     },
 };
 
@@ -45,12 +46,11 @@ fn disp_atom_data(atom: &Atom, residues: &[Residue], posit_override: Option<Vec3
     let text_0 = format!("#{}", atom.serial_number);
     let text_b = atom.element.to_letter();
 
-    ui.label(RichText::new(text_0).color(Color32::WHITE));
-
-    ui.label(RichText::new(posit_txt).color(Color32::GOLD));
+    label!(ui, text_0, Color32::WHITE);
+    label!(ui, posit_txt, Color32::GOLD);
 
     let atom_color = make_egui_color(atom.element.color());
-    ui.label(RichText::new(text_b).color(atom_color));
+    label!(ui, text_b, atom_color);
 
     if let Some(res_i) = atom.residue {
         // Placeholder for water etc.
@@ -63,21 +63,21 @@ fn disp_atom_data(atom: &Atom, residues: &[Residue], posit_override: Option<Vec3
             res_color = make_egui_color(aa_color(aa));
         }
 
-        ui.label(RichText::new(res_txt).color(res_color));
+        label!(ui, res_txt, res_color);
     }
 
-    ui.label(RichText::new(role).color(Color32::LIGHT_GRAY));
+    label!(ui, role, Color32::LIGHT_GRAY);
 
     if let Some(tir) = &atom.type_in_res {
-        ui.label(RichText::new(format!("{tir}")).color(Color32::LIGHT_YELLOW));
+        label!(ui, tir.to_string(), Color32::LIGHT_YELLOW);
     }
 
     if let Some(tir) = &atom.type_in_res_lipid {
-        ui.label(RichText::new(tir).color(Color32::LIGHT_YELLOW));
+        label!(ui, tir, Color32::LIGHT_YELLOW);
     }
 
     if let Some(ff) = &atom.force_field_type {
-        ui.label(RichText::new(format!("FF: {ff}")).color(Color32::LIGHT_YELLOW));
+        label!(ui, format!("FF: {ff}"), Color32::LIGHT_YELLOW);
     }
 
     if let Some(q) = &atom.partial_charge {
@@ -89,7 +89,7 @@ fn disp_atom_data(atom: &Atom, residues: &[Residue], posit_override: Option<Vec3
         ));
 
         // todo: In some cases, this is getting rendered over the initial text? EGUI error?
-        ui.label(RichText::new(format!("{plus}q: {q:.2}")).color(color));
+        label!(ui, format!("{plus}q: {q:.2}"), color);
     }
 }
 
@@ -117,18 +117,21 @@ fn disp_bond_data(
     let atom_1 = &atoms[bond.atom_1];
 
     ui.label("Bond");
-    ui.label(
-        RichText::new(format!("#{} - #{}", bond.atom_0_sn, bond.atom_1_sn)).color(Color32::WHITE),
+    label!(
+        ui,
+        format!("#{} - #{}", bond.atom_0_sn, bond.atom_1_sn),
+        Color32::WHITE
     );
 
-    ui.label(
-        RichText::new(format!(
+    label!(
+        ui,
+        format!(
             "{} {} {}",
             atom_0.element.to_letter(),
             bond.bond_type.to_visual_str(),
             atom_1.element.to_letter()
-        ))
-        .color(Color32::LIGHT_BLUE),
+        ),
+        Color32::LIGHT_BLUE
     );
 
     // todo: Cache??
@@ -136,7 +139,7 @@ fn disp_bond_data(
     let posit_1 = atom_1.posit;
     let dist = (posit_1 - posit_0).magnitude();
 
-    ui.label(RichText::new(format!("{dist:.3} Å")).color(Color32::LIGHT_YELLOW));
+    label!(ui, format!("{dist:.3} Å"), Color32::LIGHT_YELLOW);
 
     if let Some(p) = get_params(params, mol_type) {
         if let (Some(ff_0), Some(ff_1)) = (
@@ -145,7 +148,7 @@ fn disp_bond_data(
         ) {
             if let Some(b) = p.get_bond(&(ff_0.to_string(), ff_1.to_string())) {
                 ui.label(RichText::new("Param len:"));
-                ui.label(RichText::new(format!("{:.3} Å", b.r_0)).color(Color32::LIGHT_BLUE));
+                label!(ui, format!("{:.3} Å", b.r_0), Color32::LIGHT_BLUE);
 
                 // todo: Cache this; don't compute in the UI.
                 let m0 = atom_0.element.atomic_weight();
@@ -241,11 +244,11 @@ pub fn selected_data(
                     if let ResidueType::AminoAcid(aa) = res.res_type {
                         res_color = make_egui_color(aa_color(aa));
                     }
-                    ui.label(RichText::new(res.to_string()).color(res_color));
+                    label!(ui, res.to_string(), res_color);
                 }
             }
             Selection::AtomsPeptide(is) => {
-                ui.label(RichText::new(format!("{} atoms", is.len())).color(Color32::GOLD));
+                label!(ui, format!("{} atoms", is.len()), Color32::GOLD);
             }
             Selection::BondPeptide(bond_i) => {
                 let Some(mol) = &state.peptide else {
@@ -488,6 +491,16 @@ pub fn display_mol_data_peptide(
                 .on_hover_text("Draw a Ramachandran plot of the dihedral angles of the peptide.")
                 .clicked() {
                 state.ui.popup.rama_plot = !state.ui.popup.rama_plot;
+            }
+
+            if ui.button("Metadata")
+                .on_hover_text("Display metadata for this molecule")
+                .clicked() {
+                if let Some((mol_type, _)) = state.ui.popup.metadata && mol_type == MolType::Peptide {
+                    state.ui.popup.metadata = None;
+                } else {
+                    state.ui.popup.metadata = Some((MolType::Peptide, 0))
+                }
             }
 
             let res_selected = match state.ui.selection {
@@ -738,7 +751,7 @@ pub fn display_mol_data(
             *close = true;
         }
 
-        ui.add_space(COL_SPACING);
+        ui.add_space(COL_SPACING / 2.);
 
         if let Some(mol) = state.active_mol() {
             mol_descrip(&mol, ui);
@@ -856,6 +869,16 @@ pub fn display_mol_data(
                         }
                     }
                 }
+
+                if ui.button("Metadata")
+                    .on_hover_text("Display metadata for this molecule")
+                    .clicked() {
+                    if let Some((mol_type, _)) = state.ui.popup.metadata && mol_type == MolType::Ligand {
+                        state.ui.popup.metadata = None;
+                    } else {
+                        state.ui.popup.metadata = Some((MolType::Ligand, active_mol_i))
+                    }
+                }
             }
         }
 
@@ -865,8 +888,6 @@ pub fn display_mol_data(
                 MolGenericRef::Ligand(m) => {
                     ui.add_space(COL_SPACING);
 
-                    // todo status color helper?
-                    ui.label("Loaded:");
                     let color = if m.ff_params_loaded {
                         Color32::LIGHT_GREEN
                     } else {
@@ -914,7 +935,7 @@ pub fn display_mol_data(
                     }
 
                     if let Some(cid) = pubchem_cid {
-                        if ui.button("Find associated structs").clicked() {
+                        if ui.button("Find assoc structs").clicked() {
                             // todo: Don't block.
                             if m.associated_structures.is_empty() {
                                 match pubchem::load_associated_structures(cid) {
@@ -944,5 +965,78 @@ pub fn display_mol_data(
         }
 
         ui.add_space(COL_SPACING);
+    });
+}
+
+/// Display metadata stored for a given molecule.
+pub(super) fn metadata_disp(
+    mol_type: MolType,
+    i: usize,
+    state: &mut State,
+    ui: &mut Ui,
+    engine_updates: &mut EngineUpdates,
+) {
+    let popup_id = ui.make_persistent_id("metadata_popup");
+
+    let mol = match mol_type {
+        MolType::Peptide => {
+            if state.peptide.is_none() {
+                return;
+            }
+            &state.peptide.as_ref().unwrap().common
+        }
+        MolType::Ligand => {
+            if i >= state.ligands.len() {
+                return;
+            }
+            &state.ligands[i].common
+        }
+        MolType::NucleicAcid => {
+            if i >= state.nucleic_acids.len() {
+                return;
+            }
+            &state.nucleic_acids[i].common
+        }
+        MolType::Lipid => {
+            if i >= state.lipids.len() {
+                return;
+            }
+            &state.lipids[i].common
+        }
+        _ => return,
+    };
+
+    Popup::new(
+        popup_id,
+        ui.ctx().clone(),
+        PopupAnchor::Position(Pos2::new(60., 60.)),
+        ui.layer_id(),
+    )
+    .align(RectAlign::TOP)
+    .open(true)
+    .gap(4.0)
+    .show(|ui| {
+        ui.with_layout(Layout::top_down(Align::RIGHT), |ui| {
+            if ui
+                .button(RichText::new("Close").color(Color32::LIGHT_RED))
+                .clicked()
+            {
+                state.ui.popup.metadata = None;
+            }
+        });
+
+        ui.heading(RichText::new(format!("Metadata for {}", mol.ident)).color(Color32::WHITE));
+        ui.add_space(ROW_SPACING);
+
+        ScrollArea::vertical()
+            .min_scrolled_height(800.0)
+            .show(ui, |ui| {
+                for (k, v) in mol.metadata.iter() {
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new(format!("{k}: ")));
+                        label!(ui, v.to_string(), Color32::WHITE);
+                    });
+                }
+            });
     });
 }

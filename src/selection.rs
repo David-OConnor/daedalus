@@ -3,7 +3,7 @@
 
 use graphics::{ControlScheme, Scene};
 use lin_alg::{f32::Vec3 as Vec3F32, map_linear};
-use na_seq::Element;
+use na_seq::{Element, Element::Hydrogen};
 
 use crate::{
     Selection, State, StateUi, ViewSelLevel,
@@ -12,6 +12,8 @@ use crate::{
     util::orbit_center,
 };
 
+// For hydrogens
+const SELECTION_DIST_THRESH_H: f32 = 0.4; // e.g. ball + stick, or stick.
 const SELECTION_DIST_THRESH_SMALL: f32 = 0.7; // e.g. ball + stick, or stick.
 const SELECTION_DIST_THRESH_BOND: f32 = 0.5; // e.g. ball + stick, or stick.
 // Setting this high rel to `THRESH_SMALL` will cause more accidental selections of nearby atoms that
@@ -260,6 +262,7 @@ pub fn points_along_ray_inner(
     i_mol: usize,
     i_atom_or_bond: usize,
     posit: Vec3F32,
+    el: Option<Element>,
 ) {
     // Compute the closest point on the ray to the atom position
     let to_atom: Vec3F32 = posit - ray.0;
@@ -275,7 +278,14 @@ pub fn points_along_ray_inner(
     //     // todo: This seems to prevent selecting at all; not sure why.
     //     // dist_thresh *= 0.9;
     // }
-    if dist_to_ray < dist_thresh {
+
+    // We render Hydrogens smaller; use a smaller thresh
+    let mut thresh = dist_thresh;
+    if el == Some(Hydrogen) && thresh == SELECTION_DIST_THRESH_SMALL {
+        thresh = SELECTION_DIST_THRESH_H;
+    }
+
+    if dist_to_ray < thresh {
         result.push((i_mol, i_atom_or_bond));
     }
 }
@@ -311,6 +321,7 @@ pub fn points_along_ray_atom(
             0,
             i,
             atom.posit.into(),
+            Some(atom.element),
         );
     }
 
@@ -329,6 +340,7 @@ pub fn points_along_ray_atom(
                     i_mol,
                     i,
                     atom.posit.into(),
+                    Some(atom.element),
                 );
             }
         }
@@ -421,6 +433,7 @@ pub fn points_along_ray_bond(
             0,
             i,
             posit.into(),
+            None,
         );
     }
 
@@ -435,7 +448,16 @@ pub fn points_along_ray_bond(
                 let a1 = atoms_list[i_mol][bond.atom_1].posit;
                 let posit = (a0 + a1) / 2.0;
 
-                points_along_ray_inner(result, &ray, ray_dir, dist_thresh, i_mol, i, posit.into());
+                points_along_ray_inner(
+                    result,
+                    &ray,
+                    ray_dir,
+                    dist_thresh,
+                    i_mol,
+                    i,
+                    posit.into(),
+                    None,
+                );
             }
         }
     }
@@ -473,17 +495,6 @@ pub(crate) fn handle_selection_attempt(
 
     selected_ray.0 += diff.to_normalized() * SEL_NEAR_PAD;
 
-    // If we don't scale the selection distance appropriately, an atom etc
-    // behind the desired one, but closer to the ray, may be selected; likely
-    // this is undesired.
-    let dist_thresh = match state.ui.mol_view {
-        MoleculeView::SpaceFill => SELECTION_DIST_THRESH_LARGE,
-        _ => match state.ui.view_sel_level {
-            ViewSelLevel::Bond => SELECTION_DIST_THRESH_BOND,
-            _ => SELECTION_DIST_THRESH_SMALL,
-        },
-    };
-
     // todo: Lots of DRY here!
 
     // todo: I don't like this rebuilding.
@@ -517,6 +528,17 @@ pub(crate) fn handle_selection_attempt(
     let (pep_atoms, pep_res) = match &state.peptide {
         Some(p) => (&p.common.atoms, &p.residues),
         None => (&Vec::new(), &Vec::new()),
+    };
+
+    // If we don't scale the selection distance appropriately, an atom etc
+    // behind the desired one, but closer to the ray, may be selected; likely
+    // this is undesired.
+    let dist_thresh = match state.ui.mol_view {
+        MoleculeView::SpaceFill => SELECTION_DIST_THRESH_LARGE,
+        _ => match state.ui.view_sel_level {
+            ViewSelLevel::Bond => SELECTION_DIST_THRESH_BOND,
+            _ => SELECTION_DIST_THRESH_SMALL,
+        },
     };
 
     let selection = match state.ui.view_sel_level {

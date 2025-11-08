@@ -416,6 +416,7 @@ struct PopupState {
     residue_selector: bool,
     rama_plot: bool,
     recent_files: bool,
+    metadata: Option<(MolType, usize)>,
 }
 
 struct StateUiMd {
@@ -512,7 +513,7 @@ struct StateUi {
 
 /// For showing and hiding UI sections.
 pub struct UiVisibility {
-    metadata: bool,
+    // metadata: bool,
     aa_seq: bool,
     smiles: bool,
     selfies: bool,
@@ -523,7 +524,7 @@ pub struct UiVisibility {
 impl Default for UiVisibility {
     fn default() -> Self {
         Self {
-            metadata: false,
+            // metadata: false,
             aa_seq: false,
             smiles: false,
             selfies: false,
@@ -896,11 +897,16 @@ fn main() {
 
     // todo temp testing inference
     let mol = Mol2::load(Path::new("molecules/CPB.mol2")).unwrap();
-    // let (ff_type, charge, dihedrals) = dynamics::param_inference::infer_params(&mol.atoms, &mol.bonds).unwrap();
-    //
-    // for i in 0..mol.atoms.len() {
-    //     println!("SN: {} {}, {}", i + 1, ff_type[i], charge[i]);
-    // }
+    let (ff_type, charge, p) =
+        dynamics::param_inference::infer_params(&mol.atoms, &mol.bonds).unwrap();
+
+    for i in 0..mol.atoms.len() {
+        println!("SN: {} {}, {}", i + 1, ff_type[i], charge[i]);
+    }
+
+    for param in p.dihedral {
+        println!("Param: {:?}", param);
+    }
 
     render(state);
 }

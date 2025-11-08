@@ -334,16 +334,6 @@ pub fn ui_section_vis(state: &mut State, ui: &mut Ui) {
         );
     }
 
-    // todo: Not working for proteins? Button not showing, and /or MD not showing.
-    if state.volatile.active_mol.is_some() {
-        vis_helper(
-            &mut state.ui.ui_vis.metadata,
-            "Metadata",
-            "Show or hide metadata for this molecule",
-            ui,
-        );
-    }
-
     let tooltip = "Show or hide tools for adding lipids";
     vis_helper(&mut state.ui.ui_vis.lipids, "Lipid tools", tooltip, ui);
 

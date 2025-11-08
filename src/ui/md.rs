@@ -6,7 +6,7 @@ use graphics::{EngineUpdates, Scene};
 use lin_alg::f64::Vec3;
 
 use crate::{
-    State,
+    State, label,
     md::{STATIC_ATOM_DIST_THRESH, build_and_run_dynamics, reassign_snapshot_indices},
     ui::{
         COL_SPACING, COLOR_ACTIVE, COLOR_HIGHLIGHT, COLOR_INACTIVE, cam::move_cam_to_active_mol,
@@ -306,12 +306,12 @@ pub fn energy_disp(snap: &Snapshot, ui: &mut Ui) {
     ui.label(RichText::new(format!("{:.1}", ke_per_atom)).color(Color32::GOLD));
 
     ui.label("PE: ");
-    ui.label(RichText::new(format!("{:.2}", snap.energy_potential)).color(Color32::GOLD));
+    label!(ui, format!("{:.2}", snap.energy_potential), Color32::GOLD);
 
     ui.label("PE/atom: ");
     // todo: Don't continuously run this!
     let pe_per_atom = snap.energy_potential / atom_count;
-    ui.label(RichText::new(format!("{:.3}", pe_per_atom)).color(Color32::GOLD));
+    label!(ui, format!("{:.3}", pe_per_atom), Color32::GOLD);
 
     ui.label("PE between mols:");
     // todo: One pair only for now
@@ -324,8 +324,8 @@ pub fn energy_disp(snap: &Snapshot, ui: &mut Ui) {
     }
 
     ui.label("Temp: ");
-    ui.label(RichText::new(format!("{:.1} K", snap.temperature)).color(Color32::GOLD));
+    label!(ui, format!("{:.1} K", snap.temperature), Color32::GOLD);
 
     ui.label("P: ");
-    ui.label(RichText::new(format!("{:.1} bar", snap.pressure)).color(Color32::GOLD));
+    label!(ui, format!("{:.1} bar", snap.pressure), Color32::GOLD);
 }

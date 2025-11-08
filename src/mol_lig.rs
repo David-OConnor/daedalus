@@ -425,16 +425,6 @@ impl MoleculeSmall {
                 eprintln!(
                     "Unable to load Amber Geostd data for this molecule; atom count mismatch."
                 );
-
-                println!("Inferring parameter data using ML");
-                let atoms_gen: Vec<_> = self.common.atoms.iter().map(|a| a.to_generic()).collect();
-                let bonds_gen: Vec<_> = self.common.bonds.iter().map(|a| a.to_generic()).collect();
-                let (ff_type, charge, dihedrals) =
-                    dynamics::param_inference::infer_params(&atoms_gen, &bonds_gen).unwrap();
-
-                for i in 0..self.common.atoms.len() {
-                    println!("SN: {} {}, {}", i + 1, ff_type[i], charge[i]);
-                }
                 return;
             }
 

@@ -354,3 +354,11 @@ pub fn init_with_scene(state: &mut State, scene: &mut Scene, ctx: &egui::Context
 
     reset_orbit_center(state, scene);
 }
+
+/// An assistant to make a colored label.
+#[macro_export]
+macro_rules! label {
+    ($ui:expr, $text:expr, $color:expr) => {
+        $ui.label(egui::RichText::new($text).color($color));
+    };
+}

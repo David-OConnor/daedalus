@@ -810,25 +810,48 @@ pub fn handle_thread_rx(state: &mut State) {
 
     if let Some(rx) = &mut state.volatile.amber_geostd_data_avail {
         match rx.try_recv() {
-            Ok((i, data)) => {
+            Ok((i_mol, data)) => {
                 println!("Geostd thread returned"); // todo temp
+
+                if i_mol >= state.ligands.len() {
+                    eprintln!("Uhoh: Can't find a ligand we loaded Geostd data for");
+                    state.volatile.amber_geostd_data_avail = None;
+                    return;
+                }
+                let mol = &mut state.ligands[i_mol];
 
                 match data {
                     Ok(d) => {
-                        if i >= state.ligands.len() {
-                            eprintln!("Uhoh: Can't find a ligand we loaded Geostd data for");
-                            state.volatile.amber_geostd_data_avail = None;
-                            return;
-                        }
-                        let mol = &mut state.ligands[i];
                         mol.apply_geostd_data(d, &mut state.lig_specific_params);
                     }
                     Err(e) => {
                         eprintln!(
-                            " Unable to load GeoStd data for this molecule (Likely not in the data set.))"
+                            " Unable to load GeoStd data for this molecule (Likely not in the data set.)"
                         );
 
-                        // todo: Inference here?
+                        println!("Inferring parameter data using ML");
+                        let atoms_gen: Vec<_> =
+                            mol.common.atoms.iter().map(|a| a.to_generic()).collect();
+                        let bonds_gen: Vec<_> =
+                            mol.common.bonds.iter().map(|a| a.to_generic()).collect();
+
+                        let (ff_type, charge, params) =
+                            dynamics::param_inference::infer_params(&atoms_gen, &bonds_gen)
+                                .unwrap();
+
+                        if !mol.ff_params_loaded {
+                            for i in 0..mol.common.atoms.len() {
+                                mol.common.atoms[i].force_field_type = Some(ff_type[i].clone());
+                                mol.common.atoms[i].partial_charge = Some(charge[i]);
+
+                                println!("Loaded: SN: {} {}, {}", i + 1, ff_type[i], charge[i]);
+                            }
+                        }
+
+                        if !mol.frcmod_loaded {
+                            // todo: Once working
+                            // state.lig_specific_params.insert(mol.common.ident.to_owned(), params);
+                        }
                     }
                 }
                 state.volatile.amber_geostd_data_avail = None;

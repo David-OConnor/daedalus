@@ -25,6 +25,7 @@ use crate::{
     drawing_wrappers::draw_all_lipids,
     file_io::gemmi_path,
     inputs::{MOVEMENT_SENS, ROTATE_SENS, SENS_MOL_MOVE_SCROLL},
+    label,
     lipid::{LipidShape, make_bacterial_lipids},
     mol_editor::enter_edit_mode,
     molecule::MolGenericRef,
@@ -32,7 +33,7 @@ use crate::{
     ui::{
         cam::{cam_controls, cam_snapshots},
         misc::section_box,
-        mol_data::display_mol_data_peptide,
+        mol_data::{display_mol_data_peptide, metadata_disp},
         rama_plot::plot_rama,
         recent_files::recent_files,
         util::{
@@ -917,6 +918,10 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             }
         }
 
+        if let Some((mol_type, i)) = state.ui.popup.metadata {
+            metadata_disp(mol_type, i, state, ui, &mut engine_updates);
+        }
+
         // -----------
 
         ui.horizontal(|ui| {
@@ -1339,13 +1344,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             }
         }
 
-        if state.ui.ui_vis.metadata {
-            if let Some(mol) = &state.active_mol() {
-                if !mol.common().metadata.is_empty() {
-                    draw_metadata(&mol.common().metadata, ui);
-                }
-            }
-        }
 
         draw_cli(
             state,
@@ -1577,14 +1575,5 @@ fn draw_smiles(v: &str, ui: &mut Ui) {
         //
         //     ui.label(RichText::new(char).color(color));
         // }
-    });
-}
-
-fn draw_metadata(metadata: &HashMap<String, String>, ui: &mut Ui) {
-    ui.horizontal_wrapped(|ui| {
-        for (key, v) in metadata {
-            ui.label(RichText::new(format!("{key}: ")).color(Color32::LIGHT_BLUE));
-            ui.label(RichText::new(format!("{v}: ")).color(Color32::LIGHT_GREEN));
-        }
     });
 }
