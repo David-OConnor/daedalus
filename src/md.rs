@@ -35,7 +35,6 @@ pub const STATIC_ATOM_DIST_THRESH: f64 = 14.;
 // noticeably increase total computation time. e.g. the frame time is small compared to this many
 // MD steps for a small molecule + water sim.
 const MD_STEPS_PER_APPLICATION_FRAME: usize = 10;
-
 pub fn post_run_cleanup(state: &mut State, scene: &mut Scene, engine_updates: &mut EngineUpdates) {
     if state.mol_dynamics.is_none() {
         eprintln!("Can't run MD cleanup; MD state is None");
@@ -336,8 +335,6 @@ pub fn reassign_snapshot_indices(
     println!("Re-assigning snapshot indices to match atoms excluded for MD...");
 
     let pep_count = pep_atom_set.len();
-
-    println!("Pep count: {pep_count}"); // todo temp
 
     // Count how many ligand atoms precede the peptide in the snapshot ordering.
     let lig_atom_count: usize = ligs

@@ -895,74 +895,73 @@ fn main() {
 
     state.load_lipid_templates();
 
-
     // todo temp:
     {
-        let mut mol: MoleculeSmall = Mol2::load_amber_geostd("CPB").unwrap().try_into().unwrap();
-
-
-        println!("Inferring parameter data using ML");
-        let atoms_gen: Vec<_> =
-            mol.common.atoms.iter().map(|a| a.to_generic()).collect();
-        let bonds_gen: Vec<_> =
-            mol.common.bonds.iter().map(|a| a.to_generic()).collect();
-
-        // Two passes: One to get FF types and charge. Then, once we have FF types, a second
-        // to get dihedrals.
-        // todo: You're running the logic on FF type/charge twice; find a better way
-        // todo to prevent this, to improve performance.
-
-        let (ff_type, charge, _params) = match
-        dynamics::param_inference::infer_params(
-            &atoms_gen,
-            &bonds_gen,
-            Vec::new(),
-            Vec::new(),
-            state.ff_param_set.small_mol.as_ref().unwrap()
-        ) {
-            Ok(v) => v,
-            Err(e) => {
-                eprintln!("Error inferring params: {e:?}");
-                return;
-            }
-        };
-
-        if !mol.ff_params_loaded {
-            for i in 0..mol.common.atoms.len() {
-                mol.common.atoms[i].force_field_type = Some(ff_type[i].clone());
-                mol.common.atoms[i].partial_charge = Some(charge[i]);
-
-                println!("Loaded FF/Q SN: {} {}, {}", i + 1, ff_type[i], charge[i]);
-            }
-        }
-
-        if !mol.frcmod_loaded {
-            // todo: Once working
-            // We only find missing dihedrals once FF types are populated.
-            // let (dihedrals_missing, improper_missing) = crate::util::find_missing_dihedrals(mol, state.ff_param_set.small_mol.as_ref().unwrap()).unwrap();
-
-            let (_ff_type, _charge, params) =
-                dynamics::param_inference::infer_params(
-                    &atoms_gen,
-                    &bonds_gen,
-                    // todo: These are not used... If we truly don't need them, we
-                    // todo can do it in one pass, and remove the logic that builds them.
-                    // dihedrals_missing,
-                    // improper_missing,
-                    Vec::new(),
-                    Vec::new(),
-                    state.ff_param_set.small_mol.as_ref().unwrap()
-                )
-                    .unwrap();
-
-            for p in &params.dihedral {
-                println!("Dihe inferred: {:?}", p);
-            }
-
-            for p in &params.improper {
-                println!("Improper inferred: {:?}", p);
-            }
-        }
+        // let mut mol: MoleculeSmall = Mol2::load_amber_geostd("CPB").unwrap().try_into().unwrap();
+        //
+        //
+        // println!("Inferring parameter data using ML");
+        // let atoms_gen: Vec<_> =
+        //     mol.common.atoms.iter().map(|a| a.to_generic()).collect();
+        // let bonds_gen: Vec<_> =
+        //     mol.common.bonds.iter().map(|a| a.to_generic()).collect();
+        //
+        // // Two passes: One to get FF types and charge. Then, once we have FF types, a second
+        // // to get dihedrals.
+        // // todo: You're running the logic on FF type/charge twice; find a better way
+        // // todo to prevent this, to improve performance.
+        //
+        // let (ff_type, charge, _params) = match
+        // dynamics::param_inference::infer_params(
+        //     &atoms_gen,
+        //     &bonds_gen,
+        //     Vec::new(),
+        //     Vec::new(),
+        //     state.ff_param_set.small_mol.as_ref().unwrap()
+        // ) {
+        //     Ok(v) => v,
+        //     Err(e) => {
+        //         eprintln!("Error inferring params: {e:?}");
+        //         return;
+        //     }
+        // };
+        //
+        // if !mol.ff_params_loaded {
+        //     for i in 0..mol.common.atoms.len() {
+        //         mol.common.atoms[i].force_field_type = Some(ff_type[i].clone());
+        //         mol.common.atoms[i].partial_charge = Some(charge[i]);
+        //
+        //         println!("Loaded FF/Q SN: {} {}, {}", i + 1, ff_type[i], charge[i]);
+        //     }
+        // }
+        //
+        // if !mol.frcmod_loaded {
+        //     // todo: Once working
+        //     // We only find missing dihedrals once FF types are populated.
+        //     // let (dihedrals_missing, improper_missing) = crate::util::find_missing_dihedrals(mol, state.ff_param_set.small_mol.as_ref().unwrap()).unwrap();
+        //
+        //     let (_ff_type, _charge, params) =
+        //         dynamics::param_inference::infer_params(
+        //             &atoms_gen,
+        //             &bonds_gen,
+        //             // todo: These are not used... If we truly don't need them, we
+        //             // todo can do it in one pass, and remove the logic that builds them.
+        //             // dihedrals_missing,
+        //             // improper_missing,
+        //             Vec::new(),
+        //             Vec::new(),
+        //             state.ff_param_set.small_mol.as_ref().unwrap()
+        //         )
+        //             .unwrap();
+        //
+        //     for p in &params.dihedral {
+        //         println!("Dihe inferred: {:?}", p);
+        //     }
+        //
+        //     for p in &params.improper {
+        //         println!("Improper inferred: {:?}", p);
+        //     }
+        // }
     }
 
     render(state);

@@ -109,7 +109,8 @@ pub fn dock(
         zero_com_drift: false, // May already be false.
         // todo: A/R. Have to relax proteins currently, or hydrogens are likely to end up
         // todo too close to one another.
-        max_init_relaxation_iters: Some(300),
+        // max_init_relaxation_iters: Some(300),
+        max_init_relaxation_iters: None,
         // For now at least. Constrained seems to be blowing up proteins in general, not just
         // for docking.
         hydrogen_constraint: HydrogenConstraint::Flexible,
@@ -130,11 +131,11 @@ pub fn dock(
     )?;
 
     state.volatile.md_local.start = Some(Instant::now());
-    state.volatile.md_local.running = true;
+    // state.volatile.md_local.running = true;
 
     // todo: We may opt for a higher-than-normal DT here.
     let dt = 0.002;
-    let n_steps = 600;
+    let n_steps = 200;
 
     // todo: We may need to interrupt periodically e.g. to relax once close.
 
@@ -142,9 +143,10 @@ pub fn dock(
 
     // Blocking for now.
     run_dynamics(&mut md_state, &state.dev, dt, n_steps);
-    post_run_cleanup(state, scene, engine_updates);
 
     state.mol_dynamics = Some(md_state);
+    // This cleanup fn requires state mol dynamics to be loaded.
+    post_run_cleanup(state, scene, engine_updates);
 
     Ok(())
 }
@@ -203,12 +205,8 @@ fn build_dynamics_docking(
     };
 
     // todo: Make sure you're filtering nearby based on the docking config; not hte initial one
-    // tood if moving towards it
+    // todo if moving towards it
     // We assume hetero atoms are ligands, water etc, and are not part of the protein.
-
-    // let atoms = filter_peptide_atoms(pep_atom_set, p, &[mol], peptide_only_near_lig);
-    // println!("Peptide atom count: {}", atoms.len());
-    // let bonds = create_bonds(&atoms);
 
     // Filter out hetero atoms.
     let pep_atoms = filter_peptide_atoms(pep_atom_set, pep, &[], None);
@@ -231,12 +229,6 @@ fn build_dynamics_docking(
         mol_specific_params: None,
     });
 
-    // All peptide atoms are included, for the purposes of un-flattening snapshot atoms.
-    for i in 0..pep.common.atoms.len() {
-        pep_atom_set.insert((0, i));
-    }
-
-    //
     println!("Initializing docking MD state...");
     let mut md_state = MdState::new(dev, &cfg, &mols, param_set)?;
     println!("MD init done.");

@@ -20,7 +20,7 @@ use crate::{
 pub fn load_cif_rcsb(ident: &str) -> Result<(MmCif, String), ReqError> {
     let cif_text = rcsb::load_cif(ident)?;
 
-    let mmcif = MmCif::load_rcsb(&cif_text).map_err(|e| {
+    let mmcif = MmCif::new(&cif_text).map_err(|e| {
         eprintln!("Error parsing mmCIF file: {e}");
         e
     });
