@@ -180,7 +180,7 @@ pub fn md_setup(
                     .show_ui(ui, |ui| {
                         // todo: More A/R
                         // todo: What should gamma be? And make it customizable in UI and state.
-                        for v in &[Integrator::LangevinMiddle { gamma: 0. }, Integrator::VerletVelocity] {
+                        for v in &[Integrator::LangevinMiddle { gamma: 0.1 }, Integrator::VerletVelocity] {
                             ui.selectable_value(&mut state.to_save.md_config.integrator, v.clone(), v.to_string());
                         }
                     })
@@ -196,7 +196,7 @@ pub fn md_setup(
                     if let Ok(v) = &mut state.ui.md.langevin_γ.parse::<f32>() {
                         match state.to_save.md_config.integrator {
                             // Integrator::Langevin { gamma: _ } => state.to_save.md_config.integrator = Integrator::Langevin { gamma: *v},
-                            Integrator::LangevinMiddle { gamma: _} => state.to_save.md_config.integrator = Integrator::Langevin { gamma: *v},
+                            Integrator::LangevinMiddle { gamma: _} => state.to_save.md_config.integrator = Integrator::LangevinMiddle { gamma: *v},
                             _ => ()
                         }
                     }
