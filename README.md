@@ -82,9 +82,7 @@ download associated ligands for a protein, automatically download molecule-speci
 other party tricks.
 
 
-![ELectron density](screenshots/iso_a.png)
-
-![Docking A](screenshots/docking_a.png)
+![Electron densities and small molecules](screenshots/density_example_nov_2025.png)
 
 
 ## Parallel computing
@@ -285,6 +283,9 @@ You may notice that this program places a *daedalus_prefs.dae* file in the same 
 is a small binary file containing application state. It's what lets it remember the last file opened, current
 view settings etc. It will grow with the number of molecules you've opened, as it stores per-molecule
 settings. Deleting it is harmless, other than resetting these conveniences.
+
+
+![ELectron density](screenshots/iso_a.png)
 
 
 ### Compiling
