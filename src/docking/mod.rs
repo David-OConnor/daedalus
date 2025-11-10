@@ -93,8 +93,8 @@ pub fn dock(
     pep.common.selected_for_md = true; // Required to properly re-assign snapshot indices.
     mol.common.selected_for_md = true; // Required to not get filtered out in `build_dynamics`.
 
-    let start_dist = 10.;
-    let speed = 60.; // Å/ps
+    let start_dist = 8.;
+    let speed = 120.; // Å/ps
 
     let docking_site = mol.common.centroid(); // for now
 
@@ -135,7 +135,7 @@ pub fn dock(
 
     // todo: We may opt for a higher-than-normal DT here.
     let dt = 0.002;
-    let n_steps = 200;
+    let n_steps = 800;
 
     // todo: We may need to interrupt periodically e.g. to relax once close.
 

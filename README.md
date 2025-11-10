@@ -2,6 +2,8 @@
 
 [//]: # ([![Crate]&#40;https://img.shields.io/crates/v/daedalus.svg&#41;]&#40;https://crates.io/crates/daedalus&#41;)
 
+[Home page](https://www.athanorlab.com/daedalus)
+
 ## Goal: The easiest to use structural biology tool
 
 For viewing and exploring proteins and small molecules. View atom positions, bonds, solvent-accessible-surfaces, and

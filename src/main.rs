@@ -110,6 +110,13 @@ use crate::{
 #[cfg(feature = "cuda")]
 const PTX: &str = include_str!("../daedalus.ptx");
 
+// todo: This is duplicate with the definitions in param_inference mod.
+// Model: ~1.5Mb. Vocab: ~440 bytes.
+// todo: Figure out how you handle this. You currently need this file both in the Dynamics
+// todo lib, and your application. I'm not sure how this will work out in applications.
+const PARAM_INFERENCE_MODEL: &[u8] = include_bytes!("../geostd_model.safetensors");
+const PARAM_INFERENCE_VOCAB: &[u8] = include_bytes!("../geostd_model.vocab");
+
 // todo: Eventually, implement a system that automatically checks for changes, and don't
 // todo save to disk if there are no changes.
 // For now, we check for differences between to_save and to_save prev, and write to disk
