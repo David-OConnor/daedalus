@@ -246,7 +246,6 @@ pub fn editor(
                 bond.atom_0_sn = updated_sns[bond.atom_0];
                 bond.atom_1_sn = updated_sns[bond.atom_1];
             }
-
         }
 
         if let Some(md) = &mut state.mol_editor.md_state {

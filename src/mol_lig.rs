@@ -478,7 +478,6 @@ impl MoleculeSmall {
         thread::spawn(move || {
             let data = amber_geostd::load_mol_files(&ident_for_thread);
             let _ = tx.send((mol_i, data));
-            println!("Sent thread"); // todo temp.
         });
 
         *geostd_thread = Some(rx);

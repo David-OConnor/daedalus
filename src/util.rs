@@ -21,10 +21,22 @@ use graphics::{Camera, ControlScheme, EngineUpdates, EntityUpdate, FWD_VEC, Scen
 use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 use na_seq::{AaIdent, Element};
 
-use crate::{CamSnapshot, ManipMode, PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel, cam_misc, drawing::{EntityClass, MoleculeView, draw_density_point_cloud, draw_peptide}, drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids}, mol_lig::MoleculeSmall, molecule::{
-    Atom, Bond, MoGenericRefMut, MolGenericRef, MolIdent, MolType, MoleculeCommon,
-    MoleculeGeneric, MoleculePeptide, Residue,
-}, prefs::OpenType, reflection, render::{Color, MESH_SECONDARY_STRUCTURE, MESH_SOLVENT_SURFACE, set_flashlight}, ribbon_mesh::build_cartoon_mesh, sa_surface::make_sas_mesh, PARAM_INFERENCE_MODEL, PARAM_INFERENCE_VOCAB};
+use crate::{
+    CamSnapshot, ManipMode, PARAM_INFERENCE_MODEL, PARAM_INFERENCE_VOCAB, PREFS_SAVE_INTERVAL,
+    Selection, State, StateUi, ViewSelLevel, cam_misc,
+    drawing::{EntityClass, MoleculeView, draw_density_point_cloud, draw_peptide},
+    drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
+    mol_lig::MoleculeSmall,
+    molecule::{
+        Atom, Bond, MoGenericRefMut, MolGenericRef, MolIdent, MolType, MoleculeCommon,
+        MoleculeGeneric, MoleculePeptide, Residue,
+    },
+    prefs::OpenType,
+    reflection,
+    render::{Color, MESH_SECONDARY_STRUCTURE, MESH_SOLVENT_SURFACE, set_flashlight},
+    ribbon_mesh::build_cartoon_mesh,
+    sa_surface::make_sas_mesh,
+};
 
 pub fn mol_center_size(atoms: &[Atom]) -> (Vec3, f32) {
     let mut sum = Vec3::new_zero();
@@ -840,7 +852,7 @@ pub fn handle_thread_rx(state: &mut State) {
                                 Vec::new(),
                                 Vec::new(),
                                 state.ff_param_set.small_mol.as_ref().unwrap(),
-                                 PARAM_INFERENCE_MODEL,
+                                PARAM_INFERENCE_MODEL,
                                 PARAM_INFERENCE_VOCAB,
                             ) {
                                 Ok(v) => v,
