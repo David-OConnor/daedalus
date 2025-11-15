@@ -923,37 +923,19 @@ fn main() {
 
     // todo temp:
     {
-        let td =
-            bio_files::amber_typedef::DefFile::load(Path::new("../../../Desktop/ATOMTYPE_BCC.DEF"))
-                .unwrap();
-        println!("\n\nTypedef loaded");
-        for t in &td.wildatoms {
-            println!("Wild: {:?}", t);
+        let mut mol: MoleculeSmall = Mol2::load_amber_geostd("CPB").unwrap().try_into().unwrap();
+
+        let atoms_gen: Vec<_> = mol.common.atoms.iter().map(|a| a.to_generic()).collect();
+        let bonds_gen: Vec<_> = mol.common.bonds.iter().map(|a| a.to_generic()).collect();
+
+        let defs = dynamics::inference_new::AmberDefSet::new().unwrap();
+        let ff_types = dynamics::inference_new::find_ff_types(&atoms_gen, &bonds_gen, &defs);
+
+        println!("\n FF types loaded:\n");
+        for (i, f) in ff_types.iter().enumerate() {
+            println!("--{i}: {f}");
         }
-        for at in &td.atomtypes {
-            println!("Type: {:?}", at);
-        }
-    }
 
-    // todo temp:
-    // {
-    //     let mut mol: MoleculeSmall = Mol2::load_amber_geostd("CPB").unwrap().try_into().unwrap();
-    //
-    //     let atoms_gen: Vec<_> = mol.common.atoms.iter().map(|a| a.to_generic()).collect();
-    //     let bonds_gen: Vec<_> = mol.common.bonds.iter().map(|a| a.to_generic()).collect();
-    //
-    //     let orca_inp = orca::OrcaInput {
-    //         atoms: atoms_gen.to_vec(),
-    //         // atoms: atoms_gen[0..7].to_vec(),
-    //         ..Default::default()
-    //     };
-    //
-    //     println!("Orca INP:\n{}\n", orca_inp.make_inp());
-
-    // println!("Running Orca...");
-    // let orca_out = orca_inp.run().unwrap();
-
-    // println!("Orca OUT:\n{}\n", orca_out);
 
     // // Two passes: One to get FF types and charge. Then, once we have FF types, a second
     // // to get dihedrals.
@@ -1010,7 +992,7 @@ fn main() {
     //     for p in &params.improper {
     //         println!("Improper inferred: {:?}", p);
     //     }
-    // }
+    }
 
     render(state);
 }
