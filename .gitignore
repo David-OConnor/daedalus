@@ -39,3 +39,6 @@ Cargo.lock
 
 # Release packages
 *.zip
+
+# Orca files
+/orca_temp

@@ -10,7 +10,10 @@ use crate::{
     },
     drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
     molecule::MolType,
-    ui::{COL_SPACING, DENS_ISO_MAX, DENS_ISO_MIN, UI_HEIGHT_CHANGED, misc, misc::section_box},
+    ui::{
+        COL_SPACING, DENS_ISO_MAX, DENS_ISO_MIN, UI_HEIGHT_CHANGED, misc,
+        misc::{section_box, toggle_btn, toggle_btn_inv},
+    },
     util::clear_mol_entity_indices,
 };
 
@@ -61,14 +64,14 @@ pub fn view_settings(
             ui.label("Vis:");
 
             if state.peptide.is_some() {
-                misc::toggle_btn(
+                toggle_btn_inv(
                     &mut state.ui.visibility.hide_protein,
                     "Peptide",
                     "Show or hide the protein/peptide",
                     ui,
                     redraw_peptide,
                 );
-                misc::toggle_btn(
+                toggle_btn_inv(
                     &mut state.ui.visibility.hide_hetero,
                     "Hetero",
                     "Show or hide non-amino-acid atoms in the protein/peptide",
@@ -80,7 +83,7 @@ pub fn view_settings(
 
                 if !state.ui.visibility.hide_protein {
                     // Subset of peptide.
-                    misc::toggle_btn(
+                    toggle_btn_inv(
                         &mut state.ui.visibility.hide_sidechains,
                         "Sidechains",
                         "Show or sidechains in the protein/peptide",
@@ -91,7 +94,7 @@ pub fn view_settings(
             }
 
             let hide_hydrogen_prev = state.ui.visibility.hide_hydrogen;
-            misc::toggle_btn(
+            toggle_btn_inv(
                 &mut state.ui.visibility.hide_hydrogen,
                 "H",
                 "Show or hide non-amino-acid atoms in the protein/peptide",
@@ -111,7 +114,7 @@ pub fn view_settings(
             // if !state.ui.visibility.hide_hetero {
             // Subset of hetero.
             let water_prev = state.ui.visibility.hide_water;
-            misc::toggle_btn(
+            toggle_btn_inv(
                 &mut state.ui.visibility.hide_water,
                 "Water",
                 "Show or hide water molecules",
@@ -120,7 +123,7 @@ pub fn view_settings(
             );
 
             if !state.nucleic_acids.is_empty() {
-                misc::toggle_btn(
+                toggle_btn_inv(
                     &mut state.ui.visibility.hide_nucleic_acids,
                     "Nucleic acids",
                     "Show or hide nucleic acis",
@@ -174,7 +177,7 @@ pub fn view_settings(
                 }
             }
 
-            misc::toggle_btn(
+            toggle_btn_inv(
                 &mut state.ui.visibility.hide_h_bonds,
                 "H bonds",
                 "Showh or hide Hydrogen bonds",
@@ -183,7 +186,7 @@ pub fn view_settings(
             );
 
             let prev = state.ui.visibility.labels_atom_sn;
-            misc::toggle_btn_not_inv(
+            toggle_btn(
                 &mut state.ui.visibility.labels_atom_sn,
                 "Lbl",
                 "Show or hide atom serial numbers overlaid on their positions",
@@ -242,7 +245,7 @@ pub fn view_settings(
             if let Some(mol) = &state.peptide {
                 if let Some(dens) = &mol.elec_density {
                     let mut redraw_dens = false;
-                    misc::toggle_btn(
+                    toggle_btn_inv(
                         &mut state.ui.visibility.hide_density_point_cloud,
                         "Density",
                         "Show or hide the electron density point cloud visualization",
@@ -264,7 +267,7 @@ pub fn view_settings(
                     }
 
                     let mut redraw_dens_surface = false;
-                    misc::toggle_btn(
+                    toggle_btn_inv(
                         &mut state.ui.visibility.hide_density_surface,
                         "Density sfc",
                         "Show or hide the electron density isosurface visualization",
@@ -307,7 +310,7 @@ pub fn view_settings(
 
 fn vis_helper(vis: &mut bool, name: &str, tooltip: &str, ui: &mut Ui) {
     let prev = *vis;
-    misc::toggle_btn_not_inv(vis, name, tooltip, ui, &mut false);
+    toggle_btn(vis, name, tooltip, ui, &mut false);
 
     if *vis != prev {
         UI_HEIGHT_CHANGED.store(true, Ordering::Release);
@@ -339,4 +342,10 @@ pub fn ui_section_vis(state: &mut State, ui: &mut Ui) {
 
     let tooltip = "Show or hide the molecular dynamics section.";
     vis_helper(&mut state.ui.ui_vis.dynamics, "Dynamics", tooltip, ui);
+
+    // todo: Do we want this button available if ORCA is not on the PATH? Maybe check at runtime,
+    // todo or check when clicking this button. Not sure yet.
+    let tooltip =
+        "Show or hide the ORCA (Quantum mechanics package) section. Has powerful, but slow tools";
+    vis_helper(&mut state.ui.ui_vis.orca, "ORCA", tooltip, ui);
 }

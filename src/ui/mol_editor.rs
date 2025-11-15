@@ -133,7 +133,7 @@ pub fn editor(
         section_box().show(ui, |ui| {
             ui.label("Vis:");
 
-            misc::toggle_btn(
+            misc::toggle_btn_inv(
                 &mut state.ui.visibility.hide_hydrogen,
                 "H",
                 "Show or hide Hydrogen atoms",
@@ -144,7 +144,7 @@ pub fn editor(
 
         section_box().show(ui, |ui| {
             let prev = state.mol_editor.md_running;
-            misc::toggle_btn_not_inv(
+            misc::toggle_btn(
                 &mut state.mol_editor.md_running,
                 "MD running",
                 "Start a molecular dynamics simulation of the selected molecules",

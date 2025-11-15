@@ -6,7 +6,7 @@ use std::{collections::HashSet, io, time::Instant};
 
 use bio_files::{
     ResidueType,
-    md_params::{DihedralParams, ForceFieldParams},
+    md_params::{AngleBendingParams, DihedralParams, ForceFieldParams},
 };
 #[cfg(feature = "cudarc")]
 use cudarc::{
@@ -1195,6 +1195,45 @@ pub fn get_computation_device() -> (ComputationDevice, Option<CudaFunction>) {
         }
     }
 }
+
+// /// See `find_missing_dihedrals` below. Used in the inference pipeline
+// // todo: Move this and maybe find_missing_diherals? to dynamics?
+// fn find_missing_valance_angles(
+//     mol: &MoleculeSmall,
+//     params: &ForceFieldParams,
+// ) -> io::Result<(
+//     Vec<(String, String,String)>,
+// )> {
+//     use itertools::Itertools; // todo... hmm.
+//
+//     // todo: This is a copy+paste+modify from FFParamsIndexed::new() for now.
+//     let mut result = Vec::new();
+//
+//     let atoms = &mol.common.atoms;
+//
+//     for (ctr, neighbors) in mol.common.adjacency_list.iter().enumerate() {
+//         if neighbors.len() < 2 {
+//             continue;
+//         }
+//         for (&n0, &n1) in neighbors.iter().tuple_combinations() {
+//             let type_n0 = &atoms[n0].force_field_type;
+//             let type_ctr = &atoms[ctr].force_field_type;
+//             let type_n1 = &atoms[n1].force_field_type;
+//
+//             let key = (
+//                 type_n0.clone(),
+//                 type_ctr.clone(),
+//                 type_n1.clone(),
+//             );
+//
+//             if params.get_valence_angle(&key).is_none() {
+//                 result.push(key);
+//             }
+//         }
+//     }
+//
+//     Ok(result)
+// }
 
 /// Find proper and improper dihedral angles that this molecule has, but are not included in gaff2.dat.
 /// Overrides are required for these. `params` passed should be from Gaff2.

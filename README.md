@@ -44,6 +44,7 @@ and either installing the CUDA toolkit, or disabling CUDA.
 - Visualize ligand docking
 - Edit small molecules in 3D with integrated dynamics
 - Visualize electron density from crystallography and Cryo-Em data
+- Run [ORCA](https://www.faccts.de/orca/) quantum chemistry procedures on molecules (if ORCA is installed).
 
 
 ## Molecule types supported for viewing and dynamics

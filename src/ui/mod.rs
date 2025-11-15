@@ -34,6 +34,7 @@ use crate::{
         cam::{cam_controls, cam_snapshots},
         misc::section_box,
         mol_data::{display_mol_data_peptide, metadata_disp},
+        orca::orca_input,
         rama_plot::plot_rama,
         recent_files::recent_files,
         util::{
@@ -53,6 +54,7 @@ mod md;
 pub mod misc;
 mod mol_data;
 mod mol_editor;
+mod orca;
 mod rama_plot;
 mod recent_files;
 pub mod util;
@@ -1292,11 +1294,11 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         ui.horizontal(|ui| {
             if state.ui.ui_vis.lipids {
                 lipid_section(state, scene, &mut engine_updates, ui);
-                ui.add_space(COL_SPACING);
             }
 
             if let Some(mol) = &state.active_mol() && state.peptide.is_some() {
                 if let MolGenericRef::Ligand(_) = mol {
+                    ui.add_space(COL_SPACING);
                     ui.label("Docking:");
 
                     if ui.button(RichText::new("Dock").color(Color32::GOLD)).clicked() {
@@ -1317,6 +1319,9 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         if state.ui.ui_vis.dynamics {
             md_setup(state, scene, &mut engine_updates, ui);
+        }
+        if state.ui.ui_vis.orca {
+            orca_input(state, scene, &mut engine_updates, ui);
         }
 
         // if state.ui.show_docking_tools {

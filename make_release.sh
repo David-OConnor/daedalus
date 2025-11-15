@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-version=0_2_1
+version=0_2_2
 outdir=target/release
 exe="$outdir/daedalus"
 readme="README.md"
