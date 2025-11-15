@@ -11,6 +11,7 @@ use crate::{
     orca::StateOrca,
     ui::{COL_SPACING, COLOR_HIGHLIGHT, misc, misc::toggle_btn},
 };
+use crate::ui::COLOR_ACTIVE;
 
 fn keyword_toggle(
     input: &mut OrcaInput,
@@ -20,7 +21,7 @@ fn keyword_toggle(
     ui: &mut Ui,
 ) {
     let color = if input.keywords.contains(&keyword) {
-        COLOR_HIGHLIGHT
+        COLOR_ACTIVE
     } else {
         Color32::GRAY
     };
@@ -30,7 +31,7 @@ fn keyword_toggle(
         .on_hover_text(help_text)
         .clicked()
     {
-        if input.keywords.contains(&Keyword::OptimizeGeometry) {
+        if input.keywords.contains(&keyword) {
             input.keywords.retain(|&k| k != keyword);
         } else {
             input.keywords.push(keyword);
@@ -60,7 +61,8 @@ pub(super) fn orca_input(
                 let help_text = "Choose the method";
                 ui.label("Method:").on_hover_text(help_text);
                 ComboBox::from_id_salt(699)
-                    .width(80.)
+                    // .width(80.)
+                    .height(400.)
                     // todo: different repr a/r
                     .selected_text(state.orca.input.method.keyword())
                     .show_ui(ui, |ui| {
@@ -90,9 +92,9 @@ pub(super) fn orca_input(
 
             {
                 let help_text = "Choose the category of basis sets; this helps organize basis sets you select to the right.";
-                ui.label("Basis set cat:").on_hover_text(help_text);
-                ComboBox::from_id_salt(699)
-                    .width(80.)
+                ui.label("Basis cat:").on_hover_text(help_text);
+                ComboBox::from_id_salt(700)
+                    // .width(80.)
                     // todo: different repr a/r
                     .selected_text(state.orca.basis_set_cat.to_string())
                     .show_ui(ui, |ui| {
@@ -109,8 +111,11 @@ pub(super) fn orca_input(
             {
                 let help_text = "Choose the basis set";
                 ui.label("Basis:").on_hover_text(help_text);
-                ComboBox::from_id_salt(700)
-                    .width(80.)
+                ComboBox::from_id_salt(701)
+                    // .width(80.)
+
+                    .height(600.)
+
                     // todo: different repr a/r
                     .selected_text(state.orca.input.basis_set.keyword())
                     .show_ui(ui, |ui| {
@@ -131,7 +136,7 @@ pub(super) fn orca_input(
                     None => "Disabled".to_string(),
                 };
 
-                // ComboBox::from_id_salt(700)
+                // ComboBox::from_id_salt(702)
                 //     .width(80.)
                 //     // todo: different repr a/r
                 //     .selected_text(text)
@@ -207,21 +212,23 @@ pub(super) fn orca_input(
                     };
 
                     inp.keywords.push(Keyword::ConformerSearch);
-                    println!("Running ORCA input: \n{}\n", inp.make_inp());
+                    println!("\nRunning ORCA input: \n{}\n", inp.make_inp());
                 }
 
                 ui.add_space(COL_SPACING);
 
-                if ui
-                    .button(RichText::new("Run"))
-                    .on_hover_text(
-                        "Run ORCA using the settings here, on the active molecule.",
-                    )
-                    .clicked()
-                {
-                    let atoms: Vec<_> = mol.common().atoms.iter().map(|a| a.to_generic()).collect();
-                    state.orca.input.atoms = atoms;
-                    println!("Running ORCA input: \n{}\n", state.orca.input.make_inp());
+                if state.volatile.orca_avail {
+                    if ui
+                        .button(RichText::new("Run").color(Color32::GOLD))
+                        .on_hover_text(
+                            "Run ORCA using the settings here, on the active molecule.",
+                        )
+                        .clicked()
+                    {
+                        let atoms: Vec<_> = mol.common().atoms.iter().map(|a| a.to_generic()).collect();
+                        state.orca.input.atoms = atoms;
+                        println!("Running ORCA input: \n{}\n", state.orca.input.make_inp());
+                    }
                 }
             }
         });
