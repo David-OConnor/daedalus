@@ -117,8 +117,8 @@ const PTX: &str = include_str!("../daedalus.ptx");
 // Model: ~1.5Mb. Vocab: ~440 bytes.
 // todo: Figure out how you handle this. You currently need this file both in the Dynamics
 // todo lib, and your application. I'm not sure how this will work out in applications.
-const PARAM_INFERENCE_MODEL: &[u8] = include_bytes!("../geostd_model.safetensors");
-const PARAM_INFERENCE_VOCAB: &[u8] = include_bytes!("../geostd_model.vocab");
+// const PARAM_INFERENCE_MODEL: &[u8] = include_bytes!("../geostd_model.safetensors");
+// const PARAM_INFERENCE_VOCAB: &[u8] = include_bytes!("../geostd_model.vocab");
 
 // todo: Eventually, implement a system that automatically checks for changes, and don't
 // todo save to disk if there are no changes.
@@ -839,7 +839,7 @@ fn main() {
         }
     }
 
-    println!("Using computing device: {:?}\n", dev);
+    println!("Using computing device: {:?}/n", dev);
 
     // todo: Consider a custom default impl. This is a substitute.
     let mut state = State {
@@ -914,7 +914,7 @@ fn main() {
 
     if let Ok(out) = Command::new("orca").output() {
         let out = String::from_utf8(out.stdout).unwrap();
-        println!("\n\nout: {out}");
+        println!("/n/nout: {out}");
         // No simpler way like version?
         if out.contains("This program requires") {
             state.volatile.orca_avail = true;
@@ -923,17 +923,46 @@ fn main() {
 
     // todo temp:
     {
-        let mut mol: MoleculeSmall = Mol2::load_amber_geostd("CPB").unwrap().try_into().unwrap();
+        // let mut mol: MoleculeSmall = Mol2::load_amber_geostd("o0j").unwrap().try_into().unwrap();
+        let mut mol: MoleculeSmall = Mol2::load(Path::new("C:/Users/the_a/Desktop/bio_misc/amber_geostd/o/O5G.mol2"))
+            .unwrap()
+            .try_into().unwrap();
 
-        let atoms_gen: Vec<_> = mol.common.atoms.iter().map(|a| a.to_generic()).collect();
+        let mut atoms_gen: Vec<_> = mol.common.atoms.iter().map(|a| a.to_generic()).collect();
         let bonds_gen: Vec<_> = mol.common.bonds.iter().map(|a| a.to_generic()).collect();
 
-        let defs = dynamics::inference_new::AmberDefSet::new().unwrap();
-        let ff_types = dynamics::inference_new::find_ff_types(&atoms_gen, &bonds_gen, &defs);
+        let defs = dynamics::param_inference::AmberDefSet::new().unwrap();
+        let ff_types = dynamics::param_inference::find_ff_types(&atoms_gen, &bonds_gen, &defs);
 
-        println!("\n FF types loaded:\n");
-        for (i, f) in ff_types.iter().enumerate() {
-            println!("--{i}: {f}");
+        // We must compute force field type prior to partial charge and frcmod.
+        for (i, ff_type) in ff_types.iter().enumerate() {
+            atoms_gen[i].force_field_type = Some(ff_type.clone());
+        }
+
+        let mol_specific_params = dynamics::param_inference::find_missing_params(
+            &atoms_gen, &mol.common.adjacency_list, &state.ff_param_set.small_mol.as_ref().unwrap());
+        );
+
+        let charge = match
+        dynamics::partial_charge_inference::infer_charge(
+            &atoms_gen,
+            &bonds_gen,
+        ) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("Error inferring charge: {e:?}");
+                return;
+            }
+        };
+        //
+        // for p in &params.dihedral {
+        //     println!("Dihe: {:?}", p);
+        // }
+
+        println!("/n FF types loaded:/n");
+        for (i, atom) in atoms_gen.iter_mut().enumerate() {
+            atom.partial_charge = Some(charge[i]);
+            println!("--{}: {} {:.4}", atom.serial_number, atom.force_field_type.as_ref().unwrap(), atom.partial_charge.unwrap());
         }
 
 

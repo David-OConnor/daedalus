@@ -1,5 +1,5 @@
 use bio_files::orca::{
-    Keyword, Method, OrcaInput, ScfConvergenceTolerance,
+    Keyword, OrcaInput, method::{Method},
     basis_sets::{BasisSet, BasisSetCategory},
 };
 use dynamics::Integrator;
@@ -170,7 +170,7 @@ pub(super) fn orca_input(
 
             keyword_toggle(
                 &mut state.orca.input,
-                Keyword::MBIS,
+                Keyword::Mbis,
                 "MBIS charge",
                 "Apply the MBIS model to generate atom-centered s-tyhpe Slater functions. Can be \
                 used for FF parameterization",

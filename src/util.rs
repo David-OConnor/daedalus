@@ -22,7 +22,7 @@ use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 use na_seq::{AaIdent, Element};
 
 use crate::{
-    CamSnapshot, ManipMode, PARAM_INFERENCE_MODEL, PARAM_INFERENCE_VOCAB, PREFS_SAVE_INTERVAL,
+    CamSnapshot, ManipMode, PREFS_SAVE_INTERVAL,
     Selection, State, StateUi, ViewSelLevel, cam_misc,
     drawing::{EntityClass, MoleculeView, draw_density_point_cloud, draw_peptide},
     drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
@@ -834,26 +834,44 @@ pub fn handle_thread_rx(state: &mut State) {
                             " Unable to load GeoStd data for this molecule (Likely not in the data set.)"
                         );
 
-                        println!("Inferring parameter data using ML");
+                        println!("Inferring parameter data");
                         let atoms_gen: Vec<_> =
                             mol.common.atoms.iter().map(|a| a.to_generic()).collect();
                         let bonds_gen: Vec<_> =
                             mol.common.bonds.iter().map(|a| a.to_generic()).collect();
 
-                        // Two passes: One to get FF types and charge. Then, once we have FF types, a second
-                        // to get dihedrals.
-                        // todo: You're running the logic on FF type/charge twice; find a better way
-                        // todo to prevent this, to improve performance.
+                        // todo: Move this elsewhere; you no longer need geostd.
+                        if !mol.ff_params_loaded {
+                            let defs = dynamics::param_inference::AmberDefSet::new().unwrap();
+                            let ff_types = dynamics::param_inference::find_ff_types(&atoms_gen, &bonds_gen, &defs);
 
-                        let (ff_type, charge, _params) =
-                            match dynamics::param_inference::infer_params(
-                                &atoms_gen,
-                                &bonds_gen,
-                                Vec::new(),
-                                Vec::new(),
-                                state.ff_param_set.small_mol.as_ref().unwrap(),
-                                PARAM_INFERENCE_MODEL,
-                                PARAM_INFERENCE_VOCAB,
+                            for (i, atom) in mol.common.atoms.iter_mut().enumerate() {
+                                atom.force_field_type = Some(ff_types[i].clone());
+                                // println!("Loaded FF/Q SN: {} {}, {}", i + 1, ff_type[i], charge[i]);
+                            }
+
+                            let charge =
+                                match dynamics::partial_charge_inference::infer_charge(
+                                    &atoms_gen,
+                                    &bonds_gen,
+                                ) {
+                                    Ok(v) => v,
+                                    Err(e) => {
+                                        eprintln!("Error inferring params: {e:?}");
+                                        return;
+                                    }
+                                };
+
+                            for (i, atom) in mol.common.atoms.iter_mut().enumerate() {
+                                atom.partial_charge = Some(charge[i]);
+                            }
+
+                            mol.ff_params_loaded = true;
+                        }
+
+                        if !mol.frcmod_loaded {
+                            let mol_specific_params = match dynamics::param_inference::find_missing_params(
+                                &atoms_gen, &mol.common.adjacency_list, &state.ff_param_set.small_mol.as_ref().unwrap()
                             ) {
                                 Ok(v) => v,
                                 Err(e) => {
@@ -862,51 +880,9 @@ pub fn handle_thread_rx(state: &mut State) {
                                 }
                             };
 
-                        if !mol.ff_params_loaded {
-                            for i in 0..mol.common.atoms.len() {
-                                mol.common.atoms[i].force_field_type = Some(ff_type[i].clone());
-                                mol.common.atoms[i].partial_charge = Some(charge[i]);
-
-                                mol.ff_params_loaded = true;
-
-                                println!("Loaded FF/Q SN: {} {}, {}", i + 1, ff_type[i], charge[i]);
-                            }
-                        }
-
-                        if !mol.frcmod_loaded {
-                            // todo: Once working
-                            // We only find missing dihedrals once FF types are populated.
-                            let (dihedrals_missing, improper_missing) = find_missing_dihedrals(
-                                mol,
-                                state.ff_param_set.small_mol.as_ref().unwrap(),
-                            )
-                            .unwrap();
-
-                            let (_ff_type, _charge, params) =
-                                dynamics::param_inference::infer_params(
-                                    &atoms_gen,
-                                    &bonds_gen,
-                                    // todo: These are not used... If we truly don't need them, we
-                                    // todo can do it in one pass, and remove the logic that builds them.
-                                    dihedrals_missing,
-                                    improper_missing,
-                                    state.ff_param_set.small_mol.as_ref().unwrap(),
-                                    PARAM_INFERENCE_MODEL,
-                                    PARAM_INFERENCE_VOCAB,
-                                )
-                                .unwrap();
-
-                            for p in &params.dihedral {
-                                println!("Dihe inferred: {:?}", p);
-                            }
-
-                            for p in &params.improper {
-                                println!("Improper inferred: {:?}", p);
-                            }
-
                             state
                                 .lig_specific_params
-                                .insert(mol.common.ident.to_owned(), params);
+                                .insert(mol.common.ident.to_owned(), mol_specific_params);
                             mol.frcmod_loaded = true;
                         }
                     }
@@ -1235,145 +1211,145 @@ pub fn get_computation_device() -> (ComputationDevice, Option<CudaFunction>) {
 //     Ok(result)
 // }
 
-/// Find proper and improper dihedral angles that this molecule has, but are not included in gaff2.dat.
-/// Overrides are required for these. `params` passed should be from Gaff2.
-///
-/// Returns (dihedral, improper). Force field combinations present in the molecule, but not
-/// gaff2.dat.
-/// We may integrate this into our FRCMOD inference pipeline.
-/// todo: Missing valance and bond params too A/R
-// todo: Not sure where this will go
-fn find_missing_dihedrals(
-    mol: &MoleculeSmall,
-    params: &ForceFieldParams,
-) -> io::Result<(
-    Vec<(String, String, String, String)>,
-    Vec<(String, String, String, String)>,
-)> {
-    // todo: This is a copy+paste+modify from FFParamsIndexed::new() for now.
-    // Proper and improper dihedral angles.
-    let mut seen = HashSet::<(usize, usize, usize, usize)>::new();
-
-    let mut result = (Vec::new(), Vec::new());
-
-    let atoms = &mol.common.atoms;
-
-    // Proper dihedrals: Atoms 1-2-3-4 bonded linearly
-    for (i1, nbr_j) in mol.common.adjacency_list.iter().enumerate() {
-        for &i2 in nbr_j {
-            if i1 >= i2 {
-                continue;
-            } // handle each j-k bond once
-
-            for &i0 in mol.common.adjacency_list[i1].iter().filter(|&&x| x != i2) {
-                for &i3 in mol.common.adjacency_list[i2].iter().filter(|&&x| x != i1) {
-                    if i0 == i3 {
-                        continue;
-                    }
-
-                    // Canonicalise so (i1, i2) is always (min, max)
-                    let idx_key = if i1 < i2 {
-                        (i0, i1, i2, i3)
-                    } else {
-                        (i3, i2, i1, i0)
-                    };
-                    if !seen.insert(idx_key) {
-                        continue;
-                    }
-
-                    if atoms[i0].force_field_type.is_none()
-                        || atoms[i1].force_field_type.is_none()
-                        || atoms[i2].force_field_type.is_none()
-                        || atoms[i3].force_field_type.is_none()
-                    {
-                        eprintln!(
-                            "Error finding missing dihedrals for param inference: Missing FF type."
-                        );
-                        return Err(io::Error::new(io::ErrorKind::Other, "Missing FF type"));
-                    }
-
-                    let type_0 = atoms[i0].force_field_type.as_ref().unwrap();
-                    let type_1 = atoms[i1].force_field_type.as_ref().unwrap();
-                    let type_2 = atoms[i2].force_field_type.as_ref().unwrap();
-                    let type_3 = atoms[i3].force_field_type.as_ref().unwrap();
-
-                    let key = (
-                        type_0.clone(),
-                        type_1.clone(),
-                        type_2.clone(),
-                        type_3.clone(),
-                    );
-
-                    if params.get_dihedral(&key, true).is_none() {
-                        result.0.push(key);
-                    }
-                }
-            }
-        }
-    }
-
-    // Improper dihedrals 2-1-3-4. Atom 3 is the hub, with the other 3 atoms bonded to it.
-    // The order of the others in the angle calculation affects the sign of the result.
-    // Generally only for planar configs.
-    //
-    // Note: The sattelites are expected to be in alphabetical order, re their FF types.
-    // So, for the hub of "ca" with sattelites of "ca", "ca", and "os", the correct combination
-    // to look for in the params is "ca-ca-ca-os"
-    for (ctr, satellites) in mol.common.adjacency_list.iter().enumerate() {
-        if satellites.len() < 3 {
-            continue;
-        }
-
-        // Unique unordered triples of neighbours
-        for a in 0..satellites.len() - 2 {
-            for b in a + 1..satellites.len() - 1 {
-                for d in b + 1..satellites.len() {
-                    let (sat0, sat1, sat2) = (satellites[a], satellites[b], satellites[d]);
-
-                    let idx_key = (sat0, sat1, ctr, sat2); // order is fixed → no swap
-                    if !seen.insert(idx_key) {
-                        continue;
-                    }
-
-                    if atoms[sat0].force_field_type.is_none()
-                        || atoms[sat1].force_field_type.is_none()
-                        || atoms[ctr].force_field_type.is_none()
-                        || atoms[sat2].force_field_type.is_none()
-                    {
-                        eprintln!(
-                            "Error finding missing improper dihedrals for param inference: Missing FF type."
-                        );
-                        return Err(io::Error::new(io::ErrorKind::Other, "Missing FF type"));
-                    }
-
-                    let type_0 = atoms[sat0].force_field_type.as_ref().unwrap();
-                    let type_1 = atoms[sat1].force_field_type.as_ref().unwrap();
-                    let type_ctr = atoms[ctr].force_field_type.as_ref().unwrap();
-                    let type_2 = atoms[sat2].force_field_type.as_ref().unwrap();
-
-                    // Sort satellites alphabetically; required to ensure we don't miss combinations.
-                    let mut sat_types = [type_0.clone(), type_1.clone(), type_2.clone()];
-                    sat_types.sort();
-
-                    let key = (
-                        sat_types[0].clone(),
-                        sat_types[1].clone(),
-                        type_ctr.clone(),
-                        sat_types[2].clone(),
-                    );
-
-                    // todo: Re this note: it may be tough to determine which impropers we need.
-                    // In the case of improper, unlike all other param types, we are allowed to
-                    // have missing values. Impropers areonly, by Amber convention, for planar
-                    // hub and spoke setups, so non-planar ones will be omitted. These may occur,
-                    // for example, at ring intersections.
-                    if params.get_dihedral(&key, false).is_none() {
-                        result.1.push(key);
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(result)
-}
+// /// Find proper and improper dihedral angles that this molecule has, but are not included in gaff2.dat.
+// /// Overrides are required for these. `params` passed should be from Gaff2.
+// ///
+// /// Returns (dihedral, improper). Force field combinations present in the molecule, but not
+// /// gaff2.dat.
+// /// We may integrate this into our FRCMOD inference pipeline.
+// /// todo: Missing valance and bond params too A/R
+// // todo: Not sure where this will go
+// fn find_missing_dihedrals(
+//     mol: &MoleculeSmall,
+//     params: &ForceFieldParams,
+// ) -> io::Result<(
+//     Vec<(String, String, String, String)>,
+//     Vec<(String, String, String, String)>,
+// )> {
+//     // todo: This is a copy+paste+modify from FFParamsIndexed::new() for now.
+//     // Proper and improper dihedral angles.
+//     let mut seen = HashSet::<(usize, usize, usize, usize)>::new();
+//
+//     let mut result = (Vec::new(), Vec::new());
+//
+//     let atoms = &mol.common.atoms;
+//
+//     // Proper dihedrals: Atoms 1-2-3-4 bonded linearly
+//     for (i1, nbr_j) in mol.common.adjacency_list.iter().enumerate() {
+//         for &i2 in nbr_j {
+//             if i1 >= i2 {
+//                 continue;
+//             } // handle each j-k bond once
+//
+//             for &i0 in mol.common.adjacency_list[i1].iter().filter(|&&x| x != i2) {
+//                 for &i3 in mol.common.adjacency_list[i2].iter().filter(|&&x| x != i1) {
+//                     if i0 == i3 {
+//                         continue;
+//                     }
+//
+//                     // Canonicalise so (i1, i2) is always (min, max)
+//                     let idx_key = if i1 < i2 {
+//                         (i0, i1, i2, i3)
+//                     } else {
+//                         (i3, i2, i1, i0)
+//                     };
+//                     if !seen.insert(idx_key) {
+//                         continue;
+//                     }
+//
+//                     if atoms[i0].force_field_type.is_none()
+//                         || atoms[i1].force_field_type.is_none()
+//                         || atoms[i2].force_field_type.is_none()
+//                         || atoms[i3].force_field_type.is_none()
+//                     {
+//                         eprintln!(
+//                             "Error finding missing dihedrals for param inference: Missing FF type."
+//                         );
+//                         return Err(io::Error::new(io::ErrorKind::Other, "Missing FF type"));
+//                     }
+//
+//                     let type_0 = atoms[i0].force_field_type.as_ref().unwrap();
+//                     let type_1 = atoms[i1].force_field_type.as_ref().unwrap();
+//                     let type_2 = atoms[i2].force_field_type.as_ref().unwrap();
+//                     let type_3 = atoms[i3].force_field_type.as_ref().unwrap();
+//
+//                     let key = (
+//                         type_0.clone(),
+//                         type_1.clone(),
+//                         type_2.clone(),
+//                         type_3.clone(),
+//                     );
+//
+//                     if params.get_dihedral(&key, true).is_none() {
+//                         result.0.push(key);
+//                     }
+//                 }
+//             }
+//         }
+//     }
+//
+//     // Improper dihedrals 2-1-3-4. Atom 3 is the hub, with the other 3 atoms bonded to it.
+//     // The order of the others in the angle calculation affects the sign of the result.
+//     // Generally only for planar configs.
+//     //
+//     // Note: The sattelites are expected to be in alphabetical order, re their FF types.
+//     // So, for the hub of "ca" with sattelites of "ca", "ca", and "os", the correct combination
+//     // to look for in the params is "ca-ca-ca-os"
+//     for (ctr, satellites) in mol.common.adjacency_list.iter().enumerate() {
+//         if satellites.len() < 3 {
+//             continue;
+//         }
+//
+//         // Unique unordered triples of neighbours
+//         for a in 0..satellites.len() - 2 {
+//             for b in a + 1..satellites.len() - 1 {
+//                 for d in b + 1..satellites.len() {
+//                     let (sat0, sat1, sat2) = (satellites[a], satellites[b], satellites[d]);
+//
+//                     let idx_key = (sat0, sat1, ctr, sat2); // order is fixed → no swap
+//                     if !seen.insert(idx_key) {
+//                         continue;
+//                     }
+//
+//                     if atoms[sat0].force_field_type.is_none()
+//                         || atoms[sat1].force_field_type.is_none()
+//                         || atoms[ctr].force_field_type.is_none()
+//                         || atoms[sat2].force_field_type.is_none()
+//                     {
+//                         eprintln!(
+//                             "Error finding missing improper dihedrals for param inference: Missing FF type."
+//                         );
+//                         return Err(io::Error::new(io::ErrorKind::Other, "Missing FF type"));
+//                     }
+//
+//                     let type_0 = atoms[sat0].force_field_type.as_ref().unwrap();
+//                     let type_1 = atoms[sat1].force_field_type.as_ref().unwrap();
+//                     let type_ctr = atoms[ctr].force_field_type.as_ref().unwrap();
+//                     let type_2 = atoms[sat2].force_field_type.as_ref().unwrap();
+//
+//                     // Sort satellites alphabetically; required to ensure we don't miss combinations.
+//                     let mut sat_types = [type_0.clone(), type_1.clone(), type_2.clone()];
+//                     sat_types.sort();
+//
+//                     let key = (
+//                         sat_types[0].clone(),
+//                         sat_types[1].clone(),
+//                         type_ctr.clone(),
+//                         sat_types[2].clone(),
+//                     );
+//
+//                     // todo: Re this note: it may be tough to determine which impropers we need.
+//                     // In the case of improper, unlike all other param types, we are allowed to
+//                     // have missing values. Impropers areonly, by Amber convention, for planar
+//                     // hub and spoke setups, so non-planar ones will be omitted. These may occur,
+//                     // for example, at ring intersections.
+//                     if params.get_dihedral(&key, false).is_none() {
+//                         result.1.push(key);
+//                     }
+//                 }
+//             }
+//         }
+//     }
+//
+//     Ok(result)
+// }

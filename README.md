@@ -109,16 +109,12 @@ Integrates the following [Amber parameters](https://ambermd.org/AmberModels.php)
 We plan to support carbohydrates in the future.
 
 These general parameters do not need to be loaded externally; they provide the information needed to perform
-MD with any amino acid sequence, and provide a baseline for dynamics of small organic molecules. You may wish to load
-frcmod data over these that have overrides for specific small molecules.
+MD with any amino acid sequence, and provide a baseline for dynamics of small organic molecules.
 
-This program can automatically load ligands with Amber parameters, for the
-*Amber Geostd* set. This includes many common small organic molecules with force field parameters,
-and partial charges included. It can infer these from the protein loaded, or be queried by identifier.
-
-You can load these molecules with parameters directly from the GUI by typing the identifier. 
-If you load an SDF molecule, the program may be able to automatically update it using Amber parameters and
-partial charges.
+For small organic molecules, we must compute force field types, partial charges, and dihedral overrides.
+We compute force field type and overrides when loading molecules. We have two approaches for computing partial
+charges (Used in Coulomb interactions): By default, we use machine learning, trained on Amber's Geostd set. This
+is fast and reasonably accurate. If you have Orca installed, we provide slower, but more accurate approaches.
 
 For details on how dynamics using this parameterized approach works, see the 
 [Amber Reference Manual](https://ambermd.org/doc12/Amber25.pdf). Section 3 and 15 are of particular
