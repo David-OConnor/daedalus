@@ -146,7 +146,7 @@ fn disp_bond_data(
             atom_0.force_field_type.as_deref(),
             atom_1.force_field_type.as_deref(),
         ) {
-            if let Some(b) = p.get_bond(&(ff_0.to_string(), ff_1.to_string())) {
+            if let Some(b) = p.get_bond(&(ff_0.to_string(), ff_1.to_string()), true) {
                 ui.label(RichText::new("Param len:"));
                 label!(ui, format!("{:.3} Å", b.r_0), Color32::LIGHT_BLUE);
 

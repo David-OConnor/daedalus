@@ -22,8 +22,7 @@ use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 use na_seq::{AaIdent, Element};
 
 use crate::{
-    CamSnapshot, ManipMode, PREFS_SAVE_INTERVAL,
-    Selection, State, StateUi, ViewSelLevel, cam_misc,
+    CamSnapshot, ManipMode, PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel, cam_misc,
     drawing::{EntityClass, MoleculeView, draw_density_point_cloud, draw_peptide},
     drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
     mol_lig::MoleculeSmall,
@@ -833,58 +832,6 @@ pub fn handle_thread_rx(state: &mut State) {
                         eprintln!(
                             " Unable to load GeoStd data for this molecule (Likely not in the data set.)"
                         );
-
-                        println!("Inferring parameter data");
-                        let atoms_gen: Vec<_> =
-                            mol.common.atoms.iter().map(|a| a.to_generic()).collect();
-                        let bonds_gen: Vec<_> =
-                            mol.common.bonds.iter().map(|a| a.to_generic()).collect();
-
-                        // todo: Move this elsewhere; you no longer need geostd.
-                        if !mol.ff_params_loaded {
-                            let defs = dynamics::param_inference::AmberDefSet::new().unwrap();
-                            let ff_types = dynamics::param_inference::find_ff_types(&atoms_gen, &bonds_gen, &defs);
-
-                            for (i, atom) in mol.common.atoms.iter_mut().enumerate() {
-                                atom.force_field_type = Some(ff_types[i].clone());
-                                // println!("Loaded FF/Q SN: {} {}, {}", i + 1, ff_type[i], charge[i]);
-                            }
-
-                            let charge =
-                                match dynamics::partial_charge_inference::infer_charge(
-                                    &atoms_gen,
-                                    &bonds_gen,
-                                ) {
-                                    Ok(v) => v,
-                                    Err(e) => {
-                                        eprintln!("Error inferring params: {e:?}");
-                                        return;
-                                    }
-                                };
-
-                            for (i, atom) in mol.common.atoms.iter_mut().enumerate() {
-                                atom.partial_charge = Some(charge[i]);
-                            }
-
-                            mol.ff_params_loaded = true;
-                        }
-
-                        if !mol.frcmod_loaded {
-                            let mol_specific_params = match dynamics::param_inference::find_missing_params(
-                                &atoms_gen, &mol.common.adjacency_list, &state.ff_param_set.small_mol.as_ref().unwrap()
-                            ) {
-                                Ok(v) => v,
-                                Err(e) => {
-                                    eprintln!("Error inferring params: {e:?}");
-                                    return;
-                                }
-                            };
-
-                            state
-                                .lig_specific_params
-                                .insert(mol.common.ident.to_owned(), mol_specific_params);
-                            mol.frcmod_loaded = true;
-                        }
                     }
                 }
                 state.volatile.amber_geostd_data_avail = None;

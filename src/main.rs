@@ -922,106 +922,63 @@ fn main() {
     };
 
     // todo temp:
-    {
-        // let mut mol: MoleculeSmall = Mol2::load_amber_geostd("o0j").unwrap().try_into().unwrap();
-        let mut mol: MoleculeSmall = Mol2::load(Path::new("C:/Users/the_a/Desktop/bio_misc/amber_geostd/o/O5G.mol2"))
-            .unwrap()
-            .try_into().unwrap();
-
-        let mut atoms_gen: Vec<_> = mol.common.atoms.iter().map(|a| a.to_generic()).collect();
-        let bonds_gen: Vec<_> = mol.common.bonds.iter().map(|a| a.to_generic()).collect();
-
-        let defs = dynamics::param_inference::AmberDefSet::new().unwrap();
-        let ff_types = dynamics::param_inference::find_ff_types(&atoms_gen, &bonds_gen, &defs);
-
-        // We must compute force field type prior to partial charge and frcmod.
-        for (i, ff_type) in ff_types.iter().enumerate() {
-            atoms_gen[i].force_field_type = Some(ff_type.clone());
-        }
-
-        let mol_specific_params = dynamics::param_inference::find_missing_params(
-            &atoms_gen, &mol.common.adjacency_list, &state.ff_param_set.small_mol.as_ref().unwrap());
-        );
-
-        let charge = match
-        dynamics::partial_charge_inference::infer_charge(
-            &atoms_gen,
-            &bonds_gen,
-        ) {
-            Ok(v) => v,
-            Err(e) => {
-                eprintln!("Error inferring charge: {e:?}");
-                return;
-            }
-        };
-        //
-        // for p in &params.dihedral {
-        //     println!("Dihe: {:?}", p);
-        // }
-
-        println!("/n FF types loaded:/n");
-        for (i, atom) in atoms_gen.iter_mut().enumerate() {
-            atom.partial_charge = Some(charge[i]);
-            println!("--{}: {} {:.4}", atom.serial_number, atom.force_field_type.as_ref().unwrap(), atom.partial_charge.unwrap());
-        }
-
-
-    // // Two passes: One to get FF types and charge. Then, once we have FF types, a second
-    // // to get dihedrals.
-    // // todo: You're running the logic on FF type/charge twice; find a better way
-    // // todo to prevent this, to improve performance.
+    // {
+    //     // let mut mol: MoleculeSmall = Mol2::load_amber_geostd("o0j").unwrap().try_into().unwrap();
+    //     let mut mol: MoleculeSmall = Mol2::load(Path::new(
+    //         "C:/Users/the_a/Desktop/bio_misc/amber_geostd/e/E7Y.mol2",
+    //     ))
+    //     .unwrap()
+    //     .try_into()
+    //     .unwrap();
     //
-    // let (ff_type, charge, _params) = match
-    // dynamics::param_inference::infer_params(
-    //     &atoms_gen,
-    //     &bonds_gen,
-    //     Vec::new(),
-    //     Vec::new(),
-    //     state.ff_param_set.small_mol.as_ref().unwrap()
-    // ) {
-    //     Ok(v) => v,
-    //     Err(e) => {
-    //         eprintln!("Error inferring params: {e:?}");
-    //         return;
+    //     let mut atoms_gen: Vec<_> = mol.common.atoms.iter().map(|a| a.to_generic()).collect();
+    //     let bonds_gen: Vec<_> = mol.common.bonds.iter().map(|a| a.to_generic()).collect();
+    //
+    //     let defs = dynamics::param_inference::AmberDefSet::new().unwrap();
+    //     let ff_types = dynamics::param_inference::find_ff_types(&atoms_gen, &bonds_gen, &defs);
+    //
+    //     // We must compute force field type prior to partial charge and frcmod.
+    //     for (i, ff_type) in ff_types.iter().enumerate() {
+    //         atoms_gen[i].force_field_type = Some(ff_type.clone());
     //     }
-    // };
     //
-    // if !mol.ff_params_loaded {
-    //     for i in 0..mol.common.atoms.len() {
-    //         mol.common.atoms[i].force_field_type = Some(ff_type[i].clone());
-    //         mol.common.atoms[i].partial_charge = Some(charge[i]);
+    //     let charge = match dynamics::partial_charge_inference::infer_charge(&atoms_gen, &bonds_gen)
+    //     {
+    //         Ok(v) => v,
+    //         Err(e) => {
+    //             eprintln!("Error inferring charge: {e:?}");
+    //             return;
+    //         }
+    //     };
     //
-    //         println!("Loaded FF/Q SN: {} {}, {}", i + 1, ff_type[i], charge[i]);
+    //     println!("\n FF types loaded:/n");
+    //     for (i, atom) in atoms_gen.iter_mut().enumerate() {
+    //         atom.partial_charge = Some(charge[i]);
+    //         println!(
+    //             "--{}: {} {:.4}",
+    //             atom.serial_number,
+    //             atom.force_field_type.as_ref().unwrap(),
+    //             atom.partial_charge.unwrap()
+    //         );
+    //     }
+    //
+    //     let mol_specific_params = dynamics::param_inference::assign_missing_params(
+    //         &atoms_gen,
+    //         &mol.common.adjacency_list,
+    //         &state.ff_param_set.small_mol.as_ref().unwrap(),
+    //     )
+    //     .unwrap();
+    //
+    //     println!("\n\nDihe FRCMOD created:");
+    //     for p in &mol_specific_params.dihedral {
+    //         println!("\nDihe: {:?}", p);
+    //     }
+    //
+    //     println!("\n\nImproper FRCMOD created:");
+    //     for p in &mol_specific_params.improper {
+    //         println!("Improp: {:?}", p);
     //     }
     // }
-    //
-    // if !mol.frcmod_loaded {
-    //     // todo: Once working
-    //     // We only find missing dihedrals once FF types are populated.
-    //     // let (dihedrals_missing, improper_missing) = crate::util::find_missing_dihedrals(mol, state.ff_param_set.small_mol.as_ref().unwrap()).unwrap();
-    //
-    //     let (_ff_type, _charge, params) =
-    //         dynamics::param_inference::infer_params(
-    //             &atoms_gen,
-    //             &bonds_gen,
-    //             // todo: These are not used... If we truly don't need them, we
-    //             // todo can do it in one pass, and remove the logic that builds them.
-    //             // dihedrals_missing,
-    //             // improper_missing,
-    //             Vec::new(),
-    //             Vec::new(),
-    //             state.ff_param_set.small_mol.as_ref().unwrap()
-    //         )
-    //             .unwrap();
-    //
-    //     for p in &params.dihedral {
-    //         println!("Dihe inferred: {:?}", p);
-    //     }
-    //
-    //     for p in &params.improper {
-    //         println!("Improper inferred: {:?}", p);
-    //     }
-    }
 
     render(state);
 }

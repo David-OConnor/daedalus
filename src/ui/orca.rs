@@ -1,6 +1,7 @@
 use bio_files::orca::{
-    Keyword, OrcaInput, method::{Method},
+    Keyword, OrcaInput,
     basis_sets::{BasisSet, BasisSetCategory},
+    method::Method,
 };
 use dynamics::Integrator;
 use egui::{Color32, ComboBox, RichText, Ui};
@@ -9,9 +10,8 @@ use graphics::{EngineUpdates, Scene};
 use crate::{
     State, label,
     orca::StateOrca,
-    ui::{COL_SPACING, COLOR_HIGHLIGHT, misc, misc::toggle_btn},
+    ui::{COL_SPACING, COLOR_ACTIVE, COLOR_HIGHLIGHT, misc, misc::toggle_btn},
 };
-use crate::ui::COLOR_ACTIVE;
 
 fn keyword_toggle(
     input: &mut OrcaInput,

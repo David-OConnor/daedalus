@@ -167,12 +167,6 @@ fn text_overlay_bonds(
         ui.mol_view,
         MoleculeView::BallAndStick | MoleculeView::SpaceFill
     ) {
-        let color = if sel {
-            LABEL_COLOR_ATOM_SEL
-        } else {
-            LABEL_COLOR_ATOM
-        };
-
         if ui.visibility.labels_atom_sn {
             entity.overlay_text = Some(TextOverlay {
                 text: format!("{}", atom.serial_number),
@@ -1191,6 +1185,7 @@ pub fn draw_mol(
             to_hydrogen,
         );
 
+        // todo: This seems to be related to a bug where atom labels are doubled for some in sticks mode.
         // Draw atom-based labels on bonds if not in a view mode that shows atoms.
         if !entities.is_empty() {
             text_overlay_bonds(

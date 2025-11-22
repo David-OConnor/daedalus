@@ -16,6 +16,10 @@ use bio_files::{
     ChargeType, Mol2, MolType, Pdbqt, Sdf,
     md_params::{ForceFieldParams, ForceFieldParamsVec},
 };
+use dynamics::{
+    param_inference::{AmberDefSet, assign_missing_params, find_ff_types},
+    partial_charge_inference::infer_charge,
+};
 use na_seq::Element;
 
 use crate::{
@@ -487,9 +491,10 @@ impl MoleculeSmall {
     pub fn update_aux(
         &mut self,
         active_mol: &Option<(Mt, usize)>,
-        lig_specific: &mut HashMap<String, ForceFieldParams>,
-        geostd_thread: &mut Option<Receiver<(usize, Result<GeostdData, ReqError>)>>,
-        mol_i: usize,
+        mol_specific_param_set: &mut HashMap<String, ForceFieldParams>,
+        // geostd_thread: &mut Option<Receiver<(usize, Result<GeostdData, ReqError>)>>,
+        // mol_i: usize,
+        gaff2: &ForceFieldParams,
     ) {
         if let Some((_, i)) = active_mol {
             let offset = LIGAND_ABS_POSIT_OFFSET * (*i as f64);
@@ -506,33 +511,103 @@ impl MoleculeSmall {
             }
         }
 
-        if lig_specific
+        if mol_specific_param_set
             .keys()
             .any(|k| k.eq_ignore_ascii_case(&self.common.ident))
         {
             self.frcmod_loaded = true;
         }
 
-        // Attempt to load Amber GeoStd force field names and partial charges.
-        // Note: For now at least, we override any existing partial charges.
-        // This is probably OK, as we assume Amber parameters elsewhere for now.
-        if !self.ff_params_loaded || !self.frcmod_loaded {
-            // todo: This lacks nuance. We wish to handle the case of Geostd Mol2 to load frcmod,
-            // todo or the case of Drugbank/Pubchem SDF that need both, and have a pubchem id.
-            // The reason for our current approach is that a pubchem ID is always valid, but the ident
-            // may not be. (e.g. in the case of DrugBank). For Geostd, the Ident is valid.
-            let mut ident = self.common.ident.clone();
+        // // Attempt to load Amber GeoStd force field names and partial charges.
+        // // Note: For now at least, we override any existing partial charges.
+        // // This is probably OK, as we assume Amber parameters elsewhere for now.
+        // if !self.ff_params_loaded || !self.frcmod_loaded {
+        //     // todo: This lacks nuance. We wish to handle the case of Geostd Mol2 to load frcmod,
+        //     // todo or the case of Drugbank/Pubchem SDF that need both, and have a pubchem id.
+        //     // The reason for our current approach is that a pubchem ID is always valid, but the ident
+        //     // may not be. (e.g. in the case of DrugBank). For Geostd, the Ident is valid.
+        //     let mut ident = self.common.ident.clone();
+        //
+        //     for ident_ in &self.idents {
+        //         if let MolIdent::PubChem(cid) = ident_ {
+        //             ident = ident_.to_str();
+        //             break;
+        //         }
+        //     }
+        //
+        //     // Attempt to find parameters in the Amber Geostd data set. If that fails,
+        //     // infer using machine learning.
+        //     self.search_geostd(&ident, geostd_thread, mol_i);
+        // }
 
-            for ident_ in &self.idents {
-                if let MolIdent::PubChem(cid) = ident_ {
-                    ident = ident_.to_str();
-                    break;
-                }
+        println!("Inferring parameter data...");
+        // Note: There is an all-in-one `update_small_mol_params` fn we can use as well; it's
+        // easier to use nominally, but this approach works better for our this-project Atom and bond types,
+        // and loaded flags.
+
+        let atoms_gen: Vec<_> = self.common.atoms.iter().map(|a| a.to_generic()).collect();
+        let bonds_gen: Vec<_> = self.common.bonds.iter().map(|a| a.to_generic()).collect();
+
+        // todo: Move this elsewhere; you no longer need geostd.
+        if !self.ff_params_loaded {
+            let defs = AmberDefSet::new().unwrap();
+            let ff_types = find_ff_types(&atoms_gen, &bonds_gen, &defs);
+
+            for (i, atom) in self.common.atoms.iter_mut().enumerate() {
+                atom.force_field_type = Some(ff_types[i].clone());
             }
 
-            // Attempt to find parameters in the Amber Geostd data set. If that fails,
-            // infer using machine learning.
-            self.search_geostd(&ident, geostd_thread, mol_i);
+            let charge = match infer_charge(&atoms_gen, &bonds_gen) {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!("Error inferring params: {e:?}");
+                    return;
+                }
+            };
+
+            for (i, atom) in self.common.atoms.iter_mut().enumerate() {
+                atom.partial_charge = Some(charge[i]);
+            }
+
+            println!("\n FF types loaded:/n");
+            for atom in &self.common.atoms {
+                println!(
+                    "--{}: {} {:.4}",
+                    atom.serial_number,
+                    atom.force_field_type.as_ref().unwrap(),
+                    atom.partial_charge.unwrap()
+                );
+            }
+
+            self.ff_params_loaded = true;
         }
+
+        if !self.frcmod_loaded {
+            let mol_specific_params =
+                match assign_missing_params(&atoms_gen, &self.common.adjacency_list, gaff2) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        eprintln!(
+                            "Error inferring params for mol {}: {e:?}",
+                            self.common.ident
+                        );
+                        return;
+                    }
+                };
+
+            println!("\n\nDihe FRCMOD created:");
+            for p in &mol_specific_params.dihedral {
+                println!("\nDihe: {:?}", p);
+            }
+
+            println!("\n\nImproper FRCMOD created:");
+            for p in &mol_specific_params.improper {
+                println!("Improp: {:?}", p);
+            }
+
+            mol_specific_param_set.insert(self.common.ident.to_owned(), mol_specific_params);
+            self.frcmod_loaded = true;
+        }
+        println!("Inference complete.");
     }
 }

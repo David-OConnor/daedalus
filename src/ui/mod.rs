@@ -1,12 +1,11 @@
 use std::{
-    collections::HashMap,
     io::Cursor,
     sync::atomic::{AtomicBool, Ordering},
     time::Instant,
 };
 
-use bio_apis::rcsb;
-use bio_files::{DensityMap, ResidueType, density_from_2fo_fc_rcsb_gemmi};
+use bio_apis::{pubchem::find_cids_from_search, rcsb};
+use bio_files::{DensityMap, ResidueType, Sdf, density_from_2fo_fc_rcsb_gemmi};
 use egui::{
     Align, Color32, ComboBox, Context, Key, Layout, Popup, PopupAnchor, Pos2, RectAlign, RichText,
     Slider, TextEdit, TextFormat, TextStyle, TopBottomPanel, Ui, text::LayoutJob,
@@ -1158,7 +1157,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 .on_hover_text(query_help);
 
             let edit_resp = ui
-                .add(TextEdit::singleline(&mut state.ui.db_input).desired_width(60.))
+                .add(TextEdit::singleline(&mut state.ui.db_input).desired_width(80.))
                 .on_hover_text(query_help);
 
             if state.ui.db_input.len() >= 4 {
@@ -1184,7 +1183,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             if state.ui.db_input.len() == 3 {
                 let enter_pressed =
                     edit_resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-                let button_clicked = ui.button("Load Amber Geostd").clicked();
+                let button_clicked = ui.button("Load Geostd").clicked();
 
                 if button_clicked || enter_pressed {
                     let db_input = &state.ui.db_input.clone(); // Avoids a double borrow.
@@ -1196,7 +1195,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
             if state.ui.db_input.len() >= 4 {
                 if state.ui.db_input.to_uppercase().starts_with("DB") {
-                    if ui.button("Load from DrugBank").clicked() {
+                    if ui.button("Load DrugBank").clicked() {
                         match load_sdf_drugbank(&state.ui.db_input) {
                             Ok(mol) => {
                                 open_lig_from_input(state, mol, scene, &mut engine_updates);
@@ -1212,7 +1211,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 }
 
                 if let Ok(cid) = state.ui.db_input.parse::<u32>() {
-                    if ui.button("Load from PubChem").clicked() {
+                    if ui.button("Load PubChem").clicked() {
                         match load_sdf_pubchem(cid) {
                             Ok(mol) => {
                                 open_lig_from_input(state, mol, scene, &mut engine_updates);
@@ -1224,6 +1223,44 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                                 handle_err(&mut state.ui, msg);
                             }
                         }
+                    }
+                }
+            }
+
+            // Can you find a better heuristic for a plain text search
+            if state.ui.db_input.len() >= 5 {
+                if ui.button("Search PubChem").clicked() {
+                    let cids = find_cids_from_search(&state.ui.db_input.trim());
+
+                    match cids {
+                        Ok(c) => {
+                            if c.is_empty() {
+                                handle_success(&mut state.ui, "No results found on Pubchem".to_owned());
+                            } else {
+                                // todo: DRY with the other pubchem branch above.
+                                match load_sdf_pubchem(c[0]) {
+                                    Ok(mol) => {
+                                        open_lig_from_input(state, mol, scene, &mut engine_updates);
+                                        redraw_lig = true;
+                                        reset_cam = true;
+
+
+                                        let cids_str = c
+                                            .iter()
+                                            .map(u32::to_string)
+                                            .collect::<Vec<_>>()
+                                            .join(", ");
+
+                                        handle_success(&mut state.ui, format!("Found the following Pubchem CIDs: {cids_str}. Loaded {}", c[0]));
+                                    }
+                                    Err(e) => {
+                                        let msg = format!("Error loading SDF file: {e:?}");
+                                        handle_err(&mut state.ui, msg);
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => handle_err(&mut state.ui, format!("Error finding a mol from Pubchem {:?}", e)),
                     }
                 }
             }

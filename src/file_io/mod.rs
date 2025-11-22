@@ -11,7 +11,6 @@ use graphics::{ControlScheme, EngineUpdates, EntityUpdate, Scene};
 use lin_alg::f64::Vec3;
 use na_seq::{AaIdent, Element};
 use rand::Rng;
-use rustfft::FftPlanner;
 
 use crate::{
     Selection, State,
@@ -24,9 +23,7 @@ use crate::{
         MolGenericTrait, MolIdent, MolType, MoleculeCommon, MoleculeGeneric, MoleculePeptide,
     },
     prefs::{OpenHistory, OpenType},
-    reflection::{
-        DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityPt, DensityRect, density_map_from_sf,
-    },
+    reflection::{DENSITY_CELL_MARGIN, DENSITY_MAX_DIST, DensityPt, DensityRect},
     util::{handle_err, handle_success},
 };
 
@@ -602,12 +599,21 @@ impl State {
 
                 self.mol_dynamics = None;
 
-                mol.update_aux(
-                    &self.volatile.active_mol,
-                    &mut self.lig_specific_params,
-                    &mut self.volatile.amber_geostd_data_avail,
-                    self.ligands.len(),
-                );
+                if let Some(p) = &self.ff_param_set.small_mol {
+                    mol.update_aux(
+                        &self.volatile.active_mol,
+                        &mut self.lig_specific_params,
+                        // &mut self.volatile.amber_geostd_data_avail,
+                        // self.ligands.len(),
+                        p,
+                    );
+                } else {
+                    handle_err(
+                        &mut self.ui,
+                        "Error: Unable to update a molecule's params due to missing GAFF2."
+                            .to_string(),
+                    )
+                }
 
                 if let Some(ref mut s) = scene {
                     let centroid = mol.common.centroid();
