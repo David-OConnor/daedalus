@@ -545,7 +545,7 @@ impl MoleculeSmall {
         // easier to use nominally, but this approach works better for our this-project Atom and bond types,
         // and loaded flags.
 
-        let atoms_gen: Vec<_> = self.common.atoms.iter().map(|a| a.to_generic()).collect();
+        let mut atoms_gen: Vec<_> = self.common.atoms.iter().map(|a| a.to_generic()).collect();
         let bonds_gen: Vec<_> = self.common.bonds.iter().map(|a| a.to_generic()).collect();
 
         // todo: Move this elsewhere; you no longer need geostd.
@@ -553,8 +553,13 @@ impl MoleculeSmall {
             let defs = AmberDefSet::new().unwrap();
             let ff_types = find_ff_types(&atoms_gen, &bonds_gen, &defs);
 
+            println!("FF types created: {:?}", ff_types); // todo temp
+
             for (i, atom) in self.common.atoms.iter_mut().enumerate() {
                 atom.force_field_type = Some(ff_types[i].clone());
+
+                // We re-use `atoms_gen` for mol specific params below; update atoms gen here.
+                atoms_gen[i].force_field_type = Some(ff_types[i].clone());
             }
 
             let charge = match infer_charge(&atoms_gen, &bonds_gen) {

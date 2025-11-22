@@ -5,7 +5,7 @@ use std::{
 };
 
 use bio_apis::{pubchem::find_cids_from_search, rcsb};
-use bio_files::{DensityMap, ResidueType, Sdf, density_from_2fo_fc_rcsb_gemmi};
+use bio_files::{DensityMap, ResidueType, density_from_2fo_fc_rcsb_gemmi};
 use egui::{
     Align, Color32, ComboBox, Context, Key, Layout, Popup, PopupAnchor, Pos2, RectAlign, RichText,
     Slider, TextEdit, TextFormat, TextStyle, TopBottomPanel, Ui, text::LayoutJob,
@@ -20,7 +20,7 @@ use crate::{
     cli::autocomplete_cli,
     docking::dock,
     download_mols::{load_atom_coords_rcsb, load_sdf_drugbank, load_sdf_pubchem},
-    drawing::{EntityClass, MoleculeView, color_viridis},
+    drawing::{EntityClass, color_viridis},
     drawing_wrappers::draw_all_lipids,
     file_io::gemmi_path,
     inputs::{MOVEMENT_SENS, ROTATE_SENS, SENS_MOL_MOVE_SCROLL},
