@@ -887,29 +887,20 @@ pub fn display_mol_data(
                 MolGenericRef::Peptide(_) => {}
                 MolGenericRef::Ligand(m) => {
                     ui.add_space(COL_SPACING);
-
-                    let color = if m.ff_params_loaded {
-                        Color32::LIGHT_GREEN
-                    } else {
-                        Color32::LIGHT_RED
-                    };
-                    ui.label(RichText::new("FF/q").color(color)).on_hover_text(
-                        "Green if force field names, and partial charges are assigned \
+                    if !m.ff_params_loaded {
+                        ui.label(RichText::new("FF/q").color(Color32::LIGHT_RED)).on_hover_text(
+                            "Green if force field names, and partial charges are assigned \
                 for all ligand atoms. Required for ligand moleculer dynamics and docking.",
-                    );
-
-                    ui.add_space(COL_SPACING / 4.);
-
-                    let color = if m.frcmod_loaded {
-                        Color32::LIGHT_GREEN
-                    } else {
-                        Color32::LIGHT_RED
-                    };
-                    ui.label(RichText::new("Frcmod").color(color))
-                        .on_hover_text(
-                            "Green if molecule-specific Amber force field parameters are \
-                loaded for this ligand. Required for ligand molecular dynamics and docking.",
                         );
+                    }
+
+                    if !m.frcmod_loaded {
+                        ui.label(RichText::new("Frcmod").color(Color32::LIGHT_RED))
+                            .on_hover_text(
+                                "Green if molecule-specific Amber force field parameters are \
+                loaded for this ligand. Required for ligand molecular dynamics and docking.",
+                            );
+                    }
 
                     let mut pubchem_cid = None;
                     for ident in &m.idents {

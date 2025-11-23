@@ -548,7 +548,6 @@ impl MoleculeSmall {
         let mut atoms_gen: Vec<_> = self.common.atoms.iter().map(|a| a.to_generic()).collect();
         let bonds_gen: Vec<_> = self.common.bonds.iter().map(|a| a.to_generic()).collect();
 
-        // todo: Move this elsewhere; you no longer need geostd.
         if !self.ff_params_loaded {
             let defs = AmberDefSet::new().unwrap();
             let ff_types = find_ff_types(&atoms_gen, &bonds_gen, &defs);

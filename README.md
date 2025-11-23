@@ -3,6 +3,7 @@
 [//]: # ([![Crate]&#40;https://img.shields.io/crates/v/daedalus.svg&#41;]&#40;https://crates.io/crates/daedalus&#41;)
 
 [Home page](https://www.athanorlab.com/daedalus)
+[Documentation](https://www.athanorlab.com/docs)
 
 ## Goal: The easiest to use structural biology tool
 
@@ -192,9 +193,9 @@ See below for a reference.
 
 - **Left backet**: Previous view mode (sticks, surface mesh etc)
 - **Right bracket**: Next view mode
-- 
-- **;**: View/select level (Atoms, bonds, residues)
-- **'Right bracket'**: Next view/select level
+
+- **Semicolon**: View/select level (Atoms, bonds, residues)
+- **Right bracket**: Next view/select level
 
 - **M**: Move a molecule with the mouse and scroll wheel
 - **R**: Rotate a molecule with the mouse and scroll wheel
