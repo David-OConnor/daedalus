@@ -659,6 +659,7 @@ pub(crate) fn handle_selection_attempt(
     }
 
     if let ControlScheme::Arc { center } = &mut scene.input_settings.control_scheme {
+        state.volatile.orbit_center = state.volatile.active_mol;
         *center = orbit_center(state);
     }
 

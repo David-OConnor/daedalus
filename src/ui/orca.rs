@@ -1,16 +1,19 @@
 use bio_files::orca::{
     Keyword, OrcaInput,
     basis_sets::{BasisSet, BasisSetCategory},
+    dynamics::{Dynamics, Thermostat},
     method::Method,
 };
-use dynamics::Integrator;
+use std::path::PathBuf;
+use std::str::FromStr;
+
 use egui::{Color32, ComboBox, RichText, Ui};
 use graphics::{EngineUpdates, Scene};
 
+use crate::util::handle_err;
 use crate::{
     State, label,
-    orca::StateOrca,
-    ui::{COL_SPACING, COLOR_ACTIVE, COLOR_HIGHLIGHT, misc, misc::toggle_btn},
+    ui::{COL_SPACING, COLOR_ACTIVE, misc},
 };
 
 fn keyword_toggle(
@@ -69,6 +72,10 @@ pub(super) fn orca_input(
                         for m in &[
                             Method::HartreeFock,
                             Method::Dft,
+                            Method::BLYP,
+                            Method::B1LYP,
+                            Method::B3LYP,
+                            Method::BP86,
                             Method::Mp2Perturbation,
                             Method::SpinComponentScaledMp2,
                             Method::OrbitalOptimzedMp2,
@@ -98,11 +105,11 @@ pub(super) fn orca_input(
                     // todo: different repr a/r
                     .selected_text(state.orca.basis_set_cat.to_string())
                     .show_ui(ui, |ui| {
-                            ui.selectable_value(&mut state.orca.basis_set_cat, BasisSetCategory::Pople, BasisSetCategory::Pople.to_string());
-                            ui.selectable_value(&mut state.orca.basis_set_cat, BasisSetCategory::Ahlrich, BasisSetCategory::Ahlrich.to_string());
-                            ui.selectable_value(&mut state.orca.basis_set_cat, BasisSetCategory::KarlseruheDef2, BasisSetCategory::KarlseruheDef2.to_string());
-                            ui.selectable_value(&mut state.orca.basis_set_cat, BasisSetCategory::KarlseruheDhf, BasisSetCategory::KarlseruheDhf.to_string());
-                            ui.selectable_value(&mut state.orca.basis_set_cat, BasisSetCategory::CorrelationConsistent, BasisSetCategory::CorrelationConsistent.to_string());
+                        ui.selectable_value(&mut state.orca.basis_set_cat, BasisSetCategory::Pople, BasisSetCategory::Pople.to_string());
+                        ui.selectable_value(&mut state.orca.basis_set_cat, BasisSetCategory::Ahlrich, BasisSetCategory::Ahlrich.to_string());
+                        ui.selectable_value(&mut state.orca.basis_set_cat, BasisSetCategory::KarlseruheDef2, BasisSetCategory::KarlseruheDef2.to_string());
+                        ui.selectable_value(&mut state.orca.basis_set_cat, BasisSetCategory::KarlseruheDhf, BasisSetCategory::KarlseruheDhf.to_string());
+                        ui.selectable_value(&mut state.orca.basis_set_cat, BasisSetCategory::CorrelationConsistent, BasisSetCategory::CorrelationConsistent.to_string());
                     })
                     .response
                     .on_hover_text(help_text);
@@ -170,6 +177,22 @@ pub(super) fn orca_input(
 
             keyword_toggle(
                 &mut state.orca.input,
+                Keyword::AnFreq,
+                "Freq (analytical)",
+                "Compute the vibrational frequencies, using analytical methods",
+                ui,
+            );
+
+            keyword_toggle(
+                &mut state.orca.input,
+                Keyword::NumFreq,
+                "Freq (numeric)",
+                "Compute the vibrational frequencies, using numeric methods",
+                ui,
+            );
+
+            keyword_toggle(
+                &mut state.orca.input,
                 Keyword::Mbis,
                 "MBIS charge",
                 "Apply the MBIS model to generate atom-centered s-tyhpe Slater functions. Can be \
@@ -217,6 +240,10 @@ pub(super) fn orca_input(
 
                 ui.add_space(COL_SPACING);
 
+                // Avoids borrow error
+                let mut run = false;
+                let mut run_orca = false;
+
                 if state.volatile.orca_avail {
                     if ui
                         .button(RichText::new("Run").color(Color32::GOLD))
@@ -225,9 +252,53 @@ pub(super) fn orca_input(
                         )
                         .clicked()
                     {
-                        let atoms: Vec<_> = mol.common().atoms.iter().map(|a| a.to_generic()).collect();
-                        state.orca.input.atoms = atoms;
-                        println!("Running ORCA input: \n{}\n", state.orca.input.make_inp());
+                        run = true;
+                    }
+
+                    if ui
+                        .button(RichText::new("Run ab-initio MD").color(Color32::GOLD))
+                        .on_hover_text(
+                            "Run ORCA using the settings here, on the active molecule.",
+                        )
+                        .clicked()
+                    {
+                        run_orca = true;
+                    }
+                }
+
+                if run {
+                    let atoms: Vec<_> = mol.common().atoms.iter().map(|a| a.to_generic()).collect();
+                    state.orca.input.atoms = atoms;
+
+                    println!("Running ORCA input: \n{}\n", state.orca.input.make_inp());
+                    if let Err(e) = state.orca.input.run() {
+                        handle_err(&mut state.ui, format!("Problem running ORCA: {e:?}"));
+                    }
+                } else if run_orca {
+                    let atoms: Vec<_> = mol.common().atoms.iter().map(|a| a.to_generic()).collect();
+
+                    let timestep= state.ui.md.dt_input.parse::<f32>().unwrap_or_default() * 1_000.;
+
+                    let orca_inp = OrcaInput {
+                        method: state.orca.input.method,
+                        basis_set: state.orca.input.basis_set,
+                        atoms,
+                        dynamics: Some(Dynamics {
+                            // Convert ps to fs.
+                            timestep,
+                            init_vel: state.ui.md.temp_input.parse().unwrap_or_default(),
+                            thermostat: Thermostat::Csvr,
+                            thermostat_temp: state.ui.md.temp_input.parse().unwrap_or_default(),
+                            thermostat_timecon: 10.,
+                            traj_out_dir: PathBuf::from_str("out_traj.xyz").unwrap(),
+                            steps: 200,
+                        }),
+                        ..Default::default()
+                    };
+
+                    println!("Running ORCA input: \n{}\n", orca_inp.make_inp());
+                    if let Err(e) = orca_inp.run() {
+                        handle_err(&mut state.ui, format!("Problem running ORCA MD: {e:?}"));
                     }
                 }
             }

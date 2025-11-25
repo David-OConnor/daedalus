@@ -1,6 +1,7 @@
 # Daedalus: structural biology
 
 [//]: # ([![Crate]&#40;https://img.shields.io/crates/v/daedalus.svg&#41;]&#40;https://crates.io/crates/daedalus&#41;)
+[![Docs](https://docs.rs/dynamics/badge.svg)](https://www.athanorlab.com/docs)
 
 [Home page](https://www.athanorlab.com/daedalus)
 [Documentation](https://www.athanorlab.com/docs)
@@ -112,12 +113,11 @@ We plan to support carbohydrates in the future.
 These general parameters do not need to be loaded externally; they provide the information needed to perform
 MD with any amino acid sequence, and provide a baseline for dynamics of small organic molecules.
 
-For small organic molecules, we must compute force field types, partial charges, and dihedral overrides.
-We compute force field type and overrides when loading molecules. We have two approaches for computing partial
-charges (Used in Coulomb interactions): By default, we use machine learning, trained on Amber's Geostd set. This
-is fast and reasonably accurate. If you have Orca installed, we provide slower, but more accurate approaches.
+For small organic molecules, we may compute force field types, partial charges, and dihedral overrides. These can
+be provided directly from FRCMOD files, or suitably annotated Mol2 or SDF files, but are often absent. The computations
+we use are similar in principle to Amber's Antechamber tool, and we use parameters from it.
 
-For details on how dynamics using this parameterized approach works, see the 
+For details on how this parameterized approach works, see the
 [Amber Reference Manual](https://ambermd.org/doc12/Amber25.pdf). Section 3 and 15 are of particular
 interest, regarding force field parameters.
 
@@ -246,7 +246,7 @@ Daedalus supports a very limited subset of PyMol's CLI interface. Supported comm
 - `hide`: Limited options available, e.g. `resn HOH`, `hydro`, `chain`, `hetatm` etc.
 - `remove`: Limited options available, e.g. `resn HOH`, `hydro`, `chain`, `hetatm` etc.
 
-## Selections
+### Selections
 - `select resn`: Select a residue by 3-letter amino acid identifier
 - `select resi`: Select a residue by index
 - `select elem`: Select an atom by element abbreviation

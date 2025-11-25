@@ -334,6 +334,7 @@ fn mol_picker(
     redraw_lig: &mut bool,
     engine_updates: &mut EngineUpdates,
 ) {
+    let help_text = "Make this molecule the active / selected one. Middle click to close it.";
     // todo: Make this support other types.
     let mut recenter_orbit = false;
     if let Some(mol) = &mut state.peptide {
@@ -353,14 +354,14 @@ fn mol_picker(
         let sel_btn = ui
             .button(RichText::new(&mol.common.ident).color(color))
             .on_hover_text(
-                "Make this molecule the active / selected one. Middle click to close it.",
+                help_text,
             );
         if sel_btn.clicked() {
             if active && state.volatile.active_mol.is_some() {
                 state.volatile.active_mol = None;
             } else {
                 state.volatile.active_mol = Some((MolType::Peptide, i_mol));
-                state.volatile.orbit_center = Some((MolType::Peptide, i_mol));
+                state.volatile.orbit_center = state.volatile.active_mol;
 
                 recenter_orbit = true;
             }
@@ -405,14 +406,14 @@ fn mol_picker(
         let sel_btn = ui
             .button(RichText::new(&mol.common.ident).color(color))
             .on_hover_text(
-                "Make this molecule the active / selected one. Middle click to close it.",
+                help_text,
             );
         if sel_btn.clicked() {
             if active && state.volatile.active_mol.is_some() {
                 state.volatile.active_mol = None;
             } else {
                 state.volatile.active_mol = Some((MolType::Ligand, i_mol));
-                state.volatile.orbit_center = Some((MolType::Ligand, i_mol));
+                state.volatile.orbit_center = state.volatile.active_mol;
 
                 recenter_orbit = true;
             }
@@ -445,7 +446,6 @@ fn mol_picker(
     }
 
     if recenter_orbit {
-        // reset_orbit_center(state, scene);
         if let ControlScheme::Arc { center } = &mut scene.input_settings.control_scheme {
             *center = orbit_center(state);
         }
