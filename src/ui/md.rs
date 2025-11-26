@@ -210,7 +210,7 @@ pub fn md_setup(
             // ui.checkbox(&mut state.to_save.md_config.zero_com_drift, "Zero drift")
             //     .on_hover_text("Zero the center-of-mass of items in the simulation.");
 
-            ui.label("Pres (kPa):");
+            ui.label("Pres (bar):");
             if ui
                 .add_sized([30., Ui::available_height(ui)], TextEdit::singleline(&mut state.ui.md.pressure_input))
                 .changed()

@@ -1,8 +1,8 @@
 //! Handles user inputs, e.g. from keyboard and mouse.
 
 use graphics::{
-    ControlScheme, DeviceEvent, ElementState, EngineUpdates, EntityUpdate, FWD_VEC, Scene,
-    WindowEvent,
+    ControlScheme, DeviceEvent, ElementState, EngineUpdates, EntityUpdate, FWD_VEC,
+    InputsCommanded, Scene, WindowEvent,
     event::MouseScrollDelta,
     winit::keyboard::{KeyCode, PhysicalKey::Code},
 };
@@ -41,6 +41,10 @@ pub fn event_dev_handler(
 ) -> EngineUpdates {
     let mut updates = EngineUpdates::default();
 
+    // todo: DRY with graphics.
+    // This affects our app-specific commands, vs engine built-in ones. For example, hot keys
+    // to change various modes.
+
     let mut redraw_protein = false;
     let mut redraw_lig = false;
     let mut redraw_na = false;
@@ -52,7 +56,6 @@ pub fn event_dev_handler(
     let mut redraw_na_inplace = false;
     let mut redraw_lipid_inplace = false;
 
-    // todo: Move this logic to the engine (graphics lib)?
     if !state_.ui.mouse_in_window {
         return updates;
     }

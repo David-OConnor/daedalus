@@ -1386,7 +1386,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             }
         }
 
-
         draw_cli(
             state,
             scene,

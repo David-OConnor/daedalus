@@ -1,5 +1,5 @@
 use bio_files::orca::{
-    Keyword, OrcaInput,
+    Keyword, OrcaInput, OrcaOutput,
     basis_sets::{BasisSet, BasisSetCategory},
     dynamics::{Dynamics, Thermostat},
     method::Method,
@@ -270,14 +270,20 @@ pub(super) fn orca_input(
                     let atoms: Vec<_> = mol.common().atoms.iter().map(|a| a.to_generic()).collect();
                     state.orca.input.atoms = atoms;
 
-                    println!("Running ORCA input: \n{}\n", state.orca.input.make_inp());
-                    if let Err(e) = state.orca.input.run() {
-                        handle_err(&mut state.ui, format!("Problem running ORCA: {e:?}"));
+                    println!("Running ORCA input:\n{}\n...", state.orca.input.make_inp());
+                    match state.orca.input.run() {
+                        Ok(out) => {
+                            if let OrcaOutput::Text(t) = out {
+                                println!("Complete. Output: \n\n{t}");
+                            }
+                        }
+                        Err(e) => {
+                            handle_err(&mut state.ui, format!("Problem running ORCA: {e:?}"));
+                        }
                     }
+
                 } else if run_orca {
                     let atoms: Vec<_> = mol.common().atoms.iter().map(|a| a.to_generic()).collect();
-
-                    let timestep= state.ui.md.dt_input.parse::<f32>().unwrap_or_default() * 1_000.;
 
                     let orca_inp = OrcaInput {
                         method: state.orca.input.method,
@@ -285,20 +291,30 @@ pub(super) fn orca_input(
                         atoms,
                         dynamics: Some(Dynamics {
                             // Convert ps to fs.
-                            timestep,
-                            init_vel: state.ui.md.temp_input.parse().unwrap_or_default(),
+                            timestep: state.to_save.md_dt * 1_000., // ps to fs.
+                            init_vel: state.to_save.md_config.temp_target,
                             thermostat: Thermostat::Csvr,
-                            thermostat_temp: state.ui.md.temp_input.parse().unwrap_or_default(),
-                            thermostat_timecon: 10.,
+                            thermostat_temp: state.to_save.md_config.temp_target,
+                            thermostat_timecon: 10., // between 10 and 100 generally.
                             traj_out_dir: PathBuf::from_str("out_traj.xyz").unwrap(),
-                            steps: 200,
+                            steps: state.to_save.num_md_steps,
                         }),
                         ..Default::default()
                     };
 
-                    println!("Running ORCA input: \n{}\n", orca_inp.make_inp());
-                    if let Err(e) = orca_inp.run() {
-                        handle_err(&mut state.ui, format!("Problem running ORCA MD: {e:?}"));
+                    println!("Running ORCA input:\n{}\n...", orca_inp.make_inp());
+                    // todo: Thread.
+                    match orca_inp.run() {
+                        Ok(out) => {
+                            if let OrcaOutput::Dynamics(o) = out {
+                                println!("Complete. Output: \n\n{}", o.text);
+
+                                println!("\n\nTrajectory: \n\n{:?}", o.trajectory);
+                            }
+                        }
+                        Err(e) => {
+                            handle_err(&mut state.ui, format!("Problem running ORCA MD: {e:?}"));
+                        }
                     }
                 }
             }
