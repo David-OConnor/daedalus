@@ -21,7 +21,7 @@ use bio_apis::{
 };
 use bio_files::{
     AtomGeneric, BackboneSS, BondGeneric, BondType, ChainGeneric, DensityMap, ExperimentalMethod,
-    MmCif, Mol2, Pdbqt, ResidueEnd, ResidueGeneric, ResidueType, Sdf, create_bonds,
+    MmCif, Mol2, Pdbqt, ResidueEnd, ResidueGeneric, ResidueType, Sdf, Xyz, create_bonds,
 };
 use dynamics::{
     Dihedral,
@@ -280,6 +280,13 @@ impl<'a> MolGenericRef<'a> {
     pub fn to_sdf(&self) -> Sdf {
         match self {
             Self::Ligand(l) => l.to_sdf(),
+            _ => unimplemented!(),
+        }
+    }
+
+    pub fn to_xyz(&self) -> Xyz {
+        match self {
+            Self::Ligand(l) => l.to_xyz(),
             _ => unimplemented!(),
         }
     }

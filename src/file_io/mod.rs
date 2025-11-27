@@ -2,7 +2,7 @@ use std::{fs, io, io::ErrorKind, path::Path, sync::mpsc, thread, time::Instant};
 
 use bio_apis::pubchem;
 use bio_files::{
-    DensityMap, MmCif, Mol2, Pdbqt, cif_sf::CifStructureFactors, gemmi_sf_to_map,
+    DensityMap, MmCif, Mol2, Pdbqt, Xyz, cif_sf::CifStructureFactors, gemmi_sf_to_map,
     md_params::ForceFieldParams, sdf::Sdf,
 };
 use chrono::Utc;
@@ -47,7 +47,7 @@ impl State {
             .unwrap_or_default()
         {
             // The cif branch here also handles 2fo-fc mmCIF files.
-            "sdf" | "mol2" | "pdbqt" | "pdb" | "cif" => {
+            "sdf" | "mol2" | "xyz" | "pdbqt" | "pdb" | "cif" | "xyz" => {
                 self.open_mol_from_file(path, scene, engine_updates)?
             }
             "prmtop" => {
@@ -99,6 +99,10 @@ impl State {
             "mol2" => {
                 let mut m: MoleculeSmall = Mol2::load(path)?.try_into()?;
                 m.common.path = Some(path.to_owned());
+                Ok(MoleculeGeneric::Ligand(m))
+            }
+            "xyz" => {
+                let m = MoleculeSmall::from_xyz(Xyz::load(path)?, path)?;
                 Ok(MoleculeGeneric::Ligand(m))
             }
             "pdbqt" => {
@@ -380,6 +384,16 @@ impl State {
             "mol2" => match self.active_mol() {
                 Some(lig) => {
                     lig.to_mol2().save(path)?;
+                    self.update_history(path, OpenType::Ligand);
+
+                    // Save the open history.
+                    self.update_save_prefs(false);
+                }
+                None => return Err(io::Error::new(ErrorKind::InvalidData, "No ligand to save")),
+            },
+            "xyz" => match self.active_mol() {
+                Some(lig) => {
+                    lig.to_xyz().save(path)?;
                     self.update_history(path, OpenType::Ligand);
 
                     // Save the open history.

@@ -113,13 +113,6 @@ use crate::{
 #[cfg(feature = "cuda")]
 const PTX: &str = include_str!("../daedalus.ptx");
 
-// todo: This is duplicate with the definitions in param_inference mod.
-// Model: ~1.5Mb. Vocab: ~440 bytes.
-// todo: Figure out how you handle this. You currently need this file both in the Dynamics
-// todo lib, and your application. I'm not sure how this will work out in applications.
-// const PARAM_INFERENCE_MODEL: &[u8] = include_bytes!("../geostd_model.safetensors");
-// const PARAM_INFERENCE_VOCAB: &[u8] = include_bytes!("../geostd_model.vocab");
-
 // todo: Eventually, implement a system that automatically checks for changes, and don't
 // todo save to disk if there are no changes.
 // For now, we check for differences between to_save and to_save prev, and write to disk
@@ -193,18 +186,25 @@ impl Default for FileDialogs {
             .add_file_filter_extensions(
                 "All",
                 vec![
-                    "cif", "mol2", "sdf", "pdbqt", "map", "mtz", "frcmod", "dat", "prmtop",
+                    "cif", "mol2", "sdf", "xyz", "pdbqt", "map", "mtz", "frcmod", "dat", "prmtop",
                 ],
             )
-            .add_file_filter_extensions("Molecule (small)", vec!["mol2", "sdf", "pdbqt", "prmtop"])
+            .add_file_filter_extensions(
+                "Molecule (small)",
+                vec!["mol2", "sdf", "xyz", "pdbqt", "prmtop"],
+            )
             .add_file_filter_extensions("Protein (CIF)", vec!["cif"])
             .add_file_filter_extensions("Density", vec!["map", "mtz", "cif"])
             .add_file_filter_extensions("Mol dynamics", vec!["frcmod", "dat", "lib", "prmtop"])
             //
-            .add_file_filter_extensions("Molecule (small)", vec!["mol2", "sdf", "pdbqt", "prmtop"])
+            .add_file_filter_extensions(
+                "Molecule (small)",
+                vec!["mol2", "sdf", "xyz", "pdbqt", "prmtop"],
+            )
             .add_save_extension("Protein (CIF)", "cif")
             .add_save_extension("Mol2", "mol2")
             .add_save_extension("SDF", "sdf")
+            .add_save_extension("XYZ", "xyz")
             .add_save_extension("Pdbqt", "pdbqt")
             .add_save_extension("Map", "map")
             .add_save_extension("MTZ", "mtz")

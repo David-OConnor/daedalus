@@ -9,7 +9,7 @@ use std::{
     time::Instant,
 };
 
-use bio_files::{BondType, Mol2, Pdbqt, Sdf, md_params::ForceFieldParams};
+use bio_files::{BondType, Mol2, Pdbqt, Sdf, Xyz, md_params::ForceFieldParams};
 use dynamics::{
     ComputationDevice, FfMolType, HydrogenConstraint, MdConfig, MdOverrides, MdState, MolDynamics,
     ParamError, params::FfParamSet, snapshot::Snapshot,
@@ -24,6 +24,7 @@ use na_seq::{
     Element::{Carbon, Hydrogen, Nitrogen, Oxygen},
 };
 
+use crate::molecule::MoleculeGeneric;
 use crate::{
     ManipMode, OperatingMode, State, StateUi, ViewSelLevel,
     drawing::{
@@ -142,7 +143,8 @@ impl MolEditorState {
                 m.common.path = Some(path.to_owned());
                 m
             }
-            "mol2" => {
+            "mol2" => MoleculeSmall::from_xyz(Xyz::load(path)?, path)?,
+            "xyz" => {
                 let mut m: MoleculeSmall = Mol2::load(path)?.try_into()?;
                 m.common.path = Some(path.to_owned());
                 m
@@ -711,6 +713,7 @@ pub fn save(state: &mut State, path: &Path) -> io::Result<()> {
     match extension.to_str().unwrap_or_default() {
         "sdf" => mol.to_sdf().save(path)?,
         "mol2" => mol.to_mol2().save(path)?,
+        "xyz" => mol.to_xyz().save(path)?,
         "prmtop" => (), // todo
         "pdbqt" => mol.to_pdbqt().save(path)?,
         _ => unimplemented!(),

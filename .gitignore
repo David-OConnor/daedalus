@@ -18,6 +18,7 @@ Cargo.lock
 *.gz
 *.sdf
 *.mol2
+*.xyz
 *.pdbqt
 *.mtz
 *.map

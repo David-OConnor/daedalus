@@ -2,14 +2,13 @@
 
 use std::time::Instant;
 
-use bio_apis::{ReqError, amber_geostd, amber_geostd::GeostdItem, drugbank, pubchem, rcsb};
+use bio_apis::{ReqError, amber_geostd, amber_geostd::GeostdItem,rcsb};
 use bio_files::{MmCif, Mol2, Sdf, md_params::ForceFieldParams};
-use graphics::{Camera, ControlScheme, EngineUpdates, Scene};
+use graphics::{ ControlScheme, EngineUpdates, Scene};
 use na_seq::AaIdent;
 
 use crate::{
     State, StateUi,
-    cam_misc::move_mol_to_cam,
     mol_lig::MoleculeSmall,
     molecule::{MoGenericRefMut, MolIdent, MolType, MoleculeGeneric, MoleculePeptide},
     render::set_flashlight,

@@ -1,5 +1,18 @@
 //! Fundamental data structures for small organic molecules / ligands
 
+use bio_apis::{
+    ReqError, amber_geostd, amber_geostd::GeostdData, pubchem, pubchem::ProteinStructure,
+};
+use bio_files::{
+    ChargeType, Mol2, MolType, Pdbqt, Sdf, Xyz, create_bonds,
+    md_params::{ForceFieldParams, ForceFieldParamsVec},
+};
+use dynamics::{
+    param_inference::{AmberDefSet, assign_missing_params, find_ff_types},
+    partial_charge_inference::infer_charge,
+};
+use na_seq::Element;
+use std::path::Path;
 use std::{
     collections::HashMap,
     io,
@@ -8,19 +21,6 @@ use std::{
     thread,
     time::Instant,
 };
-
-use bio_apis::{
-    ReqError, amber_geostd, amber_geostd::GeostdData, pubchem, pubchem::ProteinStructure,
-};
-use bio_files::{
-    ChargeType, Mol2, MolType, Pdbqt, Sdf,
-    md_params::{ForceFieldParams, ForceFieldParamsVec},
-};
-use dynamics::{
-    param_inference::{AmberDefSet, assign_missing_params, find_ff_types},
-    partial_charge_inference::infer_charge,
-};
-use na_seq::Element;
 
 use crate::{
     docking::{DockingSite, Pose},
@@ -183,6 +183,36 @@ impl TryFrom<Sdf> for MoleculeSmall {
     }
 }
 
+impl MoleculeSmall {
+    pub fn from_xyz(m: Xyz, path: &Path) -> io::Result<Self> {
+        let atoms: Vec<_> = m.atoms.iter().map(|a| a.into()).collect();
+
+        let bonds_gen = create_bonds(&m.atoms);
+        let bonds: Vec<Bond> = bonds_gen
+            .iter()
+            .map(|b| Bond::from_generic(b, &atoms))
+            .collect::<Result<_, _>>()?;
+
+        let filename = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_string();
+
+        let mut metadata = HashMap::new();
+        metadata.insert(String::from("Comment"), m.comment.clone());
+
+        // Handle path and state-specific items after; not supported by TryFrom.
+        Ok(Self::new(
+            filename,
+            atoms,
+            bonds,
+            metadata,
+            Some(path.to_owned()),
+        ))
+    }
+}
+
 impl TryFrom<Pdbqt> for MoleculeSmall {
     type Error = io::Error;
     fn try_from(m: Pdbqt) -> Result<Self, Self::Error> {
@@ -288,6 +318,17 @@ impl MoleculeSmall {
             chains: Vec::new(),
             residues: Vec::new(),
         }
+    }
+
+    pub fn to_xyz(&self) -> Xyz {
+        let atoms = self.common.atoms.iter().map(|a| a.to_generic()).collect();
+
+        let comment = match self.common.metadata.get("Comment") {
+            Some(v) => v.to_owned(),
+            None => String::new(),
+        };
+
+        Xyz { atoms, comment }
     }
 
     pub fn to_pdbqt(&self) -> Pdbqt {
@@ -548,7 +589,9 @@ impl MoleculeSmall {
         let mut atoms_gen: Vec<_> = self.common.atoms.iter().map(|a| a.to_generic()).collect();
         let bonds_gen: Vec<_> = self.common.bonds.iter().map(|a| a.to_generic()).collect();
 
-        if !self.ff_params_loaded {
+        // todo temp!
+        if true {
+            // if !self.ff_params_loaded {
             let defs = AmberDefSet::new().unwrap();
             let ff_types = find_ff_types(&atoms_gen, &bonds_gen, &defs);
 
@@ -573,7 +616,8 @@ impl MoleculeSmall {
                 atom.partial_charge = Some(charge[i]);
             }
 
-            println!("\n FF types loaded:/n");
+            // todo: This print and loop are temp.
+            println!("\n FF types computed:/n");
             for atom in &self.common.atoms {
                 println!(
                     "--{}: {} {:.4}",

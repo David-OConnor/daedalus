@@ -1,20 +1,22 @@
+use crate::ui::md::md_setup;
+use crate::util::{handle_err, handle_success};
+use crate::{
+    State, label, orca,
+    ui::{COL_SPACING, COLOR_ACTIVE, misc},
+};
 use bio_files::orca::{
     Keyword, OrcaInput, OrcaOutput,
     basis_sets::{BasisSet, BasisSetCategory},
     dynamics::{Dynamics, Thermostat},
     method::Method,
 };
-use std::path::PathBuf;
-use std::str::FromStr;
-
+use dynamics::MdState;
+use dynamics::snapshot::{HydrogenBond, Snapshot};
 use egui::{Color32, ComboBox, RichText, Ui};
 use graphics::{EngineUpdates, Scene};
-
-use crate::util::handle_err;
-use crate::{
-    State, label,
-    ui::{COL_SPACING, COLOR_ACTIVE, misc},
-};
+use lin_alg::f32::Vec3;
+use std::path::PathBuf;
+use std::str::FromStr;
 
 fn keyword_toggle(
     input: &mut OrcaInput,
@@ -191,15 +193,6 @@ pub(super) fn orca_input(
                 ui,
             );
 
-            keyword_toggle(
-                &mut state.orca.input,
-                Keyword::Mbis,
-                "MBIS charge",
-                "Apply the MBIS model to generate atom-centered s-tyhpe Slater functions. Can be \
-                used for FF parameterization",
-                ui,
-            );
-
             // toggle_btn(
             //     &mut state.orca.input.optimize_geometry,
             //     "Opt geom",
@@ -216,7 +209,13 @@ pub(super) fn orca_input(
             //     &mut false,
             // );
 
-            if let Some(mol) = state.active_mol() {
+            // Avoids borrow error
+            let mut run = false;
+            let mut run_charges = false;
+            let mut run_orca = false;
+
+            // if let Some(mol) = state.active_mol() {
+            if state.active_mol().is_some() {
                 // todo: Delegate to src/orca A/R.
                 if ui
                     .button(RichText::new("Find min energy"))
@@ -226,6 +225,9 @@ pub(super) fn orca_input(
                     )
                     .clicked()
                 {
+                    let Some(mut mol) = state.active_mol() else {
+                        return;
+                    };
                     let atoms: Vec<_> = mol.common().atoms.iter().map(|a| a.to_generic()).collect();
                     let mut inp = OrcaInput {
                         method: Method::Xtb,
@@ -240,10 +242,6 @@ pub(super) fn orca_input(
 
                 ui.add_space(COL_SPACING);
 
-                // Avoids borrow error
-                let mut run = false;
-                let mut run_orca = false;
-
                 if state.volatile.orca_avail {
                     if ui
                         .button(RichText::new("Run").color(Color32::GOLD))
@@ -253,68 +251,145 @@ pub(super) fn orca_input(
                         .clicked()
                     {
                         run = true;
+                        let Some(mut mol) = state.active_mol() else {
+                            return;
+                        };
+                        state.orca.input.atoms = mol.common().atoms.iter().map(|a| a.to_generic()).collect();
+                    }
+
+                    //             keyword_toggle(
+                    //                 &mut state.orca.input,
+                    //                 Keyword::Mbis,
+                    //                 "MBIS charge",
+                    //                 "Apply the MBIS model to generate atom-centered s-tyhpe Slater functions. Can be \
+                    //                 used for FF parameterization",
+                    //                 ui,
+                    //             );
+
+                    if ui
+                        .button(RichText::new("Assign MBIS q").color(Color32::GOLD))
+                        .on_hover_text(
+                            "Compute and assign MBIS partial charges for this molecule. This is an accurate QM method, but is very \
+                            slow; it may take 10 minutes or longer for a small organic molecule. This replaces any existing partial\
+                            charges on this molecule.",
+                        )
+                        .clicked()
+                    {
+                        run_charges = true;
+                        let Some(mut mol) = state.active_mol() else {
+                            return;
+                        };
+                        state.orca.input.atoms = mol.common().atoms.iter().map(|a| a.to_generic()).collect();
                     }
 
                     if ui
                         .button(RichText::new("Run ab-initio MD").color(Color32::GOLD))
                         .on_hover_text(
-                            "Run ORCA using the settings here, on the active molecule.",
+                            "Run MD using ORCA. This is much slower than our normal MD system, but \
+                             more accurate Uses settings from the MD section of the UI as well, including number of steps,\
+                             dt, and temperature.",
                         )
                         .clicked()
                     {
                         run_orca = true;
+                        let Some(mut mol) = state.active_mol() else {
+                            return;
+                        };
+                        state.orca.input.atoms = mol.common().atoms.iter().map(|a| a.to_generic()).collect();
                     }
                 }
+            }
 
-                if run {
-                    let atoms: Vec<_> = mol.common().atoms.iter().map(|a| a.to_generic()).collect();
-                    state.orca.input.atoms = atoms;
+            if run {
+                let Some(mol) = state.active_mol_mut() else {
+                    return;
+                };
 
-                    println!("Running ORCA input:\n{}\n...", state.orca.input.make_inp());
-                    match state.orca.input.run() {
-                        Ok(out) => {
-                            if let OrcaOutput::Text(t) = out {
-                                println!("Complete. Output: \n\n{t}");
-                            }
-                        }
-                        Err(e) => {
-                            handle_err(&mut state.ui, format!("Problem running ORCA: {e:?}"));
+                println!("Running ORCA input:\n{}\n...", state.orca.input.make_inp());
+                match state.orca.input.run() {
+                    Ok(out) => {
+                        if let OrcaOutput::Text(t) = out {
+                            println!("Complete. Output: \n\n{t}");
+                            handle_success(&mut state.ui, format!("ORCA run complete"));
                         }
                     }
+                    Err(e) => {
+                        handle_err(&mut state.ui, format!("Problem running ORCA: {e:?}"));
+                    }
+                }
+            } else if run_charges {
+                let mut keywords = state.orca.input.keywords.clone();
+                keywords.push(Keyword::Mbis);
 
-                } else if run_orca {
-                    let atoms: Vec<_> = mol.common().atoms.iter().map(|a| a.to_generic()).collect();
+                let orca_inp = OrcaInput {
+                    method: state.orca.input.method,
+                    keywords,
+                    basis_set: state.orca.input.basis_set,
+                    atoms: state.orca.input.atoms.clone(),
+                    ..Default::default()
+                };
 
-                    let orca_inp = OrcaInput {
-                        method: state.orca.input.method,
-                        basis_set: state.orca.input.basis_set,
-                        atoms,
-                        dynamics: Some(Dynamics {
-                            // Convert ps to fs.
-                            timestep: state.to_save.md_dt * 1_000., // ps to fs.
-                            init_vel: state.to_save.md_config.temp_target,
-                            thermostat: Thermostat::Csvr,
-                            thermostat_temp: state.to_save.md_config.temp_target,
-                            thermostat_timecon: 10., // between 10 and 100 generally.
-                            traj_out_dir: PathBuf::from_str("out_traj.xyz").unwrap(),
-                            steps: state.to_save.num_md_steps,
-                        }),
-                        ..Default::default()
-                    };
+                println!("Running ORCA input:\n{}\n...", orca_inp.make_inp());
+                match orca_inp.run() {
+                    Ok(out) => {
+                        if let OrcaOutput::Charges(o) = out {
+                            println!("Charge output: {:?}", o);
+                            // handle_success(&mut state.ui, format!("MBIS charges assigned for {}", mol.common().ident));
 
-                    println!("Running ORCA input:\n{}\n...", orca_inp.make_inp());
-                    // todo: Thread.
-                    match orca_inp.run() {
-                        Ok(out) => {
-                            if let OrcaOutput::Dynamics(o) = out {
-                                println!("Complete. Output: \n\n{}", o.text);
+                            let Some(mut mol) = state.active_mol_mut() else {
+                                return;
+                            };
 
-                                println!("\n\nTrajectory: \n\n{:?}", o.trajectory);
+                            if o.charges.len() != mol.common().atoms.len() {
+                                // todo: Borrow mut error.
+                                // handle_err(&mut state.ui, "Mismatch in len on MBIS charges".to_string());
+                                eprintln!("Mismatch in len on MBIS charges");
+                            }
+
+                            for (i, q) in o.charges.iter().enumerate() {
+                                mol.common_mut().atoms[i].partial_charge = Some(q.charge as f32);
                             }
                         }
-                        Err(e) => {
-                            handle_err(&mut state.ui, format!("Problem running ORCA MD: {e:?}"));
+                    }
+                    Err(e) => {
+                        handle_err(&mut state.ui, format!("Problem running ORCA MBIS partial charge computation: {e:?}"));
+                    }
+                }
+            } else if run_orca {
+                // let Some(mol) = state.active_mol_mut() else {
+                //     return;
+                // };
+
+                let orca_inp = OrcaInput {
+                    method: state.orca.input.method,
+                    basis_set: state.orca.input.basis_set,
+                    atoms: state.orca.input.atoms.clone(),
+                    dynamics: Some(Dynamics {
+                        // Convert ps to fs.
+                        timestep: state.to_save.md_dt * 1_000., // ps to fs.
+                        init_vel: state.to_save.md_config.temp_target,
+                        thermostat: Thermostat::Csvr,
+                        thermostat_temp: state.to_save.md_config.temp_target,
+                        thermostat_timecon: 10., // between 10 and 100 generally.
+                        traj_out_dir: PathBuf::from_str("out_traj.xyz").unwrap(),
+                        steps: state.to_save.num_md_steps,
+                    }),
+                    ..Default::default()
+                };
+
+                println!("Running ORCA input:\n{}\n...", orca_inp.make_inp());
+                // todo: Thread.
+                match orca_inp.run() {
+                    Ok(out) => {
+                        if let OrcaOutput::Dynamics(o) = out {
+                            println!("Complete. Output: \n\n{}", o.text);
+                            println!("\n\nTrajectory: \n\n{:?}", o.trajectory);
+                            orca::update_snapshots(state, o);
                         }
+                        // handle_success(&mut state.ui, "ORCA run complete".to_owned());
+                    }
+                    Err(e) => {
+                        handle_err(&mut state.ui, format!("Problem running ORCA MD: {e:?}"));
                     }
                 }
             }
