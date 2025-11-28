@@ -72,7 +72,7 @@ pub(in crate::ui) fn lipid_section(
     engine_updates: &mut EngineUpdates,
     ui: &mut Ui,
 ) {
-    if state.ui.lipid_to_add >= state.templates.lipid.len() {
+    if state.ui.lipid.lipid_to_add >= state.templates.lipid.len() {
         eprintln!("Error: Not enough lipid templates");
         return;
     }
@@ -81,36 +81,40 @@ pub(in crate::ui) fn lipid_section(
         ui.horizontal(|ui| {
             ui.label("Add lipids:");
 
-            let add_standard_text = state.templates.lipid[state.ui.lipid_to_add]
+            let add_standard_text = state.templates.lipid[state.ui.lipid.lipid_to_add]
                 .common
                 .ident
                 .clone();
 
             ComboBox::from_id_salt(102)
                 .width(90.)
-                .selected_text(state.ui.lipid_shape.to_string())
+                .selected_text(state.ui.lipid.shape.to_string())
                 .show_ui(ui, |ui| {
                     for shape in [LipidShape::Free, LipidShape::Membrane, LipidShape::Lnp] {
-                        ui.selectable_value(&mut state.ui.lipid_shape, shape, shape.to_string());
+                        ui.selectable_value(&mut state.ui.lipid.shape, shape, shape.to_string());
                     }
                 })
                 .response
                 .on_hover_text("Add lipids in this pattern");
 
-            if state.ui.lipid_shape == LipidShape::Free {
+            if state.ui.lipid.shape == LipidShape::Free {
                 ComboBox::from_id_salt(101)
                     .width(30.)
                     .selected_text(add_standard_text)
                     .show_ui(ui, |ui| {
                         for (i, mol) in state.templates.lipid.iter().enumerate() {
-                            ui.selectable_value(&mut state.ui.lipid_to_add, i, &mol.common.ident);
+                            ui.selectable_value(
+                                &mut state.ui.lipid.lipid_to_add,
+                                i,
+                                &mol.common.ident,
+                            );
                         }
                     })
                     .response
                     .on_hover_text("Add this lipid to the scene.");
             }
 
-            ui::num_field(&mut state.ui.lipid_mol_count, "# mols", 36, ui);
+            ui::num_field(&mut state.ui.lipid.mol_count, "# mols", 36, ui);
 
             // todo: Multiple and sets once this is validated
             if ui.button("+").clicked() {
@@ -120,9 +124,9 @@ pub(in crate::ui) fn lipid_section(
                         * crate::cam_misc::MOVE_TO_CAM_DIST;
 
                 state.lipids.extend(make_bacterial_lipids(
-                    state.ui.lipid_mol_count as usize,
+                    state.ui.lipid.mol_count as usize,
                     center.into(),
-                    state.ui.lipid_shape,
+                    state.ui.lipid.shape,
                     &state.templates.lipid,
                 ));
                 //
@@ -167,20 +171,39 @@ pub(in crate::ui) fn na_section(
 
         ui.label("Seq").on_hover_text(help_text);
 
-        ui.add(TextEdit::singleline(&mut state.ui.na_seq_to_create).desired_width(60.))
+        ui.add(TextEdit::singleline(&mut state.ui.nucleic_acid.seq_to_create).desired_width(300.))
             .on_hover_text(help_text);
+
+        ComboBox::from_id_salt(12443)
+            .width(80.)
+            .selected_text(state.ui.nucleic_acid.na_type.to_string())
+            .show_ui(ui, |ui| {
+                for v in &[NucleicAcidType::Dna, NucleicAcidType::Rna] {
+                    ui.selectable_value(&mut state.ui.nucleic_acid.na_type, *v, v.to_string());
+                }
+            });
+
+        ComboBox::from_id_salt(12444)
+            .width(80.)
+            .selected_text(state.ui.nucleic_acid.strands.to_string())
+            .show_ui(ui, |ui| {
+                for v in &[Strands::Single, Strands::Double] {
+                    ui.selectable_value(&mut state.ui.nucleic_acid.strands, *v, v.to_string());
+                }
+            });
 
         if ui
             .button(RichText::new("Create").color(COLOR_ACTION))
             .clicked()
         {
             // todo: Handle RNA U.
-            let seq = seq_from_str(&state.ui.na_seq_to_create);
+            let seq = seq_from_str(&state.ui.nucleic_acid.seq_to_create);
 
             let mol = match MoleculeNucleicAcid::from_seq(
                 &seq,
-                NucleicAcidType::Dna,
-                Strands::Single,
+                state.ui.nucleic_acid.na_type,
+                state.ui.nucleic_acid.strands,
+                lin_alg::f64::Vec3::new_zero(), // todo: A/R. Maybe from cam posit?
                 &state.templates.dna,
                 &state.templates.rna,
             ) {
@@ -209,10 +232,5 @@ pub(in crate::ui) fn aa_section(
     engine_updates: &mut EngineUpdates,
     ui: &mut Ui,
 ) {
-    section_box().show(ui, |ui| {
-        if state.ui.lipid_to_add >= state.templates.lipid.len() {
-            eprintln!("Error: Not enough lipid templates");
-            return;
-        }
-    });
+    section_box().show(ui, |ui| {});
 }

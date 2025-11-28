@@ -56,12 +56,21 @@ fn disp_atom_data(atom: &Atom, residues: &[Residue], posit_override: Option<Vec3
         // Placeholder for water etc.
         let mut res_color = COLOR_AA_NON_RESIDUE_EGUI;
 
-        let res = &residues[res_i];
-        let res_txt = &format!("  {res}");
+        let res_txt = if res_i >= residues.len() {
+            eprintln!(
+                "Error: Invalid res requested. Res i: {res_i}, len: {}",
+                residues.len()
+            );
+            "Invalid res".to_owned()
+        } else {
+            let res = &residues[res_i];
 
-        if let ResidueType::AminoAcid(aa) = res.res_type {
-            res_color = make_egui_color(aa_color(aa));
-        }
+            if let ResidueType::AminoAcid(aa) = res.res_type {
+                res_color = make_egui_color(aa_color(aa));
+            }
+
+            format!("  {res}")
+        };
 
         label!(ui, res_txt, res_color);
     }

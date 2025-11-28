@@ -74,7 +74,9 @@ use bio_apis::{
     rcsb::{FilesAvailable, PdbDataResults},
 };
 use bio_files::{
-    AtomGeneric, BondGeneric, Mol2, md_params::ForceFieldParams, mol_templates::load_templates,
+    AtomGeneric, BondGeneric, Mol2,
+    md_params::ForceFieldParams,
+    mol_templates::{TemplateData, load_templates},
 };
 #[cfg(feature = "cuda")]
 use cudarc::{
@@ -94,12 +96,13 @@ use lin_alg::{
 };
 use mol_lig::MoleculeSmall;
 use molecule::MoleculePeptide;
+use na_seq::Nucleotide;
 
 use crate::{
     lipid::{LipidShape, MoleculeLipid, load_lipid_templates},
     mol_editor::MolEditorState,
     molecule::{Bond, MoGenericRefMut, MolGenericRef, MolIdent, MolType, MoleculeCommon},
-    nucleic_acid::{MoleculeNucleicAcid, load_na_templates},
+    nucleic_acid::{MoleculeNucleicAcid, NucleicAcidType, Strands, load_na_templates},
     orca::StateOrca,
     prefs::ToSave,
     render::render,
@@ -458,6 +461,39 @@ impl Default for StateUiMd {
     }
 }
 
+struct LipidUi {
+    /// For the combo box. Stays at 0 if none loaded.
+    pub lipid_to_add: usize,
+    pub shape: LipidShape,
+    pub mol_count: u16,
+}
+
+impl Default for LipidUi {
+    fn default() -> Self {
+        Self {
+            lipid_to_add: 0,
+            shape: Default::default(),
+            mol_count: 10,
+        }
+    }
+}
+
+struct NucleicAcidUi {
+    pub seq_to_create: String,
+    pub na_type: NucleicAcidType,
+    pub strands: Strands,
+}
+
+impl Default for NucleicAcidUi {
+    fn default() -> Self {
+        Self {
+            seq_to_create: String::from("ATCG"),
+            na_type: Default::default(),
+            strands: Default::default(),
+        }
+    }
+}
+
 /// Ui text fields and similar.
 #[derive(Default)]
 struct StateUi {
@@ -517,11 +553,8 @@ struct StateUi {
     popup: PopupState,
     md: StateUiMd,
     ph_input: String,
-    /// For the combo box. Stays at 0 if none loaded.
-    lipid_to_add: usize,
-    lipid_shape: LipidShape,
-    lipid_mol_count: u16,
-    na_seq_to_create: String,
+    lipid: LipidUi,
+    nucleic_acid: NucleicAcidUi,
 }
 
 /// For showing and hiding UI sections.
@@ -609,8 +642,10 @@ struct Templates {
     /// Common lipid types, e.g. as derived from Amber's `lipids21.lib`, but perhaps not exclusively.
     /// These are loaded at init; there will be one of each type.
     pub lipid: Vec<MoleculeLipid>,
-    pub dna: Vec<MoleculeNucleicAcid>,
-    pub rna: Vec<MoleculeNucleicAcid>,
+    // pub dna: Vec<MoleculeNucleicAcid>,
+    // pub rna: Vec<MoleculeNucleicAcid>,
+    pub dna: HashMap<String, TemplateData>,
+    pub rna: HashMap<String, TemplateData>,
     // todo: A/R
     pub amino_acid: Vec<MoleculeSmall>,
 }
@@ -651,7 +686,6 @@ impl Default for State {
             view_depth: (VIEW_DEPTH_NEAR_MIN, FOG_DIST_DEFAULT),
             nearby_dist_thresh: 15,
             density_iso_level: 1.8,
-            lipid_mol_count: 10,
             ..Default::default()
         };
 
@@ -833,21 +867,25 @@ fn main() {
 
     state.load_prefs();
 
-    // Set these UI strings for numerical values up after loading prefs
-    state.volatile.md_runtime = state.to_save.num_md_steps as f32 * state.to_save.md_dt;
-    state.ui.ph_input = state.to_save.ph.to_string();
-    state.ui.md.dt_input = state.to_save.md_dt.to_string();
-    state.ui.md.pressure_input = (state.to_save.md_config.pressure_target as u16).to_string();
-    state.ui.md.temp_input = (state.to_save.md_config.temp_target as u16).to_string();
-    state.ui.md.simbox_pad_input = match state.to_save.md_config.sim_box {
-        SimBoxInit::Pad(p) => (p as u16).to_string(),
-        SimBoxInit::Fixed(_) => "0".to_string(), // We currently don't use this.
-    };
+    {
+        // Set these UI strings for numerical values up after loading prefs
+        state.volatile.md_runtime = state.to_save.num_md_steps as f32 * state.to_save.md_dt;
+        state.ui.ph_input = state.to_save.ph.to_string();
+        state.ui.md.dt_input = state.to_save.md_dt.to_string();
+        state.ui.md.pressure_input = (state.to_save.md_config.pressure_target as u16).to_string();
+        state.ui.md.temp_input = (state.to_save.md_config.temp_target as u16).to_string();
+        state.ui.md.simbox_pad_input = match state.to_save.md_config.sim_box {
+            SimBoxInit::Pad(p) => (p as u16).to_string(),
+            SimBoxInit::Fixed(_) => "0".to_string(), // We currently don't use this.
+        };
 
-    state.ui.md.langevin_γ = match state.to_save.md_config.integrator {
-        Integrator::Langevin { gamma } | Integrator::LangevinMiddle { gamma } => gamma.to_string(),
-        _ => "0.".to_string(),
-    };
+        state.ui.md.langevin_γ = match state.to_save.md_config.integrator {
+            Integrator::Langevin { gamma } | Integrator::LangevinMiddle { gamma } => {
+                gamma.to_string()
+            }
+            _ => "0.".to_string(),
+        };
+    }
 
     // We must have loaded prefs prior to this, so we know which file to open.
     state.load_last_opened();
