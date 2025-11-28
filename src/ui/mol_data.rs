@@ -19,8 +19,8 @@ use crate::{
     molecule::{Atom, Bond, MoGenericRefMut, MolGenericRef, MolIdent, MolType, Residue, aa_color},
     nucleic_acid::MoleculeNucleicAcid,
     ui::{
-        COL_SPACING, COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_HIGHLIGHT, COLOR_INACTIVE,
-        ROW_SPACING, cam::move_cam_to_active_mol, mol_descrip,
+        COL_SPACING, COLOR_ACTION, COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_HIGHLIGHT,
+        COLOR_INACTIVE, ROW_SPACING, cam::move_cam_to_active_mol, mol_descrip,
     },
     util::{
         close_mol, handle_err, handle_success, make_egui_color, make_lig_from_res, move_mol_to_res,
@@ -72,7 +72,7 @@ fn disp_atom_data(atom: &Atom, residues: &[Residue], posit_override: Option<Vec3
         label!(ui, tir.to_string(), Color32::LIGHT_YELLOW);
     }
 
-    if let Some(tir) = &atom.type_in_res_lipid {
+    if let Some(tir) = &atom.type_in_res_general {
         label!(ui, tir, Color32::LIGHT_YELLOW);
     }
 
@@ -95,7 +95,7 @@ fn disp_atom_data(atom: &Atom, residues: &[Residue], posit_override: Option<Vec3
 
 // todo: This would ideally be a method on FfParamSet, but that lib doesn't have access to our MolType enum.
 /// Get params for a single molecule type.
-pub fn get_params(set: &FfParamSet, mol_type: MolType) -> &Option<ForceFieldParams> {
+pub(in crate::ui) fn get_params(set: &FfParamSet, mol_type: MolType) -> &Option<ForceFieldParams> {
     match mol_type {
         MolType::Peptide => &set.peptide,
         MolType::Ligand => &set.small_mol,
@@ -163,7 +163,7 @@ fn disp_bond_data(
 }
 
 /// Display text of the selected atom or residue.
-pub fn selected_data(
+pub(in crate::ui) fn selected_data(
     state: &State,
     ligands: &[MoleculeSmall],
     nucleic_acids: &[MoleculeNucleicAcid],
@@ -353,9 +353,7 @@ fn mol_picker(
 
         let sel_btn = ui
             .button(RichText::new(&mol.common.ident).color(color))
-            .on_hover_text(
-                help_text,
-            );
+            .on_hover_text(help_text);
         if sel_btn.clicked() {
             if active && state.volatile.active_mol.is_some() {
                 state.volatile.active_mol = None;
@@ -405,9 +403,7 @@ fn mol_picker(
 
         let sel_btn = ui
             .button(RichText::new(&mol.common.ident).color(color))
-            .on_hover_text(
-                help_text,
-            );
+            .on_hover_text(help_text);
         if sel_btn.clicked() {
             if active && state.volatile.active_mol.is_some() {
                 state.volatile.active_mol = None;
@@ -453,7 +449,7 @@ fn mol_picker(
 }
 
 // todo: Unify this with non-peptide.
-pub fn display_mol_data_peptide(
+pub(in crate::ui) fn display_mol_data_peptide(
     state: &mut State,
     scene: &mut Scene,
     ui: &mut Ui,
@@ -527,7 +523,7 @@ pub fn display_mol_data_peptide(
                 if ui
                     .button(
                         RichText::new(format!("Lig from {}", res.res_type))
-                            .color(Color32::GOLD),
+                            .color(COLOR_ACTION),
                     )
                     .on_hover_text(
                         "Create a ligand from this residue on the peptide. This can be \
@@ -671,10 +667,7 @@ pub fn display_mol_data_peptide(
                         }
                         residue_names.push(name);
 
-                        if ui
-                            .button(RichText::new(name).color(Color32::GOLD))
-                            .clicked()
-                        {
+                        if ui.button(RichText::new(name).color(COLOR_ACTION)).clicked() {
                             download_mols::load_geostd(name, &mut load_data, &mut state.ui);
                             res_to_load = Some(res.clone()); // Clone avoids borrow error.
                         }
@@ -727,7 +720,7 @@ pub fn display_mol_data_peptide(
     }
 }
 
-pub fn display_mol_data(
+pub(in crate::ui) fn display_mol_data(
     state: &mut State,
     scene: &mut Scene,
     ui: &mut Ui,

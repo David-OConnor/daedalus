@@ -4,21 +4,30 @@
 
 // todo: Load Amber FF params for nucleic acids.
 
-use std::{collections::HashMap, f64::consts::TAU};
+use std::{collections::HashMap, f64::consts::TAU, io, time::Instant};
 
-use bio_files::BondType;
+use bio_files::{
+    BondType,
+    mol_templates::{TemplateData, load_templates},
+};
+use dynamics::params::OL24_LIB;
 use lin_alg::f64::Vec3;
 use na_seq::{
     AminoAcid,
     Element::{self, *},
     Nucleotide::{self, *},
+    seq_complement,
 };
 
 use crate::{
+    State,
+    lipid::MoleculeLipid,
     mol_lig::MoleculeSmall,
     molecule::{
         Atom, Bond, MolGenericRef, MolGenericTrait, MolType, MoleculeCommon, MoleculePeptide,
+        Residue, build_adjacency_list,
     },
+    util::handle_err,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -67,10 +76,258 @@ pub struct MoleculeNucleicAcid {
     pub seq: Vec<Nucleotide>,
     // pub bonds_hydrogen: Vec<HydrogenBond>,
     /// This is in the same vein as used by nucleic acid sequencing tools
+    /// for example, things like promoters, operators, RNA bind site, etc.
     /// todo: Use the same struct as PlasCAD, or similar?
     pub features: Vec<(String, (usize, usize))>,
-    // todo: A/R.
-    // pub ff_params: Option<ForceFieldParamsIndexed>,
+    //     pub common_name: String,
+    //     /// We use residues to denote headgroups and chains.
+    //     pub residues: Vec<Residue>,
+}
+
+fn build_single_strand(
+    seq: &[Nucleotide],
+    na_type: NucleicAcidType,
+    templates: &[MoleculeNucleicAcid],
+    strand_label: &str,
+) -> io::Result<(Vec<Atom>, Vec<Vec3>, Vec<Bond>)> {
+    let mut atoms_out: Vec<Atom> = Vec::new();
+    let mut posits_out: Vec<Vec3> = Vec::new();
+    let mut bonds_out: Vec<Bond> = Vec::new();
+
+    let mut next_sn: u32 = 1;
+
+    let mut prev_tail_global_sn: Option<u32> = None;
+    let mut prev_tail_posit: Option<Vec3> = None;
+
+    // todo: Examine this.
+
+    // Simple backbone bond length used for translating residues to match up.
+    let backbone_bond_len = 1.6;
+
+    for (i, &nt) in seq.iter().enumerate() {
+        let is_first = i == 0;
+        let is_last = i + 1 == seq.len();
+
+        let template = match na_type {
+            NucleicAcidType::Dna => {
+                let b = nt.to_str_upper();
+                let mid = format!("D{b}");
+                let five = format!("D{b}5");
+                let three = format!("D{b}3");
+                let want: [&str; 2] = if is_first && !is_last {
+                    [&five, &mid]
+                } else if is_last && !is_first {
+                    [&three, &mid]
+                } else {
+                    [&mid, &mid]
+                };
+                find_template(templates, &want)
+            }
+            NucleicAcidType::Rna => {
+                let mut b = nt.to_str_upper();
+                if b == "T" {
+                    b == "U";
+                }
+
+                let mid = format!("R{b}");
+                let five = format!("R{b}5");
+                let three = format!("R{b}3");
+
+                // Some Amber libs use RU, some older/custom setups might use RT; try both for U.
+                if b == "U" {
+                    let mid_alt = "RT".to_string();
+                    let five_alt = "RT5".to_string();
+                    let three_alt = "RT3".to_string();
+                    let want: [&str; 4] = if is_first && !is_last {
+                        [&five, &mid, &five_alt, &mid_alt]
+                    } else if is_last && !is_first {
+                        [&three, &mid, &three_alt, &mid_alt]
+                    } else {
+                        [&mid, &mid_alt, &mid, &mid_alt]
+                    };
+                    find_template(templates, &want)
+                } else {
+                    let want: [&str; 2] = if is_first && !is_last {
+                        [&five, &mid]
+                    } else if is_last && !is_first {
+                        [&three, &mid]
+                    } else {
+                        [&mid, &mid]
+                    };
+                    find_template(templates, &want)
+                }
+            }
+        };
+
+        // todo: This map of indexes to bonds is repeated a few times.
+        let mut atom_index_map = HashMap::new();
+        for (i, atom) in template.common.atoms.iter().enumerate() {
+            atom_index_map.insert(atom.serial_number, i);
+        }
+
+        let (head_local_i, tail_local_i) = template_attach_points(template);
+
+        let Some(head_local_i) = head_local_i else {
+            let msg = format!(
+                "Template {} missing head attach point (.unit.connect or P atom)",
+                template.common.ident
+            );
+
+            return Err(io::Error::other(msg));
+        };
+        let Some(tail_local_i) = tail_local_i else {
+            let msg = format!(
+                "Template {} missing tail attach point (.unit.connect or P atom)",
+                template.common.ident
+            );
+
+            return Err(io::Error::other(msg));
+        };
+
+        let tpl_head_posit = template
+            .common
+            .atom_posits
+            .get(head_local_i)
+            .copied()
+            .unwrap_or_else(|| Vec3::new(0.0, 0.0, 0.0));
+
+        let translation = if let Some(prev_tail) = prev_tail_posit {
+            (prev_tail + Vec3::new(0.0, 0.0, backbone_bond_len)) - tpl_head_posit
+        } else {
+            Vec3::new(0.0, 0.0, 0.0)
+        };
+
+        let residue_start_sn = next_sn;
+
+        // Copy atoms + positioned coordinates
+        for (local_i, tpl_atom) in template.common.atoms.iter().enumerate() {
+            let mut a = tpl_atom.clone();
+            a.serial_number = next_sn;
+
+            let p = template
+                .common
+                .atom_posits
+                .get(local_i)
+                .copied()
+                .unwrap_or_else(|| Vec3::new(0.0, 0.0, 0.0))
+                + translation;
+
+            a.posit = p;
+
+            atoms_out.push(a);
+            posits_out.push(p);
+            next_sn += 1;
+        }
+
+        // Copy intra-residue bonds with serial offset
+        let sn_offset = residue_start_sn - 1;
+        for b in &template.common.bonds {
+            let mut nb = b.clone();
+            nb.atom_0_sn = b.atom_0_sn + sn_offset;
+            nb.atom_1_sn = b.atom_1_sn + sn_offset;
+            bonds_out.push(nb);
+        }
+
+        // Add inter-residue backbone bond: prev_tail -- current_head
+        let cur_head_global_sn = sn_offset + (head_local_i as u32) + 1;
+        let cur_tail_global_sn = sn_offset + (tail_local_i as u32) + 1;
+
+        if let Some(prev_tail_sn) = prev_tail_global_sn {
+            bonds_out.push(Bond {
+                atom_0_sn: prev_tail_sn,
+                atom_1_sn: cur_head_global_sn,
+                atom_0: atom_index_map[&prev_tail_sn],
+                atom_1: atom_index_map[&cur_head_global_sn],
+                bond_type: BondType::Single,
+                is_backbone: false,
+            });
+        }
+
+        let cur_tail_posit = posits_out
+            .get((cur_tail_global_sn as usize) - 1)
+            .copied()
+            .unwrap_or_else(|| Vec3::new(0.0, 0.0, 0.0));
+
+        prev_tail_global_sn = Some(cur_tail_global_sn);
+        prev_tail_posit = Some(cur_tail_posit);
+
+        // Optionally tag strand in metadata per-atom later; for now just a hook:
+        let _ = strand_label;
+    }
+
+    Ok((atoms_out, posits_out, bonds_out))
+}
+
+// todo: Review and clean this up A/R. Especially the joins. between template segments
+fn find_template<'a>(
+    templates: &'a [MoleculeNucleicAcid],
+    names: &[&str],
+) -> &'a MoleculeNucleicAcid {
+    for &want in names {
+        if let Some(t) = templates.iter().find(|t| t.common.ident == want) {
+            return t;
+        }
+    }
+    panic!("No matching nucleic acid template found. Wanted one of: {names:?}");
+}
+
+fn find_atom_local_idx_by_name(t: &MoleculeNucleicAcid, want: &str) -> Option<usize> {
+    t.common
+        .atoms
+        .iter()
+        .enumerate()
+        .find(|(_, a)| a.type_in_res_general.as_deref() == Some(want))
+        .map(|(i, _)| i)
+}
+
+fn parse_u32_meta(t: &MoleculeNucleicAcid, key: &str) -> Option<u32> {
+    t.common
+        .metadata
+        .get(key)
+        .and_then(|v| v.parse::<u32>().ok())
+}
+
+fn template_attach_points(t: &MoleculeNucleicAcid) -> (Option<usize>, Option<usize>) {
+    // Prefer unit.connect head/tail if present.
+    let head = parse_u32_meta(t, "unit_connect_head").unwrap_or(0);
+    let tail = parse_u32_meta(t, "unit_connect_tail").unwrap_or(0);
+
+    if head != 0 || tail != 0 {
+        let head_i = if head == 0 {
+            None
+        } else {
+            Some((head - 1) as usize)
+        };
+        let tail_i = if tail == 0 {
+            None
+        } else {
+            Some((tail - 1) as usize)
+        };
+        return (head_i, tail_i);
+    }
+
+    // Fallback to residueconnect c1/c2 if present.
+    let c1 = parse_u32_meta(t, "residueconnect_c1x").unwrap_or(0);
+    let c2 = parse_u32_meta(t, "residueconnect_c2x").unwrap_or(0);
+    if c1 != 0 || c2 != 0 {
+        let head_i = if c1 == 0 {
+            None
+        } else {
+            Some((c1 - 1) as usize)
+        };
+        let tail_i = if c2 == 0 {
+            None
+        } else {
+            Some((c2 - 1) as usize)
+        };
+        return (head_i, tail_i);
+    }
+
+    // Final fallback: atom names (Amber DNA/RNA typically: P is head; O3' is tail).
+    let head_i = find_atom_local_idx_by_name(t, "P");
+    let tail_i =
+        find_atom_local_idx_by_name(t, "O3'").or_else(|| find_atom_local_idx_by_name(t, "O3*"));
+    (head_i, tail_i)
 }
 
 impl MoleculeNucleicAcid {
@@ -81,132 +338,88 @@ impl MoleculeNucleicAcid {
     /// Geometry is **idealized B-DNA-like**: rise ~3.4 Å, twist 36°, with simple radial offsets.
     /// This is a minimal “it renders now” model you can extend with full atom templates later.
     /// Initializes a linear molecule.
-    pub fn from_seq(seq: &[Nucleotide], na_type: NucleicAcidType, strands: Strands) -> Self {
-        let helix = match na_type {
-            NucleicAcidType::Rna => {
-                // A-form-ish
-                HelixGeom {
-                    rise: 2.60,
-                    twist: 33.0_f64.to_radians(),
-                    r_backbone: 4.6,
-                    base_rad: 6.2,
-                    sugar_ang: 0.35,
-                    sugar_dz: 0.6,
-                    base_ang: TAU / 2., // bases roughly opposite backbone
-                    base_dz: 0.25,
-                }
-            }
-            NucleicAcidType::Dna => {
-                // B-DNA-ish
-                HelixGeom {
-                    rise: 3.40,
-                    twist: 36.0_f64.to_radians(),
-                    r_backbone: 4.2,
-                    base_rad: 6.0,
-                    sugar_ang: 0.35,
-                    sugar_dz: 0.6,
-                    base_ang: TAU / 2.,
-                    base_dz: 0.20,
-                }
-            }
+    pub fn from_seq(
+        seq: &[Nucleotide],
+        na_type: NucleicAcidType,
+        strands: Strands,
+        templates_dna: &[MoleculeNucleicAcid],
+        templates_rna: &[MoleculeNucleicAcid],
+    ) -> io::Result<Self> {
+        let templates = match na_type {
+            NucleicAcidType::Dna => templates_dna,
+            NucleicAcidType::Rna => templates_rna,
         };
 
-        let mut common = MoleculeCommon::default();
+        let (mut atoms, mut atom_posits, mut bonds) =
+            build_single_strand(seq, na_type, templates, "strand_0")?;
 
-        common.ident = format!(
-            "{}-nt {} strand",
-            seq.len(),
-            match na_type {
-                NucleicAcidType::Rna => "RNA",
-                NucleicAcidType::Dna => "DNA",
+        if strands == Strands::Double && !seq.is_empty() {
+            let seq2 = seq_complement(seq);
+            let (atoms2, pos2, bonds2) =
+                build_single_strand(&seq2, na_type, templates, "strand_1")?;
+
+            let sn_offset = atoms.len() as u32;
+
+            // Shift serial_numbers + bonds for second strand, then append.
+            let mut atoms2_shifted = atoms2;
+            for a in &mut atoms2_shifted {
+                a.serial_number += sn_offset;
             }
+
+            let mut bonds2_shifted = bonds2;
+            for b in &mut bonds2_shifted {
+                b.atom_0_sn += sn_offset;
+                b.atom_1_sn += sn_offset;
+            }
+
+            atoms.extend(atoms2_shifted);
+            atom_posits.extend(pos2);
+            bonds.extend(bonds2_shifted);
+        }
+
+        let adjacency_list = build_adjacency_list(&bonds, atoms.len());
+
+        let mut metadata = HashMap::new();
+        metadata.insert(
+            "nucleic_acid_type".to_string(),
+            match na_type {
+                NucleicAcidType::Dna => "dna",
+                NucleicAcidType::Rna => "rna",
+            }
+            .to_string(),
+        );
+        metadata.insert(
+            "strands".to_string(),
+            match strands {
+                Strands::Single => "single",
+                Strands::Double => "double",
+            }
+            .to_string(),
         );
 
-        // Reserve roughly (#atoms per residue ≈ 18 backbone + 10–12 base) × n
-        common.atoms.reserve(seq.len() * 32);
+        let common = MoleculeCommon {
+            ident: match (na_type, strands) {
+                (NucleicAcidType::Dna, Strands::Single) => "DNA(ss)".to_string(),
+                (NucleicAcidType::Dna, Strands::Double) => "DNA(ds)".to_string(),
+                (NucleicAcidType::Rna, Strands::Single) => "RNA(ss)".to_string(),
+                (NucleicAcidType::Rna, Strands::Double) => "RNA(ds)".to_string(),
+            },
+            atoms,
+            bonds,
+            adjacency_list,
+            atom_posits,
+            metadata,
+            visible: true,
+            path: None,
+            selected_for_md: false,
+            entity_i_range: None,
+        };
 
-        // Keep per-residue name→index for wiring bonds
-        let mut idx_maps: Vec<HashMap<&'static str, usize>> = Vec::with_capacity(seq.len());
-
-        // Build residues
-        for (i, nt) in seq.iter().enumerate() {
-            // Residue placement on helix
-            let angle = i as f64 * helix.twist;
-            let s_world = helix_point(i, 0.0, helix.r_backbone, helix.sugar_dz, &helix);
-            let s_world = rotate_xy(s_world, angle);
-            // Local frame at residue (C1′ origin):
-            //   e_r: outward radial (base points roughly along +x_local = +e_r)
-            //   e_t: tangential (around the helix)
-            //   e_z: helix axis (z)
-            let e_r = Vec3::new(angle.cos(), angle.sin(), 0.0);
-            let e_t = Vec3::new(-angle.sin(), angle.cos(), 0.0);
-            let e_z = Vec3::new(0.0, 0.0, 1.0);
-            let frame = Frame {
-                o: s_world,
-                ex: e_r,
-                ey: e_t,
-                ez: e_z,
-            };
-
-            let mut name_to_idx: HashMap<&'static str, usize> = HashMap::new();
-
-            // === Sugar + phosphate ===
-            let sugar = sugar_template(na_type);
-            let phos = phosphate_template();
-            for a in sugar.iter().chain(phos.iter()) {
-                let pos = frame.apply(a.coord);
-                let idx = push_atom(&mut common, pos, a.element, i);
-                name_to_idx.insert(a.name, idx);
-            }
-
-            // === Base (ring + exocyclics) ===
-            let base = base_template(*nt);
-            for a in &base.atoms {
-                // Base is further out from axis; we offset its local x by base radial delta.
-                // The coordinates below are already drawn in the base plane; we add a global outward
-                // shift so the base sits ~base_rad from axis.
-                let local = Vec3::new(a.coord.x + base.anchor_shift, a.coord.y, a.coord.z);
-                let pos = frame.apply(local);
-                let idx = push_atom(&mut common, pos, a.element, i);
-                name_to_idx.insert(a.name, idx);
-            }
-
-            // === Bonds within residue ===
-            // Sugar bonds
-            for (a, b) in sugar_bonds(na_type) {
-                push_bond_by_name(&mut common, &name_to_idx, a, b, true);
-            }
-            // Phosphate bonds (O5′—P and two non-bridging oxygens)
-            for (a, b) in phosphate_bonds() {
-                push_bond_by_name(&mut common, &name_to_idx, a, b, true);
-            }
-            // Glycosidic bond C1′—(N9 or N1)
-            push_bond_by_name(&mut common, &name_to_idx, "C1'", base.anchor, false);
-            // Base internal bonds
-            for (a, b) in &base.bonds {
-                push_bond_by_name(&mut common, &name_to_idx, a, b, false);
-            }
-
-            idx_maps.push(name_to_idx);
-        }
-
-        // Inter-residue phosphodiester: O3′(i) — P(i+1)
-        for i in 0..seq.len().saturating_sub(1) {
-            let i0 = idx_maps[i]["O3'"];
-            let i1 = idx_maps[i + 1]["P"];
-            push_bond_indices(&mut common, i0, i1, true);
-        }
-
-        // Positions mirror
-        common.atom_posits = common.atoms.iter().map(|a| a.posit).collect();
-
-        common.build_adjacency_list();
-
-        Self {
+        Ok(Self {
             common,
             seq: seq.to_vec(),
             features: Vec::new(),
-        }
+        })
     }
 
     /// This wrapper that extracts the AA sequence, then chooses a suitable DNA sequence.
@@ -216,7 +429,9 @@ impl MoleculeNucleicAcid {
         peptide: &MoleculePeptide,
         na_type: NucleicAcidType,
         strands: Strands,
-    ) -> Self {
+        templates_dna: &[MoleculeNucleicAcid],
+        templates_rna: &[MoleculeNucleicAcid],
+    ) -> io::Result<Self> {
         let mut seq = Vec::with_capacity(&peptide.residues.len() * 3);
         for res in &peptide.residues {
             seq.push(A);
@@ -224,7 +439,7 @@ impl MoleculeNucleicAcid {
             seq.push(A);
         }
 
-        Self::from_seq(&seq, na_type, strands)
+        Self::from_seq(&seq, na_type, strands, templates_dna, templates_rna)
     }
 }
 
@@ -642,4 +857,50 @@ fn t(name: &'static str, el: Element, x: f64, y: f64, z: f64) -> TAtom {
         element: el,
         coord: v(x, y, z),
     }
+}
+
+/// Returns (DNA, RNA)
+pub fn load_na_templates() -> io::Result<(Vec<MoleculeNucleicAcid>, Vec<MoleculeNucleicAcid>)> {
+    println!("Loading Nucleic acid templates...");
+
+    let mut dna = Vec::new();
+    let mut rna = Vec::new();
+
+    // todo: Both DNA and RNA.
+    let start = Instant::now();
+    let templates = load_templates(OL24_LIB)?;
+
+    for (ident, template) in templates {
+        // todo: Move this to molecule mod A/R,.
+        let mut mol = MoleculeNucleicAcid {
+            common: MoleculeCommon {
+                ident,
+                ..Default::default()
+            },
+            seq: vec![],
+            features: Vec::new(),
+            // residues: Vec::new(),
+        };
+        for atom in template.atoms {
+            mol.common.atoms.push((&atom).into());
+        }
+
+        for bond in template.bonds {
+            mol.common
+                .bonds
+                .push(Bond::from_generic(&bond, &mol.common.atoms).unwrap());
+        }
+
+        mol.common.build_adjacency_list();
+        mol.common.atom_posits = mol.common.atoms.iter().map(|a| a.posit).collect();
+
+        dna.push(mol);
+    }
+
+    dna.sort_by_key(|mol| mol.common.ident.clone());
+
+    let elapsed = start.elapsed().as_millis();
+    println!("Loaded lipid templates in {elapsed:.1}ms");
+
+    Ok((dna, rna))
 }

@@ -9,8 +9,8 @@ use crate::{
     State, label,
     md::{STATIC_ATOM_DIST_THRESH, build_and_run_dynamics, reassign_snapshot_indices},
     ui::{
-        COL_SPACING, COLOR_ACTIVE, COLOR_HIGHLIGHT, COLOR_INACTIVE, cam::move_cam_to_active_mol,
-        flag_btn, misc, num_field,
+        COL_SPACING, COLOR_ACTION, COLOR_ACTIVE, COLOR_HIGHLIGHT, COLOR_INACTIVE,
+        cam::move_cam_to_active_mol, flag_btn, misc, num_field,
     },
     util::{clear_cli_out, handle_err},
 };
@@ -57,7 +57,7 @@ pub fn md_setup(
             ui.add_space(COL_SPACING / 2.);
 
             let run_clicked = ui
-                .button(RichText::new("Run MD").color(Color32::GOLD))
+                .button(RichText::new("Run MD").color(COLOR_ACTION))
                 .on_hover_text("Run a molecular dynamics simulation on all molecules selected.")
                 .clicked();
 
@@ -295,7 +295,7 @@ pub fn md_setup(
     misc::dynamics_player(state, scene, engine_updates, ui);
 }
 
-pub fn energy_disp(snap: &Snapshot, ui: &mut Ui) {
+pub(in crate::ui) fn energy_disp(snap: &Snapshot, ui: &mut Ui) {
     ui.add_space(COL_SPACING / 2.);
     ui.label("E (kcal/mol) KE: ");
     ui.label(RichText::new(format!("{:.1}", snap.energy_kinetic)).color(Color32::GOLD));

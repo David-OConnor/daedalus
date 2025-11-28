@@ -74,8 +74,7 @@ use bio_apis::{
     rcsb::{FilesAvailable, PdbDataResults},
 };
 use bio_files::{
-    AtomGeneric, BondGeneric, Mol2,
-    md_params::{ForceFieldParams, load_lipid_templates},
+    AtomGeneric, BondGeneric, Mol2, md_params::ForceFieldParams, mol_templates::load_templates,
 };
 #[cfg(feature = "cuda")]
 use cudarc::{
@@ -85,7 +84,7 @@ use cudarc::{
 use drawing::MoleculeView;
 use dynamics::{
     ComputationDevice, Integrator, MdState, SimBoxInit,
-    params::{FfParamSet, LIPID_21_LIB},
+    params::{FfParamSet, LIPID_21_LIB, OL24_LIB},
 };
 use egui_file_dialog::{FileDialog, FileDialogConfig};
 use graphics::{Camera, ControlScheme, InputsCommanded, winit::event::Modifiers};
@@ -97,10 +96,10 @@ use mol_lig::MoleculeSmall;
 use molecule::MoleculePeptide;
 
 use crate::{
-    lipid::{LipidShape, MoleculeLipid},
+    lipid::{LipidShape, MoleculeLipid, load_lipid_templates},
     mol_editor::MolEditorState,
     molecule::{Bond, MoGenericRefMut, MolGenericRef, MolIdent, MolType, MoleculeCommon},
-    nucleic_acid::MoleculeNucleicAcid,
+    nucleic_acid::{MoleculeNucleicAcid, load_na_templates},
     orca::StateOrca,
     prefs::ToSave,
     render::render,
@@ -522,15 +521,17 @@ struct StateUi {
     lipid_to_add: usize,
     lipid_shape: LipidShape,
     lipid_mol_count: u16,
+    na_seq_to_create: String,
 }
 
 /// For showing and hiding UI sections.
 pub struct UiVisibility {
-    // metadata: bool,
     aa_seq: bool,
     smiles: bool,
     selfies: bool,
     lipids: bool,
+    nucleic_acids: bool,
+    amino_acids: bool,
     dynamics: bool,
     orca: bool,
 }
@@ -538,11 +539,12 @@ pub struct UiVisibility {
 impl Default for UiVisibility {
     fn default() -> Self {
         Self {
-            // metadata: false,
             aa_seq: false,
             smiles: false,
             selfies: false,
             lipids: false,
+            nucleic_acids: false,
+            amino_acids: false,
             dynamics: true,
             orca: false,
         }
@@ -601,6 +603,18 @@ impl CamSnapshot {
     }
 }
 
+#[derive(Default)]
+/// Molecule templates for building-block molecules.
+struct Templates {
+    /// Common lipid types, e.g. as derived from Amber's `lipids21.lib`, but perhaps not exclusively.
+    /// These are loaded at init; there will be one of each type.
+    pub lipid: Vec<MoleculeLipid>,
+    pub dna: Vec<MoleculeNucleicAcid>,
+    pub rna: Vec<MoleculeNucleicAcid>,
+    // todo: A/R
+    pub amino_acid: Vec<MoleculeSmall>,
+}
+
 struct State {
     pub ui: StateUi,
     pub volatile: StateVolatile,
@@ -625,9 +639,7 @@ struct State {
     // todo: Combine these params in a single struct.
     pub ff_param_set: FfParamSet,
     pub lig_specific_params: HashMap<String, ForceFieldParams>,
-    /// Common lipid types, e.g. as derived from Amber's `lipids21.lib`, but perhaps not exclusively.
-    /// These are loaded at init; there will be one of each type.
-    pub lipid_templates: Vec<MoleculeLipid>,
+    pub templates: Templates,
     pub mol_editor: MolEditorState,
     pub orca: StateOrca,
 }
@@ -660,7 +672,7 @@ impl Default for State {
             mol_dynamics: Default::default(),
             ff_param_set: Default::default(),
             lig_specific_params: Default::default(),
-            lipid_templates: Default::default(),
+            templates: Default::default(),
             mol_editor: Default::default(),
             orca: Default::default(),
         }
@@ -766,57 +778,6 @@ impl State {
             None => None,
         }
     }
-
-    /// Create lipid molecules from Amber's Lipids21.lib, which is included in the binary.
-    pub fn load_lipid_templates(&mut self) {
-        println!("Loading lipid templates...");
-        let start = Instant::now();
-        match load_lipid_templates(LIPID_21_LIB) {
-            Ok(l) => {
-                self.lipid_templates = Vec::new();
-                for (ident, (atoms, bonds)) in l {
-                    // todo: Move this to molecule mod A/R, e.g. lipid mod.
-                    let mut mol = MoleculeLipid {
-                        // t
-                        common: MoleculeCommon {
-                            ident,
-                            ..Default::default()
-                        },
-                        lmsd_id: String::new(),
-                        hmdb_id: String::new(),
-                        kegg_id: String::new(),
-                        common_name: String::new(),
-                        residues: Vec::new(),
-                    };
-                    for atom in atoms {
-                        mol.common.atoms.push((&atom).into());
-                    }
-
-                    for bond in bonds {
-                        mol.common
-                            .bonds
-                            .push(Bond::from_generic(&bond, &mol.common.atoms).unwrap());
-                    }
-
-                    mol.common.build_adjacency_list();
-                    mol.common.atom_posits = mol.common.atoms.iter().map(|a| a.posit).collect();
-
-                    mol.populate_db_ids();
-
-                    self.lipid_templates.push(mol);
-                }
-
-                self.lipid_templates
-                    .sort_by_key(|mol| mol.common.ident.clone());
-            }
-            Err(e) => {
-                handle_err(&mut self.ui, format!("Unable to load lipid templates: {e}"));
-            }
-        };
-
-        let elapsed = start.elapsed().as_millis();
-        println!("Loaded lipid templates in {elapsed:.1}ms");
-    }
 }
 
 fn main() {
@@ -910,7 +871,42 @@ fn main() {
         state.volatile.active_mol = Some((MolType::Ligand, 0));
     }
 
-    state.load_lipid_templates();
+    match load_lipid_templates() {
+        Ok(t) => {
+            state.templates.lipid = t;
+        }
+        Err(e) => {
+            handle_err(
+                &mut state.ui,
+                format!("Unable to load lipid templates: {e}"),
+            );
+        }
+    }
+
+    match load_na_templates() {
+        Ok((dna, rna)) => {
+            state.templates.dna = dna;
+            state.templates.rna = rna;
+        }
+        Err(e) => {
+            handle_err(
+                &mut state.ui,
+                format!("Unable to load nucleic acid templates: {e}"),
+            );
+        }
+    }
+
+    // match load_aa_templates() {
+    //     Ok(t) => {
+    //         state.templates.amino_acid= t;
+    //     }
+    //     Err(e) => {
+    //         handle_err(
+    //             &mut state.ui,
+    //             format!("Unable to load amino acid templates: {e}"),
+    //         );
+    //     }
+    // }
 
     if let Ok(out) = Command::new("orca").output() {
         let out = String::from_utf8(out.stdout).unwrap();

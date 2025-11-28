@@ -2,10 +2,10 @@
 //!
 //! [ORCA recommendations for methods, basis fns etc](https://www.faccts.de/docs/orca/6.1/manual/contents/quickstartguide/recommendations.html)
 
-use crate::State;
-use bio_files::orca::dynamics::DynamicsOutput;
-use bio_files::orca::{OrcaInput, basis_sets::BasisSetCategory};
+use bio_files::orca::{OrcaInput, basis_sets::BasisSetCategory, dynamics::DynamicsOutput};
 use dynamics::snapshot::Snapshot;
+
+use crate::State;
 
 #[derive(Default)]
 // todo: Some of this is UI state; move to a place that makes sense A/R.

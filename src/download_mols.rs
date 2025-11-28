@@ -2,9 +2,9 @@
 
 use std::time::Instant;
 
-use bio_apis::{ReqError, amber_geostd, amber_geostd::GeostdItem,rcsb};
+use bio_apis::{ReqError, amber_geostd, amber_geostd::GeostdItem, rcsb};
 use bio_files::{MmCif, Mol2, Sdf, md_params::ForceFieldParams};
-use graphics::{ ControlScheme, EngineUpdates, Scene};
+use graphics::{ControlScheme, EngineUpdates, Scene};
 use na_seq::AaIdent;
 
 use crate::{

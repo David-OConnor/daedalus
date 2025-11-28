@@ -60,7 +60,7 @@ fn change_el_button(
     }
 }
 
-pub fn editor(
+pub(in crate::ui) fn editor(
     state: &mut State,
     scene: &mut Scene,
     engine_updates: &mut EngineUpdates,

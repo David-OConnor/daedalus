@@ -854,7 +854,7 @@ pub struct Atom {
     /// There are too many variants of this (with different numbers) to use an enum effectively
     /// Ideally, we would share a field between lipid and normal type in res, but don't due
     /// to the different in inner type. (Maybe an outer enum?)
-    pub type_in_res_lipid: Option<String>,
+    pub type_in_res_general: Option<String>,
     /// "Type 2" for proteins/AA. For ligands and small molecules, this
     /// is a "Type 3".
     /// E.g. "c6", "ca", "n3", "ha", "h0" etc, as seen in Mol2 files from AMBER.
@@ -892,7 +892,7 @@ impl Atom {
         AtomGeneric {
             serial_number: self.serial_number,
             type_in_res: self.type_in_res.clone(),
-            type_in_res_lipid: self.type_in_res_lipid.clone(),
+            type_in_res_general: self.type_in_res_general.clone(),
             posit: self.posit,
             element: self.element,
             partial_charge: self.partial_charge,
@@ -916,7 +916,7 @@ impl From<&AtomGeneric> for Atom {
             posit: atom.posit,
             element: atom.element,
             type_in_res: atom.type_in_res.clone(),
-            type_in_res_lipid: atom.type_in_res_lipid.clone(),
+            type_in_res_general: atom.type_in_res_general.clone(),
             role,
             partial_charge: atom.partial_charge,
             force_field_type: atom.force_field_type.clone(),

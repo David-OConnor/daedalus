@@ -1,5 +1,14 @@
 //! Fundamental data structures for small organic molecules / ligands
 
+use std::{
+    collections::HashMap,
+    io,
+    path::{Path, PathBuf},
+    sync::{mpsc, mpsc::Receiver},
+    thread,
+    time::Instant,
+};
+
 use bio_apis::{
     ReqError, amber_geostd, amber_geostd::GeostdData, pubchem, pubchem::ProteinStructure,
 };
@@ -12,15 +21,6 @@ use dynamics::{
     partial_charge_inference::infer_charge,
 };
 use na_seq::Element;
-use std::path::Path;
-use std::{
-    collections::HashMap,
-    io,
-    path::PathBuf,
-    sync::{mpsc, mpsc::Receiver},
-    thread,
-    time::Instant,
-};
 
 use crate::{
     docking::{DockingSite, Pose},
@@ -590,8 +590,8 @@ impl MoleculeSmall {
         let bonds_gen: Vec<_> = self.common.bonds.iter().map(|a| a.to_generic()).collect();
 
         // todo temp!
-        if true {
-            // if !self.ff_params_loaded {
+        // if true {
+        if !self.ff_params_loaded {
             let defs = AmberDefSet::new().unwrap();
             let ff_types = find_ff_types(&atoms_gen, &bonds_gen, &defs);
 

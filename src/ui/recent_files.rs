@@ -24,7 +24,7 @@ fn recentness_descrip(age_min: i64) -> (String, Color32) {
     }
 }
 
-pub(super) fn recent_files(
+pub(in crate::ui) fn recent_files(
     state: &mut State,
     scene: &mut Scene,
     ui: &mut Ui,

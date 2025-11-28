@@ -24,7 +24,6 @@ use na_seq::{
     Element::{Carbon, Hydrogen, Nitrogen, Oxygen},
 };
 
-use crate::molecule::MoleculeGeneric;
 use crate::{
     ManipMode, OperatingMode, State, StateUi, ViewSelLevel,
     drawing::{
@@ -35,7 +34,7 @@ use crate::{
     md::change_snapshot_helper,
     mol_editor,
     mol_lig::MoleculeSmall,
-    molecule::{Atom, Bond, MolGenericRef, MolType, MoleculeCommon},
+    molecule::{Atom, Bond, MolGenericRef, MolType, MoleculeCommon, MoleculeGeneric},
     render::{
         ATOM_SHININESS, BALL_STICK_RADIUS, BALL_STICK_RADIUS_H, set_flashlight, set_static_light,
     },

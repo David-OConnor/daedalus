@@ -216,32 +216,6 @@ pub fn view_settings(
                 }
             }
 
-            // ui.add_space(COL_SPACING);
-            // // todo temp
-            // if ui.button("Load DNA").clicked() {
-            //     if let Some(mol) = &state.peptide {
-            //         state.nucleic_acids = vec![MoleculeNucleicAcid::from_peptide(
-            //             &mol,
-            //             NucleicAcidType::Dna,
-            //             Strands::Single,
-            //         )];
-            //     }
-            //     draw_all_nucleic_acids(state, scene);
-            //     engine_updates.entities = true;
-            // }
-            //
-            // if ui.button("Load RNA").clicked() {
-            //     if let Some(mol) = &state.peptide {
-            //         state.nucleic_acids = vec![MoleculeNucleicAcid::from_peptide(
-            //             &mol,
-            //             NucleicAcidType::Rna,
-            //             Strands::Single,
-            //         )];
-            //     }
-            //     draw_all_nucleic_acids(state, scene);
-            //     engine_updates.entities = true;
-            // }
-
             if let Some(mol) = &state.peptide {
                 if let Some(dens) = &mol.elec_density {
                     let mut redraw_dens = false;
@@ -338,7 +312,14 @@ pub fn ui_section_vis(state: &mut State, ui: &mut Ui) {
     }
 
     let tooltip = "Show or hide tools for adding lipids";
-    vis_helper(&mut state.ui.ui_vis.lipids, "Lipid tools", tooltip, ui);
+    vis_helper(&mut state.ui.ui_vis.lipids, "Lipid", tooltip, ui);
+
+    let tooltip = "Show or hide tools for nucleic acids (DNA, RNA)";
+    vis_helper(&mut state.ui.ui_vis.nucleic_acids, "NA", tooltip, ui);
+
+    let tooltip = "Show or hide tools for amino acids. This can be used to build arbitrary proteins \
+    from a primary sequence.";
+    vis_helper(&mut state.ui.ui_vis.amino_acids, "AA", tooltip, ui);
 
     let tooltip = "Show or hide the molecular dynamics section.";
     vis_helper(&mut state.ui.ui_vis.dynamics, "Dynamics", tooltip, ui);

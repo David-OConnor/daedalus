@@ -1,22 +1,24 @@
-use crate::ui::md::md_setup;
-use crate::util::{handle_err, handle_success};
-use crate::{
-    State, label, orca,
-    ui::{COL_SPACING, COLOR_ACTIVE, misc},
-};
+use std::{path::PathBuf, str::FromStr};
+
 use bio_files::orca::{
     Keyword, OrcaInput, OrcaOutput,
     basis_sets::{BasisSet, BasisSetCategory},
     dynamics::{Dynamics, Thermostat},
     method::Method,
 };
-use dynamics::MdState;
-use dynamics::snapshot::{HydrogenBond, Snapshot};
+use dynamics::{
+    MdState,
+    snapshot::{HydrogenBond, Snapshot},
+};
 use egui::{Color32, ComboBox, RichText, Ui};
 use graphics::{EngineUpdates, Scene};
 use lin_alg::f32::Vec3;
-use std::path::PathBuf;
-use std::str::FromStr;
+
+use crate::{
+    State, label, orca,
+    ui::{COL_SPACING, COLOR_ACTION, COLOR_ACTIVE, md::md_setup, misc},
+    util::{handle_err, handle_success},
+};
 
 fn keyword_toggle(
     input: &mut OrcaInput,
@@ -44,7 +46,7 @@ fn keyword_toggle(
     }
 }
 
-pub(super) fn orca_input(
+pub(in crate::ui) fn orca_input(
     state: &mut State,
     scene: &mut Scene,
     engine_updates: &mut EngineUpdates,
@@ -244,7 +246,7 @@ pub(super) fn orca_input(
 
                 if state.volatile.orca_avail {
                     if ui
-                        .button(RichText::new("Run").color(Color32::GOLD))
+                        .button(RichText::new("Run").color(COLOR_ACTION))
                         .on_hover_text(
                             "Run ORCA using the settings here, on the active molecule.",
                         )
@@ -267,7 +269,7 @@ pub(super) fn orca_input(
                     //             );
 
                     if ui
-                        .button(RichText::new("Assign MBIS q").color(Color32::GOLD))
+                        .button(RichText::new("Assign MBIS q").color(COLOR_ACTION))
                         .on_hover_text(
                             "Compute and assign MBIS partial charges for this molecule. This is an accurate QM method, but is very \
                             slow; it may take 10 minutes or longer for a small organic molecule. This replaces any existing partial\
@@ -283,7 +285,7 @@ pub(super) fn orca_input(
                     }
 
                     if ui
-                        .button(RichText::new("Run ab-initio MD").color(Color32::GOLD))
+                        .button(RichText::new("Run ab-initio MD").color(COLOR_ACTION))
                         .on_hover_text(
                             "Run MD using ORCA. This is much slower than our normal MD system, but \
                              more accurate Uses settings from the MD section of the UI as well, including number of steps,\

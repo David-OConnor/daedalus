@@ -57,7 +57,7 @@ pub fn set_fog_dist(cam: &mut Camera, dist: u16) {
     cam.fog_end = fog_end;
 }
 
-pub fn cam_reset_controls(
+pub(in crate::ui) fn cam_reset_controls(
     state: &mut State,
     scene: &mut Scene,
     ui: &mut Ui,
@@ -95,7 +95,7 @@ pub fn cam_reset_controls(
     }
 }
 
-pub fn cam_controls(
+pub(in crate::ui) fn cam_controls(
     scene: &mut Scene,
     state: &mut State,
     engine_updates: &mut EngineUpdates,
@@ -237,7 +237,7 @@ pub fn cam_controls(
     }
 }
 
-pub fn cam_snapshots(
+pub(in crate::ui) fn cam_snapshots(
     state: &mut State,
     scene: &mut Scene,
     engine_updates: &mut EngineUpdates,
@@ -301,7 +301,7 @@ pub fn cam_snapshots(
     });
 }
 
-pub fn move_cam_to_active_mol(
+pub(in crate::ui) fn move_cam_to_active_mol(
     state: &mut State,
     scene: &mut Scene,
     look_to_beyond: lin_alg::f64::Vec3,

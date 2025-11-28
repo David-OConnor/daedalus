@@ -1,4 +1,6 @@
-//! Can create lipids: Common ones by name, and ones built to specification.
+//! Can create lipids: Common ones by name, and ones built to specification. We load molecule data
+//! from templates in Amber's `Lipid21.dat`, and can combine the head and tail groups provided there
+//! as required, for example to create phospholipids.
 //!
 //! [LIPID MAPS Structure Database (LMSD)](https://www.lipidmaps.org/databases/lmsd/overview?utm_source=chatgpt.com)
 //!
@@ -9,7 +11,7 @@
 //! - E-coli membrane: PE:PG:CL: 70-80:20-25:5-10 (mol%)
 //! - Staphy aureus: PG:CL: 80:20
 //! Bacillus subtilis: PE:PG:CL: 40-60%, 5-40%, 8-18%
-
+//!
 // notes for when constructing liposomes and LNPs:
 // "
 // Classic liposomes are almost always built from “normal” phospholipids (PC, PE, PS, PG, sometimes PA),
@@ -25,18 +27,24 @@
 use std::{
     f64::consts::TAU,
     fmt::{Display, Formatter},
+    io,
+    time::Instant,
 };
 
 use bio_files::{
     BondType::{self, *},
     LipidStandard, ResidueEnd, ResidueType,
+    mol_templates::load_templates,
 };
+use dynamics::params::LIPID_21_LIB;
 use lin_alg::f64::{Quaternion, Vec3, Y_VEC, Z_VEC};
 use na_seq::Element::{self, *};
 use rand::{Rng, distr::Uniform, rngs::ThreadRng};
 
-use crate::molecule::{
-    Atom, Bond, MolGenericRef, MolGenericTrait, MolType, MoleculeCommon, Residue,
+use crate::{
+    State,
+    molecule::{Atom, Bond, MolGenericRef, MolGenericTrait, MolType, MoleculeCommon, Residue},
+    util::handle_err,
 };
 
 // From Amber Lipid21.lib. This joins the phospholipid head to the tail.
@@ -121,7 +129,7 @@ fn find_atom_by_tir(m: &MoleculeLipid, name: &str) -> usize {
     m.common
         .atoms
         .iter()
-        .position(|a| a.type_in_res_lipid.as_deref() == Some(name))
+        .position(|a| a.type_in_res_general.as_deref() == Some(name))
         .expect(name)
 }
 
@@ -152,6 +160,9 @@ fn find_c12_pos(head: &MoleculeLipid, c11_posit: Vec3, o11_name: &str, o12_name:
 /// Moves all atoms so that the head's phosphorous is at the origin.
 ///
 /// Note: This makes new names like "PE(16:0/18:1) — also written as PE(PA/OL) or 1-palmitoyl-2-oleoyl-PE."
+///
+/// todo: Note: We could use the join data from templates instead of manually selecting them
+/// todo by type-in-res, for our TIR approach is working as-is, so no need to change.
 fn combine_head_tail(
     head: &mut MoleculeLipid,
     mut tail_0: MoleculeLipid,
@@ -191,11 +202,11 @@ fn combine_head_tail(
         for (i, atom) in tail_1.common.atoms.iter_mut().enumerate() {
             atom.posit = tail_1.common.atom_posits[i];
             // Convert C11 to C21 etc; this is consistent with the head naming of this chain.
-            let mut tir = atom.type_in_res_lipid.clone().unwrap();
+            let mut tir = atom.type_in_res_general.clone().unwrap();
             if tir.starts_with('C') {
                 tir.replace_range(1..2, "2"); // Instead of 1.
             }
-            atom.type_in_res_lipid = Some(tir);
+            atom.type_in_res_general = Some(tir);
         }
         // PG has a (relative to PE) reversed head
         if &head.common_name == "PGS" || &head.common_name == "PGR" {
@@ -659,7 +670,6 @@ impl MolGenericTrait for MoleculeLipid {
     }
 }
 
-// `ForceFieldParams` should be loaded from lipid21 or similar.
 impl MoleculeLipid {
     /// We assume common.ident is the Amber lipid21 mol ID.
     pub fn populate_db_ids(&mut self) {
@@ -765,4 +775,51 @@ impl MoleculeLipid {
             _ => (),
         }
     }
+}
+
+/// Create lipid molecules from Amber's Lipids21.lib, which is included in the binary.
+pub fn load_lipid_templates() -> io::Result<Vec<MoleculeLipid>> {
+    println!("Loading lipid templates...");
+    let start = Instant::now();
+    let mut result = Vec::new();
+
+    let templates = load_templates(LIPID_21_LIB)?;
+    for (ident, template) in templates {
+        // todo: Move this to molecule mod A/R, e.g. lipid mod.
+        let mut mol = MoleculeLipid {
+            // t
+            common: MoleculeCommon {
+                ident,
+                ..Default::default()
+            },
+            lmsd_id: String::new(),
+            hmdb_id: String::new(),
+            kegg_id: String::new(),
+            common_name: String::new(),
+            residues: Vec::new(),
+        };
+        for atom in template.atoms {
+            mol.common.atoms.push((&atom).into());
+        }
+
+        for bond in template.bonds {
+            mol.common
+                .bonds
+                .push(Bond::from_generic(&bond, &mol.common.atoms).unwrap());
+        }
+
+        mol.common.build_adjacency_list();
+        mol.common.atom_posits = mol.common.atoms.iter().map(|a| a.posit).collect();
+
+        mol.populate_db_ids();
+
+        result.push(mol);
+    }
+
+    result.sort_by_key(|mol| mol.common.ident.clone());
+
+    let elapsed = start.elapsed().as_millis();
+    println!("Loaded lipid templates in {elapsed:.1}ms");
+
+    Ok(result)
 }

@@ -33,6 +33,7 @@ use crate::{
         cam::{cam_controls, cam_snapshots},
         misc::section_box,
         mol_data::{display_mol_data_peptide, metadata_disp},
+        mol_type_tools::mol_type_toolbars,
         orca::orca_input,
         rama_plot::plot_rama,
         recent_files::recent_files,
@@ -53,6 +54,7 @@ mod md;
 pub mod misc;
 mod mol_data;
 mod mol_editor;
+mod mol_type_tools;
 mod orca;
 mod rama_plot;
 mod recent_files;
@@ -65,8 +67,8 @@ static INIT_COMPLETE: AtomicBool = AtomicBool::new(false);
 pub static UI_HEIGHT_CHANGED: AtomicBool = AtomicBool::new(false);
 pub static UI_HEIGHT_CHANGE_DELAY: AtomicBool = AtomicBool::new(false);
 
-pub const ROW_SPACING: f32 = 10.;
-pub const COL_SPACING: f32 = 30.;
+pub(in crate::ui) const ROW_SPACING: f32 = 10.;
+pub(in crate::ui) const COL_SPACING: f32 = 30.;
 
 const DENS_ISO_MIN: f32 = 0.6;
 const DENS_ISO_MAX: f32 = 3.0;
@@ -74,11 +76,14 @@ const DENS_ISO_MAX: f32 = 3.0;
 const NEARBY_THRESH_MIN: u16 = 5;
 const NEARBY_THRESH_MAX: u16 = 60;
 
-pub const COLOR_INACTIVE: Color32 = Color32::GRAY;
-pub const COLOR_ACTIVE: Color32 = Color32::LIGHT_GREEN;
-pub const COLOR_HIGHLIGHT: Color32 = Color32::LIGHT_BLUE;
-pub const COLOR_ACTIVE_RADIO: Color32 = Color32::LIGHT_BLUE;
-pub const _COLOR_ATTENTION: Color32 = Color32::ORANGE;
+pub(in crate::ui) const COLOR_INACTIVE: Color32 = Color32::GRAY;
+pub(in crate::ui) const COLOR_ACTIVE: Color32 = Color32::LIGHT_GREEN;
+pub(in crate::ui) const COLOR_HIGHLIGHT: Color32 = Color32::LIGHT_BLUE;
+pub(in crate::ui) const COLOR_ACTIVE_RADIO: Color32 = Color32::LIGHT_BLUE;
+pub(in crate::ui) const _COLOR_ATTENTION: Color32 = Color32::ORANGE;
+
+// Creation, simulation runs etc.
+pub(in crate::ui) const COLOR_ACTION: Color32 = Color32::GOLD;
 
 const COLOR_OUT_ERROR: Color32 = Color32::LIGHT_RED;
 const COLOR_OUT_NORMAL: Color32 = Color32::WHITE;
@@ -384,30 +389,38 @@ fn residue_search(
     }
 }
 
+/// The display for the amino acid sequence of an opened protein.
 fn add_aa_seq(selection: &mut Selection, seq_text: &str, ui: &mut Ui, redraw: &mut bool) {
     let len = seq_text.len(); // One char per res.
-    ui.horizontal_wrapped(|ui| {
-        for (i, aa) in seq_text.chars().enumerate() {
-            let color = color_viridis(i, 0, len);
-            // todo: Find a cheaper way.
-            let mut color = Color32::from_rgb(
-                (color.0 * 255.) as u8,
-                (color.1 * 255.) as u8,
-                (color.2 * 255.) as u8,
-            );
 
-            if let Selection::Residue(sel) = selection {
-                if i == *sel {
-                    color = Color32::from_rgb(255, 0, 0); // cheaper, but more maintenance than calling the const.
+    // This grey ensures that the whole viridis display range is clear, e.g. the purple
+    // parse isn't blocked by our dark background.
+    egui::Frame::none()
+        // .fill(Color32::from_rgb(200, 200, 200))
+        .show(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                for (i, aa) in seq_text.chars().enumerate() {
+                    let color = color_viridis(i, 0, len);
+                    // todo: Find a cheaper way.
+                    let mut color = Color32::from_rgb(
+                        (color.0 * 255.) as u8,
+                        (color.1 * 255.) as u8,
+                        (color.2 * 255.) as u8,
+                    );
+
+                    if let Selection::Residue(sel) = selection {
+                        if i == *sel {
+                            color = Color32::from_rgb(255, 0, 0); // cheaper, but more maintenance than calling the const.
+                        }
+                    }
+
+                    if ui.label(RichText::new(aa).color(color)).clicked() {
+                        *selection = Selection::Residue(i);
+                        *redraw = true;
+                    }
                 }
-            }
-
-            if ui.label(RichText::new(aa).color(color)).clicked() {
-                *selection = Selection::Residue(i);
-                *redraw = true;
-            }
-        }
-    });
+            });
+        });
 }
 
 pub fn view_sel_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui, include_res: bool) {
@@ -889,7 +902,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         );
 
         if state.volatile.operating_mode == OperatingMode::MolEditor {
-            mol_editor::editor(state, scene, &mut engine_updates,ui);
+            mol_editor::editor(state, scene, &mut engine_updates, ui);
 
             if let Err(e) = update_file_dialogs(state, scene, ui, &mut false, &mut false, &mut engine_updates) {
                 handle_err(&mut state.ui, format!("Problem saving file: {e:?}"));
@@ -939,7 +952,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             }
 
             let color_open_tools = if state.peptide.is_none() && state.ligands.is_empty() {
-                Color32::GOLD
+                COLOR_ACTION
             } else {
                 COLOR_INACTIVE
             };
@@ -1136,7 +1149,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 if ui.button(RichText::new("Save mol").color(color))
                     .on_hover_text("Save the active small molecule, nucleic acid, or lipid to a file.")
                     .clicked() {
-
                     mol_to_save = Some(mol.common().clone());
                 }
             }
@@ -1328,31 +1340,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         chain_selector(state, &mut redraw_peptide, ui);
 
-        ui.horizontal(|ui| {
-            if state.ui.ui_vis.lipids {
-                lipid_section(state, scene, &mut engine_updates, ui);
-            }
-
-            if let Some(mol) = &state.active_mol() && state.peptide.is_some() {
-                if let MolGenericRef::Ligand(_) = mol {
-                    ui.add_space(COL_SPACING);
-                    ui.label("Docking:");
-
-                    if ui.button(RichText::new("Dock").color(Color32::GOLD)).clicked() {
-                        // The other views make it tough to see the ligand rel the protein.
-                        // if !matches!(state.ui.mol_view, MoleculeView::SpaceFill | MoleculeView::Surface) {
-                        //     // todo: Dim peptide?
-                        //     state.ui.mol_view = MoleculeView::Surface;
-                        // }
-
-                        if let Err(e) = dock(state, state.volatile.active_mol.unwrap().1, scene, &mut engine_updates) {
-                            handle_err(&mut state.ui, format!("Problem setting up docking: {e:?}"));
-                        }
-                    }
-                }
-            }
-        });
-
+        mol_type_toolbars(state, scene, &mut engine_updates, ui);
 
         if state.ui.ui_vis.dynamics {
             md_setup(state, scene, &mut engine_updates, ui);
@@ -1414,7 +1402,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         handle_redraw(
             state,
-            scene, redraw_peptide, redraw_lig, redraw_na, redraw_lipid, reset_cam, &mut engine_updates
+            scene, redraw_peptide, redraw_lig, redraw_na, redraw_lipid, reset_cam, &mut engine_updates,
         )
     });
 
@@ -1466,96 +1454,6 @@ pub fn flag_btn(val: &mut bool, label: &str, hover_text: &str, ui: &mut Ui) {
     {
         *val = !(*val);
     }
-}
-
-/// Add and manage lipids
-pub fn lipid_section(
-    state: &mut State,
-    scene: &mut Scene,
-    engine_updates: &mut EngineUpdates,
-    ui: &mut Ui,
-) {
-    if state.ui.lipid_to_add >= state.lipid_templates.len() {
-        eprintln!("Error: Not enough lipid templates");
-        return;
-    }
-
-    section_box().show(ui, |ui| {
-        ui.horizontal(|ui| {
-            ui.label("Add lipids:");
-
-            let add_standard_text = state.lipid_templates[state.ui.lipid_to_add]
-                .common
-                .ident
-                .clone();
-
-            ComboBox::from_id_salt(102)
-                .width(90.)
-                .selected_text(state.ui.lipid_shape.to_string())
-                .show_ui(ui, |ui| {
-                    for shape in [LipidShape::Free, LipidShape::Membrane, LipidShape::Lnp] {
-                        ui.selectable_value(&mut state.ui.lipid_shape, shape, shape.to_string());
-                    }
-                })
-                .response
-                .on_hover_text("Add lipids in this pattern");
-
-            if state.ui.lipid_shape == LipidShape::Free {
-                ComboBox::from_id_salt(101)
-                    .width(30.)
-                    .selected_text(add_standard_text)
-                    .show_ui(ui, |ui| {
-                        for (i, mol) in state.lipid_templates.iter().enumerate() {
-                            ui.selectable_value(&mut state.ui.lipid_to_add, i, &mol.common.ident);
-                        }
-                    })
-                    .response
-                    .on_hover_text("Add this lipid to the scene.");
-            }
-
-            num_field(&mut state.ui.lipid_mol_count, "# mols", 36, ui);
-
-            // todo: Multiple and sets once this is validated
-            if ui.button("+").clicked() {
-                // Place in front of the camera.
-                let center = scene.camera.position
-                    + scene.camera.orientation.rotate_vec(FWD_VEC)
-                        * crate::cam_misc::MOVE_TO_CAM_DIST;
-
-                state.lipids.extend(make_bacterial_lipids(
-                    state.ui.lipid_mol_count as usize,
-                    center.into(),
-                    state.ui.lipid_shape,
-                    &state.lipid_templates,
-                ));
-                //
-                // let mut mol = state.lipid_templates[state.ui.lipid_to_add].clone();
-                // for p in &mut mol.common.atom_posits {
-                //     *p = *p + Vec3::new_zero();
-                // }
-                //
-                // state.lipids.push(mol);
-
-                draw_all_lipids(state, scene);
-                engine_updates.entities = EntityUpdate::All;
-            }
-
-            if !state.lipids.is_empty() {
-                if ui
-                    .button(RichText::new("Close all lipids").color(Color32::LIGHT_RED))
-                    .clicked()
-                {
-                    state.lipids = Vec::new();
-                    scene
-                        .entities
-                        .retain(|e| e.class != EntityClass::Lipid as u32);
-                    clear_mol_entity_indices(state, None);
-
-                    engine_updates.entities = EntityUpdate::All;
-                }
-            }
-        });
-    });
 }
 
 fn draw_smiles(v: &str, ui: &mut Ui) {

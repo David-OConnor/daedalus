@@ -180,7 +180,7 @@ impl MoleculeCommon {
                             posit: Vec3::new(0.0, 0.0, 0.0),
                             element,
                             type_in_res: None,
-                            type_in_res_lipid: None,
+                            type_in_res_general: None,
                             force_field_type: None,
                             role: None,
                             residue: None,
