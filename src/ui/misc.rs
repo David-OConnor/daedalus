@@ -4,6 +4,7 @@ use egui::{Color32, CornerRadius, Frame, Margin, RichText, Slider, Stroke, Ui};
 use graphics::{EngineUpdates, EntityUpdate, Scene};
 const COLOR_SECTION_BOX: Color32 = Color32::from_rgb(100, 100, 140);
 
+use crate::drawing_wrappers::draw_all_nucleic_acids;
 use crate::{
     State,
     drawing::{draw_peptide, draw_water},
@@ -112,6 +113,13 @@ pub fn dynamics_player(
                     .collect();
                 let lipids_len = lipids_md.len();
 
+                let na_md: Vec<_> = state
+                    .nucleic_acids
+                    .iter_mut()
+                    .filter(|l| l.common.selected_for_md)
+                    .collect();
+                let na_len = na_md.len();
+
                 let peptide_md = match &mut state.peptide {
                     Some(m) => {
                         if m.common.selected_for_md {
@@ -123,7 +131,7 @@ pub fn dynamics_player(
                     None => None,
                 };
 
-                change_snapshot(peptide_md, ligs_md, lipids_md, snap);
+                change_snapshot(peptide_md, ligs_md, lipids_md, na_md, snap);
                 // todo: Only if at least one lig is involved.
                 if ligs_len > 0 {
                     draw_all_ligs(state, scene);
@@ -131,6 +139,10 @@ pub fn dynamics_player(
 
                 if lipids_len > 0 {
                     draw_all_lipids(state, scene);
+                }
+
+                if na_len > 0 {
+                    draw_all_nucleic_acids(state, scene);
                 }
 
                 if let Some(mol) = &state.peptide {

@@ -1031,8 +1031,6 @@ impl MoleculePeptide {
             }
         }
 
-        println!("A"); // todo temp
-
         // if !alternate_conformations.is_empty() {
         //     result.alternate_conformations = Some(alternate_conformations);
         // }
@@ -1063,8 +1061,6 @@ impl MoleculePeptide {
             m.metadata,
             path,
         );
-
-        println!("D"); // todo temp
 
         result.experimental_method = m.experimental_method.clone();
         result.secondary_structure = m.secondary_structure.clone();

@@ -36,6 +36,7 @@ pub const STATIC_ATOM_DIST_THRESH: f64 = 14.;
 // noticeably increase total computation time. e.g. the frame time is small compared to this many
 // MD steps for a small molecule + water sim.
 const MD_STEPS_PER_APPLICATION_FRAME: usize = 10;
+
 pub fn post_run_cleanup(state: &mut State, scene: &mut Scene, engine_updates: &mut EngineUpdates) {
     if state.mol_dynamics.is_none() {
         eprintln!("Can't run MD cleanup; MD state is None");
@@ -58,11 +59,18 @@ pub fn post_run_cleanup(state: &mut State, scene: &mut Scene, engine_updates: &m
             .filter(|l| l.common.selected_for_md)
             .collect();
 
+        let nucleic_acids: Vec<_> = state
+            .nucleic_acids
+            .iter_mut()
+            .filter(|l| l.common.selected_for_md)
+            .collect();
+
         let md = state.mol_dynamics.as_mut().unwrap();
         reassign_snapshot_indices(
             p,
             &ligs,
             &lipids,
+            &nucleic_acids,
             &mut md.snapshots,
             &state.volatile.md_peptide_selected,
         );
@@ -81,22 +89,17 @@ pub fn post_run_cleanup(state: &mut State, scene: &mut Scene, engine_updates: &m
             &snap.water_h0_posits,
             &snap.water_h1_posits,
             state.ui.visibility.hide_water,
-            // state,
         );
     }
     draw_peptide(state, scene);
 
     state.ui.current_snapshot = 0;
 
-    // engine_updates.entities = true;
     engine_updates.entities = EntityUpdate::All;
 }
 pub fn build_and_run_dynamics(
     dev: &ComputationDevice,
     mols: &[(FfMolType, &MoleculeCommon)],
-    // ligs: Vec<&MoleculeSmall>,
-    // lipids: Vec<&MoleculeLipid>,
-    // nucleic_acids: Vec<&MoleculeNucleicAcid>,
     peptide: Option<&MoleculePeptide>,
     param_set: &FfParamSet,
     mol_specific_params: &HashMap<String, ForceFieldParams>,
@@ -109,9 +112,6 @@ pub fn build_and_run_dynamics(
     let md_state = build_dynamics(
         dev,
         mols,
-        // &ligs,
-        // &lipids,
-        // &nucleic_acids,
         peptide,
         param_set,
         mol_specific_params,
@@ -131,7 +131,6 @@ pub fn build_and_run_dynamics(
 pub fn filter_peptide_atoms(
     set: &mut HashSet<(usize, usize)>,
     pep: &MoleculePeptide,
-    // ligs: &[&MoleculeSmall],
     mols_non_pep: &[(FfMolType, &MoleculeCommon)],
     only_near_lig: Option<f64>,
 ) -> Vec<AtomGeneric> {
@@ -173,9 +172,6 @@ pub fn filter_peptide_atoms(
 pub fn build_dynamics(
     dev: &ComputationDevice,
     mols_in: &[(FfMolType, &MoleculeCommon)],
-    // ligs: &[&MoleculeSmall],
-    // lipids: &[&MoleculeLipid],
-    // nucleic_acids: &[&MoleculeNucleicAcid],
     peptide: Option<&MoleculePeptide>,
     param_set: &FfParamSet,
     mol_specific_params: &HashMap<String, ForceFieldParams>,
@@ -201,11 +197,17 @@ pub fn build_dynamics(
         let atoms_gen: Vec<_> = mol.atoms.iter().map(|a| a.to_generic()).collect();
         let bonds_gen: Vec<_> = mol.bonds.iter().map(|b| b.to_generic()).collect();
 
-        let Some(msp) = mol_specific_params.get(&mol.ident) else {
-            return Err(ParamError::new(&format!(
-                "Missing molecule-specific parameters for  {}",
-                mol.ident
-            )));
+        let msp = match mol_specific_params.get(&mol.ident) {
+            Some(v) => Some(v.clone()),
+            None => {
+                if *ff_mol_type == FfMolType::SmallOrganic {
+                    return Err(ParamError::new(&format!(
+                        "Missing molecule-specific parameters for  {}",
+                        mol.ident
+                    )));
+                }
+                None
+            }
         };
 
         mols.push(MolDynamics {
@@ -217,78 +219,9 @@ pub fn build_dynamics(
             adjacency_list: Some(mol.adjacency_list.clone()),
             static_: false,
             bonded_only: false,
-            mol_specific_params: Some(msp.clone()),
+            mol_specific_params: msp,
         });
     }
-
-    // for mol in ligs {
-    //     if !mol.common.selected_for_md {
-    //         continue;
-    //     }
-    //     let atoms_gen: Vec<_> = mol.common.atoms.iter().map(|a| a.to_generic()).collect();
-    //     let bonds_gen: Vec<_> = mol.common.bonds.iter().map(|b| b.to_generic()).collect();
-    //
-    //     let Some(msp) = mol_specific_params.get(&mol.common.ident) else {
-    //         return Err(ParamError::new(&format!(
-    //             "Missing molecule-specific parameters for  {}",
-    //             mol.common.ident
-    //         )));
-    //     };
-    //
-    //     mols.push(MolDynamics {
-    //         ff_mol_type: FfMolType::SmallOrganic,
-    //         atoms: atoms_gen,
-    //         atom_posits: Some(mol.common.atom_posits.clone()),
-    //         atom_init_velocities: None,
-    //         bonds: bonds_gen,
-    //         adjacency_list: Some(mol.common.adjacency_list.clone()),
-    //         static_: false,
-    //         bonded_only: false,
-    //         mol_specific_params: Some(msp.clone()),
-    //     });
-    // }
-    //
-    // // todo: DRY
-    // for mol in lipids {
-    //     if !mol.common.selected_for_md {
-    //         continue;
-    //     }
-    //     let atoms_gen: Vec<_> = mol.common.atoms.iter().map(|a| a.to_generic()).collect();
-    //     let bonds_gen: Vec<_> = mol.common.bonds.iter().map(|b| b.to_generic()).collect();
-    //
-    //     mols.push(MolDynamics {
-    //         ff_mol_type: FfMolType::Lipid,
-    //         atoms: atoms_gen,
-    //         atom_posits: Some(mol.common.atom_posits.clone()),
-    //         atom_init_velocities: None,
-    //         bonds: bonds_gen,
-    //         adjacency_list: Some(mol.common.adjacency_list.clone()),
-    //         static_: false,
-    //         bonded_only: false,
-    //         mol_specific_params: None,
-    //     });
-    // }
-    //
-    // // todo: DRY
-    // for mol in nucleic_acids {
-    //     if !mol.common.selected_for_md {
-    //         continue;
-    //     }
-    //     let atoms_gen: Vec<_> = mol.common.atoms.iter().map(|a| a.to_generic()).collect();
-    //     let bonds_gen: Vec<_> = mol.common.bonds.iter().map(|b| b.to_generic()).collect();
-    //
-    //     mols.push(MolDynamics {
-    //         ff_mol_type: FfMolType::Lipid,
-    //         atoms: atoms_gen,
-    //         atom_posits: Some(mol.common.atom_posits.clone()),
-    //         atom_init_velocities: None,
-    //         bonds: bonds_gen,
-    //         adjacency_list: Some(mol.common.adjacency_list.clone()),
-    //         static_: false,
-    //         bonded_only: false,
-    //         mol_specific_params: None,
-    //     });
-    // }
 
     if let Some(p) = peptide {
         // We assume hetero atoms are ligands, water etc, and are not part of the protein.
@@ -387,6 +320,7 @@ pub fn reassign_snapshot_indices(
     pep: &MoleculePeptide,
     ligs: &[&mut MoleculeSmall],
     lipids: &[&mut MoleculeLipid],
+    nucleic_acids: &[&mut MoleculeNucleicAcid],
     snapshots: &mut [Snapshot],
     pep_atom_set: &HashSet<(usize, usize)>,
 ) {
@@ -407,7 +341,13 @@ pub fn reassign_snapshot_indices(
         .map(|l| l.common.atoms.len())
         .sum();
 
-    let pep_start_i = lig_atom_count + lipid_atom_count;
+    let na_atom_count: usize = nucleic_acids
+        .iter()
+        .filter(|l| l.common.selected_for_md)
+        .map(|l| l.common.atoms.len())
+        .sum();
+
+    let pep_start_i = lig_atom_count + lipid_atom_count + na_atom_count;
 
     // Rebuild each snapshot's atom_posits: [ligands as-is] + [full peptide with holes filled]
     for snap in snapshots {
@@ -487,6 +427,7 @@ pub fn change_snapshot(
     peptide: Option<&mut MoleculePeptide>,
     ligs: Vec<&mut MoleculeSmall>,
     lipids: Vec<&mut MoleculeLipid>,
+    nucleic_acids: Vec<&mut MoleculeNucleicAcid>,
     snapshot: &Snapshot,
 ) {
     let mut start_i_this_mol = 0;
@@ -496,6 +437,10 @@ pub fn change_snapshot(
     }
 
     for mol in lipids {
+        change_snapshot_helper(&mut mol.common.atom_posits, &mut start_i_this_mol, snapshot);
+    }
+
+    for mol in nucleic_acids {
         change_snapshot_helper(&mut mol.common.atom_posits, &mut start_i_this_mol, snapshot);
     }
 

@@ -128,6 +128,8 @@ fn find_template(
 ) -> io::Result<&TemplateData> {
     let mut nt_str = nt.to_str_upper();
 
+    // Note: We also have, for DNA, "neutral" templates that have an N suffix.
+    // We have many other templates for RNA. I'm not sure what they're for. Structural?
     let ident = match na_type {
         NucleicAcidType::Dna => {
             if is_first && !is_last {
