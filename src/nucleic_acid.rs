@@ -170,12 +170,47 @@ fn rotate_about_axis(posit: Vec3, pivot: Vec3, axis: Vec3, angle: f64) -> Vec3 {
     pivot + q.rotate_vec(posit - pivot)
 }
 
+/// Rotate all atoms in a single residue so that its bases align to an axis.
+fn align_bases(atoms: &mut [Atom], nt: Nucleotide, tgt_base_norm: Vec3, template: &TemplateData) {
+    // todo: Delegate this to a fn as required.
+    let (base_n_name, plane_0_name, plane_1_name) = match nt {
+        A | G => ("N9", "C8", "C4"),
+        C | T => ("N1", "C6", "C2"),
+    };
+
+    let base_n = template.find_atom_by_name(base_n_name).unwrap().posit;
+    let plane_0 = template.find_atom_by_name(plane_0_name).unwrap().posit;
+    let plane_1 = template.find_atom_by_name(plane_1_name).unwrap().posit;
+
+    // These are arbitrary; choose any bonds in the base; they share the same plane.
+    let base_rot_axis = {
+        let base_anchor = template.find_atom_by_name("C1'").unwrap().posit;
+        (base_anchor - base_n).to_normalized()
+    };
+
+    let base_plane_norm = {
+        // todo: QC sign/direction on this
+        let plane_bond_0 = (base_n - plane_0).to_normalized();
+        let plane_bond_1 = (base_n - plane_1).to_normalized();
+        (plane_bond_0.cross(plane_bond_1)).to_normalized()
+    };
+
+    // todo: QC dir
+    // This is the shortest rotation to align the bases, but it's not along the bond in question...
+    let norm_rot = Quaternion::from_unit_vecs(tgt_base_norm, base_plane_norm);
+
+    for atom in atoms {
+        // atom.posit = rotate_about_axis(atom.posit, posit_head_global, rot_axis, twist_cum);
+    }
+}
+
 fn build_single_strand(
     seq: &[Nucleotide],
     na_type: NucleicAcidType,
     posit_5p: Vec3,
     templates: &HashMap<String, TemplateData>,
     helix_phase: f64,
+    // helix_reverse: bool,
     strand_label: &str,
 ) -> io::Result<(Vec<Atom>, Vec<Bond>, Vec<Residue>)> {
     let mut atoms_out = Vec::new();
@@ -194,9 +229,15 @@ fn build_single_strand(
     // This is, except for at the 5' end, the previous O3' position.
     let mut prev_o3p = posit_5p;
 
-    // // posit_5p is where strand_0 residue 0 head lands.
-    // // Strand_1 will be opposite (phase = PI) automatically.
-    // let global_offset = posit_5p - Vec3::new(HELIX_RADIUS, 0.0, 0.0);
+    // We increment this, applying increasing (And wrapping) rotations for each
+    // nucleotide.
+    let mut twist_cum = helix_phase;
+
+    // let twist_per_nt = if helix_reverse {
+    //     -HELIX_TWIST
+    // } else {
+    //     HELIX_TWIST
+    // };
 
     for (i, &nt) in seq.iter().enumerate() {
         let is_first = i == 0;
@@ -227,9 +268,9 @@ fn build_single_strand(
             // which are part of the res we're adding.
 
             // todo: Unwrap is not ideal, but working for the templates we're using.
-            let o_0 = template.atoms[template.find_atom_i_by_name("OP1").unwrap()].posit;
-            let o_1 = template.atoms[template.find_atom_i_by_name("OP2").unwrap()].posit;
-            let o_2 = template.atoms[template.find_atom_i_by_name("O5'").unwrap()].posit;
+            let o_0 = template.find_atom_by_name("OP1").unwrap().posit;
+            let o_1 = template.find_atom_by_name("OP2").unwrap().posit;
+            let o_2 = template.find_atom_by_name("O5'").unwrap().posit;
 
             let o_3p_posit = find_tetra_posit_final(posit_head_local, o_0, o_1, o_2);
             prev_o3p + o_3p_posit
@@ -257,13 +298,10 @@ fn build_single_strand(
         let mut local_to_global_sn = HashMap::new();
 
         let rot_axis = if is_first {
-            Z_VEC // todo: QC
+            Z_VEC
         } else {
             (posit_head_global - prev_o3p).to_normalized()
         };
-
-        let twist = TAU / 8.; // todo temp
-        // let twist = if is_first { helix_phase } else { HELIX_TWIST };
 
         // This is for rotation around the P-O3' bond.
         let tail_template_sn = if !is_last {
@@ -285,11 +323,12 @@ fn build_single_strand(
             atom.residue = Some(res_i);
 
             atom.posit += translation;
+
             // We rotate all atoms in this template around the P - O3' bond.
             // We also rotate on the first template, to take phase into account, e.g. for
             // offsetting the whole helix, or for the other half.
 
-            // atom.posit = rotate_about_axis(atom.posit, posit_head_global, rot_axis, twist);
+            atom.posit = rotate_about_axis(atom.posit, posit_head_global, rot_axis, twist_cum);
 
             if tail_template_sn == Some(atom_template.serial_number) {
                 tail_global_pos = Some(atom.posit);
@@ -303,14 +342,16 @@ fn build_single_strand(
             atoms_out.push(atom);
         }
 
+        // Perform a second rotation to keep the bases aligned in plane with one another.
+        // todo: Set this norm A/R. It's the normal vec to all bases after this transform.
+        let tgt_base_norm = Z_VEC;
+        align_bases(&mut atoms_out, nt, tgt_base_norm, template);
+
+        // twist_cum += twist_per_nt;
+        twist_cum += HELIX_TWIST;
+
         res_out.push(res);
         res_i += 1;
-
-        // // Map serial numbers to indices. (Often index = sn - 1)
-        // let mut atom_index_map = HashMap::new();
-        // for (i, atom) in template.atoms.iter().enumerate() {
-        //     atom_index_map.insert(atom.serial_number, i);
-        // }
 
         for bond_template in &template.bonds {
             let atom_0_sn = *local_to_global_sn
@@ -368,8 +409,6 @@ fn build_single_strand(
                     io::Error::other("Tail attach serial missing from local->global map")
                 })?;
 
-            // prev_o3p = tail_atom.posit + translation;
-            // prev_tail_sn = Some(cur_tail_sn);
             prev_o3p = tail_global_pos.ok_or_else(|| io::Error::other("Tail atom not captured"))?;
             prev_tail_sn =
                 Some(tail_global_sn.ok_or_else(|| io::Error::other("Tail sn not captured"))?);
@@ -407,8 +446,15 @@ impl MoleculeNucleicAcid {
 
         if strands == Strands::Double && !seq.is_empty() {
             let seq2 = seq_complement(seq);
-            let (atoms2, bonds2, mut residues2) =
-                build_single_strand(&seq2, na_type, posit_5p, templates, TAU / 2., "strand_1")?;
+            let (atoms2, bonds2, mut residues2) = build_single_strand(
+                &seq2,
+                na_type,
+                posit_5p,
+                templates,
+                TAU / 2.,
+                // true,
+                "strand_1",
+            )?;
 
             let sn_offset = atoms.len() as u32;
 

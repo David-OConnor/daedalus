@@ -1031,6 +1031,8 @@ impl MoleculePeptide {
             }
         }
 
+        println!("A"); // todo temp
+
         // if !alternate_conformations.is_empty() {
         //     result.alternate_conformations = Some(alternate_conformations);
         // }
@@ -1038,8 +1040,12 @@ impl MoleculePeptide {
         println!("Populating protein hydrogens, dihedral angles, FF types and partial charges...");
         let start = Instant::now();
 
-        let (bonds_, dihedrals) = prepare_peptide_mmcif(&mut m, ff_map, ph)
-            .map_err(|e| io::Error::new(ErrorKind::InvalidData, e.descrip))?;
+        let (bonds_, dihedrals) = prepare_peptide_mmcif(&mut m, ff_map, ph).unwrap_or_else(|e| {
+            eprintln!("Error: Unable to prepare a mmCIF file. Maybe it's not a protein? {e:?}");
+            // Populate bonds directly in case of an error:
+            let bonds = create_bonds(&m.atoms);
+            (bonds, Vec::new())
+        });
 
         // todo: Speed this up?
         let end = start.elapsed().as_millis();
@@ -1057,6 +1063,8 @@ impl MoleculePeptide {
             m.metadata,
             path,
         );
+
+        println!("D"); // todo temp
 
         result.experimental_method = m.experimental_method.clone();
         result.secondary_structure = m.secondary_structure.clone();

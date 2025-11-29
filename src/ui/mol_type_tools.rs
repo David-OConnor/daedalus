@@ -176,7 +176,9 @@ pub(in crate::ui) fn na_section(
         ui.label("Seq").on_hover_text(help_text);
 
         ui.add(
-            TextEdit::singleline(&mut state.to_save.nucleic_acid.seq_to_create).desired_width(300.),
+            TextEdit::multiline(&mut state.to_save.nucleic_acid.seq_to_create)
+                .desired_width(240.)
+                .desired_rows(2),
         )
         .on_hover_text(help_text);
 

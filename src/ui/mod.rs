@@ -1305,7 +1305,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
         ui.horizontal(|ui| {
             // Show the picker, at least.
-            if !state.ligands.is_empty() {
+            if !state.ligands.is_empty() || !state.lipids.is_empty() || !state.nucleic_acids.is_empty() {
                 display_mol_data(state, scene, ui, &mut redraw_peptide, &mut redraw_lig, &mut redraw_na, &mut redraw_lipid, &mut close_active_mol, &mut engine_updates);
             }
 

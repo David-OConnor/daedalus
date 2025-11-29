@@ -624,7 +624,7 @@ fn redraw_inplace_helper(
         MolType::NucleicAcid => {
             drawing_wrappers::update_single_nucleic_acid_inplace(mol_i, state, scene);
 
-            if mol_i >= state.ligands.len() {
+            if mol_i >= state.nucleic_acids.len() {
                 eprintln!("{err}");
                 drawing_wrappers::draw_all_nucleic_acids(state, scene);
                 return;

@@ -334,8 +334,8 @@ pub(in crate::ui) fn selected_data(
 
 /// Abstracts over all molecule types. (Currently not protein though)
 fn mol_picker_one(
-    active_mol: &mut Option<((MolType, usize))>,
-    orbit_center: &mut Option<((MolType, usize))>,
+    active_mol: &mut Option<(MolType, usize)>,
+    orbit_center: &mut Option<(MolType, usize)>,
     i_mol: usize,
     mol: &mut MoleculeCommon,
     mol_type: MolType,
@@ -343,7 +343,7 @@ fn mol_picker_one(
     engine_updates: &mut EngineUpdates,
     redraw: &mut bool,
     recenter_orbit: &mut bool,
-    close: &mut Option<usize>,
+    close: &mut Option<(MolType, usize)>,
 ) {
     let help_text = "Make this molecule the active / selected one. Middle click to close it.";
 
@@ -375,7 +375,7 @@ fn mol_picker_one(
     }
 
     if sel_btn.middle_clicked() {
-        *close = Some(i_mol);
+        *close = Some((mol_type, i_mol));
     }
 
     let color_vis = if mol.visible {
@@ -484,7 +484,7 @@ fn mol_picker(
             MolType::Lipid,
             ui,
             engine_updates,
-            redraw_lig,
+            redraw_lipid,
             &mut recenter_orbit,
             &mut close,
         );
@@ -499,7 +499,7 @@ fn mol_picker(
             MolType::NucleicAcid,
             ui,
             engine_updates,
-            redraw_lig,
+            redraw_na,
             &mut recenter_orbit,
             &mut close,
         );
@@ -507,8 +507,8 @@ fn mol_picker(
 
     // todo: AAs here too?
 
-    if let Some(i_mol) = close {
-        close_mol(MolType::Ligand, i_mol, state, scene, engine_updates);
+    if let Some((mol_type, i_mol)) = close {
+        close_mol(mol_type, i_mol, state, scene, engine_updates);
     }
 
     if recenter_orbit {
