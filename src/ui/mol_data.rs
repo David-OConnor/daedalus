@@ -7,7 +7,6 @@ use egui::{Align, Color32, Layout, Popup, PopupAnchor, Pos2, RectAlign, RichText
 use graphics::{ControlScheme, EngineUpdates, EntityUpdate, Scene};
 use lin_alg::f64::Vec3;
 
-use crate::molecule::MoleculeCommon;
 use crate::{
     ManipMode, Selection, State,
     cam_misc::move_mol_to_cam,
@@ -17,7 +16,10 @@ use crate::{
     lipid::MoleculeLipid,
     mol_lig::MoleculeSmall,
     mol_manip::set_manip,
-    molecule::{Atom, Bond, MoGenericRefMut, MolGenericRef, MolIdent, MolType, Residue, aa_color},
+    molecule::{
+        Atom, Bond, MoGenericRefMut, MolGenericRef, MolIdent, MolType, MoleculeCommon, Residue,
+        aa_color,
+    },
     nucleic_acid::MoleculeNucleicAcid,
     ui::{
         COL_SPACING, COLOR_ACTION, COLOR_ACTIVE, COLOR_ACTIVE_RADIO, COLOR_HIGHLIGHT,

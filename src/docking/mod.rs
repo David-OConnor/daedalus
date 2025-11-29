@@ -242,7 +242,12 @@ fn build_dynamics_docking(
     let mut pep_set_near = HashSet::new();
 
     let near_lig_thresh: f64 = 20.; // todo: Experiment
-    let _ = filter_peptide_atoms(&mut pep_set_near, pep, &[mol], Some(near_lig_thresh));
+    let _ = filter_peptide_atoms(
+        &mut pep_set_near,
+        pep,
+        &[(FfMolType::SmallOrganic, &mol.common)],
+        Some(near_lig_thresh),
+    );
 
     let pep_start_i = mol.common.atoms.len();
     for (i, atom) in md_state.atoms.iter_mut().enumerate() {

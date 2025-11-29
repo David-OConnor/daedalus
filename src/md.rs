@@ -20,7 +20,8 @@ use crate::{
     drawing::{draw_peptide, draw_water},
     lipid::MoleculeLipid,
     mol_lig::MoleculeSmall,
-    molecule::MoleculePeptide,
+    molecule::{MolType, MoleculeCommon, MoleculePeptide},
+    nucleic_acid::MoleculeNucleicAcid,
     util::handle_success,
 };
 
@@ -92,8 +93,10 @@ pub fn post_run_cleanup(state: &mut State, scene: &mut Scene, engine_updates: &m
 }
 pub fn build_and_run_dynamics(
     dev: &ComputationDevice,
-    ligs: Vec<&MoleculeSmall>,
-    lipids: Vec<&MoleculeLipid>,
+    mols: &[(FfMolType, &MoleculeCommon)],
+    // ligs: Vec<&MoleculeSmall>,
+    // lipids: Vec<&MoleculeLipid>,
+    // nucleic_acids: Vec<&MoleculeNucleicAcid>,
     peptide: Option<&MoleculePeptide>,
     param_set: &FfParamSet,
     mol_specific_params: &HashMap<String, ForceFieldParams>,
@@ -105,8 +108,10 @@ pub fn build_and_run_dynamics(
 ) -> Result<MdState, ParamError> {
     let md_state = build_dynamics(
         dev,
-        &ligs,
-        &lipids,
+        mols,
+        // &ligs,
+        // &lipids,
+        // &nucleic_acids,
         peptide,
         param_set,
         mol_specific_params,
@@ -126,7 +131,8 @@ pub fn build_and_run_dynamics(
 pub fn filter_peptide_atoms(
     set: &mut HashSet<(usize, usize)>,
     pep: &MoleculePeptide,
-    ligs: &[&MoleculeSmall],
+    // ligs: &[&MoleculeSmall],
+    mols_non_pep: &[(FfMolType, &MoleculeCommon)],
     only_near_lig: Option<f64>,
 ) -> Vec<AtomGeneric> {
     *set = HashSet::new();
@@ -138,8 +144,8 @@ pub fn filter_peptide_atoms(
         .filter_map(|(i, a)| {
             let pass = if let Some(thresh) = only_near_lig {
                 let mut closest_dist = f64::MAX;
-                for lig in ligs {
-                    for p in &lig.common.atom_posits {
+                for lig in mols_non_pep {
+                    for p in &lig.1.atom_posits {
                         let dist = (*p - pep.common.atom_posits[i]).magnitude();
                         if dist < closest_dist {
                             closest_dist = dist;
@@ -166,8 +172,10 @@ pub fn filter_peptide_atoms(
 /// Set up MD for selected molecules.
 pub fn build_dynamics(
     dev: &ComputationDevice,
-    ligs: &[&MoleculeSmall],
-    lipids: &[&MoleculeLipid],
+    mols_in: &[(FfMolType, &MoleculeCommon)],
+    // ligs: &[&MoleculeSmall],
+    // lipids: &[&MoleculeLipid],
+    // nucleic_acids: &[&MoleculeNucleicAcid],
     peptide: Option<&MoleculePeptide>,
     param_set: &FfParamSet,
     mol_specific_params: &HashMap<String, ForceFieldParams>,
@@ -178,64 +186,114 @@ pub fn build_dynamics(
 ) -> Result<MdState, ParamError> {
     println!("Setting up dynamics...");
 
-    if ligs.is_empty() && lipids.is_empty() {
+    // if ligs.is_empty() && lipids.is_empty() {
+    if mols_in.is_empty() {
         static_peptide = false;
         peptide_only_near_lig = None;
     }
 
     let mut mols = Vec::new();
 
-    for mol in ligs {
-        if !mol.common.selected_for_md {
+    for (ff_mol_type, mol) in mols_in {
+        if !mol.selected_for_md {
             continue;
         }
-        let atoms_gen: Vec<_> = mol.common.atoms.iter().map(|a| a.to_generic()).collect();
-        let bonds_gen: Vec<_> = mol.common.bonds.iter().map(|b| b.to_generic()).collect();
+        let atoms_gen: Vec<_> = mol.atoms.iter().map(|a| a.to_generic()).collect();
+        let bonds_gen: Vec<_> = mol.bonds.iter().map(|b| b.to_generic()).collect();
 
-        let Some(msp) = mol_specific_params.get(&mol.common.ident) else {
+        let Some(msp) = mol_specific_params.get(&mol.ident) else {
             return Err(ParamError::new(&format!(
                 "Missing molecule-specific parameters for  {}",
-                mol.common.ident
+                mol.ident
             )));
         };
 
         mols.push(MolDynamics {
-            ff_mol_type: FfMolType::SmallOrganic,
+            ff_mol_type: *ff_mol_type,
             atoms: atoms_gen,
-            atom_posits: Some(mol.common.atom_posits.clone()),
+            atom_posits: Some(mol.atom_posits.clone()),
             atom_init_velocities: None,
             bonds: bonds_gen,
-            adjacency_list: Some(mol.common.adjacency_list.clone()),
+            adjacency_list: Some(mol.adjacency_list.clone()),
             static_: false,
             bonded_only: false,
             mol_specific_params: Some(msp.clone()),
         });
     }
 
-    // todo: DRY
-    for mol in lipids {
-        if !mol.common.selected_for_md {
-            continue;
-        }
-        let atoms_gen: Vec<_> = mol.common.atoms.iter().map(|a| a.to_generic()).collect();
-        let bonds_gen: Vec<_> = mol.common.bonds.iter().map(|b| b.to_generic()).collect();
-
-        mols.push(MolDynamics {
-            ff_mol_type: FfMolType::Lipid,
-            atoms: atoms_gen,
-            atom_posits: Some(mol.common.atom_posits.clone()),
-            atom_init_velocities: None,
-            bonds: bonds_gen,
-            adjacency_list: Some(mol.common.adjacency_list.clone()),
-            static_: false,
-            bonded_only: false,
-            mol_specific_params: None,
-        });
-    }
+    // for mol in ligs {
+    //     if !mol.common.selected_for_md {
+    //         continue;
+    //     }
+    //     let atoms_gen: Vec<_> = mol.common.atoms.iter().map(|a| a.to_generic()).collect();
+    //     let bonds_gen: Vec<_> = mol.common.bonds.iter().map(|b| b.to_generic()).collect();
+    //
+    //     let Some(msp) = mol_specific_params.get(&mol.common.ident) else {
+    //         return Err(ParamError::new(&format!(
+    //             "Missing molecule-specific parameters for  {}",
+    //             mol.common.ident
+    //         )));
+    //     };
+    //
+    //     mols.push(MolDynamics {
+    //         ff_mol_type: FfMolType::SmallOrganic,
+    //         atoms: atoms_gen,
+    //         atom_posits: Some(mol.common.atom_posits.clone()),
+    //         atom_init_velocities: None,
+    //         bonds: bonds_gen,
+    //         adjacency_list: Some(mol.common.adjacency_list.clone()),
+    //         static_: false,
+    //         bonded_only: false,
+    //         mol_specific_params: Some(msp.clone()),
+    //     });
+    // }
+    //
+    // // todo: DRY
+    // for mol in lipids {
+    //     if !mol.common.selected_for_md {
+    //         continue;
+    //     }
+    //     let atoms_gen: Vec<_> = mol.common.atoms.iter().map(|a| a.to_generic()).collect();
+    //     let bonds_gen: Vec<_> = mol.common.bonds.iter().map(|b| b.to_generic()).collect();
+    //
+    //     mols.push(MolDynamics {
+    //         ff_mol_type: FfMolType::Lipid,
+    //         atoms: atoms_gen,
+    //         atom_posits: Some(mol.common.atom_posits.clone()),
+    //         atom_init_velocities: None,
+    //         bonds: bonds_gen,
+    //         adjacency_list: Some(mol.common.adjacency_list.clone()),
+    //         static_: false,
+    //         bonded_only: false,
+    //         mol_specific_params: None,
+    //     });
+    // }
+    //
+    // // todo: DRY
+    // for mol in nucleic_acids {
+    //     if !mol.common.selected_for_md {
+    //         continue;
+    //     }
+    //     let atoms_gen: Vec<_> = mol.common.atoms.iter().map(|a| a.to_generic()).collect();
+    //     let bonds_gen: Vec<_> = mol.common.bonds.iter().map(|b| b.to_generic()).collect();
+    //
+    //     mols.push(MolDynamics {
+    //         ff_mol_type: FfMolType::Lipid,
+    //         atoms: atoms_gen,
+    //         atom_posits: Some(mol.common.atom_posits.clone()),
+    //         atom_init_velocities: None,
+    //         bonds: bonds_gen,
+    //         adjacency_list: Some(mol.common.adjacency_list.clone()),
+    //         static_: false,
+    //         bonded_only: false,
+    //         mol_specific_params: None,
+    //     });
+    // }
 
     if let Some(p) = peptide {
         // We assume hetero atoms are ligands, water etc, and are not part of the protein.
-        let atoms = filter_peptide_atoms(pep_atom_set, p, ligs, peptide_only_near_lig);
+        // let atoms = filter_peptide_atoms(pep_atom_set, p, ligs, peptide_only_near_lig);
+        let atoms = filter_peptide_atoms(pep_atom_set, p, mols_in, peptide_only_near_lig);
         println!(
             "Peptide atom count: {}. Set count: {}",
             atoms.len(),

@@ -1,5 +1,6 @@
 use dynamics::{
-    ComputationDevice, HydrogenConstraint, Integrator, MdConfig, SimBoxInit, snapshot::Snapshot,
+    ComputationDevice, FfMolType, HydrogenConstraint, Integrator, MdConfig, SimBoxInit,
+    snapshot::Snapshot,
 };
 use egui::{Color32, ComboBox, RichText, TextEdit, Ui};
 use graphics::{EngineUpdates, Scene};
@@ -46,11 +47,13 @@ pub fn md_setup(
                         l.common.selected_for_md = !prev_val;
                     }
                 }
-
-
             }
 
             for mol in &mut state.ligands {
+                flag_btn(&mut mol.common.selected_for_md, &mol.common.ident, "Toggle if we use this molecule for MD.", ui);
+            }
+
+            for mol in &mut state.nucleic_acids {
                 flag_btn(&mut mol.common.selected_for_md, &mol.common.ident, "Toggle if we use this molecule for MD.", ui);
             }
 
@@ -68,7 +71,7 @@ pub fn md_setup(
                 // Check that we have FF params and mol-specific parameters.
                 for lig in &state.ligands {
                     if !lig.common.selected_for_md {
-                        continue
+                        continue;
                     }
                     if !lig.ff_params_loaded || !lig.frcmod_loaded {
                         state.ui.popup.show_get_geostd = true;
@@ -90,6 +93,19 @@ pub fn md_setup(
                     // mut so we can move their posits in the initial snapshot change.
                     let ligs: Vec<_> = state.ligands.iter().filter(|l| l.common.selected_for_md).collect();
                     let lipids: Vec<_> = state.lipids.iter().filter(|l| l.common.selected_for_md).collect();
+                    let nucleic_acids: Vec<_> = state.nucleic_acids.iter().filter(|l| l.common.selected_for_md).collect();
+
+                    let mut mols = Vec::new();
+                    for m in &ligs {
+                        mols.push((FfMolType::SmallOrganic, &m.common));
+                    }
+                    for m in &lipids {
+                        mols.push((FfMolType::Lipid, &m.common));
+                    }
+                    // todo: You must specify DNA or RNA here!
+                    for m in &nucleic_acids {
+                        mols.push((FfMolType::Dna, &m.common));
+                    }
 
                     let mol = match &state.peptide {
                         Some(m) => if m.common.selected_for_md { Some(m) } else { None },
@@ -103,8 +119,10 @@ pub fn md_setup(
                     };
                     match build_and_run_dynamics(
                         &state.dev,
-                        ligs,
-                        lipids,
+                        &mols,
+                        // ligs,
+                        // lipids,
+                        // nucleic_acids,
                         mol,
                         &state.ff_param_set,
                         &state.lig_specific_params,
@@ -169,7 +187,7 @@ pub fn md_setup(
                     state.volatile.md_runtime = state.to_save.num_md_steps as f32 * v;
                 }
             }
-            ui.add_space(COL_SPACING/2.);
+            ui.add_space(COL_SPACING / 2.);
 
             {
                 let help_text = "Set the integrator to use for molecular dynamics. Verlet Velocity is a good default.";
@@ -197,14 +215,14 @@ pub fn md_setup(
                     if let Ok(v) = &mut state.ui.md.langevin_γ.parse::<f32>() {
                         match state.to_save.md_config.integrator {
                             // Integrator::Langevin { gamma: _ } => state.to_save.md_config.integrator = Integrator::Langevin { gamma: *v},
-                            Integrator::LangevinMiddle { gamma: _} => state.to_save.md_config.integrator = Integrator::LangevinMiddle { gamma: *v},
+                            Integrator::LangevinMiddle { gamma: _ } => state.to_save.md_config.integrator = Integrator::LangevinMiddle { gamma: *v },
                             _ => ()
                         }
                     }
                 }
             }
 
-            ui.add_space(COL_SPACING/2.);
+            ui.add_space(COL_SPACING / 2.);
 
             // todo: A/R
             // ui.checkbox(&mut state.to_save.md_config.zero_com_drift, "Zero drift")
@@ -215,7 +233,7 @@ pub fn md_setup(
                 .add_sized([30., Ui::available_height(ui)], TextEdit::singleline(&mut state.ui.md.pressure_input))
                 .changed()
             {
-                if let Ok(v) =&mut state.ui.md.pressure_input.parse::<f32>() {
+                if let Ok(v) = &mut state.ui.md.pressure_input.parse::<f32>() {
                     state.to_save.md_config.pressure_target = *v;
                 }
             }
@@ -225,7 +243,7 @@ pub fn md_setup(
                 .add_sized([30., Ui::available_height(ui)], TextEdit::singleline(&mut state.ui.md.temp_input))
                 .changed()
             {
-                if let Ok(v) =&mut state.ui.md.temp_input.parse::<f32>() {
+                if let Ok(v) = &mut state.ui.md.temp_input.parse::<f32>() {
                     state.to_save.md_config.temp_target = *v;
                 }
             }
@@ -245,7 +263,7 @@ pub fn md_setup(
                     .response
                     .on_hover_text(help_text);
             }
-            ui.add_space(COL_SPACING/2.);
+            ui.add_space(COL_SPACING / 2.);
 
             // todo: Add snapshot cfg
             // num_field(&mut state.to_save.md_config.snapshot_ratio_memory, "Snapshot ratio:", 22, ui);
@@ -280,7 +298,7 @@ pub fn md_setup(
             }
 
 
-            ui.add_space(COL_SPACING/2.);
+            ui.add_space(COL_SPACING / 2.);
             ui.label(format!("Runtime: {:.1} ps", state.volatile.md_runtime));
 
             if let Some(md) = &state.mol_dynamics {
@@ -288,7 +306,6 @@ pub fn md_setup(
                     energy_disp(&md.snapshots[state.ui.current_snapshot], ui);
                 }
             }
-
         });
     });
 

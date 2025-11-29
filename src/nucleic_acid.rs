@@ -4,6 +4,8 @@
 
 // todo: Load Amber FF params for nucleic acids.
 
+use std::{collections::HashMap, f64::consts::TAU, fmt::Display, io, time::Instant};
+
 use bincode::{Decode, Encode};
 use bio_files::{
     BondType, ResidueEnd, ResidueType,
@@ -20,7 +22,6 @@ use na_seq::{
     Nucleotide::{self, *},
     seq_complement,
 };
-use std::{collections::HashMap, f64::consts::TAU, fmt::Display, io, time::Instant};
 
 use crate::{
     State, Templates,

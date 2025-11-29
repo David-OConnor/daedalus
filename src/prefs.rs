@@ -22,10 +22,11 @@ use lin_alg::f64::Vec3;
 
 use crate::{
     CamSnapshot, LipidUi, MsaaSetting, NucleicAcidUi, Selection, State, ViewSelLevel, Visibility,
+    docking::DockingSite,
     drawing::MoleculeView,
-    inputs::{MOVEMENT_SENS, ROTATE_SENS},
+    inputs::{MOVEMENT_SENS, ROTATE_SENS, SENS_MOL_MOVE_SCROLL},
+    molecule::MolIdent,
 };
-use crate::{docking::DockingSite, inputs::SENS_MOL_MOVE_SCROLL, molecule::MolIdent};
 
 pub const DEFAULT_PREFS_FILE: &str = "daedalus_prefs.dae";
 

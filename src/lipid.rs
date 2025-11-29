@@ -24,6 +24,13 @@
 // Use LIPID21 for DSPC/CHL; GAFF2 for PEG.
 //"
 
+use std::{
+    f64::consts::TAU,
+    fmt::{Display, Formatter},
+    io,
+    time::Instant,
+};
+
 use bincode::{Decode, Encode};
 use bio_files::{
     BondType::{self, *},
@@ -34,12 +41,6 @@ use dynamics::params::LIPID_21_LIB;
 use lin_alg::f64::{Quaternion, Vec3, Y_VEC, Z_VEC};
 use na_seq::Element::{self, *};
 use rand::{Rng, distr::Uniform, rngs::ThreadRng};
-use std::{
-    f64::consts::TAU,
-    fmt::{Display, Formatter},
-    io,
-    time::Instant,
-};
 
 use crate::{
     State,
