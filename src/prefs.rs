@@ -21,13 +21,7 @@ use graphics::{
 use lin_alg::f64::Vec3;
 
 use crate::{
-    CamSnapshot,
-    MsaaSetting,
-    Selection,
-    State,
-    ViewSelLevel,
-    Visibility,
-    // docking::{ConformationType, DockingSite},
+    CamSnapshot, LipidUi, MsaaSetting, NucleicAcidUi, Selection, State, ViewSelLevel, Visibility,
     drawing::MoleculeView,
     inputs::{MOVEMENT_SENS, ROTATE_SENS},
 };
@@ -134,7 +128,10 @@ impl OpenHistory {
 /// We maintain some of the state that is saved in the preferences file here, to keep
 /// the save/load state streamlined, instead of in an intermediate struct between main state, and
 /// saving/loading.
-#[derive(Debug, Clone, PartialEq, Encode, Decode)]
+///
+/// Note that this contains things which often fit cleanly in other state structs like `StateUi`,
+/// but are here due to our save mechanic.
+#[derive(Clone, PartialEq, Encode, Decode)]
 pub struct ToSave {
     pub per_mol: HashMap<String, PerMolToSave>,
     pub open_history: Vec<OpenHistory>,
@@ -166,6 +163,8 @@ pub struct ToSave {
     /// of the fields here didn't change. E.g. after moving a molecule.
     /// This is caught during our periodic check for changes in this struct.
     pub save_flag: bool,
+    pub lipid: LipidUi,
+    pub nucleic_acid: NucleicAcidUi,
 }
 
 impl Default for ToSave {
@@ -193,6 +192,8 @@ impl Default for ToSave {
             visibility: Default::default(),
             smiles_map: Default::default(),
             save_flag: false,
+            lipid: Default::default(),
+            nucleic_acid: Default::default(),
         }
     }
 }

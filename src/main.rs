@@ -461,6 +461,7 @@ impl Default for StateUiMd {
     }
 }
 
+#[derive(Clone, PartialEq, Encode, Decode)]
 struct LipidUi {
     /// For the combo box. Stays at 0 if none loaded.
     pub lipid_to_add: usize,
@@ -478,6 +479,7 @@ impl Default for LipidUi {
     }
 }
 
+#[derive(Clone, PartialEq, Encode, Decode)]
 struct NucleicAcidUi {
     pub seq_to_create: String,
     pub na_type: NucleicAcidType,
@@ -553,8 +555,6 @@ struct StateUi {
     popup: PopupState,
     md: StateUiMd,
     ph_input: String,
-    lipid: LipidUi,
-    nucleic_acid: NucleicAcidUi,
 }
 
 /// For showing and hiding UI sections.
@@ -576,7 +576,7 @@ impl Default for UiVisibility {
             smiles: false,
             selfies: false,
             lipids: false,
-            nucleic_acids: false,
+            nucleic_acids: true, // todo temp true?
             amino_acids: false,
             dynamics: true,
             orca: false,
@@ -948,7 +948,6 @@ fn main() {
 
     if let Ok(out) = Command::new("orca").output() {
         let out = String::from_utf8(out.stdout).unwrap();
-        println!("/n/nout: {out}");
         // No simpler way like version?
         if out.contains("This program requires") {
             state.volatile.orca_avail = true;

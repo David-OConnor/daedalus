@@ -7,6 +7,7 @@ use egui::{Align, Color32, Layout, Popup, PopupAnchor, Pos2, RectAlign, RichText
 use graphics::{ControlScheme, EngineUpdates, EntityUpdate, Scene};
 use lin_alg::f64::Vec3;
 
+use crate::molecule::MoleculeCommon;
 use crate::{
     ManipMode, Selection, State,
     cam_misc::move_mol_to_cam,
@@ -57,10 +58,6 @@ fn disp_atom_data(atom: &Atom, residues: &[Residue], posit_override: Option<Vec3
         let mut res_color = COLOR_AA_NON_RESIDUE_EGUI;
 
         let res_txt = if res_i >= residues.len() {
-            // eprintln!(
-            //     "Error: Invalid res requested. Res i: {res_i}, len: {}",
-            //     residues.len()
-            // );
             "Invalid res".to_owned()
         } else {
             let res = &residues[res_i];
@@ -221,7 +218,7 @@ pub(in crate::ui) fn selected_data(
                 let atom = &mol.common.atoms[*atom_i];
                 let posit = mol.common.atom_posits[*atom_i];
 
-                disp_atom_data(atom, &[], Some(posit), ui);
+                disp_atom_data(atom, &mol.residues, Some(posit), ui);
             }
             // todo DRY
             Selection::AtomLipid((mol_i, atom_i)) => {
@@ -335,12 +332,77 @@ pub(in crate::ui) fn selected_data(
     });
 }
 
+/// Abstracts over all molecule types. (Currently not protein though)
+fn mol_picker_one(
+    active_mol: &mut Option<((MolType, usize))>,
+    orbit_center: &mut Option<((MolType, usize))>,
+    i_mol: usize,
+    mol: &mut MoleculeCommon,
+    mol_type: MolType,
+    ui: &mut Ui,
+    engine_updates: &mut EngineUpdates,
+    redraw: &mut bool,
+    recenter_orbit: &mut bool,
+    close: &mut Option<usize>,
+) {
+    let help_text = "Make this molecule the active / selected one. Middle click to close it.";
+
+    let active = match active_mol {
+        Some((_mol_type, i)) => *i == i_mol,
+        _ => false,
+    };
+
+    let color = if active {
+        COLOR_ACTIVE_RADIO
+    } else {
+        COLOR_INACTIVE
+    };
+
+    let sel_btn = ui
+        .button(RichText::new(&mol.ident).color(color))
+        .on_hover_text(help_text);
+    if sel_btn.clicked() {
+        if active && active_mol.is_some() {
+            *active_mol = None;
+        } else {
+            *active_mol = Some((mol_type, i_mol));
+            *orbit_center = *active_mol;
+
+            *recenter_orbit = true;
+        }
+
+        *redraw = true; // To reflect the change in thickness, color etc.
+    }
+
+    if sel_btn.middle_clicked() {
+        *close = Some(i_mol);
+    }
+
+    let color_vis = if mol.visible {
+        COLOR_ACTIVE
+    } else {
+        COLOR_INACTIVE
+    };
+
+    if ui.button(RichText::new("👁").color(color_vis)).clicked() {
+        mol.visible = !mol.visible;
+
+        *redraw = true; // todo Overkill; only need to redraw (or even just clear) one.
+        // todo: Generalize.
+        engine_updates.entities = EntityUpdate::All;
+        // engine_updates.entities.push_class(mol_type.entity_class() as u32);
+    }
+}
+
+/// Select, close, hide etc molecules from ones opened.
 fn mol_picker(
     state: &mut State,
     scene: &mut Scene,
     ui: &mut Ui,
     redraw_pep: &mut bool,
     redraw_lig: &mut bool,
+    redraw_lipid: &mut bool,
+    redraw_na: &mut bool,
     engine_updates: &mut EngineUpdates,
 ) {
     let help_text = "Make this molecule the active / selected one. Middle click to close it.";
@@ -399,52 +461,51 @@ fn mol_picker(
     let mut close = None; // Avoids borrow error.
 
     for (i_mol, mol) in state.ligands.iter_mut().enumerate() {
-        let active = match state.volatile.active_mol {
-            Some((MolType::Ligand, i_)) => i_ == i_mol,
-            _ => false,
-        };
-
-        let color = if active {
-            COLOR_ACTIVE_RADIO
-        } else {
-            COLOR_INACTIVE
-        };
-
-        let sel_btn = ui
-            .button(RichText::new(&mol.common.ident).color(color))
-            .on_hover_text(help_text);
-        if sel_btn.clicked() {
-            if active && state.volatile.active_mol.is_some() {
-                state.volatile.active_mol = None;
-            } else {
-                state.volatile.active_mol = Some((MolType::Ligand, i_mol));
-                state.volatile.orbit_center = state.volatile.active_mol;
-
-                recenter_orbit = true;
-            }
-
-            *redraw_lig = true; // To reflect the change in thickness, color etc.
-        }
-
-        if sel_btn.middle_clicked() {
-            close = Some(i_mol);
-        }
-
-        let color_vis = if mol.common.visible {
-            COLOR_ACTIVE
-        } else {
-            COLOR_INACTIVE
-        };
-
-        if ui.button(RichText::new("👁").color(color_vis)).clicked() {
-            mol.common.visible = !mol.common.visible;
-
-            *redraw_lig = true; // todo Overkill; only need to redraw (or even just clear) one.
-            // todo: Generalize.
-            engine_updates.entities = EntityUpdate::All;
-            // engine_updates.entities.push_class(EntityClass::Ligand as u32);
-        }
+        mol_picker_one(
+            &mut state.volatile.active_mol,
+            &mut state.volatile.orbit_center,
+            i_mol,
+            &mut mol.common,
+            MolType::Ligand,
+            ui,
+            engine_updates,
+            redraw_lig,
+            &mut recenter_orbit,
+            &mut close,
+        );
     }
+
+    for (i_mol, mol) in state.lipids.iter_mut().enumerate() {
+        mol_picker_one(
+            &mut state.volatile.active_mol,
+            &mut state.volatile.orbit_center,
+            i_mol,
+            &mut mol.common,
+            MolType::Lipid,
+            ui,
+            engine_updates,
+            redraw_lig,
+            &mut recenter_orbit,
+            &mut close,
+        );
+    }
+
+    for (i_mol, mol) in state.nucleic_acids.iter_mut().enumerate() {
+        mol_picker_one(
+            &mut state.volatile.active_mol,
+            &mut state.volatile.orbit_center,
+            i_mol,
+            &mut mol.common,
+            MolType::NucleicAcid,
+            ui,
+            engine_updates,
+            redraw_lig,
+            &mut recenter_orbit,
+            &mut close,
+        );
+    }
+
+    // todo: AAs here too?
 
     if let Some(i_mol) = close {
         close_mol(MolType::Ligand, i_mol, state, scene, engine_updates);
@@ -741,7 +802,7 @@ pub(in crate::ui) fn display_mol_data(
     engine_updates: &mut EngineUpdates,
 ) {
     ui.horizontal(|ui| {
-        mol_picker(state, scene, ui, redraw_pep, redraw_lig, engine_updates);
+        mol_picker(state, scene, ui, redraw_pep, redraw_lig, redraw_lipid, redraw_na, engine_updates);
 
         let Some((active_mol_type, active_mol_i)) = state.volatile.active_mol else {
             return

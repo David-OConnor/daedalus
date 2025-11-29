@@ -24,13 +24,7 @@
 // Use LIPID21 for DSPC/CHL; GAFF2 for PEG.
 //"
 
-use std::{
-    f64::consts::TAU,
-    fmt::{Display, Formatter},
-    io,
-    time::Instant,
-};
-
+use bincode::{Decode, Encode};
 use bio_files::{
     BondType::{self, *},
     LipidStandard, ResidueEnd, ResidueType,
@@ -40,6 +34,12 @@ use dynamics::params::LIPID_21_LIB;
 use lin_alg::f64::{Quaternion, Vec3, Y_VEC, Z_VEC};
 use na_seq::Element::{self, *};
 use rand::{Rng, distr::Uniform, rngs::ThreadRng};
+use std::{
+    f64::consts::TAU,
+    fmt::{Display, Formatter},
+    io,
+    time::Instant,
+};
 
 use crate::{
     State,
@@ -72,7 +72,7 @@ const DIST_ACROSS_MEMBRANE: f64 = 38.; // 36-39Å phosphate-to-phosphate
 // todo: Fragile. Used to rotate lipids around the phosphate in the head.
 const PHOSPHATE_I: usize = 12;
 
-#[derive(Clone, Copy, Debug, PartialEq, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Default, Encode, Decode)]
 pub enum LipidShape {
     Free,
     #[default]
@@ -779,8 +779,6 @@ impl MoleculeLipid {
 
 /// Create lipid molecules from Amber's Lipids21.lib, which is included in the binary.
 pub fn load_lipid_templates() -> io::Result<Vec<MoleculeLipid>> {
-    println!("Loading lipid templates...");
-    let start = Instant::now();
     let mut result = Vec::new();
 
     let templates = load_templates(LIPID_21_LIB)?;
@@ -817,9 +815,6 @@ pub fn load_lipid_templates() -> io::Result<Vec<MoleculeLipid>> {
     }
 
     result.sort_by_key(|mol| mol.common.ident.clone());
-
-    let elapsed = start.elapsed().as_millis();
-    println!("Loaded lipid templates in {elapsed:.1}ms");
 
     Ok(result)
 }

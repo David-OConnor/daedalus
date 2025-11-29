@@ -4,8 +4,7 @@
 
 // todo: Load Amber FF params for nucleic acids.
 
-use std::{collections::HashMap, f64::consts::TAU, fmt::Display, io, time::Instant};
-
+use bincode::{Decode, Encode};
 use bio_files::{
     BondType, ResidueEnd, ResidueType,
     mol_templates::{TemplateData, load_templates},
@@ -21,6 +20,7 @@ use na_seq::{
     Nucleotide::{self, *},
     seq_complement,
 };
+use std::{collections::HashMap, f64::consts::TAU, fmt::Display, io, time::Instant};
 
 use crate::{
     State, Templates,
@@ -33,19 +33,11 @@ use crate::{
     util::handle_err,
 };
 
-// Simple backbone bond length used for translating residues to match up.
-// This is the length of the bond which connects residues.
-// todo: Once ready, qc this against the FF equilibrium len by selecting the bond in the UI
-// const BACKBONE_BOND_LEN: f64 = 1.6;
-
 const HELIX_TWIST: f64 = TAU / 10.0; // 36°
-const HELIX_RISE: f64 = 3.4; // Å per base (visual B-DNA-ish)
+// const HELIX_RISE: f64 = 3.4; // Å per base (visual B-DNA-ish)
 const HELIX_RADIUS: f64 = 10.0; // Å (tweak to taste)
 
-// Len between residues.
-// const BACKBONE_BOND_LEN: f64 = 1.6; //
-
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Encode, Decode)]
 pub enum NucleicAcidType {
     #[default]
     Dna,
@@ -63,7 +55,7 @@ impl Display for NucleicAcidType {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Encode, Decode)]
 pub enum Strands {
     Single,
     #[default]
@@ -133,29 +125,29 @@ fn find_template(
     is_last: bool,
     templates: &HashMap<String, TemplateData>,
 ) -> io::Result<&TemplateData> {
+    let mut nt_str = nt.to_str_upper();
+
     let ident = match na_type {
         NucleicAcidType::Dna => {
-            let b = nt.to_str_upper();
             if is_first && !is_last {
-                format!("D{b}5")
+                format!("D{nt_str}5")
             } else if is_last && !is_first {
-                format!("D{b}3")
+                format!("D{nt_str}3")
             } else {
-                format!("D{b}")
+                format!("D{nt_str}")
             }
         }
         NucleicAcidType::Rna => {
-            let mut b = nt.to_str_upper();
-            if b == "T" {
-                b = "U".to_string();
+            if nt_str == "T" {
+                nt_str = "U".to_string();
             }
 
             if is_first && !is_last {
-                format!("{b}5")
+                format!("{nt_str}5")
             } else if is_last && !is_first {
-                format!("{b}3")
+                format!("{nt_str}3")
             } else {
-                b
+                nt_str
             }
         }
     };
@@ -168,9 +160,14 @@ fn find_template(
     }
 }
 
-fn rot_z(v: Vec3, theta: f64) -> Vec3 {
-    let rotator = Quaternion::from_axis_angle(Z_VEC, theta);
-    rotator.rotate_vec(v)
+// fn rot_z(v: Vec3, theta: f64) -> Vec3 {
+//     let rotator = Quaternion::from_axis_angle(Z_VEC, theta);
+//     rotator.rotate_vec(v)
+// }
+
+fn rotate_about_axis(posit: Vec3, pivot: Vec3, axis: Vec3, angle: f64) -> Vec3 {
+    let q = Quaternion::from_axis_angle(axis, angle);
+    pivot + q.rotate_vec(posit - pivot)
 }
 
 fn build_single_strand(
@@ -194,7 +191,8 @@ fn build_single_strand(
     // We use this for offsetting bond serial numbers.
     let mut atom_count_current: u32 = 0;
 
-    let mut attach_pt = posit_5p;
+    // This is, except for at the 5' end, the previous O3' position.
+    let mut prev_o3p = posit_5p;
 
     // // posit_5p is where strand_0 residue 0 head lands.
     // // Strand_1 will be opposite (phase = PI) automatically.
@@ -205,13 +203,13 @@ fn build_single_strand(
         let is_last = i + 1 == seq.len();
 
         let template = find_template(nt, na_type, is_first, is_last, templates)?;
-        let (head_local_i, tail_local_i) = template_attach_points(template)?;
+        let (head_local_i, tail_local_i) = template.attach_points()?;
 
         // P is the first atom in the template for non 5' variants; so for non-5', head_local_i is `Some`,
         // and we use it. For 5' ones, we find the one with name "P", or equivalently, index 0.
         let head_i = match head_local_i {
             Some(i) => i,
-            None => find_atom_local_idx_by_name(template, "P").unwrap_or(0),
+            None => template.find_atom_i_by_name("P").unwrap_or(0),
         };
 
         let posit_head_local = template
@@ -220,29 +218,21 @@ fn build_single_strand(
             .ok_or_else(|| io::Error::other("Head attach index out of range"))?
             .posit;
 
-        let theta = (i as f64) * HELIX_TWIST + helix_phase;
-        // let head_global = global_offset
-        //     + Vec3::new(
-        //         HELIX_RADIUS * theta.cos(),
-        //         HELIX_RADIUS * theta.sin(),
-        //         (i as f64) * HELIX_RISE,
-        //     );
-
+        // We're about to overwrite this, but need it for rotation.
         let posit_head_global = if is_first {
-            attach_pt
+            prev_o3p
         } else {
             // Since we're attacking the central head atom to the tail oxygen of the previous
             // residue, find what position this H should be, then subtract to position the P. (And other 3 Os)
             // which are part of the res we're adding.
 
             // todo: Unwrap is not ideal, but working for the templates we're using.
-            let o_0 = template.atoms[find_atom_local_idx_by_name(template, "OP1").unwrap()].posit;
-            let o_1 = template.atoms[find_atom_local_idx_by_name(template, "OP2").unwrap()].posit;
-            let o_2 = template.atoms[find_atom_local_idx_by_name(template, "O5'").unwrap()].posit;
+            let o_0 = template.atoms[template.find_atom_i_by_name("OP1").unwrap()].posit;
+            let o_1 = template.atoms[template.find_atom_i_by_name("OP2").unwrap()].posit;
+            let o_2 = template.atoms[template.find_atom_i_by_name("O5'").unwrap()].posit;
 
             let o_3p_posit = find_tetra_posit_final(posit_head_local, o_0, o_1, o_2);
-            // attach_pt is the global O3' position of the previous res.
-            attach_pt + o_3p_posit
+            prev_o3p + o_3p_posit
         };
 
         let translation = posit_head_global - posit_head_local;
@@ -266,16 +256,47 @@ fn build_single_strand(
         // Translate atom positions, and convert from `AtomGeneric` to `Atom`.
         let mut local_to_global_sn = HashMap::new();
 
+        let rot_axis = if is_first {
+            Z_VEC // todo: QC
+        } else {
+            (posit_head_global - prev_o3p).to_normalized()
+        };
+
+        let twist = TAU / 8.; // todo temp
+        // let twist = if is_first { helix_phase } else { HELIX_TWIST };
+
+        // This is for rotation around the P-O3' bond.
+        let tail_template_sn = if !is_last {
+            let tail_i =
+                tail_local_i.ok_or_else(|| io::Error::other("Missing tail attach point"))?;
+            Some(template.atoms[tail_i].serial_number)
+        } else {
+            None
+        };
+
+        let mut tail_global_pos: Option<Vec3> = None;
+        let mut tail_global_sn: Option<u32> = None;
+
         for atom_template in &template.atoms {
             let mut atom: Atom = atom_template.try_into().unwrap();
 
             let new_sn = (atoms_out.len() as u32) + 1;
             atom.serial_number = new_sn;
-            atom.posit += translation;
             atom.residue = Some(res_i);
 
+            atom.posit += translation;
+            // We rotate all atoms in this template around the P - O3' bond.
+            // We also rotate on the first template, to take phase into account, e.g. for
+            // offsetting the whole helix, or for the other half.
+
+            // atom.posit = rotate_about_axis(atom.posit, posit_head_global, rot_axis, twist);
+
+            if tail_template_sn == Some(atom_template.serial_number) {
+                tail_global_pos = Some(atom.posit);
+                tail_global_sn = Some(new_sn);
+            }
+
             res.atom_sns.push(new_sn);
-            // todo: QC this atom index
             res.atoms.push(new_sn as usize - 1);
 
             local_to_global_sn.insert(atom_template.serial_number, new_sn);
@@ -347,40 +368,17 @@ fn build_single_strand(
                     io::Error::other("Tail attach serial missing from local->global map")
                 })?;
 
-            attach_pt = tail_atom.posit + translation;
-            prev_tail_sn = Some(cur_tail_sn);
+            // prev_o3p = tail_atom.posit + translation;
+            // prev_tail_sn = Some(cur_tail_sn);
+            prev_o3p = tail_global_pos.ok_or_else(|| io::Error::other("Tail atom not captured"))?;
+            prev_tail_sn =
+                Some(tail_global_sn.ok_or_else(|| io::Error::other("Tail sn not captured"))?);
         }
 
         atom_count_current += template.atoms.len() as u32;
     }
 
     Ok((atoms_out, bonds_out, res_out))
-}
-
-fn find_atom_local_idx_by_name(t: &TemplateData, want: &str) -> Option<usize> {
-    t.atoms
-        .iter()
-        .enumerate()
-        .find(|(_, a)| a.type_in_res_general.as_deref() == Some(want))
-        .map(|(i, _)| i)
-}
-
-/// Find the indices of a template that join it to previous ones. None for terminal templates.
-fn template_attach_points(template: &TemplateData) -> io::Result<(Option<usize>, Option<usize>)> {
-    let Some(unit_connect) = template.unit_connect else {
-        return Err(io::Error::other("Missing unit connect on template"));
-    };
-
-    let head_i = match unit_connect.head {
-        Some(v) => Some(v as usize - 1),
-        None => None,
-    };
-    let tail_i = match unit_connect.tail {
-        Some(v) => Some(v as usize - 1),
-        None => None,
-    };
-
-    Ok((head_i, tail_i))
 }
 
 impl MoleculeNucleicAcid {
@@ -538,15 +536,8 @@ impl MolGenericTrait for MoleculeNucleicAcid {
 /// Returns (DNA, RNA)
 pub fn load_na_templates()
 -> io::Result<(HashMap<String, TemplateData>, HashMap<String, TemplateData>)> {
-    let start = Instant::now();
-
-    println!("Loading nucleic acid templates...");
-
     let templates_dna = load_templates(OL24_LIB)?;
     let templates_rna = load_templates(RNA_LIB)?;
-
-    let elapsed = start.elapsed().as_millis();
-    println!("Loaded nucleic acid templates in {elapsed:.1}ms");
 
     Ok((templates_dna, templates_rna))
 }
