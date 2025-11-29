@@ -10,9 +10,11 @@ use bio_files::{
     BondType, ResidueEnd, ResidueType,
     mol_templates::{TemplateData, load_templates},
 };
-use dynamics::Dihedral;
-use dynamics::params::{OL24_LIB, RNA_LIB};
-use lin_alg::f64::Vec3;
+use dynamics::{
+    Dihedral, find_tetra_posit_final,
+    params::{OL24_LIB, RNA_LIB},
+};
+use lin_alg::f64::{Quaternion, Vec3, Z_VEC};
 use na_seq::{
     AminoAcid,
     Element::{self, *},
@@ -34,7 +36,14 @@ use crate::{
 // Simple backbone bond length used for translating residues to match up.
 // This is the length of the bond which connects residues.
 // todo: Once ready, qc this against the FF equilibrium len by selecting the bond in the UI
-const BACKBONE_BOND_LEN: f64 = 1.6;
+// const BACKBONE_BOND_LEN: f64 = 1.6;
+
+const HELIX_TWIST: f64 = TAU / 10.0; // 36°
+const HELIX_RISE: f64 = 3.4; // Å per base (visual B-DNA-ish)
+const HELIX_RADIUS: f64 = 10.0; // Å (tweak to taste)
+
+// Len between residues.
+// const BACKBONE_BOND_LEN: f64 = 1.6; //
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum NucleicAcidType {
@@ -159,11 +168,17 @@ fn find_template(
     }
 }
 
+fn rot_z(v: Vec3, theta: f64) -> Vec3 {
+    let rotator = Quaternion::from_axis_angle(Z_VEC, theta);
+    rotator.rotate_vec(v)
+}
+
 fn build_single_strand(
     seq: &[Nucleotide],
     na_type: NucleicAcidType,
     posit_5p: Vec3,
     templates: &HashMap<String, TemplateData>,
+    helix_phase: f64,
     strand_label: &str,
 ) -> io::Result<(Vec<Atom>, Vec<Bond>, Vec<Residue>)> {
     let mut atoms_out = Vec::new();
@@ -173,57 +188,64 @@ fn build_single_strand(
     let mut atom_sn: u32 = 1;
     let mut res_i: usize = 0;
 
-    // Starts at 0; after each base we add, is applied to that base's tail connect posit.
-    let mut attach_pt = posit_5p;
-
     // Used for the bond between residues.
     let mut prev_tail_sn: Option<u32> = None;
 
-    // // We use this for offsetting bond serial numbers.
+    // We use this for offsetting bond serial numbers.
     let mut atom_count_current: u32 = 0;
+
+    let mut attach_pt = posit_5p;
+
+    // // posit_5p is where strand_0 residue 0 head lands.
+    // // Strand_1 will be opposite (phase = PI) automatically.
+    // let global_offset = posit_5p - Vec3::new(HELIX_RADIUS, 0.0, 0.0);
 
     for (i, &nt) in seq.iter().enumerate() {
         let is_first = i == 0;
         let is_last = i + 1 == seq.len();
 
         let template = find_template(nt, na_type, is_first, is_last, templates)?;
-
         let (head_local_i, tail_local_i) = template_attach_points(template)?;
 
-        let posit_head_local = if is_first {
-            // I believe this may always be atom 0 in our templates.
-            let i = find_atom_local_idx_by_name(template, "P").unwrap_or(0);
-            template.atoms[i].posit
-        } else {
-            let Some(head_local_i) = head_local_i else {
-                let msg =
-                    format!("Template {nt} missing head attach point (.unit.connect or P atom)",);
-
-                return Err(io::Error::other(msg));
-            };
-
-            match template.atoms.get(head_local_i) {
-                Some(t) => t.posit,
-                None => {
-                    return Err(io::Error::other(format!(
-                        "Can't find the atom at head index {head_local_i}",
-                    )));
-                }
-            }
+        // P is the first atom in the template for non 5' variants; so for non-5', head_local_i is `Some`,
+        // and we use it. For 5' ones, we find the one with name "P", or equivalently, index 0.
+        let head_i = match head_local_i {
+            Some(i) => i,
+            None => find_atom_local_idx_by_name(template, "P").unwrap_or(0),
         };
 
-        // todo: Orientation of this bond? Or should this not be a bond, and the atoms
-        // todo should match exactly?
+        let posit_head_local = template
+            .atoms
+            .get(head_i)
+            .ok_or_else(|| io::Error::other("Head attach index out of range"))?
+            .posit;
+
+        let theta = (i as f64) * HELIX_TWIST + helix_phase;
+        // let head_global = global_offset
+        //     + Vec3::new(
+        //         HELIX_RADIUS * theta.cos(),
+        //         HELIX_RADIUS * theta.sin(),
+        //         (i as f64) * HELIX_RISE,
+        //     );
+
         let posit_head_global = if is_first {
             attach_pt
         } else {
-            attach_pt + Vec3::new(0.0, 0.0, BACKBONE_BOND_LEN)
+            // Since we're attacking the central head atom to the tail oxygen of the previous
+            // residue, find what position this H should be, then subtract to position the P. (And other 3 Os)
+            // which are part of the res we're adding.
+
+            // todo: Unwrap is not ideal, but working for the templates we're using.
+            let o_0 = template.atoms[find_atom_local_idx_by_name(template, "OP1").unwrap()].posit;
+            let o_1 = template.atoms[find_atom_local_idx_by_name(template, "OP2").unwrap()].posit;
+            let o_2 = template.atoms[find_atom_local_idx_by_name(template, "O5'").unwrap()].posit;
+
+            let o_3p_posit = find_tetra_posit_final(posit_head_local, o_0, o_1, o_2);
+            // attach_pt is the global O3' position of the previous res.
+            attach_pt + o_3p_posit
         };
 
         let translation = posit_head_global - posit_head_local;
-
-        // Translate atom positions, and convert from `AtomGeneric` to `Atom`.
-        let mut local_to_global_sn = HashMap::new();
 
         let end = if is_first {
             ResidueEnd::NTerminus
@@ -240,6 +262,9 @@ fn build_single_strand(
             dihedral: None,
             end,
         };
+
+        // Translate atom positions, and convert from `AtomGeneric` to `Atom`.
+        let mut local_to_global_sn = HashMap::new();
 
         for atom_template in &template.atoms {
             let mut atom: Atom = atom_template.try_into().unwrap();
@@ -356,37 +381,6 @@ fn template_attach_points(template: &TemplateData) -> io::Result<(Option<usize>,
     };
 
     Ok((head_i, tail_i))
-
-    // todo: Fall back to res connect here A/R. I believe our templates have both types.
-
-    //
-    // // Fallback to residueconnect c1/c2 if present.
-    // let c1 = parse_u32_meta(template, "residueconnect_c1x").unwrap_or(0);
-    // let c2 = parse_u32_meta(template, "residueconnect_c2x").unwrap_or(0);
-    //
-    // if c1 != 0 || c2 != 0 {
-    //     let head_i = if c1 == 0 {
-    //         None
-    //     } else {
-    //         Some((c1 - 1) as usize)
-    //     };
-    //     let tail_i = if c2 == 0 {
-    //         None
-    //     } else {
-    //         Some((c2 - 1) as usize)
-    //     };
-    //     return (head_i, tail_i);
-    // }
-    //
-    // // Final fallback: atom names (Amber DNA/RNA typically: P is head; O3' is tail).
-    // let head_i = find_atom_local_idx_by_name(template, "P");
-    // let tail_i = find_atom_local_idx_by_name(template, "O3'")
-    //     .or_else(|| find_atom_local_idx_by_name(template, "O3*"));
-    //
-    // // todo: Fix this unwrap.
-    // let head_i = unit_connect.head.unwrap() as usize - 1;
-    //
-    // (head_i, tail_i)
 }
 
 impl MoleculeNucleicAcid {
@@ -411,12 +405,12 @@ impl MoleculeNucleicAcid {
         };
 
         let (mut atoms, mut bonds, mut residues) =
-            build_single_strand(seq, na_type, posit_5p, templates, "strand_0")?;
+            build_single_strand(seq, na_type, posit_5p, templates, 0., "strand_0")?;
 
         if strands == Strands::Double && !seq.is_empty() {
             let seq2 = seq_complement(seq);
             let (atoms2, bonds2, mut residues2) =
-                build_single_strand(&seq2, na_type, posit_5p, templates, "strand_1")?;
+                build_single_strand(&seq2, na_type, posit_5p, templates, TAU / 2., "strand_1")?;
 
             let sn_offset = atoms.len() as u32;
 

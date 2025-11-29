@@ -57,10 +57,10 @@ fn disp_atom_data(atom: &Atom, residues: &[Residue], posit_override: Option<Vec3
         let mut res_color = COLOR_AA_NON_RESIDUE_EGUI;
 
         let res_txt = if res_i >= residues.len() {
-            eprintln!(
-                "Error: Invalid res requested. Res i: {res_i}, len: {}",
-                residues.len()
-            );
+            // eprintln!(
+            //     "Error: Invalid res requested. Res i: {res_i}, len: {}",
+            //     residues.len()
+            // );
             "Invalid res".to_owned()
         } else {
             let res = &residues[res_i];
