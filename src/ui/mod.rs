@@ -1172,9 +1172,15 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 .add(TextEdit::singleline(&mut state.ui.db_input).desired_width(80.))
                 .on_hover_text(query_help);
 
-            if state.ui.db_input.len() >= 4 {
-                let enter_pressed =
+            let inp_lower = state.ui.db_input.to_lowercase();
+
+            let mut enter_pressed = false;
+            if state.ui.db_input.len() >= 3 {
+                enter_pressed =
                     edit_resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
+            }
+
+            if state.ui.db_input.len() == 4 || inp_lower.starts_with("pdb_") {
                 let button_clicked = ui.button("Load from RCSB").clicked();
 
                 if (button_clicked || enter_pressed) && state.ui.db_input.trim().len() == 4 {
@@ -1191,10 +1197,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
                     state.ui.db_input = String::new();
                 }
-            }
-            if state.ui.db_input.len() == 3 {
-                let enter_pressed =
-                    edit_resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
+            } else if state.ui.db_input.len() == 3 {
                 let button_clicked = ui.button("Load Geostd").clicked();
 
                 if button_clicked || enter_pressed {
@@ -1203,45 +1206,42 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
                     state.ui.db_input = String::new();
                 }
-            }
+            } else if state.ui.db_input.len() > 4 && inp_lower.starts_with("db") {
+                let button_clicked = ui.button("Load DrugBank").clicked();
 
-            if state.ui.db_input.len() >= 4 {
-                if state.ui.db_input.to_uppercase().starts_with("DB") {
-                    if ui.button("Load DrugBank").clicked() {
-                        match load_sdf_drugbank(&state.ui.db_input) {
-                            Ok(mol) => {
-                                open_lig_from_input(state, mol, scene, &mut engine_updates);
-                                redraw_lig = true;
-                                reset_cam = true;
-                            }
-                            Err(e) => {
-                                let msg = format!("Error loading SDF file: {e:?}");
-                                handle_err(&mut state.ui, msg);
-                            }
+                if button_clicked || enter_pressed {
+                    match load_sdf_drugbank(&state.ui.db_input) {
+                        Ok(mol) => {
+                            open_lig_from_input(state, mol, scene, &mut engine_updates);
+                            redraw_lig = true;
+                            reset_cam = true;
                         }
-                    }
-                }
-
-                if let Ok(cid) = state.ui.db_input.parse::<u32>() {
-                    if ui.button("Load PubChem").clicked() {
-                        match load_sdf_pubchem(cid) {
-                            Ok(mol) => {
-                                open_lig_from_input(state, mol, scene, &mut engine_updates);
-                                redraw_lig = true;
-                                reset_cam = true;
-                            }
-                            Err(e) => {
-                                let msg = format!("Error loading SDF file: {e:?}");
-                                handle_err(&mut state.ui, msg);
-                            }
+                        Err(e) => {
+                            let msg = format!("Error loading SDF file: {e:?}");
+                            handle_err(&mut state.ui, msg);
                         }
                     }
                 }
             }
 
-            // Can you find a better heuristic for a plain text search
-            if state.ui.db_input.len() >= 5 {
-                if ui.button("Search PubChem").clicked() {
+            if let Ok(cid) = state.ui.db_input.parse::<u32>() {
+                let button_clicked = ui.button("Load PubChem").clicked();
+                if button_clicked || enter_pressed {
+                    match load_sdf_pubchem(cid) {
+                        Ok(mol) => {
+                            open_lig_from_input(state, mol, scene, &mut engine_updates);
+                            redraw_lig = true;
+                            reset_cam = true;
+                        }
+                        Err(e) => {
+                            let msg = format!("Error loading SDF file: {e:?}");
+                            handle_err(&mut state.ui, msg);
+                        }
+                    }
+                }
+            } else if state.ui.db_input.len() >= 5 && !inp_lower.starts_with("pdb_")&& !inp_lower.starts_with("db") {
+                let button_clicked = ui.button("Search PubChem").clicked();
+                if button_clicked || enter_pressed {
                     let cids = find_cids_from_search(&state.ui.db_input.trim());
 
                     match cids {

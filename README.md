@@ -105,38 +105,28 @@ GPU functionality requires Nvidia driver version 580 or higher.
 
 ## Molecular dynamics
 
-We use the [Dynamics rust library](https://github.com/david-oconnor/dynamics) for molecular dynamics. See
-that library's readme for details and assumptions.
+This application fully integrates classical molecular dynamics setup and playback into the GUI.
+For details, see [the documentation](https://www.athanorlab.com/docs/md.html).
 
-Integrates the following [Amber parameters](https://ambermd.org/AmberModels.php):
+It supports running MD directly on the following molecule types, without loading any other data:
 
-- Small organic molecules, e.g. ligands: [General Amber Force Fields: GAFF2](https://ambermd.org/antechamber/gaff.html)
-- Protein/AA: [FF19SB](https://pubs.acs.org/doi/10.1021/acs.jctc.9b00591)
-- Nucleic acids: Amber OL3 and RNA libraries
-- Lipids: Lipid21
-- Water: [OPC](https://arxiv.org/abs/1408.1679)
+- Proteins/amino acids
+- Small organic molecules
+- DNA and RNA
+- Lipids
+- Carbohydrates (WIP)
 
-We plan to support carbohydrates in the future.
+Overview of MD components:
 
-These general parameters do not need to be loaded externally; they provide the information needed to perform
-MD with any amino acid sequence, and provide a baseline for dynamics of small organic molecules.
+- [Amber parameters](https://ambermd.org/AmberModels.php)
+- Velocity Verlet integrator
+- [CSVR](https://arxiv.org/pdf/0803.4060) or Langevin Middle thermostats
+- Explicit OPC water model
+- SPME Coulomb forces
+- AM1-BCC partial charges (MBIS if you have ORCA installed)
 
-For small organic molecules, we may compute force field types, partial charges, and dihedral overrides. These can
-be provided directly from FRCMOD files, or suitably annotated Mol2 or SDF files, but are often absent. The computations
-we use are similar in principle to Amber's Antechamber tool, and we use parameters from it.
-
-For details on how this parameterized approach works, see the
-[Amber Reference Manual](https://ambermd.org/doc12/Amber25.pdf). Section 3 and 15 are of particular
-interest, regarding force field parameters.
-
-Moleucule-specific overrides to these general parameters can be loaded from *.frcmod*, *prmptom*, and *.dat* files.
-We delegate this to the [bio files](https://github.com/david-OConnor/bio_files) library.
-
-We load partial charges for ligands from *mol2*, *sdf*, *xyz*, and *pdbqt*  files. Protein dynamics and water can be
-simulated
-using parameters built-in to the program (The Amber one above). Simulating ligands requires the loaded
-file (e.g. *mol2*) include partial charges. We recommend including ligand-specific override
-files as well, e.g. to load dihedral angles from *.frcmod* that aren't present in *Gaff2*.
+We use the [Dynamics rust library](https://github.com/david-oconnor/dynamics) for the implementation. You may also wish
+to referencethat library's readme.
 
 ## Editing molecules
 
