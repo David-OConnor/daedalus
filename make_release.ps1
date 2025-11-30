@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 
-$version = "0_2_2"
+$version = "0_2_3"
 $outDir = "target\release"
 $exe    = Join-Path $outDir "daedalus.exe"
 $gemmi  = "C:\Program Files\gemmi"

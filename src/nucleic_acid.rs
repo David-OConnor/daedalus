@@ -511,10 +511,10 @@ impl MoleculeNucleicAcid {
 
         let common = MoleculeCommon {
             ident: match (na_type, strands) {
-                (NucleicAcidType::Dna, Strands::Single) => "DNA(ss)".to_string(),
-                (NucleicAcidType::Dna, Strands::Double) => "DNA(ds)".to_string(),
-                (NucleicAcidType::Rna, Strands::Single) => "RNA(ss)".to_string(),
-                (NucleicAcidType::Rna, Strands::Double) => "RNA(ds)".to_string(),
+                (NucleicAcidType::Dna, Strands::Single) => format!("DNA(ss) {}nt", seq.len()),
+                (NucleicAcidType::Dna, Strands::Double) => format!("DNA(ds) {}nt", seq.len()),
+                (NucleicAcidType::Rna, Strands::Single) => format!("RNA(ss) {}nt", seq.len()),
+                (NucleicAcidType::Rna, Strands::Double) => format!("RNA(ds) {}nt", seq.len()),
             },
             atoms,
             bonds,

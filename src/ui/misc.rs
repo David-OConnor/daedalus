@@ -146,7 +146,6 @@ pub fn dynamics_player(
                 }
 
                 if let Some(mol) = &state.peptide {
-                    // if mol.common.atoms.len() > 0 {
                     if mol.common.selected_for_md {
                         draw_peptide(state, scene);
                     }

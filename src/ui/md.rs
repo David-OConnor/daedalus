@@ -198,7 +198,10 @@ pub fn md_setup(
                     .show_ui(ui, |ui| {
                         // todo: More A/R
                         // todo: What should gamma be? And make it customizable in UI and state.
+                        // todo: Langevin mid thermostat is out of control, and I'm not sure how
+                        // todo to fix it.
                         for v in &[Integrator::LangevinMiddle { gamma: 0.1 }, Integrator::VerletVelocity] {
+                        // for v in &[Integrator::VerletVelocity] {
                             ui.selectable_value(&mut state.to_save.md_config.integrator, v.clone(), v.to_string());
                         }
                     })
