@@ -271,6 +271,8 @@ pub enum OperatingMode {
 // todo: Remove or augment A/R
 #[derive(Default)]
 pub struct MdStateLocal {
+    /// This flag lets us defer launch by a frame, so we can display a flag.
+    pub launching: bool,
     pub running: bool,
     pub start: Option<Instant>,
 }
@@ -576,7 +578,7 @@ impl Default for UiVisibility {
             smiles: false,
             selfies: false,
             lipids: false,
-            nucleic_acids: true, // todo temp true?
+            nucleic_acids: false,
             amino_acids: false,
             dynamics: true,
             orca: false,
@@ -880,9 +882,7 @@ fn main() {
         };
 
         state.ui.md.langevin_γ = match state.to_save.md_config.integrator {
-            Integrator::Langevin { gamma } | Integrator::LangevinMiddle { gamma } => {
-                gamma.to_string()
-            }
+            Integrator::LangevinMiddle { gamma } => gamma.to_string(),
             _ => "0.".to_string(),
         };
     }

@@ -6,6 +6,8 @@ use egui::{Color32, ComboBox, RichText, TextEdit, Ui};
 use graphics::{EngineUpdates, Scene};
 use lin_alg::f64::Vec3;
 
+use crate::md::{launch_md, post_run_cleanup};
+use crate::util::handle_success;
 use crate::{
     State, label,
     md::{STATIC_ATOM_DIST_THRESH, build_and_run_dynamics, reassign_snapshot_indices},
@@ -13,7 +15,7 @@ use crate::{
         COL_SPACING, COLOR_ACTION, COLOR_ACTIVE, COLOR_HIGHLIGHT, COLOR_INACTIVE,
         cam::move_cam_to_active_mol, flag_btn, misc, num_field,
     },
-    util::{clear_cli_out, handle_err},
+    util::clear_cli_out,
 };
 
 pub fn md_setup(
@@ -22,6 +24,16 @@ pub fn md_setup(
     engine_updates: &mut EngineUpdates,
     ui: &mut Ui,
 ) {
+    // This sequencing code is above the UI code below, so it's deferred a frame after any actions.
+    if state.volatile.md_local.launching {
+        state.volatile.md_local.launching = false;
+        launch_md(state);
+    } else {
+        // This is spammed each frame, so don't print, which handle_success does.
+        state.ui.cmd_line_output = "MD Running...".to_string();
+        state.ui.cmd_line_out_is_err = false;
+    }
+
     misc::section_box().show(ui, |ui| {
         ui.horizontal_wrapped(|ui| {
             ui.label("MD:");
@@ -80,63 +92,17 @@ pub fn md_setup(
                 }
 
                 if ready_to_run {
-                    {
-                        let center = match &state.peptide {
-                            Some(m) => m.center,
-                            None => Vec3::new(0., 0., 0.),
-                        };
-                        // todo: Set a loading indicator, and trigger the build next GUI frame.
-                        move_cam_to_active_mol(state, scene, center, engine_updates);
-                    }
-
-                    // Filter molecules for docking by if they're selected.
-                    // mut so we can move their posits in the initial snapshot change.
-                    let ligs: Vec<_> = state.ligands.iter().filter(|l| l.common.selected_for_md).collect();
-                    let lipids: Vec<_> = state.lipids.iter().filter(|l| l.common.selected_for_md).collect();
-                    let nucleic_acids: Vec<_> = state.nucleic_acids.iter().filter(|l| l.common.selected_for_md).collect();
-
-                    let mut mols = Vec::new();
-                    for m in &ligs {
-                        mols.push((FfMolType::SmallOrganic, &m.common));
-                    }
-                    for m in &lipids {
-                        mols.push((FfMolType::Lipid, &m.common));
-                    }
-                    // todo: You must specify DNA or RNA here!
-                    for m in &nucleic_acids {
-                        mols.push((FfMolType::Dna, &m.common));
-                    }
-
-                    let mol = match &state.peptide {
-                        Some(m) => if m.common.selected_for_md { Some(m) } else { None },
-                        None => None,
+                    let center = match &state.peptide {
+                        Some(m) => m.center,
+                        None => Vec3::new(0., 0., 0.),
                     };
+                    // todo: Set a loading indicator, and trigger the build next GUI frame.
+                    move_cam_to_active_mol(state, scene, center, engine_updates);
 
-                    let near_lig_thresh = if state.ui.md.peptide_only_near_ligs {
-                        Some(STATIC_ATOM_DIST_THRESH)
-                    } else {
-                        None
-                    };
-                    match build_and_run_dynamics(
-                        &state.dev,
-                        &mols,
-                        // ligs,
-                        // lipids,
-                        // nucleic_acids,
-                        mol,
-                        &state.ff_param_set,
-                        &state.lig_specific_params,
-                        &state.to_save.md_config,
-                        state.ui.md.peptide_static,
-                        near_lig_thresh,
-                        &mut state.volatile.md_peptide_selected,
-                        &mut state.volatile.md_local,
-                    ) {
-                        Ok(md) => {
-                            state.mol_dynamics = Some(md);
-                        }
-                        Err(e) => handle_err(&mut state.ui, e.descrip),
-                    }
+                    handle_success(&mut state.ui, "Running MD. Initializing water, and relaxing the molecules...".to_string());
+
+                    // We will wait a frame so we can display the message above.
+                    state.volatile.md_local.launching = true;
                 }
             }
 
@@ -144,18 +110,23 @@ pub fn md_setup(
                 if ui
                     .button(RichText::new("Abort").color(Color32::LIGHT_RED))
                     .on_hover_text("Stop the in-progress simulation")
-                    .clicked() {
-                    crate::md::post_run_cleanup(state, scene, engine_updates);
+                    .clicked()
+                {
+                    post_run_cleanup(state, scene, engine_updates);
                 }
-            }
 
-            if state.volatile.md_local.running {
                 if let Some(md) = &state.mol_dynamics {
                     let count = (md.step_count / 100) * 100;
-                    ui.label(RichText::new(format!("MD running. Step {} of {}", count, state.to_save.num_md_steps)).color(COLOR_HIGHLIGHT));
+
+                    ui.label(
+                        RichText::new(format!(
+                            "MD running. Step {} of {}",
+                            count, state.to_save.num_md_steps
+                        ))
+                            .color(COLOR_HIGHLIGHT),
+                    );
                 }
             }
-
 
             match &state.dev {
                 ComputationDevice::Cpu => {
@@ -200,8 +171,16 @@ pub fn md_setup(
                         // todo: What should gamma be? And make it customizable in UI and state.
                         // todo: Langevin mid thermostat is out of control, and I'm not sure how
                         // todo to fix it.
-                        for v in &[Integrator::LangevinMiddle { gamma: 0.1 }, Integrator::VerletVelocity] {
-                        // for v in &[Integrator::VerletVelocity] {
+                        // todo: For tau and gamma, consider using defaults from dynamics.
+                        // for v in &[Integrator::LangevinMiddle { gamma: 0.1 }, Integrator::VerletVelocity { thermostat: Some(1.0)}] {
+
+                        // todo temp; allow for enabling/disabling therm.
+                        for v in &[
+                            Integrator::LangevinMiddle { gamma: 0.1 },
+                            Integrator::VerletVelocity { thermostat: Some(1.0) },
+                            Integrator::VerletVelocity { thermostat: None },
+                        ] {
+                            // for v in &[Integrator::VerletVelocity] {
                             ui.selectable_value(&mut state.to_save.md_config.integrator, v.clone(), v.to_string());
                         }
                     })

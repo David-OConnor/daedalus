@@ -301,7 +301,7 @@ pub(in crate::ui) fn cam_snapshots(
     });
 }
 
-pub(in crate::ui) fn move_cam_to_active_mol(
+pub fn move_cam_to_active_mol(
     state: &mut State,
     scene: &mut Scene,
     look_to_beyond: lin_alg::f64::Vec3,

@@ -15,6 +15,8 @@ use dynamics::{
 use graphics::{EngineUpdates, EntityUpdate, Scene};
 use lin_alg::f64::Vec3;
 
+use crate::ui::cam::move_cam_to_active_mol;
+use crate::util::handle_err;
 use crate::{
     MdStateLocal, State,
     drawing::{draw_peptide, draw_water},
@@ -473,5 +475,74 @@ impl State {
             }
             md.step(&self.dev, self.to_save.md_dt);
         }
+    }
+}
+
+// Callced directly from the UI;
+
+pub fn launch_md(state: &mut State) {
+    // Filter molecules for docking by if they're selected.
+    // mut so we can move their posits in the initial snapshot change.
+    let ligs: Vec<_> = state
+        .ligands
+        .iter()
+        .filter(|l| l.common.selected_for_md)
+        .collect();
+    let lipids: Vec<_> = state
+        .lipids
+        .iter()
+        .filter(|l| l.common.selected_for_md)
+        .collect();
+    let nucleic_acids: Vec<_> = state
+        .nucleic_acids
+        .iter()
+        .filter(|l| l.common.selected_for_md)
+        .collect();
+
+    let mut mols = Vec::new();
+    for m in &ligs {
+        mols.push((FfMolType::SmallOrganic, &m.common));
+    }
+    for m in &lipids {
+        mols.push((FfMolType::Lipid, &m.common));
+    }
+    // todo: You must specify DNA or RNA here!
+    for m in &nucleic_acids {
+        mols.push((FfMolType::Dna, &m.common));
+    }
+
+    let mol = match &state.peptide {
+        Some(m) => {
+            if m.common.selected_for_md {
+                Some(m)
+            } else {
+                None
+            }
+        }
+        None => None,
+    };
+
+    let near_lig_thresh = if state.ui.md.peptide_only_near_ligs {
+        Some(STATIC_ATOM_DIST_THRESH)
+    } else {
+        None
+    };
+
+    match build_and_run_dynamics(
+        &state.dev,
+        &mols,
+        mol,
+        &state.ff_param_set,
+        &state.lig_specific_params,
+        &state.to_save.md_config,
+        state.ui.md.peptide_static,
+        near_lig_thresh,
+        &mut state.volatile.md_peptide_selected,
+        &mut state.volatile.md_local,
+    ) {
+        Ok(md) => {
+            state.mol_dynamics = Some(md);
+        }
+        Err(e) => handle_err(&mut state.ui, e.descrip),
     }
 }
