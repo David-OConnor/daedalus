@@ -28,7 +28,7 @@ pub fn md_setup(
     if state.volatile.md_local.launching {
         state.volatile.md_local.launching = false;
         launch_md(state);
-    } else {
+    } else if state.volatile.md_local.running {
         // This is spammed each frame, so don't print, which handle_success does.
         state.ui.cmd_line_output = "MD Running...".to_string();
         state.ui.cmd_line_out_is_err = false;
@@ -177,8 +177,7 @@ pub fn md_setup(
                         // todo temp; allow for enabling/disabling therm.
                         for v in &[
                             Integrator::LangevinMiddle { gamma: 0.1 },
-                            Integrator::VerletVelocity { thermostat: Some(1.0) },
-                            Integrator::VerletVelocity { thermostat: None },
+                            Integrator::VerletVelocity { thermostat: Some(0.3) },
                         ] {
                             // for v in &[Integrator::VerletVelocity] {
                             ui.selectable_value(&mut state.to_save.md_config.integrator, v.clone(), v.to_string());
@@ -188,20 +187,35 @@ pub fn md_setup(
                     .on_hover_text(help_text);
             }
 
-            if matches!(state.to_save.md_config.integrator, | Integrator::LangevinMiddle { gamma: _ }) {
-                ui.label("γ:");
-                if ui
-                    .add_sized([22., Ui::available_height(ui)], TextEdit::singleline(&mut state.ui.md.langevin_γ))
-                    .changed()
-                {
-                    if let Ok(v) = &mut state.ui.md.langevin_γ.parse::<f32>() {
-                        match state.to_save.md_config.integrator {
-                            // Integrator::Langevin { gamma: _ } => state.to_save.md_config.integrator = Integrator::Langevin { gamma: *v},
-                            Integrator::LangevinMiddle { gamma: _ } => state.to_save.md_config.integrator = Integrator::LangevinMiddle { gamma: *v },
-                            _ => ()
+            match &mut state.to_save.md_config.integrator {
+                Integrator::LangevinMiddle { gamma } => {
+                    ui.label("γ:");
+                    if ui
+                        .add_sized([22., Ui::available_height(ui)], TextEdit::singleline(&mut state.ui.md.langevin_γ))
+                        .changed()
+                    {
+                        if let Ok(v) = &mut state.ui.md.langevin_γ.parse::<f32>() {
+                            *gamma = *v;
                         }
                     }
                 }
+                Integrator::VerletVelocity { thermostat } => {
+                    let help_text = "Enable or disable the thermostat";
+                    ui.label("Therm:").on_hover_text(help_text);
+                    let mut v = thermostat.is_some();
+                    if ui.checkbox(&mut v, "").on_hover_text(help_text).changed() {
+                        *thermostat = if v {
+                            Some(0.3) // todo: DOn't hc the val?
+                        } else {
+                            None
+                        };
+
+                    }
+                }
+            }
+
+            if matches!(state.to_save.md_config.integrator, | Integrator::LangevinMiddle { gamma: _ }) {
+
             }
 
             ui.add_space(COL_SPACING / 2.);

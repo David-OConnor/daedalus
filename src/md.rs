@@ -478,8 +478,7 @@ impl State {
     }
 }
 
-// Callced directly from the UI;
-
+/// Called directly from the UI;
 pub fn launch_md(state: &mut State) {
     // Filter molecules for docking by if they're selected.
     // mut so we can move their posits in the initial snapshot change.
