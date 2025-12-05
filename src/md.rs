@@ -9,20 +9,19 @@ use bio_files::{AtomGeneric, create_bonds, md_params::ForceFieldParams};
 #[cfg(feature = "cuda")]
 use cudarc::driver::HostSlice;
 use dynamics::{
-    ComputationDevice, FfMolType, HydrogenConstraint, MdConfig, MdOverrides, MdState, MolDynamics,
-    ParamError, params::FfParamSet, snapshot::Snapshot,
+    ComputationDevice, FfMolType, MdConfig, MdOverrides, MdState, MolDynamics, ParamError,
+    params::FfParamSet, snapshot::Snapshot,
 };
 use graphics::{EngineUpdates, EntityUpdate, Scene};
 use lin_alg::f64::Vec3;
 
-use crate::ui::cam::move_cam_to_active_mol;
 use crate::util::handle_err;
 use crate::{
     MdStateLocal, State,
     drawing::{draw_peptide, draw_water},
     lipid::MoleculeLipid,
     mol_lig::MoleculeSmall,
-    molecule::{MolType, MoleculeCommon, MoleculePeptide},
+    molecule::{MoleculeCommon, MoleculePeptide},
     nucleic_acid::MoleculeNucleicAcid,
     util::handle_success,
 };
@@ -250,32 +249,36 @@ pub fn build_dynamics(
         });
     }
 
-    // Uncomment as required for validating individual processes.
-    // let cfg = MdConfig {
-    //     overrides: MdOverrides {
-    //         allow_missing_dihedral_params: true,
-    //         skip_water: true,
-    //         bonded_disabled: true,
-    //         coulomb_disabled: false,
-    //         lj_disabled: true,
-    //         long_range_recip_disabled: false,
-    //         thermo_disabled: true,
-    //         baro_disabled: true,
-    //     },
-    //     max_init_relaxation_iters: None,
-    //     ..cfg.clone()
-    // };
+    // findings: (2025-12-04)
+    // Temp with only this force enabled, no water, 6k steps at dt = 0.001,
+    // flex Hydrogens
+    // - Bonded: 2-3 thousand K
+    // - LJ only; no bonded: Temp stays under control, but not useful; whole thing expands
+    // - LJ + bonded: 600k. (Adding LJ brings down the KE?
+    // - Coulomb + bonded: Explodes (Probably due to coulomb attraction singularity)
+    // - Coulomb + bonded + LJ: 880.
+    // What this is telling me: Coulomb is potentially causing trouble?
 
-    // todo temp
+    // - Getting interesting: Wth Coulomb + LJ + Bond stretching only: Stable!
+    // - Adding Valence angle causes an energy increase.
+    // Bond + Dihedral without Angle causes blow up.
+    // - Constrained H with the otherwise stable Coulomb + bond + LJ = increasing E.
+    // todo: Action items: Fix Valence Angle. Fix Constrained H. Fix LR Recip.
+
+    // Adding LR recip to bond + LJ + Coulomb involves a steady E increase.
+
+    // Uncomment as required for validating individual processes.
     let cfg = MdConfig {
         overrides: MdOverrides {
-            // coulomb_disabled: false,
-            // long_range_recip_disabled: false,
-            // lj_disabled: false,
-            // skip_water: true,
-            ..Default::default()
+            skip_water: true,
+            bonded_disabled: false,
+            coulomb_disabled: false,
+            lj_disabled: false,
+            long_range_recip_disabled: true,
+            thermo_disabled: false,
+            baro_disabled: false,
         },
-        // max_init_relaxation_iters: None,
+        max_init_relaxation_iters: None,
         ..cfg.clone()
     };
 

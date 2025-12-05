@@ -327,6 +327,11 @@ pub(in crate::ui) fn energy_disp(snap: &Snapshot, ui: &mut Ui) {
     let pe_per_atom = snap.energy_potential / atom_count;
     label!(ui, format!("{:.3}", pe_per_atom), Color32::GOLD);
 
+    ui.label("E tot: ");
+    // todo: Don't continuously run this!
+    let e = snap.energy_potential + snap.energy_kinetic;
+    label!(ui, format!("{:.3}", e), Color32::GOLD);
+
     ui.label("PE between mols:");
     // todo: One pair only for now
     if snap.energy_potential_between_mols.len() >= 2 {

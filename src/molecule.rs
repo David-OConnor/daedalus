@@ -1083,7 +1083,7 @@ impl MoleculePeptide {
             .map(|a| a.to_generic())
             .collect();
 
-        let mut res_gen = self.residues.iter().map(|a| a.to_generic()).collect();
+        let mut res_gen: Vec<_> = self.residues.iter().map(|a| a.to_generic()).collect();
         let mut chains_gen: Vec<_> = self.chains.iter().map(|a| a.to_generic()).collect();
 
         println!("Populating Hydrogens and dihedral angles...");

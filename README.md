@@ -30,7 +30,7 @@ SIMD, and thread pools.)
 Notes:
 
 - On Linux distros that use Gnome (e.g. Ubuntu), run `setup_linux_desktop.sh`, included in the zip, to create a Desktop
-  GUI entry.
+  GUI entry. (Do not run this with `sudo`.)
 - On Windows, the first time you run the program, you may get the message *"Microsoft Defender prevented an unrecognized
   app from starting"*.
   To bypass this, click *More info*, then *Run Anyway*.

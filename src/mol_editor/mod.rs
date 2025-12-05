@@ -900,7 +900,6 @@ pub(super) fn build_dynamics(
     let cfg = MdConfig {
         max_init_relaxation_iters: Some(100), // todo A/R
         overrides: MdOverrides {
-            allow_missing_dihedral_params: true,
             long_range_recip_disabled: true,
             ..Default::default()
         },

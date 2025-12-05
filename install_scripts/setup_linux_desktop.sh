@@ -13,7 +13,6 @@ if [ ! -d "$APP_DIR" ]; then
 fi
 
 cp "$NAME" "$APP_DIR"
-cp -R gemmi "$APP_DIR"
 cp icon.png "$APP_DIR/icon.png"
 
 # We create a .desktop file dynamically here; one fewer file to manage.
@@ -37,11 +36,11 @@ if [ -f "./$cufft_lib" ]; then
   printf "Moved the libcufft.so.12 library (for the cuFFT dependency)  to /usr/lib."
 fi
 
-printf "Moved the ${NAME_UPPER} executable and icon to ${APP_DIR}."
-printf "\nYou can launch ${NAME_UPPER} through the GUI (e.g., search \"${NAME_UPPER}\") and/or add it to favorites.\n"
-
 read -p "Install gemmi from apt, to support unprocessed electron density files? [y/n] " ans
 if [ "$ans" = "y" ] || [ "$ans" = "Y" ]; then
   sudo apt install gemmi
   printf "\ngemmi installed. You can uninstall it with sudo apt remove gemmi.\n"
 fi
+
+printf "Moved the ${NAME_UPPER} executable and icon to ${APP_DIR}."
+printf "\nYou can launch ${NAME_UPPER} through the GUI (e.g., search \"${NAME_UPPER}\") and/or add it to favorites.\n"
