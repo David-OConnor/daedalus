@@ -6,16 +6,17 @@ use egui::{Color32, ComboBox, RichText, TextEdit, Ui};
 use graphics::{EngineUpdates, Scene};
 use lin_alg::f64::Vec3;
 
-use crate::md::{launch_md, post_run_cleanup};
-use crate::util::handle_success;
 use crate::{
     State, label,
-    md::{STATIC_ATOM_DIST_THRESH, build_and_run_dynamics, reassign_snapshot_indices},
+    md::{
+        STATIC_ATOM_DIST_THRESH, build_and_run_dynamics, launch_md, post_run_cleanup,
+        reassign_snapshot_indices,
+    },
     ui::{
         COL_SPACING, COLOR_ACTION, COLOR_ACTIVE, COLOR_HIGHLIGHT, COLOR_INACTIVE,
         cam::move_cam_to_active_mol, flag_btn, misc, num_field,
     },
-    util::clear_cli_out,
+    util::{clear_cli_out, handle_success},
 };
 
 pub fn md_setup(

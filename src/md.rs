@@ -15,7 +15,6 @@ use dynamics::{
 use graphics::{EngineUpdates, EntityUpdate, Scene};
 use lin_alg::f64::Vec3;
 
-use crate::util::handle_err;
 use crate::{
     MdStateLocal, State,
     drawing::{draw_peptide, draw_water},
@@ -23,7 +22,7 @@ use crate::{
     mol_lig::MoleculeSmall,
     molecule::{MoleculeCommon, MoleculePeptide},
     nucleic_acid::MoleculeNucleicAcid,
-    util::handle_success,
+    util::{handle_err, handle_success},
 };
 
 // Å. Static atoms must be at least this close to a dynamic atom at the start of MD to be counted.
@@ -267,10 +266,12 @@ pub fn build_dynamics(
 
     // Adding LR recip to bond + LJ + Coulomb involves a steady E increase.
 
+    // Update: Bonded is good for VV. Need to fix Langevin md, and long range spme
+
     // Uncomment as required for validating individual processes.
     let cfg = MdConfig {
         overrides: MdOverrides {
-            skip_water: true,
+            skip_water: false,
             bonded_disabled: false,
             coulomb_disabled: false,
             lj_disabled: false,
