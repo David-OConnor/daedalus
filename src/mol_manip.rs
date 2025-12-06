@@ -7,6 +7,7 @@ use lin_alg::{
     map_linear,
 };
 
+use crate::molecule::MoleculeCommon;
 use crate::{
     ManipMode, State, StateVolatile,
     inputs::{SENS_MOL_ROT_MOUSE, SENS_MOL_ROT_SCROLL},
@@ -33,7 +34,7 @@ pub fn handle_mol_manip_in_plane(
         return;
     };
 
-    // your existing UI offset fix
+    // Offset for the UI, as we use elsewhere.
     cursor.1 -= map_linear(
         cursor.1,
         (scene.window_size.1, state.volatile.ui_height),
@@ -49,8 +50,15 @@ pub fn handle_mol_manip_in_plane(
                 _ => unimplemented!(),
             };
 
+            // Ray from screen
+            let (ray_origin, ray_point) = scene.screen_to_render(cursor);
+            let ray_dir = (ray_point - ray_origin).to_normalized();
+
             if state.volatile.mol_manip.pivot.is_none() {
-                let pivot: Vec3 = mol.centroid().into();
+                // We set the pivot to be the coordinates of the molecule (e.g. nearest atom)
+                // to the cursor. We're moving this pivot with the mouse cursor, so we take
+                // this approach to prevent the mol jumping; this part *snaps* to the cursor.
+                let pivot: Vec3 = pick_movemenet_pivot(mol, ray_origin, ray_dir);
 
                 let n = scene.camera.orientation.rotate_vec(FWD_VEC).to_normalized();
 
@@ -63,10 +71,6 @@ pub fn handle_mol_manip_in_plane(
             let pivot = state.volatile.mol_manip.pivot.unwrap();
             let pivot_norm = state.volatile.mol_manip.view_dir.unwrap();
             let prev_offset = state.volatile.mol_manip.offset;
-
-            // Ray from screen
-            let (ray_origin, ray_point) = scene.screen_to_render(cursor);
-            let ray_dir = (ray_point - ray_origin).to_normalized();
 
             let denom = ray_dir.dot(pivot_norm);
             if denom.abs() > 1e-6 {
@@ -336,5 +340,40 @@ pub fn set_manip(
             MolType::Lipid => *redraw_lipid = true,
             _ => (),
         }
+    }
+}
+
+/// Chooses the atom closest to the cursor ray as the pivot.
+/// This helps ensure, while drag-moving, that the molecule stays anchored to the cursor in
+/// a way that feels intuitive; the part moving to the cursor's position is the part originally
+/// under the cursor at drag start.
+fn pick_movemenet_pivot(mol: &MoleculeCommon, ray_origin: Vec3, ray_dir: Vec3) -> Vec3 {
+    const PICK_RADIUS: f64 = 4.0; // Å-ish // A/R
+    let pick_r2 = PICK_RADIUS * PICK_RADIUS;
+
+    let ro: Vec3F64 = ray_origin.into();
+    let rd: Vec3F64 = ray_dir.into();
+
+    let mut best_d2 = f64::INFINITY;
+    let mut best_p: Option<Vec3F64> = None;
+
+    for p in &mol.atom_posits {
+        let w = *p - ro;
+        let t = w.dot(rd); // rd assumed normalized
+        if t < 0.0 {
+            continue;
+        }
+        let closest = ro + rd * t;
+        let d2 = (*p - closest).magnitude_squared();
+        if d2 < best_d2 {
+            best_d2 = d2;
+            best_p = Some(*p);
+        }
+    }
+
+    if best_d2 <= pick_r2 {
+        best_p.unwrap().into()
+    } else {
+        mol.centroid().into()
     }
 }

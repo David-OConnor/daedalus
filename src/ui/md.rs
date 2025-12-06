@@ -164,7 +164,9 @@ pub fn md_setup(
             {
                 let help_text = "Set the integrator to use for molecular dynamics. Verlet Velocity is a good default.";
                 ui.label("Integrator:").on_hover_text(help_text);
-                ComboBox::from_id_salt(4)
+
+                let mut prev = state.to_save.md_config.integrator.clone();
+                if ComboBox::from_id_salt(4)
                     .width(80.)
                     .selected_text(state.to_save.md_config.integrator.to_string())
                     .show_ui(ui, |ui| {
@@ -173,19 +175,23 @@ pub fn md_setup(
                         // todo: Langevin mid thermostat is out of control, and I'm not sure how
                         // todo to fix it.
                         // todo: For tau and gamma, consider using defaults from dynamics.
-                        // for v in &[Integrator::LangevinMiddle { gamma: 0.1 }, Integrator::VerletVelocity { thermostat: Some(1.0)}] {
 
                         // todo temp; allow for enabling/disabling therm.
                         for v in &[
-                            Integrator::LangevinMiddle { gamma: 0.1 },
-                            Integrator::VerletVelocity { thermostat: Some(0.3) },
+                            Integrator::LangevinMiddle { gamma: 0.3 },
+                            Integrator::VerletVelocity { thermostat: Some(1.0) },
                         ] {
-                            // for v in &[Integrator::VerletVelocity] {
                             ui.selectable_value(&mut state.to_save.md_config.integrator, v.clone(), v.to_string());
                         }
                     })
                     .response
-                    .on_hover_text(help_text);
+                    .on_hover_text(help_text).changed() {
+                    if let Integrator::LangevinMiddle {gamma} = state.to_save.md_config.integrator {
+                        if !matches!(prev, Integrator::LangevinMiddle {gamma: _}) {
+                            state.ui.md.langevin_γ = gamma.to_string();
+                        }
+                    }
+                }
             }
 
             match &mut state.to_save.md_config.integrator {
@@ -206,7 +212,7 @@ pub fn md_setup(
                     let mut v = thermostat.is_some();
                     if ui.checkbox(&mut v, "").on_hover_text(help_text).changed() {
                         *thermostat = if v {
-                            Some(0.3) // todo: DOn't hc the val?
+                            Some(1.0)
                         } else {
                             None
                         };

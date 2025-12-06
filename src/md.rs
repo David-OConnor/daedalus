@@ -275,6 +275,7 @@ pub fn build_dynamics(
             bonded_disabled: false,
             coulomb_disabled: false,
             lj_disabled: false,
+            // todo: Still struggling with energy injected from this.
             long_range_recip_disabled: true,
             thermo_disabled: false,
             baro_disabled: false,
