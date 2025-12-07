@@ -3,9 +3,10 @@ use dynamics::{
     snapshot::Snapshot,
 };
 use egui::{Color32, ComboBox, RichText, TextEdit, Ui};
-use graphics::{EngineUpdates, Scene};
+use graphics::{EngineUpdates, EntityUpdate, Scene};
 use lin_alg::f64::Vec3;
 
+use crate::drawing::EntityClass;
 use crate::{
     State, label,
     md::{
@@ -72,12 +73,30 @@ pub fn md_setup(
 
             ui.add_space(COL_SPACING / 2.);
 
-            let run_clicked = ui
+            if let Some(md) = &state.mol_dynamics &&
+                state.ui.current_snapshot < md.snapshots.len() &&
+                !md.snapshots[state.ui.current_snapshot].water_o_posits.is_empty() {
+                if ui
+                    .button(RichText::new("Clear water"))
+                    .on_hover_text("Clear all rendered water molecules from the display")
+                    .clicked() {
+
+                    scene
+                        .entities
+                        .retain(|ent| ent.class != EntityClass::WaterModel as u32);
+                }
+
+
+
+                // todo: Setting water class isn't working for this update.
+                // engine_updates.entities = EntityUpdate::Classes(vec![EntityClass::WaterModel as u32]);
+                engine_updates.entities = EntityUpdate::All;
+            }
+
+            if ui
                 .button(RichText::new("Run MD").color(COLOR_ACTION))
                 .on_hover_text("Run a molecular dynamics simulation on all molecules selected.")
-                .clicked();
-
-            if run_clicked {
+                .clicked() {
                 clear_cli_out(&mut state.ui); // todo: Not working; not loaded until next frame.
                 let mut ready_to_run = true;
 
@@ -186,7 +205,7 @@ pub fn md_setup(
                     })
                     .response
                     .on_hover_text(help_text).changed() {
-                    if let Integrator::LangevinMiddle {gamma} = state.to_save.md_config.integrator {
+                    if let Integrator::LangevinMiddle { gamma } = state.to_save.md_config.integrator {
                         if !matches!(prev, Integrator::LangevinMiddle {gamma: _}) {
                             state.ui.md.langevin_γ = gamma.to_string();
                         }
@@ -216,14 +235,11 @@ pub fn md_setup(
                         } else {
                             None
                         };
-
                     }
                 }
             }
 
-            if matches!(state.to_save.md_config.integrator, | Integrator::LangevinMiddle { gamma: _ }) {
-
-            }
+            if matches!(state.to_save.md_config.integrator, | Integrator::LangevinMiddle { gamma: _ }) {}
 
             ui.add_space(COL_SPACING / 2.);
 

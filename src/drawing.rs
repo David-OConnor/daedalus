@@ -808,7 +808,6 @@ pub fn draw_water(
     h0_pos: &[Vec3],
     h1_pos: &[Vec3],
     hide_water: bool,
-    // state: &mut State,
 ) {
     scene
         .entities
