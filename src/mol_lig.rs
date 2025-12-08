@@ -533,8 +533,6 @@ impl MoleculeSmall {
         &mut self,
         active_mol: &Option<(Mt, usize)>,
         mol_specific_param_set: &mut HashMap<String, ForceFieldParams>,
-        // geostd_thread: &mut Option<Receiver<(usize, Result<GeostdData, ReqError>)>>,
-        // mol_i: usize,
         gaff2: &ForceFieldParams,
     ) {
         if let Some((_, i)) = active_mol {
@@ -559,28 +557,6 @@ impl MoleculeSmall {
             self.frcmod_loaded = true;
         }
 
-        // // Attempt to load Amber GeoStd force field names and partial charges.
-        // // Note: For now at least, we override any existing partial charges.
-        // // This is probably OK, as we assume Amber parameters elsewhere for now.
-        // if !self.ff_params_loaded || !self.frcmod_loaded {
-        //     // todo: This lacks nuance. We wish to handle the case of Geostd Mol2 to load frcmod,
-        //     // todo or the case of Drugbank/Pubchem SDF that need both, and have a pubchem id.
-        //     // The reason for our current approach is that a pubchem ID is always valid, but the ident
-        //     // may not be. (e.g. in the case of DrugBank). For Geostd, the Ident is valid.
-        //     let mut ident = self.common.ident.clone();
-        //
-        //     for ident_ in &self.idents {
-        //         if let MolIdent::PubChem(cid) = ident_ {
-        //             ident = ident_.to_str();
-        //             break;
-        //         }
-        //     }
-        //
-        //     // Attempt to find parameters in the Amber Geostd data set. If that fails,
-        //     // infer using machine learning.
-        //     self.search_geostd(&ident, geostd_thread, mol_i);
-        // }
-
         println!("Inferring parameter data...");
         // Note: There is an all-in-one `update_small_mol_params` fn we can use as well; it's
         // easier to use nominally, but this approach works better for our this-project Atom and bond types,
@@ -595,7 +571,7 @@ impl MoleculeSmall {
             let defs = AmberDefSet::new().unwrap();
             let ff_types = find_ff_types(&atoms_gen, &bonds_gen, &defs);
 
-            println!("FF types created: {:?}", ff_types); // todo temp
+            // println!("FF types created: {:?}", ff_types); // todo temp
 
             for (i, atom) in self.common.atoms.iter_mut().enumerate() {
                 atom.force_field_type = Some(ff_types[i].clone());

@@ -46,6 +46,7 @@ pub fn update_file_dialogs(
             OperatingMode::MolEditor => state.mol_editor.open_molecule(
                 &state.dev,
                 &state.ff_param_set,
+                &mut state.lig_specific_params,
                 &state.to_save.md_config,
                 path,
                 scene,
@@ -321,7 +322,6 @@ pub fn open_lig_from_input(
     scene: &mut Scene,
     engine_updates: &mut EngineUpdates,
 ) {
-    // mol.update_aux(&state.volatile.active_mol, &mut state.lig_specific_params);
     state.load_mol_to_state(
         MoleculeGeneric::Ligand(mol),
         Some(scene),

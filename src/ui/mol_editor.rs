@@ -6,7 +6,7 @@ use graphics::{EngineUpdates, EntityUpdate, Scene};
 use lin_alg::f64::Vec3;
 use na_seq::{
     Element,
-    Element::{Carbon, Chlorine, Nitrogen, Oxygen, Phosphorus, Sulfur},
+    Element::{Carbon, Chlorine, Hydrogen, Nitrogen, Oxygen, Phosphorus, Sulfur},
 };
 
 use crate::{
@@ -23,6 +23,8 @@ use crate::{
 };
 // todo: Check DBs (with a button maybe?) to see if the molecule exists in a DB already, or if
 // todo a similar one does.
+
+// todo: Use what you like from [Maestro's](https://www.youtube.com/watch?v=JpOOI5qyTXU&list=PL3dxdlKx_PccSO0YWKJqUx6lfQRyvyyG0&index=6)
 
 // These are in ps.
 const DT_MIN: f32 = 0.00005;
@@ -43,7 +45,13 @@ fn change_el_button(
     let r = (r * 255.) as u8;
     let g = (g * 255.) as u8;
     let b = (b * 255.) as u8;
-    let color = Color32::from_rgb(r, g, b);
+
+    // N's default blue is too dark against the button's background.
+    let color = if el == Nitrogen {
+        Color32::from_rgb(130, 130, 255)
+    } else {
+        Color32::from_rgb(r, g, b)
+    };
 
     if ui
         .button(RichText::new(el.to_letter()).color(color))
@@ -168,33 +176,13 @@ pub(in crate::ui) fn editor(
             }
         });
 
+        if ui.button(RichText::new("Clear all").color(Color32::LIGHT_RED))
+            .on_hover_text("Delete all atoms; start fresh")
+            .clicked() {
+            // todo: Add a confirmer
+            state.mol_editor.mol.common = Default::default();
 
-        ui.add_space(COL_SPACING);
-
-        section_box().show(ui, |ui| {
-            if ui
-                .button(RichText::new("↔ Move atom"))
-                .on_hover_text("(Hotkey: M. M or Esc to stop) Move the selected atom")
-                .clicked()
-            {
-                // if state.mol_editor.move_atom(i).is_err() {
-                //     eprintln!("Error moving atom");
-                // };
-                // redraw = true;
-            }
-        });
-
-        if let Selection::AtomLig((_, i)) = state.ui.selection {
-            if ui
-                .button(RichText::new("Del atom").color(Color32::LIGHT_RED))
-                .on_hover_text("(Hotkey: Delete) Delete the selected atom")
-                .clicked()
-            {
-                if state.mol_editor.delete_atom(i).is_err() {
-                    eprintln!("Error deleting atom");
-                };
-                redraw = true;
-            }
+            redraw = true;
         }
 
         ui.add_space(COL_SPACING / 2.);
@@ -221,7 +209,7 @@ pub(in crate::ui) fn editor(
         }
         if ui
             .button(RichText::new("Load"))
-            .on_hover_text("Save to a Mol2 or SDF file")
+            .on_hover_text("Load from a Mol2, SDF XYZ etc file")
             .clicked()
         {
             state.volatile.dialogs.load.pick_file();
@@ -268,7 +256,7 @@ pub(in crate::ui) fn editor(
     });
 
     ui.horizontal(|ui| {
-        edit_tools(state, scene, ui, engine_updates);
+        edit_tools(state, scene, ui, engine_updates, &mut redraw);
     });
 
     // ui.horizontal_wrapped(|ui| {
@@ -337,6 +325,7 @@ fn edit_tools(
     scene: &mut Scene,
     ui: &mut Ui,
     engine_updates: &mut EngineUpdates,
+    redraw: &mut bool,
 ) {
     let mut rebuild_md = false;
 
@@ -414,48 +403,17 @@ fn edit_tools(
         //     engine_updates,
         // );
 
-        change_el_button(
-            &mut state.mol_editor.mol.common.atoms,
-            &state.ui.selection,
-            Carbon,
-            ui,
-            &mut rebuild_md,
-        );
-        change_el_button(
-            &mut state.mol_editor.mol.common.atoms,
-            &state.ui.selection,
-            Oxygen,
-            ui,
-            &mut rebuild_md,
-        );
-        change_el_button(
-            &mut state.mol_editor.mol.common.atoms,
-            &state.ui.selection,
-            Nitrogen,
-            ui,
-            &mut rebuild_md,
-        );
-        change_el_button(
-            &mut state.mol_editor.mol.common.atoms,
-            &state.ui.selection,
-            Sulfur,
-            ui,
-            &mut rebuild_md,
-        );
-        change_el_button(
-            &mut state.mol_editor.mol.common.atoms,
-            &state.ui.selection,
-            Phosphorus,
-            ui,
-            &mut rebuild_md,
-        );
-        change_el_button(
-            &mut state.mol_editor.mol.common.atoms,
-            &state.ui.selection,
-            Chlorine,
-            ui,
-            &mut rebuild_md,
-        );
+        for el in [
+            Carbon, Hydrogen, Oxygen, Nitrogen, Sulfur, Phosphorus, Chlorine,
+        ] {
+            change_el_button(
+                &mut state.mol_editor.mol.common.atoms,
+                &state.ui.selection,
+                el,
+                ui,
+                &mut rebuild_md,
+            );
+        }
     });
 
     ui.add_space(COL_SPACING / 2.);
@@ -483,12 +441,49 @@ fn edit_tools(
         {}
 
         if ui
-            .button("Ring")
-            .on_hover_text("Add a benzene ring")
+            .button("Ar")
+            .on_hover_text("Add a benzene/aromatic ring")
             .clicked()
         {
             let anchor = Vec3::new_zero();
-            let atoms = templates::benzene_ring(anchor, 0);
+            let atoms = templates::ar_ring(anchor, 0);
+        }
+
+        if ui
+            .button("Pent")
+            .on_hover_text("Add a benzene/aromatic ring")
+            .clicked()
+        {
+            let anchor = Vec3::new_zero();
+            let atoms = templates::ar_ring(anchor, 0);
+        }
+    });
+
+    // ui.add_space(COL_SPACING);
+
+    section_box().show(ui, |ui| {
+        if ui
+            .button(RichText::new("↔ Move atom"))
+            .on_hover_text("(Hotkey: M. M or Esc to stop) Move the selected atom")
+            .clicked()
+        {
+            // if state.mol_editor.move_atom(i).is_err() {
+            //     eprintln!("Error moving atom");
+            // };
+            // redraw = true;
+        }
+
+        if let Selection::AtomLig((_, i)) = state.ui.selection {
+            if ui
+                .button(RichText::new("Del atom").color(Color32::LIGHT_RED))
+                .on_hover_text("(Hotkey: Delete) Delete the selected atom")
+                .clicked()
+            {
+                if state.mol_editor.delete_atom(i).is_err() {
+                    eprintln!("Error deleting atom");
+                };
+                *redraw = true;
+            }
         }
     });
 

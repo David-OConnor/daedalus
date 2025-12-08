@@ -6,9 +6,10 @@ use egui::{Color32, ComboBox, RichText, TextEdit, Ui};
 use graphics::{EngineUpdates, EntityUpdate, Scene};
 use lin_alg::f64::Vec3;
 
-use crate::drawing::EntityClass;
 use crate::{
-    State, label,
+    State,
+    drawing::EntityClass,
+    label,
     md::{
         STATIC_ATOM_DIST_THRESH, build_and_run_dynamics, launch_md, post_run_cleanup,
         reassign_snapshot_indices,

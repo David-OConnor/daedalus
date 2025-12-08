@@ -39,7 +39,7 @@ use crate::{
         ATOM_SHININESS, BALL_STICK_RADIUS, BALL_STICK_RADIUS_H, set_flashlight, set_static_light,
     },
     ui::UI_HEIGHT_CHANGED,
-    util::find_neighbor_posit,
+    util::{find_neighbor_posit, handle_err},
 };
 
 pub const INIT_CAM_DIST: f32 = 20.;
@@ -127,6 +127,7 @@ impl MolEditorState {
         &mut self,
         dev: &ComputationDevice,
         param_set: &FfParamSet,
+        lig_specific_params: &mut HashMap<String, ForceFieldParams>,
         md_cfg: &MdConfig,
         path: &Path,
         scene: &mut Scene,
@@ -164,21 +165,28 @@ impl MolEditorState {
             }
         };
 
-        self.load_mol(&molecule.common, scene, engine_updates, state_ui);
+        self.load_mol(
+            // &molecule.common,
+            &molecule,
+            param_set,
+            lig_specific_params,
+            scene,
+            engine_updates,
+            state_ui,
+        );
         Ok(())
     }
 
-    pub fn load_mol(
+    fn remove_repopulate_h(
         &mut self,
-        mol: &MoleculeCommon,
         scene: &mut Scene,
         engine_updates: &mut EngineUpdates,
         state_ui: &mut StateUi,
     ) {
-        self.mol.common = mol.clone();
-
         // We assign H dynamically; ignore present ones.
-        self.mol.common.atoms = mol
+        self.mol.common.atoms = self
+            .mol
+            .common
             .atoms
             .iter()
             .filter(|a| a.element != Hydrogen)
@@ -197,7 +205,9 @@ impl MolEditorState {
             .collect();
 
         // Keep only bonds whose endpoints still exist; reindex to new atom indices
-        self.mol.common.bonds = mol
+        self.mol.common.bonds = self
+            .mol
+            .common
             .bonds
             .iter()
             .filter_map(|b| {
@@ -218,11 +228,38 @@ impl MolEditorState {
         self.mol.common.atom_posits = self.mol.common.atoms.iter().map(|a| a.posit).collect();
         self.mol.common.build_adjacency_list();
 
-        // Re-populate hydrogens algorithmically. This assumes we trust our algorithm more than the
-        // initial molecule, which may or may not be true.
+        // Re-populate hydrogens algorithmically.
         for (i, atom) in self.mol.common.atoms.clone().iter().enumerate() {
+            println!("Populating H for atom {atom}");
             self.populate_hydrogens_on_atom(i, atom, &mut scene.entities, state_ui, engine_updates);
         }
+    }
+
+    pub fn load_mol(
+        &mut self,
+        // mol: &MoleculeCommon,
+        mol: &MoleculeSmall,
+        param_set: &FfParamSet,
+        lig_specific_params: &mut HashMap<String, ForceFieldParams>,
+        scene: &mut Scene,
+        engine_updates: &mut EngineUpdates,
+        state_ui: &mut StateUi,
+    ) {
+        // self.mol.common = mol.clone();
+        self.mol = mol.clone();
+
+        // Load FF type, charge etc. Do this prior to attempting to populate H, and prior to removing
+        // H: We use the H in our FF type and charge determination algorithms, then in tern use FF type
+        // to re-add H later!
+        // todo: Maybe don't remove and re-populate H?
+        if let Some(p) = &param_set.small_mol {
+            self.mol.update_aux(&None, lig_specific_params, p);
+        } else {
+            eprintln!("Error: Unable to update a molecule's params due to missing GAFF2.",)
+        }
+
+        // todo: Evaluate if you want to do this.
+        // self.remove_repopulate_h(scene, engine_updates, state_ui);
 
         let mut highest_sn = 0;
         for atom in &self.mol.common.atoms {
@@ -435,7 +472,7 @@ pub mod templates {
     }
 
     // todo: What does posit anchor too? Center? An corner marked in a certain way?
-    pub fn benzene_ring(anchor: Vec3, starting_sn: u32) -> (Vec<Atom>, Vec<Bond>) {
+    pub fn ar_ring(anchor: Vec3, starting_sn: u32) -> (Vec<Atom>, Vec<Bond>) {
         const POSITS: [Vec3; 6] = [
             Vec3::new(1.3970, 0.0000, 0.0),
             Vec3::new(0.6985, 1.2090, 0.0),
@@ -498,7 +535,10 @@ pub fn enter_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mu
             eprintln!("Expected a ligand at this index, but out of bounds when entering edit mode");
         } else {
             state.mol_editor.load_mol(
-                &state.ligands[i].common,
+                // &state.ligands[i].common,
+                &state.ligands[i],
+                &state.ff_param_set,
+                &mut state.lig_specific_params,
                 scene,
                 engine_updates,
                 &mut state.ui,

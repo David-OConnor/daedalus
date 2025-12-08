@@ -7,11 +7,10 @@ use lin_alg::{
     map_linear,
 };
 
-use crate::molecule::MoleculeCommon;
 use crate::{
     ManipMode, State, StateVolatile,
     inputs::{SENS_MOL_ROT_MOUSE, SENS_MOL_ROT_SCROLL},
-    molecule::MolType,
+    molecule::{MolType, MoleculeCommon},
 };
 
 /// Blender-style mouse dragging of the molecule. For movement, creates a plane of the camera view,

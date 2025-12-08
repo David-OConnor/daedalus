@@ -22,7 +22,8 @@ use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 use na_seq::{AaIdent, Element};
 
 use crate::{
-    CamSnapshot, ManipMode, PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel, cam_misc,
+    CamSnapshot, ManipMode, OperatingMode, PREFS_SAVE_INTERVAL, Selection, State, StateUi,
+    ViewSelLevel, cam_misc,
     drawing::{EntityClass, MoleculeView, draw_density_point_cloud, draw_peptide},
     drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
     mol_lig::MoleculeSmall,
@@ -249,7 +250,11 @@ pub fn cycle_selected(state: &mut State, scene: &mut Scene, reverse: bool) {
         },
     }
 
-    if let ControlScheme::Arc { center } = &mut scene.input_settings.control_scheme {
+    // Don't change the orbit center for the mol editor. Also note that its naive behavior CAO Dec 2025
+    // may attempt to center around a molecule open in the primary mode, not even a valid editor-mode atom.
+    if state.volatile.operating_mode == OperatingMode::Primary
+        && let ControlScheme::Arc { center } = &mut scene.input_settings.control_scheme
+    {
         *center = orbit_center(state);
     }
 }

@@ -200,7 +200,6 @@ pub fn load_geostd2(
                             mol.idents.push(MolIdent::PubChem(cid));
                         }
 
-                        // mol.update_aux(&state.volatile.active_mol, &mut state.lig_specific_params);
                         state.load_mol_to_state(
                             MoleculeGeneric::Ligand(mol),
                             Some(scene),
