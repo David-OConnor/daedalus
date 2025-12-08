@@ -2,15 +2,16 @@ use std::collections::HashMap;
 
 use bio_files::BondType;
 use egui::{Color32, ComboBox, RichText, Slider, Ui};
-use graphics::{EngineUpdates, EntityUpdate, Scene};
+use graphics::{EngineUpdates, Entity, EntityUpdate, Scene};
 use lin_alg::f64::Vec3;
 use na_seq::{
     Element,
     Element::{Carbon, Chlorine, Hydrogen, Nitrogen, Oxygen, Phosphorus, Sulfur},
 };
 
+use crate::mol_lig::MoleculeSmall;
 use crate::{
-    Selection, State, ViewSelLevel,
+    Selection, State, StateUi, ViewSelLevel,
     drawing::MoleculeView,
     mol_editor,
     mol_editor::{exit_edit_mode, templates},
@@ -35,11 +36,15 @@ const DT_MAX: f32 = 0.0005; // No more than 0.002 for stability. currently 0.5fs
 const MAX_RELAX_ITERS: usize = 300;
 
 fn change_el_button(
-    atoms: &mut [Atom],
+    // atoms: &mut [Atom],
     sel: &Selection,
     el: Element,
     ui: &mut Ui,
-    rebuild: &mut bool,
+    entities: &mut Vec<Entity>,
+    state_ui: &StateUi,
+    mol: &mut MoleculeSmall,
+    engine_updates: &mut EngineUpdates,
+    rebuild_md: &mut bool,
 ) {
     let (r, g, b) = el.color();
     let r = (r * 255.) as u8;
@@ -63,8 +68,12 @@ fn change_el_button(
             return;
         };
 
-        atoms[*i].element = el;
-        *rebuild = true;
+        mol.common.atoms[*i].element = el;
+
+        mol_editor::redraw(entities, mol, state_ui);
+        engine_updates.entities = EntityUpdate::All;
+
+        *rebuild_md = true;
     }
 }
 
@@ -407,10 +416,14 @@ fn edit_tools(
             Carbon, Hydrogen, Oxygen, Nitrogen, Sulfur, Phosphorus, Chlorine,
         ] {
             change_el_button(
-                &mut state.mol_editor.mol.common.atoms,
+                // &mut state.mol_editor.mol.common.atoms,
                 &state.ui.selection,
                 el,
                 ui,
+                &mut scene.entities,
+                &state.ui,
+                &mut state.mol_editor.mol,
+                engine_updates,
                 &mut rebuild_md,
             );
         }

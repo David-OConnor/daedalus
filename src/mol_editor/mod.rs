@@ -177,7 +177,7 @@ impl MolEditorState {
         Ok(())
     }
 
-    fn remove_repopulate_h(
+    fn _remove_repopulate_h(
         &mut self,
         scene: &mut Scene,
         engine_updates: &mut EngineUpdates,
@@ -604,7 +604,7 @@ pub fn exit_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mut
 
 // todo: Move to drawing_wrappers?
 pub fn redraw(entities: &mut Vec<Entity>, mol: &MoleculeSmall, ui: &StateUi) {
-    *entities = Vec::new();
+    entities.clear();
 
     entities.extend(draw_mol(
         MolGenericRef::Ligand(mol),

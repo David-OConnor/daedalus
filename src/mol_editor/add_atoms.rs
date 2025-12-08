@@ -3,12 +3,13 @@ use std::sync::atomic::Ordering;
 use bio_files::BondType;
 use dynamics::{find_tetra_posit_final, find_tetra_posits};
 use graphics::{EngineUpdates, Entity, EntityUpdate};
-use lin_alg::f64::Vec3;
+use lin_alg::f64::{Quaternion, Vec3};
 use na_seq::{
     Element,
     Element::{Carbon, Hydrogen, Nitrogen, Oxygen},
 };
 
+use crate::mol_editor::redraw;
 use crate::{
     StateUi, mol_editor,
     mol_editor::{MolEditorState, NEXT_ATOM_SN, hydrogens_avail},
@@ -54,6 +55,8 @@ impl MolEditorState {
                     eprintln!("Problem deleting atom {j}");
                 }
             }
+            redraw(entities, &mut self.mol, ui);
+            updates.entities = EntityUpdate::All;
         }
 
         // todo: Can't use `common` below here due to the delete_atom code and ownership.
@@ -68,6 +71,7 @@ impl MolEditorState {
             &self.mol.common.atoms,
             adj_list,
             bond_len,
+            element,
         ) {
             Some(p) => p,
             // Can't add an atom; already too many atoms bonded.
@@ -112,6 +116,7 @@ impl MolEditorState {
 
         let i_new = self.mol.common.atoms.len() - 1;
         let i_new_bond = self.mol.common.bonds.len() - 1;
+
         mol_editor::draw_atom(entities, &self.mol.common.atoms[i_new], ui);
         mol_editor::draw_bond(
             entities,
@@ -128,12 +133,15 @@ impl MolEditorState {
 
         // todo: Ideally just add the single entity, and add it to the
         // index buffer.
+
+        // todo: this redraw etc is not working.
         updates.entities = EntityUpdate::All;
 
         Some(new_i)
     }
 
-    /// Populate hydrogens on a single atom.
+    /// Populate hydrogens on a single atom. Uses tetrahedral, or planar geometry as required
+    /// based on atoms in the vicinity.
     pub(super) fn populate_hydrogens_on_atom(
         &mut self,
         i: usize,
@@ -170,11 +178,6 @@ impl MolEditorState {
             };
 
             let bonds_remaining = bonds_avail.saturating_sub(adj.len());
-
-            // println!(
-            //     "AVAIL. Atom: {} re: {bonds_remaining}. Adj: {adj:?}",
-            //     atom.element
-            // );
 
             let mut j = 0;
             for (ff_type, bond_len) in hydrogens_avail(&atom.force_field_type) {
@@ -215,16 +218,30 @@ fn find_appended_posit(
     atoms: &[Atom],
     adj_list: &[Vec<usize>],
     bond_len: Option<f64>,
+    element: Element,
 ) -> Option<Vec3> {
     let result = match neighbor_count {
-        // todo
-        0 => Some(Vec3::new(1.3, 0., 0.)),
+        // This 0 branch should rarely be called; for disconnected parents.
+        0 => Some(posit_parent + Vec3::new(1.3, 0., 0.)),
         1 => {
             let adj = adj_list[i][0];
             let neighbor = atoms[adj].posit;
 
-            // todo: This probably isn't what you want.
-            Some(find_tetra_posits(posit_parent, neighbor, Vec3::new_zero()).0)
+            // For now, pick an arbitrary orientation of the 3 methyl atoms, and let MD sort it out later.
+            // todo: choose something that avoids steric clashes.
+
+            // todo: This section is not working properly.
+            const TETRA_ANGLE: f64 = 1.91063;
+            let bond = (neighbor - posit_parent).to_normalized();
+            let axis = bond.any_perpendicular();
+            let rotator = Quaternion::from_axis_angle(axis, TETRA_ANGLE);
+
+            // If H, shorten the bond.
+            let mut relative_dir = rotator.rotate_vec(bond);
+            if element == Hydrogen {
+                relative_dir = (relative_dir.to_normalized()) * 1.1;
+            }
+            Some(posit_parent + relative_dir)
         }
         2 => {
             let adj_0 = adj_list[i][0];
@@ -232,7 +249,9 @@ fn find_appended_posit(
             let adj_1 = adj_list[i][1];
             let neighbor_1 = atoms[adj_1].posit;
 
-            let (p0, p1) = find_tetra_posits(posit_parent, neighbor_0, neighbor_1);
+            // This function uses the distance between the first two params, so it's likely
+            // in the case of adding H, this is what we want. (?)
+            let (p0, p1) = find_tetra_posits(posit_parent, neighbor_1, neighbor_0);
 
             // Score a candidate by its minimum distance to any existing neighbor; pick the larger score.
             let neighbors: &[usize] = &adj_list[i];
@@ -247,9 +266,12 @@ fn find_appended_posit(
                 }
                 best
             };
+
+            // None
             Some(if score(p0) >= score(p1) { p0 } else { p1 })
         }
         3 => {
+            // None
             let adj_0 = adj_list[i][0];
             let neighbor_0 = atoms[adj_0].posit;
             let adj_1 = adj_list[i][1];
