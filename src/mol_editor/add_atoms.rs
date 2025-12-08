@@ -2,6 +2,7 @@ use std::sync::atomic::Ordering;
 
 use bio_files::BondType;
 use dynamics::{find_tetra_posit_final, find_tetra_posits};
+use egui::Ui;
 use graphics::{EngineUpdates, Entity, EntityUpdate};
 use lin_alg::f64::{Quaternion, Vec3};
 use na_seq::{
@@ -9,7 +10,8 @@ use na_seq::{
     Element::{Carbon, Hydrogen, Nitrogen, Oxygen},
 };
 
-use crate::mol_editor::redraw;
+use crate::mol_editor::{redraw, templates};
+use crate::molecule::MoleculeCommon;
 use crate::{
     StateUi, mol_editor,
     mol_editor::{MolEditorState, NEXT_ATOM_SN, hydrogens_avail},
@@ -312,5 +314,37 @@ fn find_appended_posit(
             None => Some(p),
         },
         None => None,
+    }
+}
+
+/// A button that adds atoms to the editor molecule from a template. Things can be single atoms, but we are
+/// currently using it for rings, functional groups etc.
+pub fn add_from_template(
+    mol: &mut MoleculeCommon,
+    atoms_bonds: (Vec<Atom>, Vec<Bond>),
+    ui: &mut Ui,
+    rebuild_md: &mut bool,
+    abbrev: &str,
+    name: &str,
+) {
+    let (atoms, bonds) = atoms_bonds;
+
+    if ui
+        .button(abbrev)
+        .on_hover_text(format!("Add a {name} at the current selection"))
+        .clicked()
+    {
+        NEXT_ATOM_SN.fetch_add(atoms.len() as u32, Ordering::AcqRel);
+
+        for atom in atoms {
+            mol.atoms.push(atom);
+        }
+        for bond in bonds {
+            mol.bonds.push(bond);
+        }
+
+        mol.reset_posits();
+        mol.build_adjacency_list();
+        *rebuild_md = true;
     }
 }

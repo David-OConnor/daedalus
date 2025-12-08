@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use bio_files::BondType;
 use egui::{Color32, ComboBox, RichText, Slider, Ui};
 use graphics::{EngineUpdates, Entity, EntityUpdate, Scene};
@@ -8,8 +6,13 @@ use na_seq::{
     Element,
     Element::{Carbon, Chlorine, Hydrogen, Nitrogen, Oxygen, Phosphorus, Sulfur},
 };
+use std::collections::HashMap;
+use std::sync::atomic::Ordering;
 
+use crate::mol_editor::NEXT_ATOM_SN;
+use crate::mol_editor::add_atoms::add_from_template;
 use crate::mol_lig::MoleculeSmall;
+use crate::molecule::{Bond, MoleculeCommon};
 use crate::{
     Selection, State, StateUi, ViewSelLevel,
     drawing::MoleculeView,
@@ -432,44 +435,52 @@ fn edit_tools(
     ui.add_space(COL_SPACING / 2.);
 
     section_box().show(ui, |ui| {
-        if ui
-            .button("−OH")
-            .on_hover_text("Add a hydroxyl functional group")
-            .clicked()
-        {}
+        let anchor = Vec3::new_zero();
 
-        if ui
-            .button("−COOH")
-            .on_hover_text("Add a carboxylic acid functional group")
-            .clicked()
-        {
-            let anchor = Vec3::new_zero();
-            let atoms = templates::cooh_group(anchor, 0);
-        }
+        let next_sn = NEXT_ATOM_SN.load(Ordering::Acquire);
+        let next_i = state.mol_editor.mol.common.atoms.len();
 
-        if ui
-            .button("−NH₂")
-            .on_hover_text("Add an admide functional group")
-            .clicked()
-        {}
+        // Helper
+        let mut add_t = |temp: (Vec<Atom>, Vec<Bond>), name, abbrev| {
+            add_from_template(
+                &mut state.mol_editor.mol.common,
+                temp,
+                ui,
+                &mut rebuild_md,
+                name,
+                abbrev,
+            );
+        };
 
-        if ui
-            .button("Ar")
-            .on_hover_text("Add a benzene/aromatic ring")
-            .clicked()
-        {
-            let anchor = Vec3::new_zero();
-            let atoms = templates::ar_ring(anchor, 0);
-        }
+        add_t(
+            templates::ar_ring(anchor, next_sn, next_i),
+            "−OH",
+            "hydroxyl functional group",
+        );
 
-        if ui
-            .button("Pent")
-            .on_hover_text("Add a benzene/aromatic ring")
-            .clicked()
-        {
-            let anchor = Vec3::new_zero();
-            let atoms = templates::ar_ring(anchor, 0);
-        }
+        add_t(
+            templates::cooh_group(anchor, next_sn, next_i),
+            "−COOH",
+            "carboxylic acid functional group",
+        );
+
+        add_t(
+            templates::ar_ring(anchor, next_sn, next_i),
+            "−NH₂",
+            "amide functional group",
+        );
+
+        add_t(
+            templates::ar_ring(anchor, next_sn, next_i),
+            "Ar",
+            "benzene/aromatic ring",
+        );
+
+        add_t(
+            templates::ar_ring(anchor, next_sn, next_i),
+            "Pent",
+            "5-atom ring",
+        );
     });
 
     // ui.add_space(COL_SPACING);

@@ -317,7 +317,7 @@ fn combine_head_tail(
     // todo: Instead of rebuilding the adjacency list, you could update it procedurally. For now,
     // todo doing this as it's safer. That would be faster
     head.common.build_adjacency_list();
-    head.common.atom_posits = head.common.atoms.iter().map(|a| a.posit).collect();
+    head.common.reset_posits();
 
     let total_len = head.common.atoms.len();
 
@@ -808,7 +808,7 @@ pub fn load_lipid_templates() -> io::Result<Vec<MoleculeLipid>> {
         }
 
         mol.common.build_adjacency_list();
-        mol.common.atom_posits = mol.common.atoms.iter().map(|a| a.posit).collect();
+        mol.common.reset_posits();
 
         mol.populate_db_ids();
 
