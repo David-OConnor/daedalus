@@ -175,9 +175,9 @@ pub(in crate::ui) fn editor(
             if started && (state.mol_editor.md_rebuild_required || state.mol_editor.md_state.is_none()) {
                 match mol_editor::build_dynamics(
                     &state.dev,
-                    &state.mol_editor.mol,
+                    &mut state.mol_editor.mol,
                     &state.ff_param_set,
-                    &state.mol_editor.mol_specific_params,
+                        &mut state.mol_editor.mol_specific_params,
                     &state.to_save.md_config,
                 ) {
                     Ok(d) => state.mol_editor.md_state = Some(d),
@@ -514,9 +514,9 @@ fn edit_tools(
         // todo: Ideally don't rebuild the whole dynamics, for performance reasons.
         match mol_editor::build_dynamics(
             &state.dev,
-            &state.mol_editor.mol,
+            &mut state.mol_editor.mol,
             &state.ff_param_set,
-            &state.mol_editor.mol_specific_params,
+            &mut state.mol_editor.mol_specific_params,
             &state.to_save.md_config,
         ) {
             Ok(d) => state.mol_editor.md_state = Some(d),

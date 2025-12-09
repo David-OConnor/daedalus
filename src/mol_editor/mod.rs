@@ -252,32 +252,32 @@ impl MolEditorState {
         self.mol = mol.clone();
         self.mol.common.ident = MOL_IDENT.to_owned();
 
-        let mut params_loaded_from_state = false;
-        if mol.frcmod_loaded && let Some(v) = mol_specific_param_set.get(&mol.common.ident) {
-            self.mol_specific_params = v.clone();
-            params_loaded_from_state = true;
-        }
+        // let mut params_loaded_from_state = false;
+        // if mol.frcmod_loaded && let Some(v) = mol_specific_param_set.get(&mol.common.ident) {
+        //     self.mol_specific_params = v.clone();
+        //     params_loaded_from_state = true;
+        // }
 
         // We use a HashMap here to fit the update_aux API, then extract the
         // entry it adds.
-        let mut mol_specific_params = HashMap::new();
-
-        if let Some(p) = &param_set.small_mol {
-            self.mol.update_aux(&None, &mut mol_specific_params, p);
-        } else {
-            eprintln!("Error: Unable to update a molecule's params due to missing GAFF2.");
-        }
+        // let mut mol_specific_params = HashMap::new();
+        //
+        // if let Some(p) = &param_set.small_mol {
+        //     self.mol.update_ff_related(&mut mol_specific_params, p);
+        // } else {
+        //     eprintln!("Error: Unable to update a molecule's params due to missing GAFF2.");
+        // }
 
         // todo temp print
-        println!("MSP here: {:?}", mol_specific_params);
-
-        if !params_loaded_from_state {
-            match mol_specific_params.get(MOL_IDENT) {
-                Some(v) => self.mol_specific_params = v.clone(),
-                None => eprintln!("Error: mol-specific editor params missing.")
-            }
-
-        }
+        // println!("MSP here: {:?}", mol_specific_params);
+        //
+        // if !params_loaded_from_state {
+        //     match mol_specific_params.get(MOL_IDENT) {
+        //         Some(v) => self.mol_specific_params = v.clone(),
+        //         None => eprintln!("Error: mol-specific editor params missing.")
+        //     }
+        //
+        // }
 
         // todo: Evaluate if you want to do this.
         // self.remove_repopulate_h(scene, engine_updates, state_ui);
@@ -824,15 +824,28 @@ pub fn hydrogens_avail(ff_type: &Option<String>) -> Vec<(String, f64)> {
 /// Set up MD for the editor's molecule.
 pub(super) fn build_dynamics(
     dev: &ComputationDevice,
-    mol: &MoleculeSmall,
+    mol: &mut MoleculeSmall,
     param_set: &FfParamSet,
-    mol_specific_params: &ForceFieldParams,
+    mol_specific_params: &mut ForceFieldParams,
     cfg: &MdConfig,
 ) -> Result<MdState, ParamError> {
     println!("Setting up dynamics for the mol editor...");
 
     let atoms_gen: Vec<_> = mol.common.atoms.iter().map(|a| a.to_generic()).collect();
     let bonds_gen: Vec<_> = mol.common.bonds.iter().map(|b| b.to_generic()).collect();
+
+    let mut msp = HashMap::new();
+    // Set these flags to false, so it will rebuild them.
+    mol.ff_params_loaded = false;
+    mol.frcmod_loaded = false;
+
+    if let Some(p) = &param_set.small_mol {
+        mol.update_ff_related(&mut msp, p);
+    } else {
+        eprintln!("Error: Unable to update a molecule's params due to missing GAFF2.");
+    }
+
+    *mol_specific_params = msp[MOL_IDENT].clone();
 
     let mols = vec![MolDynamics {
         ff_mol_type: FfMolType::SmallOrganic,

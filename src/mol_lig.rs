@@ -509,20 +509,22 @@ impl MoleculeSmall {
         *geostd_thread = Some(rx);
     }
 
-    /// Updates we wish to do shortly after load, but need access to State for.
-    pub fn update_aux(
-        &mut self,
-        active_mol: &Option<(Mt, usize)>,
-        mol_specific_param_set: &mut HashMap<String, ForceFieldParams>,
-        gaff2: &ForceFieldParams,
-    ) {
+    pub fn update_aux(&mut self, active_mol: &Option<(Mt, usize)>) {
         if let Some((_, i)) = active_mol {
             let offset = LIGAND_ABS_POSIT_OFFSET * (*i as f64);
             for posit in &mut self.common.atom_posits {
                 posit.x += offset; // Arbitrary axis and direction.
             }
         }
+    }
 
+    /// Update partial charges, FF types, and mol-specific params.
+    /// Note: Perhaps we restructure? Not all of these need access to state.
+    pub fn update_ff_related(
+        &mut self,
+        mol_specific_param_set: &mut HashMap<String, ForceFieldParams>,
+        gaff2: &ForceFieldParams,
+    ) {
         self.ff_params_loaded = true;
         for atom in &self.common.atoms {
             if atom.force_field_type.is_none() || atom.partial_charge.is_none() {
@@ -531,13 +533,11 @@ impl MoleculeSmall {
             }
         }
 
-        println!("FRCMOD loded a: {:?}", self.frcmod_loaded);
         if mol_specific_param_set
             .keys()
             .any(|k| k.eq_ignore_ascii_case(&self.common.ident))
         {
             self.frcmod_loaded = true;
-            println!("FRCMOD loded b: {:?}", self.frcmod_loaded);
         }
 
         println!("Inferring parameter data...");
