@@ -309,7 +309,7 @@ impl State {
                     })?
                     .to_string();
 
-                self.lig_specific_params.insert(
+                self.mol_specific_params.insert(
                     mol_name.to_uppercase(),
                     ForceFieldParams::load_frcmod(path)?,
                 );
@@ -616,7 +616,7 @@ impl State {
                 if let Some(p) = &self.ff_param_set.small_mol {
                     mol.update_aux(
                         &self.volatile.active_mol,
-                        &mut self.lig_specific_params,
+                        &mut self.mol_specific_params,
                         // &mut self.volatile.amber_geostd_data_avail,
                         // self.ligands.len(),
                         p,

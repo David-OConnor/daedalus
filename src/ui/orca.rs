@@ -12,7 +12,6 @@ use dynamics::{
 };
 use egui::{Color32, ComboBox, RichText, Ui};
 use graphics::{EngineUpdates, Scene};
-use lin_alg::f32::Vec3;
 
 use crate::{
     State, label, orca,
@@ -216,7 +215,6 @@ pub(in crate::ui) fn orca_input(
             let mut run_charges = false;
             let mut run_orca = false;
 
-            // if let Some(mol) = state.active_mol() {
             if state.active_mol().is_some() {
                 // todo: Delegate to src/orca A/R.
                 if ui
@@ -227,7 +225,7 @@ pub(in crate::ui) fn orca_input(
                     )
                     .clicked()
                 {
-                    let Some(mut mol) = state.active_mol() else {
+                    let Some(mol) = state.active_mol() else {
                         return;
                     };
                     let atoms: Vec<_> = mol.common().atoms.iter().map(|a| a.to_generic()).collect();
@@ -253,7 +251,7 @@ pub(in crate::ui) fn orca_input(
                         .clicked()
                     {
                         run = true;
-                        let Some(mut mol) = state.active_mol() else {
+                        let Some(mol) = state.active_mol() else {
                             return;
                         };
                         state.orca.input.atoms = mol.common().atoms.iter().map(|a| a.to_generic()).collect();
@@ -278,7 +276,7 @@ pub(in crate::ui) fn orca_input(
                         .clicked()
                     {
                         run_charges = true;
-                        let Some(mut mol) = state.active_mol() else {
+                        let Some(mol) = state.active_mol() else {
                             return;
                         };
                         state.orca.input.atoms = mol.common().atoms.iter().map(|a| a.to_generic()).collect();
@@ -294,7 +292,7 @@ pub(in crate::ui) fn orca_input(
                         .clicked()
                     {
                         run_orca = true;
-                        let Some(mut mol) = state.active_mol() else {
+                        let Some(mol) = state.active_mol() else {
                             return;
                         };
                         state.orca.input.atoms = mol.common().atoms.iter().map(|a| a.to_generic()).collect();

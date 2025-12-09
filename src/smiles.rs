@@ -1,10 +1,12 @@
+#![allow(unused)]
+
 //! Convert between molecules and SMILES text
 
 use std::{collections::HashMap, io};
 
 use bio_files::BondType;
 use lin_alg::f64::Vec3;
-use na_seq::{Element, Element::*};
+use na_seq::Element;
 
 use crate::molecule::{Atom, Bond, MoleculeCommon};
 

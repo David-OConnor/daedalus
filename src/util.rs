@@ -2,11 +2,10 @@
 //! For example, we may call some of these from the GUI, but they won't have any EGUI-specific
 //! logic in them.
 
-use std::{collections::HashSet, io, time::Instant};
+use std::time::Instant;
 
 use bio_files::{
     ResidueType,
-    md_params::{AngleBendingParams, DihedralParams, ForceFieldParams},
 };
 #[cfg(feature = "cudarc")]
 use cudarc::{
@@ -28,7 +27,7 @@ use crate::{
     drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
     mol_lig::MoleculeSmall,
     molecule::{
-        Atom, Bond, MoGenericRefMut, MolGenericRef, MolIdent, MolType, MoleculeCommon,
+        Atom, Bond, MoGenericRefMut, MolGenericRef, MolType,
         MoleculeGeneric, MoleculePeptide, Residue,
     },
     prefs::OpenType,
@@ -806,7 +805,7 @@ pub fn handle_thread_rx(state: &mut State) {
                 state.volatile.smiles_pending_data_avail = None;
             }
             // E.g. no results. COuld handle explicit errors too.
-            Err(e) => {}
+            Err(_) => {}
         }
     }
 
@@ -831,9 +830,9 @@ pub fn handle_thread_rx(state: &mut State) {
 
                 match data {
                     Ok(d) => {
-                        mol.apply_geostd_data(d, &mut state.lig_specific_params);
+                        mol.apply_geostd_data(d, &mut state.mol_specific_params);
                     }
-                    Err(e) => {
+                    Err(_) => {
                         eprintln!(
                             " Unable to load GeoStd data for this molecule (Likely not in the data set.)"
                         );
@@ -842,7 +841,7 @@ pub fn handle_thread_rx(state: &mut State) {
                 state.volatile.amber_geostd_data_avail = None;
             }
 
-            Err(e) => {}
+            Err(_) => {}
         }
     }
 }
@@ -872,7 +871,6 @@ pub fn move_mol_to_res(
 
     // todo: YOu need to add hydrogens to hetero atoms.
 
-    let mut all_found = false;
     for lig_i in 0..mol.common().atoms.len() {
         let lig_type_in_res = { &mol.common().atoms[lig_i].type_in_res };
         if lig_type_in_res.is_none() {
@@ -895,23 +893,8 @@ pub fn move_mol_to_res(
         if !found {
             // todo: If it's just a few, automatically position based on geometry to the positioned atoms.
             eprintln!("Unable to position a ligand atom based on the residue.");
-            all_found = false;
-            // todo: Temp break rm until we can add het Hydrogens or find a workaround.
-            // break;
         }
     }
-
-    // lig.pose.conformation_type = if all_found {
-    //     println!("Found all atoms required to position ligand to residue.");
-    //     ConformationType::AbsolutePosits
-    // } else {
-    //     // todo temp abs until we populate het Hydrogens or find a workaround
-    //     ConformationType::AbsolutePosits
-    //
-    //     // ConformationType::Flexible {
-    //     //     torsions: Vec::new(),
-    //     // }
-    // };
 
     posit
 }

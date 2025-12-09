@@ -56,12 +56,10 @@ mod viridis_lut;
 #[cfg(feature = "cuda")]
 use std::sync::Arc;
 use std::{
-    collections::{BTreeSet, HashMap, HashSet},
+    collections::{HashMap, HashSet},
     env, fmt,
     fmt::Display,
-    fs, io,
-    io::ErrorKind,
-    path::{Path, PathBuf},
+    path::PathBuf,
     process::Command,
     sync::mpsc::Receiver,
     time::Instant,
@@ -74,9 +72,8 @@ use bio_apis::{
     rcsb::{FilesAvailable, PdbDataResults},
 };
 use bio_files::{
-    AtomGeneric, BondGeneric, Mol2,
     md_params::ForceFieldParams,
-    mol_templates::{TemplateData, load_templates},
+    mol_templates::TemplateData,
 };
 #[cfg(feature = "cuda")]
 use cudarc::{
@@ -86,7 +83,7 @@ use cudarc::{
 use drawing::MoleculeView;
 use dynamics::{
     ComputationDevice, Integrator, MdState, SimBoxInit,
-    params::{FfParamSet, LIPID_21_LIB, OL24_LIB},
+    params::FfParamSet,
 };
 use egui_file_dialog::{FileDialog, FileDialogConfig};
 use graphics::{Camera, ControlScheme, InputsCommanded, winit::event::Modifiers};
@@ -96,12 +93,11 @@ use lin_alg::{
 };
 use mol_lig::MoleculeSmall;
 use molecule::MoleculePeptide;
-use na_seq::Nucleotide;
 
 use crate::{
     lipid::{LipidShape, MoleculeLipid, load_lipid_templates},
     mol_editor::MolEditorState,
-    molecule::{Bond, MoGenericRefMut, MolGenericRef, MolIdent, MolType, MoleculeCommon},
+    molecule::{ MoGenericRefMut, MolGenericRef, MolIdent, MolType},
     nucleic_acid::{MoleculeNucleicAcid, NucleicAcidType, Strands, load_na_templates},
     orca::StateOrca,
     prefs::ToSave,
@@ -211,11 +207,6 @@ impl Default for FileDialogs {
             .add_save_extension("Map", "map")
             .add_save_extension("MTZ", "mtz")
             .add_save_extension("Prmtop", "prmtop");
-
-        let cfg_vina = FileDialogConfig {
-            ..Default::default()
-        }
-        .add_file_filter_extensions("Executables", vec!["", "exe"]);
 
         let load = FileDialog::with_config(cfg_all.clone()).default_file_filter("All");
         let save = FileDialog::with_config(cfg_all).default_save_extension("Protein");
@@ -675,7 +666,7 @@ struct State {
     pub mol_dynamics: Option<MdState>,
     // todo: Combine these params in a single struct.
     pub ff_param_set: FfParamSet,
-    pub lig_specific_params: HashMap<String, ForceFieldParams>,
+    pub mol_specific_params: HashMap<String, ForceFieldParams>,
     pub templates: Templates,
     pub mol_editor: MolEditorState,
     pub orca: StateOrca,
@@ -707,7 +698,7 @@ impl Default for State {
             kernel_reflections: None,
             mol_dynamics: Default::default(),
             ff_param_set: Default::default(),
-            lig_specific_params: Default::default(),
+            mol_specific_params: Default::default(),
             templates: Default::default(),
             mol_editor: Default::default(),
             orca: Default::default(),

@@ -16,13 +16,14 @@ use dynamics::{
     ParamError, params::FfParamSet, snapshot::Snapshot,
 };
 use graphics::{ControlScheme, EngineUpdates, Entity, EntityUpdate, Scene};
+use graphics::event::Force;
 use lin_alg::{
     f32::{Quaternion, Vec3 as Vec3F32},
     f64::Vec3,
 };
 use na_seq::{
     AtomTypeInRes,
-    Element::{Carbon, Hydrogen, Nitrogen, Oxygen},
+    Element::{Carbon, Hydrogen},
 };
 
 use crate::{
@@ -35,12 +36,12 @@ use crate::{
     md::change_snapshot_helper,
     mol_editor,
     mol_lig::MoleculeSmall,
-    molecule::{Atom, Bond, MolGenericRef, MolType, MoleculeCommon, MoleculeGeneric},
+    molecule::{Atom, Bond, MolGenericRef, MolType},
     render::{
         ATOM_SHININESS, BALL_STICK_RADIUS, BALL_STICK_RADIUS_H, set_flashlight, set_static_light,
     },
     ui::UI_HEIGHT_CHANGED,
-    util::{find_neighbor_posit, handle_err},
+    util::find_neighbor_posit,
 };
 
 pub const INIT_CAM_DIST: f32 = 20.;
@@ -50,10 +51,13 @@ pub const STATIC_LIGHT_MOL_SIZE: f32 = 500.;
 
 pub static NEXT_ATOM_SN: AtomicU32 = AtomicU32::new(0);
 
+const MOL_IDENT: &str = "editor_mol";
+
 /// For editing small organic molecules.
 pub struct MolEditorState {
     pub mol: MoleculeSmall,
     pub md_state: Option<MdState>,
+    pub mol_specific_params: ForceFieldParams,
     /// Picoseconds. Combined with how often we run MD. 0.001 - 0.002 is good for preventing
     /// the simulation from blowing up, but we have other concerns re frame rate and desired ratio.
     /// todo: Make this customizable in the UI, and display the ratio.
@@ -73,6 +77,7 @@ impl Default for MolEditorState {
         Self {
             mol: Default::default(),
             md_state: Default::default(),
+            mol_specific_params: Default::default(),
             dt_md: 0.0001,
             time_between_md_runs: 33.333,
             md_running: Default::default(),
@@ -128,7 +133,7 @@ impl MolEditorState {
         &mut self,
         dev: &ComputationDevice,
         param_set: &FfParamSet,
-        lig_specific_params: &mut HashMap<String, ForceFieldParams>,
+        mol_specific_params: &HashMap<String, ForceFieldParams>,
         md_cfg: &MdConfig,
         path: &Path,
         scene: &mut Scene,
@@ -167,10 +172,9 @@ impl MolEditorState {
         };
 
         self.load_mol(
-            // &molecule.common,
             &molecule,
             param_set,
-            lig_specific_params,
+            mol_specific_params,
             scene,
             engine_updates,
             state_ui,
@@ -238,25 +242,41 @@ impl MolEditorState {
 
     pub fn load_mol(
         &mut self,
-        // mol: &MoleculeCommon,
         mol: &MoleculeSmall,
         param_set: &FfParamSet,
-        lig_specific_params: &mut HashMap<String, ForceFieldParams>,
+        mol_specific_param_set: &HashMap<String, ForceFieldParams>,
         scene: &mut Scene,
         engine_updates: &mut EngineUpdates,
         state_ui: &mut StateUi,
     ) {
-        // self.mol.common = mol.clone();
         self.mol = mol.clone();
+        self.mol.common.ident = MOL_IDENT.to_owned();
 
-        // Load FF type, charge etc. Do this prior to attempting to populate H, and prior to removing
-        // H: We use the H in our FF type and charge determination algorithms, then in tern use FF type
-        // to re-add H later!
-        // todo: Maybe don't remove and re-populate H?
+        let mut params_loaded_from_state = false;
+        if mol.frcmod_loaded && let Some(v) = mol_specific_param_set.get(&mol.common.ident) {
+            self.mol_specific_params = v.clone();
+            params_loaded_from_state = true;
+        }
+
+        // We use a HashMap here to fit the update_aux API, then extract the
+        // entry it adds.
+        let mut mol_specific_params = HashMap::new();
+
         if let Some(p) = &param_set.small_mol {
-            self.mol.update_aux(&None, lig_specific_params, p);
+            self.mol.update_aux(&None, &mut mol_specific_params, p);
         } else {
-            eprintln!("Error: Unable to update a molecule's params due to missing GAFF2.",)
+            eprintln!("Error: Unable to update a molecule's params due to missing GAFF2.");
+        }
+
+        // todo temp print
+        println!("MSP here: {:?}", mol_specific_params);
+
+        if !params_loaded_from_state {
+            match mol_specific_params.get(MOL_IDENT) {
+                Some(v) => self.mol_specific_params = v.clone(),
+                None => eprintln!("Error: mol-specific editor params missing.")
+            }
+
         }
 
         // todo: Evaluate if you want to do this.
@@ -426,10 +446,9 @@ pub fn enter_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mu
             eprintln!("Expected a ligand at this index, but out of bounds when entering edit mode");
         } else {
             state.mol_editor.load_mol(
-                // &state.ligands[i].common,
                 &state.ligands[i],
                 &state.ff_param_set,
-                &mut state.lig_specific_params,
+                &state.mol_specific_params,
                 scene,
                 engine_updates,
                 &mut state.ui,
@@ -807,7 +826,7 @@ pub(super) fn build_dynamics(
     dev: &ComputationDevice,
     mol: &MoleculeSmall,
     param_set: &FfParamSet,
-    mol_specific_params: &HashMap<String, ForceFieldParams>,
+    mol_specific_params: &ForceFieldParams,
     cfg: &MdConfig,
 ) -> Result<MdState, ParamError> {
     println!("Setting up dynamics for the mol editor...");
@@ -824,13 +843,14 @@ pub(super) fn build_dynamics(
         adjacency_list: Some(mol.common.adjacency_list.clone()),
         static_: false,
         bonded_only: false,
-        // mol_specific_params: Some(mol_specific_params["CPB"].clone()),
-        mol_specific_params: None,
+        mol_specific_params: Some(mol_specific_params.clone()),
     }];
 
     let cfg = MdConfig {
         max_init_relaxation_iters: Some(100), // todo A/R
         overrides: MdOverrides {
+            // Water relaxation is slow.
+            skip_water_relaxation: true,
             long_range_recip_disabled: true,
             ..Default::default()
         },

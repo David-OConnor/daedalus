@@ -125,7 +125,7 @@ pub fn dock(
         Some(pep),
         starting_vel.into(),
         &state.ff_param_set,
-        &state.lig_specific_params,
+        &state.mol_specific_params,
         &cfg,
         &mut state.volatile.md_peptide_selected,
     )?;

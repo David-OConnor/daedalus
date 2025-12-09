@@ -272,6 +272,7 @@ pub fn build_dynamics(
     let cfg = MdConfig {
         overrides: MdOverrides {
             skip_water: false,
+            skip_water_relaxation: false,
             bonded_disabled: false,
             coulomb_disabled: false,
             lj_disabled: false,
@@ -537,7 +538,7 @@ pub fn launch_md(state: &mut State) {
         &mols,
         mol,
         &state.ff_param_set,
-        &state.lig_specific_params,
+        &state.mol_specific_params,
         &state.to_save.md_config,
         state.ui.md.peptide_static,
         near_lig_thresh,

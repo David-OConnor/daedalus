@@ -92,7 +92,7 @@ pub fn load_atom_coords_rcsb(
                 return;
             };
 
-            let mut mol: MoleculePeptide =
+            let mol: MoleculePeptide =
                 match MoleculePeptide::from_mmcif(cif, ff_map, None, state.to_save.ph) {
                     Ok(m) => m,
                     Err(e) => {
@@ -173,7 +173,7 @@ pub fn load_geostd2(
                 if let Some(frcmod) = data.frcmod {
                     match ForceFieldParams::from_frcmod(&frcmod) {
                         Ok(v) => {
-                            state.lig_specific_params.insert(ident.to_uppercase(), v);
+                            state.mol_specific_params.insert(ident.to_uppercase(), v);
                         }
                         Err(e) => {
                             handle_err(&mut state.ui, format!("FRCmod empty from geostd: {e:?}"));

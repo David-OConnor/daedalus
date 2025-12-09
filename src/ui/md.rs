@@ -1,5 +1,5 @@
 use dynamics::{
-    ComputationDevice, FfMolType, HydrogenConstraint, Integrator, MdConfig, SimBoxInit,
+    ComputationDevice, HydrogenConstraint, Integrator, MdConfig, SimBoxInit,
     snapshot::Snapshot,
 };
 use egui::{Color32, ComboBox, RichText, TextEdit, Ui};
@@ -10,10 +10,7 @@ use crate::{
     State,
     drawing::EntityClass,
     label,
-    md::{
-        STATIC_ATOM_DIST_THRESH, build_and_run_dynamics, launch_md, post_run_cleanup,
-        reassign_snapshot_indices,
-    },
+    md::{launch_md, post_run_cleanup},
     ui::{
         COL_SPACING, COLOR_ACTION, COLOR_ACTIVE, COLOR_HIGHLIGHT, COLOR_INACTIVE,
         cam::move_cam_to_active_mol, flag_btn, misc, num_field,
@@ -185,7 +182,7 @@ pub fn md_setup(
                 let help_text = "Set the integrator to use for molecular dynamics. Verlet Velocity is a good default.";
                 ui.label("Integrator:").on_hover_text(help_text);
 
-                let mut prev = state.to_save.md_config.integrator.clone();
+                let prev = state.to_save.md_config.integrator.clone();
                 if ComboBox::from_id_salt(4)
                     .width(80.)
                     .selected_text(state.to_save.md_config.integrator.to_string())

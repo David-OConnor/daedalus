@@ -6,7 +6,6 @@ use na_seq::{
     Element,
     Element::{Carbon, Chlorine, Hydrogen, Nitrogen, Oxygen, Phosphorus, Sulfur},
 };
-use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 
 use crate::mol_editor::NEXT_ATOM_SN;
@@ -178,7 +177,7 @@ pub(in crate::ui) fn editor(
                     &state.dev,
                     &state.mol_editor.mol,
                     &state.ff_param_set,
-                    &HashMap::new(), // todo: A/R
+                    &state.mol_editor.mol_specific_params,
                     &state.to_save.md_config,
                 ) {
                     Ok(d) => state.mol_editor.md_state = Some(d),
@@ -512,12 +511,12 @@ fn edit_tools(
     });
 
     if rebuild_md && state.mol_editor.md_running {
-        // todo: Ideally don't rebuild the whole dynamics for performance reasons.
+        // todo: Ideally don't rebuild the whole dynamics, for performance reasons.
         match mol_editor::build_dynamics(
             &state.dev,
             &state.mol_editor.mol,
             &state.ff_param_set,
-            &HashMap::new(), // todo: A/R
+            &state.mol_editor.mol_specific_params,
             &state.to_save.md_config,
         ) {
             Ok(d) => state.mol_editor.md_state = Some(d),

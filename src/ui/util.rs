@@ -46,7 +46,7 @@ pub fn update_file_dialogs(
             OperatingMode::MolEditor => state.mol_editor.open_molecule(
                 &state.dev,
                 &state.ff_param_set,
-                &mut state.lig_specific_params,
+                &state.mol_specific_params,
                 &state.to_save.md_config,
                 path,
                 scene,
@@ -318,7 +318,7 @@ pub fn handle_redraw(
 /// Handles the case of opening a ligand remotely using the text input.
 pub fn open_lig_from_input(
     state: &mut State,
-    mut mol: MoleculeSmall,
+    mol: MoleculeSmall,
     scene: &mut Scene,
     engine_updates: &mut EngineUpdates,
 ) {
@@ -359,6 +359,6 @@ pub fn init_with_scene(state: &mut State, scene: &mut Scene, ctx: &egui::Context
 #[macro_export]
 macro_rules! label {
     ($ui:expr, $text:expr, $color:expr) => {
-        $ui.label(egui::RichText::new($text).color($color));
+        $ui.label(egui::RichText::new($text).color($color))
     };
 }

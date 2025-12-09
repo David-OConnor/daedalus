@@ -10,7 +10,7 @@ use std::{
 };
 
 use bio_apis::{
-    ReqError, amber_geostd, amber_geostd::GeostdData, pubchem, pubchem::ProteinStructure,
+    ReqError, amber_geostd, amber_geostd::GeostdData, pubchem::ProteinStructure,
 };
 use bio_files::{
     ChargeType, Mol2, MolType, Pdbqt, Sdf, Xyz, create_bonds,
@@ -120,25 +120,6 @@ pub struct Ligand {
     pub _flexible_bonds: Vec<usize>, // Index
     pub _pose: Pose,
     pub _docking_site: DockingSite,
-}
-
-impl Ligand {
-    pub fn _new(mol: &MoleculeSmall) -> Self {
-        let mut ff_params_loaded = true;
-        for atom in &mol.common.atoms {
-            if atom.force_field_type.is_none() || atom.partial_charge.is_none() {
-                ff_params_loaded = false;
-                break;
-            }
-        }
-
-        // todo: What was your intent here? This doesn't do anything.
-        let mut result = Self {
-            ..Default::default()
-        };
-
-        result
-    }
 }
 
 impl TryFrom<Mol2> for MoleculeSmall {
@@ -550,11 +531,13 @@ impl MoleculeSmall {
             }
         }
 
+        println!("FRCMOD loded a: {:?}", self.frcmod_loaded);
         if mol_specific_param_set
             .keys()
             .any(|k| k.eq_ignore_ascii_case(&self.common.ident))
         {
             self.frcmod_loaded = true;
+            println!("FRCMOD loded b: {:?}", self.frcmod_loaded);
         }
 
         println!("Inferring parameter data...");
@@ -629,6 +612,7 @@ impl MoleculeSmall {
                 println!("Improp: {:?}", p);
             }
 
+            println!("Inserting: {:?}", self.common.ident.to_owned());
             mol_specific_param_set.insert(self.common.ident.to_owned(), mol_specific_params);
             self.frcmod_loaded = true;
         }

@@ -18,14 +18,12 @@ use na_seq::{AaIdent, Element};
 use crate::{
     CamSnapshot, MsaaSetting, OperatingMode, Selection, State, ViewSelLevel, cli,
     cli::autocomplete_cli,
-    docking::dock,
     download_mols::{load_atom_coords_rcsb, load_sdf_drugbank, load_sdf_pubchem},
-    drawing::{EntityClass, color_viridis},
+    drawing::color_viridis,
     drawing_wrappers::draw_all_lipids,
     file_io::gemmi_path,
     inputs::{MOVEMENT_SENS, ROTATE_SENS, SENS_MOL_MOVE_SCROLL},
     label,
-    lipid::{LipidShape, make_bacterial_lipids},
     mol_editor::enter_edit_mode,
     molecule::MolGenericRef,
     render::set_flashlight,
@@ -45,7 +43,7 @@ use crate::{
     util::{
         check_prefs_save, clear_mol_entity_indices, close_mol, close_peptide, cycle_selected,
         handle_err, handle_scene_flags, handle_success, handle_thread_rx, orbit_center,
-        reset_orbit_center, select_from_search,
+        select_from_search,
     },
 };
 
