@@ -1,5 +1,5 @@
 use bio_files::BondType;
-use lin_alg::f64::Vec3;
+use lin_alg::f64::{Quaternion, Vec3};
 use na_seq::{
     AtomTypeInRes,
     Element::{self, Carbon, Hydrogen, Oxygen},
@@ -7,8 +7,24 @@ use na_seq::{
 
 use crate::molecule::{Atom, Bond};
 
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Template {
+    Cooh,
+    AromaticRing
+}
+
+impl Template {
+    pub fn atoms_bonds(&self, anchor: Vec3, orientation: Quaternion, start_sn: u32, start_i: usize) -> (Vec<Atom>, Vec<Bond>) {
+        match self {
+            Self:: Cooh => cooh_group(anchor, start_sn, start_i),
+            Self::AromaticRing => ar_ring(anchor, orientation, start_sn, start_i),
+            _ => Default::default()
+        }
+    }
+}
+
 // todo: What does posit anchor too? Center? An corner marked in a certain way?
-pub fn cooh_group(anchor: Vec3, start_sn: u32, start_i: usize) -> (Vec<Atom>, Vec<Bond>) {
+fn cooh_group(anchor: Vec3, start_sn: u32, start_i: usize) -> (Vec<Atom>, Vec<Bond>) {
     const POSITS: [Vec3; 3] = [
         Vec3::new(0.0000, 0.0000, 0.0), // C (carboxyl)
         Vec3::new(1.2290, 0.0000, 0.0), // O (carbonyl)
@@ -61,7 +77,7 @@ pub fn cooh_group(anchor: Vec3, start_sn: u32, start_i: usize) -> (Vec<Atom>, Ve
 }
 
 // todo: What does posit anchor too? Center? An corner marked in a certain way?
-pub fn ar_ring(anchor: Vec3, start_sn: u32, start_i: usize) -> (Vec<Atom>, Vec<Bond>) {
+fn ar_ring(anchor: Vec3, orientation: Quaternion, start_sn: u32, start_i: usize) -> (Vec<Atom>, Vec<Bond>) {
     const POSITS: [Vec3; 6] = [
         Vec3::new(1.3970, 0.0000, 0.0),
         Vec3::new(0.6985, 1.2090, 0.0),
@@ -71,7 +87,8 @@ pub fn ar_ring(anchor: Vec3, start_sn: u32, start_i: usize) -> (Vec<Atom>, Vec<B
         Vec3::new(0.6985, -1.2090, 0.0),
     ];
 
-    let posits = POSITS.iter().map(|p| *p + anchor);
+    // let posits = POSITS.iter().map(|p| *p + anchor);
+    let posits = POSITS.iter().map(|p| (orientation.rotate_vec(*p)) + anchor);
 
     let mut atoms = Vec::with_capacity(6);
 

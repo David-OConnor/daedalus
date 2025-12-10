@@ -9,7 +9,7 @@ use na_seq::{
 use std::sync::atomic::Ordering;
 
 use crate::mol_editor::NEXT_ATOM_SN;
-use crate::mol_editor::add_atoms::add_from_template;
+use crate::mol_editor::add_atoms::add_from_template_btn;
 use crate::mol_lig::MoleculeSmall;
 use crate::molecule::{Bond, MoleculeCommon};
 use crate::{
@@ -24,6 +24,8 @@ use crate::{
     },
     util::handle_err,
 };
+use crate::mol_editor::templates::Template;
+use crate::ui::misc::active_color;
 // todo: Check DBs (with a button maybe?) to see if the molecule exists in a DB already, or if
 // todo a similar one does.
 
@@ -170,6 +172,39 @@ pub(in crate::ui) fn editor(
                 ui,
                 &mut redraw,
             );
+
+            if state.mol_editor.md_running {
+
+                let color = active_color(!state.mol_editor.md_skip_water);
+                if ui
+                    .button(RichText::new("MD Water").color(color))
+                    .on_hover_text("If enabled, use the explicit solvation model. If disabled, does not model water.")
+                    .clicked()
+                {
+                    state.mol_editor.md_skip_water = !state.mol_editor.md_skip_water;
+                    redraw = true;
+
+                    // todo: THis MD rebuild code iss DRY with below.
+                    if state.mol_editor.md_running {
+                        // todo: Ideally don't rebuild the whole dynamics, for performance reasons.
+                        match mol_editor::build_dynamics(
+                            &state.dev,
+                            &mut state.mol_editor.mol,
+                            &state.ff_param_set,
+                            &mut state.mol_editor.mol_specific_params,
+                            &state.to_save.md_config,
+                        ) {
+                            Ok(d) => state.mol_editor.md_state = Some(d),
+                            Err(e) => eprintln!("Problem setting up dynamics for the editor: {e:?}"),
+                        }
+                    } else {
+                        // Will be triggered next time MD is started.
+                        state.mol_editor.md_rebuild_required = true;
+                    }
+
+                }
+            }
+
             let started = !prev && state.mol_editor.md_running;
 
             if started && (state.mol_editor.md_rebuild_required || state.mol_editor.md_state.is_none()) {
@@ -434,16 +469,28 @@ fn edit_tools(
     ui.add_space(COL_SPACING / 2.);
 
     section_box().show(ui, |ui| {
+        let Selection::AtomLig((_, i)) = state.ui.selection else {
+            eprintln!("Attempting to add an atom with no parent to add it to");
+            return;
+        };
+
         let anchor = Vec3::new_zero();
 
         let next_sn = NEXT_ATOM_SN.load(Ordering::Acquire);
         let next_i = state.mol_editor.mol.common.atoms.len();
 
+        // todo: Don't continuously compute orientation
+        let orientation =
+
         // Helper
-        let mut add_t = |temp: (Vec<Atom>, Vec<Bond>), name, abbrev| {
-            add_from_template(
+        let mut add_t = |template: Template, name, abbrev| {
+            add_from_template_btn(
                 &mut state.mol_editor.mol.common,
-                temp,
+                template,
+                anchor,
+                orientation,
+                next_sn,
+                next_i,
                 ui,
                 &mut rebuild_md,
                 name,
@@ -451,32 +498,33 @@ fn edit_tools(
             );
         };
 
+        // todo: No! Don't continuously run these template atom creators!
         add_t(
-            templates::ar_ring(anchor, next_sn, next_i),
+            Template::AromaticRing,
             "−OH",
             "hydroxyl functional group",
         );
 
         add_t(
-            templates::cooh_group(anchor, next_sn, next_i),
+            Template::Cooh,
             "−COOH",
             "carboxylic acid functional group",
         );
 
         add_t(
-            templates::ar_ring(anchor, next_sn, next_i),
+            Template::AromaticRing,
             "−NH₂",
             "amide functional group",
         );
 
         add_t(
-            templates::ar_ring(anchor, next_sn, next_i),
+            Template::AromaticRing,
             "Ar",
             "benzene/aromatic ring",
         );
 
         add_t(
-            templates::ar_ring(anchor, next_sn, next_i),
+            Template::AromaticRing,
             "Pent",
             "5-atom ring",
         );
@@ -523,7 +571,7 @@ fn edit_tools(
             Err(e) => eprintln!("Problem setting up dynamics for the editor: {e:?}"),
         }
     } else if rebuild_md {
-        // Will be triggered next time MD  is started.
+        // Will be triggered next time MD is started.
         state.mol_editor.md_rebuild_required = true;
     }
 }

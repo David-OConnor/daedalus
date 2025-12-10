@@ -67,6 +67,7 @@ pub struct MolEditorState {
     // frame, including MD.
     pub time_between_md_runs: f32,
     pub md_running: bool,
+    pub md_skip_water: bool,
     pub snap: Option<Snapshot>,
     pub last_dt_run: Instant,
     pub md_rebuild_required: bool,
@@ -77,6 +78,7 @@ impl Default for MolEditorState {
         Self {
             mol: Default::default(),
             md_state: Default::default(),
+            md_skip_water: true,
             mol_specific_params: Default::default(),
             dt_md: 0.0001,
             time_between_md_runs: 33.333,
@@ -173,8 +175,8 @@ impl MolEditorState {
 
         self.load_mol(
             &molecule,
-            param_set,
-            mol_specific_params,
+            // param_set,
+            // mol_specific_params,
             scene,
             engine_updates,
             state_ui,
@@ -243,8 +245,8 @@ impl MolEditorState {
     pub fn load_mol(
         &mut self,
         mol: &MoleculeSmall,
-        param_set: &FfParamSet,
-        mol_specific_param_set: &HashMap<String, ForceFieldParams>,
+        // param_set: &FfParamSet,
+        // mol_specific_param_set: &HashMap<String, ForceFieldParams>,
         scene: &mut Scene,
         engine_updates: &mut EngineUpdates,
         state_ui: &mut StateUi,
@@ -294,6 +296,11 @@ impl MolEditorState {
         self.load_atom_posits_from_md(&mut scene.entities, state_ui, engine_updates);
 
         self.mol.smiles = Some(self.mol.common.to_smiles());
+
+
+        scene.input_settings.control_scheme = ControlScheme::Arc {
+            center: mol.common.centroid().into()
+        };
 
         // Clear all entities for non-editor molecules. And render the initial relaxation
         // from building dynamics.
@@ -439,6 +446,9 @@ pub fn enter_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mu
     // This stays false under several conditions.
     let mut mol_loaded = false;
 
+
+    let mut arc_center = Vec3F32::new_zero();
+
     if let Some((mol_type, i)) = state.volatile.active_mol
         && mol_type == MolType::Ligand
     {
@@ -447,13 +457,12 @@ pub fn enter_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mu
         } else {
             state.mol_editor.load_mol(
                 &state.ligands[i],
-                &state.ff_param_set,
-                &state.mol_specific_params,
                 scene,
                 engine_updates,
                 &mut state.ui,
             );
             mol_loaded = true;
+            arc_center = state.ligands[i].common.centroid().into();
         }
     }
 
@@ -462,9 +471,6 @@ pub fn enter_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mu
     }
 
     state.volatile.control_scheme_prev = scene.input_settings.control_scheme;
-    scene.input_settings.control_scheme = ControlScheme::Arc {
-        center: Vec3F32::new_zero(),
-    };
 
     state.volatile.primary_mode_cam = scene.camera.clone();
     scene.camera.position = Vec3F32::new(0., 0., -INIT_CAM_DIST);
@@ -860,7 +866,7 @@ pub(super) fn build_dynamics(
     }];
 
     let cfg = MdConfig {
-        max_init_relaxation_iters: Some(100), // todo A/R
+        max_init_relaxation_iters: Some(50), // todo A/R
         overrides: MdOverrides {
             // Water relaxation is slow.
             skip_water_relaxation: true,

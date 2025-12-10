@@ -17,6 +17,7 @@ use crate::{
     mol_editor::{MolEditorState, NEXT_ATOM_SN, hydrogens_avail},
     molecule::{Atom, Bond},
 };
+use crate::mol_editor::templates::Template;
 
 impl MolEditorState {
     /// Returns the index of the atom added.
@@ -319,21 +320,24 @@ fn find_appended_posit(
 
 /// A button that adds atoms to the editor molecule from a template. Things can be single atoms, but we are
 /// currently using it for rings, functional groups etc.
-pub fn add_from_template(
+pub fn add_from_template_btn(
     mol: &mut MoleculeCommon,
-    atoms_bonds: (Vec<Atom>, Vec<Bond>),
+    template: Template,
+    anchor: Vec3,
+    orientation: Quaternion,
+    start_sn: u32,
+    start_i: usize,
     ui: &mut Ui,
     rebuild_md: &mut bool,
     abbrev: &str,
     name: &str,
 ) {
-    let (atoms, bonds) = atoms_bonds;
-
     if ui
         .button(abbrev)
         .on_hover_text(format!("Add a {name} at the current selection"))
         .clicked()
     {
+        let (atoms, bonds) = template.atoms_bonds(anchor, orientation, start_sn, start_i);
         NEXT_ATOM_SN.fetch_add(atoms.len() as u32, Ordering::AcqRel);
 
         for atom in atoms {
