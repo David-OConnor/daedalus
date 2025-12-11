@@ -1011,15 +1011,17 @@ pub fn draw_mol(
                 ATOM_SHININESS,
             );
 
-            // Note: We draw these on the bond entities if not in a view that shows atoms.
-            text_overlay_atoms(
-                &mut entity,
-                &mol.common().ident,
-                i_atom,
-                &atom,
-                mol_active,
-                ui,
-            );
+            if mode != OperatingMode::MolEditor {
+                // Note: We draw these on the bond entities if not in a view that shows atoms.
+                text_overlay_atoms(
+                    &mut entity,
+                    &mol.common().ident,
+                    i_atom,
+                    &atom,
+                    mol_active,
+                    ui,
+                );
+            }
 
             entity.class = mol.mol_type().entity_type() as u32;
             result.push(entity);
@@ -1186,7 +1188,7 @@ pub fn draw_mol(
 
         // todo: This seems to be related to a bug where atom labels are doubled for some in sticks mode.
         // Draw atom-based labels on bonds if not in a view mode that shows atoms.
-        if !entities.is_empty() {
+        if !entities.is_empty() && mode != OperatingMode::MolEditor {
             text_overlay_bonds(
                 &mut entities[0],
                 &mol.common().ident,

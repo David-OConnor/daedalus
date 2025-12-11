@@ -614,15 +614,9 @@ impl State {
                 self.mol_dynamics = None;
 
                 if let Some(p) = &self.ff_param_set.small_mol {
-                    mol.update_ff_related(
-                        &mut self.mol_specific_params,
-                        p,
-                    );
+                    mol.update_ff_related(&mut self.mol_specific_params, p);
 
-                    mol.update_aux(
-                        &self.volatile.active_mol,
-
-                    );
+                    mol.update_aux(&self.volatile.active_mol);
                 } else {
                     handle_err(
                         &mut self.ui,

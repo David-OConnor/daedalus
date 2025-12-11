@@ -9,9 +9,7 @@ use std::{
     time::Instant,
 };
 
-use bio_apis::{
-    ReqError, amber_geostd, amber_geostd::GeostdData, pubchem::ProteinStructure,
-};
+use bio_apis::{ReqError, amber_geostd, amber_geostd::GeostdData, pubchem::ProteinStructure};
 use bio_files::{
     ChargeType, Mol2, MolType, Pdbqt, Sdf, Xyz, create_bonds,
     md_params::{ForceFieldParams, ForceFieldParamsVec},

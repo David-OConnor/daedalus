@@ -13,7 +13,7 @@ use ewald::fft3d_c2r;
 use graphics::{EngineUpdates, EntityUpdate, Mesh, Scene, Vertex};
 #[cfg(feature = "cuda")]
 use lin_alg::f32::{vec3s_from_dev, vec3s_to_dev};
-use lin_alg::{f64::Vec3};
+use lin_alg::f64::Vec3;
 use mcubes::{MarchingCubes, MeshSide};
 use rayon::prelude::*;
 use rustfft::{FftPlanner, num_complex::Complex};

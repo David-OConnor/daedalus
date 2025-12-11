@@ -1,57 +1,83 @@
+use std::f64::consts::TAU;
+
 use bio_files::BondType;
-use lin_alg::f64::{Quaternion, Vec3};
+use dynamics::find_planar_posit;
+use lin_alg::f64::{Quaternion, Vec3, X_VEC, Z_VEC};
 use na_seq::{
     AtomTypeInRes,
-    Element::{self, Carbon, Hydrogen, Oxygen},
+    Element::{self, Carbon, Hydrogen, Nitrogen, Oxygen},
 };
 
 use crate::molecule::{Atom, Bond};
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Template {
+    /// Carboxylic acid
     Cooh,
-    AromaticRing
+    Amide,
+    AromaticRing,
 }
 
 impl Template {
-    pub fn atoms_bonds(&self, anchor: Vec3, orientation: Quaternion, start_sn: u32, start_i: usize) -> (Vec<Atom>, Vec<Bond>) {
+    pub(in crate::mol_editor) fn atoms_bonds(
+        &self,
+        anchor: Vec3,
+        r_aligner: Vec3,
+        start_sn: u32,
+        start_i: usize,
+    ) -> (Vec<Atom>, Vec<Bond>) {
         match self {
-            Self:: Cooh => cooh_group(anchor, start_sn, start_i),
-            Self::AromaticRing => ar_ring(anchor, orientation, start_sn, start_i),
-            _ => Default::default()
+            Self::Cooh => cooh_group(anchor, r_aligner, start_sn, start_i),
+            Self::Amide => amide_group(anchor, r_aligner, start_sn, start_i),
+            Self::AromaticRing => ar_ring(anchor, r_aligner, start_sn, start_i),
+            _ => Default::default(),
         }
     }
 }
 
-// todo: What does posit anchor too? Center? An corner marked in a certain way?
-fn cooh_group(anchor: Vec3, start_sn: u32, start_i: usize) -> (Vec<Atom>, Vec<Bond>) {
-    const POSITS: [Vec3; 3] = [
-        Vec3::new(0.0000, 0.0000, 0.0), // C (carboxyl)
-        Vec3::new(1.2290, 0.0000, 0.0), // O (carbonyl)
-        Vec3::new(-0.6715, 1.1645, 0.0), // O (hydroxyl)
-                                        // Vec3::new(-1.0286, 1.7826, 0.0), // H (hydroxyl)
-    ];
+/// Atom 0 is placed on the anchor; the r_group is used to match a "previous"
+/// atom in the mol we're adding this to.
+fn cooh_group(
+    anchor: Vec3,
+    aligner: Vec3,
+    start_sn: u32,
+    start_i: usize,
+) -> (Vec<Atom>, Vec<Bond>) {
+    // Atom 0 is must be the 0 vec. (Or we will have to offset everything until it is)
+    const LEN_HYDROXYL: f64 = 1.362;
+    const LEN_CARBONYL: f64 = 1.227;
+    let mut posits = vec![Vec3::new_zero(), Vec3::new(LEN_HYDROXYL, 0., 0.)];
 
-    // todo: Skip the H.
-    const ELEMENTS: [Element; 4] = [Carbon, Oxygen, Oxygen, Hydrogen];
-    const FF_TYPES: [&str; 4] = ["c", "o", "oh", "ho"]; // GAFF2-style
-    const CHARGES: [f32; 4] = [0.70, -0.55, -0.61, 0.44]; // todo: A/R
+    let rot_hydr = Quaternion::from_axis_angle(Z_VEC, TAU / 3.);
+    posits.push(rot_hydr.rotate_vec(posits[1]).to_normalized() * LEN_CARBONYL);
 
-    let posits = POSITS.iter().map(|p| *p + anchor);
+    // Used to orient the molecule.
+    let r_group_local = find_planar_posit(posits[0], posits[1], posits[2]);
+
+    // Rotates the molecule to the correct global orientation.
+    let rotator = Quaternion::from_unit_vecs(
+        r_group_local.to_normalized(),
+        (aligner - anchor).to_normalized(),
+    );
+
+    // Align and rotate the local atom positions to global ones.
+    let posits: Vec<_> = posits
+        .iter()
+        .map(|p| rotator.rotate_vec(*p) + anchor)
+        .collect();
+
+    const ELEMENTS: [Element; 3] = [Carbon, Oxygen, Oxygen];
 
     let mut atoms = Vec::with_capacity(3);
-    let mut bonds = Vec::with_capacity(3);
+    let mut bonds = Vec::with_capacity(2);
 
-    for (i, posit) in posits.enumerate() {
+    for (i, posit) in posits.into_iter().enumerate() {
         let serial_number = start_sn + i as u32;
 
         atoms.push(Atom {
             serial_number,
             posit,
             element: ELEMENTS[i],
-            type_in_res: None,                              // todo: no; fix this
-            force_field_type: Some(FF_TYPES[i].to_owned()), // todo: A/R
-            partial_charge: Some(CHARGES[i]),               // todo: A/R,
             ..Default::default()
         })
     }
@@ -64,11 +90,12 @@ fn cooh_group(anchor: Vec3, start_sn: u32, start_i: usize) -> (Vec<Atom>, Vec<Bo
         atom_1: start_i + 1,
         is_backbone: false,
     });
+
     bonds.push(Bond {
         bond_type: BondType::Single,
-        atom_0_sn: atoms[1].serial_number,
+        atom_0_sn: atoms[0].serial_number,
         atom_1_sn: atoms[2].serial_number,
-        atom_0: start_i + 1,
+        atom_0: start_i,
         atom_1: start_i + 2,
         is_backbone: false,
     });
@@ -76,8 +103,61 @@ fn cooh_group(anchor: Vec3, start_sn: u32, start_i: usize) -> (Vec<Atom>, Vec<Bo
     (atoms, bonds)
 }
 
+/// See comments on `cooh_group`.
+fn amide_group(
+    anchor: Vec3,
+    aligner: Vec3,
+    start_sn: u32,
+    start_i: usize,
+) -> (Vec<Atom>, Vec<Bond>) {
+    const LEN: f64 = 1.33;
+    let mut posits = vec![Vec3::new_zero(), Vec3::new(LEN, 0., 0.)];
+
+    let r_group_local = -X_VEC;
+
+    // Rotates the molecule to the correct global orientation.
+    let rotator = Quaternion::from_unit_vecs(
+        r_group_local.to_normalized(),
+        (aligner - anchor).to_normalized(),
+    );
+
+    // Align and rotate the local atom positions to global ones.
+    let posits: Vec<_> = posits
+        .iter()
+        .map(|p| rotator.rotate_vec(*p) + anchor)
+        .collect();
+
+    const ELEMENTS: [Element; 2] = [Carbon, Nitrogen];
+
+    let mut atoms = Vec::with_capacity(2);
+    let mut bonds = Vec::with_capacity(2);
+
+    for (i, posit) in posits.into_iter().enumerate() {
+        let serial_number = start_sn + i as u32;
+
+        atoms.push(Atom {
+            serial_number,
+            posit,
+            element: ELEMENTS[i],
+            ..Default::default()
+        })
+    }
+
+    bonds.push(Bond {
+        bond_type: BondType::Single,
+        atom_0_sn: atoms[0].serial_number,
+        atom_1_sn: atoms[1].serial_number,
+        atom_0: start_i,
+        atom_1: start_i + 1,
+        is_backbone: false,
+    });
+
+    (atoms, bonds)
+}
+
 // todo: What does posit anchor too? Center? An corner marked in a certain way?
-fn ar_ring(anchor: Vec3, orientation: Quaternion, start_sn: u32, start_i: usize) -> (Vec<Atom>, Vec<Bond>) {
+// fn ar_ring(anchor: Vec3, orientation: Quaternion, start_sn: u32, start_i: usize) -> (Vec<Atom>, Vec<Bond>) {
+fn ar_ring(anchor: Vec3, r_aligner: Vec3, start_sn: u32, start_i: usize) -> (Vec<Atom>, Vec<Bond>) {
     const POSITS: [Vec3; 6] = [
         Vec3::new(1.3970, 0.0000, 0.0),
         Vec3::new(0.6985, 1.2090, 0.0),
@@ -88,6 +168,7 @@ fn ar_ring(anchor: Vec3, orientation: Quaternion, start_sn: u32, start_i: usize)
     ];
 
     // let posits = POSITS.iter().map(|p| *p + anchor);
+    let orientation = Quaternion::new_identity(); // todo temp
     let posits = POSITS.iter().map(|p| (orientation.rotate_vec(*p)) + anchor);
 
     let mut atoms = Vec::with_capacity(6);
@@ -100,8 +181,6 @@ fn ar_ring(anchor: Vec3, orientation: Quaternion, start_sn: u32, start_i: usize)
             posit,
             element: Carbon,
             type_in_res: Some(AtomTypeInRes::CA), // todo: A/R
-            force_field_type: Some("ca".to_owned()),
-            partial_charge: Some(-0.115), // tood: Ar. -0.06 - 0.012 etc.
             ..Default::default()
         })
     }

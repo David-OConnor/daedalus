@@ -1,31 +1,36 @@
+use std::sync::atomic::Ordering;
+
 use bio_files::BondType;
 use egui::{Color32, ComboBox, RichText, Slider, Ui};
 use graphics::{EngineUpdates, Entity, EntityUpdate, Scene};
-use lin_alg::f64::Vec3;
+use lin_alg::f64::{Quaternion, Vec3, Z_VEC};
 use na_seq::{
     Element,
     Element::{Carbon, Chlorine, Hydrogen, Nitrogen, Oxygen, Phosphorus, Sulfur},
 };
-use std::sync::atomic::Ordering;
 
-use crate::mol_editor::NEXT_ATOM_SN;
-use crate::mol_editor::add_atoms::add_from_template_btn;
-use crate::mol_lig::MoleculeSmall;
-use crate::molecule::{Bond, MoleculeCommon};
 use crate::{
     Selection, State, StateUi, ViewSelLevel,
     drawing::MoleculeView,
     mol_editor,
-    mol_editor::{exit_edit_mode, templates},
-    molecule::Atom,
+    mol_editor::{
+        NEXT_ATOM_SN,
+        add_atoms::{add_atom, add_from_template_btn, remove_hydrogens},
+        exit_edit_mode,
+        templates::Template,
+    },
+    mol_lig::MoleculeSmall,
     ui::{
-        COL_SPACING, COLOR_ACTIVE, COLOR_INACTIVE, cam::cam_reset_controls, md::energy_disp, misc,
-        misc::section_box, mol_data::selected_data, view_sel_selector,
+        COL_SPACING, COLOR_ACTIVE, COLOR_INACTIVE,
+        cam::cam_reset_controls,
+        md::energy_disp,
+        misc,
+        misc::{active_color, section_box},
+        mol_data::selected_data,
+        view_sel_selector,
     },
     util::handle_err,
 };
-use crate::mol_editor::templates::Template;
-use crate::ui::misc::active_color;
 // todo: Check DBs (with a button maybe?) to see if the molecule exists in a DB already, or if
 // todo a similar one does.
 
@@ -212,7 +217,7 @@ pub(in crate::ui) fn editor(
                     &state.dev,
                     &mut state.mol_editor.mol,
                     &state.ff_param_set,
-                        &mut state.mol_editor.mol_specific_params,
+                    &mut state.mol_editor.mol_specific_params,
                     &state.to_save.md_config,
                 ) {
                     Ok(d) => state.mol_editor.md_state = Some(d),
@@ -386,7 +391,8 @@ fn edit_tools(
                 return;
             };
 
-            state.mol_editor.add_atom(
+            add_atom(
+                &mut state.mol_editor.mol.common,
                 &mut scene.entities,
                 i,
                 Carbon,
@@ -410,7 +416,8 @@ fn edit_tools(
                 return;
             };
 
-            let new_i = state.mol_editor.add_atom(
+            let new_i = add_atom(
+                &mut state.mol_editor.mol.common,
                 &mut scene.entities,
                 i,
                 Carbon,
@@ -468,69 +475,7 @@ fn edit_tools(
 
     ui.add_space(COL_SPACING / 2.);
 
-    section_box().show(ui, |ui| {
-        let Selection::AtomLig((_, i)) = state.ui.selection else {
-            eprintln!("Attempting to add an atom with no parent to add it to");
-            return;
-        };
-
-        let anchor = Vec3::new_zero();
-
-        let next_sn = NEXT_ATOM_SN.load(Ordering::Acquire);
-        let next_i = state.mol_editor.mol.common.atoms.len();
-
-        // todo: Don't continuously compute orientation
-        let orientation =
-
-        // Helper
-        let mut add_t = |template: Template, name, abbrev| {
-            add_from_template_btn(
-                &mut state.mol_editor.mol.common,
-                template,
-                anchor,
-                orientation,
-                next_sn,
-                next_i,
-                ui,
-                &mut rebuild_md,
-                name,
-                abbrev,
-            );
-        };
-
-        // todo: No! Don't continuously run these template atom creators!
-        add_t(
-            Template::AromaticRing,
-            "−OH",
-            "hydroxyl functional group",
-        );
-
-        add_t(
-            Template::Cooh,
-            "−COOH",
-            "carboxylic acid functional group",
-        );
-
-        add_t(
-            Template::AromaticRing,
-            "−NH₂",
-            "amide functional group",
-        );
-
-        add_t(
-            Template::AromaticRing,
-            "Ar",
-            "benzene/aromatic ring",
-        );
-
-        add_t(
-            Template::AromaticRing,
-            "Pent",
-            "5-atom ring",
-        );
-    });
-
-    // ui.add_space(COL_SPACING);
+    template_section(state, ui, redraw, &mut rebuild_md);
 
     section_box().show(ui, |ui| {
         if ui
@@ -550,9 +495,7 @@ fn edit_tools(
                 .on_hover_text("(Hotkey: Delete) Delete the selected atom")
                 .clicked()
             {
-                if state.mol_editor.delete_atom(i).is_err() {
-                    eprintln!("Error deleting atom");
-                };
+                state.mol_editor.remove_atom(i);
                 *redraw = true;
             }
         }
@@ -574,4 +517,74 @@ fn edit_tools(
         // Will be triggered next time MD is started.
         state.mol_editor.md_rebuild_required = true;
     }
+}
+
+fn template_section(state: &mut State, ui: &mut Ui, redraw: &mut bool, rebuild_md: &mut bool) {
+    let Selection::AtomLig((_, i)) = state.ui.selection else {
+        return;
+    };
+
+    section_box().show(ui, |ui| {
+        let (anchor, r_aligner, next_sn, next_i, anchor_i, r_aligner_i) = {
+            let mol_com = &state.mol_editor.mol.common;
+
+            if i >= mol_com.atoms.len() {
+                eprintln!("Error: Sel out of range for mol editor");
+                return;
+            }
+
+            let anchor = mol_com.atoms[i].posit;
+
+            let next_sn = NEXT_ATOM_SN.load(Ordering::Acquire);
+            let next_i = mol_com.atoms.len();
+
+            // todo: Don't continuously compute orientation; move the fects to add_from_temp... params,
+            // todo, and
+            // todo: This is crude.
+            let (mut r_aligner, mut r_aligner_i) = (Vec3::new_zero(), 0);
+
+            for bonded in &mol_com.adjacency_list[i] {
+                if mol_com.atoms[*bonded].element == Hydrogen {
+                    continue;
+                }
+
+                // todo: Which one? If you even keep this setup.
+                r_aligner = mol_com.atoms[*bonded].posit;
+                r_aligner_i = *bonded;
+            }
+
+            (anchor, r_aligner, next_sn, next_i, i, r_aligner_i)
+        };
+
+        // Helper
+        let mut add_t = |template: Template, name, abbrev| {
+            add_from_template_btn(
+                &mut state.mol_editor.mol.common,
+                template,
+                anchor_i,
+                anchor,
+                r_aligner_i,
+                r_aligner,
+                next_sn,
+                next_i,
+                ui,
+                redraw,
+                rebuild_md,
+                name,
+                abbrev,
+                &mut state.ui,
+            );
+        };
+
+        // todo: No! Don't continuously run these template atom creators!
+        // add_t(Template::AromaticRing, "−OH", "hydroxyl functional group");
+
+        add_t(Template::Cooh, "−COOH", "carboxylic acid functional group");
+
+        add_t(Template::Amide, "−NH₂", "amide functional group");
+
+        add_t(Template::AromaticRing, "Ar", "benzene/aromatic ring");
+
+        add_t(Template::AromaticRing, "Pent", "5-atom ring");
+    });
 }

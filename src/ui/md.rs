@@ -1,6 +1,5 @@
 use dynamics::{
-    ComputationDevice, HydrogenConstraint, Integrator, MdConfig, SimBoxInit,
-    snapshot::Snapshot,
+    ComputationDevice, HydrogenConstraint, Integrator, MdConfig, SimBoxInit, snapshot::Snapshot,
 };
 use egui::{Color32, ComboBox, RichText, TextEdit, Ui};
 use graphics::{EngineUpdates, EntityUpdate, Scene};

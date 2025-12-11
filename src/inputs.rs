@@ -328,10 +328,7 @@ pub fn event_dev_handler(
                                 // Delete the selected atom.
 
                                 if let Selection::AtomLig((_, i)) = state_.ui.selection {
-                                    if state_.mol_editor.delete_atom(i).is_err() {
-                                        eprintln!("Error deleting atom");
-                                    };
-
+                                    state_.mol_editor.remove_atom(i);
                                     redraw_mol_editor = true;
                                 }
                             }

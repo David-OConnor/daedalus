@@ -71,20 +71,14 @@ use bio_apis::{
     amber_geostd::{GeostdData, GeostdItem},
     rcsb::{FilesAvailable, PdbDataResults},
 };
-use bio_files::{
-    md_params::ForceFieldParams,
-    mol_templates::TemplateData,
-};
+use bio_files::{md_params::ForceFieldParams, mol_templates::TemplateData};
 #[cfg(feature = "cuda")]
 use cudarc::{
     driver::{CudaContext, CudaFunction, CudaModule, CudaStream},
     nvrtc::Ptx,
 };
 use drawing::MoleculeView;
-use dynamics::{
-    ComputationDevice, Integrator, MdState, SimBoxInit,
-    params::FfParamSet,
-};
+use dynamics::{ComputationDevice, Integrator, MdState, SimBoxInit, params::FfParamSet};
 use egui_file_dialog::{FileDialog, FileDialogConfig};
 use graphics::{Camera, ControlScheme, InputsCommanded, winit::event::Modifiers};
 use lin_alg::{
@@ -97,7 +91,7 @@ use molecule::MoleculePeptide;
 use crate::{
     lipid::{LipidShape, MoleculeLipid, load_lipid_templates},
     mol_editor::MolEditorState,
-    molecule::{ MoGenericRefMut, MolGenericRef, MolIdent, MolType},
+    molecule::{MoGenericRefMut, MolGenericRef, MolIdent, MolType},
     nucleic_acid::{MoleculeNucleicAcid, NucleicAcidType, Strands, load_na_templates},
     orca::StateOrca,
     prefs::ToSave,

@@ -4,9 +4,7 @@
 
 use std::time::Instant;
 
-use bio_files::{
-    ResidueType,
-};
+use bio_files::ResidueType;
 #[cfg(feature = "cudarc")]
 use cudarc::{
     driver::{CudaContext, CudaFunction},
@@ -27,8 +25,8 @@ use crate::{
     drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
     mol_lig::MoleculeSmall,
     molecule::{
-        Atom, Bond, MoGenericRefMut, MolGenericRef, MolType,
-        MoleculeGeneric, MoleculePeptide, Residue,
+        Atom, Bond, MoGenericRefMut, MolGenericRef, MolType, MoleculeGeneric, MoleculePeptide,
+        Residue,
     },
     prefs::OpenType,
     reflection,

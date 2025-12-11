@@ -210,6 +210,44 @@ impl MoleculeCommon {
             *posit = out;
         }
     }
+
+    /// Removes an atom, and any bond to it. Re-index bonds due to this
+    /// removal from likely the interior of the molecule's seq.
+    pub fn remove_atom(&mut self, i: usize) {
+        if i >= self.atoms.len() {
+            eprintln!("Error removing atom: Out of range");
+            return;
+        }
+
+        self.atoms.remove(i);
+        self.atom_posits.remove(i);
+
+        self.bonds.retain_mut(|bond| {
+            if bond.atom_0 == i || bond.atom_1 == i {
+                return false;
+            }
+
+            if bond.atom_0 > i {
+                bond.atom_0 -= 1;
+            }
+            if bond.atom_1 > i {
+                bond.atom_1 -= 1;
+            }
+            true
+        });
+
+        self.adjacency_list.remove(i);
+
+        for adj in &mut self.adjacency_list {
+            adj.retain(|&j| j != i);
+
+            for j in adj.iter_mut() {
+                if *j > i {
+                    *j -= 1;
+                }
+            }
+        }
+    }
 }
 
 #[derive(Debug)]

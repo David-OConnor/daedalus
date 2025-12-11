@@ -15,8 +15,7 @@ use dynamics::{
     ComputationDevice, FfMolType, HydrogenConstraint, MdConfig, MdOverrides, MdState, MolDynamics,
     ParamError, params::FfParamSet, snapshot::Snapshot,
 };
-use graphics::{ControlScheme, EngineUpdates, Entity, EntityUpdate, Scene};
-use graphics::event::Force;
+use graphics::{ControlScheme, EngineUpdates, Entity, EntityUpdate, Scene, event::Force};
 use lin_alg::{
     f32::{Quaternion, Vec3 as Vec3F32},
     f64::Vec3,
@@ -27,7 +26,7 @@ use na_seq::{
 };
 
 use crate::{
-    ManipMode, OperatingMode, State, StateUi, ViewSelLevel,
+    ManipMode, OperatingMode, Selection, State, StateUi, ViewSelLevel,
     drawing::{
         EntityClass, MESH_BALL_STICK_SPHERE, MESH_SPACEFILL_SPHERE, MoleculeView, atom_color,
         bond_entities, draw_mol, draw_peptide,
@@ -35,6 +34,7 @@ use crate::{
     drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
     md::change_snapshot_helper,
     mol_editor,
+    mol_editor::add_atoms::populate_hydrogens_on_atom,
     mol_lig::MoleculeSmall,
     molecule::{Atom, Bond, MolGenericRef, MolType},
     render::{
@@ -183,64 +183,64 @@ impl MolEditorState {
         );
         Ok(())
     }
-
-    fn _remove_repopulate_h(
-        &mut self,
-        scene: &mut Scene,
-        engine_updates: &mut EngineUpdates,
-        state_ui: &mut StateUi,
-    ) {
-        // We assign H dynamically; ignore present ones.
-        self.mol.common.atoms = self
-            .mol
-            .common
-            .atoms
-            .iter()
-            .filter(|a| a.element != Hydrogen)
-            .map(|a| a.clone())
-            .collect();
-
-        // Remove bonds to atoms that no longer exist, and change indices otherwise:
-        // serial_number -> new index after filtering
-        let sn2idx: HashMap<u32, usize> = self
-            .mol
-            .common
-            .atoms
-            .iter()
-            .enumerate()
-            .map(|(i, a)| (a.serial_number, i))
-            .collect();
-
-        // Keep only bonds whose endpoints still exist; reindex to new atom indices
-        self.mol.common.bonds = self
-            .mol
-            .common
-            .bonds
-            .iter()
-            .filter_map(|b| {
-                let i0 = sn2idx.get(&b.atom_0_sn)?;
-                let i1 = sn2idx.get(&b.atom_1_sn)?;
-                Some(Bond {
-                    bond_type: b.bond_type,
-                    atom_0_sn: b.atom_0_sn,
-                    atom_1_sn: b.atom_1_sn,
-                    atom_0: *i0,
-                    atom_1: *i1,
-                    is_backbone: b.is_backbone,
-                })
-            })
-            .collect();
-
-        // Rebuild these based on the new filters.
-        self.mol.common.reset_posits();
-        self.mol.common.build_adjacency_list();
-
-        // Re-populate hydrogens algorithmically.
-        for (i, atom) in self.mol.common.atoms.clone().iter().enumerate() {
-            println!("Populating H for atom {atom}");
-            self.populate_hydrogens_on_atom(i, atom, &mut scene.entities, state_ui, engine_updates);
-        }
-    }
+    //
+    // fn _remove_repopulate_h(
+    //     &mut self,
+    //     scene: &mut Scene,
+    //     engine_updates: &mut EngineUpdates,
+    //     state_ui: &mut StateUi,
+    // ) {
+    //     // We assign H dynamically; ignore present ones.
+    //     self.mol.common.atoms = self
+    //         .mol
+    //         .common
+    //         .atoms
+    //         .iter()
+    //         .filter(|a| a.element != Hydrogen)
+    //         .map(|a| a.clone())
+    //         .collect();
+    //
+    //     // Remove bonds to atoms that no longer exist, and change indices otherwise:
+    //     // serial_number -> new index after filtering
+    //     let sn2idx: HashMap<u32, usize> = self
+    //         .mol
+    //         .common
+    //         .atoms
+    //         .iter()
+    //         .enumerate()
+    //         .map(|(i, a)| (a.serial_number, i))
+    //         .collect();
+    //
+    //     // Keep only bonds whose endpoints still exist; reindex to new atom indices
+    //     self.mol.common.bonds = self
+    //         .mol
+    //         .common
+    //         .bonds
+    //         .iter()
+    //         .filter_map(|b| {
+    //             let i0 = sn2idx.get(&b.atom_0_sn)?;
+    //             let i1 = sn2idx.get(&b.atom_1_sn)?;
+    //             Some(Bond {
+    //                 bond_type: b.bond_type,
+    //                 atom_0_sn: b.atom_0_sn,
+    //                 atom_1_sn: b.atom_1_sn,
+    //                 atom_0: *i0,
+    //                 atom_1: *i1,
+    //                 is_backbone: b.is_backbone,
+    //             })
+    //         })
+    //         .collect();
+    //
+    //     // Rebuild these based on the new filters.
+    //     self.mol.common.reset_posits();
+    //     self.mol.common.build_adjacency_list();
+    //
+    //     // Re-populate hydrogens algorithmically.
+    //     for (i, atom) in self.mol.common.atoms.clone().iter().enumerate() {
+    //         println!("Populating H for atom {atom}");
+    //         populate_hydrogens_on_atom(&mut self.mol.common, i, atom.element, &atom.force_field_type, &mut scene.entities, state_ui, engine_updates);
+    //     }
+    // }
 
     pub fn load_mol(
         &mut self,
@@ -297,9 +297,8 @@ impl MolEditorState {
 
         self.mol.smiles = Some(self.mol.common.to_smiles());
 
-
         scene.input_settings.control_scheme = ControlScheme::Arc {
-            center: mol.common.centroid().into()
+            center: mol.common.centroid().into(),
         };
 
         // Clear all entities for non-editor molecules. And render the initial relaxation
@@ -309,43 +308,6 @@ impl MolEditorState {
         set_flashlight(scene);
         engine_updates.entities = EntityUpdate::All;
         engine_updates.lighting = true;
-    }
-
-    pub fn delete_atom(&mut self, i: usize) -> io::Result<()> {
-        if i >= self.mol.common.atoms.len() {
-            return Err(io::Error::new(ErrorKind::InvalidData, "Out of range"));
-        }
-
-        self.mol.common.atoms.remove(i);
-        self.mol.common.atom_posits.remove(i);
-
-        // Drop bonds that referenced the removed atom
-        self.mol
-            .common
-            .bonds
-            .retain(|b| b.atom_0 != i && b.atom_1 != i);
-
-        // Reindex remaining bonds (atom indices shift down after removal)
-        for b in &mut self.mol.common.bonds {
-            if b.atom_0 > i {
-                b.atom_0 -= 1;
-            }
-            if b.atom_1 > i {
-                b.atom_1 -= 1;
-            }
-        }
-
-        for adj in &mut self.mol.common.adjacency_list {
-            adj.retain(|&j| j != i);
-
-            for j in adj.iter_mut() {
-                if *j > i {
-                    *j -= 1;
-                }
-            }
-        }
-
-        Ok(())
     }
 
     pub fn save_mol2(&self, path: &Path) -> io::Result<()> {
@@ -446,7 +408,6 @@ pub fn enter_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mu
     // This stays false under several conditions.
     let mut mol_loaded = false;
 
-
     let mut arc_center = Vec3F32::new_zero();
 
     if let Some((mol_type, i)) = state.volatile.active_mol
@@ -455,12 +416,9 @@ pub fn enter_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mu
         if i >= state.ligands.len() {
             eprintln!("Expected a ligand at this index, but out of bounds when entering edit mode");
         } else {
-            state.mol_editor.load_mol(
-                &state.ligands[i],
-                scene,
-                engine_updates,
-                &mut state.ui,
-            );
+            state
+                .mol_editor
+                .load_mol(&state.ligands[i], scene, engine_updates, &mut state.ui);
             mol_loaded = true;
             arc_center = state.ligands[i].common.centroid().into();
         }
@@ -469,6 +427,13 @@ pub fn enter_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mu
     if !mol_loaded {
         state.mol_editor.clear_mol();
     }
+
+    // Select the first atom.
+    state.ui.selection = if state.mol_editor.mol.common.atoms.is_empty() {
+        Selection::None
+    } else {
+        Selection::AtomLig((0, 0))
+    };
 
     state.volatile.control_scheme_prev = scene.input_settings.control_scheme;
 
