@@ -206,6 +206,26 @@ pub(in crate::ui) fn selected_data(
 
                 disp_atom_data(atom, &[], Some(posit), ui);
             }
+            // todo: Update A/R
+            Selection::AtomsLig((mol_i, atom_is)) => {
+                if *mol_i >= ligands.len() {
+                    return;
+                }
+                let mol = &ligands[*mol_i];
+
+                let mut txt = format!("{} atoms", atom_is.len());
+
+                for atom_i in atom_is {
+                    if *atom_i >= mol.common.atoms.len() {
+                        return;
+                    }
+                    let atom = &mol.common.atoms[*atom_i];
+                    // todo: More info a/r
+                    txt.push_str(&format!(" {}/{}", atom.serial_number, atom.element));
+                }
+
+                label!(ui, txt, Color32::GOLD);
+            }
             // todo DRY
             Selection::AtomNucleicAcid((mol_i, atom_i)) => {
                 if *mol_i >= nucleic_acids.len() {
@@ -255,8 +275,23 @@ pub(in crate::ui) fn selected_data(
                     label!(ui, res.to_string(), res_color);
                 }
             }
-            Selection::AtomsPeptide(is) => {
-                label!(ui, format!("{} atoms", is.len()), Color32::GOLD);
+            Selection::AtomsPeptide(atom_is) => {
+                // todo: DRY with AtomsLig.
+                 let mut txt = format!("{} atoms", atom_is.len());
+
+                for atom_i in atom_is {
+                    let Some(mol) = &state.peptide else {
+                        return;
+                    };
+                    if *atom_i >= mol.common.atoms.len() {
+                        return;
+                    }
+                    let atom = &mol.common.atoms[*atom_i];
+                    // todo: More info a/r
+                    txt.push_str(&format!(" {}/{}", atom.serial_number, atom.element));
+                }
+
+                label!(ui, txt, Color32::GOLD);
             }
             Selection::BondPeptide(bond_i) => {
                 let Some(mol) = &state.peptide else {

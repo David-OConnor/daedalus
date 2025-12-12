@@ -312,7 +312,7 @@ pub fn bond_angle(atoms: &[Atom], bond_0: &Bond, bond_1: &Bond) -> f64 {
 /// Based on selection status and if a molecule is open, find the center for the orbit camera. This
 /// is generally around a specific atom, or a molecule's centroid.
 pub fn orbit_center(state: &State) -> Vec3F32 {
-    if state.ui.orbit_selected_atom {
+    if state.ui.orbit_selected_atom && state.volatile.operating_mode != OperatingMode::MolEditor {
         match &state.ui.selection {
             Selection::AtomPeptide(i) => {
                 if let Some(mol) = &state.peptide {
@@ -323,11 +323,30 @@ pub fn orbit_center(state: &State) -> Vec3F32 {
                 }
             }
             Selection::AtomLig((i_mol, i_atom)) => {
-                if *i_atom >= state.ligands.len() {
+                if *i_mol >= state.ligands.len() {
                     eprintln!("Error: Invalid lig index for orbit center");
                     return Vec3F32::new_zero();
                 }
                 return state.ligands[*i_mol].common.atom_posits[*i_atom].into();
+            }
+            Selection::AtomsLig((i_mol, is_atom)) => {
+                if i_mol >= &state.ligands.len() {
+                    eprintln!("Error: Invalid lig index for orbit center");
+                    return Vec3F32::new_zero();
+                }
+                let mol = &state.ligands[*i_mol];
+
+                    let mut ctr = Vec3F32::new_zero();
+                    for i in is_atom {
+                        match mol.common.atoms.get(*i) {
+                            Some(a) => {
+                                let p: Vec3F32 = a.posit.into();
+                                ctr += p
+                            },
+                            None => (),
+                        }
+                    }
+                    return ctr / is_atom.len() as f32;
             }
             Selection::AtomNucleicAcid((i_mol, i_atom)) => {
                 if *i_atom >= state.nucleic_acids.len() {
@@ -362,10 +381,17 @@ pub fn orbit_center(state: &State) -> Vec3F32 {
             }
             Selection::AtomsPeptide(is) => {
                 if let Some(mol) = &state.peptide {
-                    match mol.common.atoms.get(is[0]) {
-                        Some(a) => return a.posit.into(),
-                        None => (),
+                    let mut ctr = Vec3F32::new_zero();
+                    for i in is {
+                        match mol.common.atoms.get(*i) {
+                            Some(a) => {
+                                let p: Vec3F32 = a.posit.into();
+                                ctr += p;
+                            },
+                            None => (),
+                        }
                     }
+                    return ctr / is.len() as f32;
                 }
             }
             Selection::BondPeptide(i_atom) => {

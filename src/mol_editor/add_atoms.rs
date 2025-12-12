@@ -214,7 +214,6 @@ pub fn remove_hydrogens(mol: &mut MoleculeCommon, i: usize) {
     }
 
     h_to_del.sort_unstable_by(|a, b| b.cmp(a));
-    println!("H to del: {:?}", h_to_del);
     for j in h_to_del {
         mol.remove_atom(j);
     }

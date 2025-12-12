@@ -37,6 +37,8 @@ impl Template {
 
 /// Atom 0 is placed on the anchor; the r_group is used to match a "previous"
 /// atom in the mol we're adding this to.
+///
+/// Example: Acetic acid
 fn cooh_group(
     anchor: Vec3,
     aligner: Vec3,
@@ -67,6 +69,7 @@ fn cooh_group(
         .collect();
 
     const ELEMENTS: [Element; 3] = [Carbon, Oxygen, Oxygen];
+    const FF_TYPES: [&str; 3] = ["c", "oh", "o"];
 
     let mut atoms = Vec::with_capacity(3);
     let mut bonds = Vec::with_capacity(2);
@@ -78,12 +81,13 @@ fn cooh_group(
             serial_number,
             posit,
             element: ELEMENTS[i],
+            force_field_type: Some(String::from(FF_TYPES[i])),
             ..Default::default()
         })
     }
 
     bonds.push(Bond {
-        bond_type: BondType::Double,
+        bond_type: BondType::Single,
         atom_0_sn: atoms[0].serial_number,
         atom_1_sn: atoms[1].serial_number,
         atom_0: start_i,
@@ -92,7 +96,7 @@ fn cooh_group(
     });
 
     bonds.push(Bond {
-        bond_type: BondType::Single,
+        bond_type: BondType::Double,
         atom_0_sn: atoms[0].serial_number,
         atom_1_sn: atoms[2].serial_number,
         atom_0: start_i,
@@ -104,13 +108,14 @@ fn cooh_group(
 }
 
 /// See comments on `cooh_group`.
+/// Ref example: Formaldehyde
 fn amide_group(
     anchor: Vec3,
     aligner: Vec3,
     start_sn: u32,
     start_i: usize,
 ) -> (Vec<Atom>, Vec<Bond>) {
-    const LEN: f64 = 1.33;
+    const LEN: f64 = 1.37;
     let mut posits = vec![Vec3::new_zero(), Vec3::new(LEN, 0., 0.)];
 
     let r_group_local = -X_VEC;
@@ -128,6 +133,7 @@ fn amide_group(
         .collect();
 
     const ELEMENTS: [Element; 2] = [Carbon, Nitrogen];
+    const FF_TYPES: [&str; 2] = ["c", "nt"];
 
     let mut atoms = Vec::with_capacity(2);
     let mut bonds = Vec::with_capacity(2);
@@ -139,6 +145,7 @@ fn amide_group(
             serial_number,
             posit,
             element: ELEMENTS[i],
+            force_field_type: Some(String::from(FF_TYPES[i])),
             ..Default::default()
         })
     }

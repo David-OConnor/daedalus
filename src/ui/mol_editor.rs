@@ -378,19 +378,18 @@ fn edit_tools(
     engine_updates: &mut EngineUpdates,
     redraw: &mut bool,
 ) {
+    let Selection::AtomLig((_, i)) = state.ui.selection else {
+        return
+    };
+
     let mut rebuild_md = false;
 
     section_box().show(ui, |ui| {
         if ui
-            .button("Add C")
-            .on_hover_text("Add a Carbon atom")
+            .button("Add Atom")
+            .on_hover_text("Add a Carbon atom. (Can change to other elements after)")
             .clicked()
         {
-            let Selection::AtomLig((_, i)) = state.ui.selection else {
-                eprintln!("Attempting to add an atom with no parent to add it to");
-                return;
-            };
-
             add_atom(
                 &mut state.mol_editor.mol.common,
                 &mut scene.entities,
@@ -407,8 +406,8 @@ fn edit_tools(
         }
 
         if ui
-            .button("Add, sel C")
-            .on_hover_text("Add a Carbon atom, and select it. Useful for adding chains.")
+            .button("Add, sel atom")
+            .on_hover_text("Add a Carbon atom, and select it. Useful for quickly adding chains.")
             .clicked()
         {
             let Selection::AtomLig((mol_i, i)) = state.ui.selection else {

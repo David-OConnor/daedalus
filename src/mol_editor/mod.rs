@@ -245,8 +245,6 @@ impl MolEditorState {
     pub fn load_mol(
         &mut self,
         mol: &MoleculeSmall,
-        // param_set: &FfParamSet,
-        // mol_specific_param_set: &HashMap<String, ForceFieldParams>,
         scene: &mut Scene,
         engine_updates: &mut EngineUpdates,
         state_ui: &mut StateUi,
@@ -254,35 +252,7 @@ impl MolEditorState {
         self.mol = mol.clone();
         self.mol.common.ident = MOL_IDENT.to_owned();
 
-        // let mut params_loaded_from_state = false;
-        // if mol.frcmod_loaded && let Some(v) = mol_specific_param_set.get(&mol.common.ident) {
-        //     self.mol_specific_params = v.clone();
-        //     params_loaded_from_state = true;
-        // }
-
-        // We use a HashMap here to fit the update_aux API, then extract the
-        // entry it adds.
-        // let mut mol_specific_params = HashMap::new();
-        //
-        // if let Some(p) = &param_set.small_mol {
-        //     self.mol.update_ff_related(&mut mol_specific_params, p);
-        // } else {
-        //     eprintln!("Error: Unable to update a molecule's params due to missing GAFF2.");
-        // }
-
-        // todo temp print
-        // println!("MSP here: {:?}", mol_specific_params);
-        //
-        // if !params_loaded_from_state {
-        //     match mol_specific_params.get(MOL_IDENT) {
-        //         Some(v) => self.mol_specific_params = v.clone(),
-        //         None => eprintln!("Error: mol-specific editor params missing.")
-        //     }
-        //
-        // }
-
-        // todo: Evaluate if you want to do this.
-        // self.remove_repopulate_h(scene, engine_updates, state_ui);
+        self.mol.common.reset_posits();
 
         let mut highest_sn = 0;
         for atom in &self.mol.common.atoms {

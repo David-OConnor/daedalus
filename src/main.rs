@@ -583,6 +583,8 @@ pub enum Selection {
     AtomsPeptide(Vec<usize>),
     /// Molecule index, atom index
     AtomLig((usize, usize)),
+    /// Mol, set of atom indices
+    AtomsLig((usize, Vec<usize>)),
     /// Molecule index, atom index
     AtomNucleicAcid((usize, usize)),
     /// Molecule index, atom index

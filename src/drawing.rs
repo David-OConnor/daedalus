@@ -466,8 +466,13 @@ pub fn atom_color(
                 result = COLOR_SELECTED;
             }
         }
-        Selection::AtomLig((lig_i, sel_i)) => {
-            if mol_type == MolType::Ligand && *sel_i == i && *lig_i == mol_i {
+        Selection::AtomLig((i_mol, i_atom)) => {
+            if mol_type == MolType::Ligand && *i_atom == i && *i_mol == mol_i {
+                result = COLOR_SELECTED;
+            }
+        }
+        Selection::AtomsLig((i_mol, is_atom)) => {
+            if mol_type == MolType::Ligand && is_atom.contains(&i) && *i_mol == mol_i {
                 result = COLOR_SELECTED;
             }
         }

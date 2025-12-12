@@ -61,6 +61,7 @@ pub fn find_selected_atom(
     bonds_na: &[Vec<Bond>],
     bonds_lipid: &[Vec<Bond>],
     bond_mode: bool,
+    shift_held: bool,
 ) -> Selection {
     if items_pep_along_ray.is_empty()
         && items_lig_along_ray.is_empty()
@@ -217,7 +218,48 @@ pub fn find_selected_atom(
     match ui.view_sel_level {
         ViewSelLevel::Atom => match nearest.mol_type {
             MolType::Peptide => Selection::AtomPeptide(nearest.atom_i),
-            MolType::Ligand => Selection::AtomLig(indices),
+            MolType::Ligand => {
+                if shift_held {
+                    match &ui.selection {
+                        Selection::AtomLig((mol_i_prev, atom_i_prev)) => {
+                            let mut updated = vec![*atom_i_prev];
+
+                            // todo: DRY with below
+                            if updated.contains(&indices.1) {
+                                updated.retain(|idx| idx != &indices.1);
+                            } else {
+                                updated.push(indices.1);
+                            }
+                            match updated.len() {
+                                0 => Selection::None,
+                                1 => Selection::AtomLig((*mol_i_prev, updated[0])),
+                                _ => Selection::AtomsLig((*mol_i_prev, updated)),
+                            }
+                        }
+                        Selection::AtomsLig((mol_i_prev, atoms_i_prev)) => {
+                            // todo: Handle the case if mol_i is diff from prev.
+                            // todo: DRY with the AtomLig branch.
+                            let mut updated = atoms_i_prev.clone();
+                            // Toggle
+                            if updated.contains(&indices.1) {
+                                updated.retain(|idx| idx != &indices.1);
+                            } else {
+                                updated.push(indices.1);
+                            }
+                            match updated.len() {
+                                0 => Selection::None,
+                                1 => Selection::AtomLig((*mol_i_prev, updated[0])),
+                                _ => Selection::AtomsLig((*mol_i_prev, updated)),
+                            }
+
+                        }
+
+                        _ => Selection::AtomLig(indices)
+                    }
+                } else {
+                    Selection::AtomLig(indices)
+                }
+            },
             MolType::NucleicAcid => Selection::AtomNucleicAcid(indices),
             MolType::Lipid => Selection::AtomLipid(indices),
             _ => unreachable!(),
@@ -599,6 +641,7 @@ pub(crate) fn handle_selection_attempt(
                 &na_bonds,
                 &lipid_bonds,
                 true,
+                state.volatile.inputs_commanded.run,
             )
         }
         _ => {
@@ -634,6 +677,7 @@ pub(crate) fn handle_selection_attempt(
                 &[],
                 &[],
                 false,
+                state.volatile.inputs_commanded.run,
             )
         }
     };
@@ -748,6 +792,7 @@ pub fn handle_selection_attempt_mol_editor(
                 &[],
                 &[],
                 true,
+                state.volatile.inputs_commanded.run,
             )
         }
         _ => {
@@ -783,6 +828,7 @@ pub fn handle_selection_attempt_mol_editor(
                 &[],
                 &[],
                 false,
+                state.volatile.inputs_commanded.run,
             )
         }
     };

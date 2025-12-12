@@ -334,9 +334,17 @@ pub fn event_dev_handler(
                             }
                         }
                     }
+                    Code(KeyCode::ShiftLeft | KeyCode::ShiftRight) => {
+                        state_.volatile.inputs_commanded.run = true;
+                    }
                     _ => (),
                 },
-                ElementState::Released => (),
+                ElementState::Released => match key.physical_key {
+                    Code(KeyCode::ShiftLeft | KeyCode::ShiftRight) => {
+                        state_.volatile.inputs_commanded.run = false;
+                    }
+                    _ => ()
+                }
             }
 
             // todo: If you enable a direction-dependent flashlight, you will need to modify the mouse movement
