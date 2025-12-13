@@ -248,6 +248,24 @@ impl MoleculeCommon {
             }
         }
     }
+
+    /// Re-assign atom serial numbers as 1-ripple. Useful after or during editing, especially
+    /// prior to saving in SDF format, which doesn't explicitly list SNs with the atom.
+    pub fn reassign_sns(&mut self) {
+        // todo: Be more clever about this.
+        let mut updated_sns = Vec::with_capacity(self.atoms.len());
+
+        for (i, atom) in self.atoms.iter_mut().enumerate() {
+            let sn_new = i as u32 + 1;
+            atom.serial_number = sn_new;
+            updated_sns.push(sn_new);
+        }
+
+        for bond in &mut self.bonds {
+            bond.atom_0_sn = updated_sns[bond.atom_0];
+            bond.atom_1_sn = updated_sns[bond.atom_1];
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -315,6 +333,8 @@ impl<'a> MolGenericRef<'a> {
         }
     }
 
+    /// Note: Serial numbers mus be sequential prior to running this, as SDF format
+    /// doesn't include serial numbers; this will break bonds.
     pub fn to_sdf(&self) -> Sdf {
         match self {
             Self::Ligand(l) => l.to_sdf(),
@@ -687,7 +707,10 @@ impl Bond {
             None => {
                 return Err(io::Error::new(
                     ErrorKind::InvalidData,
-                    "Unable to find atom SN when loading from generic bond",
+                    format!(
+                        "Unable to find atom0 SN when loading from generic bond: {}",
+                        bond.atom_0_sn
+                    ),
                 ));
             }
         };
@@ -698,7 +721,10 @@ impl Bond {
             None => {
                 return Err(io::Error::new(
                     ErrorKind::InvalidData,
-                    "Unable to find atom SN when loading from generic bond",
+                    format!(
+                        "Unable to find atom1 SN when loading from generic bond: {}",
+                        bond.atom_1_sn
+                    ),
                 ));
             }
         };
@@ -756,7 +782,7 @@ impl Residue {
                 None => {
                     return Err(io::Error::new(
                         ErrorKind::InvalidData,
-                        "Unable to find atom SN when loading from generic res",
+                        "ble to find atom SN when loading from generic res",
                     ));
                 }
             }

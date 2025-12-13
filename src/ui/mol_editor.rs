@@ -272,21 +272,7 @@ pub(in crate::ui) fn editor(
             .on_hover_text("Reset atom serial numbers to be sequential without gaps.")
             .clicked()
         {
-            let mol = &mut state.mol_editor.mol.common;
-            // todo: Be more clever about this.
-            let mut updated_sns = Vec::with_capacity(mol.atoms.len());
-
-            for (i, atom) in mol.atoms.iter_mut().enumerate() {
-                // let sn_prev = atom.serial_number;
-                let sn_new = i as u32 + 1;
-                atom.serial_number = sn_new;
-                updated_sns.push(sn_new);
-            }
-
-            for bond in &mut mol.bonds {
-                bond.atom_0_sn = updated_sns[bond.atom_0];
-                bond.atom_1_sn = updated_sns[bond.atom_1];
-            }
+            state.mol_editor.mol.common.reassign_sns();
         }
 
         if let Some(md) = &mut state.mol_editor.md_state {
@@ -305,6 +291,8 @@ pub(in crate::ui) fn editor(
             .on_hover_text("Exit the molecule editor, and load the edited molecule.")
             .clicked()
         {
+            state.mol_editor.mol.common.reassign_sns();
+
             // Load the edited molecule back into the state.
             state.ligands.push(
                 state.mol_editor.mol.clone()
@@ -314,21 +302,23 @@ pub(in crate::ui) fn editor(
         }
 
         if let Some(mol_i) = state.volatile.mol_editing {
-            ui.add_space(COL_SPACING);
             if ui
                 .button(RichText::new("Exit / update").color(Color32::LIGHT_RED))
                 .on_hover_text("Exit the molecule editor, and update the loaded molecule with changes made.")
                 .clicked()
             {
+                state.mol_editor.mol.common.reassign_sns();
+
                 // Load the edited molecule back into the state.
                 state.ligands[mol_i].common.atoms = state.mol_editor.mol.common.atoms.clone();
                 state.ligands[mol_i].common.bonds = state.mol_editor.mol.common.bonds.clone();
+                state.ligands[mol_i].common.build_adjacency_list();
+                state.ligands[mol_i].common.reset_posits();
 
                 exit_edit_mode(state, scene, engine_updates);
             }
         }
 
-        ui.add_space(COL_SPACING);
         if ui
             .button(RichText::new("Exit / discard").color(Color32::LIGHT_RED))
             .on_hover_text("Exit the mol editor, discarding all unsaved changes.")
