@@ -32,30 +32,37 @@ use crate::{
 };
 
 /// `posit_override` is for example, relative atom positions, such as a positioned ligand.
-fn disp_atom_data(atom: &Atom, residues: &[Residue], posit_override: Option<Vec3>, ui: &mut Ui) {
-    let role = match atom.role {
-        Some(r) => format!("Role: {r}"),
-        None => String::new(),
-    };
-
-    // Similar to `Vec3`'s format impl, but with fewer digits.
-    let posit = match posit_override {
-        Some(p) => p,
-        None => atom.posit,
-    };
-
-    let posit_txt = format!("|{:.3}, {:.3}, {:.3}|", posit.x, posit.y, posit.z);
-
+fn disp_atom_data(
+    atom: &Atom,
+    residues: &[Residue],
+    posit_override: Option<Vec3>,
+    ui: &mut Ui,
+    show_role: bool,
+    show_posit: bool,
+) {
     let text_0 = format!("#{}", atom.serial_number);
-    let text_b = atom.element.to_letter();
-
     label!(ui, text_0, Color32::WHITE);
-    label!(ui, posit_txt, Color32::GOLD);
+
+    if show_posit {
+        // Similar to `Vec3`'s format impl, but with fewer digits.
+        let posit = match posit_override {
+            Some(p) => p,
+            None => atom.posit,
+        };
+
+        let posit_txt = format!("|{:.3}, {:.3}, {:.3}|", posit.x, posit.y, posit.z);
+        label!(ui, posit_txt, Color32::GOLD);
+    }
+
+    let text_b = atom.element.to_letter();
 
     let atom_color = make_egui_color(atom.element.color());
     label!(ui, text_b, atom_color);
 
-    if let Some(res_i) = atom.residue {
+    // Hijacking `show_posit` here to hide res/dihedral info as well.
+    if let Some(res_i) = atom.residue
+        && show_posit
+    {
         // Placeholder for water etc.
         let mut res_color = COLOR_AA_NON_RESIDUE_EGUI;
 
@@ -74,7 +81,13 @@ fn disp_atom_data(atom: &Atom, residues: &[Residue], posit_override: Option<Vec3
         label!(ui, res_txt, res_color);
     }
 
-    label!(ui, role, Color32::LIGHT_GRAY);
+    if show_role {
+        let role = match atom.role {
+            Some(r) => format!("Role: {r}"),
+            None => String::new(),
+        };
+        label!(ui, role, Color32::LIGHT_GRAY);
+    }
 
     if let Some(tir) = &atom.type_in_res {
         label!(ui, tir.to_string(), Color32::LIGHT_YELLOW);
@@ -189,7 +202,26 @@ pub(in crate::ui) fn selected_data(
                 }
 
                 let atom = &mol.common.atoms[*sel_i];
-                disp_atom_data(atom, &mol.residues, None, ui);
+                disp_atom_data(atom, &mol.residues, None, ui, true, true);
+            }
+            Selection::AtomsPeptide(atom_is) => {
+                let Some(mol) = &state.peptide else {
+                    return;
+                };
+
+                ui.label(format!("{} atoms |", atom_is.len()));
+
+                for atom_i in atom_is {
+                    if *atom_i >= mol.common.atoms.len() {
+                        return;
+                    }
+                    let atom = &mol.common.atoms[*atom_i];
+                    let posit = mol.common.atom_posits[*atom_i];
+
+                    disp_atom_data(atom, &mol.residues, Some(posit), ui, false, false);
+
+                    ui.label("|");
+                }
             }
             Selection::AtomLig((mol_i, atom_i)) => {
                 if *mol_i >= ligands.len() {
@@ -204,7 +236,7 @@ pub(in crate::ui) fn selected_data(
                 let atom = &mol.common.atoms[*atom_i];
                 let posit = mol.common.atom_posits[*atom_i];
 
-                disp_atom_data(atom, &[], Some(posit), ui);
+                disp_atom_data(atom, &[], Some(posit), ui, false, true);
             }
             // todo: Update A/R
             Selection::AtomsLig((mol_i, atom_is)) => {
@@ -213,18 +245,18 @@ pub(in crate::ui) fn selected_data(
                 }
                 let mol = &ligands[*mol_i];
 
-                let mut txt = format!("{} atoms", atom_is.len());
+                ui.label(format!("{} atoms |", atom_is.len()));
 
                 for atom_i in atom_is {
                     if *atom_i >= mol.common.atoms.len() {
                         return;
                     }
                     let atom = &mol.common.atoms[*atom_i];
-                    // todo: More info a/r
-                    txt.push_str(&format!(" {}/{}", atom.serial_number, atom.element));
-                }
+                    let posit = mol.common.atom_posits[*atom_i];
 
-                label!(ui, txt, Color32::GOLD);
+                    disp_atom_data(atom, &[], Some(posit), ui, false, false);
+                    ui.label("|");
+                }
             }
             // todo DRY
             Selection::AtomNucleicAcid((mol_i, atom_i)) => {
@@ -240,7 +272,7 @@ pub(in crate::ui) fn selected_data(
                 let atom = &mol.common.atoms[*atom_i];
                 let posit = mol.common.atom_posits[*atom_i];
 
-                disp_atom_data(atom, &mol.residues, Some(posit), ui);
+                disp_atom_data(atom, &mol.residues, Some(posit), ui, true, true);
             }
             // todo DRY
             Selection::AtomLipid((mol_i, atom_i)) => {
@@ -256,7 +288,7 @@ pub(in crate::ui) fn selected_data(
                 let atom = &mol.common.atoms[*atom_i];
                 let posit = mol.common.atom_posits[*atom_i];
 
-                disp_atom_data(atom, &mol.residues, Some(posit), ui);
+                disp_atom_data(atom, &mol.residues, Some(posit), ui, true, true);
             }
             Selection::Residue(sel_i) => {
                 if let Some(mol) = &state.peptide {
@@ -274,24 +306,6 @@ pub(in crate::ui) fn selected_data(
                     }
                     label!(ui, res.to_string(), res_color);
                 }
-            }
-            Selection::AtomsPeptide(atom_is) => {
-                // todo: DRY with AtomsLig.
-                 let mut txt = format!("{} atoms", atom_is.len());
-
-                for atom_i in atom_is {
-                    let Some(mol) = &state.peptide else {
-                        return;
-                    };
-                    if *atom_i >= mol.common.atoms.len() {
-                        return;
-                    }
-                    let atom = &mol.common.atoms[*atom_i];
-                    // todo: More info a/r
-                    txt.push_str(&format!(" {}/{}", atom.serial_number, atom.element));
-                }
-
-                label!(ui, txt, Color32::GOLD);
             }
             Selection::BondPeptide(bond_i) => {
                 let Some(mol) = &state.peptide else {

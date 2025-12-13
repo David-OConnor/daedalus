@@ -336,17 +336,17 @@ pub fn orbit_center(state: &State) -> Vec3F32 {
                 }
                 let mol = &state.ligands[*i_mol];
 
-                    let mut ctr = Vec3F32::new_zero();
-                    for i in is_atom {
-                        match mol.common.atoms.get(*i) {
-                            Some(a) => {
-                                let p: Vec3F32 = a.posit.into();
-                                ctr += p
-                            },
-                            None => (),
+                let mut ctr = Vec3F32::new_zero();
+                for i in is_atom {
+                    match mol.common.atoms.get(*i) {
+                        Some(a) => {
+                            let p: Vec3F32 = a.posit.into();
+                            ctr += p
                         }
+                        None => (),
                     }
-                    return ctr / is_atom.len() as f32;
+                }
+                return ctr / is_atom.len() as f32;
             }
             Selection::AtomNucleicAcid((i_mol, i_atom)) => {
                 if *i_atom >= state.nucleic_acids.len() {
@@ -387,7 +387,7 @@ pub fn orbit_center(state: &State) -> Vec3F32 {
                             Some(a) => {
                                 let p: Vec3F32 = a.posit.into();
                                 ctr += p;
-                            },
+                            }
                             None => (),
                         }
                     }

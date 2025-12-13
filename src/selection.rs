@@ -217,49 +217,41 @@ pub fn find_selected_atom(
     let indices = nearest.indices();
     match ui.view_sel_level {
         ViewSelLevel::Atom => match nearest.mol_type {
-            MolType::Peptide => Selection::AtomPeptide(nearest.atom_i),
+            MolType::Peptide => {
+                if shift_held {
+                    match &ui.selection {
+                        Selection::AtomPeptide(atom_i) => {
+                            let updated = vec![*atom_i];
+                            multi_sel_helper(updated, indices.0, indices.1, MolType::Peptide)
+                        }
+                        Selection::AtomsPeptide(atoms_i) => {
+                            let updated = atoms_i.clone();
+                            multi_sel_helper(updated, indices.0, indices.1, MolType::Peptide)
+                        }
+                        _ => Selection::AtomPeptide(nearest.atom_i),
+                    }
+                } else {
+                    Selection::AtomPeptide(nearest.atom_i)
+                }
+            }
             MolType::Ligand => {
                 if shift_held {
                     match &ui.selection {
                         Selection::AtomLig((mol_i_prev, atom_i_prev)) => {
-                            let mut updated = vec![*atom_i_prev];
-
-                            // todo: DRY with below
-                            if updated.contains(&indices.1) {
-                                updated.retain(|idx| idx != &indices.1);
-                            } else {
-                                updated.push(indices.1);
-                            }
-                            match updated.len() {
-                                0 => Selection::None,
-                                1 => Selection::AtomLig((*mol_i_prev, updated[0])),
-                                _ => Selection::AtomsLig((*mol_i_prev, updated)),
-                            }
+                            let updated = vec![*atom_i_prev];
+                            multi_sel_helper(updated, indices.0, indices.1, MolType::Ligand)
                         }
                         Selection::AtomsLig((mol_i_prev, atoms_i_prev)) => {
-                            // todo: Handle the case if mol_i is diff from prev.
-                            // todo: DRY with the AtomLig branch.
-                            let mut updated = atoms_i_prev.clone();
-                            // Toggle
-                            if updated.contains(&indices.1) {
-                                updated.retain(|idx| idx != &indices.1);
-                            } else {
-                                updated.push(indices.1);
-                            }
-                            match updated.len() {
-                                0 => Selection::None,
-                                1 => Selection::AtomLig((*mol_i_prev, updated[0])),
-                                _ => Selection::AtomsLig((*mol_i_prev, updated)),
-                            }
-
+                            let updated = atoms_i_prev.clone();
+                            multi_sel_helper(updated, indices.0, indices.1, MolType::Ligand)
                         }
 
-                        _ => Selection::AtomLig(indices)
+                        _ => Selection::AtomLig(indices),
                     }
                 } else {
                     Selection::AtomLig(indices)
                 }
-            },
+            }
             MolType::NucleicAcid => Selection::AtomNucleicAcid(indices),
             MolType::Lipid => Selection::AtomLipid(indices),
             _ => unreachable!(),
@@ -683,7 +675,13 @@ pub(crate) fn handle_selection_attempt(
     };
 
     match selection {
-        Selection::AtomLig((mol_i, _)) | Selection::BondLig((mol_i, _)) => {
+        Selection::AtomPeptide(_) | Selection::AtomsPeptide(_) | Selection::BondPeptide(_) => {
+            let mol_i = 0;
+            state.volatile.active_mol = Some((MolType::Peptide, mol_i));
+        }
+        Selection::AtomLig((mol_i, _))
+        | Selection::AtomsLig((mol_i, _))
+        | Selection::BondLig((mol_i, _)) => {
             state.volatile.active_mol = Some((MolType::Ligand, mol_i));
         }
         Selection::AtomNucleicAcid((mol_i, _)) | Selection::BondNucleicAcid((mol_i, _)) => {
@@ -848,4 +846,39 @@ pub fn handle_selection_attempt_mol_editor(
     }
 
     *redraw = true;
+}
+
+/// Handles logic regarding selection changes updating multi-atom lists, or reverting
+/// to single-atom variants. Uses toggling behavior.
+fn multi_sel_helper(
+    mut updated: Vec<usize>,
+    mol_i: usize,
+    atom_i: usize,
+    mol_type: MolType,
+) -> Selection {
+    if updated.contains(&atom_i) {
+        updated.retain(|idx| idx != &atom_i);
+    } else {
+        updated.push(atom_i);
+    }
+
+    // todo: We should handle the case where the mol i isn't from the previous mol.
+    match updated.len() {
+        0 => Selection::None,
+        // Single-selection variants
+        1 => {
+            let result = (mol_i, updated[0]);
+            match mol_type {
+                MolType::Ligand => Selection::AtomLig(result),
+                MolType::Peptide => Selection::AtomPeptide(updated[0]),
+                _ => unimplemented!(),
+            }
+        }
+        // Multi-selection variants
+        _ => match mol_type {
+            MolType::Ligand => Selection::AtomsLig((mol_i, updated)),
+            MolType::Peptide => Selection::AtomsPeptide(updated),
+            _ => unimplemented!(),
+        },
+    }
 }

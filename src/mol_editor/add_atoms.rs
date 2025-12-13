@@ -17,51 +17,56 @@ use crate::{
     molecule::{Atom, Bond, MoleculeCommon},
 };
 
-/// `i` is the parent's index.
 fn find_appended_posit(
-    i: usize,
     posit_parent: Vec3,
-    neighbor_count: usize,
     atoms: &[Atom],
-    adj_list: &[Vec<usize>],
+    adj_to_par: &[usize],
     bond_len: Option<f64>,
     element: Element,
 ) -> Option<Vec3> {
-    let result = match neighbor_count {
-        // This 0 branch should rarely be called; for disconnected parents.
-        0 => Some(posit_parent + Vec3::new(1.3, 0., 0.)),
-        1 => {
-            let adj = adj_list[i][0];
-            let neighbor = atoms[adj].posit;
+    let neighbor_count = adj_to_par.len();
 
-            // For now, pick an arbitrary orientation of the 3 methyl atoms, and let MD sort it out later.
-            // todo: choose something that avoids steric clashes.
+    // Note on these computations: The parent atom is the "hub" of a tetrahedral or planar
+    // hub-and-spoke config. Other spokes are existing atoms bound to this parent, and the atom
+    // we're computing the position here to add.
+    let result = match neighbor_count {
+        // This 0 branch should only be called for disconnected parents.
+        0 => Some(posit_parent + Vec3::new(1.3, 0., 0.)),
+
+        1 => {
+            // This neighbor is the *grandparent* to the one we're adding; what ties
+            // the parent to it. We set up the atom we're adding so it's tau/3 to this
+            // grandparent, rotated around the parent.
+            let grandparent = atoms[adj_to_par[0]].posit;
+
+            // For now, pick an arbitrary orientation of the 3 methyl atoms (relative to the rest of the system)
+            // without regard for steric clashes, and let MD sort it out after.
+            // todo: choose something explicitly that avoids steric clashes?
 
             // todo: This section is not working properly.
             const TETRA_ANGLE: f64 = 1.91063;
-            let bond = (neighbor - posit_parent).to_normalized();
-            let axis = bond.any_perpendicular();
-            let rotator = Quaternion::from_axis_angle(axis, TETRA_ANGLE);
+
+            let bond_par_gp = (grandparent - posit_parent).to_normalized();
+            let ax_rot = bond_par_gp.any_perpendicular();
+            let rotator = Quaternion::from_axis_angle(ax_rot, TETRA_ANGLE);
 
             // If H, shorten the bond.
-            let mut relative_dir = rotator.rotate_vec(bond);
+            let mut relative_dir = rotator.rotate_vec(bond_par_gp);
             if element == Hydrogen {
                 relative_dir = (relative_dir.to_normalized()) * 1.1;
             }
             Some(posit_parent + relative_dir)
         }
         2 => {
-            let adj_0 = adj_list[i][0];
-            let neighbor_0 = atoms[adj_0].posit;
-            let adj_1 = adj_list[i][1];
-            let neighbor_1 = atoms[adj_1].posit;
+            let neighbor_0 = atoms[adj_to_par[0]].posit;
+            let neighbor_1 = atoms[adj_to_par[1]].posit;
 
             // This function uses the distance between the first two params, so it's likely
             // in the case of adding H, this is what we want. (?)
             let (p0, p1) = find_tetra_posits(posit_parent, neighbor_1, neighbor_0);
 
             // Score a candidate by its minimum distance to any existing neighbor; pick the larger score.
-            let neighbors: &[usize] = &adj_list[i];
+            let neighbors: &[usize] = &adj_to_par;
             let score = |p: Vec3| {
                 let mut best = f64::INFINITY;
                 for &ni in neighbors {
@@ -79,11 +84,11 @@ fn find_appended_posit(
         }
         3 => {
             // None
-            let adj_0 = adj_list[i][0];
+            let adj_0 = adj_to_par[0];
             let neighbor_0 = atoms[adj_0].posit;
-            let adj_1 = adj_list[i][1];
+            let adj_1 = adj_to_par[1];
             let neighbor_1 = atoms[adj_1].posit;
-            let adj_2 = adj_list[i][2];
+            let adj_2 = adj_to_par[2];
             let neighbor_2 = atoms[adj_2].posit;
 
             // todo. Check both angles?
@@ -254,16 +259,10 @@ pub fn add_atom(
     }
 
     // todo: Can't use `common` below here due to the delete_atom code and ownership.
-
-    let neighbor_count = mol.adjacency_list[i_par].len();
-    let adj_list = &mol.adjacency_list;
-
     let posit = match find_appended_posit(
-        i_par,
         posit_parent,
-        neighbor_count,
         &mol.atoms,
-        adj_list,
+        &mol.adjacency_list[i_par],
         bond_len,
         element,
     ) {

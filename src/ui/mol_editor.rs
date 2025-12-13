@@ -20,8 +20,9 @@ use crate::{
         templates::Template,
     },
     mol_lig::MoleculeSmall,
+    molecule::Bond,
     ui::{
-        COL_SPACING, COLOR_ACTIVE, COLOR_INACTIVE,
+        COL_SPACING, COLOR_ACTION, COLOR_ACTIVE, COLOR_INACTIVE,
         cam::cam_reset_controls,
         md::energy_disp,
         misc,
@@ -271,17 +272,18 @@ pub(in crate::ui) fn editor(
             .on_hover_text("Reset atom serial numbers to be sequential without gaps.")
             .clicked()
         {
+            let mol = &mut state.mol_editor.mol.common;
             // todo: Be more clever about this.
-            let mut updated_sns = Vec::with_capacity(state.mol_editor.mol.common.atoms.len());
+            let mut updated_sns = Vec::with_capacity(mol.atoms.len());
 
-            for (i, atom) in state.mol_editor.mol.common.atoms.iter_mut().enumerate() {
+            for (i, atom) in mol.atoms.iter_mut().enumerate() {
                 // let sn_prev = atom.serial_number;
                 let sn_new = i as u32 + 1;
                 atom.serial_number = sn_new;
                 updated_sns.push(sn_new);
             }
 
-            for bond in &mut state.mol_editor.mol.common.bonds {
+            for bond in &mut mol.bonds {
                 bond.atom_0_sn = updated_sns[bond.atom_0];
                 bond.atom_1_sn = updated_sns[bond.atom_1];
             }
@@ -378,8 +380,13 @@ fn edit_tools(
     engine_updates: &mut EngineUpdates,
     redraw: &mut bool,
 ) {
-    let Selection::AtomLig((_, i)) = state.ui.selection else {
-        return
+    let (mol_i, atom_sel_i) = match &state.ui.selection {
+        Selection::AtomLig((mol_i, i)) => (*mol_i, *i),
+        Selection::AtomsLig((mol_i, i)) => {
+            // todo: How should we handle this?
+            (*mol_i, i[0])
+        }
+        _ => return,
     };
 
     let mut rebuild_md = false;
@@ -387,18 +394,18 @@ fn edit_tools(
     section_box().show(ui, |ui| {
         if ui
             .button("Add Atom")
-            .on_hover_text("Add a Carbon atom. (Can change to other elements after)")
+            .on_hover_text("(Hotkey: Tab) Add a Carbon atom. (Can change to other elements after)")
             .clicked()
         {
             add_atom(
                 &mut state.mol_editor.mol.common,
                 &mut scene.entities,
-                i,
+                atom_sel_i,
                 Carbon,
                 BondType::Single,
-                Some("ca".to_owned()), // todo
-                Some(1.4),             // todo
-                0.13,                  // todo
+                Some("c".to_owned()), // todo
+                Some(1.4),            // todo
+                0.13,                 // todo
                 &mut state.ui,
                 engine_updates,
             );
@@ -410,15 +417,10 @@ fn edit_tools(
             .on_hover_text("Add a Carbon atom, and select it. Useful for quickly adding chains.")
             .clicked()
         {
-            let Selection::AtomLig((mol_i, i)) = state.ui.selection else {
-                eprintln!("Attempting to add an atom with no parent to add it to");
-                return;
-            };
-
             let new_i = add_atom(
                 &mut state.mol_editor.mol.common,
                 &mut scene.entities,
-                i,
+                atom_sel_i,
                 Carbon,
                 BondType::Single,
                 Some("ca".to_owned()), // todo
@@ -459,7 +461,6 @@ fn edit_tools(
             Carbon, Hydrogen, Oxygen, Nitrogen, Sulfur, Phosphorus, Chlorine,
         ] {
             change_el_button(
-                // &mut state.mol_editor.mol.common.atoms,
                 &state.ui.selection,
                 el,
                 ui,
@@ -486,6 +487,41 @@ fn edit_tools(
             //     eprintln!("Error moving atom");
             // };
             // redraw = true;
+        }
+
+        let mol = &mut state.mol_editor.mol.common;
+
+        if let Selection::AtomsLig((_, atoms_i)) = &state.ui.selection
+            && atoms_i.len() == 2
+        {
+            let bond_exists = mol.adjacency_list[atoms_i[0]].contains(&atoms_i[1]);
+
+            if !bond_exists {
+                // todo: Hotkey for this and other functionality.
+                if ui
+                    .button(RichText::new("Create Bond").color(COLOR_ACTION))
+                    .on_hover_text(
+                        "(Hotkey: todo) Create a covalently bond between the two selected atoms",
+                    )
+                    .clicked()
+                {
+                    let atom_0 = &mol.atoms[atoms_i[0]];
+                    let atom_1 = &mol.atoms[atoms_i[1]];
+
+                    mol.bonds.push(Bond {
+                        bond_type: BondType::Single, // todo: Allow other types
+                        atom_0_sn: atom_0.serial_number,
+                        atom_1_sn: atom_1.serial_number,
+                        atom_0: atoms_i[0],
+                        atom_1: atoms_i[1],
+                        is_backbone: false,
+                    });
+                    mol.build_adjacency_list();
+
+                    *redraw = true;
+                    rebuild_md = true;
+                }
+            }
         }
 
         if let Selection::AtomLig((_, i)) = state.ui.selection {
@@ -529,6 +565,7 @@ fn template_section(state: &mut State, ui: &mut Ui, redraw: &mut bool, rebuild_m
 
             if i >= mol_com.atoms.len() {
                 eprintln!("Error: Sel out of range for mol editor");
+                state.ui.selection = Selection::None;
                 return;
             }
 

@@ -96,7 +96,9 @@ impl MolEditorState {
         // todo: Change this dist; rough start.
         const DIST: f64 = 1.3;
 
-        self.mol.common.atoms = vec![
+        let mol = &mut self.mol.common;
+
+        mol.atoms = vec![
             Atom {
                 serial_number: 1,
                 posit: Vec3::new_zero(),
@@ -117,7 +119,7 @@ impl MolEditorState {
             },
         ];
 
-        self.mol.common.bonds = vec![Bond {
+        mol.bonds = vec![Bond {
             bond_type: BondType::Single,
             atom_0_sn: 1,
             atom_1_sn: 2,
@@ -126,8 +128,8 @@ impl MolEditorState {
             is_backbone: false,
         }];
 
-        self.mol.common.reset_posits();
-        self.mol.common.build_adjacency_list();
+        mol.reset_posits();
+        mol.build_adjacency_list();
     }
 
     /// A simplified variant of our primary `open_molecule` function.
@@ -299,11 +301,13 @@ impl MolEditorState {
             return;
         };
 
-        change_snapshot_helper(&mut self.mol.common.atom_posits, &mut 0, snap);
+        let mol = &mut self.mol.common;
+
+        change_snapshot_helper(&mut mol.atom_posits, &mut 0, snap);
 
         // Since we assume they're synced:
-        for (i, posit) in self.mol.common.atom_posits.iter().enumerate() {
-            self.mol.common.atoms[i].posit = *posit;
+        for (i, posit) in mol.atom_posits.iter().enumerate() {
+            mol.atoms[i].posit = *posit;
         }
         self.snap = Some(snap.clone());
 

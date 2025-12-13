@@ -1,5 +1,6 @@
 //! Handles user inputs, e.g. from keyboard and mouse.
 
+use bio_files::BondType;
 use graphics::{
     ControlScheme, DeviceEvent, ElementState, EngineUpdates, EntityUpdate, FWD_VEC,
     InputsCommanded, Scene, WindowEvent,
@@ -7,11 +8,14 @@ use graphics::{
     winit::keyboard::{KeyCode, PhysicalKey::Code},
 };
 use lin_alg::f32::Vec3;
+use na_seq::Element::Carbon;
 
 use crate::{
     ManipMode, OperatingMode, Selection, State,
     cam_misc::move_cam_to_sel,
-    drawing, drawing_wrappers, mol_editor, mol_manip,
+    drawing, drawing_wrappers, mol_editor,
+    mol_editor::add_atoms::add_atom,
+    mol_manip,
     molecule::MolType,
     render::set_flashlight,
     selection,
@@ -337,14 +341,61 @@ pub fn event_dev_handler(
                     Code(KeyCode::ShiftLeft | KeyCode::ShiftRight) => {
                         state_.volatile.inputs_commanded.run = true;
                     }
+                    Code(KeyCode::Tab) => {
+                        // todo: This is DRY/mostly C+P from the add atom button.
+                        if state_.volatile.operating_mode == OperatingMode::MolEditor {
+                            let (mol_i, atom_sel_i) = match &state_.ui.selection {
+                                Selection::AtomLig((mol_i, i)) => (*mol_i, *i),
+                                Selection::AtomsLig((mol_i, i)) => {
+                                    // todo: How should we handle this?
+                                    (*mol_i, i[0])
+                                }
+                                _ => return updates,
+                            };
+
+                            // todo: DRY here in some of the params with the button
+                            add_atom(
+                                &mut state_.mol_editor.mol.common,
+                                &mut scene.entities,
+                                atom_sel_i,
+                                Carbon,
+                                BondType::Single,
+                                Some("c".to_owned()), // todo
+                                Some(1.4),            // todo
+                                0.13,                 // todo
+                                &mut state_.ui,
+                                &mut updates,
+                            );
+                            // todo: Rebuild md here.
+
+                            if state_.mol_editor.md_running {
+                                // todo: Ideally don't rebuild the whole dynamics, for performance reasons.
+                                match mol_editor::build_dynamics(
+                                    &state_.dev,
+                                    &mut state_.mol_editor.mol,
+                                    &state_.ff_param_set,
+                                    &mut state_.mol_editor.mol_specific_params,
+                                    &state_.to_save.md_config,
+                                ) {
+                                    Ok(d) => state_.mol_editor.md_state = Some(d),
+                                    Err(e) => eprintln!(
+                                        "Problem setting up dynamics for the editor: {e:?}"
+                                    ),
+                                }
+                            } else {
+                                // Will be triggered next time MD is started.
+                                state_.mol_editor.md_rebuild_required = true;
+                            }
+                        }
+                    }
                     _ => (),
                 },
                 ElementState::Released => match key.physical_key {
                     Code(KeyCode::ShiftLeft | KeyCode::ShiftRight) => {
                         state_.volatile.inputs_commanded.run = false;
                     }
-                    _ => ()
-                }
+                    _ => (),
+                },
             }
 
             // todo: If you enable a direction-dependent flashlight, you will need to modify the mouse movement
