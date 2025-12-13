@@ -3,7 +3,7 @@ use std::sync::atomic::Ordering;
 use bio_files::BondType;
 use dynamics::{find_tetra_posit_final, find_tetra_posits};
 use egui::Ui;
-use graphics::{EngineUpdates, Entity, EntityUpdate};
+use graphics::{ControlScheme, EngineUpdates, Entity, EntityUpdate};
 use lin_alg::f64::{Quaternion, Vec3};
 use na_seq::{
     Element,
@@ -144,6 +144,7 @@ pub fn add_from_template_btn(
     abbrev: &str,
     name: &str,
     state_ui: &mut StateUi,
+    controls: &mut ControlScheme,
 ) {
     if ui
         .button(abbrev)
@@ -187,6 +188,10 @@ pub fn add_from_template_btn(
                 &mut Default::default(),
             );
         }
+
+        *controls = ControlScheme::Arc {
+            center: mol.centroid().into(),
+        };
 
         // We are currently replacing the selected atom with the added group's anchor.
         // So, remove it and its H atoms.
@@ -236,6 +241,7 @@ pub fn add_atom(
     q: f32,
     ui: &mut StateUi,
     updates: &mut EngineUpdates,
+    control: &mut ControlScheme,
 ) -> Option<usize> {
     // todo: For readability, we really need somethign like this, but getter borrow errors:
     let posit_parent = mol.atom_posits[i_par];
@@ -321,6 +327,9 @@ pub fn add_atom(
     // Up to one recursion to add hydrogens to this parent and to the new atom.
     if element != Hydrogen {
         populate_hydrogens_on_atom(mol, i_new, element, &ff_type, entities, ui, updates);
+        *control = ControlScheme::Arc {
+            center: mol.centroid().into(),
+        };
     }
 
     // todo: Ideally just add the single entity, and add it to the
@@ -396,6 +405,7 @@ pub fn populate_hydrogens_on_atom(
                 q,
                 state_ui,
                 engine_updates,
+                &mut ControlScheme::None,
             );
             j += 1;
         }

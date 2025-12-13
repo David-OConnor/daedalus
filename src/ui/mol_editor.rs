@@ -2,7 +2,7 @@ use std::sync::atomic::Ordering;
 
 use bio_files::BondType;
 use egui::{Color32, ComboBox, RichText, Slider, Ui};
-use graphics::{EngineUpdates, Entity, EntityUpdate, Scene};
+use graphics::{ControlScheme, EngineUpdates, Entity, EntityUpdate, Scene};
 use lin_alg::f64::{Quaternion, Vec3, Z_VEC};
 use na_seq::{
     Element,
@@ -301,7 +301,37 @@ pub(in crate::ui) fn editor(
 
         ui.add_space(COL_SPACING);
         if ui
-            .button(RichText::new("Exit editor").color(Color32::LIGHT_RED))
+            .button(RichText::new("Exit / add").color(Color32::LIGHT_RED))
+            .on_hover_text("Exit the molecule editor, and load the edited molecule.")
+            .clicked()
+        {
+            // Load the edited molecule back into the state.
+            state.ligands.push(
+                state.mol_editor.mol.clone()
+            );
+
+            exit_edit_mode(state, scene, engine_updates);
+        }
+
+        if let Some(mol_i) = state.volatile.mol_editing {
+            ui.add_space(COL_SPACING);
+            if ui
+                .button(RichText::new("Exit / update").color(Color32::LIGHT_RED))
+                .on_hover_text("Exit the molecule editor, and update the loaded molecule with changes made.")
+                .clicked()
+            {
+                // Load the edited molecule back into the state.
+                state.ligands[mol_i].common.atoms = state.mol_editor.mol.common.atoms.clone();
+                state.ligands[mol_i].common.bonds = state.mol_editor.mol.common.bonds.clone();
+
+                exit_edit_mode(state, scene, engine_updates);
+            }
+        }
+
+        ui.add_space(COL_SPACING);
+        if ui
+            .button(RichText::new("Exit / discard").color(Color32::LIGHT_RED))
+            .on_hover_text("Exit the mol editor, discarding all unsaved changes.")
             .clicked()
         {
             exit_edit_mode(state, scene, engine_updates);
@@ -408,6 +438,7 @@ fn edit_tools(
                 0.13,                 // todo
                 &mut state.ui,
                 engine_updates,
+                &mut scene.input_settings.control_scheme,
             );
             rebuild_md = true;
         }
@@ -428,6 +459,7 @@ fn edit_tools(
                 0.13,                  // todo
                 &mut state.ui,
                 engine_updates,
+                &mut scene.input_settings.control_scheme,
             );
 
             if let Some(i) = new_i {
@@ -475,7 +507,13 @@ fn edit_tools(
 
     ui.add_space(COL_SPACING / 2.);
 
-    template_section(state, ui, redraw, &mut rebuild_md);
+    template_section(
+        state,
+        ui,
+        redraw,
+        &mut rebuild_md,
+        &mut scene.input_settings.control_scheme,
+    );
 
     section_box().show(ui, |ui| {
         if ui
@@ -554,7 +592,13 @@ fn edit_tools(
     }
 }
 
-fn template_section(state: &mut State, ui: &mut Ui, redraw: &mut bool, rebuild_md: &mut bool) {
+fn template_section(
+    state: &mut State,
+    ui: &mut Ui,
+    redraw: &mut bool,
+    rebuild_md: &mut bool,
+    controls: &mut ControlScheme,
+) {
     let Selection::AtomLig((_, i)) = state.ui.selection else {
         return;
     };
@@ -609,6 +653,7 @@ fn template_section(state: &mut State, ui: &mut Ui, redraw: &mut bool, rebuild_m
                 name,
                 abbrev,
                 &mut state.ui,
+                controls,
             );
         };
 

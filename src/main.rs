@@ -308,6 +308,7 @@ struct StateVolatile {
     operating_mode: OperatingMode,
     /// Allows restoring after entering the mol edit mode.
     primary_mode_cam: Camera,
+    mol_editing: Option<usize>,
     md_local: MdStateLocal,
     orbit_center: Option<(MolType, usize)>,
     /// ORCA is available on the system path.
@@ -336,6 +337,7 @@ impl Default for StateVolatile {
             key_modifiers: Default::default(),
             operating_mode: Default::default(),
             primary_mode_cam: Default::default(),
+            mol_editing: Default::default(),
             md_local: Default::default(),
             orbit_center: None,
             orca_avail: false,

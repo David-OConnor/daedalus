@@ -365,6 +365,7 @@ pub fn event_dev_handler(
                                 0.13,                 // todo
                                 &mut state_.ui,
                                 &mut updates,
+                                &mut scene.input_settings.control_scheme,
                             );
                             // todo: Rebuild md here.
 

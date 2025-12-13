@@ -395,6 +395,8 @@ pub fn enter_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mu
                 .load_mol(&state.ligands[i], scene, engine_updates, &mut state.ui);
             mol_loaded = true;
             arc_center = state.ligands[i].common.centroid().into();
+
+            state.volatile.mol_editing = Some(i);
         }
     }
 
@@ -440,9 +442,10 @@ pub fn exit_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mut
 
     state.mol_editor.md_state = None;
     state.mol_editor.md_running = false;
+    state.volatile.mol_editing = None;
 
-    // todo: Not necessarily zero!
     scene.input_settings.control_scheme = state.volatile.control_scheme_prev;
+    scene.camera = state.volatile.primary_mode_cam.clone();
 
     // Load all primary molecules into the engine.
     draw_peptide(state, scene);
@@ -450,9 +453,8 @@ pub fn exit_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mut
     draw_all_nucleic_acids(state, scene);
     draw_all_lipids(state, scene);
 
-    scene.camera = state.volatile.primary_mode_cam.clone();
-
     set_flashlight(scene);
+
     engine_updates.entities = EntityUpdate::All;
     engine_updates.lighting = true;
 }
