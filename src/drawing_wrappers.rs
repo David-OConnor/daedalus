@@ -83,7 +83,7 @@ pub fn draw_all_ligs(state: &mut State, scene: &mut Scene) {
             i_mol,
             &state.ui,
             &state.volatile.active_mol,
-            state.volatile.mol_manip.mol,
+            state.volatile.mol_manip.mode,
             state.volatile.operating_mode,
         );
 
@@ -131,7 +131,7 @@ pub fn draw_all_nucleic_acids(state: &mut State, scene: &mut Scene) {
             i_mol,
             &state.ui,
             &state.volatile.active_mol,
-            state.volatile.mol_manip.mol,
+            state.volatile.mol_manip.mode,
             state.volatile.operating_mode,
         );
 
@@ -179,7 +179,7 @@ pub fn draw_all_lipids(state: &mut State, scene: &mut Scene) {
             i_mol,
             &state.ui,
             &state.volatile.active_mol,
-            state.volatile.mol_manip.mol,
+            state.volatile.mol_manip.mode,
             state.volatile.operating_mode,
         );
 
@@ -227,7 +227,7 @@ pub fn draw_all_mol_of_type<T: MolGenericTrait>(
             i,
             &state.ui,
             &state.volatile.active_mol,
-            state.volatile.mol_manip.mol,
+            state.volatile.mol_manip.mode,
             state.volatile.operating_mode,
         ));
 
@@ -257,7 +257,7 @@ fn update_inplace_inner(
         i,
         &state.ui,
         &state.volatile.active_mol,
-        state.volatile.mol_manip.mol,
+        state.volatile.mol_manip.mode,
         state.volatile.operating_mode,
     );
 

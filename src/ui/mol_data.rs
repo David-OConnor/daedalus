@@ -8,14 +8,14 @@ use graphics::{ControlScheme, EngineUpdates, EntityUpdate, Scene};
 use lin_alg::f64::Vec3;
 
 use crate::{
-    ManipMode, Selection, State,
+    Selection, State,
     cam_misc::move_mol_to_cam,
     download_mols, drawing,
     drawing::{CHARGE_MAP_MAX, CHARGE_MAP_MIN, COLOR_AA_NON_RESIDUE_EGUI},
     label,
     lipid::MoleculeLipid,
     mol_lig::MoleculeSmall,
-    mol_manip::set_manip,
+    mol_manip::{ManipMode, set_manip},
     molecule::{
         Atom, Bond, MoGenericRefMut, MolGenericRef, MolIdent, MolType, MoleculeCommon, Residue,
         aa_color,
@@ -875,7 +875,7 @@ pub(in crate::ui) fn display_mol_data(
             let mut color_move = COLOR_INACTIVE;
             let mut color_rotate = COLOR_INACTIVE;
 
-            match state.volatile.mol_manip.mol {
+            match state.volatile.mol_manip.mode {
                 ManipMode::Move((mol_type, mol_i)) => {
                     if mol_type == active_mol_type && mol_i == active_mol_i {
                         color_move = COLOR_ACTIVE;
@@ -895,14 +895,16 @@ pub(in crate::ui) fn display_mol_data(
                 the mouse. Scroll to move it forward and back.")
                 .clicked() {
 
-                set_manip(&mut state.volatile,&mut state.to_save.save_flag, scene, redraw_lig, redraw_na, redraw_lipid, ManipMode::Move((active_mol_type, active_mol_i)));
+                set_manip(&mut state.volatile,&mut state.to_save.save_flag, scene, redraw_lig, redraw_na, redraw_lipid,
+                          ManipMode::Move((active_mol_type, active_mol_i)), &state.ui.selection,);
             }
 
             if ui.button(RichText::new("⟳").color(color_rotate))
                 .on_hover_text("(Hotkey: R. R or Esc to stop) Rotate the active molecule by clicking and dragging with the mouse. Scroll to roll.")
                 .clicked() {
 
-                set_manip(&mut state.volatile,&mut state.to_save.save_flag, scene, redraw_lig,redraw_na, redraw_lipid, ManipMode::Rotate((active_mol_type, active_mol_i)));
+                set_manip(&mut state.volatile,&mut state.to_save.save_flag, scene, redraw_lig,redraw_na, redraw_lipid,
+                          ManipMode::Rotate((active_mol_type, active_mol_i)), &state.ui.selection,);
             }
         }
 

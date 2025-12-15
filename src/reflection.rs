@@ -4,6 +4,8 @@
 // todo: This is currently a disorganized dumping ground of related data. Organize it,
 // todo, move to bio_files as requried, and add cuFFT.
 
+#[cfg(feature = "cuda")]
+use std::sync::Arc;
 use std::{io, time::Instant};
 
 use bio_files::{DensityMap, MapHeader, UnitCell, cif_sf::CifStructureFactors};
@@ -11,6 +13,8 @@ use bio_files::{DensityMap, MapHeader, UnitCell, cif_sf::CifStructureFactors};
 use cudarc::driver::{CudaFunction, CudaStream, LaunchConfig, PushKernelArg};
 use ewald::fft3d_c2r;
 use graphics::{EngineUpdates, EntityUpdate, Mesh, Scene, Vertex};
+#[cfg(feature = "cuda")]
+use lin_alg::f32::Vec3 as Vec3F32;
 #[cfg(feature = "cuda")]
 use lin_alg::f32::{vec3s_from_dev, vec3s_to_dev};
 use lin_alg::f64::Vec3;
@@ -330,7 +334,7 @@ impl DensityRect {
             vec3s_to_dev(stream, &v)
         };
 
-        let mut densities_gpu = stream.memcpy_stod(&vec![0.0f32; n]).unwrap();
+        let mut densities_gpu = stream.clone_htod(&vec![0.0f32; n]).unwrap();
 
         let triplets_gpu = {
             let mut trip_flat = Vec::with_capacity(n * 3);
@@ -339,7 +343,7 @@ impl DensityRect {
                 trip_flat.push(y as u32);
                 trip_flat.push(z as u32);
             }
-            stream.memcpy_stod(&trip_flat).unwrap()
+            stream.clone_htod(&trip_flat).unwrap()
         };
 
         let atom_posits_gpu = {

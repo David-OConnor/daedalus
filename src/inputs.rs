@@ -2,8 +2,8 @@
 
 use bio_files::BondType;
 use graphics::{
-    ControlScheme, DeviceEvent, ElementState, EngineUpdates, EntityUpdate, FWD_VEC,
-    InputsCommanded, Scene, WindowEvent,
+    ControlScheme, DeviceEvent, ElementState, EngineUpdates, EntityUpdate, FWD_VEC, Scene,
+    WindowEvent,
     event::MouseScrollDelta,
     winit::keyboard::{KeyCode, PhysicalKey::Code},
 };
@@ -11,11 +11,12 @@ use lin_alg::f32::Vec3;
 use na_seq::Element::Carbon;
 
 use crate::{
-    ManipMode, OperatingMode, Selection, State,
+    OperatingMode, Selection, State,
     cam_misc::move_cam_to_sel,
     drawing, drawing_wrappers, mol_editor,
     mol_editor::add_atoms::add_atom,
     mol_manip,
+    mol_manip::ManipMode,
     molecule::MolType,
     render::set_flashlight,
     selection,
@@ -204,10 +205,10 @@ pub fn event_dev_handler(
                     Code(KeyCode::Escape) => {
                         // If in manip mode, exit that, but don't remove selections.
                         if matches!(
-                            state_.volatile.mol_manip.mol,
+                            state_.volatile.mol_manip.mode,
                             ManipMode::Move(_) | ManipMode::Rotate(_)
                         ) {
-                            state_.volatile.mol_manip.mol = ManipMode::None;
+                            state_.volatile.mol_manip.mode = ManipMode::None;
                             state_.volatile.mol_manip.pivot = None;
                             scene.input_settings.control_scheme =
                                 state_.volatile.control_scheme_prev;
@@ -289,10 +290,28 @@ pub fn event_dev_handler(
                         }
                     },
                     Code(KeyCode::KeyM) => {
-                        let mol_type = match state_.active_mol() {
-                            Some(m) => m.mol_type(),
-                            None => return updates,
-                        };
+                        // let (mol_type, mol_i) = match state_.volatile.operating_mode {
+                        //     OperatingMode::Primary => match state_.active_mol() {
+                        //         Some(m) => (
+                        //             m.mol_type(),
+                        //             state_.volatile.active_mol.unwrap_or_default().1,
+                        //         ),
+                        //         None => return updates,
+                        //     },
+                        //     OperatingMode::MolEditor => {
+                        //         // todo: DRY with mol editor button.
+                        //         let (mol_i, atom_sel_i) = match &state_.ui.selection {
+                        //             Selection::AtomLig((mol_i, i)) => (*mol_i, *i),
+                        //             Selection::AtomsLig((mol_i, i)) => {
+                        //                 // todo: How should we handle this?
+                        //                 (*mol_i, i[0])
+                        //             }
+                        //             _ => return updates,
+                        //         };
+                        //
+                        //         (MolType::Ligand, atom_sel_i)
+                        //     }
+                        // };
 
                         mol_manip::set_manip(
                             &mut state_.volatile,
@@ -301,7 +320,8 @@ pub fn event_dev_handler(
                             &mut redraw_ligs_inplace,
                             &mut redraw_na_inplace,
                             &mut redraw_lipid_inplace,
-                            ManipMode::Move((mol_type, 0)),
+                            ManipMode::Move((MolType::Ligand, 0)),
+                            &state_.ui.selection,
                         );
                     }
                     Code(KeyCode::KeyR) => {
@@ -318,6 +338,7 @@ pub fn event_dev_handler(
                             &mut redraw_na_inplace,
                             &mut redraw_lipid_inplace,
                             ManipMode::Rotate((mol_type, 0)),
+                            &state_.ui.selection,
                         );
                     }
                     Code(KeyCode::Delete) => {

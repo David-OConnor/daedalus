@@ -86,6 +86,7 @@ use lin_alg::{
     f64::Vec3 as Vec3F64,
 };
 use mol_lig::MoleculeSmall;
+use mol_manip::MolManip;
 use molecule::MoleculePeptide;
 
 use crate::{
@@ -222,26 +223,6 @@ struct SceneFlags {
     pub clear_density_drawing: bool,
     pub new_density_loaded: bool,
     pub new_mol_loaded: bool,
-}
-
-#[derive(Clone, Copy, Default, PartialEq)]
-pub enum ManipMode {
-    #[default]
-    None,
-    Move((MolType, usize)), // Index of mol
-    Rotate((MolType, usize)),
-}
-
-/// State for dragging and rotating molecules.
-#[derive(Default)]
-struct MolManip {
-    /// Allows the user to move a molecule around with mouse or keyboard.
-    mol: ManipMode,
-    /// For maintaining the screen plane when dragging the mol.
-    pivot: Option<Vec3>,
-    view_dir: Option<Vec3>,
-    offset: Vec3,
-    depth_bias: f32,
 }
 
 // todo: Rename A/R

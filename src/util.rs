@@ -12,18 +12,18 @@ use cudarc::{
 };
 #[cfg(feature = "cuda")]
 use dynamics::ComputationDevice;
-use dynamics::ParamError;
 use egui::Color32;
 use graphics::{Camera, ControlScheme, EngineUpdates, EntityUpdate, FWD_VEC, Scene};
 use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 use na_seq::{AaIdent, Element};
 
 use crate::{
-    CamSnapshot, ManipMode, OperatingMode, PREFS_SAVE_INTERVAL, Selection, State, StateUi,
-    ViewSelLevel, cam_misc,
+    CamSnapshot, OperatingMode, PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel,
+    cam_misc,
     drawing::{EntityClass, MoleculeView, draw_density_point_cloud, draw_peptide},
     drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
     mol_lig::MoleculeSmall,
+    mol_manip::ManipMode,
     molecule::{
         Atom, Bond, MoGenericRefMut, MolGenericRef, MolType, MoleculeGeneric, MoleculePeptide,
         Residue,
@@ -594,7 +594,7 @@ pub fn close_mol(
     scene: &mut Scene,
     engine_updates: &mut EngineUpdates,
 ) {
-    state.volatile.mol_manip.mol = ManipMode::None;
+    state.volatile.mol_manip.mode = ManipMode::None;
     engine_updates.entities = EntityUpdate::All;
 
     match mol_type {

@@ -1,6 +1,8 @@
 //! Handles logic for moving and rotating molecules from user inputs.
+//! This is for both primary mode, and the mol editor. In the latter, it
+//! can move individual atoms, and rotate parts of molecules around bonds.
 
-use graphics::{ControlScheme, FWD_VEC, RIGHT_VEC, Scene, UP_VEC, event::MouseScrollDelta};
+use graphics::{Camera, ControlScheme, FWD_VEC, RIGHT_VEC, Scene, UP_VEC, event::MouseScrollDelta};
 use lin_alg::{
     f32::{Quaternion, Vec3},
     f64::Vec3 as Vec3F64,
@@ -8,7 +10,7 @@ use lin_alg::{
 };
 
 use crate::{
-    ManipMode, State, StateVolatile,
+    OperatingMode, Selection, State, StateVolatile,
     inputs::{SENS_MOL_ROT_MOUSE, SENS_MOL_ROT_SCROLL},
     molecule::{MolType, MoleculeCommon},
 };
@@ -40,31 +42,30 @@ pub fn handle_mol_manip_in_plane(
         (0., state.volatile.ui_height),
     );
 
-    match state.volatile.mol_manip.mol {
+    match state.volatile.mol_manip.mode {
         ManipMode::Move((mol_type, mol_i)) => {
-            let mol = match mol_type {
-                MolType::Ligand => &mut state.ligands[mol_i].common,
-                MolType::NucleicAcid => &mut state.nucleic_acids[mol_i].common,
-                MolType::Lipid => &mut state.lipids[mol_i].common,
-                _ => unimplemented!(),
+            let mol = match state.volatile.operating_mode {
+                OperatingMode::Primary => match mol_type {
+                    MolType::Ligand => &mut state.ligands[mol_i].common,
+                    MolType::NucleicAcid => &mut state.nucleic_acids[mol_i].common,
+                    MolType::Lipid => &mut state.lipids[mol_i].common,
+                    _ => unimplemented!(),
+                },
+                OperatingMode::MolEditor => &mut state.mol_editor.mol.common,
             };
 
             // Ray from screen
             let (ray_origin, ray_point) = scene.screen_to_render(cursor);
             let ray_dir = (ray_point - ray_origin).to_normalized();
 
-            if state.volatile.mol_manip.pivot.is_none() {
-                // We set the pivot to be the coordinates of the molecule (e.g. nearest atom)
-                // to the cursor. We're moving this pivot with the mouse cursor, so we take
-                // this approach to prevent the mol jumping; this part *snaps* to the cursor.
-                let pivot: Vec3 = pick_movemenet_pivot(mol, ray_origin, ray_dir);
-
-                let n = scene.camera.orientation.rotate_vec(FWD_VEC).to_normalized();
-
-                state.volatile.mol_manip.pivot = Some(pivot);
-                state.volatile.mol_manip.view_dir = Some(n);
-                state.volatile.mol_manip.offset = Vec3::new_zero();
-            }
+            state.volatile.mol_manip.enter_movement(
+                &scene.camera,
+                mol,
+                ray_origin,
+                ray_dir,
+                state.volatile.operating_mode,
+                mol_i,
+            );
 
             // Cached at drag start
             let pivot = state.volatile.mol_manip.pivot.unwrap();
@@ -83,8 +84,19 @@ pub fn handle_mol_manip_in_plane(
 
                 // Apply delta (convert types if needed)
                 let movement_vec: Vec3F64 = delta_.into();
-                for p in &mut mol.atom_posits {
-                    *p += movement_vec;
+
+                match state.volatile.operating_mode {
+                    OperatingMode::Primary => {
+                        for p in &mut mol.atom_posits {
+                            *p += movement_vec;
+                        }
+                    }
+                    OperatingMode::MolEditor => {
+                        // `mol_i` = atom_i here.
+                        println!("Moving atom i: {:?}", mol_i);
+                        mol.atom_posits[mol_i] += movement_vec;
+                        mol.atoms[mol_i].posit = mol.atom_posits[mol_i];
+                    }
                 }
 
                 state.volatile.mol_manip.offset = offset;
@@ -92,7 +104,9 @@ pub fn handle_mol_manip_in_plane(
                 let ratio = 8;
                 unsafe {
                     I += 1;
-                    if I.is_multiple_of(ratio) {
+                    if I.is_multiple_of(ratio)
+                        || state.volatile.operating_mode == OperatingMode::MolEditor
+                    {
                         match mol_type {
                             MolType::Ligand => *redraw_lig = true,
                             MolType::NucleicAcid => *redraw_na = true,
@@ -153,7 +167,7 @@ pub fn handle_mol_manip_in_out(
     redraw_lipid: &mut bool,
 ) {
     // Move the molecule forward and backwards relative to the camera on scroll.
-    match state.volatile.mol_manip.mol {
+    match state.volatile.mol_manip.mode {
         ManipMode::Move((mol_type, mol_i)) => {
             let mol = match mol_type {
                 MolType::Ligand => &mut state.ligands[mol_i].common,
@@ -175,7 +189,10 @@ pub fn handle_mol_manip_in_out(
             // If not also supporting zooming in and out, we'd cache these values at the drag start.
             // If we do that, moving the mol and and out would be wonky mid-drag.
             {
-                let pivot: Vec3 = mol.centroid().into();
+                let pivot: Vec3 = match state.volatile.operating_mode {
+                    OperatingMode::Primary => mol.centroid().into(),
+                    OperatingMode::MolEditor => mol.atom_posits[mol_i].into(), // actually atom i.
+                };
 
                 let cam_pos32: Vec3 = scene.camera.position.into();
                 let view_dir = (pivot - cam_pos32).to_normalized();
@@ -184,6 +201,10 @@ pub fn handle_mol_manip_in_out(
                 state.volatile.mol_manip.view_dir = Some(view_dir);
                 state.volatile.mol_manip.offset = Vec3::new_zero();
             }
+            // state
+            //     .volatile
+            //     .mol_manip
+            //     .enter_movement(&scene.camera, mol, ray_origin, ray_dir);
 
             if let (Some(pivot), _) = (
                 state.volatile.mol_manip.pivot,
@@ -195,13 +216,19 @@ pub fn handle_mol_manip_in_out(
                 let dist = (pivot - scene.camera.position).magnitude();
                 let step = state.to_save.mol_move_sens as f32 / 1_000. * dist;
 
-                // let dv = pivot_norm * (scroll * step);
                 let dv = view_dir * (scroll * step);
+                let movement_vec: Vec3F64 = dv.into();
 
-                {
-                    let dv64: Vec3F64 = dv.into();
-                    for p in &mut mol.atom_posits {
-                        *p += dv64;
+                match state.volatile.operating_mode {
+                    OperatingMode::Primary => {
+                        for p in &mut mol.atom_posits {
+                            *p += movement_vec;
+                        }
+                    }
+                    OperatingMode::MolEditor => {
+                        println!("Moving atom i: {:?}", mol_i);
+                        mol.atom_posits[mol_i] += movement_vec;
+                        mol.atoms[mol_i].posit = mol.atom_posits[mol_i];
                     }
                 }
 
@@ -279,66 +306,90 @@ pub fn set_manip(
     redraw_lig: &mut bool,
     redraw_na: &mut bool,
     redraw_lipid: &mut bool,
+    // Note: The mol itself is overwritten but this sets move/rotate,
     mode: ManipMode,
+    sel: &Selection,
 ) {
-    if let Some((mol_type_active, i_active)) = vol.active_mol {
-        let mut move_active = false;
-        let mut rotate_active = false;
+    let (mol_type_active, i_active) = match vol.operating_mode {
+        OperatingMode::Primary => match vol.active_mol {
+            Some(v) => v,
+            None => return,
+        },
+        // In the editor mode, select the selected atom as the one to move.
+        OperatingMode::MolEditor => match sel {
+            Selection::AtomLig((_, i)) => (MolType::Ligand, *i),
+            Selection::AtomsLig((_, i)) => {
+                // todo: How should we handle this?
+                (MolType::Ligand, i[0])
+            }
+            _ => return,
+        },
+    };
 
-        match vol.mol_manip.mol {
+    let (move_active, rotate_active) = {
+        let mut move_ = false;
+        let mut rotate = false;
+
+        match vol.mol_manip.mode {
             ManipMode::None => (),
             ManipMode::Move((mol_type, mol_i)) => {
                 if mol_type == mol_type_active && mol_i == i_active {
-                    move_active = true;
+                    move_ = true;
                 }
             }
             ManipMode::Rotate((mol_type, mol_i)) => {
                 if mol_type == mol_type_active && mol_i == i_active {
-                    rotate_active = true;
+                    rotate = true;
                 }
             }
         }
+        (move_, rotate)
+    };
 
-        match mode {
-            ManipMode::Move(_) => {
-                if move_active {
-                    scene.input_settings.control_scheme = vol.control_scheme_prev;
-                    vol.mol_manip.mol = ManipMode::None;
-                    vol.mol_manip.pivot = None;
-                } else if rotate_active {
-                    vol.mol_manip.mol = ManipMode::Move((mol_type_active, i_active));
-                } else {
-                    if scene.input_settings.control_scheme != ControlScheme::None {
-                        vol.control_scheme_prev = scene.input_settings.control_scheme;
-                    }
-                    scene.input_settings.control_scheme = ControlScheme::None;
-                    vol.mol_manip.mol = ManipMode::Move((mol_type_active, i_active));
-                };
-            }
-            ManipMode::Rotate(_) => {
-                if rotate_active {
-                    scene.input_settings.control_scheme = vol.control_scheme_prev;
-                    vol.mol_manip.mol = ManipMode::None;
-                    vol.mol_manip.pivot = None;
-                } else if move_active {
-                    vol.mol_manip.mol = ManipMode::Rotate((mol_type_active, i_active));
-                } else {
-                    if scene.input_settings.control_scheme != ControlScheme::None {
-                        vol.control_scheme_prev = scene.input_settings.control_scheme;
-                    }
-                    scene.input_settings.control_scheme = ControlScheme::None;
-                    vol.mol_manip.mol = ManipMode::Rotate((mol_type_active, i_active));
-                };
-            }
-            ManipMode::None => unreachable!(),
+    match mode {
+        ManipMode::Move(_) => {
+            if move_active {
+                // Exiting a move
+                println!("Exiting move"); // todo temp
+                scene.input_settings.control_scheme = vol.control_scheme_prev;
+                vol.mol_manip.mode = ManipMode::None;
+                vol.mol_manip.pivot = None;
+            } else if rotate_active {
+                // Entering a move from rotation
+                vol.mol_manip.mode = ManipMode::Move((mol_type_active, i_active));
+            } else {
+                // Entering a move from no manip prior.
+                println!("Entering move"); // todo tmep
+                if scene.input_settings.control_scheme != ControlScheme::None {
+                    vol.control_scheme_prev = scene.input_settings.control_scheme;
+                }
+                scene.input_settings.control_scheme = ControlScheme::None;
+                vol.mol_manip.mode = ManipMode::Move((mol_type_active, i_active));
+            };
         }
+        ManipMode::Rotate(_) => {
+            if rotate_active {
+                scene.input_settings.control_scheme = vol.control_scheme_prev;
+                vol.mol_manip.mode = ManipMode::None;
+                vol.mol_manip.pivot = None;
+            } else if move_active {
+                vol.mol_manip.mode = ManipMode::Rotate((mol_type_active, i_active));
+            } else {
+                if scene.input_settings.control_scheme != ControlScheme::None {
+                    vol.control_scheme_prev = scene.input_settings.control_scheme;
+                }
+                scene.input_settings.control_scheme = ControlScheme::None;
+                vol.mol_manip.mode = ManipMode::Rotate((mol_type_active, i_active));
+            };
+        }
+        ManipMode::None => unreachable!(),
+    }
 
-        match mol_type_active {
-            MolType::Ligand => *redraw_lig = true,
-            MolType::NucleicAcid => *redraw_na = true,
-            MolType::Lipid => *redraw_lipid = true,
-            _ => (),
-        }
+    match mol_type_active {
+        MolType::Ligand => *redraw_lig = true,
+        MolType::NucleicAcid => *redraw_na = true,
+        MolType::Lipid => *redraw_lipid = true,
+        _ => (),
     }
 }
 
@@ -346,7 +397,7 @@ pub fn set_manip(
 /// This helps ensure, while drag-moving, that the molecule stays anchored to the cursor in
 /// a way that feels intuitive; the part moving to the cursor's position is the part originally
 /// under the cursor at drag start.
-fn pick_movemenet_pivot(mol: &MoleculeCommon, ray_origin: Vec3, ray_dir: Vec3) -> Vec3 {
+fn pick_movement_pivot(mol: &MoleculeCommon, ray_origin: Vec3, ray_dir: Vec3) -> Vec3 {
     const PICK_RADIUS: f64 = 4.0; // Å-ish // A/R
     let pick_r2 = PICK_RADIUS * PICK_RADIUS;
 
@@ -374,5 +425,53 @@ fn pick_movemenet_pivot(mol: &MoleculeCommon, ray_origin: Vec3, ray_dir: Vec3) -
         best_p.unwrap().into()
     } else {
         mol.centroid().into()
+    }
+}
+
+#[derive(Clone, Copy, Default, PartialEq, Debug)]
+pub enum ManipMode {
+    #[default]
+    None,
+    Move((MolType, usize)), // Index of mol
+    Rotate((MolType, usize)),
+}
+
+/// State for dragging and rotating molecules.
+#[derive(Default, Debug)]
+pub struct MolManip {
+    /// Allows the user to move a molecule around with mouse or keyboard.
+    pub mode: ManipMode,
+    /// For maintaining the screen plane when dragging the mol.
+    pub pivot: Option<Vec3>,
+    pub view_dir: Option<Vec3>,
+    pub offset: Vec3,
+    pub depth_bias: f32,
+}
+
+impl MolManip {
+    pub fn enter_movement(
+        &mut self,
+        cam: &Camera,
+        mol: &MoleculeCommon,
+        ray_origin: Vec3,
+        ray_dir: Vec3,
+        mode: OperatingMode,
+        atom_i: usize, // For edit mode, of the atom being moved.
+    ) {
+        if self.pivot.is_none() {
+            // We set the pivot to be the coordinates of the molecule (e.g. nearest atom)
+            // to the cursor. We're moving this pivot with the mouse cursor, so we take
+            // this approach to prevent the mol jumping; this part *snaps* to the cursor.
+            let pivot: Vec3 = match mode {
+                OperatingMode::Primary => pick_movement_pivot(mol, ray_origin, ray_dir),
+                OperatingMode::MolEditor => mol.atom_posits[atom_i].into(),
+            };
+
+            let n = cam.orientation.rotate_vec(FWD_VEC).to_normalized();
+
+            self.pivot = Some(pivot);
+            self.view_dir = Some(n);
+            self.offset = Vec3::new_zero();
+        }
     }
 }

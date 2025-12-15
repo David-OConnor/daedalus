@@ -3,7 +3,7 @@ use std::sync::atomic::Ordering;
 use bio_files::BondType;
 use egui::{Color32, ComboBox, RichText, Slider, Ui};
 use graphics::{ControlScheme, EngineUpdates, Entity, EntityUpdate, Scene};
-use lin_alg::f64::{Quaternion, Vec3, Z_VEC};
+use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 use na_seq::{
     Element,
     Element::{Carbon, Chlorine, Hydrogen, Nitrogen, Oxygen, Phosphorus, Sulfur},
@@ -15,12 +15,14 @@ use crate::{
     mol_editor,
     mol_editor::{
         NEXT_ATOM_SN,
-        add_atoms::{add_atom, add_from_template_btn, remove_hydrogens},
+        add_atoms::{add_atom, add_from_template_btn},
         exit_edit_mode,
         templates::Template,
     },
     mol_lig::MoleculeSmall,
-    molecule::Bond,
+    mol_manip,
+    mol_manip::{ManipMode, MolManip},
+    molecule::{Bond, MolType},
     ui::{
         COL_SPACING, COLOR_ACTION, COLOR_ACTIVE, COLOR_INACTIVE,
         cam::cam_reset_controls,
@@ -511,6 +513,29 @@ fn edit_tools(
             .on_hover_text("(Hotkey: M. M or Esc to stop) Move the selected atom")
             .clicked()
         {
+            mol_manip::set_manip(
+                &mut state.volatile,
+                &mut state.to_save.save_flag,
+                scene,
+                redraw,
+                &mut false,
+                &mut false,
+                // Atom i is used instead of the primary mode's mol i, since we're moving a single atom.
+                ManipMode::Move((MolType::Ligand, atom_sel_i)),
+                &state.ui.selection,
+            );
+
+            // We are hijacking the primary-mode mol manip state.
+            // Toggle.
+            // match state.volatile.mol_manip.mode {
+            //     ManipMode::Move(_) => {
+            //         state.volatile.mol_manip.mode = ManipMode::None;
+            //         *redraw = true;
+            //         rebuild_md = true;
+            //     }
+            //     _ => state.volatile.mol_manip.mode = ManipMode::Move((MolType::Ligand, atom_sel_i)),
+            // }
+
             // if state.mol_editor.move_atom(i).is_err() {
             //     eprintln!("Error moving atom");
             // };

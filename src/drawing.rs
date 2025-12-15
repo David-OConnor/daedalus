@@ -14,7 +14,8 @@ use lin_alg::{
 use na_seq::Element;
 
 use crate::{
-    ManipMode, OperatingMode, Selection, State, StateUi, ViewSelLevel,
+    OperatingMode, Selection, State, StateUi, ViewSelLevel,
+    mol_manip::ManipMode,
     molecule::{Atom, AtomRole, Chain, MolGenericRef, MolGenericTrait, MolType, Residue, aa_color},
     reflection::DensityPt,
     render::{

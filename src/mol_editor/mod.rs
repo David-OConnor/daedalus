@@ -15,7 +15,7 @@ use dynamics::{
     ComputationDevice, FfMolType, HydrogenConstraint, MdConfig, MdOverrides, MdState, MolDynamics,
     ParamError, params::FfParamSet, snapshot::Snapshot,
 };
-use graphics::{ControlScheme, EngineUpdates, Entity, EntityUpdate, Scene, event::Force};
+use graphics::{ControlScheme, EngineUpdates, Entity, EntityUpdate, Scene};
 use lin_alg::{
     f32::{Quaternion, Vec3 as Vec3F32},
     f64::Vec3,
@@ -26,16 +26,15 @@ use na_seq::{
 };
 
 use crate::{
-    ManipMode, OperatingMode, Selection, State, StateUi, ViewSelLevel,
+    OperatingMode, Selection, State, StateUi, ViewSelLevel,
     drawing::{
         EntityClass, MESH_BALL_STICK_SPHERE, MESH_SPACEFILL_SPHERE, MoleculeView, atom_color,
         bond_entities, draw_mol, draw_peptide,
     },
     drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
     md::change_snapshot_helper,
-    mol_editor,
-    mol_editor::add_atoms::populate_hydrogens_on_atom,
     mol_lig::MoleculeSmall,
+    mol_manip::ManipMode,
     molecule::{Atom, Bond, MolGenericRef, MolType},
     render::{
         ATOM_SHININESS, BALL_STICK_RADIUS, BALL_STICK_RADIUS_H, set_flashlight, set_static_light,
