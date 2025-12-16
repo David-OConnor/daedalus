@@ -906,7 +906,8 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 handle_err(&mut state.ui, format!("Problem saving file: {e:?}"));
             }
 
-            state.mol_editor.md_step(&state.dev, &mut scene.entities, &state.ui, &mut engine_updates);
+            state.mol_editor.md_step(&state.dev, &mut scene.entities, &state.ui,
+                                     &mut engine_updates, state.volatile.mol_manip.mode,);
             return;
         }
 

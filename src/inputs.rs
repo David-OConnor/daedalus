@@ -13,7 +13,9 @@ use na_seq::Element::Carbon;
 use crate::{
     OperatingMode, Selection, State,
     cam_misc::move_cam_to_sel,
-    drawing, drawing_wrappers, mol_editor,
+    drawing,
+    drawing::EntityClass,
+    drawing_wrappers, mol_editor,
     mol_editor::add_atoms::add_atom,
     mol_manip,
     mol_manip::ManipMode,
@@ -387,6 +389,7 @@ pub fn event_dev_handler(
                                 &mut state_.ui,
                                 &mut updates,
                                 &mut scene.input_settings.control_scheme,
+                                state_.volatile.mol_manip.mode,
                             );
                             // todo: Rebuild md here.
 
@@ -538,7 +541,7 @@ pub fn event_dev_handler(
         _ => (),
     }
 
-    if redraw_protein {
+    if redraw_protein && state_.volatile.operating_mode == OperatingMode::Primary {
         // todo:This is overkill for certain keys. Just change the color of the one[s] in question, and set update.entities = true.
         drawing::draw_peptide(state_, scene);
         updates.entities = EntityUpdate::All;
@@ -546,34 +549,61 @@ pub fn event_dev_handler(
     }
 
     if redraw_lig {
-        drawing_wrappers::draw_all_ligs(state_, scene);
+        match state_.volatile.operating_mode {
+            OperatingMode::Primary => drawing_wrappers::draw_all_ligs(state_, scene),
+
+            OperatingMode::MolEditor => mol_editor::redraw(
+                &mut scene.entities,
+                &state_.mol_editor.mol,
+                &state_.ui,
+                state_.volatile.mol_manip.mode,
+            ),
+        }
         updates.entities = EntityUpdate::All;
     }
 
-    if redraw_na {
+    if redraw_na && state_.volatile.operating_mode == OperatingMode::Primary {
         drawing_wrappers::draw_all_nucleic_acids(state_, scene);
         updates.entities = EntityUpdate::All;
     }
 
-    if redraw_lipid {
+    if redraw_lipid && state_.volatile.operating_mode == OperatingMode::Primary {
         drawing_wrappers::draw_all_lipids(state_, scene);
         updates.entities = EntityUpdate::All;
     }
 
     if redraw_ligs_inplace {
-        redraw_inplace_helper(MolType::Ligand, state_, scene, &mut updates);
+        match state_.volatile.operating_mode {
+            OperatingMode::Primary => {
+                redraw_inplace_helper(MolType::Ligand, state_, scene, &mut updates);
+            }
+            OperatingMode::MolEditor => {
+                mol_editor::redraw(
+                    &mut scene.entities,
+                    &state_.mol_editor.mol,
+                    &state_.ui,
+                    state_.volatile.mol_manip.mode,
+                );
+                updates.entities = EntityUpdate::Classes(vec![EntityClass::Ligand as u32]);
+            }
+        }
     }
 
-    if redraw_na_inplace {
+    if redraw_na_inplace && state_.volatile.operating_mode == OperatingMode::Primary {
         redraw_inplace_helper(MolType::NucleicAcid, state_, scene, &mut updates);
     }
 
-    if redraw_lipid_inplace {
+    if redraw_lipid_inplace && state_.volatile.operating_mode == OperatingMode::Primary {
         redraw_inplace_helper(MolType::Lipid, state_, scene, &mut updates);
     }
 
     if redraw_mol_editor {
-        mol_editor::redraw(&mut scene.entities, &state_.mol_editor.mol, &state_.ui);
+        mol_editor::redraw(
+            &mut scene.entities,
+            &state_.mol_editor.mol,
+            &state_.ui,
+            state_.volatile.mol_manip.mode,
+        );
         updates.entities = EntityUpdate::All;
     }
 

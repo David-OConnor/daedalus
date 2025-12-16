@@ -93,7 +93,6 @@ pub fn handle_mol_manip_in_plane(
                     }
                     OperatingMode::MolEditor => {
                         // `mol_i` = atom_i here.
-                        println!("Moving atom i: {:?}", mol_i);
                         mol.atom_posits[mol_i] += movement_vec;
                         mol.atoms[mol_i].posit = mol.atom_posits[mol_i];
                     }
@@ -169,11 +168,14 @@ pub fn handle_mol_manip_in_out(
     // Move the molecule forward and backwards relative to the camera on scroll.
     match state.volatile.mol_manip.mode {
         ManipMode::Move((mol_type, mol_i)) => {
-            let mol = match mol_type {
-                MolType::Ligand => &mut state.ligands[mol_i].common,
-                MolType::NucleicAcid => &mut state.nucleic_acids[mol_i].common,
-                MolType::Lipid => &mut state.lipids[mol_i].common,
-                _ => unimplemented!(),
+            let mol = match state.volatile.operating_mode {
+                OperatingMode::Primary => match mol_type {
+                    MolType::Ligand => &mut state.ligands[mol_i].common,
+                    MolType::NucleicAcid => &mut state.nucleic_acids[mol_i].common,
+                    MolType::Lipid => &mut state.lipids[mol_i].common,
+                    _ => unimplemented!(),
+                },
+                OperatingMode::MolEditor => &mut state.mol_editor.mol.common,
             };
 
             let scroll: f32 = match delta {
@@ -226,7 +228,6 @@ pub fn handle_mol_manip_in_out(
                         }
                     }
                     OperatingMode::MolEditor => {
-                        println!("Moving atom i: {:?}", mol_i);
                         mol.atom_posits[mol_i] += movement_vec;
                         mol.atoms[mol_i].posit = mol.atom_posits[mol_i];
                     }

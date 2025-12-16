@@ -83,7 +83,7 @@ const AR_INNER_OFFSET: f32 = 0.3; // Å
 // const AR_INNER_SHORTEN_FACTOR: f32 = 0.7;
 const AR_SHORTEN_AMT: f32 = 0.4; // Å. Applied to each half.
 const DBL_BOND_OFFSET: f32 = 0.1; // Two of these is the separation.
-const TRIPLE_BOND_OFFSET: f32 = 0.07; // Two of these is the separation.
+const TRIPLE_BOND_OFFSET: f32 = 0.1; // Two of these is the separation.
 
 pub const SIZE_SFC_DOT: f32 = 0.03;
 
@@ -892,7 +892,7 @@ pub fn draw_mol(
     mol_i: usize,
     ui: &StateUi,
     active_mol: &Option<(MolType, usize)>,
-    move_mol: ManipMode,
+    manip_mode: ManipMode,
     mode: OperatingMode,
 ) -> Vec<Entity> {
     let mut result = Vec::new();
@@ -947,13 +947,21 @@ pub fn draw_mol(
             let mut color = (0., 0., 0.);
             let mut manip_active = false;
 
-            match move_mol {
-                ManipMode::Move((mol_type, i)) => {
-                    if mol_type == mol.mol_type() && i == mol_i {
-                        color = COLOR_MOL_MOVING;
-                        manip_active = true;
+            match manip_mode {
+                ManipMode::Move((mol_type, i)) => match mode {
+                    OperatingMode::Primary => {
+                        if mol_type == mol.mol_type() && i == mol_i {
+                            color = COLOR_MOL_MOVING;
+                            manip_active = true;
+                        }
                     }
-                }
+                    OperatingMode::MolEditor => {
+                        if i == i_atom {
+                            color = COLOR_MOL_MOVING;
+                            manip_active = true;
+                        }
+                    }
+                },
                 ManipMode::Rotate((mol_type, i)) => {
                     if mol_type == mol.mol_type() && i == mol_i {
                         color = COLOR_MOL_ROTATE;
@@ -1073,16 +1081,31 @@ pub fn draw_mol(
 
         let mut color_0 = (0., 0., 0.);
         let mut color_1 = (0., 0., 0.);
+
         let mut manip_active = false;
 
-        match move_mol {
-            ManipMode::Move((mol_type, i)) => {
-                if mol_type == mol.mol_type() && i == mol_i {
-                    color_0 = COLOR_MOL_MOVING;
-                    color_1 = COLOR_MOL_MOVING;
-                    manip_active = true;
+        match manip_mode {
+            ManipMode::Move((mol_type, i)) => match mode {
+                OperatingMode::Primary => {
+                    if mol_type == mol.mol_type() && i == mol_i {
+                        color_0 = COLOR_MOL_MOVING;
+                        color_1 = COLOR_MOL_MOVING;
+                        manip_active = true;
+                    }
                 }
-            }
+                OperatingMode::MolEditor => {
+                    if i == bond.atom_0 {
+                        // todo: You may need to clarify manip_1 active manip_0 active or similar,
+                        // todo: otherwise the other bond half will not be colored by atom etc.
+                        color_0 = COLOR_MOL_MOVING;
+                        manip_active = true;
+                    }
+                    if i == bond.atom_1 {
+                        color_1 = COLOR_MOL_MOVING;
+                        manip_active = true;
+                    }
+                }
+            },
             ManipMode::Rotate((mol_type, i)) => {
                 if mol_type == mol.mol_type() && i == mol_i {
                     color_0 = COLOR_MOL_ROTATE;

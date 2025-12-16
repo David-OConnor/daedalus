@@ -142,6 +142,7 @@ impl MolEditorState {
         scene: &mut Scene,
         engine_updates: &mut EngineUpdates,
         state_ui: &mut StateUi,
+        manip_mode: ManipMode,
     ) -> io::Result<()> {
         let binding = path.extension().unwrap_or_default().to_ascii_lowercase();
         let extension = binding;
@@ -181,6 +182,7 @@ impl MolEditorState {
             scene,
             engine_updates,
             state_ui,
+            manip_mode,
         );
         Ok(())
     }
@@ -249,6 +251,7 @@ impl MolEditorState {
         scene: &mut Scene,
         engine_updates: &mut EngineUpdates,
         state_ui: &mut StateUi,
+        manip_mode: ManipMode,
     ) {
         self.mol = mol.clone();
         self.mol.common.ident = MOL_IDENT.to_owned();
@@ -264,7 +267,7 @@ impl MolEditorState {
         NEXT_ATOM_SN.store(highest_sn + 1, Ordering::Release);
 
         // Load the initial relaxation into atom positions.
-        self.load_atom_posits_from_md(&mut scene.entities, state_ui, engine_updates);
+        self.load_atom_posits_from_md(&mut scene.entities, state_ui, engine_updates, manip_mode);
 
         self.mol.smiles = Some(self.mol.common.to_smiles());
 
@@ -274,7 +277,7 @@ impl MolEditorState {
 
         // Clear all entities for non-editor molecules. And render the initial relaxation
         // from building dynamics.
-        redraw(&mut scene.entities, &self.mol, state_ui);
+        redraw(&mut scene.entities, &self.mol, state_ui, manip_mode);
 
         set_flashlight(scene);
         engine_updates.entities = EntityUpdate::All;
@@ -295,6 +298,7 @@ impl MolEditorState {
         entities: &mut Vec<Entity>,
         state_ui: &StateUi,
         engine_updates: &mut EngineUpdates,
+        manip_mode: ManipMode,
     ) {
         let Some(snap) = self.md_state.as_ref().unwrap().snapshots.last() else {
             return;
@@ -312,7 +316,7 @@ impl MolEditorState {
 
         self.md_state.as_mut().unwrap().snapshots = Vec::new();
 
-        redraw(entities, &self.mol, state_ui);
+        redraw(entities, &self.mol, state_ui, manip_mode);
         engine_updates.entities = EntityUpdate::All;
     }
 
@@ -322,6 +326,7 @@ impl MolEditorState {
         entities: &mut Vec<Entity>,
         state_ui: &StateUi,
         engine_updates: &mut EngineUpdates,
+        manip_mode: ManipMode,
     ) {
         let Some(md) = &self.md_state else { return };
         for (i, atom) in md.atoms.iter().enumerate() {
@@ -329,7 +334,7 @@ impl MolEditorState {
             self.mol.common.atom_posits[i] = atom.posit.into();
         }
 
-        redraw(entities, &self.mol, state_ui);
+        redraw(entities, &self.mol, state_ui, manip_mode);
         engine_updates.entities = EntityUpdate::All;
     }
 
@@ -340,6 +345,7 @@ impl MolEditorState {
         entities: &mut Vec<Entity>,
         state_ui: &StateUi,
         engine_updates: &mut EngineUpdates,
+        manip_mode: ManipMode,
     ) {
         static mut I: u32 = 0;
 
@@ -366,7 +372,7 @@ impl MolEditorState {
         // Load the snapshot taken into current atom posits, and redraw.
         // Remove the snap from memory to prevent them from accumulating.
         // todo: use our dynamics posit directly, and clear snapshots?
-        self.load_atom_posits_from_snap(entities, state_ui, engine_updates);
+        self.load_atom_posits_from_snap(entities, state_ui, engine_updates, manip_mode);
     }
 }
 
@@ -389,9 +395,13 @@ pub fn enter_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mu
         if i >= state.ligands.len() {
             eprintln!("Expected a ligand at this index, but out of bounds when entering edit mode");
         } else {
-            state
-                .mol_editor
-                .load_mol(&state.ligands[i], scene, engine_updates, &mut state.ui);
+            state.mol_editor.load_mol(
+                &state.ligands[i],
+                scene,
+                engine_updates,
+                &mut state.ui,
+                state.volatile.mol_manip.mode,
+            );
             mol_loaded = true;
             arc_center = state.ligands[i].common.centroid().into();
 
@@ -426,7 +436,12 @@ pub fn enter_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mu
     }
 
     // Clear all entities for non-editor molecules.
-    redraw(&mut scene.entities, &state.mol_editor.mol, &state.ui);
+    redraw(
+        &mut scene.entities,
+        &state.mol_editor.mol,
+        &state.ui,
+        state.volatile.mol_manip.mode,
+    );
 
     set_static_light(scene, Vec3F32::new_zero(), STATIC_LIGHT_MOL_SIZE);
     set_flashlight(scene);
@@ -459,7 +474,12 @@ pub fn exit_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mut
 }
 
 // todo: Move to drawing_wrappers?
-pub fn redraw(entities: &mut Vec<Entity>, mol: &MoleculeSmall, ui: &StateUi) {
+pub fn redraw(
+    entities: &mut Vec<Entity>,
+    mol: &MoleculeSmall,
+    ui: &StateUi,
+    manip_mode: ManipMode,
+) {
     entities.clear();
 
     entities.extend(draw_mol(
@@ -467,7 +487,7 @@ pub fn redraw(entities: &mut Vec<Entity>, mol: &MoleculeSmall, ui: &StateUi) {
         0,
         ui,
         &None,
-        ManipMode::None,
+        manip_mode,
         OperatingMode::MolEditor,
     ));
 }

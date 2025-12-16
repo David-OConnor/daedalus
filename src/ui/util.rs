@@ -52,6 +52,7 @@ pub fn update_file_dialogs(
                 scene,
                 engine_updates,
                 &mut state.ui,
+                state.volatile.mol_manip.mode,
             ),
         } {
             handle_err(&mut state.ui, e.to_string());

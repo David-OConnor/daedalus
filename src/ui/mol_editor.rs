@@ -40,8 +40,8 @@ use crate::{
 // todo: Use what you like from [Maestro's](https://www.youtube.com/watch?v=JpOOI5qyTXU&list=PL3dxdlKx_PccSO0YWKJqUx6lfQRyvyyG0&index=6)
 
 // These are in ps.
-const DT_MIN: f32 = 0.00005;
-const DT_MAX: f32 = 0.0005; // No more than 0.002 for stability. currently 0.5fs.
+const DT_MIN: f32 = 0.00001;
+const DT_MAX: f32 = 0.0001; // No more than 0.002 for stability. currently 0.5fs.
 
 // Higher may be relax more, but takes longer. We aim for a small time so it can be done without
 // a noticeable lag.
@@ -57,6 +57,7 @@ fn change_el_button(
     mol: &mut MoleculeSmall,
     engine_updates: &mut EngineUpdates,
     rebuild_md: &mut bool,
+    state_manip: ManipMode,
 ) {
     let (r, g, b) = el.color();
     let r = (r * 255.) as u8;
@@ -82,7 +83,7 @@ fn change_el_button(
 
         mol.common.atoms[*i].element = el;
 
-        mol_editor::redraw(entities, mol, state_ui);
+        mol_editor::redraw(entities, mol, state_ui, state_manip);
         engine_updates.entities = EntityUpdate::All;
 
         *rebuild_md = true;
@@ -283,7 +284,8 @@ pub(in crate::ui) fn editor(
                 .clicked() {
                 md.minimize_energy(&state.dev, MAX_RELAX_ITERS); // todo: Iters A/R.
 
-                state.mol_editor.load_atom_posits_from_md(&mut scene.entities, &state.ui, engine_updates);
+                state.mol_editor.load_atom_posits_from_md(&mut scene.entities, &state.ui,
+                                                          engine_updates, state.volatile.mol_manip.mode,);
             }
         }
 
@@ -390,7 +392,12 @@ pub(in crate::ui) fn editor(
     }
 
     if redraw {
-        mol_editor::redraw(&mut scene.entities, &state.mol_editor.mol, &state.ui);
+        mol_editor::redraw(
+            &mut scene.entities,
+            &state.mol_editor.mol,
+            &state.ui,
+            state.volatile.mol_manip.mode,
+        );
         engine_updates.entities = EntityUpdate::All;
     }
 }
@@ -402,17 +409,79 @@ fn edit_tools(
     engine_updates: &mut EngineUpdates,
     redraw: &mut bool,
 ) {
+    let mut bond_mode = false;
     let (mol_i, atom_sel_i) = match &state.ui.selection {
         Selection::AtomLig((mol_i, i)) => (*mol_i, *i),
         Selection::AtomsLig((mol_i, i)) => {
             // todo: How should we handle this?
             (*mol_i, i[0])
         }
-        _ => return,
+        Selection::BondLig((mol_i, i)) => {
+            bond_mode = true;
+            (*mol_i, *i)
+        }
+        _ => {
+            // Vertical pad to prevent UI jumping
+            ui.vertical(|ui| {
+                ui.add_space(24.);
+            });
+            return;
+        }
     };
 
     let mut rebuild_md = false;
 
+    if bond_mode {
+        let bond = &mut state.mol_editor.mol.common.bonds[atom_sel_i];
+        section_box().show(ui, |ui| {
+            if bond.bond_type != BondType::Single {
+                if ui
+                    .button("-")
+                    .on_hover_text("Change this to a single bond.")
+                    .clicked()
+                {
+                    bond.bond_type = BondType::Single;
+                    *redraw = true;
+                    rebuild_md = true;
+                }
+            }
+            if bond.bond_type != BondType::Double {
+                if ui
+                    .button("=")
+                    .on_hover_text("Change this to a double bond.")
+                    .clicked()
+                {
+                    bond.bond_type = BondType::Double;
+                    *redraw = true;
+                    rebuild_md = true;
+                }
+            }
+            if bond.bond_type != BondType::Triple {
+                if ui
+                    .button("Tr")
+                    .on_hover_text("Change this to a triple bond.")
+                    .clicked()
+                {
+                    bond.bond_type = BondType::Triple;
+                    *redraw = true;
+                    rebuild_md = true;
+                }
+            }
+            if bond.bond_type != BondType::Aromatic {
+                if ui
+                    .button("Ar")
+                    .on_hover_text("Change this to an aromatic.")
+                    .clicked()
+                {
+                    bond.bond_type = BondType::Aromatic;
+                    *redraw = true;
+                    rebuild_md = true;
+                }
+            }
+        });
+
+        return;
+    }
     section_box().show(ui, |ui| {
         if ui
             .button("Add Atom")
@@ -431,6 +500,7 @@ fn edit_tools(
                 &mut state.ui,
                 engine_updates,
                 &mut scene.input_settings.control_scheme,
+                state.volatile.mol_manip.mode,
             );
             rebuild_md = true;
         }
@@ -452,6 +522,7 @@ fn edit_tools(
                 &mut state.ui,
                 engine_updates,
                 &mut scene.input_settings.control_scheme,
+                state.volatile.mol_manip.mode,
             );
 
             if let Some(i) = new_i {
@@ -460,7 +531,12 @@ fn edit_tools(
                 // `add_atom` handles individual redrawing, but here we need something, or the previous
                 // atom will still show as the selected color.
                 // todo better. (todo: More specific than this redraw all?)
-                mol_editor::redraw(&mut scene.entities, &state.mol_editor.mol, &state.ui);
+                mol_editor::redraw(
+                    &mut scene.entities,
+                    &state.mol_editor.mol,
+                    &state.ui,
+                    state.volatile.mol_manip.mode,
+                );
             }
 
             rebuild_md = true;
@@ -493,6 +569,7 @@ fn edit_tools(
                 &mut state.mol_editor.mol,
                 engine_updates,
                 &mut rebuild_md,
+                state.volatile.mol_manip.mode,
             );
         }
     });
@@ -669,6 +746,7 @@ fn template_section(
                 abbrev,
                 &mut state.ui,
                 controls,
+                state.volatile.mol_manip.mode,
             );
         };
 

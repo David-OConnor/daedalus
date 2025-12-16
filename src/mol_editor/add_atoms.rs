@@ -14,6 +14,7 @@ use crate::{
     StateUi, mol_editor,
     mol_editor::{MolEditorState, NEXT_ATOM_SN, hydrogens_avail, redraw, templates::Template},
     mol_lig::MoleculeSmall,
+    mol_manip::ManipMode,
     molecule::{Atom, Bond, MoleculeCommon},
 };
 
@@ -145,6 +146,7 @@ pub fn add_from_template_btn(
     name: &str,
     state_ui: &mut StateUi,
     controls: &mut ControlScheme,
+    manip_mode: ManipMode,
 ) {
     if ui
         .button(abbrev)
@@ -186,6 +188,7 @@ pub fn add_from_template_btn(
                 &mut Vec::new(),
                 state_ui,
                 &mut Default::default(),
+                manip_mode,
             );
         }
 
@@ -242,6 +245,7 @@ pub fn add_atom(
     ui: &mut StateUi,
     updates: &mut EngineUpdates,
     control: &mut ControlScheme,
+    manip_mode: ManipMode,
 ) -> Option<usize> {
     // todo: For readability, we really need somethign like this, but getter borrow errors:
     let posit_parent = mol.atom_posits[i_par];
@@ -260,7 +264,7 @@ pub fn add_atom(
             ..Default::default()
         };
 
-        redraw(entities, &mol_wrapper, ui);
+        redraw(entities, &mol_wrapper, ui, manip_mode);
         updates.entities = EntityUpdate::All;
     }
 
@@ -326,7 +330,9 @@ pub fn add_atom(
 
     // Up to one recursion to add hydrogens to this parent and to the new atom.
     if element != Hydrogen {
-        populate_hydrogens_on_atom(mol, i_new, element, &ff_type, entities, ui, updates);
+        populate_hydrogens_on_atom(
+            mol, i_new, element, &ff_type, entities, ui, updates, manip_mode,
+        );
         *control = ControlScheme::Arc {
             center: mol.centroid().into(),
         };
@@ -349,6 +355,7 @@ pub fn populate_hydrogens_on_atom(
     entities: &mut Vec<Entity>,
     state_ui: &mut StateUi,
     engine_updates: &mut EngineUpdates,
+    manip_mode: ManipMode,
 ) {
     // todo. Don't clone!!! Find a better way to fix the borrow error.
 
@@ -406,6 +413,7 @@ pub fn populate_hydrogens_on_atom(
                 state_ui,
                 engine_updates,
                 &mut ControlScheme::None,
+                manip_mode,
             );
             j += 1;
         }
