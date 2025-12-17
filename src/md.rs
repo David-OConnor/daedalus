@@ -280,6 +280,8 @@ pub fn build_dynamics(
             long_range_recip_disabled: true,
             thermo_disabled: false,
             baro_disabled: false,
+            snapshots_during_equilibration: true,
+            ..Default::default()
         },
         max_init_relaxation_iters: None,
         ..cfg.clone()

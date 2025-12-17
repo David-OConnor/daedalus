@@ -266,6 +266,37 @@ impl MoleculeCommon {
             bond.atom_1_sn = updated_sns[bond.atom_1];
         }
     }
+
+    /// The sum of each atom's elemental atomic weight, in Daltons (amu).
+    // Todo: Would be more generally useful in bio_files?
+    pub fn atomic_weight(&self) -> f32 {
+        let result: f64 = self
+            .atoms
+            .iter()
+            .map(|a| a.element.atomic_weight() as f64)
+            .sum();
+
+        result as f32
+    }
+
+    /// Unweighted chemistry adjacency matrix: A N×N matrix with 1 where a bond exists
+    /// (0 otherwise). N is the atom count.
+    // Todo: Would be more generally useful in bio_files?
+    pub fn adjacency_matrix(&self) -> Vec<Vec<u8>> {
+        let n = self.adjacency_list.len();
+        let mut result = vec![vec![0; n]; n];
+
+        for (i, neighs) in self.adjacency_list.iter().enumerate() {
+            for &j in neighs {
+                if j < n && i != j {
+                    result[i][j] = 1;
+                    result[j][i] = 1;
+                }
+            }
+        }
+
+        result
+    }
 }
 
 #[derive(Debug)]

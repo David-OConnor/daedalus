@@ -1,5 +1,6 @@
 use dynamics::{
-    ComputationDevice, HydrogenConstraint, Integrator, MdConfig, SimBoxInit, snapshot::Snapshot,
+    ComputationDevice, HydrogenConstraint, Integrator, LANGEVIN_GAMMA_DEFAULT, MdConfig,
+    SimBoxInit, TAU_TEMP_DEFAULT, snapshot::Snapshot,
 };
 use egui::{Color32, ComboBox, RichText, TextEdit, Ui};
 use graphics::{EngineUpdates, EntityUpdate, Scene};
@@ -194,8 +195,8 @@ pub fn md_setup(
 
                         // todo temp; allow for enabling/disabling therm.
                         for v in &[
-                            Integrator::LangevinMiddle { gamma: 0.3 },
-                            Integrator::VerletVelocity { thermostat: Some(1.0) },
+                            Integrator::LangevinMiddle { gamma: LANGEVIN_GAMMA_DEFAULT },
+                            Integrator::VerletVelocity { thermostat: Some(TAU_TEMP_DEFAULT) },
                         ] {
                             ui.selectable_value(&mut state.to_save.md_config.integrator, v.clone(), v.to_string());
                         }
@@ -254,6 +255,7 @@ pub fn md_setup(
                 }
             }
 
+            // We show this even if there is no thermostat, to set the initial temperature.
             ui.label("Temp (K):");
             if ui
                 .add_sized([30., Ui::available_height(ui)], TextEdit::singleline(&mut state.ui.md.temp_input))
@@ -263,6 +265,7 @@ pub fn md_setup(
                     state.to_save.md_config.temp_target = *v;
                 }
             }
+
 
             {
                 let help_text = "Set to Constrained to allow higher time steps; Flexible may more more accurate.";
