@@ -157,7 +157,7 @@ pub(in crate::ui) fn editor(
                 redraw = true;
             }
 
-            view_sel_selector(state, &mut redraw, ui, false);
+            // view_sel_selector(state, &mut redraw, ui, false);
         });
 
         section_box().show(ui, |ui| {

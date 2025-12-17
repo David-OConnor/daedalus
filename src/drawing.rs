@@ -897,6 +897,8 @@ pub fn draw_mol(
 ) -> Vec<Entity> {
     let mut result = Vec::new();
 
+    // println!("SEL: {:?}", ui.selection);
+
     if !mol.common().visible {
         return result;
     }

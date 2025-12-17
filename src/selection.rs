@@ -37,12 +37,13 @@ impl Nearest {
 }
 
 /// From under the cursor; pick the one near the ray, closest to the camera. This function is
-/// run after the ray geometry is calculated, and is responsible for determing which atoms, residues, etc
+/// run after the ray geometry is calculated, and is responsible for determining which atoms, residues, etc
 /// are available for selection. It takes into account graphical filters, so only visible items
 /// are selected.
 ///
-/// Can select atoms from the protein, or ligand.
-pub fn find_selected_atom(
+/// Can select atoms from the protein, or ligand. Returns both the selection, and the distance;
+/// we use this if running this for both atoms and bonds, so we can find the closest of the two.
+pub fn find_selected_atom_or_bond(
     items_pep_along_ray: &[(usize, usize)],
     items_lig_along_ray: &[(usize, usize)],
     items_na_along_ray: &[(usize, usize)],
@@ -62,16 +63,19 @@ pub fn find_selected_atom(
     bonds_lipid: &[Vec<Bond>],
     bond_mode: bool,
     shift_held: bool,
-) -> Selection {
+) -> (Selection, f32) {
     if items_pep_along_ray.is_empty()
         && items_lig_along_ray.is_empty()
         && items_na_along_ray.is_empty()
         && items_lipid_along_ray.is_empty()
     {
-        return Selection::None;
+        return (Selection::None, 0.);
     }
 
     const INIT_DIST: f32 = f32::INFINITY;
+
+    let ray_dir = (ray.1 - ray.0).to_normalized();
+    let mut near_t = INIT_DIST;
 
     let mut nearest = Nearest {
         mol_type: MolType::Peptide,
@@ -124,7 +128,7 @@ pub fn find_selected_atom(
             }
         }
 
-        if ui.visibility.hide_hydrogen && atom.element == Element::Hydrogen {
+        if ui.visibility.hide_hydrogen && atom.element == Hydrogen {
             continue;
         }
 
@@ -142,7 +146,7 @@ pub fn find_selected_atom(
             let atom_1 = &atoms_pep[bond.atom_1];
 
             if ui.visibility.hide_hydrogen
-                && (atom_0.element == Element::Hydrogen || atom_1.element == Element::Hydrogen)
+                && (atom_0.element == Hydrogen || atom_1.element == Hydrogen)
             {
                 continue;
             }
@@ -151,22 +155,27 @@ pub fn find_selected_atom(
         } else {
             let atom = &atoms_pep[*i_atom];
 
-            if ui.visibility.hide_hydrogen && atom.element == Element::Hydrogen {
+            if ui.visibility.hide_hydrogen && atom.element == Hydrogen {
                 continue;
             }
 
             atom.posit.into()
         };
 
-        let dist = (posit - ray.0).magnitude();
+        let (dist_to_ray, t) = ray_metrics(ray.0, ray_dir, posit);
+        if t < 0.0 {
+            continue;
+        }
 
-        if dist < near_dist {
+        let eps = 1e-4;
+        if dist_to_ray + eps < near_dist || ((dist_to_ray - near_dist).abs() <= eps && t < near_t) {
             nearest = Nearest {
                 mol_type: MolType::Peptide,
                 mol_i: *i_mol,
                 atom_i: *i_atom,
             };
-            near_dist = dist;
+            near_dist = dist_to_ray;
+            near_t = t;
         }
     }
 
@@ -180,8 +189,10 @@ pub fn find_selected_atom(
         bond_mode,
         ui.visibility.hide_hydrogen,
         ray.0,
+        ray_dir,
         &mut nearest,
         &mut near_dist,
+        &mut near_t,
     );
 
     nearest_in_group(
@@ -192,8 +203,10 @@ pub fn find_selected_atom(
         bond_mode,
         ui.visibility.hide_hydrogen,
         ray.0,
+        ray_dir,
         &mut nearest,
         &mut near_dist,
+        &mut near_t,
     );
 
     nearest_in_group(
@@ -204,58 +217,86 @@ pub fn find_selected_atom(
         bond_mode,
         ui.visibility.hide_hydrogen,
         ray.0,
+        ray_dir,
         &mut nearest,
         &mut near_dist,
+        &mut near_t,
     );
 
     // This is equivalent to our empty check above, but catches the case of the atom count being
     // empty due to hidden chains.
     if near_dist == INIT_DIST {
-        return Selection::None;
+        return (Selection::None, 0.);
     }
 
     let indices = nearest.indices();
-    match ui.view_sel_level {
-        ViewSelLevel::Atom => match nearest.mol_type {
-            MolType::Peptide => {
-                if shift_held {
-                    match &ui.selection {
-                        Selection::AtomPeptide(atom_i) => {
-                            let updated = vec![*atom_i];
-                            multi_sel_helper(updated, indices.0, indices.1, MolType::Peptide)
-                        }
-                        Selection::AtomsPeptide(atoms_i) => {
-                            let updated = atoms_i.clone();
-                            multi_sel_helper(updated, indices.0, indices.1, MolType::Peptide)
-                        }
-                        _ => Selection::AtomPeptide(nearest.atom_i),
-                    }
-                } else {
-                    Selection::AtomPeptide(nearest.atom_i)
-                }
-            }
-            MolType::Ligand => {
-                if shift_held {
-                    match &ui.selection {
-                        Selection::AtomLig((mol_i_prev, atom_i_prev)) => {
-                            let updated = vec![*atom_i_prev];
-                            multi_sel_helper(updated, indices.0, indices.1, MolType::Ligand)
-                        }
-                        Selection::AtomsLig((mol_i_prev, atoms_i_prev)) => {
-                            let updated = atoms_i_prev.clone();
-                            multi_sel_helper(updated, indices.0, indices.1, MolType::Ligand)
-                        }
 
-                        _ => Selection::AtomLig(indices),
+    let sel = match ui.view_sel_level {
+        // ViewSelLevel::Atom => match nearest.mol_type {
+        ViewSelLevel::Atom | ViewSelLevel::Bond => {
+            if bond_mode {
+                match nearest.mol_type {
+                    // todo: Rework this (with appropriate steps upstream). Get bonds along ray.
+                    MolType::Peptide => Selection::BondPeptide(nearest.atom_i),
+                    MolType::Ligand => Selection::BondLig(indices),
+                    MolType::NucleicAcid => Selection::BondNucleicAcid(indices),
+                    MolType::Lipid => Selection::BondLipid(indices),
+                    _ => unreachable!(),
+                }
+            } else {
+                match nearest.mol_type {
+                    MolType::Peptide => {
+                        if shift_held {
+                            match &ui.selection {
+                                Selection::AtomPeptide(atom_i) => {
+                                    let updated = vec![*atom_i];
+                                    multi_sel_helper(
+                                        updated,
+                                        indices.0,
+                                        indices.1,
+                                        MolType::Peptide,
+                                    )
+                                }
+                                Selection::AtomsPeptide(atoms_i) => {
+                                    let updated = atoms_i.clone();
+                                    multi_sel_helper(
+                                        updated,
+                                        indices.0,
+                                        indices.1,
+                                        MolType::Peptide,
+                                    )
+                                }
+                                _ => Selection::AtomPeptide(nearest.atom_i),
+                            }
+                        } else {
+                            Selection::AtomPeptide(nearest.atom_i)
+                        }
                     }
-                } else {
-                    Selection::AtomLig(indices)
+                    MolType::Ligand => {
+                        if shift_held {
+                            match &ui.selection {
+                                Selection::AtomLig((_mol_i_prev, atom_i_prev)) => {
+                                    let updated = vec![*atom_i_prev];
+                                    multi_sel_helper(updated, indices.0, indices.1, MolType::Ligand)
+                                }
+                                Selection::AtomsLig((_mol_i_prev, atoms_i_prev)) => {
+                                    let updated = atoms_i_prev.clone();
+                                    multi_sel_helper(updated, indices.0, indices.1, MolType::Ligand)
+                                }
+
+                                _ => Selection::AtomLig(indices),
+                            }
+                        } else {
+                            Selection::AtomLig(indices)
+                        }
+                    }
+                    MolType::NucleicAcid => Selection::AtomNucleicAcid(indices),
+                    MolType::Lipid => Selection::AtomLipid(indices),
+                    _ => unreachable!(),
                 }
             }
-            MolType::NucleicAcid => Selection::AtomNucleicAcid(indices),
-            MolType::Lipid => Selection::AtomLipid(indices),
-            _ => unreachable!(),
-        },
+        }
+
         ViewSelLevel::Residue => {
             match nearest.mol_type {
                 MolType::Peptide => {
@@ -264,27 +305,21 @@ pub fn find_selected_atom(
                         if let Some(i) = atom_near.residue
                             && i == i_res
                         {
-                            return Selection::Residue(i_res);
+                            return (Selection::Residue(i_res), near_dist);
                         }
                     }
                     Selection::None // Selected atom is not in a residue.
                 }
-                // These are the same as bove.
+                // These are the same as above.
                 MolType::Ligand => Selection::AtomLig(indices),
                 MolType::NucleicAcid => Selection::AtomNucleicAcid(indices),
                 MolType::Lipid => Selection::AtomLipid(indices),
                 _ => unreachable!(),
             }
         }
-        ViewSelLevel::Bond => match nearest.mol_type {
-            // todo: Rework this (with appropriate steps upstream). Get bonds along ray.
-            MolType::Peptide => Selection::BondPeptide(nearest.atom_i),
-            MolType::Ligand => Selection::BondLig(indices),
-            MolType::NucleicAcid => Selection::BondNucleicAcid(indices),
-            MolType::Lipid => Selection::BondLipid(indices),
-            _ => unreachable!(),
-        },
-    }
+    };
+
+    (sel, near_dist)
 }
 
 /// Helper
@@ -386,46 +421,53 @@ pub fn points_along_ray_atom(
 /// A helper
 fn nearest_in_group(
     items: &[(usize, usize)],
-    atoms: &[Vec<Atom>],
-    bonds: &[Vec<Bond>],
+    atoms: &[Vec<Atom>], // All atoms
+    bonds: &[Vec<Bond>], // All bonds
     mol_type: MolType,
     bond_mode: bool,
     hide_h: bool,
     ray_origin: Vec3F32,
+    ray_dir: Vec3F32,
     nearest: &mut Nearest,
     near_dist: &mut f32,
+    near_t: &mut f32, // tie-break: depth along ray
 ) {
+    let eps = 1e-4;
+
     for (i_mol, i_atom_bond) in items.iter() {
         let posit: Vec3F32 = if bond_mode {
             let bond = &bonds[*i_mol][*i_atom_bond];
             let atom_0 = &atoms[*i_mol][bond.atom_0];
             let atom_1 = &atoms[*i_mol][bond.atom_1];
 
-            if hide_h
-                && (atom_0.element == Element::Hydrogen || atom_1.element == Element::Hydrogen)
-            {
+            if hide_h && (atom_0.element == Hydrogen || atom_1.element == Hydrogen) {
                 continue;
             }
 
             ((atom_0.posit + atom_1.posit) / 2.).into()
         } else {
             let atom = &atoms[*i_mol][*i_atom_bond];
-
-            if hide_h && atom.element == Element::Hydrogen {
+            if hide_h && atom.element == Hydrogen {
                 continue;
             }
-
             atom.posit.into()
         };
 
-        let dist = (posit - ray_origin).magnitude();
-        if dist < *near_dist {
+        let (dist_to_ray, t) = ray_metrics(ray_origin, ray_dir, posit);
+        if t < 0.0 {
+            continue;
+        }
+
+        if dist_to_ray + eps < *near_dist
+            || ((dist_to_ray - *near_dist).abs() <= eps && t < *near_t)
+        {
             *nearest = Nearest {
                 mol_type,
                 mol_i: *i_mol,
                 atom_i: *i_atom_bond,
             };
-            *near_dist = dist;
+            *near_dist = dist_to_ray;
+            *near_t = t;
         }
     }
 }
@@ -575,7 +617,7 @@ pub(crate) fn handle_selection_attempt(
         },
     };
 
-    let selection = match state.ui.view_sel_level {
+    let (selection, _dist) = match state.ui.view_sel_level {
         ViewSelLevel::Bond => {
             let mut pep_bonds = Vec::new();
             // todo: I don' tlike these clones.
@@ -615,7 +657,7 @@ pub(crate) fn handle_selection_attempt(
                 dist_thresh,
             );
 
-            find_selected_atom(
+            find_selected_atom_or_bond(
                 &atoms_along_ray_pep,
                 &atoms_along_ray_lig,
                 &atoms_along_ray_na,
@@ -651,7 +693,7 @@ pub(crate) fn handle_selection_attempt(
                 dist_thresh,
             );
 
-            find_selected_atom(
+            find_selected_atom_or_bond(
                 &atoms_along_ray_pep,
                 &atoms_along_ray_lig,
                 &atoms_along_ray_na,
@@ -712,11 +754,15 @@ pub(crate) fn handle_selection_attempt(
 }
 
 /// A stripped-down version, for the mol editor. See notes there where applicable.
+/// Note that this allows selecting *either atoms or bonds*, depending on where the click
+/// occurs.
 pub fn handle_selection_attempt_mol_editor(
     state: &mut State,
     scene: &mut Scene,
     redraw: &mut bool,
 ) {
+    // todo: Allow a sel mode in the Primary mode that lets you pick either atoms or bonds, like this.
+
     let Some(mut cursor) = state.ui.cursor_pos else {
         return;
     };
@@ -751,15 +797,44 @@ pub fn handle_selection_attempt_mol_editor(
         })
         .collect();
 
-    let selection = match state.ui.view_sel_level {
-        ViewSelLevel::Bond => {
-            let bonds = mol.common.bonds.clone(); // todo: This clone...
-            let (
-                bonds_along_ray_pep,
-                bonds_along_ray_lig,
-                bonds_along_ray_na,
-                bonds_along_ray_lipid,
-            ) = points_along_ray_bond(
+    let (sel_atoms, dist_atoms) = {
+        let (atoms_along_ray_pep, atoms_along_ray_lig, atoms_along_ray_na, atoms_along_ray_lipid) =
+            points_along_ray_atom(
+                selected_ray,
+                &Vec::new(),
+                &[atoms.clone()], // todo: This clone...
+                &[],
+                &[],
+                dist_thresh,
+            );
+
+        find_selected_atom_or_bond(
+            &atoms_along_ray_pep,
+            &atoms_along_ray_lig,
+            &atoms_along_ray_na,
+            &atoms_along_ray_lipid,
+            &Vec::new(),
+            &Vec::new(),
+            &[atoms.clone()], // todo: Don't like this.
+            &[],
+            &[],
+            &selected_ray,
+            &state.ui,
+            &Vec::new(),
+            &Vec::new(),
+            &[],
+            &[],
+            &[],
+            false,
+            state.volatile.inputs_commanded.run,
+        )
+    };
+
+    let (sel_bonds, dist_bonds) = {
+        let bonds = mol.common.bonds.clone(); // todo: This clone...
+
+        let (bonds_along_ray_pep, bonds_along_ray_lig, bonds_along_ray_na, bonds_along_ray_lipid) =
+            points_along_ray_bond(
                 selected_ray,
                 &Vec::new(),
                 &[bonds.clone()], // todo: CLone again...
@@ -772,71 +847,33 @@ pub fn handle_selection_attempt_mol_editor(
                 dist_thresh,
             );
 
-            find_selected_atom(
-                &bonds_along_ray_pep,
-                &bonds_along_ray_lig,
-                &bonds_along_ray_na,
-                &bonds_along_ray_lipid,
-                &Vec::new(),
-                &Vec::new(),
-                &[atoms],
-                &[],
-                &[],
-                &selected_ray,
-                &state.ui,
-                &Vec::new(),
-                &Vec::new(),
-                &[bonds],
-                &[],
-                &[],
-                true,
-                state.volatile.inputs_commanded.run,
-            )
-        }
-        _ => {
-            let (
-                atoms_along_ray_pep,
-                atoms_along_ray_lig,
-                atoms_along_ray_na,
-                atoms_along_ray_lipid,
-            ) = points_along_ray_atom(
-                selected_ray,
-                &Vec::new(),
-                &[atoms.clone()], // todo: This clone...
-                &[],
-                &[],
-                dist_thresh,
-            );
-
-            find_selected_atom(
-                &atoms_along_ray_pep,
-                &atoms_along_ray_lig,
-                &atoms_along_ray_na,
-                &atoms_along_ray_lipid,
-                &Vec::new(),
-                &Vec::new(),
-                &[atoms],
-                &[],
-                &[],
-                &selected_ray,
-                &state.ui,
-                &Vec::new(),
-                &Vec::new(),
-                &[],
-                &[],
-                &[],
-                false,
-                state.volatile.inputs_commanded.run,
-            )
-        }
+        find_selected_atom_or_bond(
+            &bonds_along_ray_pep,
+            &bonds_along_ray_lig,
+            &bonds_along_ray_na,
+            &bonds_along_ray_lipid,
+            &Vec::new(),
+            &Vec::new(),
+            &[atoms],
+            &[],
+            &[],
+            &selected_ray,
+            &state.ui,
+            &Vec::new(),
+            &Vec::new(),
+            &[bonds],
+            &[],
+            &[],
+            true,
+            state.volatile.inputs_commanded.run,
+        )
     };
 
-    match selection {
-        Selection::AtomLig((mol_i, _)) => {
-            state.volatile.active_mol = Some((MolType::Ligand, mol_i));
-        }
-        _ => (),
-    }
+    let selection = if dist_atoms < dist_bonds {
+        sel_atoms
+    } else {
+        sel_bonds
+    };
 
     if selection == state.ui.selection {
         // Toggle.
@@ -881,4 +918,13 @@ fn multi_sel_helper(
             _ => unimplemented!(),
         },
     }
+}
+
+// todo: Experimenting
+fn ray_metrics(ray_origin: Vec3F32, ray_dir: Vec3F32, posit: Vec3F32) -> (f32, f32) {
+    let to_p = posit - ray_origin;
+    let t = to_p.dot(ray_dir);
+    let closest = ray_origin + ray_dir * t;
+    let dist_to_ray = (posit - closest).magnitude();
+    (dist_to_ray, t)
 }
