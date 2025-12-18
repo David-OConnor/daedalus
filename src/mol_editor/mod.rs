@@ -802,8 +802,8 @@ pub(super) fn build_dynamics(
 
     let mut msp = HashMap::new();
     // Set these flags to false, so it will rebuild them.
-    mol.ff_params_loaded = false;
-    mol.frcmod_loaded = false;
+    // mol.ff_params_loaded = false;
+    // mol.frcmod_loaded = false;
 
     if let Some(p) = &param_set.small_mol {
         mol.update_ff_related(&mut msp, p);

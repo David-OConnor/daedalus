@@ -1,9 +1,10 @@
+use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 
 use bio_files::BondType;
 use egui::{Color32, ComboBox, RichText, Slider, Ui};
 use graphics::{ControlScheme, EngineUpdates, Entity, EntityUpdate, Scene};
-use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
+use lin_alg::f64::Vec3;
 use na_seq::{
     Element,
     Element::{Carbon, Chlorine, Hydrogen, Nitrogen, Oxygen, Phosphorus, Sulfur},
@@ -661,6 +662,7 @@ fn edit_tools(
                 .clicked()
             {
                 state.mol_editor.remove_atom(i);
+                rebuild_md = true;
                 *redraw = true;
             }
         }
@@ -679,8 +681,40 @@ fn edit_tools(
             Err(e) => eprintln!("Problem setting up dynamics for the editor: {e:?}"),
         }
     } else if rebuild_md {
-        // Will be triggered next time MD is started.
-        state.mol_editor.md_rebuild_required = true;
+        {
+            // Will be triggered next time MD is started.
+            state.mol_editor.md_rebuild_required = true;
+            state.mol_editor.mol.ff_params_loaded = false;
+            state.mol_editor.mol.frcmod_loaded = false;
+
+            // todo temp; should already be up to date.
+            // state.mol_editor.mol.common.build_adjacency_list();
+
+            // Setting this triggers FF param and partial charge rebuilds.
+            if !state.mol_editor.mol.common.atoms.is_empty() {
+                state.mol_editor.mol.common.atoms[0].force_field_type = None;
+                state.mol_editor.mol.common.atoms[0].partial_charge = None;
+            }
+
+            //todo: TS
+            for atom in &mut state.mol_editor.mol.common.atoms {
+                atom.force_field_type = None;
+                atom.partial_charge = None;
+            }
+        }
+
+        // Update this immediately, as we may take advantage of FF types when adjusting geometry,
+        // and it may be useful to view them.
+        if let Some(p) = &state.ff_param_set.small_mol {
+            state
+                .mol_editor
+                .mol
+                // New Hashmap, so it will always rebuild mol-specific params.
+                // .update_ff_related(&mut state.mol_specific_params, p);
+                .update_ff_related(&mut HashMap::new(), p);
+        } else {
+            eprintln!("Error: Unable to update a molecule's params due to missing GAFF2.");
+        }
     }
 }
 

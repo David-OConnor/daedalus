@@ -351,7 +351,6 @@ pub fn set_manip(
         ManipMode::Move(_) => {
             if move_active {
                 // Exiting a move
-                println!("Exiting move"); // todo temp
                 scene.input_settings.control_scheme = vol.control_scheme_prev;
                 vol.mol_manip.mode = ManipMode::None;
                 vol.mol_manip.pivot = None;
@@ -360,7 +359,6 @@ pub fn set_manip(
                 vol.mol_manip.mode = ManipMode::Move((mol_type_active, i_active));
             } else {
                 // Entering a move from no manip prior.
-                println!("Entering move"); // todo tmep
                 if scene.input_settings.control_scheme != ControlScheme::None {
                     vol.control_scheme_prev = scene.input_settings.control_scheme;
                 }
