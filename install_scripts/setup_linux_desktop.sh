@@ -1,7 +1,7 @@
 # This file sets up a Linux desktop entry, and moves the application to the home directory.
 
-NAME_UPPER="Daedalus"
-NAME="daedalus"
+NAME_UPPER="ChemForma"
+NAME="Chemforma"
 
 APP_DIR="$HOME/${NAME}"
 DESKTOP_PATH="$HOME/.local/share/applications/${NAME}.desktop"

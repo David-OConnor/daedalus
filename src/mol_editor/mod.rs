@@ -33,6 +33,7 @@ use crate::{
     },
     drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
     md::change_snapshot_helper,
+    mol_editor,
     mol_lig::MoleculeSmall,
     mol_manip::ManipMode,
     molecule::{Atom, Bond, MolGenericRef, MolType},
@@ -373,6 +374,31 @@ impl MolEditorState {
         // Remove the snap from memory to prevent them from accumulating.
         // todo: use our dynamics posit directly, and clear snapshots?
         self.load_atom_posits_from_snap(entities, state_ui, engine_updates, manip_mode);
+    }
+
+    /// Re-assigns FF type, partial charge, and mol-specific (e.g. dihedral) params. An interface to
+    /// `dynamics`' general NFF param updator, with setup that makes it work
+    /// in this context.
+    pub fn rebuild_ff_related(&mut self, param_set: &FfParamSet) {
+        // Typical serial number layouts are currently required to prevent crashes when assigning
+        // partial charges using SNs.
+        self.mol.common.reassign_sns();
+
+        // Setting these to `None` on any atom triggers FF param and partial charge rebuilds.
+        if !self.mol.common.atoms.is_empty() {
+            self.mol.common.atoms[0].force_field_type = None;
+            self.mol.common.atoms[0].partial_charge = None;
+        }
+
+        // Update this immediately, as we may take advantage of FF types when adjusting geometry,
+        // and it may be useful to view them.
+        if let Some(p) = &param_set.small_mol {
+            self.mol
+                // New Hashmap, so it will rebuild mol-specific params.
+                .update_ff_related(&mut HashMap::new(), p);
+        } else {
+            eprintln!("Error: Unable to update a molecule's params due to missing GAFF2.");
+        }
     }
 }
 
@@ -790,15 +816,28 @@ pub fn hydrogens_avail(ff_type: &Option<String>) -> Vec<(String, f64)> {
 /// Set up MD for the editor's molecule.
 pub(super) fn build_dynamics(
     dev: &ComputationDevice,
-    mol: &mut MoleculeSmall,
+    editor: &mut MolEditorState,
     param_set: &FfParamSet,
-    mol_specific_params: &mut ForceFieldParams,
     cfg: &MdConfig,
 ) -> Result<MdState, ParamError> {
     println!("Setting up dynamics for the mol editor...");
 
-    let atoms_gen: Vec<_> = mol.common.atoms.iter().map(|a| a.to_generic()).collect();
-    let bonds_gen: Vec<_> = mol.common.bonds.iter().map(|b| b.to_generic()).collect();
+    editor.rebuild_ff_related(param_set);
+
+    let atoms_gen: Vec<_> = editor
+        .mol
+        .common
+        .atoms
+        .iter()
+        .map(|a| a.to_generic())
+        .collect();
+    let bonds_gen: Vec<_> = editor
+        .mol
+        .common
+        .bonds
+        .iter()
+        .map(|b| b.to_generic())
+        .collect();
 
     let mut msp = HashMap::new();
     // Set these flags to false, so it will rebuild them.
@@ -806,23 +845,23 @@ pub(super) fn build_dynamics(
     // mol.frcmod_loaded = false;
 
     if let Some(p) = &param_set.small_mol {
-        mol.update_ff_related(&mut msp, p);
+        editor.mol.update_ff_related(&mut msp, p);
     } else {
         eprintln!("Error: Unable to update a molecule's params due to missing GAFF2.");
     }
 
-    *mol_specific_params = msp[MOL_IDENT].clone();
+    editor.mol_specific_params = msp[MOL_IDENT].clone();
 
     let mols = vec![MolDynamics {
         ff_mol_type: FfMolType::SmallOrganic,
         atoms: atoms_gen,
-        atom_posits: Some(mol.common.atom_posits.clone()),
+        atom_posits: Some(editor.mol.common.atom_posits.clone()),
         atom_init_velocities: None,
         bonds: bonds_gen,
-        adjacency_list: Some(mol.common.adjacency_list.clone()),
+        adjacency_list: Some(editor.mol.common.adjacency_list.clone()),
         static_: false,
         bonded_only: false,
-        mol_specific_params: Some(mol_specific_params.clone()),
+        mol_specific_params: Some(editor.mol_specific_params.clone()),
     }];
 
     let cfg = MdConfig {
@@ -844,4 +883,24 @@ pub(super) fn build_dynamics(
     println!("MD init done.");
 
     Ok(md_state)
+}
+
+/// Used to share this between GUI and keys.
+pub fn sync_md(state: &mut State) {
+    if state.mol_editor.md_running {
+        // todo: Ideally don't rebuild the whole dynamics, for performance reasons.
+        match build_dynamics(
+            &state.dev,
+            &mut state.mol_editor,
+            &state.ff_param_set,
+            &state.to_save.md_config,
+        ) {
+            Ok(d) => state.mol_editor.md_state = Some(d),
+            Err(e) => eprintln!("Problem setting up dynamics for the editor: {e:?}"),
+        }
+    } else {
+        // The MD build Will be triggered next time MD is started.
+        state.mol_editor.md_rebuild_required = true;
+        state.mol_editor.rebuild_ff_related(&state.ff_param_set);
+    }
 }

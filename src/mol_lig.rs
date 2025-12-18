@@ -550,8 +550,6 @@ impl MoleculeSmall {
             let defs = AmberDefSet::new().unwrap();
             let ff_types = find_ff_types(&atoms_gen, &bonds_gen, &defs);
 
-            println!("FF types created: {:?}", ff_types); // todo temp
-
             for (i, atom) in self.common.atoms.iter_mut().enumerate() {
                 atom.force_field_type = Some(ff_types[i].clone());
 
@@ -566,7 +564,6 @@ impl MoleculeSmall {
                     return;
                 }
             };
-            println!("Charge created: {:?}", charge); // todo temp!
 
             for (i, atom) in self.common.atoms.iter_mut().enumerate() {
                 atom.partial_charge = Some(charge[i]);

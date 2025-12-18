@@ -37,6 +37,8 @@ Cargo.lock
 
 # Our prefs format.
 *.dae
+## New below; old above
+*.cfa
 
 # Release packages
 *.zip

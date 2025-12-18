@@ -297,6 +297,26 @@ impl MoleculeCommon {
 
         result
     }
+
+    /// A helper used to ensure that there is a valid atom for each bond. (Checks both SN and index),
+    /// and that checks if the adjacency list is up to date. This is used for debugging only.
+    #[allow(unused)]
+    pub fn validate_bonds(&self) {
+        println!("\nValidating bonds... (This should not be in permanent code)\n");
+        for bond in &self.bonds {
+            assert!(bond.atom_0 < self.atoms.len());
+            assert!(bond.atom_1 < self.atoms.len());
+            assert_ne!(bond.atom_0, bond.atom_1);
+
+            assert!(self.adjacency_list[bond.atom_0].contains(&bond.atom_1));
+            assert!(self.adjacency_list[bond.atom_1].contains(&bond.atom_0));
+
+            assert_eq!(self.adjacency_list.len(), self.atoms.len());
+
+            assert_eq!(bond.atom_0_sn, self.atoms[bond.atom_0].serial_number);
+            assert_eq!(bond.atom_1_sn, self.atoms[bond.atom_1].serial_number);
+        }
+    }
 }
 
 #[derive(Debug)]

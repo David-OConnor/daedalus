@@ -28,7 +28,7 @@ use crate::{
     molecule::MolIdent,
 };
 
-pub const DEFAULT_PREFS_FILE: &str = "daedalus_prefs.dae";
+pub const DEFAULT_PREFS_FILE: &str = "chemforma_prefs.cfa";
 
 /// Used to sequence how we handle each file type.
 #[derive(Clone, Copy, PartialEq, Debug, Encode, Decode)]

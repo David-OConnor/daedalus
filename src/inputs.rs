@@ -357,6 +357,8 @@ pub fn event_dev_handler(
                                 if let Selection::AtomLig((_, i)) = state_.ui.selection {
                                     state_.mol_editor.remove_atom(i);
                                     redraw_mol_editor = true;
+
+                                    mol_editor::sync_md(state_);
                                 }
                             }
                         }
@@ -391,26 +393,8 @@ pub fn event_dev_handler(
                                 &mut scene.input_settings.control_scheme,
                                 state_.volatile.mol_manip.mode,
                             );
-                            // todo: Rebuild md here.
 
-                            if state_.mol_editor.md_running {
-                                // todo: Ideally don't rebuild the whole dynamics, for performance reasons.
-                                match mol_editor::build_dynamics(
-                                    &state_.dev,
-                                    &mut state_.mol_editor.mol,
-                                    &state_.ff_param_set,
-                                    &mut state_.mol_editor.mol_specific_params,
-                                    &state_.to_save.md_config,
-                                ) {
-                                    Ok(d) => state_.mol_editor.md_state = Some(d),
-                                    Err(e) => eprintln!(
-                                        "Problem setting up dynamics for the editor: {e:?}"
-                                    ),
-                                }
-                            } else {
-                                // Will be triggered next time MD is started.
-                                state_.mol_editor.md_rebuild_required = true;
-                            }
+                            mol_editor::sync_md(state_);
                         }
                     }
                     _ => (),

@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-use std::sync::atomic::Ordering;
+use std::{collections::HashMap, sync::atomic::Ordering};
 
 use bio_files::BondType;
 use egui::{Color32, ComboBox, RichText, Slider, Ui};
@@ -17,7 +16,7 @@ use crate::{
     mol_editor::{
         NEXT_ATOM_SN,
         add_atoms::{add_atom, add_from_template_btn},
-        exit_edit_mode,
+        exit_edit_mode, sync_md,
         templates::Template,
     },
     mol_lig::MoleculeSmall,
@@ -57,6 +56,7 @@ fn change_el_button(
     state_ui: &StateUi,
     mol: &mut MoleculeSmall,
     engine_updates: &mut EngineUpdates,
+    redraw: &mut bool,
     rebuild_md: &mut bool,
     state_manip: ManipMode,
 ) {
@@ -87,6 +87,7 @@ fn change_el_button(
         mol_editor::redraw(entities, mol, state_ui, state_manip);
         engine_updates.entities = EntityUpdate::All;
 
+        *redraw = true;
         *rebuild_md = true;
     }
 }
@@ -184,7 +185,6 @@ pub(in crate::ui) fn editor(
             );
 
             if state.mol_editor.md_running {
-
                 let color = active_color(!state.mol_editor.md_skip_water);
                 if ui
                     .button(RichText::new("MD Water").color(color))
@@ -192,26 +192,9 @@ pub(in crate::ui) fn editor(
                     .clicked()
                 {
                     state.mol_editor.md_skip_water = !state.mol_editor.md_skip_water;
+
                     redraw = true;
-
-                    // todo: THis MD rebuild code iss DRY with below.
-                    if state.mol_editor.md_running {
-                        // todo: Ideally don't rebuild the whole dynamics, for performance reasons.
-                        match mol_editor::build_dynamics(
-                            &state.dev,
-                            &mut state.mol_editor.mol,
-                            &state.ff_param_set,
-                            &mut state.mol_editor.mol_specific_params,
-                            &state.to_save.md_config,
-                        ) {
-                            Ok(d) => state.mol_editor.md_state = Some(d),
-                            Err(e) => eprintln!("Problem setting up dynamics for the editor: {e:?}"),
-                        }
-                    } else {
-                        // Will be triggered next time MD is started.
-                        state.mol_editor.md_rebuild_required = true;
-                    }
-
+                    state.mol_editor.md_rebuild_required = true;
                 }
             }
 
@@ -220,9 +203,8 @@ pub(in crate::ui) fn editor(
             if started && (state.mol_editor.md_rebuild_required || state.mol_editor.md_state.is_none()) {
                 match mol_editor::build_dynamics(
                     &state.dev,
-                    &mut state.mol_editor.mol,
+                    &mut state.mol_editor,
                     &state.ff_param_set,
-                    &mut state.mol_editor.mol_specific_params,
                     &state.to_save.md_config,
                 ) {
                     Ok(d) => state.mol_editor.md_state = Some(d),
@@ -237,6 +219,8 @@ pub(in crate::ui) fn editor(
             .clicked() {
             // todo: Add a confirmer
             state.mol_editor.mol.common = Default::default();
+            state.mol_editor.md_rebuild_required = true;
+            state.mol_editor.rebuild_ff_related(&state.ff_param_set);
 
             redraw = true;
         }
@@ -545,19 +529,6 @@ fn edit_tools(
 
         ui.add_space(COL_SPACING / 2.);
 
-        //
-        // state.mol_editor.add_atom(
-        //     &mut scene.entities,
-        //     i,
-        //     Carbon,
-        //     BondType::Single,
-        //     Some("ca".to_owned()), // todo
-        //     Some(1.4),             // todo
-        //     0.13,                  // todo
-        //     &mut state.ui,
-        //     engine_updates,
-        // );
-
         for el in [
             Carbon, Hydrogen, Oxygen, Nitrogen, Sulfur, Phosphorus, Chlorine,
         ] {
@@ -569,6 +540,7 @@ fn edit_tools(
                 &state.ui,
                 &mut state.mol_editor.mol,
                 engine_updates,
+                redraw,
                 &mut rebuild_md,
                 state.volatile.mol_manip.mode,
             );
@@ -602,22 +574,6 @@ fn edit_tools(
                 ManipMode::Move((MolType::Ligand, atom_sel_i)),
                 &state.ui.selection,
             );
-
-            // We are hijacking the primary-mode mol manip state.
-            // Toggle.
-            // match state.volatile.mol_manip.mode {
-            //     ManipMode::Move(_) => {
-            //         state.volatile.mol_manip.mode = ManipMode::None;
-            //         *redraw = true;
-            //         rebuild_md = true;
-            //     }
-            //     _ => state.volatile.mol_manip.mode = ManipMode::Move((MolType::Ligand, atom_sel_i)),
-            // }
-
-            // if state.mol_editor.move_atom(i).is_err() {
-            //     eprintln!("Error moving atom");
-            // };
-            // redraw = true;
         }
 
         let mol = &mut state.mol_editor.mol.common;
@@ -668,53 +624,8 @@ fn edit_tools(
         }
     });
 
-    if rebuild_md && state.mol_editor.md_running {
-        // todo: Ideally don't rebuild the whole dynamics, for performance reasons.
-        match mol_editor::build_dynamics(
-            &state.dev,
-            &mut state.mol_editor.mol,
-            &state.ff_param_set,
-            &mut state.mol_editor.mol_specific_params,
-            &state.to_save.md_config,
-        ) {
-            Ok(d) => state.mol_editor.md_state = Some(d),
-            Err(e) => eprintln!("Problem setting up dynamics for the editor: {e:?}"),
-        }
-    } else if rebuild_md {
-        {
-            // Will be triggered next time MD is started.
-            state.mol_editor.md_rebuild_required = true;
-            state.mol_editor.mol.ff_params_loaded = false;
-            state.mol_editor.mol.frcmod_loaded = false;
-
-            // todo temp; should already be up to date.
-            // state.mol_editor.mol.common.build_adjacency_list();
-
-            // Setting this triggers FF param and partial charge rebuilds.
-            if !state.mol_editor.mol.common.atoms.is_empty() {
-                state.mol_editor.mol.common.atoms[0].force_field_type = None;
-                state.mol_editor.mol.common.atoms[0].partial_charge = None;
-            }
-
-            //todo: TS
-            for atom in &mut state.mol_editor.mol.common.atoms {
-                atom.force_field_type = None;
-                atom.partial_charge = None;
-            }
-        }
-
-        // Update this immediately, as we may take advantage of FF types when adjusting geometry,
-        // and it may be useful to view them.
-        if let Some(p) = &state.ff_param_set.small_mol {
-            state
-                .mol_editor
-                .mol
-                // New Hashmap, so it will always rebuild mol-specific params.
-                // .update_ff_related(&mut state.mol_specific_params, p);
-                .update_ff_related(&mut HashMap::new(), p);
-        } else {
-            eprintln!("Error: Unable to update a molecule's params due to missing GAFF2.");
-        }
+    if rebuild_md {
+        sync_md(state);
     }
 }
 

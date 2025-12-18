@@ -3,7 +3,7 @@ set -euo pipefail
 
 version=0_2_3
 outdir=target/release
-exe="$outdir/daedalus"
+exe="$outdir/dchemforma"
 readme="README.md"
 setup="install_scripts/setup_linux_desktop.sh"
 icon="resources/icon.png"
@@ -14,7 +14,7 @@ export PATH=/usr/local/cuda/bin:$PATH
 chmod +x "$setup"
 
 cargo build --release
-zip -j -r "daedalus_${version}_linux.zip" "$exe" "$readme" "$setup" "$icon" "$cufft"
+zip -j -r "chemforma_${version}_linux.zip" "$exe" "$readme" "$setup" "$icon" "$cufft"
 
 cargo build --release --no-default-features
-zip -j -r "daedalus_${version}_linux_nocuda.zip" "$exe" "$readme" "$setup" "$icon"
+zip -j -r "chemforma_${version}_linux_nocuda.zip" "$exe" "$readme" "$setup" "$icon"
