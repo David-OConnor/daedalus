@@ -1345,7 +1345,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             md_setup(state, scene, &mut engine_updates, ui);
         }
         if state.ui.ui_vis.orca {
-            orca_input(state, scene, &mut engine_updates, ui);
+            orca_input(state, scene, &mut engine_updates, &mut redraw_lig, ui);
         }
 
         // if state.ui.show_docking_tools {

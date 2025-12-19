@@ -1,9 +1,8 @@
-# Chemforma: structural biology
+# ChemForma
 
-[//]: # ([![Crate]&#40;https://img.shields.io/crates/v/Chemforma.svg&#41;]&#40;https://crates.io/crates/Chemforma&#41;)
 [![Docs](https://docs.rs/dynamics/badge.svg)](https://www.athanorlab.com/docs)
 
-[Home page](https://www.athanorlab.com/Chemforma)
+[Home page](https://www.athanorlab.com/chemforma)
 [Documentation](https://www.athanorlab.com/docs)
 
 ## Goal: The easiest to use structural biology tool
@@ -223,7 +222,7 @@ Can import Map files directly, and save load density to Map format.
 
 ## PyMol-like Command line interface
 
-Chemforma supports a very limited subset of PyMol's CLI interface. Supported commands:
+ChemForma supports a very limited subset of PyMol's CLI interface. Supported commands:
 
 ![Solvent accessible surface mesh](screenshots/surface_mesh_transparent.png)
 
@@ -282,7 +281,7 @@ can create lipids arranged freely, as membrances, or as lipid nanoparticles (LNP
 
 ### The preferences file
 
-You may notice that this program places a *Chemforma_prefs.dae* file in the same folder as the executable. This
+You may notice that this program places a *chemforma_prefs.cfa* file in the same folder as the executable. This
 is a small binary file containing application state. It's what lets it remember the last file opened, current
 view settings etc. It will grow with the number of molecules you've opened, as it stores per-molecule
 settings. Deleting it is harmless, other than resetting these conveniences.

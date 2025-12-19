@@ -596,10 +596,10 @@ impl MoleculeSmall {
                     }
                 };
 
-            println!("\n\nDihe FRCMOD created:");
-            for p in &mol_specific_params.dihedral {
-                println!("\nDihe: {:?}", p);
-            }
+            // println!("\n\nDihe FRCMOD created:");
+            // for p in &mol_specific_params.dihedral {
+            //     println!("\nDihe: {:?}", p);
+            // }
 
             println!("\n\nImproper FRCMOD created:");
             for p in &mol_specific_params.improper {

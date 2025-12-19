@@ -390,15 +390,27 @@ impl MolEditorState {
             self.mol.common.atoms[0].partial_charge = None;
         }
 
+        self.mol.frcmod_loaded = false;
+
+        // if let Some(p) = &param_set.small_mol {
+        //     editor.mol.update_ff_related(&mut msp, p);
+        // } else {
+        //     eprintln!("Error: Unable to update a molecule's params due to missing GAFF2.");
+        // }
+
+        let mut msp = HashMap::new();
+
         // Update this immediately, as we may take advantage of FF types when adjusting geometry,
         // and it may be useful to view them.
         if let Some(p) = &param_set.small_mol {
-            self.mol
-                // New Hashmap, so it will rebuild mol-specific params.
-                .update_ff_related(&mut HashMap::new(), p);
+            self.mol.update_ff_related(&mut msp, p);
         } else {
             eprintln!("Error: Unable to update a molecule's params due to missing GAFF2.");
         }
+
+        println!("MSP: {:?}", msp);
+
+        self.mol_specific_params = msp[MOL_IDENT].clone();
     }
 }
 
@@ -839,18 +851,18 @@ pub(super) fn build_dynamics(
         .map(|b| b.to_generic())
         .collect();
 
-    let mut msp = HashMap::new();
+    // let mut msp = HashMap::new();
     // Set these flags to false, so it will rebuild them.
     // mol.ff_params_loaded = false;
     // mol.frcmod_loaded = false;
 
-    if let Some(p) = &param_set.small_mol {
-        editor.mol.update_ff_related(&mut msp, p);
-    } else {
-        eprintln!("Error: Unable to update a molecule's params due to missing GAFF2.");
-    }
+    // if let Some(p) = &param_set.small_mol {
+    //     editor.mol.update_ff_related(&mut msp, p);
+    // } else {
+    //     eprintln!("Error: Unable to update a molecule's params due to missing GAFF2.");
+    // }
 
-    editor.mol_specific_params = msp[MOL_IDENT].clone();
+    // editor.mol_specific_params = msp[MOL_IDENT].clone();
 
     let mols = vec![MolDynamics {
         ff_mol_type: FfMolType::SmallOrganic,
