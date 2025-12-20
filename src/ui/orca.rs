@@ -6,7 +6,6 @@ use bio_files::orca::{
     dynamics::{Dynamics, Thermostat},
     method::Method,
 };
-
 use egui::{Color32, ComboBox, RichText, Ui};
 use graphics::{EngineUpdates, Scene};
 

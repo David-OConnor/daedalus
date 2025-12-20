@@ -408,9 +408,6 @@ impl MolEditorState {
             eprintln!("Error: Unable to update a molecule's params due to missing GAFF2.");
         }
 
-        // todo: Validate MSP seems to be working here, then remove this pritn.
-        println!("MSP: {:?}", msp);
-
         self.mol_specific_params = msp[MOL_IDENT].clone();
     }
 }

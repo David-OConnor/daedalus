@@ -28,7 +28,7 @@ use crate::{
     molecule::MolIdent,
 };
 
-pub const DEFAULT_PREFS_FILE: &str = "chemforma_prefs.cfa";
+pub const DEFAULT_PREFS_FILE: &str = "molchanica_prefs.mca";
 
 /// Used to sequence how we handle each file type.
 #[derive(Clone, Copy, PartialEq, Debug, Encode, Decode)]

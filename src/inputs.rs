@@ -10,14 +10,13 @@ use graphics::{
 use lin_alg::f32::Vec3;
 use na_seq::Element::Carbon;
 
-use crate::mol_editor::sync_md;
 use crate::{
     OperatingMode, Selection, State,
     cam_misc::move_cam_to_sel,
     drawing,
     drawing::EntityClass,
     drawing_wrappers, mol_editor,
-    mol_editor::add_atoms::add_atom,
+    mol_editor::{add_atoms::add_atom, sync_md},
     mol_manip,
     mol_manip::ManipMode,
     molecule::MolType,

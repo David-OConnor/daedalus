@@ -356,7 +356,10 @@ pub fn set_manip(
                 scene.input_settings.control_scheme = vol.control_scheme_prev;
                 vol.mol_manip.mode = ManipMode::None;
                 vol.mol_manip.pivot = None;
-                *rebuild_md_editor = true;
+
+                if vol.operating_mode == OperatingMode::MolEditor {
+                    *rebuild_md_editor = true;
+                }
             } else if rotate_active {
                 // Entering a move from rotation
                 vol.mol_manip.mode = ManipMode::Move((mol_type_active, i_active));
@@ -374,7 +377,9 @@ pub fn set_manip(
                 scene.input_settings.control_scheme = vol.control_scheme_prev;
                 vol.mol_manip.mode = ManipMode::None;
                 vol.mol_manip.pivot = None;
-                *rebuild_md_editor = true;
+                if vol.operating_mode == OperatingMode::MolEditor {
+                    *rebuild_md_editor = true;
+                }
             } else if move_active {
                 vol.mol_manip.mode = ManipMode::Rotate((mol_type_active, i_active));
             } else {

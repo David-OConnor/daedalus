@@ -1,7 +1,7 @@
 # This file sets up a Linux desktop entry, and moves the application to the home directory.
 
-NAME_UPPER="ChemForma"
-NAME="Chemforma"
+NAME_UPPER="molchanica"
+NAME="molchanica"
 
 APP_DIR="$HOME/${NAME}"
 DESKTOP_PATH="$HOME/.local/share/applications/${NAME}.desktop"

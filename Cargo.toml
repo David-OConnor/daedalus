@@ -1,5 +1,5 @@
 [package]
-name = "chemforma"
+name = "molchanica"
 version = "0.1.0"
 edition = "2024"
 
@@ -16,7 +16,7 @@ na_seq = "0.3.9"
 bio_apis = { version = "0.1.12", features = ["encode"] }
 bio_files = "0.3.6"
 mcubes = "0.1.7"
-#dynamics = { version = "0.1.0", features = ["encode"] }
+#dynamics = { version = "0.1.4", features = ["encode"] }
 dynamics = { path = "../dynamics", features = ["encode"] }
 
 # For loading and saving config

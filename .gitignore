@@ -39,6 +39,7 @@ Cargo.lock
 *.dae
 ## New below; old above
 *.cfa
+*.mca
 
 # Release packages
 *.zip
