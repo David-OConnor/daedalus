@@ -569,16 +569,16 @@ impl MoleculeSmall {
                 atom.partial_charge = Some(charge[i]);
             }
 
-            // todo: This print and loop are temp.
-            println!("\n FF types computed:/n");
-            for atom in &self.common.atoms {
-                println!(
-                    "--{}: {} {:.4}",
-                    atom.serial_number,
-                    atom.force_field_type.as_ref().unwrap(),
-                    atom.partial_charge.unwrap()
-                );
-            }
+            // // todo: This print and loop are temp.
+            // println!("\n FF types computed:");
+            // for atom in &self.common.atoms {
+            //     println!(
+            //         "--{}: {} {:.4}",
+            //         atom.serial_number,
+            //         atom.force_field_type.as_ref().unwrap(),
+            //         atom.partial_charge.unwrap()
+            //     );
+            // }
 
             self.ff_params_loaded = true;
         }
@@ -601,10 +601,10 @@ impl MoleculeSmall {
             //     println!("\nDihe: {:?}", p);
             // }
 
-            println!("\n\nImproper FRCMOD created:");
-            for p in &mol_specific_params.improper {
-                println!("Improp: {:?}", p);
-            }
+            // println!("\n\nImproper FRCMOD created:");
+            // for p in &mol_specific_params.improper {
+            //     println!("Improp: {:?}", p);
+            // }
 
             println!("Inserting: {:?}", self.common.ident.to_owned());
             mol_specific_param_set.insert(self.common.ident.to_owned(), mol_specific_params);

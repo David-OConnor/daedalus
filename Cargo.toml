@@ -46,7 +46,7 @@ cudarc = { version = "0.18.1", default-features = false, features = ["std", "dri
 
 # We use these when developing locally to reduce friction.
 [patch.crates-io]
-#graphics = { path = "../../graphics" }
+graphics = { path = "../../graphics" }
 #lin_alg = { path = "../../lin_alg" }
 #na_seq = { path = "../na_seq" }
 bio_apis = { path = "../bio_apis" }

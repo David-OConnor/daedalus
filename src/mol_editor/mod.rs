@@ -12,8 +12,8 @@ use std::{
 
 use bio_files::{BondType, Mol2, Pdbqt, Sdf, Xyz, md_params::ForceFieldParams};
 use dynamics::{
-    ComputationDevice, FfMolType, HydrogenConstraint, MdConfig, MdOverrides, MdState, MolDynamics,
-    ParamError, params::FfParamSet, snapshot::Snapshot,
+    ComputationDevice, FfMolType, HydrogenConstraint, Integrator, MdConfig, MdOverrides, MdState,
+    MolDynamics, ParamError, TAU_TEMP_DEFAULT, params::FfParamSet, snapshot::Snapshot,
 };
 use graphics::{ControlScheme, EngineUpdates, Entity, EntityUpdate, Scene};
 use lin_alg::{
@@ -80,7 +80,7 @@ impl Default for MolEditorState {
             md_state: Default::default(),
             md_skip_water: true,
             mol_specific_params: Default::default(),
-            dt_md: 0.0001,
+            dt_md: 0.00001,
             time_between_md_runs: 33.333,
             md_running: Default::default(),
             last_dt_run: Instant::now(),
@@ -362,13 +362,13 @@ impl MolEditorState {
 
         md.step(dev, self.dt_md);
 
-        unsafe {
-            I += 1;
-            if I.is_multiple_of(100) {
-                let elapsed = self.last_dt_run.elapsed().as_micros();
-                println!("DT ran in: {:?}μs", elapsed);
-            }
-        }
+        // unsafe {
+        //     I += 1;
+        //     if I.is_multiple_of(100) {
+        //         let elapsed = self.last_dt_run.elapsed().as_micros();
+        //         println!("DT ran in: {:?}μs", elapsed);
+        //     }
+        // }
 
         // Load the snapshot taken into current atom posits, and redraw.
         // Remove the snap from memory to prevent them from accumulating.
@@ -408,6 +408,7 @@ impl MolEditorState {
             eprintln!("Error: Unable to update a molecule's params due to missing GAFF2.");
         }
 
+        // todo: Validate MSP seems to be working here, then remove this pritn.
         println!("MSP: {:?}", msp);
 
         self.mol_specific_params = msp[MOL_IDENT].clone();
@@ -843,6 +844,7 @@ pub(super) fn build_dynamics(
         .iter()
         .map(|a| a.to_generic())
         .collect();
+
     let bonds_gen: Vec<_> = editor
         .mol
         .common
@@ -850,19 +852,6 @@ pub(super) fn build_dynamics(
         .iter()
         .map(|b| b.to_generic())
         .collect();
-
-    // let mut msp = HashMap::new();
-    // Set these flags to false, so it will rebuild them.
-    // mol.ff_params_loaded = false;
-    // mol.frcmod_loaded = false;
-
-    // if let Some(p) = &param_set.small_mol {
-    //     editor.mol.update_ff_related(&mut msp, p);
-    // } else {
-    //     eprintln!("Error: Unable to update a molecule's params due to missing GAFF2.");
-    // }
-
-    // editor.mol_specific_params = msp[MOL_IDENT].clone();
 
     let mols = vec![MolDynamics {
         ff_mol_type: FfMolType::SmallOrganic,
@@ -876,13 +865,19 @@ pub(super) fn build_dynamics(
         mol_specific_params: Some(editor.mol_specific_params.clone()),
     }];
 
-    let cfg = MdConfig {
+    let mut cfg = MdConfig {
         max_init_relaxation_iters: Some(50), // todo A/R
         overrides: MdOverrides {
+            // todo: Reduced number of water relax steps to make it faster?
             // Water relaxation is slow.
-            skip_water_relaxation: true,
+            // skip_water_relaxation: true,
             long_range_recip_disabled: true,
             ..Default::default()
+        },
+        // todo: Which one?
+        integrator: Integrator::VerletVelocity {
+            // todo: Experimenting/troubeshooting. Temp is out of control.
+            thermostat: Some(TAU_TEMP_DEFAULT * 0.3),
         },
         // We run slower time steps than in typical MD steps here, so this is OK, and may
         // provide a more realistic visualization.
@@ -891,13 +886,34 @@ pub(super) fn build_dynamics(
     };
 
     println!("Initializing MD state...");
+
+    // Workaround to now have to regen water. I call this a workaround as there can be other
+    // elegant approaches in the Dynamics lib, and or that handle vacancies better from changing
+    // atom counts. Or that applies automatically. Pre-arranged water is a good way to start, e.g.
+    // instead of in a lattice.
+    // let mut water_prev = None;
+    //
+    // if let Some(md_prev) = &editor.md_state {
+    //     if !md_prev.water.is_empty() {
+    //         water_prev = Some(md_prev.water.clone());
+    //         cfg.overrides.skip_water = true;
+    //     }
+    // }
+
     let md_state = MdState::new(dev, &cfg, &mols, param_set)?;
+
+    // if let Some(w) = water_prev {
+    //     println!("Using previous water molecules");
+    //     // todo: Dangerous: Could cause an overlap and therefor blowup.
+    //     // md_state.water = w;
+    // }
+
     println!("MD init done.");
 
     Ok(md_state)
 }
 
-/// Used to share this between GUI and keys.
+/// Used to share this between GUI and inputs.
 pub fn sync_md(state: &mut State) {
     if state.mol_editor.md_running {
         // todo: Ideally don't rebuild the whole dynamics, for performance reasons.

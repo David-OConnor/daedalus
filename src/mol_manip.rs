@@ -12,6 +12,7 @@ use lin_alg::{
 use crate::{
     OperatingMode, Selection, State, StateVolatile,
     inputs::{SENS_MOL_ROT_MOUSE, SENS_MOL_ROT_SCROLL},
+    mol_editor,
     molecule::{MolType, MoleculeCommon},
 };
 
@@ -307,6 +308,7 @@ pub fn set_manip(
     redraw_lig: &mut bool,
     redraw_na: &mut bool,
     redraw_lipid: &mut bool,
+    rebuild_md_editor: &mut bool,
     // Note: The mol itself is overwritten but this sets move/rotate,
     mode: ManipMode,
     sel: &Selection,
@@ -354,6 +356,7 @@ pub fn set_manip(
                 scene.input_settings.control_scheme = vol.control_scheme_prev;
                 vol.mol_manip.mode = ManipMode::None;
                 vol.mol_manip.pivot = None;
+                *rebuild_md_editor = true;
             } else if rotate_active {
                 // Entering a move from rotation
                 vol.mol_manip.mode = ManipMode::Move((mol_type_active, i_active));
@@ -371,6 +374,7 @@ pub fn set_manip(
                 scene.input_settings.control_scheme = vol.control_scheme_prev;
                 vol.mol_manip.mode = ManipMode::None;
                 vol.mol_manip.pivot = None;
+                *rebuild_md_editor = true;
             } else if move_active {
                 vol.mol_manip.mode = ManipMode::Rotate((mol_type_active, i_active));
             } else {

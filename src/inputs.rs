@@ -10,6 +10,7 @@ use graphics::{
 use lin_alg::f32::Vec3;
 use na_seq::Element::Carbon;
 
+use crate::mol_editor::sync_md;
 use crate::{
     OperatingMode, Selection, State,
     cam_misc::move_cam_to_sel,
@@ -315,6 +316,7 @@ pub fn event_dev_handler(
                         //     }
                         // };
 
+                        let mut rebuild_md_editor = false;
                         mol_manip::set_manip(
                             &mut state_.volatile,
                             &mut state_.to_save.save_flag,
@@ -322,9 +324,14 @@ pub fn event_dev_handler(
                             &mut redraw_ligs_inplace,
                             &mut redraw_na_inplace,
                             &mut redraw_lipid_inplace,
+                            &mut rebuild_md_editor,
                             ManipMode::Move((MolType::Ligand, 0)),
                             &state_.ui.selection,
                         );
+
+                        if rebuild_md_editor {
+                            sync_md(state_);
+                        }
                     }
                     Code(KeyCode::KeyR) => {
                         let mol_type = match state_.active_mol() {
@@ -332,6 +339,7 @@ pub fn event_dev_handler(
                             None => return updates,
                         };
 
+                        let mut rebuild_md_editor = false;
                         mol_manip::set_manip(
                             &mut state_.volatile,
                             &mut state_.to_save.save_flag,
@@ -339,9 +347,14 @@ pub fn event_dev_handler(
                             &mut redraw_ligs_inplace,
                             &mut redraw_na_inplace,
                             &mut redraw_lipid_inplace,
+                            &mut rebuild_md_editor,
                             ManipMode::Rotate((mol_type, 0)),
                             &state_.ui.selection,
                         );
+
+                        if rebuild_md_editor {
+                            sync_md(state_);
+                        }
                     }
                     Code(KeyCode::Delete) => {
                         match state_.volatile.operating_mode {
