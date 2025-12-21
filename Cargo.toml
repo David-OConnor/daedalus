@@ -12,7 +12,7 @@ egui-file-dialog = "0.12.0" #  For file dialogs.
 egui_plot = "0.34.0"  # For Rama plots
 
 lin_alg = { version = "1.3.13", features = ["encode"] }
-na_seq = "0.3.9"
+na_seq = "0.3.10"
 bio_apis = { version = "0.1.12", features = ["encode"] }
 bio_files = "0.3.6"
 mcubes = "0.1.7"

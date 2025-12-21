@@ -53,18 +53,6 @@ mod viridis_lut;
 // todo: Eval if there's another way or if you can remove this post a refactor
 // mod train;
 
-#[cfg(feature = "cuda")]
-use std::sync::Arc;
-use std::{
-    collections::{HashMap, HashSet},
-    env, fmt,
-    fmt::Display,
-    path::PathBuf,
-    process::Command,
-    sync::mpsc::Receiver,
-    time::Instant,
-};
-
 use bincode::{Decode, Encode};
 use bio_apis::{
     ReqError,
@@ -88,6 +76,18 @@ use lin_alg::{
 use mol_lig::MoleculeSmall;
 use mol_manip::MolManip;
 use molecule::MoleculePeptide;
+use std::fmt::Formatter;
+#[cfg(feature = "cuda")]
+use std::sync::Arc;
+use std::{
+    collections::{HashMap, HashSet},
+    env, fmt,
+    fmt::Display,
+    path::PathBuf,
+    process::Command,
+    sync::mpsc::Receiver,
+    time::Instant,
+};
 
 use crate::{
     lipid::{LipidShape, MoleculeLipid, load_lipid_templates},
@@ -294,6 +294,8 @@ struct StateVolatile {
     orbit_center: Option<(MolType, usize)>,
     /// ORCA is available on the system path.
     orca_avail: bool,
+    /// Per-protein. Computed as required; None before then.
+    hydropathy_data: Option<Vec<Vec<(usize, usize)>>>,
 }
 
 impl Default for StateVolatile {
@@ -322,6 +324,7 @@ impl Default for StateVolatile {
             md_local: Default::default(),
             orbit_center: None,
             orca_avail: false,
+            hydropathy_data: Default::default(),
         }
     }
 }
@@ -466,6 +469,29 @@ impl Default for NucleicAcidUi {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Default, Debug, Encode, Decode)]
+pub enum ResColoring {
+    #[default]
+    /// A unique color per amino acid, to quickly differentiate them.
+    AminoAcid,
+    /// Position in sequence, e.g. mapped using viridis
+    Position,
+    /// Also with a Viridis-style approach.
+    Hydrophobicity,
+}
+
+impl Display for ResColoring {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let v = match self {
+            Self::AminoAcid => "AA",
+            Self::Position => "Posit",
+            Self::Hydrophobicity => "Hydro",
+        };
+
+        write!(f, "{v}")
+    }
+}
+
 /// Ui text fields and similar.
 #[derive(Default)]
 struct StateUi {
@@ -516,7 +542,7 @@ struct StateUi {
     ui_vis: UiVisibility,
     /// Use a viridis or simialar colr scheme to color residues gradually based on their
     /// position in the sequence.
-    res_color_by_index: bool,
+    res_coloring: ResColoring,
     atom_color_by_charge: bool,
     /// Affects the electron density mesh.
     density_iso_level: f32,

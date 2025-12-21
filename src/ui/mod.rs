@@ -16,7 +16,7 @@ use mol_data::display_mol_data;
 use na_seq::{AaIdent, Element};
 
 use crate::{
-    CamSnapshot, MsaaSetting, OperatingMode, Selection, State, ViewSelLevel, cli,
+    CamSnapshot, MsaaSetting, OperatingMode, ResColoring, Selection, State, ViewSelLevel, cli,
     cli::autocomplete_cli,
     download_mols::{load_atom_coords_rcsb, load_sdf_drugbank, load_sdf_pubchem},
     drawing::color_viridis,
@@ -507,19 +507,22 @@ pub fn view_sel_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui, incl
             }
         }
         ViewSelLevel::Residue => {
-            let color = if state.ui.res_color_by_index {
-                COLOR_ACTIVE
-            } else {
-                COLOR_INACTIVE
-            };
+            let prev = state.ui.res_coloring;
+            ComboBox::from_id_salt(11)
+                .width(40.)
+                .selected_text(state.ui.res_coloring.to_string())
+                .show_ui(ui, |ui| {
+                    for v in [
+                        ResColoring::AminoAcid,
+                        ResColoring::Position,
+                        ResColoring::Hydrophobicity,
+                    ] {
+                        ui.selectable_value(&mut state.ui.res_coloring, v, v.to_string());
+                    }
+                });
 
-            if ui
-                .button(RichText::new("Color by res #").color(color))
-                .on_hover_text("Color the atom by its position in the primary sequence, instead of residue (e.g. AA) -specific colors")
-                .clicked()
-            {
-                state.ui.res_color_by_index = !state.ui.res_color_by_index;
-                state.ui.view_sel_level = ViewSelLevel::Residue;
+            if state.ui.res_coloring != prev {
+                // state.ui.view_sel_level = ViewSelLevel::Residue;
                 *redraw = true;
             }
         }

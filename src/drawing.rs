@@ -14,7 +14,7 @@ use lin_alg::{
 use na_seq::Element;
 
 use crate::{
-    OperatingMode, Selection, State, StateUi, ViewSelLevel,
+    OperatingMode, ResColoring, Selection, State, StateUi, ViewSelLevel,
     mol_manip::ManipMode,
     molecule::{Atom, AtomRole, Chain, MolGenericRef, MolGenericTrait, MolType, Residue, aa_color},
     reflection::DensityPt,
@@ -399,7 +399,7 @@ pub fn atom_color(
     selection: &Selection,
     view_sel_level: ViewSelLevel,
     dimmed: bool,
-    res_color_by_index: bool,
+    res_coloring: ResColoring,
     atom_color_by_q: bool,
     mol_type: MolType,
 ) -> Color {
@@ -422,16 +422,20 @@ pub fn atom_color(
             if let Some(res_i) = &atom.residue {
                 let res = &residues[*res_i];
                 color = match &res.res_type {
-                    ResidueType::AminoAcid(aa) => {
-                        if res_color_by_index {
-                            match atom.residue {
-                                Some(res_i) => color_viridis(res_i, 0, aa_count),
-                                None => aa_color(*aa),
-                            }
-                        } else {
-                            aa_color(*aa)
+                    ResidueType::AminoAcid(aa) => match res_coloring {
+                        ResColoring::AminoAcid => aa_color(*aa),
+                        ResColoring::Position => match atom.residue {
+                            Some(res_i) => color_viridis(res_i, 0, aa_count),
+                            None => aa_color(*aa),
+                        },
+                        ResColoring::Hydrophobicity => {
+                            // -4.5 to 4.5
+                            // todo: Use hte `hydropathy_doolittle` windowing fn instead?
+                            // todo: That may be overkill, or used as a smoothing technique.
+                            // These min/maxes are based on possible values of `aa.hydropathicity()`.
+                            color_viridis_float(aa.hydropathicity(), -4.5, 4.5)
                         }
-                    }
+                    },
                     _ => COLOR_AA_NON_RESIDUE,
                 };
 
@@ -983,7 +987,7 @@ pub fn draw_mol(
                     sel,
                     ViewSelLevel::Atom, // Always color lipids by atom.
                     false,
-                    ui.res_color_by_index,
+                    ui.res_coloring,
                     ui.atom_color_by_charge,
                     mol.mol_type(),
                 );
@@ -1128,7 +1132,7 @@ pub fn draw_mol(
                 sel,                // ignores bond coloring by adjacent atom if in bond sel mode.
                 ViewSelLevel::Atom, // Always color ligands by atom.
                 false,
-                ui.res_color_by_index,
+                ui.res_coloring,
                 ui.atom_color_by_charge,
                 mol.mol_type(),
             );
@@ -1141,7 +1145,7 @@ pub fn draw_mol(
                 sel,                // ignores bond coloring by adjacent atom if in bond sel mode.
                 ViewSelLevel::Atom, // Always color ligands by atom.
                 false,
-                ui.res_color_by_index,
+                ui.res_coloring,
                 ui.atom_color_by_charge,
                 mol.mol_type(),
             );
@@ -1512,7 +1516,7 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
                             sel,
                             state.ui.view_sel_level,
                             false,
-                            false,
+                            ResColoring::default(),
                             false,
                             MolType::Peptide,
                         );
@@ -1642,7 +1646,7 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
                 sel,
                 state.ui.view_sel_level,
                 dim_peptide,
-                state.ui.res_color_by_index,
+                state.ui.res_coloring,
                 state.ui.atom_color_by_charge,
                 MolType::Peptide,
             );
@@ -1799,7 +1803,7 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
             sel,
             state.ui.view_sel_level,
             dim_peptide_0,
-            state.ui.res_color_by_index,
+            state.ui.res_coloring,
             state.ui.atom_color_by_charge,
             MolType::Peptide,
         );
@@ -1812,7 +1816,7 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
             sel,
             state.ui.view_sel_level,
             dim_peptide_1,
-            state.ui.res_color_by_index,
+            state.ui.res_coloring,
             state.ui.atom_color_by_charge,
             MolType::Peptide,
         );

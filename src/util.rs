@@ -35,6 +35,9 @@ use crate::{
     sa_surface::make_sas_mesh,
 };
 
+// todo: Move this A/R
+pub const HYDROPATHY_WINDOW_SIZE: usize = 9; // e.g. for coloring residues
+
 pub fn mol_center_size(atoms: &[Atom]) -> (Vec3, f32) {
     let mut sum = Vec3::new_zero();
     let mut max_dim = 0.;

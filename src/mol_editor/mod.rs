@@ -25,6 +25,7 @@ use na_seq::{
     Element::{Carbon, Hydrogen},
 };
 
+use crate::mol_manip::MolManip;
 use crate::{
     OperatingMode, Selection, State, StateUi, ViewSelLevel,
     drawing::{
@@ -419,7 +420,9 @@ impl MolEditorState {
             eprintln!("Error: Unable to update a molecule's params due to missing GAFF2.");
         }
 
-        self.mol_specific_params = msp[MOL_IDENT].clone();
+        if let Some(v) = msp.get(MOL_IDENT) {
+            self.mol_specific_params = v.clone();
+        }
     }
 }
 
@@ -478,6 +481,8 @@ pub fn enter_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mu
     scene.camera.position = Vec3F32::new(0., 0., -INIT_CAM_DIST);
     scene.camera.orientation = Quaternion::new_identity();
 
+    state.volatile.mol_manip.mode = ManipMode::None;
+
     // Set to a view supported by the editor.
     // todo: In this case, store the previous view, and re-set it upon exiting the editor.
     if !matches!(
@@ -509,6 +514,7 @@ pub fn exit_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mut
     state.mol_editor.md_state = None;
     state.mol_editor.md_running = false;
     state.volatile.mol_editing = None;
+    state.volatile.mol_manip.mode = ManipMode::None;
 
     scene.input_settings.control_scheme = state.volatile.control_scheme_prev;
     scene.camera = state.volatile.primary_mode_cam.clone();
@@ -560,7 +566,7 @@ fn draw_atom(entities: &mut Vec<Entity>, atom: &Atom, ui: &StateUi) {
             &ui.selection,
             ViewSelLevel::Atom, // Always color lipids by atom.
             false,
-            ui.res_color_by_index,
+            ui.res_coloring,
             ui.atom_color_by_charge,
             MolType::Ligand,
         );
@@ -635,7 +641,7 @@ fn draw_bond(
         &ui.selection,
         ViewSelLevel::Atom, // Always color ligands by atom.
         false,
-        ui.res_color_by_index,
+        ui.res_coloring,
         ui.atom_color_by_charge,
         MolType::Ligand,
     );
@@ -649,7 +655,7 @@ fn draw_bond(
         &ui.selection,
         ViewSelLevel::Atom, // Always color ligands by atom.
         false,
-        ui.res_color_by_index,
+        ui.res_coloring,
         ui.atom_color_by_charge,
         MolType::Ligand,
     );
@@ -889,8 +895,8 @@ pub(super) fn build_dynamics(
         },
         // todo: Which one?
         integrator: Integrator::VerletVelocity {
-            // todo: Experimenting/troubeshooting. Temp is out of control.
-            thermostat: Some(TAU_TEMP_DEFAULT * 0.3),
+            // todo: Experimenting/troubleshooting. Temp is out of control.
+            thermostat: Some(TAU_TEMP_DEFAULT * 0.1),
         },
         // We run slower time steps than in typical MD steps here, so this is OK, and may
         // provide a more realistic visualization.

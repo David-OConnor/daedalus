@@ -44,7 +44,6 @@ fn find_appended_posit(
             // without regard for steric clashes, and let MD sort it out after.
             // todo: choose something explicitly that avoids steric clashes?
 
-            // todo: This section is not working properly.
             const TETRA_ANGLE: f64 = 1.91063;
 
             let bond_par_gp = (grandparent - posit_parent).to_normalized();
@@ -183,7 +182,7 @@ pub fn add_from_template_btn(
             populate_hydrogens_on_atom(
                 mol,
                 i_added[i] - 1,
-                atom.element,
+                // atom.element,
                 &atom.force_field_type,
                 &mut Vec::new(),
                 state_ui,
@@ -328,11 +327,13 @@ pub fn add_atom(
         ui,
     );
 
+    // Add hydrogens back to the parent.
+    populate_hydrogens_on_atom(mol, i_par, &ff_type, entities, ui, updates, manip_mode);
+
+    // Add hydrogens to the new atom.
     // Up to one recursion to add hydrogens to this parent and to the new atom.
     if element != Hydrogen {
-        populate_hydrogens_on_atom(
-            mol, i_new, element, &ff_type, entities, ui, updates, manip_mode,
-        );
+        populate_hydrogens_on_atom(mol, i_new, &ff_type, entities, ui, updates, manip_mode);
         *control = ControlScheme::Arc {
             center: mol.centroid().into(),
         };
@@ -350,7 +351,7 @@ pub fn add_atom(
 pub fn populate_hydrogens_on_atom(
     mol: &mut MoleculeCommon,
     i: usize,
-    el: Element,
+    // el: Element,
     ff_type: &Option<String>,
     entities: &mut Vec<Entity>,
     state_ui: &mut StateUi,
@@ -358,6 +359,7 @@ pub fn populate_hydrogens_on_atom(
     manip_mode: ManipMode,
 ) {
     // todo. Don't clone!!! Find a better way to fix the borrow error.
+    let el = mol.atoms[i].element;
 
     let mut skip = false;
 

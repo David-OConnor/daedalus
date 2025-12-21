@@ -21,7 +21,8 @@ use graphics::{
 use lin_alg::f64::Vec3;
 
 use crate::{
-    CamSnapshot, LipidUi, MsaaSetting, NucleicAcidUi, Selection, State, ViewSelLevel, Visibility,
+    CamSnapshot, LipidUi, MsaaSetting, NucleicAcidUi, ResColoring, Selection, State, ViewSelLevel,
+    Visibility,
     docking::DockingSite,
     drawing::MoleculeView,
     inputs::{MOVEMENT_SENS, ROTATE_SENS, SENS_MOL_MOVE_SCROLL},
@@ -206,7 +207,7 @@ pub struct PerMolToSave {
     chain_to_pick_res: Option<usize>,
     pub docking_site: DockingSite,
     show_docking_tools: bool,
-    res_color_by_index: bool,
+    res_coloring: ResColoring,
     aatom_color_by_charge: bool,
     show_aa_seq: bool,
     rcsb_data: Option<PdbDataResults>,
@@ -255,7 +256,7 @@ impl PerMolToSave {
             // metadata,
             docking_site,
             show_docking_tools: state.ui.show_docking_tools,
-            res_color_by_index: state.ui.res_color_by_index,
+            res_coloring: state.ui.res_coloring,
             aatom_color_by_charge: state.ui.atom_color_by_charge,
             show_aa_seq: state.ui.ui_vis.aa_seq,
             rcsb_data,
@@ -333,7 +334,7 @@ impl State {
 
                 self.ui.chain_to_pick_res = data.chain_to_pick_res;
                 self.ui.show_docking_tools = data.show_docking_tools;
-                self.ui.res_color_by_index = data.res_color_by_index;
+                self.ui.res_coloring = data.res_coloring;
                 self.ui.atom_color_by_charge = data.aatom_color_by_charge;
                 self.ui.ui_vis.aa_seq = data.show_aa_seq;
 
