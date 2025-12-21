@@ -2,19 +2,19 @@
 //! This is for both primary mode, and the mol editor. In the latter, it
 //! can move individual atoms, and rotate parts of molecules around bonds.
 
-use graphics::{Camera, ControlScheme, FWD_VEC, RIGHT_VEC, Scene, UP_VEC, event::MouseScrollDelta};
-use lin_alg::{
-    f32::{Quaternion, Vec3},
-    f64::Vec3 as Vec3F64,
-    map_linear,
-};
-
 use crate::{
     OperatingMode, Selection, State, StateVolatile,
     inputs::{SENS_MOL_ROT_MOUSE, SENS_MOL_ROT_SCROLL},
     mol_editor,
     molecule::{MolType, MoleculeCommon},
 };
+use graphics::{Camera, ControlScheme, FWD_VEC, RIGHT_VEC, Scene, UP_VEC, event::MouseScrollDelta};
+use lin_alg::{
+    f32::{Quaternion, Vec3},
+    f64::Vec3 as Vec3F64,
+    map_linear,
+};
+use na_seq::Element;
 
 /// Blender-style mouse dragging of the molecule. For movement, creates a plane of the camera view,
 /// at the molecule's depth. The mouse cursor projects to this plane, moving the molecule
@@ -96,6 +96,13 @@ pub fn handle_mol_manip_in_plane(
                         // `mol_i` = atom_i here.
                         mol.atom_posits[mol_i] += movement_vec;
                         mol.atoms[mol_i].posit = mol.atom_posits[mol_i];
+
+                        // Move all hydrogens bonded to the atom too.
+                        for i in &mol.adjacency_list[mol_i] {
+                            if mol.atoms[*i].element == Element::Hydrogen {
+                                mol.atom_posits[*i] += movement_vec;
+                            }
+                        }
                     }
                 }
 
@@ -231,6 +238,13 @@ pub fn handle_mol_manip_in_out(
                     OperatingMode::MolEditor => {
                         mol.atom_posits[mol_i] += movement_vec;
                         mol.atoms[mol_i].posit = mol.atom_posits[mol_i];
+
+                        // Move all hydrogens bonded to the atom too.
+                        for i in &mol.adjacency_list[mol_i] {
+                            if mol.atoms[*i].element == Element::Hydrogen {
+                                mol.atom_posits[*i] += movement_vec;
+                            }
+                        }
                     }
                 }
 
