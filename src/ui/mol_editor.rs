@@ -15,7 +15,7 @@ use crate::{
     mol_editor,
     mol_editor::{
         NEXT_ATOM_SN,
-        add_atoms::{add_atom, add_from_template_btn},
+        add_atoms::{add_atom, add_from_template},
         exit_edit_mode, sync_md,
         templates::Template,
     },
@@ -77,12 +77,18 @@ fn change_el_button(
         .on_hover_text(format!("Change the selected atom's element to {el}"))
         .clicked()
     {
-        let Selection::AtomLig((_, i)) = sel else {
-            eprintln!("Attempting to change an element with no atom selected.");
-            return;
+        let idxs = match sel {
+            Selection::AtomLig((_, i)) => vec![*i],
+            Selection::AtomsLig((_, i)) => i.to_vec(),
+            _ => {
+                eprintln!("Attempting to change an element with an invalid selection");
+                return;
+            }
         };
 
-        mol.common.atoms[*i].element = el;
+        for i in idxs {
+            mol.common.atoms[i].element = el;
+        }
 
         mol_editor::redraw(entities, mol, state_ui, state_manip);
         engine_updates.entities = EntityUpdate::All;
@@ -387,6 +393,69 @@ pub(in crate::ui) fn editor(
     }
 }
 
+fn bond_edit_tools(
+    bond_sel_is: &[usize],
+    bonds: &mut [Bond],
+    ui: &mut Ui,
+    redraw: &mut bool,
+    rebuild_md: &mut bool,
+) {
+    let mut new_bond_type = None;
+
+    section_box().show(ui, |ui| {
+        // if bond.bond_type != BondType::Single {
+        if ui
+            .button("-")
+            .on_hover_text("Change this to a single bond.")
+            .clicked()
+        {
+            new_bond_type = Some(BondType::Single);
+            *redraw = true;
+            *rebuild_md = true;
+        }
+        // }
+        // if bond.bond_type != BondType::Double {
+        if ui
+            .button("=")
+            .on_hover_text("Change this to a double bond.")
+            .clicked()
+        {
+            new_bond_type = Some(BondType::Double);
+            *redraw = true;
+            *rebuild_md = true;
+        }
+        // }
+        // if bond.bond_type != BondType::Triple {
+        if ui
+            .button("Tr")
+            .on_hover_text("Change this to a triple bond.")
+            .clicked()
+        {
+            new_bond_type = Some(BondType::Triple);
+            *redraw = true;
+            *rebuild_md = true;
+        }
+        // }
+        // if bond.bond_type != BondType::Aromatic {
+        if ui
+            .button("Ar")
+            .on_hover_text("Change this to an aromatic.")
+            .clicked()
+        {
+            new_bond_type = Some(BondType::Aromatic);
+            *redraw = true;
+            *rebuild_md = true;
+        }
+        // }
+    });
+
+    if let Some(bt) = new_bond_type {
+        for b in bond_sel_is {
+            bonds[*b].bond_type = bt;
+        }
+    }
+}
+
 fn edit_tools(
     state: &mut State,
     scene: &mut Scene,
@@ -395,15 +464,19 @@ fn edit_tools(
     redraw: &mut bool,
 ) {
     let mut bond_mode = false;
-    let (mol_i, atom_sel_i) = match &state.ui.selection {
-        Selection::AtomLig((mol_i, i)) => (*mol_i, *i),
-        Selection::AtomsLig((mol_i, i)) => {
-            // todo: How should we handle this?
-            (*mol_i, i[0])
-        }
-        Selection::BondLig((mol_i, i)) => {
+    let mut rebuild_md = false;
+
+    // todo: Clone temp to avoid borrow problems.
+    let (mol_i, selected_idxs) = match state.ui.selection.clone() {
+        Selection::AtomLig((mol_i, i)) => (mol_i, vec![i]),
+        Selection::AtomsLig((mol_i, i)) => (mol_i, i),
+        Selection::BondLig((mol_i, bond_i)) => {
             bond_mode = true;
-            (*mol_i, *i)
+            (mol_i, vec![bond_i])
+        }
+        Selection::BondsLig((mol_i, bonds_i)) => {
+            bond_mode = true;
+            (mol_i, bonds_i)
         }
         _ => {
             // Vertical pad to prevent UI jumping
@@ -414,79 +487,42 @@ fn edit_tools(
         }
     };
 
-    let mut rebuild_md = false;
-
     if bond_mode {
-        let bond = &mut state.mol_editor.mol.common.bonds[atom_sel_i];
-        section_box().show(ui, |ui| {
-            if bond.bond_type != BondType::Single {
-                if ui
-                    .button("-")
-                    .on_hover_text("Change this to a single bond.")
-                    .clicked()
-                {
-                    bond.bond_type = BondType::Single;
-                    *redraw = true;
-                    rebuild_md = true;
-                }
-            }
-            if bond.bond_type != BondType::Double {
-                if ui
-                    .button("=")
-                    .on_hover_text("Change this to a double bond.")
-                    .clicked()
-                {
-                    bond.bond_type = BondType::Double;
-                    *redraw = true;
-                    rebuild_md = true;
-                }
-            }
-            if bond.bond_type != BondType::Triple {
-                if ui
-                    .button("Tr")
-                    .on_hover_text("Change this to a triple bond.")
-                    .clicked()
-                {
-                    bond.bond_type = BondType::Triple;
-                    *redraw = true;
-                    rebuild_md = true;
-                }
-            }
-            if bond.bond_type != BondType::Aromatic {
-                if ui
-                    .button("Ar")
-                    .on_hover_text("Change this to an aromatic.")
-                    .clicked()
-                {
-                    bond.bond_type = BondType::Aromatic;
-                    *redraw = true;
-                    rebuild_md = true;
-                }
-            }
-        });
-
+        bond_edit_tools(
+            &selected_idxs,
+            &mut state.mol_editor.mol.common.bonds,
+            ui,
+            redraw,
+            &mut rebuild_md,
+        );
+        if rebuild_md {
+            sync_md(state);
+        }
         return;
     }
+
     section_box().show(ui, |ui| {
         if ui
             .button("Add Atom")
             .on_hover_text("(Hotkey: Tab) Add a Carbon atom. (Can change to other elements after)")
             .clicked()
         {
-            add_atom(
-                &mut state.mol_editor.mol.common,
-                &mut scene.entities,
-                atom_sel_i,
-                Carbon,
-                BondType::Single,
-                Some("c".to_owned()), // todo
-                Some(1.4),            // todo
-                0.13,                 // todo
-                &mut state.ui,
-                engine_updates,
-                &mut scene.input_settings.control_scheme,
-                state.volatile.mol_manip.mode,
-            );
+            for atom_i in &selected_idxs {
+                add_atom(
+                    &mut state.mol_editor.mol.common,
+                    &mut scene.entities,
+                    *atom_i,
+                    Carbon,
+                    BondType::Single,
+                    Some("c".to_owned()), // todo
+                    Some(1.4),            // todo
+                    0.13,                 // todo
+                    &mut state.ui,
+                    engine_updates,
+                    &mut scene.input_settings.control_scheme,
+                    state.volatile.mol_manip.mode,
+                );
+            }
             rebuild_md = true;
         }
 
@@ -495,35 +531,36 @@ fn edit_tools(
             .on_hover_text("Add a Carbon atom, and select it. Useful for quickly adding chains.")
             .clicked()
         {
-            let new_i = add_atom(
-                &mut state.mol_editor.mol.common,
-                &mut scene.entities,
-                atom_sel_i,
-                Carbon,
-                BondType::Single,
-                Some("ca".to_owned()), // todo
-                Some(1.4),             // todo
-                0.13,                  // todo
-                &mut state.ui,
-                engine_updates,
-                &mut scene.input_settings.control_scheme,
-                state.volatile.mol_manip.mode,
-            );
-
-            if let Some(i) = new_i {
-                state.ui.selection = Selection::AtomLig((mol_i, i));
-
-                // `add_atom` handles individual redrawing, but here we need something, or the previous
-                // atom will still show as the selected color.
-                // todo better. (todo: More specific than this redraw all?)
-                mol_editor::redraw(
+            for atom_i in &selected_idxs {
+                let new_i = add_atom(
+                    &mut state.mol_editor.mol.common,
                     &mut scene.entities,
-                    &state.mol_editor.mol,
-                    &state.ui,
+                    *atom_i,
+                    Carbon,
+                    BondType::Single,
+                    Some("ca".to_owned()), // todo
+                    Some(1.4),             // todo
+                    0.13,                  // todo
+                    &mut state.ui,
+                    engine_updates,
+                    &mut scene.input_settings.control_scheme,
                     state.volatile.mol_manip.mode,
                 );
-            }
 
+                if let Some(i) = new_i {
+                    state.ui.selection = Selection::AtomLig((mol_i, i));
+
+                    // `add_atom` handles individual redrawing, but here we need something, or the previous
+                    // atom will still show as the selected color.
+                    // todo better. (todo: More specific than this redraw all?)
+                    mol_editor::redraw(
+                        &mut scene.entities,
+                        &state.mol_editor.mol,
+                        &state.ui,
+                        state.volatile.mol_manip.mode,
+                    );
+                }
+            }
             rebuild_md = true;
         }
 
@@ -557,73 +594,75 @@ fn edit_tools(
         &mut scene.input_settings.control_scheme,
     );
 
-    section_box().show(ui, |ui| {
-        if ui
-            .button(RichText::new("↔ Move atom"))
-            .on_hover_text("(Hotkey: M. M or Esc to stop) Move the selected atom")
-            .clicked()
-        {
-            mol_manip::set_manip(
-                &mut state.volatile,
-                &mut state.to_save.save_flag,
-                scene,
-                redraw,
-                &mut false,
-                &mut false,
-                &mut rebuild_md,
-                // Atom i is used instead of the primary mode's mol i, since we're moving a single atom.
-                ManipMode::Move((MolType::Ligand, atom_sel_i)),
-                &state.ui.selection,
-            );
-        }
-
-        let mol = &mut state.mol_editor.mol.common;
-
-        if let Selection::AtomsLig((_, atoms_i)) = &state.ui.selection
-            && atoms_i.len() == 2
-        {
-            let bond_exists = mol.adjacency_list[atoms_i[0]].contains(&atoms_i[1]);
-
-            if !bond_exists {
-                // todo: Hotkey for this and other functionality.
-                if ui
-                    .button(RichText::new("Create Bond").color(COLOR_ACTION))
-                    .on_hover_text(
-                        "(Hotkey: todo) Create a covalently bond between the two selected atoms",
-                    )
-                    .clicked()
-                {
-                    let atom_0 = &mol.atoms[atoms_i[0]];
-                    let atom_1 = &mol.atoms[atoms_i[1]];
-
-                    mol.bonds.push(Bond {
-                        bond_type: BondType::Single, // todo: Allow other types
-                        atom_0_sn: atom_0.serial_number,
-                        atom_1_sn: atom_1.serial_number,
-                        atom_0: atoms_i[0],
-                        atom_1: atoms_i[1],
-                        is_backbone: false,
-                    });
-                    mol.build_adjacency_list();
-
-                    *redraw = true;
-                    rebuild_md = true;
-                }
-            }
-        }
-
-        if let Selection::AtomLig((_, i)) = state.ui.selection {
+    if &selected_idxs.len() == &1 {
+        section_box().show(ui, |ui| {
             if ui
-                .button(RichText::new("Del atom").color(Color32::LIGHT_RED))
-                .on_hover_text("(Hotkey: Delete) Delete the selected atom")
+                .button(RichText::new("↔ Move atom"))
+                .on_hover_text("(Hotkey: M. M or Esc to stop) Move the selected atom")
                 .clicked()
             {
-                state.mol_editor.remove_atom(i);
-                rebuild_md = true;
-                *redraw = true;
+                mol_manip::set_manip(
+                    &mut state.volatile,
+                    &mut state.to_save.save_flag,
+                    scene,
+                    redraw,
+                    &mut false,
+                    &mut false,
+                    &mut rebuild_md,
+                    // Atom i is used instead of the primary mode's mol i, since we're moving a single atom.
+                    ManipMode::Move((MolType::Ligand, selected_idxs[0])),
+                    &state.ui.selection,
+                );
             }
-        }
-    });
+
+            let mol = &mut state.mol_editor.mol.common;
+
+            if let Selection::AtomsLig((_, atoms_i)) = &state.ui.selection
+                && atoms_i.len() == 2
+            {
+                let bond_exists = mol.adjacency_list[atoms_i[0]].contains(&atoms_i[1]);
+
+                if !bond_exists {
+                    // todo: Hotkey for this and other functionality.
+                    if ui
+                        .button(RichText::new("Create Bond").color(COLOR_ACTION))
+                        .on_hover_text(
+                            "(Hotkey: todo) Create a covalently bond between the two selected atoms",
+                        )
+                        .clicked()
+                    {
+                        let atom_0 = &mol.atoms[atoms_i[0]];
+                        let atom_1 = &mol.atoms[atoms_i[1]];
+
+                        mol.bonds.push(Bond {
+                            bond_type: BondType::Single, // todo: Allow other types
+                            atom_0_sn: atom_0.serial_number,
+                            atom_1_sn: atom_1.serial_number,
+                            atom_0: atoms_i[0],
+                            atom_1: atoms_i[1],
+                            is_backbone: false,
+                        });
+                        mol.build_adjacency_list();
+
+                        *redraw = true;
+                        rebuild_md = true;
+                    }
+                }
+            }
+
+            if let Selection::AtomLig((_, i)) = state.ui.selection {
+                if ui
+                    .button(RichText::new("Del atom").color(Color32::LIGHT_RED))
+                    .on_hover_text("(Hotkey: Delete) Delete the selected atom")
+                    .clicked()
+                {
+                    state.mol_editor.remove_atom(i);
+                    rebuild_md = true;
+                    *redraw = true;
+                }
+            }
+        });
+    }
 
     if rebuild_md {
         sync_md(state);
@@ -637,8 +676,10 @@ fn template_section(
     rebuild_md: &mut bool,
     controls: &mut ControlScheme,
 ) {
-    let Selection::AtomLig((_, i)) = state.ui.selection else {
-        return;
+    let parent_atoms = match &state.ui.selection {
+        Selection::AtomLig((_, i)) => vec![*i],
+        Selection::AtomsLig((_, items)) => items.clone(),
+        _ => return,
     };
 
     section_box().show(ui, |ui| {
@@ -676,24 +717,27 @@ fn template_section(
 
         // Helper
         let mut add_t = |template: Template, name, abbrev| {
-            add_from_template_btn(
-                &mut state.mol_editor.mol.common,
-                template,
-                anchor_i,
-                anchor,
-                r_aligner_i,
-                r_aligner,
-                next_sn,
-                next_i,
-                ui,
-                redraw,
-                rebuild_md,
-                name,
-                abbrev,
-                &mut state.ui,
-                controls,
-                state.volatile.mol_manip.mode,
-            );
+            if ui
+                .button(abbrev)
+                .on_hover_text(format!("Add a {name} at the current selection"))
+                .clicked()
+            {
+                add_from_template(
+                    &mut state.mol_editor.mol.common,
+                    template,
+                    anchor_i,
+                    anchor,
+                    r_aligner_i,
+                    r_aligner,
+                    next_sn,
+                    next_i,
+                    redraw,
+                    rebuild_md,
+                    &mut state.ui,
+                    controls,
+                    state.volatile.mol_manip.mode,
+                );
+            }
         };
 
         // todo: No! Don't continuously run these template atom creators!
@@ -705,6 +749,6 @@ fn template_section(
 
         add_t(Template::AromaticRing, "Ar", "benzene/aromatic ring");
 
-        add_t(Template::AromaticRing, "Pent", "5-atom ring");
+        add_t(Template::PentaRing, "Pent", "5-atom ring");
     });
 }

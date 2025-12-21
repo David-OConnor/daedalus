@@ -1171,44 +1171,32 @@ pub fn draw_mol(
                 _ => (),
             };
 
-            if color_0 != COLOR_SELECTED {
-                match mol.mol_type() {
-                    MolType::Ligand => {
-                        if mode == OperatingMode::Primary {
-                            color_0 = mod_color_for_ligand(
-                                &color_0,
-                                atom_0.element,
-                                ui.atom_color_by_charge,
-                            )
+            let helper = |atom: &Atom, color: &mut Color| {
+                if *color != COLOR_SELECTED {
+                    match mol.mol_type() {
+                        MolType::Ligand => {
+                            if mode == OperatingMode::Primary {
+                                *color = mod_color_for_ligand(
+                                    color,
+                                    atom.element,
+                                    ui.atom_color_by_charge,
+                                )
+                            }
                         }
-                    }
-                    // todo: Color for NA
-                    MolType::NucleicAcid => {
-                        color_0 = blend_color(color_0, LIPID_COLOR, LIPID_BLEND_AMT)
-                    }
-                    MolType::Lipid => color_0 = blend_color(color_0, LIPID_COLOR, LIPID_BLEND_AMT),
-                    _ => (),
-                }
-            }
-            if color_1 != COLOR_SELECTED {
-                match mol.mol_type() {
-                    MolType::Ligand => {
-                        if mode == OperatingMode::Primary {
-                            color_1 = mod_color_for_ligand(
-                                &color_1,
-                                atom_1.element,
-                                ui.atom_color_by_charge,
-                            )
+                        // todo: Color for NA
+                        MolType::NucleicAcid => {
+                            *color = blend_color(*color, LIPID_COLOR, LIPID_BLEND_AMT)
                         }
+                        MolType::Lipid => {
+                            *color = blend_color(*color, LIPID_COLOR, LIPID_BLEND_AMT)
+                        }
+                        _ => (),
                     }
-                    // todo: Color for NA
-                    MolType::NucleicAcid => {
-                        color_1 = blend_color(color_1, LIPID_COLOR, LIPID_BLEND_AMT)
-                    }
-                    MolType::Lipid => color_1 = blend_color(color_1, LIPID_COLOR, LIPID_BLEND_AMT),
-                    _ => (),
                 }
-            }
+            };
+
+            helper(atom_0, &mut color_0);
+            helper(atom_1, &mut color_1);
         }
 
         let to_hydrogen =

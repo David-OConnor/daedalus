@@ -606,7 +606,6 @@ impl MoleculeSmall {
             //     println!("Improp: {:?}", p);
             // }
 
-            println!("Inserting: {:?}", self.common.ident.to_owned());
             mol_specific_param_set.insert(self.common.ident.to_owned(), mol_specific_params);
             self.frcmod_loaded = true;
         }

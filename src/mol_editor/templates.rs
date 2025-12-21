@@ -10,12 +10,23 @@ use na_seq::{
 
 use crate::molecule::{Atom, Bond};
 
+// todo: Deprecate in place of algoirthmetc approach
+const POSITS_AR_RING: [Vec3; 6] = [
+    Vec3::new_zero(),
+    Vec3::new(-0.6985, 1.2090, 0.0),
+    Vec3::new(-2.0955, 1.2090, 0.0),
+    Vec3::new(-2.7940, 0.0000, 0.0),
+    Vec3::new(-2.0955, -1.2090, 0.0),
+    Vec3::new(-0.6985, -1.2090, 0.0),
+];
+
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Template {
     /// Carboxylic acid
     Cooh,
     Amide,
     AromaticRing,
+    PentaRing,
 }
 
 impl Template {
@@ -29,7 +40,8 @@ impl Template {
         match self {
             Self::Cooh => cooh_group(anchor, r_aligner, start_sn, start_i),
             Self::Amide => amide_group(anchor, r_aligner, start_sn, start_i),
-            Self::AromaticRing => ar_ring(anchor, r_aligner, start_sn, start_i),
+            Self::AromaticRing => ring(anchor, r_aligner, start_sn, start_i, &POSITS_AR_RING),
+            Self::PentaRing => ring(anchor, r_aligner, start_sn, start_i, &POSITS_AR_RING), // todo temp
             _ => Default::default(),
         }
     }
@@ -162,25 +174,45 @@ fn amide_group(
     (atoms, bonds)
 }
 
+// todo: C+P from nucleic acids
+fn rotate_about_axis(posit: Vec3, pivot: Vec3, axis: Vec3, angle: f64) -> Vec3 {
+    let q = Quaternion::from_axis_angle(axis, angle);
+    pivot + q.rotate_vec(posit - pivot)
+}
+
 // todo: What does posit anchor too? Center? An corner marked in a certain way?
 // fn ar_ring(anchor: Vec3, orientation: Quaternion, start_sn: u32, start_i: usize) -> (Vec<Atom>, Vec<Bond>) {
-fn ar_ring(anchor: Vec3, r_aligner: Vec3, start_sn: u32, start_i: usize) -> (Vec<Atom>, Vec<Bond>) {
-    const POSITS: [Vec3; 6] = [
-        Vec3::new(1.3970, 0.0000, 0.0),
-        Vec3::new(0.6985, 1.2090, 0.0),
-        Vec3::new(-0.6985, 1.2090, 0.0),
-        Vec3::new(-1.3970, 0.0000, 0.0),
-        Vec3::new(-0.6985, -1.2090, 0.0),
-        Vec3::new(0.6985, -1.2090, 0.0),
-    ];
+// fn ar_ring(anchor: Vec3, r_aligner: Vec3, start_sn: u32, start_i: usize) -> (Vec<Atom>, Vec<Bond>) {
+fn ring(
+    anchor_0: Vec3,
+    anchor_1: Vec3,
+    start_sn: u32,
+    start_i: usize,
+    posits: &[Vec3],
+) -> (Vec<Atom>, Vec<Bond>) {
+    // todo: Create this algorithmically from number of points and bond len?
+    let n = posits.len();
 
-    // let posits = POSITS.iter().map(|p| *p + anchor);
-    let orientation = Quaternion::new_identity(); // todo temp
-    let posits = POSITS.iter().map(|p| (orientation.rotate_vec(*p)) + anchor);
+    // Move the ring to the anchor. (Assumes point 0 is the 0 vec)
+    let mut posits: Vec<_> = posits.iter().map(|p| *p + anchor_0).collect();
+
+    // Rotate the ring so that point 1 is at anchor 1.
+    let dir_0_to_1_local = (posits[1] - posits[0]).to_normalized();
+    let dir_0_to_1_global = (anchor_1 - anchor_0).to_normalized();
+
+    // let rotator = Quaternion::from_unit_vecs(dir_0_to_1_local, dir_0_to_1_global);
+    let rotate_amt = dir_0_to_1_global.dot(dir_0_to_1_local).acos();
+
+    let axis = Z_VEC;
+    for posit in &mut posits {
+        *posit = rotate_about_axis(*posit, anchor_0, axis, rotate_amt);
+    }
+    // Note that the ring should be mostly correct now, but adjust posits[1] to be exactly at anchor_1.
+    posits[1] = anchor_1;
 
     let mut atoms = Vec::with_capacity(6);
 
-    for (i, posit) in posits.enumerate() {
+    for (i, posit) in posits.into_iter().enumerate() {
         let serial_number = start_sn + i as u32;
 
         atoms.push(Atom {
@@ -192,12 +224,12 @@ fn ar_ring(anchor: Vec3, r_aligner: Vec3, start_sn: u32, start_i: usize) -> (Vec
         })
     }
 
-    let mut bonds = Vec::with_capacity(6);
-    for i in 0..6 {
-        let i_next = i % 6; // Wrap 6 to 0.
+    let mut bonds = Vec::with_capacity(n);
+    for i in 0..n {
+        let i_next = i % n; // Wrap 6 to 0.
 
         let i_0_global = start_i + i;
-        let i_1_global = start_i + (i + 1) % 6;
+        let i_1_global = start_i + (i + 1) % n;
 
         bonds.push(Bond {
             bond_type: BondType::Aromatic,

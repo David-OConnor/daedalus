@@ -128,8 +128,8 @@ fn find_appended_posit(
 }
 
 /// A button that adds atoms to the editor molecule from a template. Things can be single atoms, but we are
-/// currently using it for rings, functional groups etc.
-pub fn add_from_template_btn(
+/// currently using it for rings, functional groups, etc.
+pub fn add_from_template(
     mol: &mut MoleculeCommon,
     template: Template,
     anchor_i: usize,
@@ -138,72 +138,63 @@ pub fn add_from_template_btn(
     r_aligner: Vec3,
     start_sn: u32,
     start_i: usize,
-    ui: &mut Ui,
     redraw: &mut bool,
     rebuild_md: &mut bool,
-    abbrev: &str,
-    name: &str,
     state_ui: &mut StateUi,
     controls: &mut ControlScheme,
     manip_mode: ManipMode,
 ) {
-    if ui
-        .button(abbrev)
-        .on_hover_text(format!("Add a {name} at the current selection"))
-        .clicked()
-    {
-        let (atoms, bonds) = template.atoms_bonds(anchor, r_aligner, start_sn, start_i);
-        NEXT_ATOM_SN.fetch_add(atoms.len() as u32, Ordering::AcqRel);
+    let (atoms, bonds) = template.atoms_bonds(anchor, r_aligner, start_sn, start_i);
+    NEXT_ATOM_SN.fetch_add(atoms.len() as u32, Ordering::AcqRel);
 
-        let mut i_added = Vec::new(); // Used for populating H.
+    let mut i_added = Vec::new(); // Used for populating H.
 
-        for atom in &atoms {
-            mol.atoms.push(atom.clone());
-            i_added.push(mol.atoms.len() - 1);
-        }
-        for bond in bonds {
-            mol.bonds.push(bond);
-        }
-
-        // Add back the bond between this atom and the aligner atom.
-        mol.bonds.push(Bond {
-            bond_type: BondType::Single,
-            atom_0_sn: mol.atoms[r_aligner_i].serial_number,
-            atom_1_sn: mol.atoms[start_i].serial_number,
-            atom_0: r_aligner_i,
-            atom_1: start_i,
-            is_backbone: false,
-        });
-
-        mol.reset_posits();
-        mol.build_adjacency_list();
-
-        for (i, atom) in atoms.into_iter().enumerate() {
-            populate_hydrogens_on_atom(
-                mol,
-                i_added[i] - 1,
-                // atom.element,
-                &atom.force_field_type,
-                &mut Vec::new(),
-                state_ui,
-                &mut Default::default(),
-                manip_mode,
-            );
-        }
-
-        *controls = ControlScheme::Arc {
-            center: mol.centroid().into(),
-        };
-
-        // We are currently replacing the selected atom with the added group's anchor.
-        // So, remove it and its H atoms.
-        // todo: Fix this; both are causing crashes.
-        remove_hydrogens(mol, anchor_i); // Do this prior to removing the atom.
-        mol.remove_atom(anchor_i);
-
-        *redraw = true;
-        *rebuild_md = true;
+    for atom in &atoms {
+        mol.atoms.push(atom.clone());
+        i_added.push(mol.atoms.len() - 1);
     }
+    for bond in bonds {
+        mol.bonds.push(bond);
+    }
+
+    // Add back the bond between this atom and the aligner atom.
+    mol.bonds.push(Bond {
+        bond_type: BondType::Single,
+        atom_0_sn: mol.atoms[r_aligner_i].serial_number,
+        atom_1_sn: mol.atoms[start_i].serial_number,
+        atom_0: r_aligner_i,
+        atom_1: start_i,
+        is_backbone: false,
+    });
+
+    mol.reset_posits();
+    mol.build_adjacency_list();
+
+    for (i, atom) in atoms.into_iter().enumerate() {
+        populate_hydrogens_on_atom(
+            mol,
+            i_added[i] - 1,
+            // atom.element,
+            &atom.force_field_type,
+            &mut Vec::new(),
+            state_ui,
+            &mut Default::default(),
+            manip_mode,
+        );
+    }
+
+    *controls = ControlScheme::Arc {
+        center: mol.centroid().into(),
+    };
+
+    // We are currently replacing the selected atom with the added group's anchor.
+    // So, remove it and its H atoms.
+    // todo: Fix this; both are causing crashes.
+    remove_hydrogens(mol, anchor_i); // Do this prior to removing the atom.
+    mol.remove_atom(anchor_i);
+
+    *redraw = true;
+    *rebuild_md = true;
 }
 
 impl MolEditorState {
