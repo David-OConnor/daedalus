@@ -1,20 +1,21 @@
 //! An interface to dynamics library.
 
-use std::{
-    collections::{HashMap, HashSet},
-    time::Instant,
-};
-
 use bio_files::{AtomGeneric, create_bonds, md_params::ForceFieldParams};
 #[cfg(feature = "cuda")]
 use cudarc::driver::HostSlice;
 use dynamics::{
     ComputationDevice, FfMolType, MdConfig, MdOverrides, MdState, MolDynamics, ParamError,
-    params::FfParamSet, snapshot::Snapshot,
+    WaterInitTemplate, params::FfParamSet, snapshot::Snapshot,
 };
 use graphics::{EngineUpdates, EntityUpdate, Scene};
 use lin_alg::f64::Vec3;
+use std::path::Path;
+use std::{
+    collections::{HashMap, HashSet},
+    time::Instant,
+};
 
+use crate::drawing::draw_mol;
 use crate::{
     MdStateLocal, State,
     drawing::{draw_peptide, draw_water},
@@ -90,8 +91,19 @@ pub fn post_run_cleanup(state: &mut State, scene: &mut Scene, engine_updates: &m
             &snap.water_h1_posits,
             state.ui.visibility.hide_water,
         );
+
+        // Put this back if we wish to re-generate the water template.
+        // WaterInitTemplate::save(
+        //     &md.water,
+        //     (md.cell.bounds_low, md.cell.bounds_high),
+        //     Path::new("water.water_init_template"),
+        // )
+        // .unwrap();
+        // println!("\n Water init template saved.\n ")
     }
     draw_peptide(state, scene);
+    // todo: Draw other mols too?
+    // draw_mol();
 
     state.ui.current_snapshot = 0;
 

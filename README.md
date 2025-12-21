@@ -294,18 +294,16 @@ This application is written in rust, so it compiles normally using `cargo build 
 standalone executable.
 
 If you're not running on a machine with an Nvidia GPU or without the CUDA toolkit installed, append the
-`--no-default-features` to the build command. This will disable GPU support.
+`--no-default-features` to the build command. This will disable GPU support on the executable produced.
 
 #### Compiling with GPU support
 
 If compiling with GPU support, your compiling PC must have
-the [CUDA Toolkit, v13+](https://developer.nvidia.com/cuda-downloads) installed.
-You must set the environment var `LD_LIBARARY_PATH` (Linux) or `Path` (Windows) to your CUDA bin
-directory, e.g. `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0\bin`. You may also need the build tools
-containing `cl.exe` or similar in the path, e.g.:
+the [CUDA Toolkit, v13+](https://developer.nvidia.com/cuda-downloads) installed. You must set the environment var
+`LD_LIBARARY_PATH` (Linux) or `Path` (Windows) to your CUDA bin directory, e.g.
+`C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0\bin`. You may also need the build tools containing `cl.exe` or
+similar in the path, e.g.:
 `C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64`
-
-CUDA v13.0 or higher must be installed on the compiling machine, but is not required to run the program.
 
 ### Errata
 
@@ -320,3 +318,5 @@ CUDA v13.0 or higher must be installed on the compiling machine, but is not requ
 - Minimizing may pause molecular dynamics computations.
 - On some displays (Ones with pixel scaling), dragging the MD time slider may also move the camera. To workaround, click
   the slider instead of dragging.
+
+[//]: # (Wub from LabRats didn't dissaprove of the project name!)

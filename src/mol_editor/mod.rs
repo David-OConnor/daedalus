@@ -272,8 +272,9 @@ impl MolEditorState {
 
         self.mol.smiles = Some(self.mol.common.to_smiles());
 
+        self.move_to_origin();
         scene.input_settings.control_scheme = ControlScheme::Arc {
-            center: mol.common.centroid().into(),
+            center: Vec3F32::new_zero(),
         };
 
         // Clear all entities for non-editor molecules. And render the initial relaxation
@@ -291,6 +292,16 @@ impl MolEditorState {
 
     pub fn save_sdf(&self, path: &Path) -> io::Result<()> {
         Ok(())
+    }
+
+    fn move_to_origin(&mut self) {
+        {
+            let centroid = self.mol.common.centroid();
+            for posit in &mut self.mol.common.atom_posits {
+                *posit -= centroid;
+            }
+            self.mol.common.reset_posits();
+        }
     }
 
     /// Load the latest snapshot into atom positions, and update entities.
@@ -449,14 +460,19 @@ pub fn enter_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mu
         state.mol_editor.clear_mol();
     }
 
+    state.volatile.control_scheme_prev = scene.input_settings.control_scheme;
+
+    // Reset positions to be around the origin.
+    state.mol_editor.move_to_origin();
+    scene.input_settings.control_scheme = ControlScheme::Arc { center: arc_center };
+    println!("MOVED TO ORIGIN"); // todo temp
+
     // Select the first atom.
     state.ui.selection = if state.mol_editor.mol.common.atoms.is_empty() {
         Selection::None
     } else {
         Selection::AtomLig((0, 0))
     };
-
-    state.volatile.control_scheme_prev = scene.input_settings.control_scheme;
 
     state.volatile.primary_mode_cam = scene.camera.clone();
     scene.camera.position = Vec3F32::new(0., 0., -INIT_CAM_DIST);

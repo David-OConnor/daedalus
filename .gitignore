@@ -46,3 +46,5 @@ Cargo.lock
 
 # Orca files
 /orca_temp
+
+*.water_init_template
