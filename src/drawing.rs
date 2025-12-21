@@ -1153,11 +1153,17 @@ pub fn draw_mol(
             // If in atom sel mode, we color bonds normally above (The  half of each bond connected
             // to the selected atom). If in bond sel mode, we color the bond between two atoms below.
 
-            match ui.selection {
+            match &ui.selection {
                 Selection::BondLig((mol_i, bond_i))
                 | Selection::BondNucleicAcid((mol_i, bond_i))
                 | Selection::BondLipid((mol_i, bond_i)) => {
-                    if bond_i == i_bond {
+                    if *bond_i == i_bond {
+                        color_0 = COLOR_SELECTED;
+                        color_1 = COLOR_SELECTED;
+                    }
+                }
+                Selection::BondsLig((mol_i, bonds_i)) => {
+                    if bonds_i.contains(&i_bond) {
                         color_0 = COLOR_SELECTED;
                         color_1 = COLOR_SELECTED;
                     }

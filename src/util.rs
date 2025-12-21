@@ -413,10 +413,33 @@ pub fn orbit_center(state: &State) -> Vec3F32 {
             Selection::BondLig((i_mol, i_bond)) => {
                 let mol = &state.ligands[*i_mol];
                 let bond = &mol.common.bonds[*i_bond];
+
                 return ((mol.common.atom_posits[bond.atom_0]
                     + mol.common.atom_posits[bond.atom_1])
                     / 2.)
                     .into();
+            }
+            Selection::BondsLig((i_mol, is_bond)) => {
+                let mol = &state.ligands[*i_mol];
+
+                let mut ctr = Vec3F32::new_zero();
+                for i_bond in is_bond {
+                    if *i_bond >= mol.common.bonds.len() {
+                        eprintln!("Error: Bond out of bounds");
+                        return Vec3F32::new_zero();
+                    }
+
+                    let mut ctr = Vec3F32::new_zero();
+                    let bond = &mol.common.bonds[*i_bond];
+
+                    let bond_ctr: Vec3F32 = ((mol.common.atom_posits[bond.atom_0]
+                        + mol.common.atom_posits[bond.atom_1])
+                        / 2.)
+                        .into();
+
+                    ctr += bond_ctr
+                }
+                return ctr / is_bond.len() as f32;
             }
             Selection::BondNucleicAcid((i_mol, i_bond)) => {
                 let mol = &state.nucleic_acids[*i_mol];

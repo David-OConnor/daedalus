@@ -53,6 +53,18 @@ mod viridis_lut;
 // todo: Eval if there's another way or if you can remove this post a refactor
 // mod train;
 
+#[cfg(feature = "cuda")]
+use std::sync::Arc;
+use std::{
+    collections::{HashMap, HashSet},
+    env, fmt,
+    fmt::{Display, Formatter},
+    path::PathBuf,
+    process::Command,
+    sync::mpsc::Receiver,
+    time::Instant,
+};
+
 use bincode::{Decode, Encode};
 use bio_apis::{
     ReqError,
@@ -76,18 +88,6 @@ use lin_alg::{
 use mol_lig::MoleculeSmall;
 use mol_manip::MolManip;
 use molecule::MoleculePeptide;
-use std::fmt::Formatter;
-#[cfg(feature = "cuda")]
-use std::sync::Arc;
-use std::{
-    collections::{HashMap, HashSet},
-    env, fmt,
-    fmt::Display,
-    path::PathBuf,
-    process::Command,
-    sync::mpsc::Receiver,
-    time::Instant,
-};
 
 use crate::{
     lipid::{LipidShape, MoleculeLipid, load_lipid_templates},
@@ -600,6 +600,7 @@ pub enum Selection {
     AtomLipid((usize, usize)),
     BondPeptide(usize),
     BondLig((usize, usize)),
+    BondsLig((usize, Vec<usize>)),
     BondNucleicAcid((usize, usize)),
     BondLipid((usize, usize)),
 }

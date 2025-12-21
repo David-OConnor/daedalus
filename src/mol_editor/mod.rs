@@ -25,7 +25,6 @@ use na_seq::{
     Element::{Carbon, Hydrogen},
 };
 
-use crate::mol_manip::MolManip;
 use crate::{
     OperatingMode, Selection, State, StateUi, ViewSelLevel,
     drawing::{
@@ -36,7 +35,7 @@ use crate::{
     md::change_snapshot_helper,
     mol_editor,
     mol_lig::MoleculeSmall,
-    mol_manip::ManipMode,
+    mol_manip::{ManipMode, MolManip},
     molecule::{Atom, Bond, MolGenericRef, MolType},
     render::{
         ATOM_SHININESS, BALL_STICK_RADIUS, BALL_STICK_RADIUS_H, set_flashlight, set_static_light,
@@ -468,7 +467,6 @@ pub fn enter_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mu
     // Reset positions to be around the origin.
     state.mol_editor.move_to_origin();
     scene.input_settings.control_scheme = ControlScheme::Arc { center: arc_center };
-    println!("MOVED TO ORIGIN"); // todo temp
 
     // Select the first atom.
     state.ui.selection = if state.mol_editor.mol.common.atoms.is_empty() {

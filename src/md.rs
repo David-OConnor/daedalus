@@ -1,5 +1,11 @@
 //! An interface to dynamics library.
 
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+    time::Instant,
+};
+
 use bio_files::{AtomGeneric, create_bonds, md_params::ForceFieldParams};
 #[cfg(feature = "cuda")]
 use cudarc::driver::HostSlice;
@@ -9,16 +15,10 @@ use dynamics::{
 };
 use graphics::{EngineUpdates, EntityUpdate, Scene};
 use lin_alg::f64::Vec3;
-use std::path::Path;
-use std::{
-    collections::{HashMap, HashSet},
-    time::Instant,
-};
 
-use crate::drawing::draw_mol;
 use crate::{
     MdStateLocal, State,
-    drawing::{draw_peptide, draw_water},
+    drawing::{draw_mol, draw_peptide, draw_water},
     lipid::MoleculeLipid,
     mol_lig::MoleculeSmall,
     molecule::{MoleculeCommon, MoleculePeptide},

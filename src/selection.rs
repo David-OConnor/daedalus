@@ -238,7 +238,36 @@ pub fn find_selected_atom_or_bond(
                 match nearest.mol_type {
                     // todo: Rework this (with appropriate steps upstream). Get bonds along ray.
                     MolType::Peptide => Selection::BondPeptide(nearest.atom_i),
-                    MolType::Ligand => Selection::BondLig(indices),
+                    MolType::Ligand => {
+                        if shift_held {
+                            match &ui.selection {
+                                Selection::BondLig((_mol_i_prev, bond_i_prev)) => {
+                                    let updated = vec![*bond_i_prev];
+                                    multi_sel_helper(
+                                        updated,
+                                        indices.0,
+                                        indices.1,
+                                        MolType::Ligand,
+                                        bond_mode,
+                                    )
+                                }
+                                Selection::BondsLig((_mol_i_prev, atoms_i_prev)) => {
+                                    let updated = atoms_i_prev.clone();
+                                    multi_sel_helper(
+                                        updated,
+                                        indices.0,
+                                        indices.1,
+                                        MolType::Ligand,
+                                        bond_mode,
+                                    )
+                                }
+
+                                _ => Selection::BondLig(indices),
+                            }
+                        } else {
+                            Selection::BondLig(indices)
+                        }
+                    }
                     MolType::NucleicAcid => Selection::BondNucleicAcid(indices),
                     MolType::Lipid => Selection::BondLipid(indices),
                     _ => unreachable!(),
@@ -255,6 +284,7 @@ pub fn find_selected_atom_or_bond(
                                         indices.0,
                                         indices.1,
                                         MolType::Peptide,
+                                        bond_mode,
                                     )
                                 }
                                 Selection::AtomsPeptide(atoms_i) => {
@@ -264,6 +294,7 @@ pub fn find_selected_atom_or_bond(
                                         indices.0,
                                         indices.1,
                                         MolType::Peptide,
+                                        bond_mode,
                                     )
                                 }
                                 _ => Selection::AtomPeptide(nearest.atom_i),
@@ -277,11 +308,23 @@ pub fn find_selected_atom_or_bond(
                             match &ui.selection {
                                 Selection::AtomLig((_mol_i_prev, atom_i_prev)) => {
                                     let updated = vec![*atom_i_prev];
-                                    multi_sel_helper(updated, indices.0, indices.1, MolType::Ligand)
+                                    multi_sel_helper(
+                                        updated,
+                                        indices.0,
+                                        indices.1,
+                                        MolType::Ligand,
+                                        bond_mode,
+                                    )
                                 }
                                 Selection::AtomsLig((_mol_i_prev, atoms_i_prev)) => {
                                     let updated = atoms_i_prev.clone();
-                                    multi_sel_helper(updated, indices.0, indices.1, MolType::Ligand)
+                                    multi_sel_helper(
+                                        updated,
+                                        indices.0,
+                                        indices.1,
+                                        MolType::Ligand,
+                                        bond_mode,
+                                    )
                                 }
 
                                 _ => Selection::AtomLig(indices),
@@ -717,13 +760,17 @@ pub(crate) fn handle_selection_attempt(
     };
 
     match selection {
-        Selection::AtomPeptide(_) | Selection::AtomsPeptide(_) | Selection::BondPeptide(_) => {
+        Selection::AtomPeptide(_)
+        | Selection::AtomsPeptide(_)
+        | Selection::BondPeptide(_)
+        | Selection::Residue(_) => {
             let mol_i = 0;
             state.volatile.active_mol = Some((MolType::Peptide, mol_i));
         }
         Selection::AtomLig((mol_i, _))
         | Selection::AtomsLig((mol_i, _))
-        | Selection::BondLig((mol_i, _)) => {
+        | Selection::BondLig((mol_i, _))
+        | Selection::BondsLig((mol_i, _)) => {
             state.volatile.active_mol = Some((MolType::Ligand, mol_i));
         }
         Selection::AtomNucleicAcid((mol_i, _)) | Selection::BondNucleicAcid((mol_i, _)) => {
@@ -890,13 +937,14 @@ pub fn handle_selection_attempt_mol_editor(
 fn multi_sel_helper(
     mut updated: Vec<usize>,
     mol_i: usize,
-    atom_i: usize,
+    atom_or_bond_i: usize,
     mol_type: MolType,
+    bond_mode: bool,
 ) -> Selection {
-    if updated.contains(&atom_i) {
-        updated.retain(|idx| idx != &atom_i);
+    if updated.contains(&atom_or_bond_i) {
+        updated.retain(|idx| idx != &atom_or_bond_i);
     } else {
-        updated.push(atom_i);
+        updated.push(atom_or_bond_i);
     }
 
     // todo: We should handle the case where the mol i isn't from the previous mol.
@@ -906,14 +954,26 @@ fn multi_sel_helper(
         1 => {
             let result = (mol_i, updated[0]);
             match mol_type {
-                MolType::Ligand => Selection::AtomLig(result),
+                MolType::Ligand => {
+                    if bond_mode {
+                        Selection::BondLig(result)
+                    } else {
+                        Selection::AtomLig(result)
+                    }
+                }
                 MolType::Peptide => Selection::AtomPeptide(updated[0]),
                 _ => unimplemented!(),
             }
         }
         // Multi-selection variants
         _ => match mol_type {
-            MolType::Ligand => Selection::AtomsLig((mol_i, updated)),
+            MolType::Ligand => {
+                if bond_mode {
+                    Selection::BondsLig((mol_i, updated))
+                } else {
+                    Selection::AtomsLig((mol_i, updated))
+                }
+            }
             MolType::Peptide => Selection::AtomsPeptide(updated),
             _ => unimplemented!(),
         },

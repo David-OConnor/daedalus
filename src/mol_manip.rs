@@ -2,12 +2,6 @@
 //! This is for both primary mode, and the mol editor. In the latter, it
 //! can move individual atoms, and rotate parts of molecules around bonds.
 
-use crate::{
-    OperatingMode, Selection, State, StateVolatile,
-    inputs::{SENS_MOL_ROT_MOUSE, SENS_MOL_ROT_SCROLL},
-    mol_editor,
-    molecule::{MolType, MoleculeCommon},
-};
 use graphics::{Camera, ControlScheme, FWD_VEC, RIGHT_VEC, Scene, UP_VEC, event::MouseScrollDelta};
 use lin_alg::{
     f32::{Quaternion, Vec3},
@@ -15,6 +9,13 @@ use lin_alg::{
     map_linear,
 };
 use na_seq::Element;
+
+use crate::{
+    OperatingMode, Selection, State, StateVolatile,
+    inputs::{SENS_MOL_ROT_MOUSE, SENS_MOL_ROT_SCROLL},
+    mol_editor,
+    molecule::{MolType, MoleculeCommon},
+};
 
 /// Blender-style mouse dragging of the molecule. For movement, creates a plane of the camera view,
 /// at the molecule's depth. The mouse cursor projects to this plane, moving the molecule

@@ -342,6 +342,27 @@ pub(in crate::ui) fn selected_data(
                     ui,
                 );
             }
+            Selection::BondsLig((mol_i, bond_is)) => {
+                if *mol_i >= ligands.len() {
+                    return;
+                }
+                let mol = &ligands[*mol_i];
+
+                for bond_i in bond_is {
+                    if *bond_i >= mol.common.bonds.len() {
+                        return;
+                    }
+
+                    let bond = &mol.common.bonds[*bond_i];
+                    disp_bond_data(
+                        bond,
+                        &mol.common.atoms,
+                        MolType::Ligand,
+                        &state.ff_param_set,
+                        ui,
+                    );
+                }
+            }
             Selection::BondNucleicAcid((mol_i, bond_i)) => {
                 if *mol_i >= nucleic_acids.len() {
                     return;
