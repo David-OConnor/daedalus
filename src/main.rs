@@ -217,6 +217,7 @@ struct SceneFlags {
     pub update_ss_mesh: bool,
     /// Solvent-accessible surface.
     pub update_sas_mesh: bool,
+    pub update_sas_coloring: bool,
     pub ss_mesh_created: bool,
     pub sas_mesh_created: bool,
     pub make_density_iso_mesh: bool,
@@ -294,8 +295,11 @@ struct StateVolatile {
     orbit_center: Option<(MolType, usize)>,
     /// ORCA is available on the system path.
     orca_avail: bool,
-    /// Per-protein. Computed as required; None before then.
-    hydropathy_data: Option<Vec<Vec<(usize, usize)>>>,
+    // /// Per-protein. Computed as required; None before then.
+    // hydropathy_data: Option<Vec<Vec<(usize, usize)>>>,
+    // /// If present, there must be one per vertex. Rebuild this whenever we
+    // /// rebuild this mesh.
+    // sa_surface_mesh_colors: Option<Vec<(u8, u8, u8)>>,
 }
 
 impl Default for StateVolatile {
@@ -323,8 +327,9 @@ impl Default for StateVolatile {
             mol_editing: Default::default(),
             md_local: Default::default(),
             orbit_center: None,
-            orca_avail: false,
-            hydropathy_data: Default::default(),
+            orca_avail: Default::default(),
+            // hydropathy_data: Default::default(),
+            // sa_surface_mesh_colors: Default::default(),
         }
     }
 }
@@ -551,6 +556,9 @@ struct StateUi {
     popup: PopupState,
     md: StateUiMd,
     ph_input: String,
+    /// If true, the surface mesh is colored according to the atom or residue colors closest to
+    /// it. (E.g. CPK, by partial charge, by hydrophobicity etc). If false, it's a solid color.
+    color_surface_mesh: bool,
 }
 
 /// For showing and hiding UI sections.

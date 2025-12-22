@@ -132,8 +132,8 @@ fn find_appended_posit(
 pub fn add_from_template(
     mol: &mut MoleculeCommon,
     template: Template,
-    anchor_i: usize,
-    anchor: Vec3,
+    anchor_is: &[usize],
+    // anchors: &[Vec3], // 0 or 1.
     r_aligner_i: usize,
     r_aligner: Vec3,
     start_sn: u32,
@@ -144,7 +144,11 @@ pub fn add_from_template(
     controls: &mut ControlScheme,
     manip_mode: ManipMode,
 ) {
-    let (atoms, bonds) = template.atoms_bonds(anchor, r_aligner, start_sn, start_i);
+    let anchors = anchor_is
+        .iter()
+        .map(|i| mol.atoms[*i].posit)
+        .collect::<Vec<_>>();
+    let (atoms, bonds) = template.atoms_bonds(&anchors, r_aligner, start_sn, start_i);
     NEXT_ATOM_SN.fetch_add(atoms.len() as u32, Ordering::AcqRel);
 
     let mut i_added = Vec::new(); // Used for populating H.
@@ -157,15 +161,51 @@ pub fn add_from_template(
         mol.bonds.push(bond);
     }
 
-    // Add back the bond between this atom and the aligner atom.
-    mol.bonds.push(Bond {
-        bond_type: BondType::Single,
-        atom_0_sn: mol.atoms[r_aligner_i].serial_number,
-        atom_1_sn: mol.atoms[start_i].serial_number,
-        atom_0: r_aligner_i,
-        atom_1: start_i,
-        is_backbone: false,
-    });
+    if !matches!(template, Template::AromaticRing | Template::PentaRing) {
+        // Add back the bond between this atom and the aligner atom.
+        mol.bonds.push(Bond {
+            bond_type: BondType::Single,
+            atom_0_sn: mol.atoms[r_aligner_i].serial_number,
+            atom_1_sn: mol.atoms[start_i].serial_number,
+            atom_0: r_aligner_i,
+            atom_1: start_i,
+            is_backbone: false,
+        });
+    } else {
+        if anchor_is.len() == 2 {
+            mol.bonds.push(Bond {
+                bond_type: BondType::Single,
+                atom_0_sn: mol.atoms[anchor_is[0]].serial_number,
+                atom_1_sn: mol.atoms[start_i + 1].serial_number,
+                atom_0: anchor_is[0],
+                atom_1: start_i + 1,
+                is_backbone: false,
+            });
+
+            mol.bonds.push(Bond {
+                bond_type: BondType::Single,
+                atom_0_sn: mol.atoms[anchor_is[1]].serial_number,
+                atom_1_sn: mol.atoms[start_i + 1].serial_number,
+                atom_0: anchor_is[1],
+                atom_1: start_i + 1,
+                is_backbone: false,
+            });
+        } else {
+            mol.bonds.push(Bond {
+                bond_type: BondType::Single,
+                atom_0_sn: mol.atoms[anchor_is[0]].serial_number,
+                atom_1_sn: mol.atoms[start_i].serial_number,
+                atom_0: anchor_is[0],
+                atom_1: start_i,
+                is_backbone: false,
+            });
+        }
+
+        // // Remove the anchor atoms, and update the bonds to connect them to the rings.
+        // for &anchor_i in anchor_is {
+        //     mol.remove_atom(anchor_i);
+        // }
+    }
 
     mol.reset_posits();
     mol.build_adjacency_list();
@@ -183,15 +223,25 @@ pub fn add_from_template(
         );
     }
 
+    // if matches!(template, Template::AromaticRing | Template::PentaRing) {
+    //     // Remove the anchor atoms, and update the bonds to connect them to the rings.
+    //     for &anchor_i in anchor_is {
+    //         mol.remove_atom(anchor_i);
+    //     }
+    // }
+
     *controls = ControlScheme::Arc {
         center: mol.centroid().into(),
     };
 
     // We are currently replacing the selected atom with the added group's anchor.
     // So, remove it and its H atoms.
-    // todo: Fix this; both are causing crashes.
-    remove_hydrogens(mol, anchor_i); // Do this prior to removing the atom.
-    mol.remove_atom(anchor_i);
+
+    for &anchor_i in anchor_is {
+        // todo: Fix this; both are causing crashes.
+        remove_hydrogens(mol, anchor_i); // Do this prior to removing the atom.
+        mol.remove_atom(anchor_i);
+    }
 
     *redraw = true;
     *rebuild_md = true;

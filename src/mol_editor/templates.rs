@@ -20,6 +20,15 @@ const POSITS_AR_RING: [Vec3; 6] = [
     Vec3::new(-0.6985, -1.2090, 0.0),
 ];
 
+// todo temp/placeholder
+const POSITS_PENT_RING: [Vec3; 5] = [
+    Vec3::new_zero(),
+    Vec3::new(-0.6985, 1.2090, 0.0),
+    Vec3::new(-2.0955, 1.2090, 0.0),
+    Vec3::new(-2.7940, 0.0000, 0.0),
+    Vec3::new(-2.0955, -1.2090, 0.0),
+];
+
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Template {
     /// Carboxylic acid
@@ -32,16 +41,16 @@ pub enum Template {
 impl Template {
     pub(in crate::mol_editor) fn atoms_bonds(
         &self,
-        anchor: Vec3,
-        r_aligner: Vec3,
+        anchors: &[Vec3], // Len = 0 or 1.
+        r_aligner: Vec3,  // todo: Clarify A/R. Currently for non-rings
         start_sn: u32,
         start_i: usize,
     ) -> (Vec<Atom>, Vec<Bond>) {
         match self {
-            Self::Cooh => cooh_group(anchor, r_aligner, start_sn, start_i),
-            Self::Amide => amide_group(anchor, r_aligner, start_sn, start_i),
-            Self::AromaticRing => ring(anchor, r_aligner, start_sn, start_i, &POSITS_AR_RING),
-            Self::PentaRing => ring(anchor, r_aligner, start_sn, start_i, &POSITS_AR_RING), // todo temp
+            Self::Cooh => cooh_group(anchors[0], r_aligner, start_sn, start_i),
+            Self::Amide => amide_group(anchors[0], r_aligner, start_sn, start_i),
+            Self::AromaticRing => ring(anchors, start_sn, start_i, &POSITS_AR_RING),
+            Self::PentaRing => ring(anchors, start_sn, start_i, &POSITS_PENT_RING),
             _ => Default::default(),
         }
     }
@@ -184,8 +193,7 @@ fn rotate_about_axis(posit: Vec3, pivot: Vec3, axis: Vec3, angle: f64) -> Vec3 {
 // fn ar_ring(anchor: Vec3, orientation: Quaternion, start_sn: u32, start_i: usize) -> (Vec<Atom>, Vec<Bond>) {
 // fn ar_ring(anchor: Vec3, r_aligner: Vec3, start_sn: u32, start_i: usize) -> (Vec<Atom>, Vec<Bond>) {
 fn ring(
-    anchor_0: Vec3,
-    anchor_1: Vec3,
+    anchors: &[Vec3],
     start_sn: u32,
     start_i: usize,
     posits: &[Vec3],
@@ -193,26 +201,35 @@ fn ring(
     // todo: Create this algorithmically from number of points and bond len?
     let n = posits.len();
 
-    // Move the ring to the anchor. (Assumes point 0 is the 0 vec)
-    let mut posits: Vec<_> = posits.iter().map(|p| *p + anchor_0).collect();
+    // Move the ring to anchor 0. (Assumes point 0 is the 0 vec)
+    let mut posits: Vec<_> = posits.iter().map(|p| *p + anchors[0]).collect();
 
-    // Rotate the ring so that point 1 is at anchor 1.
-    let dir_0_to_1_local = (posits[1] - posits[0]).to_normalized();
-    let dir_0_to_1_global = (anchor_1 - anchor_0).to_normalized();
+    if anchors.len() == 2 {
+        // Rotate the ring so that point 1 is at anchor 1.
+        let dir_0_to_1_local = (posits[1] - posits[0]).to_normalized();
+        let dir_0_to_1_global = (anchors[1] - anchors[0]).to_normalized();
 
-    // let rotator = Quaternion::from_unit_vecs(dir_0_to_1_local, dir_0_to_1_global);
-    let rotate_amt = dir_0_to_1_global.dot(dir_0_to_1_local).acos();
+        // let rotator = Quaternion::from_unit_vecs(dir_0_to_1_local, dir_0_to_1_global);
+        let rotate_amt = dir_0_to_1_global.dot(dir_0_to_1_local).acos();
 
-    let axis = Z_VEC;
-    for posit in &mut posits {
-        *posit = rotate_about_axis(*posit, anchor_0, axis, rotate_amt);
+        let axis = Z_VEC;
+        for posit in &mut posits {
+            *posit = rotate_about_axis(*posit, anchors[0], axis, -rotate_amt);
+        }
+        // Note that the ring should be mostly correct now, but adjust posits[1] to be exactly at anchor_1.
+        posits[1] = anchors[0];
     }
-    // Note that the ring should be mostly correct now, but adjust posits[1] to be exactly at anchor_1.
-    posits[1] = anchor_1;
 
     let mut atoms = Vec::with_capacity(6);
 
     for (i, posit) in posits.into_iter().enumerate() {
+        if i == 0 {
+            continue; // anchor 0
+        }
+        if anchors.len() == 2 && i == 1 {
+            continue; // anchor 1
+        }
+
         let serial_number = start_sn + i as u32;
 
         atoms.push(Atom {
@@ -226,6 +243,14 @@ fn ring(
 
     let mut bonds = Vec::with_capacity(n);
     for i in 0..n {
+        // todo.. hmmm
+        if i == 0 {
+            continue; // anchor 0
+        }
+        if anchors.len() == 2 && i == 1 {
+            continue; // anchor 1
+        }
+
         let i_next = i % n; // Wrap 6 to 0.
 
         let i_0_global = start_i + i;

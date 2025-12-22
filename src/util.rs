@@ -18,20 +18,24 @@ use lin_alg::{f32::Vec3 as Vec3F32, f64::Vec3};
 use na_seq::{AaIdent, Element};
 
 use crate::{
-    CamSnapshot, OperatingMode, PREFS_SAVE_INTERVAL, Selection, State, StateUi, ViewSelLevel,
-    cam_misc,
-    drawing::{EntityClass, MoleculeView, draw_density_point_cloud, draw_peptide},
+    CamSnapshot, OperatingMode, PREFS_SAVE_INTERVAL, ResColoring, Selection, State, StateUi,
+    ViewSelLevel, cam_misc,
+    drawing::{
+        COLOR_AA_NON_RESIDUE, EntityClass, HYDROPHOBICITY_MAX, HYDROPHOBICITY_MIN, MoleculeView,
+        color_viridis, color_viridis_float, draw_density_point_cloud, draw_peptide,
+    },
     drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
     mol_lig::MoleculeSmall,
     mol_manip::ManipMode,
     molecule::{
         Atom, Bond, MoGenericRefMut, MolGenericRef, MolType, MoleculeGeneric, MoleculePeptide,
-        Residue,
+        Residue, aa_color,
     },
     prefs::OpenType,
     reflection,
     render::{Color, MESH_SECONDARY_STRUCTURE, MESH_SOLVENT_SURFACE, set_flashlight},
     ribbon_mesh::build_cartoon_mesh,
+    sa_surface,
     sa_surface::make_sas_mesh,
 };
 
@@ -792,8 +796,10 @@ pub fn handle_scene_flags(
 
         if let Some(mol) = &state.peptide {
             let atoms: Vec<&_> = mol.common.atoms.iter().filter(|a| !a.hetero).collect();
+
             scene.meshes[MESH_SOLVENT_SURFACE] =
                 make_sas_mesh(&atoms, state.to_save.sa_surface_precision);
+            sa_surface::update_sas_mesh_coloring(mol, &state.ui, &mut scene.meshes, engine_updates);
 
             // We draw the molecule here
             if matches!(
@@ -811,6 +817,11 @@ pub fn handle_scene_flags(
 
             engine_updates.meshes = true;
         }
+    }
+
+    if state.volatile.flags.update_sas_coloring && let Some(mol) = &state.peptide {
+        sa_surface::update_sas_mesh_coloring(mol, &state.ui, &mut scene.meshes, engine_updates);
+        state.volatile.flags.update_sas_coloring = false;
     }
 }
 
@@ -1338,3 +1349,26 @@ pub fn get_computation_device() -> (ComputationDevice, Option<CudaFunction>) {
 //
 //     Ok(result)
 // }
+
+pub fn res_color(
+    res: &Residue,
+    res_coloring: ResColoring,
+    atom_res: Option<usize>,
+    aa_count: usize,
+) -> (f32, f32, f32) {
+    match &res.res_type {
+        ResidueType::AminoAcid(aa) => match res_coloring {
+            ResColoring::AminoAcid => aa_color(*aa),
+            ResColoring::Position => match atom_res {
+                Some(res_i) => color_viridis(res_i, 0, aa_count),
+                None => aa_color(*aa),
+            },
+            ResColoring::Hydrophobicity => {
+                // todo: Use hte `hydropathy_doolittle` windowing fn instead?
+                // todo: That may be overkill, or used as a smoothing technique.
+                color_viridis_float(aa.hydropathicity(), HYDROPHOBICITY_MIN, HYDROPHOBICITY_MAX)
+            }
+        },
+        _ => COLOR_AA_NON_RESIDUE,
+    }
+}

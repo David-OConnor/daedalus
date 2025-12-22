@@ -2,11 +2,20 @@
 //! to a molecule. Used for drawing *surface*, *dots*, and related meshes. Related to the van der Waals
 //! radius.
 
-use graphics::{Mesh, Vertex};
-use lin_alg::f32::Vec3;
+use std::{collections::HashMap, time::Instant};
+
+use graphics::{EngineUpdates, Mesh, Vertex};
+use lin_alg::f32::{Vec3, Vec3 as Vec3F32};
 use mcubes::{MarchingCubes, MeshSide};
 
-use crate::molecule::Atom;
+use crate::{
+    ResColoring, StateUi, ViewSelLevel,
+    drawing::{CHARGE_MAP_MAX, CHARGE_MAP_MIN, SAS_ISO_OPACITY, color_viridis_float},
+    molecule::{Atom, MoleculePeptide},
+    render::MESH_SOLVENT_SURFACE,
+    util::res_color,
+};
+use crate::drawing::MoleculeView;
 
 const SOLVENT_RAD: f32 = 1.4; // water probe
 
@@ -137,4 +146,242 @@ pub fn make_sas_mesh(atoms: &[&Atom], mut precision: f32) -> Mesh {
         indices: mc_mesh.indices,
         material: 0,
     }
+}
+
+/// We use this to apply coloring to SAS meshes based on the atoms and residues near them.
+pub fn update_sas_mesh_coloring_(mol: &MoleculePeptide, state_ui: &StateUi, meshes: &mut [Mesh]) {
+    let start = Instant::now();
+    println!("Loading SAS mesh coloring...");
+
+    let opacity = (SAS_ISO_OPACITY * 255.) as u8;
+
+    // todo: We should use a neighbor algorithm too; could result in big speedups.
+
+    // Optimization: Pre-select atoms near the surface, to reduce the number of distances we compute.
+    let mut atoms_near_surface = Vec::new();
+    for (i, atom) in mol.common.atoms.iter().enumerate() {
+        atoms_near_surface.push(i); // todo temp
+    }
+
+    for vertex in &mut meshes[MESH_SOLVENT_SURFACE].vertices {
+        // todo: This is slow and crude; find a better way! Grouping, neighbors etc.
+        let mut closest_atom_dist = f32::INFINITY;
+        let mut closest_atom = None;
+
+        // for (i, atom) in atoms_near_surface.iter().enumerate() {}
+        for i in &atoms_near_surface {
+            let atom = &mol.common.atoms[*i];
+            let p: Vec3F32 = atom.posit.into();
+            let dist = (p - Vec3F32::from_slice(&vertex.position).unwrap()).magnitude_squared();
+            if dist < closest_atom_dist {
+                closest_atom_dist = dist;
+                closest_atom = Some(i);
+            }
+        }
+
+        // todo: Once this is working, apply other coloring schemes.
+        if let Some(i) = closest_atom {
+            let (r, g, b) = match state_ui.view_sel_level {
+                ViewSelLevel::Residue => {
+                    let atom = &mol.common.atoms[*i];
+                    let aa_count = 40; // todo temp!!
+                    let res = &mol.residues[atom.residue.unwrap()];
+
+                    res_color(res, state_ui.res_coloring, atom.residue, aa_count)
+                }
+                _ => {
+                    if state_ui.atom_color_by_charge {
+                        if let Some(q) = mol.common.atoms[*i].partial_charge {
+                            color_viridis_float(q, CHARGE_MAP_MIN, CHARGE_MAP_MAX)
+                        } else {
+                            (0., 0., 0.)
+                        }
+                    } else {
+                        (0., 0., 0.)
+                    }
+                }
+            };
+
+            vertex.color = Some((
+                (r * 255.) as u8,
+                (g * 255.) as u8,
+                (b * 255.) as u8,
+                opacity,
+            ));
+        }
+    }
+
+    let elapsed = start.elapsed().as_millis();
+    println!("Colors loaded in {elapsed} ms");
+}
+
+// todo: The optimizations are LLM mess
+
+fn cell_key(p: Vec3F32, cell_size: f32) -> (i32, i32, i32) {
+    let inv = 1.0 / cell_size;
+    (
+        (p.x * inv).floor() as i32,
+        (p.y * inv).floor() as i32,
+        (p.z * inv).floor() as i32,
+    )
+}
+
+/// We use this to apply coloring to SAS meshes based on the atoms and residues near them.
+pub fn update_sas_mesh_coloring(
+    mol: &MoleculePeptide,
+    state_ui: &StateUi,
+    meshes: &mut [Mesh],
+    engine_updates: &mut EngineUpdates,
+) {
+    let start = Instant::now();
+    println!("Loading SAS mesh coloring...");
+
+    let opacity = (SAS_ISO_OPACITY * 255.) as u8;
+
+    // Tune these. Units should match your coordinate system (often Å).
+    const NEAR_SURFACE_CUTOFF: f32 = 8.0; // atom is "near surface" if within this distance of any SAS vertex
+    const GRID_CELL_SIZE: f32 = 6.0; // usually ~= cutoff; larger -> fewer cells, more candidates per cell
+
+    // --- Build grid of SAS vertices (positions only) ---
+    let mut sas_grid: HashMap<(i32, i32, i32), Vec<Vec3F32>> = HashMap::new();
+    {
+        let sas_mesh = &meshes[MESH_SOLVENT_SURFACE];
+        for v in &sas_mesh.vertices {
+            let vp = Vec3F32::from_slice(&v.position).unwrap();
+            let k = cell_key(vp, GRID_CELL_SIZE);
+            sas_grid.entry(k).or_default().push(vp);
+        }
+    }
+
+    // --- Optimization: Pre-select atoms near the surface ---
+    let mut atoms_near_surface = Vec::new();
+    let cutoff2 = NEAR_SURFACE_CUTOFF * NEAR_SURFACE_CUTOFF;
+
+    for (i, atom) in mol.common.atoms.iter().enumerate() {
+        let ap: Vec3F32 = atom.posit.into();
+        let (cx, cy, cz) = cell_key(ap, GRID_CELL_SIZE);
+
+        let mut near = false;
+
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                for dz in -1..=1 {
+                    if let Some(points) = sas_grid.get(&(cx + dx, cy + dy, cz + dz)) {
+                        for &sp in points {
+                            if (sp - ap).magnitude_squared() <= cutoff2 {
+                                near = true;
+                                break;
+                            }
+                        }
+                    }
+                    if near {
+                        break;
+                    }
+                }
+                if near {
+                    break;
+                }
+            }
+            if near {
+                break;
+            }
+        }
+
+        if near {
+            atoms_near_surface.push(i);
+        }
+    }
+
+    // --- Build grid of near-surface atoms (store indices) ---
+    let mut atom_grid: HashMap<(i32, i32, i32), Vec<usize>> = HashMap::new();
+    for &i in &atoms_near_surface {
+        let ap: Vec3F32 = mol.common.atoms[i].posit.into();
+        let k = cell_key(ap, GRID_CELL_SIZE);
+        atom_grid.entry(k).or_default().push(i);
+    }
+
+    // --- Color SAS vertices by nearest near-surface atom ---
+    for vertex in &mut meshes[MESH_SOLVENT_SURFACE].vertices {
+        if !state_ui.color_surface_mesh {
+            vertex.color = None;
+            continue;
+        }
+
+        let vp = Vec3F32::from_slice(&vertex.position).unwrap();
+        let (cx, cy, cz) = cell_key(vp, GRID_CELL_SIZE);
+
+        let mut closest_atom_dist = f32::INFINITY;
+        let mut closest_atom = None;
+
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                for dz in -1..=1 {
+                    if let Some(cands) = atom_grid.get(&(cx + dx, cy + dy, cz + dz)) {
+                        for &i in cands {
+                            let ap: Vec3F32 = mol.common.atoms[i].posit.into();
+                            let dist = (ap - vp).magnitude_squared();
+                            if dist < closest_atom_dist {
+                                closest_atom_dist = dist;
+                                closest_atom = Some(i);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fallback: if the local neighborhood is empty (rare if GRID_CELL_SIZE is sensible),
+        // do a full scan over the reduced set so you still color everything correctly.
+        if closest_atom.is_none() {
+            for &i in &atoms_near_surface {
+                let ap: Vec3F32 = mol.common.atoms[i].posit.into();
+                let dist = (ap - vp).magnitude_squared();
+                if dist < closest_atom_dist {
+                    closest_atom_dist = dist;
+                    closest_atom = Some(i);
+                }
+            }
+        }
+
+        if let Some(i) = closest_atom {
+            let (r, g, b, a) = match state_ui.view_sel_level {
+                ViewSelLevel::Residue => {
+                    let atom = &mol.common.atoms[i];
+                    let aa_count = 40; // todo temp!!
+                    let res = &mol.residues[atom.residue.unwrap()];
+                    let (r, g, b) = res_color(res, state_ui.res_coloring, atom.residue, aa_count);
+
+                    (r, g, b, opacity)
+                }
+                _ => {
+                    if state_ui.atom_color_by_charge {
+                        if let Some(q) = mol.common.atoms[i].partial_charge {
+                            let (r, g, b) = color_viridis_float(q, CHARGE_MAP_MIN, CHARGE_MAP_MAX);
+                            (r, g, b, opacity)
+                        } else {
+                            (0., 0., 0., 0)
+                        }
+                    } else {
+                        (0., 0., 0., 0)
+                    }
+                }
+            };
+
+            // Note: If opacity (a) is 0, the engine will use the entity color, and ignore vertex color.
+            vertex.color = Some((
+                (r * 255.) as u8,
+                (g * 255.) as u8,
+                (b * 255.) as u8,
+                a,
+            ));
+        }
+    }
+
+    engine_updates.meshes = true;
+
+    println!(
+        "SAS mesh coloring done: {} atoms near surface, elapsed {:?}",
+        atoms_near_surface.len(),
+        start.elapsed()
+    );
 }

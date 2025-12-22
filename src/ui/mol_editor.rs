@@ -495,94 +495,100 @@ fn edit_tools(
             redraw,
             &mut rebuild_md,
         );
-        if rebuild_md {
-            sync_md(state);
-        }
-        return;
+        // if rebuild_md {
+        //     sync_md(state);
+        // }
+        // return;
     }
 
-    section_box().show(ui, |ui| {
-        if ui
-            .button("Add Atom")
-            .on_hover_text("(Hotkey: Tab) Add a Carbon atom. (Can change to other elements after)")
-            .clicked()
-        {
-            for atom_i in &selected_idxs {
-                add_atom(
-                    &mut state.mol_editor.mol.common,
-                    &mut scene.entities,
-                    *atom_i,
-                    Carbon,
-                    BondType::Single,
-                    Some("c".to_owned()), // todo
-                    Some(1.4),            // todo
-                    0.13,                 // todo
-                    &mut state.ui,
-                    engine_updates,
-                    &mut scene.input_settings.control_scheme,
-                    state.volatile.mol_manip.mode,
-                );
-            }
-            rebuild_md = true;
-        }
-
-        if ui
-            .button("Add, sel atom")
-            .on_hover_text("Add a Carbon atom, and select it. Useful for quickly adding chains.")
-            .clicked()
-        {
-            for atom_i in &selected_idxs {
-                let new_i = add_atom(
-                    &mut state.mol_editor.mol.common,
-                    &mut scene.entities,
-                    *atom_i,
-                    Carbon,
-                    BondType::Single,
-                    Some("ca".to_owned()), // todo
-                    Some(1.4),             // todo
-                    0.13,                  // todo
-                    &mut state.ui,
-                    engine_updates,
-                    &mut scene.input_settings.control_scheme,
-                    state.volatile.mol_manip.mode,
-                );
-
-                if let Some(i) = new_i {
-                    state.ui.selection = Selection::AtomLig((mol_i, i));
-
-                    // `add_atom` handles individual redrawing, but here we need something, or the previous
-                    // atom will still show as the selected color.
-                    // todo better. (todo: More specific than this redraw all?)
-                    mol_editor::redraw(
+    if !bond_mode {
+        section_box().show(ui, |ui| {
+            if ui
+                .button("Add Atom")
+                .on_hover_text(
+                    "(Hotkey: Tab) Add a Carbon atom. (Can change to other elements after)",
+                )
+                .clicked()
+            {
+                for atom_i in &selected_idxs {
+                    add_atom(
+                        &mut state.mol_editor.mol.common,
                         &mut scene.entities,
-                        &state.mol_editor.mol,
-                        &state.ui,
+                        *atom_i,
+                        Carbon,
+                        BondType::Single,
+                        Some("c".to_owned()), // todo
+                        Some(1.4),            // todo
+                        0.13,                 // todo
+                        &mut state.ui,
+                        engine_updates,
+                        &mut scene.input_settings.control_scheme,
                         state.volatile.mol_manip.mode,
                     );
                 }
+                rebuild_md = true;
             }
-            rebuild_md = true;
-        }
 
-        ui.add_space(COL_SPACING / 2.);
+            if ui
+                .button("Add, sel atom")
+                .on_hover_text(
+                    "Add a Carbon atom, and select it. Useful for quickly adding chains.",
+                )
+                .clicked()
+            {
+                for atom_i in &selected_idxs {
+                    let new_i = add_atom(
+                        &mut state.mol_editor.mol.common,
+                        &mut scene.entities,
+                        *atom_i,
+                        Carbon,
+                        BondType::Single,
+                        Some("ca".to_owned()), // todo
+                        Some(1.4),             // todo
+                        0.13,                  // todo
+                        &mut state.ui,
+                        engine_updates,
+                        &mut scene.input_settings.control_scheme,
+                        state.volatile.mol_manip.mode,
+                    );
 
-        for el in [
-            Carbon, Hydrogen, Oxygen, Nitrogen, Sulfur, Phosphorus, Chlorine,
-        ] {
-            change_el_button(
-                &state.ui.selection,
-                el,
-                ui,
-                &mut scene.entities,
-                &state.ui,
-                &mut state.mol_editor.mol,
-                engine_updates,
-                redraw,
-                &mut rebuild_md,
-                state.volatile.mol_manip.mode,
-            );
-        }
-    });
+                    if let Some(i) = new_i {
+                        state.ui.selection = Selection::AtomLig((mol_i, i));
+
+                        // `add_atom` handles individual redrawing, but here we need something, or the previous
+                        // atom will still show as the selected color.
+                        // todo better. (todo: More specific than this redraw all?)
+                        mol_editor::redraw(
+                            &mut scene.entities,
+                            &state.mol_editor.mol,
+                            &state.ui,
+                            state.volatile.mol_manip.mode,
+                        );
+                    }
+                }
+                rebuild_md = true;
+            }
+
+            ui.add_space(COL_SPACING / 2.);
+
+            for el in [
+                Carbon, Hydrogen, Oxygen, Nitrogen, Sulfur, Phosphorus, Chlorine,
+            ] {
+                change_el_button(
+                    &state.ui.selection,
+                    el,
+                    ui,
+                    &mut scene.entities,
+                    &state.ui,
+                    &mut state.mol_editor.mol,
+                    engine_updates,
+                    redraw,
+                    &mut rebuild_md,
+                    state.volatile.mol_manip.mode,
+                );
+            }
+        });
+    }
 
     ui.add_space(COL_SPACING / 2.);
 
@@ -676,23 +682,30 @@ fn template_section(
     rebuild_md: &mut bool,
     controls: &mut ControlScheme,
 ) {
-    let parent_atoms = match &state.ui.selection {
-        Selection::AtomLig((_, i)) => vec![*i],
-        Selection::AtomsLig((_, items)) => items.clone(),
-        _ => return,
-    };
-
     section_box().show(ui, |ui| {
-        let (anchor, r_aligner, next_sn, next_i, anchor_i, r_aligner_i) = {
+        let (anchor_idxs, r_aligner, next_sn, next_i, r_aligner_i) = {
             let mol_com = &state.mol_editor.mol.common;
 
-            if i >= mol_com.atoms.len() {
-                eprintln!("Error: Sel out of range for mol editor");
-                state.ui.selection = Selection::None;
-                return;
-            }
+            // todo: Perhaps add multiples if there are multiple atoms or bonds selected,
+            // todo but for now, this will do.
+            let anchor_idxs = match &state.ui.selection {
+                Selection::AtomLig((_, i)) => vec![*i],
+                // Selection::AtomsLig((_, items)) => items.clone(),
+                Selection::BondLig((_, i)) => {
+                    let bond = &state.mol_editor.mol.common.bonds[*i];
+                    vec![bond.atom_0, bond.atom_1]
+                }
+                // Selection::BondsLig((_, items)) => items.clone(),
+                _ => return,
+            };
 
-            let anchor = mol_com.atoms[i].posit;
+            for &i in &anchor_idxs {
+                if i >= mol_com.atoms.len() {
+                    eprintln!("Error: Sel out of range for mol editor");
+                    state.ui.selection = Selection::None;
+                    return;
+                }
+            }
 
             let next_sn = NEXT_ATOM_SN.load(Ordering::Acquire);
             let next_i = mol_com.atoms.len();
@@ -702,7 +715,8 @@ fn template_section(
             // todo: This is crude.
             let (mut r_aligner, mut r_aligner_i) = (Vec3::new_zero(), 0);
 
-            for bonded in &mol_com.adjacency_list[i] {
+            // todo: Hardcoded 0 here. Currently awkward as this is for non-rings only.
+            for bonded in &mol_com.adjacency_list[anchor_idxs[0]] {
                 if mol_com.atoms[*bonded].element == Hydrogen {
                     continue;
                 }
@@ -712,11 +726,11 @@ fn template_section(
                 r_aligner_i = *bonded;
             }
 
-            (anchor, r_aligner, next_sn, next_i, i, r_aligner_i)
+            (anchor_idxs, r_aligner, next_sn, next_i, r_aligner_i)
         };
 
         // Helper
-        let mut add_t = |template: Template, name, abbrev| {
+        let mut add_t = |template: Template, abbrev, name| {
             if ui
                 .button(abbrev)
                 .on_hover_text(format!("Add a {name} at the current selection"))
@@ -725,8 +739,7 @@ fn template_section(
                 add_from_template(
                     &mut state.mol_editor.mol.common,
                     template,
-                    anchor_i,
-                    anchor,
+                    &anchor_idxs,
                     r_aligner_i,
                     r_aligner,
                     next_sn,

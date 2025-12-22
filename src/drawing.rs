@@ -24,7 +24,7 @@ use crate::{
         MESH_DENSITY_SURFACE, MESH_SECONDARY_STRUCTURE, MESH_SOLVENT_SURFACE, MESH_SPHERE_HIGHRES,
         MESH_SPHERE_LOWRES, MESH_SPHERE_MEDRES, WATER_BOND_THICKNESS, WATER_OPACITY,
     },
-    util::{clear_mol_entity_indices, find_neighbor_posit, orbit_center},
+    util::{clear_mol_entity_indices, find_neighbor_posit, orbit_center, res_color},
     viridis_lut::VIRIDIS,
 };
 // const LIGAND_COLOR_ANCHOR: Color = (1., 0., 1.);
@@ -67,7 +67,9 @@ const COLOR_DOCKING_BOX: Color = (0.3, 0.3, 0.9);
 pub const COLOR_DOCKING_SITE_MESH: Color = (0.5, 0.5, 0.9);
 // const DOCKING_SITE_OPACITY: f32 = 0.1;
 
-const COLOR_SA_SURFACE: Color = (0.3, 0.2, 1.);
+// todo temp while debugging
+// const COLOR_SA_SURFACE: Color = (0.3, 0.2, 1.);
+const COLOR_SA_SURFACE: Color = (1., 0., 0.);
 
 pub const BOND_RADIUS_BASE: f32 = 0.10; // Absolute unit in Å.
 
@@ -91,6 +93,10 @@ const DIMMED_PEPTIDE_AMT: f32 = 0.92; // Higher value means more dim.
 
 pub const DENSITY_ISO_OPACITY: f32 = 0.5;
 pub const SAS_ISO_OPACITY: f32 = 0.75;
+
+// These min/maxes are based on possible values of `aa.hydropathicity()`.
+pub const HYDROPHOBICITY_MIN: f32 = -4.5;
+pub const HYDROPHOBICITY_MAX: f32 = -HYDROPHOBICITY_MIN;
 
 // We use this for mapping partial charge (e.g. as loaded from Amber) to colors.
 // This should tightly span the range of expected charges.
@@ -421,23 +427,7 @@ pub fn atom_color(
 
             if let Some(res_i) = &atom.residue {
                 let res = &residues[*res_i];
-                color = match &res.res_type {
-                    ResidueType::AminoAcid(aa) => match res_coloring {
-                        ResColoring::AminoAcid => aa_color(*aa),
-                        ResColoring::Position => match atom.residue {
-                            Some(res_i) => color_viridis(res_i, 0, aa_count),
-                            None => aa_color(*aa),
-                        },
-                        ResColoring::Hydrophobicity => {
-                            // -4.5 to 4.5
-                            // todo: Use hte `hydropathy_doolittle` windowing fn instead?
-                            // todo: That may be overkill, or used as a smoothing technique.
-                            // These min/maxes are based on possible values of `aa.hydropathicity()`.
-                            color_viridis_float(aa.hydropathicity(), -4.5, 4.5)
-                        }
-                    },
-                    _ => COLOR_AA_NON_RESIDUE,
-                };
+                color = res_color(res, res_coloring, atom.residue, aa_count);
 
                 // Todo: WOrkaround for a problem we're having with Hydrogen's showing like hetero atoms
                 // todo in residue mode. Likely due to them not having their AA set.
@@ -1343,6 +1333,7 @@ fn draw_dots(update_mesh: &mut bool, mesh_created: bool, scene: &mut Scene) {
 }
 
 /// The mesh view of solvent-accessible-surface
+// fn draw_sa_surface(update_mesh: &mut bool, mesh_created: bool, scene: &mut Scene, color_by_vertex: Option<Vec<(u8, u8, u8)>>) {
 fn draw_sa_surface(update_mesh: &mut bool, mesh_created: bool, scene: &mut Scene) {
     // If the mesh is the default cube, build it. (On demand.)
     if !mesh_created {
@@ -1358,8 +1349,13 @@ fn draw_sa_surface(update_mesh: &mut bool, mesh_created: bool, scene: &mut Scene
         COLOR_SA_SURFACE,
         ATOM_SHININESS,
     );
+
     ent.class = EntityClass::SaSurface as u32;
     ent.opacity = SAS_ISO_OPACITY;
+    // if let Some(color) = color_by_vertex {
+    //     ent.color_by_vertex = Some(color)
+    // }
+
     scene.entities.push(ent);
 }
 

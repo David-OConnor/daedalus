@@ -10,7 +10,7 @@ use egui::{
     Align, Color32, ComboBox, Context, Key, Layout, Popup, PopupAnchor, Pos2, RectAlign, RichText,
     Slider, TextEdit, TextFormat, TextStyle, TopBottomPanel, Ui, text::LayoutJob,
 };
-use graphics::{ControlScheme, EngineUpdates, EntityUpdate, FWD_VEC, Scene};
+use graphics::{ControlScheme, EngineUpdates, EntityUpdate, FWD_VEC, Mesh, Scene};
 use md::md_setup;
 use mol_data::display_mol_data;
 use na_seq::{AaIdent, Element};
@@ -27,6 +27,7 @@ use crate::{
     mol_editor::enter_edit_mode,
     molecule::MolGenericRef,
     render::set_flashlight,
+    sa_surface,
     ui::{
         cam::{cam_controls, cam_snapshots},
         misc::section_box,
@@ -421,7 +422,14 @@ fn add_aa_seq(selection: &mut Selection, seq_text: &str, ui: &mut Ui, redraw: &m
         });
 }
 
-pub fn view_sel_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui, include_res: bool) {
+pub fn view_sel_selector(
+    state: &mut State,
+    redraw: &mut bool,
+    ui: &mut Ui,
+    include_res: bool,
+    meshes: &mut [Mesh],
+    engine_updates: &mut EngineUpdates,
+) {
     let help_text = "(Hotkeys:  ;  and  '  )";
     ui.label("View/Select:").on_hover_text(help_text);
     let prev_view = state.ui.view_sel_level;
@@ -482,6 +490,10 @@ pub fn view_sel_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui, incl
                 ViewSelLevel::Bond => {}
             }
         }
+
+        if let Some(mol) = &state.peptide {
+            state.volatile.flags.update_sas_coloring = true;
+        }
     }
 
     // Buttons to alter the color profile, e.g. for res position, or partial charge.
@@ -503,6 +515,11 @@ pub fn view_sel_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui, incl
             {
                 state.ui.atom_color_by_charge = !state.ui.atom_color_by_charge;
                 state.ui.view_sel_level = ViewSelLevel::Atom;
+
+                if let Some(mol) = &state.peptide {
+                    state.volatile.flags.update_sas_coloring = true;
+                }
+
                 *redraw = true;
             }
         }
@@ -523,6 +540,10 @@ pub fn view_sel_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui, incl
 
             if state.ui.res_coloring != prev {
                 // state.ui.view_sel_level = ViewSelLevel::Residue;
+
+                if let Some(mol) = &state.peptide {
+                    state.volatile.flags.update_sas_coloring = true;
+                }
                 *redraw = true;
             }
         }
@@ -533,11 +554,11 @@ pub fn view_sel_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui, incl
     ui.add_space(COL_SPACING);
 }
 
-fn selection_section(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
+fn selection_section(state: &mut State, redraw: &mut bool, ui: &mut Ui, meshes: &mut [Mesh], engine_updates: &mut EngineUpdates) {
     // todo: DRY with view.
     ui.horizontal_wrapped(|ui| {
         section_box().show(ui, |ui| {
-            view_sel_selector(state, redraw, ui, true);
+            view_sel_selector(state, redraw, ui, true, meshes, engine_updates);
 
             let help = "Hide all atoms not near the selection";
             ui.label("Nearby sel only:").on_hover_text(help);
@@ -1317,7 +1338,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         });
 
         let redraw_prev = redraw_peptide;
-        selection_section(state, &mut redraw_peptide, ui);
+        selection_section(state, &mut redraw_peptide, ui, &mut scene.meshes, &mut engine_updates);
         // todo: Kludge
         if redraw_peptide && !redraw_prev {
             redraw_lig = true;

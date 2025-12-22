@@ -59,6 +59,17 @@ pub fn view_settings(
                 *redraw_lipid = true;
             }
 
+            if state.ui.mol_view == MoleculeView::Surface {
+                let help_text = "If selected, the solvent-accessible surface will be colored according \
+                to the atoms closest to it. If not, it will display as a constant color.";
+                ui.label("Color sfc").on_hover_text(help_text);
+                if ui.checkbox(&mut state.ui.color_surface_mesh, "")
+                    .on_hover_text(help_text)
+                    .changed() {
+                    state.volatile.flags.update_sas_coloring = true;
+                }
+            }
+
             ui.add_space(COL_SPACING);
 
             ui.label("Vis:");
