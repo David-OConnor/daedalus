@@ -179,13 +179,56 @@ pub fn add_from_template(
     mol.reset_posits();
     mol.build_adjacency_list();
 
-    // Get the FF type for this atom prior to adding H.
+    // Set the anchor bond to Aromatic type if appropriate.
+    if template == Template::AromaticRing {
+        if anchor_is.len() == 2 {
 
-    for (i, atom) in atoms.into_iter().enumerate() {
+            let mut atoms_to_update_h = Vec::new(); // avoids db-borrow error.
+            for bond in &mut mol.bonds {
+                if (bond.atom_0 == anchor_is[0] && bond.atom_1 == anchor_is[1]) | (bond.atom_0 == anchor_is[1] && bond.atom_1 == anchor_is[0]) {
+                    bond.bond_type = BondType::Aromatic;
+                }
+
+                // todo: This section is dry with the GUI buttons to change bond types. Use a common fn for htis.
+                for i in 0..mol.atoms.len() {
+                    if bond.atom_0 != i && bond.atom_1 != i {
+                        continue
+                    }
+                    atoms_to_update_h.push(i);
+                }
+            }
+
+            // todo: Not working.
+            for i in atoms_to_update_h {
+                remove_hydrogens(mol, i);
+                populate_hydrogens_on_atom(
+                    mol,
+                    i,
+                    &mut Vec::new(),
+                    state_ui,
+                    &mut Default::default(),
+                    manip_mode,
+                );
+            }
+
+        }
+    }
+
+    // Get the FF type for this atom prior to adding H.
+    // For non-rings, we are currently the selected atom with the added group's anchor.
+    // So, remove it and its H atoms.
+    for &anchor_i in anchor_is {
+        remove_hydrogens(mol, anchor_i); // Do this prior to removing the atom.
+
+        if !template.is_ring() {
+            mol.remove_atom(anchor_i);
+        }
+    }
+
+    for i in 0..atoms.len() {
         populate_hydrogens_on_atom(
             mol,
-            i_added[i] - 1,
-            &atom.force_field_type,
+            i_added[i],
             &mut Vec::new(),
             state_ui,
             &mut Default::default(),
@@ -197,16 +240,6 @@ pub fn add_from_template(
         center: mol.centroid().into(),
     };
 
-    // We are currently replacing the selected atom with the added group's anchor.
-    // So, remove it and its H atoms.
-
-    for &anchor_i in anchor_is {
-        remove_hydrogens(mol, anchor_i); // Do this prior to removing the atom.
-
-        if !template.is_ring() {
-            mol.remove_atom(anchor_i);
-        }
-    }
 
     *redraw = true;
     *rebuild_md = true;
@@ -334,12 +367,12 @@ pub fn add_atom(
     );
 
     // Add hydrogens back to the parent.
-    populate_hydrogens_on_atom(mol, i_par, &ff_type, entities, ui, updates, manip_mode);
+    populate_hydrogens_on_atom(mol, i_par,  entities, ui, updates, manip_mode);
 
     // Add hydrogens to the new atom.
     // Up to one recursion to add hydrogens to this parent and to the new atom.
     if element != Hydrogen {
-        populate_hydrogens_on_atom(mol, i_new, &ff_type, entities, ui, updates, manip_mode);
+        populate_hydrogens_on_atom(mol, i_new, entities, ui, updates, manip_mode);
         *control = ControlScheme::Arc {
             center: mol.centroid().into(),
         };
@@ -357,29 +390,30 @@ pub fn add_atom(
 pub fn populate_hydrogens_on_atom(
     mol: &mut MoleculeCommon,
     i: usize,
-    ff_type: &Option<String>,
+    // ff_type: &Option<String>,
     entities: &mut Vec<Entity>,
     state_ui: &mut StateUi,
     engine_updates: &mut EngineUpdates,
     manip_mode: ManipMode,
 ) {
     let el = mol.atoms[i].element;
+    let ff_type = &mol.atoms[i].force_field_type;
 
     println!("Populating Hs on atom {}...", mol.atoms[i].serial_number); // todo temp
 
     // Don't add H to oxygens double-bonded.
-    if el == Oxygen {
-        for bonded_i in &mol.adjacency_list[i] {
-            for bond in &mol.bonds {
-                if (bond.atom_0 == i && bond.atom_1 == *bonded_i
-                    || bond.atom_1 == i && bond.atom_0 == *bonded_i)
-                    && matches!(bond.bond_type, BondType::Double)
-                {
-                    return;
-                }
-            }
-        }
-    }
+    // if el == Oxygen {
+    //     for bonded_i in &mol.adjacency_list[i] {
+    //         for bond in &mol.bonds {
+    //             if (bond.atom_0 == i && bond.atom_1 == *bonded_i
+    //                 || bond.atom_1 == i && bond.atom_0 == *bonded_i)
+    //                 && matches!(bond.bond_type, BondType::Double)
+    //             {
+    //                 return;
+    //             }
+    //         }
+    //     }
+    // }
 
     let bonds_to_add = {
         // let adj = &mol.adjacency_list[i];

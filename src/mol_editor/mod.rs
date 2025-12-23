@@ -92,7 +92,7 @@ impl Default for MolEditorState {
 
 impl MolEditorState {
     /// For now, sets up a pair of single-bonded carbon atoms.
-    pub fn clear_mol(&mut self) {
+    pub fn clear_mol(&mut self, sel: &mut Selection) {
         // todo: Change this dist; rough start.
         const DIST: f64 = 1.3;
 
@@ -128,6 +128,7 @@ impl MolEditorState {
             is_backbone: false,
         }];
 
+        *sel = Selection::None;
         mol.reset_posits();
         mol.build_adjacency_list();
     }
@@ -457,7 +458,7 @@ pub fn enter_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mu
     }
 
     if !mol_loaded {
-        state.mol_editor.clear_mol();
+        state.mol_editor.clear_mol(&mut state.ui.selection);
     }
 
     state.volatile.control_scheme_prev = scene.input_settings.control_scheme;

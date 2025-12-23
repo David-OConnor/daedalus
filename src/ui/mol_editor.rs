@@ -34,6 +34,7 @@ use crate::{
     },
     util::handle_err,
 };
+use crate::mol_editor::add_atoms::{populate_hydrogens_on_atom, remove_hydrogens};
 // todo: Check DBs (with a button maybe?) to see if the molecule exists in a DB already, or if
 // todo a similar one does.
 
@@ -226,7 +227,7 @@ pub(in crate::ui) fn editor(
 
             // state.mol_editor.mol.common = Default::default();
 
-            state.mol_editor.clear_mol();
+            state.mol_editor.clear_mol(&mut state.ui.selection);
 
             state.mol_editor.md_rebuild_required = true;
             state.mol_editor.rebuild_ff_related(&state.ff_param_set);
@@ -402,60 +403,50 @@ fn bond_edit_tools(
     ui: &mut Ui,
     redraw: &mut bool,
     rebuild_md: &mut bool,
+    rebuild_ff_params: &mut bool,
 ) {
     let mut new_bond_type = None;
 
     section_box().show(ui, |ui| {
-        // if bond.bond_type != BondType::Single {
         if ui
             .button("-")
             .on_hover_text("Change this to a single bond.")
             .clicked()
         {
             new_bond_type = Some(BondType::Single);
-            *redraw = true;
-            *rebuild_md = true;
         }
-        // }
-        // if bond.bond_type != BondType::Double {
         if ui
             .button("=")
             .on_hover_text("Change this to a double bond.")
             .clicked()
         {
             new_bond_type = Some(BondType::Double);
-            *redraw = true;
-            *rebuild_md = true;
         }
-        // }
-        // if bond.bond_type != BondType::Triple {
         if ui
             .button("Tr")
             .on_hover_text("Change this to a triple bond.")
             .clicked()
         {
             new_bond_type = Some(BondType::Triple);
-            *redraw = true;
-            *rebuild_md = true;
         }
-        // }
-        // if bond.bond_type != BondType::Aromatic {
         if ui
             .button("Ar")
             .on_hover_text("Change this to an aromatic.")
             .clicked()
         {
             new_bond_type = Some(BondType::Aromatic);
-            *redraw = true;
-            *rebuild_md = true;
+
         }
-        // }
     });
 
     if let Some(bt) = new_bond_type {
         for b in bond_sel_is {
             bonds[*b].bond_type = bt;
         }
+
+        *redraw = true;
+        *rebuild_md = true;
+        *rebuild_ff_params = true;
     }
 }
 
@@ -491,13 +482,40 @@ fn edit_tools(
     };
 
     if bond_mode {
+        let mut rebuild_ff_params = false;
         bond_edit_tools(
             &selected_idxs,
             &mut state.mol_editor.mol.common.bonds,
             ui,
             redraw,
             &mut rebuild_md,
+            &mut rebuild_ff_params,
         );
+
+        if rebuild_ff_params {
+            println!("Rebuilding FF related after bond change"); // todo temp
+
+            // Rebuild hydrogens on the changed bond atoms.
+            // for (i, atom) in state.mol_editor.mol.common.atoms.iter().enumerate() {
+            for i in 0..state.mol_editor.mol.common.atoms.len() {
+                let bond = &state.mol_editor.mol.common.bonds[selected_idxs[0]];
+                if bond.atom_0 != i && bond.atom_1 != i {
+                    continue
+                }
+
+                remove_hydrogens(&mut state.mol_editor.mol.common, i);
+                populate_hydrogens_on_atom(
+                    &mut state.mol_editor.mol.common,
+                    i,
+                    &mut scene.entities,
+                    &mut state.ui,
+                    engine_updates,
+                    state.volatile.mol_manip.mode,
+                );
+            }
+
+            state.mol_editor.rebuild_ff_related(&state.ff_param_set);
+        }
         // if rebuild_md {
         //     sync_md(state);
         // }
@@ -700,6 +718,12 @@ fn template_section(
                 Selection::AtomLig((_, i)) => vec![*i],
                 // Selection::AtomsLig((_, items)) => items.clone(),
                 Selection::BondLig((_, i)) => {
+                    if *i >= state.mol_editor.mol.common.bonds.len() {
+                        eprintln!("Error: Bond index out of bounds.");
+                        state.ui.selection = Selection::None;
+                        return;
+                    }
+
                     let bond = &state.mol_editor.mol.common.bonds[*i];
                     vec![bond.atom_0, bond.atom_1]
                 }
