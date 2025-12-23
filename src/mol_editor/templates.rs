@@ -10,24 +10,28 @@ use na_seq::{
 
 use crate::molecule::{Atom, Bond};
 
-// todo: Deprecate in place of algoirthmetc approach
-const POSITS_AR_RING: [Vec3; 6] = [
-    Vec3::new_zero(),
-    Vec3::new(-0.6985, 1.2090, 0.0),
-    Vec3::new(-2.0955, 1.2090, 0.0),
-    Vec3::new(-2.7940, 0.0000, 0.0),
-    Vec3::new(-2.0955, -1.2090, 0.0),
-    Vec3::new(-0.6985, -1.2090, 0.0),
-];
+// // todo: Deprecate in place of algoirthmetc approach
+// const POSITS_AR_RING: [Vec3; 6] = [
+//     Vec3::new_zero(),
+//     Vec3::new(-0.6985, 1.2090, 0.0),
+//     Vec3::new(-2.0955, 1.2090, 0.0),
+//     Vec3::new(-2.7940, 0.0000, 0.0),
+//     Vec3::new(-2.0955, -1.2090, 0.0),
+//     Vec3::new(-0.6985, -1.2090, 0.0),
+// ];
+//
+// // todo temp/placeholder
+// const POSITS_PENT_RING: [Vec3; 5] = [
+//     Vec3::new_zero(),
+//     Vec3::new(-0.6985, 1.2090, 0.0),
+//     Vec3::new(-2.0955, 1.2090, 0.0),
+//     Vec3::new(-2.7940, 0.0000, 0.0),
+//     Vec3::new(-2.0955, -1.2090, 0.0),
+// ];
 
-// todo temp/placeholder
-const POSITS_PENT_RING: [Vec3; 5] = [
-    Vec3::new_zero(),
-    Vec3::new(-0.6985, 1.2090, 0.0),
-    Vec3::new(-2.0955, 1.2090, 0.0),
-    Vec3::new(-2.7940, 0.0000, 0.0),
-    Vec3::new(-2.0955, -1.2090, 0.0),
-];
+const BOND_LEN_AROMATIC: f64 = 1.39;
+const BOND_LEN_PENT_SAT: f64 = 1.53; // C-C single bonds
+const BOND_LEN_PENT_UNSAT: f64 = 1.53; // A C=C in the ring
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Template {
@@ -41,16 +45,18 @@ pub enum Template {
 impl Template {
     pub(in crate::mol_editor) fn atoms_bonds(
         &self,
+        anchor_is: &[usize],
+        anchor_sns: &[u32],
         anchors: &[Vec3], // Len = 0 or 1.
-        r_aligner: Vec3,  // todo: Clarify A/R. Currently for non-rings
+        r_aligners: &[Vec3],
         start_sn: u32,
         start_i: usize,
     ) -> (Vec<Atom>, Vec<Bond>) {
         match self {
-            Self::Cooh => cooh_group(anchors[0], r_aligner, start_sn, start_i),
-            Self::Amide => amide_group(anchors[0], r_aligner, start_sn, start_i),
-            Self::AromaticRing => ring(anchors, start_sn, start_i, &POSITS_AR_RING),
-            Self::PentaRing => ring(anchors, start_sn, start_i, &POSITS_PENT_RING),
+            Self::Cooh => cooh_group(anchors[0], r_aligners[0], start_sn, start_i),
+            Self::Amide => amide_group(anchors[0], r_aligners[0], start_sn, start_i),
+            Self::AromaticRing => ring(anchor_is, anchor_sns, anchors, r_aligners, 6, start_sn, start_i),
+            Self::PentaRing => ring(anchor_is, anchor_sns, anchors, r_aligners,5, start_sn, start_i),
             _ => Default::default(),
         }
     }
@@ -189,79 +195,252 @@ fn rotate_about_axis(posit: Vec3, pivot: Vec3, axis: Vec3, angle: f64) -> Vec3 {
     pivot + q.rotate_vec(posit - pivot)
 }
 
-// todo: What does posit anchor too? Center? An corner marked in a certain way?
-// fn ar_ring(anchor: Vec3, orientation: Quaternion, start_sn: u32, start_i: usize) -> (Vec<Atom>, Vec<Bond>) {
-// fn ar_ring(anchor: Vec3, r_aligner: Vec3, start_sn: u32, start_i: usize) -> (Vec<Atom>, Vec<Bond>) {
+/// Construct a ring of Carbons of len 5 or 6. The anchor[s] are atoms part of the structure we're
+/// adding the ring to, which will be part of the ring. So for a 6-atom ring, with one anchor, we add 5
+/// atoms to it, roughly in plane with any other atoms bonded to the anchor. With two anchors, we add 4 atoms
+/// too it, and the bond between anchor 0 and anchor 1 is part of the ring.
 fn ring(
+    anchor_is: &[usize],
+    anchor_sns: &[u32],
     anchors: &[Vec3],
+    r_aligners: &[Vec3],
+    num_atoms: usize,
     start_sn: u32,
     start_i: usize,
-    posits: &[Vec3],
 ) -> (Vec<Atom>, Vec<Bond>) {
-    // todo: Create this algorithmically from number of points and bond len?
-    let n = posits.len();
+    assert!(num_atoms == 5 || num_atoms == 6);
+    assert!(anchors.len() == 1 || anchors.len() == 2);
+    assert!(anchor_is.len() == anchors.len());
+    assert!(anchor_sns.len() == anchors.len());
 
-    // Move the ring to anchor 0. (Assumes point 0 is the 0 vec)
-    let mut posits: Vec<_> = posits.iter().map(|p| *p + anchors[0]).collect();
+    let n = num_atoms;
+    let angle = TAU / (n as f64);
+    let bond_len = BOND_LEN_AROMATIC;
 
+    let eps = 1e-12;
+
+    let dot = |a: Vec3, b: Vec3| a.x * b.x + a.y * b.y + a.z * b.z;
+    let cross = |a: Vec3, b: Vec3| Vec3::new(
+        a.y * b.z - a.z * b.y,
+        a.z * b.x - a.x * b.z,
+        a.x * b.y - a.y * b.x,
+    );
+    let len2 = |v: Vec3| dot(v, v);
+    let len = |v: Vec3| len2(v).sqrt();
+    let normalize = |v: Vec3, fallback: Vec3| {
+        let l = len(v);
+        if l > eps { v / l } else { fallback }
+    };
+
+    let x_ref = Vec3::new(1.0, 0.0, 0.0);
+    let y_ref = Vec3::new(0.0, 1.0, 0.0);
+    let z_ref = Vec3::new(0.0, 0.0, 1.0);
+
+    let sin_pi_over_n = (std::f64::consts::PI / (n as f64)).sin();
+
+    let a0 = anchors[0];
+
+    // Best-fit-ish plane normal from anchor0->(aligners and anchor1).
+    let mut dirs: Vec<Vec3> = Vec::with_capacity(r_aligners.len() + if anchors.len() == 2 { 1 } else { 0 });
+    for p in r_aligners {
+        let d = *p - a0;
+        if len2(d) > eps {
+            dirs.push(normalize(d, x_ref));
+        }
+    }
     if anchors.len() == 2 {
-        // Rotate the ring so that point 1 is at anchor 1.
-        let dir_0_to_1_local = (posits[1] - posits[0]).to_normalized();
-        let dir_0_to_1_global = (anchors[1] - anchors[0]).to_normalized();
-
-        // let rotator = Quaternion::from_unit_vecs(dir_0_to_1_local, dir_0_to_1_global);
-        let rotate_amt = dir_0_to_1_global.dot(dir_0_to_1_local).acos();
-
-        let axis = Z_VEC;
-        for posit in &mut posits {
-            *posit = rotate_about_axis(*posit, anchors[0], axis, -rotate_amt);
+        let d = anchors[1] - a0;
+        if len2(d) > eps {
+            dirs.push(normalize(d, y_ref));
         }
-        // Note that the ring should be mostly correct now, but adjust posits[1] to be exactly at anchor_1.
-        posits[1] = anchors[0];
     }
 
-    let mut atoms = Vec::with_capacity(6);
-
-    for (i, posit) in posits.into_iter().enumerate() {
-        if i == 0 {
-            continue; // anchor 0
+    let mut nrm = Vec3::new(0.0, 0.0, 0.0);
+    for i in 0..dirs.len() {
+        for j in (i + 1)..dirs.len() {
+            nrm = nrm + cross(dirs[i], dirs[j]);
         }
-        if anchors.len() == 2 && i == 1 {
-            continue; // anchor 1
+    }
+    if len2(nrm) <= eps {
+        if !dirs.is_empty() {
+            let d0 = dirs[0];
+            let pref = if dot(d0, z_ref).abs() < 0.9 { z_ref } else { y_ref };
+            nrm = cross(d0, pref);
+        } else {
+            nrm = z_ref;
+        }
+    }
+    nrm = normalize(nrm, z_ref);
+
+    // Score: larger is better. Uses only NEW atoms (not anchors).
+    let score_ring = |ring_posits: &[Vec3]| -> (f64, f64) {
+        if r_aligners.is_empty() {
+            return (0.0, 0.0);
         }
 
-        let serial_number = start_sn + i as u32;
+        let start_k = anchors.len();
+        let mut min_d2 = f64::INFINITY;
+        let mut sum_d2 = 0.0;
 
+        for k in start_k..n {
+            let p = ring_posits[k];
+            let mut best = f64::INFINITY;
+            for q in r_aligners {
+                let d = p - *q;
+                let d2 = dot(d, d);
+                if d2 < best {
+                    best = d2;
+                }
+            }
+            if best < min_d2 {
+                min_d2 = best;
+            }
+            sum_d2 += best;
+        }
+
+        (min_d2, sum_d2)
+    };
+
+    // Build ring vertices from (center,u,v,radius). Vertex 0 is at center + u*radius.
+    let build_ring = |center: Vec3, u: Vec3, v: Vec3, radius: f64| -> Vec<Vec3> {
+        let mut ring_posits = vec![Vec3::new(0.0, 0.0, 0.0); n];
+        for k in 0..n {
+            let t = (k as f64) * angle;
+            ring_posits[k] = center + u * (radius * t.cos()) + v * (radius * t.sin());
+        }
+        ring_posits[0] = anchors[0];
+        if anchors.len() == 2 {
+            ring_posits[1] = anchors[1];
+        }
+        ring_posits
+    };
+
+    let ring_posits = if anchors.len() == 2 {
+        let a1 = anchors[1];
+        let chord = a1 - a0;
+        let d = len(chord).max(eps);
+        let radius = d / (2.0 * sin_pi_over_n);
+
+        let e = normalize(chord, x_ref);
+        let mid = (a0 + a1) * 0.5;
+
+        let h2 = radius * radius - (d * 0.5) * (d * 0.5);
+        let h = if h2 > 0.0 { h2.sqrt() } else { 0.0 };
+
+        let perp = normalize(cross(nrm, e), y_ref);
+
+        let c1 = mid + perp * h;
+        let c2 = mid - perp * h;
+
+        let mut cand = Vec::with_capacity(2);
+        for center in [c1, c2] {
+            let u = normalize(a0 - center, x_ref);
+
+            let r1 = normalize(a1 - center, x_ref);
+            let cos_t = angle.cos();
+            let sin_t = angle.sin();
+            let v = if sin_t.abs() > 1e-8 {
+                normalize((r1 - u * cos_t) / sin_t, y_ref)
+            } else {
+                normalize(cross(nrm, u), y_ref)
+            };
+
+            let rp = build_ring(center, u, v, radius);
+            cand.push((rp.clone(), score_ring(&rp)));
+        }
+
+        // Pick higher min_d2; tie-breaker higher sum_d2
+        cand.sort_by(|a, b| {
+            b.1 .0
+                .partial_cmp(&a.1 .0)
+                .unwrap()
+                .then_with(|| b.1 .1.partial_cmp(&a.1 .1).unwrap())
+        });
+
+        cand.remove(0).0
+    } else {
+        let radius = bond_len / (2.0 * sin_pi_over_n);
+
+        // Mean neighbor direction, projected into plane.
+        let mut mean_dir = Vec3::new(0.0, 0.0, 0.0);
+        for p in r_aligners {
+            mean_dir = mean_dir + (*p - a0);
+        }
+        if len2(mean_dir) <= eps {
+            // Stable in-plane fallback
+            let pref = if dot(nrm, z_ref).abs() < 0.9 { z_ref } else { y_ref };
+            mean_dir = cross(nrm, pref);
+        }
+        mean_dir = mean_dir - nrm * dot(mean_dir, nrm);
+        mean_dir = normalize(mean_dir, x_ref);
+
+        // Two candidates: center on either side (u vs -u).
+        // u is center->anchor direction.
+        let mut cand = Vec::with_capacity(2);
+        for u in [mean_dir, -mean_dir] {
+            let v = normalize(cross(nrm, u), y_ref);
+            let center = a0 - u * radius;
+            let rp = build_ring(center, u, v, radius);
+            cand.push((rp.clone(), score_ring(&rp)));
+        }
+
+        cand.sort_by(|a, b| {
+            b.1 .0
+                .partial_cmp(&a.1 .0)
+                .unwrap()
+                .then_with(|| b.1 .1.partial_cmp(&a.1 .1).unwrap())
+        });
+
+        cand.remove(0).0
+    };
+
+    let atoms_to_add = n - anchors.len();
+
+    let vertex_global_i = |k: usize| -> usize {
+        if anchors.len() == 2 {
+            if k == 0 { anchor_is[0] } else if k == 1 { anchor_is[1] } else { start_i + (k - 2) }
+        } else {
+            if k == 0 { anchor_is[0] } else { start_i + (k - 1) }
+        }
+    };
+
+    let vertex_sn = |k: usize| -> u32 {
+        if anchors.len() == 2 {
+            if k == 0 { anchor_sns[0] }
+            else if k == 1 { anchor_sns[1] }
+            else { start_sn + (k as u32) - 2 }
+        } else {
+            if k == 0 { anchor_sns[0] }
+            else { start_sn + (k as u32) - 1 }
+        }
+    };
+
+    let mut atoms = Vec::with_capacity(atoms_to_add);
+    for k in anchors.len()..n {
         atoms.push(Atom {
-            serial_number,
-            posit,
+            serial_number: vertex_sn(k),
+            posit: ring_posits[k],
             element: Carbon,
-            type_in_res: Some(AtomTypeInRes::CA), // todo: A/R
+            type_in_res: Some(AtomTypeInRes::CA),
             ..Default::default()
-        })
+        });
     }
 
-    let mut bonds = Vec::with_capacity(n);
-    for i in 0..n {
-        // todo.. hmmm
-        if i == 0 {
-            continue; // anchor 0
-        }
-        if anchors.len() == 2 && i == 1 {
-            continue; // anchor 1
-        }
+    let mut bonds = Vec::with_capacity(if anchors.len() == 2 { n - 1 } else { n });
 
-        let i_next = i % n; // Wrap 6 to 0.
+    for k in 0..n {
+        let k_next = (k + 1) % n;
 
-        let i_0_global = start_i + i;
-        let i_1_global = start_i + (i + 1) % n;
+        if anchors.len() == 2 && k == 0 {
+            continue; // skip existing (0-1)
+        }
 
         bonds.push(Bond {
             bond_type: BondType::Aromatic,
-            atom_0_sn: atoms[i].serial_number,
-            atom_1_sn: atoms[i_next].serial_number,
-            atom_0: i_0_global,
-            atom_1: i_1_global,
+            atom_0_sn: vertex_sn(k),
+            atom_1_sn: vertex_sn(k_next),
+            atom_0: vertex_global_i(k),
+            atom_1: vertex_global_i(k_next),
             is_backbone: false,
         });
     }

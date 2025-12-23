@@ -68,8 +68,8 @@ pub const COLOR_DOCKING_SITE_MESH: Color = (0.5, 0.5, 0.9);
 // const DOCKING_SITE_OPACITY: f32 = 0.1;
 
 // todo temp while debugging
-// const COLOR_SA_SURFACE: Color = (0.3, 0.2, 1.);
-const COLOR_SA_SURFACE: Color = (1., 0., 0.);
+const COLOR_SA_SURFACE: Color = (0.3, 0.2, 1.);
+// const COLOR_SA_SURFACE: Color = (1., 0., 0.);
 
 pub const BOND_RADIUS_BASE: f32 = 0.10; // Absolute unit in Å.
 

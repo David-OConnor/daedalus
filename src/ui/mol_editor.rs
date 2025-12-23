@@ -683,7 +683,7 @@ fn template_section(
     controls: &mut ControlScheme,
 ) {
     section_box().show(ui, |ui| {
-        let (anchor_idxs, r_aligner, next_sn, next_i, r_aligner_i) = {
+        let (anchor_idxs, anchor_sns, r_aligners, next_sn, next_i, r_aligner_is) = {
             let mol_com = &state.mol_editor.mol.common;
 
             // todo: Perhaps add multiples if there are multiple atoms or bonds selected,
@@ -707,13 +707,18 @@ fn template_section(
                 }
             }
 
+            let mut anchor_sns = Vec::with_capacity(anchor_idxs.len());
+            for &i in &anchor_idxs {
+                anchor_sns.push(mol_com.atoms[i].serial_number);
+            }
+
             let next_sn = NEXT_ATOM_SN.load(Ordering::Acquire);
             let next_i = mol_com.atoms.len();
 
             // todo: Don't continuously compute orientation; move the fects to add_from_temp... params,
             // todo, and
             // todo: This is crude.
-            let (mut r_aligner, mut r_aligner_i) = (Vec3::new_zero(), 0);
+            let (mut r_aligners, mut r_aligner_is) = (Vec::new(), Vec::new());
 
             // todo: Hardcoded 0 here. Currently awkward as this is for non-rings only.
             for bonded in &mol_com.adjacency_list[anchor_idxs[0]] {
@@ -722,11 +727,11 @@ fn template_section(
                 }
 
                 // todo: Which one? If you even keep this setup.
-                r_aligner = mol_com.atoms[*bonded].posit;
-                r_aligner_i = *bonded;
+                r_aligners.push(mol_com.atoms[*bonded].posit);
+                r_aligner_is.push(*bonded);
             }
 
-            (anchor_idxs, r_aligner, next_sn, next_i, r_aligner_i)
+            (anchor_idxs, anchor_sns, r_aligners, next_sn, next_i, r_aligner_is)
         };
 
         // Helper
@@ -739,9 +744,10 @@ fn template_section(
                 add_from_template(
                     &mut state.mol_editor.mol.common,
                     template,
+                    &anchor_sns,
                     &anchor_idxs,
-                    r_aligner_i,
-                    r_aligner,
+                    &r_aligner_is,
+                    &r_aligners,
                     next_sn,
                     next_i,
                     redraw,

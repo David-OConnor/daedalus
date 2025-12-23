@@ -432,6 +432,7 @@ pub fn enter_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mu
 
     // Rebuilt shortly.
     state.mol_editor.md_state = None;
+    state.ui.view_sel_level = ViewSelLevel::Atom;
 
     // This stays false under several conditions.
     let mut mol_loaded = false;
