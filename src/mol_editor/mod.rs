@@ -131,6 +131,7 @@ impl MolEditorState {
         *sel = Selection::None;
         mol.reset_posits();
         mol.build_adjacency_list();
+        mol.reassign_sns();
     }
 
     /// A simplified variant of our primary `open_molecule` function.

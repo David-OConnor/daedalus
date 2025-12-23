@@ -7,7 +7,10 @@ use std::{
     io,
     io::ErrorKind,
     path::PathBuf,
-    sync::mpsc::{self, Receiver},
+    sync::{
+        atomic::Ordering,
+        mpsc::{self, Receiver},
+    },
     thread,
     time::Instant,
 };
@@ -28,6 +31,7 @@ use dynamics::{
     params::{ProtFfChargeMapSet, prepare_peptide_mmcif},
     populate_hydrogens_dihedrals,
 };
+use egui::Order;
 use lin_alg::f64::{Quaternion, Vec3};
 use na_seq::{AminoAcid, AtomTypeInRes, Element};
 use rayon::prelude::*;
@@ -37,6 +41,7 @@ use crate::{
     bond_inference::create_hydrogen_bonds,
     drawing::EntityClass,
     lipid::MoleculeLipid,
+    mol_editor::NEXT_ATOM_SN,
     mol_lig::MoleculeSmall,
     nucleic_acid::MoleculeNucleicAcid,
     prefs::OpenType,
@@ -265,6 +270,14 @@ impl MoleculeCommon {
             bond.atom_0_sn = updated_sns[bond.atom_0];
             bond.atom_1_sn = updated_sns[bond.atom_1];
         }
+
+        NEXT_ATOM_SN.store(
+            match updated_sns.last() {
+                Some(l) => *l + 1,
+                None => 1,
+            },
+            Ordering::Release,
+        )
     }
 
     /// The sum of each atom's elemental atomic weight, in Daltons (amu).

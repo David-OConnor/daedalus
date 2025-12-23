@@ -57,14 +57,17 @@ impl Template {
         match self {
             Self::Cooh => cooh_group(anchors[0], r_aligners[0], start_sn, start_i),
             Self::Amide => amide_group(anchors[0], r_aligners[0], start_sn, start_i),
-            Self::AromaticRing | Self::Cyclohexane | Self::PentaRing => ring(self,
-                anchor_is, anchor_sns, anchors, r_aligners, start_sn, start_i,
+            Self::AromaticRing | Self::Cyclohexane | Self::PentaRing => ring(
+                self, anchor_is, anchor_sns, anchors, r_aligners, start_sn, start_i,
             ),
         }
     }
 
-    pub (in crate::mol_editor) fn is_ring(self) -> bool {
-        matches!(self, Self::AromaticRing | Self::Cyclohexane | Self::PentaRing)
+    pub(in crate::mol_editor) fn is_ring(self) -> bool {
+        matches!(
+            self,
+            Self::AromaticRing | Self::Cyclohexane | Self::PentaRing
+        )
     }
 }
 
@@ -476,7 +479,6 @@ fn ring(
     let mut bonds = Vec::with_capacity(if anchors.len() == 2 { n - 1 } else { n });
 
     // todo: Rough placeholder
-
 
     for k in 0..n {
         let k_next = (k + 1) % n;

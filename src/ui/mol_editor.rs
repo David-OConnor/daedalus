@@ -15,7 +15,7 @@ use crate::{
     mol_editor,
     mol_editor::{
         NEXT_ATOM_SN,
-        add_atoms::{add_atom, add_from_template},
+        add_atoms::{add_atom, add_from_template, populate_hydrogens_on_atom, remove_hydrogens},
         exit_edit_mode, sync_md,
         templates::Template,
     },
@@ -34,7 +34,6 @@ use crate::{
     },
     util::handle_err,
 };
-use crate::mol_editor::add_atoms::{populate_hydrogens_on_atom, remove_hydrogens};
 // todo: Check DBs (with a button maybe?) to see if the molecule exists in a DB already, or if
 // todo a similar one does.
 
@@ -435,7 +434,6 @@ fn bond_edit_tools(
             .clicked()
         {
             new_bond_type = Some(BondType::Aromatic);
-
         }
     });
 
@@ -493,25 +491,23 @@ fn edit_tools(
         );
 
         if rebuild_ff_params {
-            println!("Rebuilding FF related after bond change"); // todo temp
-
             // Rebuild hydrogens on the changed bond atoms.
             // for (i, atom) in state.mol_editor.mol.common.atoms.iter().enumerate() {
             for i in 0..state.mol_editor.mol.common.atoms.len() {
                 let bond = &state.mol_editor.mol.common.bonds[selected_idxs[0]];
                 if bond.atom_0 != i && bond.atom_1 != i {
-                    continue
+                    continue;
                 }
 
-                remove_hydrogens(&mut state.mol_editor.mol.common, i);
-                populate_hydrogens_on_atom(
-                    &mut state.mol_editor.mol.common,
-                    i,
-                    &mut scene.entities,
-                    &mut state.ui,
-                    engine_updates,
-                    state.volatile.mol_manip.mode,
-                );
+                // remove_hydrogens(&mut state.mol_editor.mol.common, i);
+                // populate_hydrogens_on_atom(
+                //     &mut state.mol_editor.mol.common,
+                //     i,
+                //     &mut scene.entities,
+                //     &mut state.ui,
+                //     engine_updates,
+                //     state.volatile.mol_manip.mode,
+                // );
             }
 
             state.mol_editor.rebuild_ff_related(&state.ff_param_set);
