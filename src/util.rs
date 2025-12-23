@@ -819,7 +819,9 @@ pub fn handle_scene_flags(
         }
     }
 
-    if state.volatile.flags.update_sas_coloring && let Some(mol) = &state.peptide {
+    if state.volatile.flags.update_sas_coloring
+        && let Some(mol) = &state.peptide
+    {
         sa_surface::update_sas_mesh_coloring(mol, &state.ui, &mut scene.meshes, engine_updates);
         state.volatile.flags.update_sas_coloring = false;
     }

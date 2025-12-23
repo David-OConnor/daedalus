@@ -148,7 +148,12 @@ pub fn make_sas_mesh(atoms: &[&Atom], mut precision: f32) -> Mesh {
 }
 
 /// We use this to apply coloring to SAS meshes based on the atoms and residues near them.
-pub fn update_sas_mesh_coloring_(mol: &MoleculePeptide, state_ui: &StateUi, meshes: &mut [Mesh], engine_updates: &mut EngineUpdates) {
+pub fn update_sas_mesh_coloring_(
+    mol: &MoleculePeptide,
+    state_ui: &StateUi,
+    meshes: &mut [Mesh],
+    engine_updates: &mut EngineUpdates,
+) {
     let start = Instant::now();
     println!("Loading SAS mesh coloring...");
 
@@ -198,7 +203,7 @@ pub fn update_sas_mesh_coloring_(mol: &MoleculePeptide, state_ui: &StateUi, mesh
                     if state_ui.atom_color_by_charge {
                         if let Some(q) = mol.common.atoms[*i].partial_charge {
                             let (r, g, b) = color_viridis_float(q, CHARGE_MAP_MIN, CHARGE_MAP_MAX);
-                            (r,g, b, opacity)
+                            (r, g, b, opacity)
                         } else {
                             (0., 0., 0., 0)
                         }
@@ -208,12 +213,7 @@ pub fn update_sas_mesh_coloring_(mol: &MoleculePeptide, state_ui: &StateUi, mesh
                 }
             };
 
-            vertex.color = Some((
-                (r * 255.) as u8,
-                (g * 255.) as u8,
-                (b * 255.) as u8,
-                a,
-            ));
+            vertex.color = Some(((r * 255.) as u8, (g * 255.) as u8, (b * 255.) as u8, a));
         }
     }
 
@@ -376,12 +376,7 @@ pub fn update_sas_mesh_coloring(
             };
 
             // Note: If opacity (a) is 0, the engine will use the entity color, and ignore vertex color.
-            vertex.color = Some((
-                (r * 255.) as u8,
-                (g * 255.) as u8,
-                (b * 255.) as u8,
-                a,
-            ));
+            vertex.color = Some(((r * 255.) as u8, (g * 255.) as u8, (b * 255.) as u8, a));
         }
     }
 

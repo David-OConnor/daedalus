@@ -149,7 +149,9 @@ pub fn add_from_template(
         .map(|i| mol.atoms[*i].posit)
         .collect::<Vec<_>>();
 
-    let (atoms, bonds) = template.atoms_bonds(anchor_is, anchor_sns, &anchors, r_aligners, start_sn, start_i);
+    let (atoms, bonds) = template.atoms_bonds(
+        anchor_is, anchor_sns, &anchors, r_aligners, start_sn, start_i,
+    );
     NEXT_ATOM_SN.fetch_add(atoms.len() as u32, Ordering::AcqRel);
 
     let mut i_added = Vec::new(); // Used for populating H.

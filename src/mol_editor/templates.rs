@@ -55,8 +55,12 @@ impl Template {
         match self {
             Self::Cooh => cooh_group(anchors[0], r_aligners[0], start_sn, start_i),
             Self::Amide => amide_group(anchors[0], r_aligners[0], start_sn, start_i),
-            Self::AromaticRing => ring(anchor_is, anchor_sns, anchors, r_aligners, 6, start_sn, start_i),
-            Self::PentaRing => ring(anchor_is, anchor_sns, anchors, r_aligners,5, start_sn, start_i),
+            Self::AromaticRing => ring(
+                anchor_is, anchor_sns, anchors, r_aligners, 6, start_sn, start_i,
+            ),
+            Self::PentaRing => ring(
+                anchor_is, anchor_sns, anchors, r_aligners, 5, start_sn, start_i,
+            ),
             _ => Default::default(),
         }
     }
@@ -220,11 +224,13 @@ fn ring(
     let eps = 1e-12;
 
     let dot = |a: Vec3, b: Vec3| a.x * b.x + a.y * b.y + a.z * b.z;
-    let cross = |a: Vec3, b: Vec3| Vec3::new(
-        a.y * b.z - a.z * b.y,
-        a.z * b.x - a.x * b.z,
-        a.x * b.y - a.y * b.x,
-    );
+    let cross = |a: Vec3, b: Vec3| {
+        Vec3::new(
+            a.y * b.z - a.z * b.y,
+            a.z * b.x - a.x * b.z,
+            a.x * b.y - a.y * b.x,
+        )
+    };
     let len2 = |v: Vec3| dot(v, v);
     let len = |v: Vec3| len2(v).sqrt();
     let normalize = |v: Vec3, fallback: Vec3| {
@@ -241,7 +247,8 @@ fn ring(
     let a0 = anchors[0];
 
     // Best-fit-ish plane normal from anchor0->(aligners and anchor1).
-    let mut dirs: Vec<Vec3> = Vec::with_capacity(r_aligners.len() + if anchors.len() == 2 { 1 } else { 0 });
+    let mut dirs: Vec<Vec3> =
+        Vec::with_capacity(r_aligners.len() + if anchors.len() == 2 { 1 } else { 0 });
     for p in r_aligners {
         let d = *p - a0;
         if len2(d) > eps {
@@ -264,7 +271,11 @@ fn ring(
     if len2(nrm) <= eps {
         if !dirs.is_empty() {
             let d0 = dirs[0];
-            let pref = if dot(d0, z_ref).abs() < 0.9 { z_ref } else { y_ref };
+            let pref = if dot(d0, z_ref).abs() < 0.9 {
+                z_ref
+            } else {
+                y_ref
+            };
             nrm = cross(d0, pref);
         } else {
             nrm = z_ref;
@@ -351,10 +362,10 @@ fn ring(
 
         // Pick higher min_d2; tie-breaker higher sum_d2
         cand.sort_by(|a, b| {
-            b.1 .0
-                .partial_cmp(&a.1 .0)
+            b.1.0
+                .partial_cmp(&a.1.0)
                 .unwrap()
-                .then_with(|| b.1 .1.partial_cmp(&a.1 .1).unwrap())
+                .then_with(|| b.1.1.partial_cmp(&a.1.1).unwrap())
         });
 
         cand.remove(0).0
@@ -368,7 +379,11 @@ fn ring(
         }
         if len2(mean_dir) <= eps {
             // Stable in-plane fallback
-            let pref = if dot(nrm, z_ref).abs() < 0.9 { z_ref } else { y_ref };
+            let pref = if dot(nrm, z_ref).abs() < 0.9 {
+                z_ref
+            } else {
+                y_ref
+            };
             mean_dir = cross(nrm, pref);
         }
         mean_dir = mean_dir - nrm * dot(mean_dir, nrm);
@@ -385,10 +400,10 @@ fn ring(
         }
 
         cand.sort_by(|a, b| {
-            b.1 .0
-                .partial_cmp(&a.1 .0)
+            b.1.0
+                .partial_cmp(&a.1.0)
                 .unwrap()
-                .then_with(|| b.1 .1.partial_cmp(&a.1 .1).unwrap())
+                .then_with(|| b.1.1.partial_cmp(&a.1.1).unwrap())
         });
 
         cand.remove(0).0
@@ -398,20 +413,37 @@ fn ring(
 
     let vertex_global_i = |k: usize| -> usize {
         if anchors.len() == 2 {
-            if k == 0 { anchor_is[0] } else if k == 1 { anchor_is[1] } else { start_i + (k - 2) }
+            if k == 0 {
+                anchor_is[0]
+            } else if k == 1 {
+                anchor_is[1]
+            } else {
+                start_i + (k - 2)
+            }
         } else {
-            if k == 0 { anchor_is[0] } else { start_i + (k - 1) }
+            if k == 0 {
+                anchor_is[0]
+            } else {
+                start_i + (k - 1)
+            }
         }
     };
 
     let vertex_sn = |k: usize| -> u32 {
         if anchors.len() == 2 {
-            if k == 0 { anchor_sns[0] }
-            else if k == 1 { anchor_sns[1] }
-            else { start_sn + (k as u32) - 2 }
+            if k == 0 {
+                anchor_sns[0]
+            } else if k == 1 {
+                anchor_sns[1]
+            } else {
+                start_sn + (k as u32) - 2
+            }
         } else {
-            if k == 0 { anchor_sns[0] }
-            else { start_sn + (k as u32) - 1 }
+            if k == 0 {
+                anchor_sns[0]
+            } else {
+                start_sn + (k as u32) - 1
+            }
         }
     };
 
@@ -428,6 +460,13 @@ fn ring(
 
     let mut bonds = Vec::with_capacity(if anchors.len() == 2 { n - 1 } else { n });
 
+    // todo: Rough placeholder
+    let bond_type = match num_atoms {
+        5 => BondType::Single,
+        6 => BondType::Aromatic,
+        _ => unreachable!(),
+    };
+
     for k in 0..n {
         let k_next = (k + 1) % n;
 
@@ -436,7 +475,7 @@ fn ring(
         }
 
         bonds.push(Bond {
-            bond_type: BondType::Aromatic,
+            bond_type,
             atom_0_sn: vertex_sn(k),
             atom_1_sn: vertex_sn(k_next),
             atom_0: vertex_global_i(k),

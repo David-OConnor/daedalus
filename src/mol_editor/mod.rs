@@ -437,8 +437,6 @@ pub fn enter_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mu
     // This stays false under several conditions.
     let mut mol_loaded = false;
 
-    let mut arc_center = Vec3F32::new_zero();
-
     if let Some((mol_type, i)) = state.volatile.active_mol
         && mol_type == MolType::Ligand
     {
@@ -453,7 +451,6 @@ pub fn enter_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mu
                 state.volatile.mol_manip.mode,
             );
             mol_loaded = true;
-            arc_center = state.ligands[i].common.centroid().into();
 
             state.volatile.mol_editing = Some(i);
         }
@@ -467,7 +464,9 @@ pub fn enter_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mu
 
     // Reset positions to be around the origin.
     state.mol_editor.move_to_origin();
-    scene.input_settings.control_scheme = ControlScheme::Arc { center: arc_center };
+    scene.input_settings.control_scheme = ControlScheme::Arc {
+        center: state.mol_editor.mol.common.centroid().into(),
+    };
 
     // Select the first atom.
     state.ui.selection = if state.mol_editor.mol.common.atoms.is_empty() {

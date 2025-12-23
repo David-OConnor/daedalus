@@ -731,7 +731,14 @@ fn template_section(
                 r_aligner_is.push(*bonded);
             }
 
-            (anchor_idxs, anchor_sns, r_aligners, next_sn, next_i, r_aligner_is)
+            (
+                anchor_idxs,
+                anchor_sns,
+                r_aligners,
+                next_sn,
+                next_i,
+                r_aligner_is,
+            )
         };
 
         // Helper

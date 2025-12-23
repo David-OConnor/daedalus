@@ -554,7 +554,13 @@ pub fn view_sel_selector(
     ui.add_space(COL_SPACING);
 }
 
-fn selection_section(state: &mut State, redraw: &mut bool, ui: &mut Ui, meshes: &mut [Mesh], engine_updates: &mut EngineUpdates) {
+fn selection_section(
+    state: &mut State,
+    redraw: &mut bool,
+    ui: &mut Ui,
+    meshes: &mut [Mesh],
+    engine_updates: &mut EngineUpdates,
+) {
     // todo: DRY with view.
     ui.horizontal_wrapped(|ui| {
         section_box().show(ui, |ui| {
