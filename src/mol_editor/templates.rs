@@ -39,12 +39,14 @@ pub enum Template {
     Cooh,
     Amide,
     AromaticRing,
+    /// 6 Carbon atoms single-bonded.
+    Cyclohexane,
     PentaRing,
 }
 
 impl Template {
     pub(in crate::mol_editor) fn atoms_bonds(
-        &self,
+        self,
         anchor_is: &[usize],
         anchor_sns: &[u32],
         anchors: &[Vec3], // Len = 0 or 1.
@@ -55,14 +57,14 @@ impl Template {
         match self {
             Self::Cooh => cooh_group(anchors[0], r_aligners[0], start_sn, start_i),
             Self::Amide => amide_group(anchors[0], r_aligners[0], start_sn, start_i),
-            Self::AromaticRing => ring(
-                anchor_is, anchor_sns, anchors, r_aligners, 6, start_sn, start_i,
+            Self::AromaticRing | Self::Cyclohexane | Self::PentaRing => ring(self,
+                anchor_is, anchor_sns, anchors, r_aligners, start_sn, start_i,
             ),
-            Self::PentaRing => ring(
-                anchor_is, anchor_sns, anchors, r_aligners, 5, start_sn, start_i,
-            ),
-            _ => Default::default(),
         }
+    }
+
+    pub (in crate::mol_editor) fn is_ring(self) -> bool {
+        matches!(self, Self::AromaticRing | Self::Cyclohexane | Self::PentaRing)
     }
 }
 
@@ -204,18 +206,23 @@ fn rotate_about_axis(posit: Vec3, pivot: Vec3, axis: Vec3, angle: f64) -> Vec3 {
 /// atoms to it, roughly in plane with any other atoms bonded to the anchor. With two anchors, we add 4 atoms
 /// too it, and the bond between anchor 0 and anchor 1 is part of the ring.
 fn ring(
+    template: Template,
     anchor_is: &[usize],
     anchor_sns: &[u32],
     anchors: &[Vec3],
     r_aligners: &[Vec3],
-    num_atoms: usize,
     start_sn: u32,
     start_i: usize,
 ) -> (Vec<Atom>, Vec<Bond>) {
-    assert!(num_atoms == 5 || num_atoms == 6);
+    let num_atoms = match template {
+        Template::AromaticRing | Template::Cyclohexane => 6,
+        Template::PentaRing => 5,
+        _ => unreachable!(),
+    };
+
     assert!(anchors.len() == 1 || anchors.len() == 2);
-    assert!(anchor_is.len() == anchors.len());
-    assert!(anchor_sns.len() == anchors.len());
+    assert_eq!(anchor_is.len(), anchors.len());
+    assert_eq!(anchor_sns.len(), anchors.len());
 
     let n = num_atoms;
     let angle = TAU / (n as f64);
@@ -447,12 +454,20 @@ fn ring(
         }
     };
 
+    let (ff_type, bond_type) = match template {
+        Template::PentaRing => (String::from("c5"), BondType::Single), // todo: Not sure on this one...
+        Template::Cyclohexane => (String::from("c6"), BondType::Single), // todo: QC. Find an example
+        Template::AromaticRing => (String::from("ca"), BondType::Aromatic),
+        _ => unreachable!(),
+    };
+
     let mut atoms = Vec::with_capacity(atoms_to_add);
     for k in anchors.len()..n {
         atoms.push(Atom {
             serial_number: vertex_sn(k),
             posit: ring_posits[k],
             element: Carbon,
+            force_field_type: Some(ff_type.clone()),
             type_in_res: Some(AtomTypeInRes::CA),
             ..Default::default()
         });
@@ -461,11 +476,7 @@ fn ring(
     let mut bonds = Vec::with_capacity(if anchors.len() == 2 { n - 1 } else { n });
 
     // todo: Rough placeholder
-    let bond_type = match num_atoms {
-        5 => BondType::Single,
-        6 => BondType::Aromatic,
-        _ => unreachable!(),
-    };
+
 
     for k in 0..n {
         let k_next = (k + 1) % n;

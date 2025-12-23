@@ -223,8 +223,11 @@ pub(in crate::ui) fn editor(
         if ui.button(RichText::new("Clear all").color(Color32::LIGHT_RED))
             .on_hover_text("Delete all atoms; start fresh")
             .clicked() {
-            // todo: Add a confirmer
-            state.mol_editor.mol.common = Default::default();
+
+            // state.mol_editor.mol.common = Default::default();
+
+            state.mol_editor.clear_mol();
+
             state.mol_editor.md_rebuild_required = true;
             state.mol_editor.rebuild_ff_related(&state.ff_param_set);
 
@@ -600,8 +603,10 @@ fn edit_tools(
         &mut scene.input_settings.control_scheme,
     );
 
-    if &selected_idxs.len() == &1 {
-        section_box().show(ui, |ui| {
+    // todo: Eventually add moving multiple atoms from multi-sel.
+
+    section_box().show(ui, |ui| {
+        if &selected_idxs.len() == &1 {
             if ui
                 .button(RichText::new("↔ Move atom"))
                 .on_hover_text("(Hotkey: M. M or Esc to stop) Move the selected atom")
@@ -626,7 +631,9 @@ fn edit_tools(
             if let Selection::AtomsLig((_, atoms_i)) = &state.ui.selection
                 && atoms_i.len() == 2
             {
+                println!("A");
                 let bond_exists = mol.adjacency_list[atoms_i[0]].contains(&atoms_i[1]);
+                println!("B");
 
                 if !bond_exists {
                     // todo: Hotkey for this and other functionality.
@@ -667,8 +674,9 @@ fn edit_tools(
                     *redraw = true;
                 }
             }
-        });
-    }
+
+        }
+    });
 
     if rebuild_md {
         sync_md(state);
@@ -766,14 +774,12 @@ fn template_section(
             }
         };
 
-        // todo: No! Don't continuously run these template atom creators!
-        // add_t(Template::AromaticRing, "−OH", "hydroxyl functional group");
-
         add_t(Template::Cooh, "−COOH", "carboxylic acid functional group");
 
         add_t(Template::Amide, "−NH₂", "amide functional group");
 
         add_t(Template::AromaticRing, "Ar", "benzene/aromatic ring");
+        add_t(Template::Cyclohexane, "Hex", "cyclohexane ring");
 
         add_t(Template::PentaRing, "Pent", "5-atom ring");
     });

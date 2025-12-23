@@ -3,7 +3,7 @@ set -euo pipefail
 
 version=0_2_3
 outdir=target/release
-exe="$outdir/dmolchanica"
+exe="$outdir/molchanica"
 readme="README.md"
 setup="install_scripts/setup_linux_desktop.sh"
 icon="resources/icon.png"

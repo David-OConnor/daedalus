@@ -690,157 +690,12 @@ pub fn save(state: &mut State, path: &Path) -> io::Result<()> {
         _ => unimplemented!(),
     }
 
-    println!("Saving editor file!"); // todo tmep
     // todo: A/R
     // state.update_history(path, OpenType::Ligand);
     // // Save the open history.
     // state.update_save_prefs(false);
 
     Ok(())
-}
-
-// todo: I think this approach is wrong. You can add multiple of the same one...
-/// This is built from Amber's gaff2.dat. Returns each H FF type that can be bound to a given atom
-/// (by force field type), and the bond distance in Å.
-/// todo: Can/should we get partial charges too
-pub fn hydrogens_avail(ff_type: &Option<String>) -> Vec<(String, f64)> {
-    let Some(f) = ff_type else { return Vec::new() };
-    match f.as_ref() {
-        // Water
-        "ow" => vec![("hw".to_owned(), 0.9572)],
-        "hw" => vec![("hw".to_owned(), 1.5136)],
-
-        // Generic sp carbon (c )
-        "c" => vec![
-            ("h4".to_owned(), 1.1123),
-            ("h5".to_owned(), 1.1053),
-            ("ha".to_owned(), 1.1010),
-        ],
-
-        // sp2 carbon families
-        "c1" => vec![("ha".to_owned(), 1.0666), ("hc".to_owned(), 1.0600)],
-        "c2" => vec![
-            ("h4".to_owned(), 1.0865),
-            ("h5".to_owned(), 1.0908),
-            ("ha".to_owned(), 1.0882),
-            ("hc".to_owned(), 1.0870),
-            ("hx".to_owned(), 1.0836),
-        ],
-        "c3" => vec![
-            ("h1".to_owned(), 1.0969),
-            ("h2".to_owned(), 1.0950),
-            ("h3".to_owned(), 1.0938),
-            ("hc".to_owned(), 1.0962),
-            ("hx".to_owned(), 1.0911),
-        ],
-        "c5" => vec![
-            ("h1".to_owned(), 1.0972),
-            ("h2".to_owned(), 1.0955),
-            ("h3".to_owned(), 1.0958),
-            ("hc".to_owned(), 1.0954),
-            ("hx".to_owned(), 1.0917),
-        ],
-        "c6" => vec![
-            ("h1".to_owned(), 1.0984),
-            ("h2".to_owned(), 1.0985),
-            ("h3".to_owned(), 1.0958),
-            ("hc".to_owned(), 1.0979),
-            ("hx".to_owned(), 1.0931),
-        ],
-
-        // Aromatic/condensed ring carbons
-        "ca" => vec![
-            ("ha".to_owned(), 1.0860),
-            ("h4".to_owned(), 1.0885),
-            ("h5".to_owned(), 1.0880),
-        ],
-        "cc" => vec![
-            ("h4".to_owned(), 1.0809),
-            ("h5".to_owned(), 1.0820),
-            ("ha".to_owned(), 1.0838),
-            ("hx".to_owned(), 1.0827),
-        ],
-        "cd" => vec![
-            ("h4".to_owned(), 1.0818),
-            ("h5".to_owned(), 1.0821),
-            ("ha".to_owned(), 1.0835),
-            ("hx".to_owned(), 1.0801),
-        ],
-        "ce" => vec![
-            ("h4".to_owned(), 1.0914),
-            ("h5".to_owned(), 1.0895),
-            ("ha".to_owned(), 1.0880),
-        ],
-        "cf" => vec![
-            ("h4".to_owned(), 1.0942),
-            ("ha".to_owned(), 1.0885),
-            // table also lists h5-cf (reverse order) at 1.0890
-            ("h5".to_owned(), 1.0890),
-        ],
-        "cg" => Vec::new(), // no H entries shown for cg in the provided snippet
-
-        // Other carbon families frequently seen
-        "cu" => vec![("ha".to_owned(), 1.0786)],
-        "cv" => vec![("ha".to_owned(), 1.0878)],
-        "cx" => vec![
-            ("h1".to_owned(), 1.0888),
-            ("h2".to_owned(), 1.0869),
-            ("hc".to_owned(), 1.0865),
-            ("hx".to_owned(), 1.0849),
-        ],
-        "cy" => vec![
-            ("h1".to_owned(), 1.0946),
-            ("h2".to_owned(), 1.0930),
-            ("hc".to_owned(), 1.0947),
-            ("hx".to_owned(), 1.0913),
-        ],
-
-        // Nitrogen families: protonated H type is "hn"
-        "n1" => vec![("hn".to_owned(), 0.9860)],
-        "n2" => vec![("hn".to_owned(), 1.0221)],
-        "n3" => vec![("hn".to_owned(), 1.0190)],
-        "n4" => vec![("hn".to_owned(), 1.0300)],
-        "n" => vec![("hn".to_owned(), 1.0130)],
-        "n5" => vec![("hn".to_owned(), 1.0211)],
-        "n6" => vec![("hn".to_owned(), 1.0183)],
-        "n7" => vec![("hn".to_owned(), 1.0195)],
-        "n8" => vec![("hn".to_owned(), 1.0192)],
-        "n9" => vec![("hn".to_owned(), 1.0192)],
-        "na" => vec![("hn".to_owned(), 1.0095)],
-        "nh" => vec![("hn".to_owned(), 1.0120)],
-        "nj" => vec![("hn".to_owned(), 1.0130)],
-        "nl" => vec![("hn".to_owned(), 1.0476)],
-        "no" => vec![("hn".to_owned(), 1.0440)],
-        "np" => vec![("hn".to_owned(), 1.0210)],
-        "nq" => vec![("hn".to_owned(), 1.0180)],
-        "ns" => vec![("hn".to_owned(), 1.0132)],
-        "nt" => vec![("hn".to_owned(), 1.0105)],
-        "nu" => vec![("hn".to_owned(), 1.0137)],
-        "nv" => vec![("hn".to_owned(), 1.0114)],
-        "nx" => vec![("hn".to_owned(), 1.0338)],
-        "ny" => vec![("hn".to_owned(), 1.0339)],
-        "nz" => vec![("hn".to_owned(), 1.0271)],
-
-        // Oxygen families: hydroxyl H type is "ho"
-        "o" => vec![("ho".to_owned(), 0.9810)],
-        "oh" => vec![("ho".to_owned(), 0.9725)],
-
-        // Sulfur families: thiol H type is "hs"
-        "s" => vec![("hs".to_owned(), 1.3530)],
-        "s4" => vec![("hs".to_owned(), 1.3928)],
-        "s6" => vec![("hs".to_owned(), 1.3709)],
-        "sh" => vec![("hs".to_owned(), 1.3503)],
-        "sy" => vec![("hs".to_owned(), 1.3716)],
-
-        // Phosphorus families: acidic phosphate H type is "hp"
-        "p2" => vec![("hp".to_owned(), 1.4272)],
-        "p3" => vec![("hp".to_owned(), 1.4256)],
-        "p4" => vec![("hp".to_owned(), 1.4271)],
-        "p5" => vec![("hp".to_owned(), 1.4205)],
-        "py" => vec![("hp".to_owned(), 1.4150)],
-
-        _ => Vec::new(),
-    }
 }
 
 /// Set up MD for the editor's molecule.
@@ -882,7 +737,7 @@ pub(super) fn build_dynamics(
         mol_specific_params: Some(editor.mol_specific_params.clone()),
     }];
 
-    let mut cfg = MdConfig {
+    let cfg = MdConfig {
         max_init_relaxation_iters: Some(50), // todo A/R
         overrides: MdOverrides {
             // todo: Reduced number of water relax steps to make it faster?
