@@ -34,6 +34,7 @@ use crate::{
     },
     util::handle_err,
 };
+use crate::mol_editor::MolEditorState;
 // todo: Check DBs (with a button maybe?) to see if the molecule exists in a DB already, or if
 // todo a similar one does.
 
@@ -53,12 +54,13 @@ fn change_el_button(
     el: Element,
     ui: &mut Ui,
     entities: &mut Vec<Entity>,
-    state_ui: &StateUi,
+    state_ui: &mut StateUi,
+    // editor: &mut MolEditorState,
     mol: &mut MoleculeSmall,
     engine_updates: &mut EngineUpdates,
     redraw: &mut bool,
     rebuild_md: &mut bool,
-    state_manip: ManipMode,
+    manip_mode: ManipMode,
 ) {
     let (r, g, b) = el.color();
     let r = (r * 255.) as u8;
@@ -88,9 +90,13 @@ fn change_el_button(
 
         for i in idxs {
             mol.common.atoms[i].element = el;
+
+            remove_hydrogens(&mut mol.common, i);
+            populate_hydrogens_on_atom(&mut mol.common, i, entities, state_ui, engine_updates, manip_mode);
         }
 
-        mol_editor::redraw(entities, mol, state_ui, state_manip);
+
+        mol_editor::redraw(entities, mol, state_ui, manip_mode);
         engine_updates.entities = EntityUpdate::All;
 
         *redraw = true;
@@ -591,12 +597,13 @@ fn edit_tools(
             for el in [
                 Carbon, Hydrogen, Oxygen, Nitrogen, Sulfur, Phosphorus, Chlorine,
             ] {
+                let sel = state.ui.selection.clone(); // todo :/
                 change_el_button(
-                    &state.ui.selection,
+                    &sel,
                     el,
                     ui,
                     &mut scene.entities,
-                    &state.ui,
+                    &mut state.ui,
                     &mut state.mol_editor.mol,
                     engine_updates,
                     redraw,
