@@ -10,25 +10,6 @@ use na_seq::{
 
 use crate::molecule::{Atom, Bond};
 
-// // todo: Deprecate in place of algoirthmetc approach
-// const POSITS_AR_RING: [Vec3; 6] = [
-//     Vec3::new_zero(),
-//     Vec3::new(-0.6985, 1.2090, 0.0),
-//     Vec3::new(-2.0955, 1.2090, 0.0),
-//     Vec3::new(-2.7940, 0.0000, 0.0),
-//     Vec3::new(-2.0955, -1.2090, 0.0),
-//     Vec3::new(-0.6985, -1.2090, 0.0),
-// ];
-//
-// // todo temp/placeholder
-// const POSITS_PENT_RING: [Vec3; 5] = [
-//     Vec3::new_zero(),
-//     Vec3::new(-0.6985, 1.2090, 0.0),
-//     Vec3::new(-2.0955, 1.2090, 0.0),
-//     Vec3::new(-2.7940, 0.0000, 0.0),
-//     Vec3::new(-2.0955, -1.2090, 0.0),
-// ];
-
 const BOND_LEN_AROMATIC: f64 = 1.39;
 const BOND_LEN_PENT_SAT: f64 = 1.53; // C-C single bonds
 const BOND_LEN_PENT_UNSAT: f64 = 1.53; // A C=C in the ring

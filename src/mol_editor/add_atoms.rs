@@ -245,8 +245,6 @@ pub fn add_from_template(
     // For non-rings, we are currently the selected atom with the added group's anchor.
     // So, remove it and its H atoms.
     for &anchor_i in anchor_is {
-        remove_hydrogens(mol, anchor_i); // Do this prior to removing the atom.
-
         if !template.is_ring() {
             mol.remove_atom(anchor_i);
         }
@@ -264,6 +262,7 @@ pub fn add_from_template(
     }
 
     for &anchor_i in anchor_is {
+        remove_hydrogens(mol, anchor_i);
         populate_hydrogens_on_atom(
             mol,
             anchor_i,
@@ -452,7 +451,7 @@ fn bonds_avail(i_atom: usize, mol: &MoleculeCommon, el: Element) -> usize {
             BondType::Triple => bonds_avail -= 3,
             BondType::Aromatic => {
                 ar_count += 1;
-                bonds_avail -= 2
+                // bonds_avail -= 2
             }
             _ => bonds_avail -= 1,
         }
@@ -460,7 +459,7 @@ fn bonds_avail(i_atom: usize, mol: &MoleculeCommon, el: Element) -> usize {
 
     // Special override for the non-integer case of Aromatic bonds (4 - 1.5 x 2 = 1)
     if ar_count == 2 {
-        bonds_avail = 1;
+        bonds_avail -=3;
     }
 
     if bonds_avail < 0 {
@@ -488,6 +487,8 @@ pub fn populate_hydrogens_on_atom(
     let el = mol.atoms[i].element;
 
     let h_to_add = bonds_avail(i, mol, el);
+
+    println!("\n Atom {} H to add: {h_to_add}", mol.atoms[i].serial_number);
 
     // let bonds_remaining = bonds_avail.saturating_sub(adj.len());
 
