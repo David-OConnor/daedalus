@@ -224,35 +224,6 @@ impl TryFrom<Pdbqt> for MoleculeSmall {
 }
 
 impl MoleculeSmall {
-    /// We use this to rotate flexible molecules around torsion (e.g. dihedral) angles.
-    /// `pivot` and `side` are atom indices in the molecule.
-    pub fn _find_downstream_atoms(&self, pivot: usize, side: usize) -> Vec<usize> {
-        // adjacency_list[atom] -> list of neighbors
-        // We want all atoms reachable from `side` when we remove the edge (side->pivot).
-        let mut visited = vec![false; self.common.atoms.len()];
-        let mut stack = vec![side];
-        let mut result = vec![];
-
-        visited[side] = true;
-
-        while let Some(current) = stack.pop() {
-            result.push(current);
-
-            for &nbr in &self.common.adjacency_list[current] {
-                // skip the pivot to avoid going back across the chosen bond
-                if nbr == pivot {
-                    continue;
-                }
-                if !visited[nbr] {
-                    visited[nbr] = true;
-                    stack.push(nbr);
-                }
-            }
-        }
-
-        result
-    }
-
     pub fn to_mol2(&self) -> Mol2 {
         let atoms = self.common.atoms.iter().map(|a| a.to_generic()).collect();
         let bonds = self.common.bonds.iter().map(|b| b.to_generic()).collect();

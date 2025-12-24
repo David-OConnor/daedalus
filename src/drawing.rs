@@ -958,10 +958,19 @@ pub fn draw_mol(
                         }
                     }
                 },
-                ManipMode::Rotate((mol_type, i)) => {
-                    if mol_type == mol.mol_type() && i == mol_i {
-                        color = COLOR_MOL_ROTATE;
-                        manip_active = true;
+                ManipMode::Rotate((mol_type, i)) => match mode {
+                    OperatingMode::Primary => {
+                        if mol_type == mol.mol_type() && i == mol_i {
+                            color = COLOR_MOL_ROTATE;
+                            manip_active = true;
+                        }
+                    }
+                    OperatingMode::MolEditor => {
+                        let bond = &mol.common().bonds[i];
+                        if bond.atom_0 == i_atom || bond.atom_1 == i_atom {
+                            color = COLOR_MOL_ROTATE;
+                            manip_active = true;
+                        }
                     }
                 }
                 ManipMode::None => (),
@@ -1102,11 +1111,22 @@ pub fn draw_mol(
                     }
                 }
             },
-            ManipMode::Rotate((mol_type, i)) => {
-                if mol_type == mol.mol_type() && i == mol_i {
-                    color_0 = COLOR_MOL_ROTATE;
-                    color_1 = COLOR_MOL_ROTATE;
-                    manip_active = true;
+            ManipMode::Rotate((mol_type, i)) =>  match mode {
+                OperatingMode::Primary => {
+                    if mol_type == mol.mol_type() && i == mol_i {
+                        color_0 = COLOR_MOL_ROTATE;
+                        color_1 = COLOR_MOL_ROTATE;
+                        manip_active = true;
+                    }
+                }
+                OperatingMode::MolEditor => {
+                    if i == i_bond {
+                        // todo: You may need to clarify manip_1 active manip_0 active or similar,
+                        // todo: otherwise the other bond half will not be colored by atom etc.
+                        color_0 = COLOR_MOL_ROTATE;
+                        color_1 = COLOR_MOL_ROTATE;
+                        manip_active = true;
+                    }
                 }
             }
             ManipMode::None => (),

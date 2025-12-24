@@ -278,14 +278,28 @@ pub(in crate::ui) fn editor(
             state.mol_editor.mol.common.reassign_sns();
         }
 
-        if let Some(md) = &mut state.mol_editor.md_state {
-            if ui.button("Relax")
-                .on_hover_text("Relax geometry; adjust atom positions to mimimize energy.")
-                .clicked() {
-                md.minimize_energy(&state.dev, MAX_RELAX_ITERS); // todo: Iters A/R.
+        if ui.button("Relax")
+            .on_hover_text("Relax geometry; adjust atom positions to minimize energy.")
+            .clicked() {
 
+            if state.mol_editor.md_state.is_none() {
+                match mol_editor::build_dynamics(
+                    &state.dev,
+                    &mut state.mol_editor,
+                    &state.ff_param_set,
+                    &state.to_save.md_config,
+                ) {
+                    Ok(md) => {
+                        state.mol_editor.md_state = Some(md);
+                    },
+                    Err(e) => eprintln!("Problem setting up dynamics for the editor: {e:?}"),
+                }
+            }
+
+            if let Some(md) = &mut state.mol_editor.md_state {
+                md.minimize_energy(&state.dev, MAX_RELAX_ITERS); // todo: Iters A/R.
                 state.mol_editor.load_atom_posits_from_md(&mut scene.entities, &state.ui,
-                                                          engine_updates, state.volatile.mol_manip.mode,);
+                                                          engine_updates, state.volatile.mol_manip.mode, );
             }
         }
 
@@ -505,23 +519,21 @@ fn edit_tools(
                     continue;
                 }
 
-                // remove_hydrogens(&mut state.mol_editor.mol.common, i);
-                // populate_hydrogens_on_atom(
-                //     &mut state.mol_editor.mol.common,
-                //     i,
-                //     &mut scene.entities,
-                //     &mut state.ui,
-                //     engine_updates,
-                //     state.volatile.mol_manip.mode,
-                // );
+                // Re-populate hydrogens on any atoms bonded to this.
+                remove_hydrogens(&mut state.mol_editor.mol.common, i);
+                populate_hydrogens_on_atom(
+                    &mut state.mol_editor.mol.common,
+                    i,
+                    &mut scene.entities,
+                    &mut state.ui,
+                    engine_updates,
+                    state.volatile.mol_manip.mode,
+                );
             }
 
             state.mol_editor.rebuild_ff_related(&state.ff_param_set);
         }
-        // if rebuild_md {
-        //     sync_md(state);
-        // }
-        // return;
+
     }
 
     if !bond_mode {
@@ -626,10 +638,24 @@ fn edit_tools(
 
     // todo: Eventually add moving multiple atoms from multi-sel.
 
+    let mut color_move = COLOR_INACTIVE;
+    let mut color_rotate = COLOR_INACTIVE;
+
+    // todo
+    match state.volatile.mol_manip.mode {
+        ManipMode::Move(_) => {
+            color_move = COLOR_ACTIVE;
+        }
+        ManipMode::Rotate(_) => {
+            color_rotate = COLOR_ACTIVE;
+        }
+        ManipMode::None => (),
+    }
+
     section_box().show(ui, |ui| {
         if &selected_idxs.len() == &1 {
             if ui
-                .button(RichText::new("↔ Move atom"))
+                .button(RichText::new("↔ Move atom").color(color_move))
                 .on_hover_text("(Hotkey: M. M or Esc to stop) Move the selected atom")
                 .clicked()
             {
@@ -646,15 +672,35 @@ fn edit_tools(
                     &state.ui.selection,
                 );
             }
+            // }
 
+            if bond_mode {
+                if ui.button(RichText::new("⟳ Rot around bond").color(color_rotate))
+                    .on_hover_text("(Hotkey: R. R or Esc to stop) Rotate the molecule around this bond")
+                    .clicked() {
+                    mol_manip::set_manip(
+                        &mut state.volatile,
+                        &mut state.to_save.save_flag,
+                        scene,
+                        redraw,
+                        &mut false,
+                        &mut false,
+                        &mut rebuild_md,
+                        // Atom i is used instead of the primary mode's mol i, since we're moving a single atom.
+                        ManipMode::Rotate((MolType::Ligand, selected_idxs[0])),
+                        &state.ui.selection,
+                    );
+                }
+            }
+
+
+            // if &selected_idxs.len() == &1 {
             let mol = &mut state.mol_editor.mol.common;
 
             if let Selection::AtomsLig((_, atoms_i)) = &state.ui.selection
                 && atoms_i.len() == 2
             {
-                println!("A");
                 let bond_exists = mol.adjacency_list[atoms_i[0]].contains(&atoms_i[1]);
-                println!("B");
 
                 if !bond_exists {
                     // todo: Hotkey for this and other functionality.

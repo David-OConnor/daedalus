@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 
-$version = "0_2_3"
+$version = "0_2_4"
 $outDir = "target\release"
 $exe    = Join-Path $outDir "molchanica.exe"
 $gemmi  = "C:\Program Files\gemmi"

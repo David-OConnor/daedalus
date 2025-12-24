@@ -292,29 +292,6 @@ pub fn event_dev_handler(
                         }
                     },
                     Code(KeyCode::KeyM) => {
-                        // let (mol_type, mol_i) = match state_.volatile.operating_mode {
-                        //     OperatingMode::Primary => match state_.active_mol() {
-                        //         Some(m) => (
-                        //             m.mol_type(),
-                        //             state_.volatile.active_mol.unwrap_or_default().1,
-                        //         ),
-                        //         None => return updates,
-                        //     },
-                        //     OperatingMode::MolEditor => {
-                        //         // todo: DRY with mol editor button.
-                        //         let (mol_i, atom_sel_i) = match &state_.ui.selection {
-                        //             Selection::AtomLig((mol_i, i)) => (*mol_i, *i),
-                        //             Selection::AtomsLig((mol_i, i)) => {
-                        //                 // todo: How should we handle this?
-                        //                 (*mol_i, i[0])
-                        //             }
-                        //             _ => return updates,
-                        //         };
-                        //
-                        //         (MolType::Ligand, atom_sel_i)
-                        //     }
-                        // };
-
                         let mut rebuild_md_editor = false;
                         mol_manip::set_manip(
                             &mut state_.volatile,

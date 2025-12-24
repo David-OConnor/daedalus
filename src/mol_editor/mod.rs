@@ -17,8 +17,8 @@ use dynamics::{
 };
 use graphics::{ControlScheme, EngineUpdates, Entity, EntityUpdate, Scene};
 use lin_alg::{
-    f32::{Quaternion, Vec3 as Vec3F32},
-    f64::Vec3,
+    f32::{Quaternion as QuaternionF32, Vec3 as Vec3F32},
+    f64::{Quaternion, Vec3},
 };
 use na_seq::{
     AtomTypeInRes,
@@ -43,6 +43,8 @@ use crate::{
     ui::UI_HEIGHT_CHANGED,
     util::find_neighbor_posit,
 };
+use crate::docking::Pose;
+use crate::molecule::MoleculeCommon;
 
 pub const INIT_CAM_DIST: f32 = 20.;
 
@@ -479,7 +481,7 @@ pub fn enter_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mu
 
     state.volatile.primary_mode_cam = scene.camera.clone();
     scene.camera.position = Vec3F32::new(0., 0., -INIT_CAM_DIST);
-    scene.camera.orientation = Quaternion::new_identity();
+    scene.camera.orientation = QuaternionF32::new_identity();
 
     state.volatile.mol_manip.mode = ManipMode::None;
 
@@ -583,7 +585,7 @@ fn draw_atom(entities: &mut Vec<Entity>, atom: &Atom, ui: &StateUi) {
             mesh,
             // We assume atom.posit is synced with atom_posits here. (Not true generally)
             atom.posit.into(),
-            Quaternion::new_identity(),
+            QuaternionF32::new_identity(),
             radius,
             color,
             ATOM_SHININESS,
@@ -805,4 +807,147 @@ pub fn sync_md(state: &mut State) {
         state.mol_editor.md_rebuild_required = true;
         state.mol_editor.rebuild_ff_related(&state.ff_param_set);
     }
+}
+
+
+/// Rotate part of the molecule around a bond. Rotates the *smaller* part of the molecule as divided
+/// by this bond: Each pivot rotation rotates the side of the flexible bond that
+/// has fewer atoms; the intent is to minimize the overall position changes for these flexible bond angle
+/// changes.
+///
+/// For each flexible bond, divide all atoms into two groups:
+/// those upstream of this bond, and those downstream. Note that not all bonds make sense as
+/// rotation centers. For example, bonds in rings.
+pub fn rotate_around_bond(mol: &mut MoleculeCommon, bond_pivot: usize, rot_amt: f64) {
+    if bond_pivot >= mol.bonds.len() {
+        eprintln!("Error: Bond pivot out of bounds.");
+        return;
+    }
+
+    let pivot = &mol.bonds[bond_pivot];
+
+    // Don't rotate around bonds that are part of a cycle (rings).
+    if bond_in_cycle(mol, pivot.atom_0, pivot.atom_1) {
+        // eprintln!("Error: bond is in a ring/cycle; refusing to rotate around it.");
+        return;
+    }
+
+    // Measure how many atoms would be "downstream" from each side
+    let side0_downstream = find_downstream_atoms(mol, pivot.atom_1, pivot.atom_0); // atoms on atom_0 side
+    let side1_downstream = find_downstream_atoms(mol, pivot.atom_0, pivot.atom_1); // atoms on atom_1 side
+
+    // Rotate the smaller side; keep pivot_idx on the larger side
+    let (pivot_idx, side_idx, downstream_atom_indices) =
+        if side0_downstream.len() > side1_downstream.len() {
+            (pivot.atom_0, pivot.atom_1, side1_downstream)
+        } else {
+            (pivot.atom_1, pivot.atom_0, side0_downstream)
+        };
+
+    // Pivot and side positions
+    let pivot_pos = mol.atom_posits[pivot_idx];
+    let side_pos = mol.atom_posits[side_idx];
+
+    let axis_raw = side_pos - pivot_pos;
+    let axis_len2 = axis_raw.dot(axis_raw);
+    if axis_len2 <= 1.0e-24 {
+        eprintln!("Error: bond axis is degenerate (zero length).");
+        return;
+    }
+
+    let axis_vec = axis_raw.to_normalized();
+
+    // Build the Quaternion for this rotation (assumes rot_amt is radians)
+    let rotator = Quaternion::from_axis_angle(axis_vec, rot_amt);
+
+    // Now apply the rotation to each downstream atom:
+    for &atom_idx in &downstream_atom_indices {
+        let old_pos = mol.atom_posits[atom_idx];
+        let relative = old_pos - pivot_pos;
+        let new_pos = pivot_pos + rotator.rotate_vec(relative);
+        mol.atom_posits[atom_idx] = new_pos;
+    }
+
+    // We've updated atom positions in place; update internal coords.
+    for (i, a) in mol.atoms.iter_mut().enumerate() {
+        a.posit = mol.atom_posits[i];
+    }
+}
+
+// /// We use this to rotate molecules around a bond pivot..
+// /// `pivot` and `side` are atom indices in the molecule.
+// pub fn find_downstream_atoms(mol: &MoleculeCommon, pivot: usize, side: usize) -> Vec<usize> {
+//     // We want all atoms reachable from `side` when we remove the edge (side->pivot).
+//     let mut visited = vec![false; mol.atoms.len()];
+//     let mut stack = vec![side];
+//     let mut result = vec![];
+//
+//     visited[side] = true;
+//
+//     while let Some(current) = stack.pop() {
+//         result.push(current);
+//
+//         for &nbr in &mol.adjacency_list[current] {
+//             // skip the pivot to avoid going back across the chosen bond
+//             if nbr == pivot {
+//                 continue;
+//             }
+//             if !visited[nbr] {
+//                 visited[nbr] = true;
+//                 stack.push(nbr);
+//             }
+//         }
+//     }
+//
+//     result
+// }
+
+fn bond_in_cycle(mol: &MoleculeCommon, a0: usize, a1: usize) -> bool {
+    // Is there an alternate path from a0 to a1 if we ignore the direct edge a0<->a1?
+    let mut visited = vec![false; mol.atoms.len()];
+    let mut stack = vec![a0];
+    visited[a0] = true;
+
+    while let Some(cur) = stack.pop() {
+        for &nbr in &mol.adjacency_list[cur] {
+            // Ignore ONLY the bond edge in either direction.
+            if (cur == a0 && nbr == a1) || (cur == a1 && nbr == a0) {
+                continue;
+            }
+            if nbr == a1 {
+                return true;
+            }
+            if !visited[nbr] {
+                visited[nbr] = true;
+                stack.push(nbr);
+            }
+        }
+    }
+
+    false
+}
+
+/// We use this to rotate molecules around a bond pivot..
+/// `pivot` and `side` are atom indices in the molecule.
+fn find_downstream_atoms(mol: &MoleculeCommon, pivot: usize, side: usize) -> Vec<usize> {
+    // We want all atoms reachable from `side` when we remove the edge (side->pivot).
+    let mut visited = vec![false; mol.atoms.len()];
+    let mut stack = vec![side];
+    let mut result = vec![];
+
+    visited[pivot] = true; // never cross or include pivot (important for safety)
+    visited[side] = true;
+
+    while let Some(current) = stack.pop() {
+        result.push(current);
+
+        for &nbr in &mol.adjacency_list[current] {
+            if !visited[nbr] {
+                visited[nbr] = true;
+                stack.push(nbr);
+            }
+        }
+    }
+
+    result
 }

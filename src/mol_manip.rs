@@ -13,9 +13,9 @@ use na_seq::Element;
 use crate::{
     OperatingMode, Selection, State, StateVolatile,
     inputs::{SENS_MOL_ROT_MOUSE, SENS_MOL_ROT_SCROLL},
-    mol_editor,
     molecule::{MolType, MoleculeCommon},
 };
+use crate::mol_editor::rotate_around_bond;
 
 /// Blender-style mouse dragging of the molecule. For movement, creates a plane of the camera view,
 /// at the molecule's depth. The mouse cursor projects to this plane, moving the molecule
@@ -29,6 +29,10 @@ pub fn handle_mol_manip_in_plane(
     redraw_na: &mut bool,
     redraw_lipid: &mut bool,
 ) {
+    if state.volatile.mol_manip.mode == ManipMode::None {
+        return;
+    }
+
     // We skip renders, as they are relatively slow. This produces choppy dragging,
     // but I don't have a better plan yet.
     static mut I: u16 = 0;
@@ -126,32 +130,48 @@ pub fn handle_mol_manip_in_plane(
             }
         }
         ManipMode::Rotate((mol_type, mol_i)) => {
-            let mol = match mol_type {
-                MolType::Ligand => &mut state.ligands[mol_i].common,
-                MolType::NucleicAcid => &mut state.nucleic_acids[mol_i].common,
-                MolType::Lipid => &mut state.lipids[mol_i].common,
-                _ => unimplemented!(),
+            // todo: DRY with above
+            let mol = match state.volatile.operating_mode {
+                OperatingMode::Primary => match mol_type {
+                    MolType::Ligand => &mut state.ligands[mol_i].common,
+                    MolType::NucleicAcid => &mut state.nucleic_acids[mol_i].common,
+                    MolType::Lipid => &mut state.lipids[mol_i].common,
+                    _ => unimplemented!(),
+                },
+                OperatingMode::MolEditor => &mut state.mol_editor.mol.common,
             };
 
-            // We handle rotation around the fwd/z axis using the scroll wheel.
-            // let fwd = scene.camera.orientation.rotate_vec(FWD_VEC);
-            let right = scene
-                .camera
-                .orientation
-                .rotate_vec(RIGHT_VEC)
-                .to_normalized();
-            let up = scene.camera.orientation.rotate_vec(UP_VEC).to_normalized();
+            match state.volatile.operating_mode {
+                OperatingMode::Primary => {
 
-            let rot_x = Quaternion::from_axis_angle(right, -delta.1 as f32 * SENS_MOL_ROT_MOUSE);
-            let rot_y = Quaternion::from_axis_angle(up, -delta.0 as f32 * SENS_MOL_ROT_MOUSE);
+                    // We handle rotation around the fwd/z axis using the scroll wheel.
+                    // let fwd = scene.camera.orientation.rotate_vec(FWD_VEC);
+                    let right = scene
+                        .camera
+                        .orientation
+                        .rotate_vec(RIGHT_VEC)
+                        .to_normalized();
+                    let up = scene.camera.orientation.rotate_vec(UP_VEC).to_normalized();
 
-            let rot = rot_y * rot_x; // Note: Can swap the order for a slightly different effect.
-            mol.rotate(rot.into(), None);
+                    let rot_x = Quaternion::from_axis_angle(right, -delta.1 as f32 * SENS_MOL_ROT_MOUSE);
+                    let rot_y = Quaternion::from_axis_angle(up, -delta.0 as f32 * SENS_MOL_ROT_MOUSE);
+
+                    let rot = rot_y * rot_x; // Note: Can swap the order for a slightly different effect.
+
+                    mol.rotate(rot.into(), None);
+                }
+                OperatingMode::MolEditor => {
+                    // todo: X vs Y?
+
+                    const ROT_FACTOR: f64 = 0.008;
+                    rotate_around_bond(mol, mol_i, ROT_FACTOR * delta.0);
+                }
+            }
 
             let ratio = 8;
             unsafe {
                 I += 1;
-                if I.is_multiple_of(ratio) {
+                if I.is_multiple_of(ratio) || state.volatile.operating_mode == OperatingMode::MolEditor {
                     match mol_type {
                         MolType::Ligand => *redraw_lig = true,
                         MolType::NucleicAcid => *redraw_na = true,
@@ -179,7 +199,13 @@ pub fn handle_mol_manip_in_out(
         ManipMode::Move((mol_type, mol_i)) => {
             let mol = match state.volatile.operating_mode {
                 OperatingMode::Primary => match mol_type {
-                    MolType::Ligand => &mut state.ligands[mol_i].common,
+                    MolType::Ligand => {
+                        if mol_i >= state.ligands.len() {
+                            println!("Error: Index out of bounds on ligand for mol manip");
+                            return;
+                        }
+                        &mut state.ligands[mol_i].common
+                    },
                     MolType::NucleicAcid => &mut state.nucleic_acids[mol_i].common,
                     MolType::Lipid => &mut state.lipids[mol_i].common,
                     _ => unimplemented!(),
@@ -293,7 +319,14 @@ pub fn handle_mol_manip_in_out(
 
             // todo: C+P with slight changes from the mouse-move variant.
             let mol = match mol_type {
-                MolType::Ligand => &mut state.ligands[mol_i].common,
+                MolType::Ligand => {
+                    if mol_i >= state.ligands.len() {
+                        println!("Error: Index out of bounds on ligand for mol manip");
+                        return;
+                    }
+
+                    &mut state.ligands[mol_i].common
+                },
                 MolType::NucleicAcid => &mut state.nucleic_acids[mol_i].common,
                 MolType::Lipid => &mut state.lipids[mol_i].common,
                 _ => unimplemented!(),
@@ -340,6 +373,8 @@ pub fn set_manip(
                 // todo: How should we handle this?
                 (MolType::Ligand, i[0])
             }
+            // For rotating.
+            Selection::BondLig((_, i)) => (MolType::Ligand, *i),
             _ => return,
         },
     };
@@ -392,6 +427,7 @@ pub fn set_manip(
                 scene.input_settings.control_scheme = vol.control_scheme_prev;
                 vol.mol_manip.mode = ManipMode::None;
                 vol.mol_manip.pivot = None;
+
                 if vol.operating_mode == OperatingMode::MolEditor {
                     *rebuild_md_editor = true;
                 }
