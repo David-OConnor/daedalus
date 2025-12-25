@@ -1450,6 +1450,10 @@ pub fn draw_peptide(state: &mut State, scene: &mut Scene) {
         return;
     };
 
+    if !mol.common.visible {
+        return;
+    }
+
     let start_i = scene.entities.len();
     let mut entities = Vec::new();
 

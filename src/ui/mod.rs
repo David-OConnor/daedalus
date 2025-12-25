@@ -494,7 +494,7 @@ pub fn view_sel_selector(
             }
         }
 
-        if let Some(mol) = &state.peptide {
+        if state.peptide.is_some() {
             state.volatile.flags.update_sas_coloring = true;
         }
     }
@@ -933,8 +933,7 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
         ctx,
     );
 
-    TopBottomPanel::top("0").show(ctx, |ui| {
-    // CentralPanel::default().show(ctx, |ui| {
+    let out_main_panel = TopBottomPanel::top("0").show(ctx, |ui| {
         ui.spacing_mut().slider_width = 120.;
 
         handle_input(
@@ -1369,6 +1368,20 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             ui,
         );
 
+        // todo: Render area here (Dec 2025) for the 3D part?
+        // {
+        //     let avail = ui.available_size();
+        //     let (rect, _resp) = ui.allocate_exact_size(avail, egui::Sense::hover());
+        //
+        //     // Important: attach your WGPU rendering to *this* rect.
+        //     // ui.painter().add(egui::Shape::Callback(egui::epaint::PaintCallback {
+        //     //     rect,
+        //     //     callback: std::sync::Arc::new(MyWgpuCallback {
+        //     //         // whatever handles/resources you need
+        //     //     }),
+        //     // }));
+        // }
+
         load_popups(state, scene, ui, &mut redraw_peptide, &mut redraw_lig, &mut reset_cam, &mut engine_updates);
 
         // -------UI above; clean-up items (based on flags) below
@@ -1388,6 +1401,9 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
             scene, redraw_peptide, redraw_lig, redraw_na, redraw_lipid, reset_cam, &mut engine_updates,
         )
     });
+
+    // todo: Experimenting
+    engine_updates.ui_reserved_px.1 = out_main_panel.response.rect.height();
 
     // todo: Appropriate place for this?
     if state.volatile.inputs_commanded.inputs_present() {

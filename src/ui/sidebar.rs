@@ -25,7 +25,7 @@ fn mol_picker_one(
     let help_text = "Make this molecule the active / selected one. Middle click to close it.";
 
     let active = match active_mol {
-        Some((_mol_type, i)) => *i == i_mol,
+        Some((mol_type_active, i)) => *mol_type_active == mol_type && *i == i_mol,
         _ => false,
     };
 
@@ -39,6 +39,7 @@ fn mol_picker_one(
         let sel_btn = ui
             .button(RichText::new(&mol.ident).color(color))
             .on_hover_text(help_text);
+
         if sel_btn.clicked() {
             if active && active_mol.is_some() {
                 *active_mol = None;
@@ -101,60 +102,23 @@ fn mol_picker(
     redraw_na: &mut bool,
     engine_updates: &mut EngineUpdates,
 ) {
-    let help_text = "Make this molecule the active / selected one. Middle click to close it.";
-    // todo: Make this support other types.
     let mut recenter_orbit = false;
-    if let Some(mol) = &mut state.peptide {
-        let i_mol = 0; // todo: A/R if you add more peptides.
-
-        let active = match state.volatile.active_mol {
-            Some((MolType::Peptide, i_)) => i_ == i_mol,
-            _ => false,
-        };
-
-        let color = if active {
-            COLOR_ACTIVE_RADIO
-        } else {
-            COLOR_INACTIVE
-        };
-
-        let sel_btn = ui
-            .button(RichText::new(&mol.common.ident).color(color))
-            .on_hover_text(help_text);
-        if sel_btn.clicked() {
-            if active && state.volatile.active_mol.is_some() {
-                state.volatile.active_mol = None;
-            } else {
-                state.volatile.active_mol = Some((MolType::Peptide, i_mol));
-                state.volatile.orbit_center = state.volatile.active_mol;
-
-                recenter_orbit = true;
-            }
-
-            *redraw_pep = true; // To reflect the change in thickness, color etc.
-
-            let color_vis = if mol.common.visible {
-                COLOR_ACTIVE
-            } else {
-                COLOR_INACTIVE
-            };
-
-            if ui.button(RichText::new("👁").color(color_vis)).clicked() {
-                mol.common.visible = !mol.common.visible;
-
-                *redraw_lig = true; // todo Overkill; only need to redraw (or even just clear) one.
-                // todo: Generalize.
-                engine_updates.entities = EntityUpdate::All;
-                // engine_updates.entities.push_class(EntityClass::Peptide as u32);
-            }
-        }
-
-        if sel_btn.middle_clicked() {
-            close_mol(MolType::Peptide, i_mol, state, scene, engine_updates);
-        }
-    }
-
     let mut close = None; // Avoids borrow error.
+
+    if let Some(mol) = &mut state.peptide {
+        mol_picker_one(
+            &mut state.volatile.active_mol,
+            &mut state.volatile.orbit_center,
+            0,
+            &mut mol.common,
+            MolType::Peptide,
+            ui,
+            engine_updates,
+            redraw_pep,
+            &mut recenter_orbit,
+            &mut close,
+        );
+    }
 
     for (i_mol, mol) in state.ligands.iter_mut().enumerate() {
         mol_picker_one(
@@ -248,9 +212,7 @@ pub(in crate::ui) fn sidebar(
     engine_updates: &mut EngineUpdates,
     ctx: &Context,
 ) {
-    // return;
-
-    egui::SidePanel::left("sidebar")
+    let out = egui::SidePanel::left("sidebar")
         // .resizable(true) // let user drag the width
         // .default_width(200.0)
         // .width_range(160.0..=420.0)
@@ -281,31 +243,34 @@ pub(in crate::ui) fn sidebar(
                     open_tools(state, ui);
                 }
 
-                if let Some(mol) = &state.peptide {
-                    // let color = if state.to_save.last_peptide_opened.is_none() {
-                    //     COLOR_ATTENTION
-                    // } else {
-                    //     Color32::GRAY
-                    // };
-                    // todo: Put a form of this back.
-                    let color = Color32::GRAY;
-                    if ui.button(RichText::new("Save").color(color)).clicked() {
-                        let filename = {
-                            let extension = "cif";
+                // todo: Put back if your "Save" button below isn't easy to get working for peptides.
 
-                            let name = if mol.common.ident.is_empty() {
-                                "molecule".to_string()
-                            } else {
-                                mol.common.ident.clone()
-                            };
-                            format!("{name}.{extension}")
-                        };
+                // if let Some(mol) = &state.peptide {
+                //     // let color = if state.to_save.last_peptide_opened.is_none() {
+                //     //     COLOR_ATTENTION
+                //     // } else {
+                //     //     Color32::GRAY
+                //     // };
+                //     // todo: Put a form of this back.
+                //     let color = Color32::GRAY;
+                //     if ui.button(RichText::new("Save").color(color)).clicked() {
+                //         let filename = {
+                //             let extension = "cif";
+                //
+                //             let name = if mol.common.ident.is_empty() {
+                //                 "molecule".to_string()
+                //             } else {
+                //                 mol.common.ident.clone()
+                //             };
+                //             format!("{name}.{extension}")
+                //         };
+                //
+                //         state.volatile.dialogs.save.config_mut().default_file_name =
+                //             filename.to_string();
+                //         state.volatile.dialogs.save.save_file();
+                //     }
+                // }
 
-                        state.volatile.dialogs.save.config_mut().default_file_name =
-                            filename.to_string();
-                        state.volatile.dialogs.save.save_file();
-                    }
-                }
                 let mut mol_to_save = None; // avoids dbl-borrow.
                 if let Some(mol) = state.active_mol() {
                     // Highlight the button if we haven't saved this to file, e.g. if opened from online.
@@ -318,7 +283,7 @@ pub(in crate::ui) fn sidebar(
                     let color = Color32::GRAY;
 
                     if ui
-                        .button(RichText::new("Save mol").color(color))
+                        .button(RichText::new("Save").color(color))
                         .on_hover_text(
                             "Save the active small molecule, nucleic acid, or lipid to a file.",
                         )
@@ -348,4 +313,6 @@ pub(in crate::ui) fn sidebar(
                 engine_updates,
             );
         });
+
+    engine_updates.ui_reserved_px.0 = out.response.rect.width();
 }
