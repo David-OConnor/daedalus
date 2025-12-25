@@ -404,192 +404,6 @@ pub(in crate::ui) fn selected_data(
     });
 }
 
-/// Abstracts over all molecule types. (Currently not protein though)
-fn mol_picker_one(
-    active_mol: &mut Option<(MolType, usize)>,
-    orbit_center: &mut Option<(MolType, usize)>,
-    i_mol: usize,
-    mol: &mut MoleculeCommon,
-    mol_type: MolType,
-    ui: &mut Ui,
-    engine_updates: &mut EngineUpdates,
-    redraw: &mut bool,
-    recenter_orbit: &mut bool,
-    close: &mut Option<(MolType, usize)>,
-) {
-    let help_text = "Make this molecule the active / selected one. Middle click to close it.";
-
-    let active = match active_mol {
-        Some((_mol_type, i)) => *i == i_mol,
-        _ => false,
-    };
-
-    let color = if active {
-        COLOR_ACTIVE_RADIO
-    } else {
-        COLOR_INACTIVE
-    };
-
-    let sel_btn = ui
-        .button(RichText::new(&mol.ident).color(color))
-        .on_hover_text(help_text);
-    if sel_btn.clicked() {
-        if active && active_mol.is_some() {
-            *active_mol = None;
-        } else {
-            *active_mol = Some((mol_type, i_mol));
-            *orbit_center = *active_mol;
-
-            *recenter_orbit = true;
-        }
-
-        *redraw = true; // To reflect the change in thickness, color etc.
-    }
-
-    if sel_btn.middle_clicked() {
-        *close = Some((mol_type, i_mol));
-    }
-
-    let color_vis = if mol.visible {
-        COLOR_ACTIVE
-    } else {
-        COLOR_INACTIVE
-    };
-
-    if ui.button(RichText::new("👁").color(color_vis)).clicked() {
-        mol.visible = !mol.visible;
-
-        *redraw = true; // todo Overkill; only need to redraw (or even just clear) one.
-        // todo: Generalize.
-        engine_updates.entities = EntityUpdate::All;
-        // engine_updates.entities.push_class(mol_type.entity_class() as u32);
-    }
-}
-
-/// Select, close, hide etc molecules from ones opened.
-fn mol_picker(
-    state: &mut State,
-    scene: &mut Scene,
-    ui: &mut Ui,
-    redraw_pep: &mut bool,
-    redraw_lig: &mut bool,
-    redraw_lipid: &mut bool,
-    redraw_na: &mut bool,
-    engine_updates: &mut EngineUpdates,
-) {
-    let help_text = "Make this molecule the active / selected one. Middle click to close it.";
-    // todo: Make this support other types.
-    let mut recenter_orbit = false;
-    if let Some(mol) = &mut state.peptide {
-        let i_mol = 0; // todo: A/R if you add more peptides.
-
-        let active = match state.volatile.active_mol {
-            Some((MolType::Peptide, i_)) => i_ == i_mol,
-            _ => false,
-        };
-
-        let color = if active {
-            COLOR_ACTIVE_RADIO
-        } else {
-            COLOR_INACTIVE
-        };
-
-        let sel_btn = ui
-            .button(RichText::new(&mol.common.ident).color(color))
-            .on_hover_text(help_text);
-        if sel_btn.clicked() {
-            if active && state.volatile.active_mol.is_some() {
-                state.volatile.active_mol = None;
-            } else {
-                state.volatile.active_mol = Some((MolType::Peptide, i_mol));
-                state.volatile.orbit_center = state.volatile.active_mol;
-
-                recenter_orbit = true;
-            }
-
-            *redraw_pep = true; // To reflect the change in thickness, color etc.
-
-            let color_vis = if mol.common.visible {
-                COLOR_ACTIVE
-            } else {
-                COLOR_INACTIVE
-            };
-
-            if ui.button(RichText::new("👁").color(color_vis)).clicked() {
-                mol.common.visible = !mol.common.visible;
-
-                *redraw_lig = true; // todo Overkill; only need to redraw (or even just clear) one.
-                // todo: Generalize.
-                engine_updates.entities = EntityUpdate::All;
-                // engine_updates.entities.push_class(EntityClass::Peptide as u32);
-            }
-        }
-
-        if sel_btn.middle_clicked() {
-            close_mol(MolType::Peptide, i_mol, state, scene, engine_updates);
-        }
-    }
-
-    let mut close = None; // Avoids borrow error.
-
-    for (i_mol, mol) in state.ligands.iter_mut().enumerate() {
-        mol_picker_one(
-            &mut state.volatile.active_mol,
-            &mut state.volatile.orbit_center,
-            i_mol,
-            &mut mol.common,
-            MolType::Ligand,
-            ui,
-            engine_updates,
-            redraw_lig,
-            &mut recenter_orbit,
-            &mut close,
-        );
-    }
-
-    for (i_mol, mol) in state.lipids.iter_mut().enumerate() {
-        mol_picker_one(
-            &mut state.volatile.active_mol,
-            &mut state.volatile.orbit_center,
-            i_mol,
-            &mut mol.common,
-            MolType::Lipid,
-            ui,
-            engine_updates,
-            redraw_lipid,
-            &mut recenter_orbit,
-            &mut close,
-        );
-    }
-
-    for (i_mol, mol) in state.nucleic_acids.iter_mut().enumerate() {
-        mol_picker_one(
-            &mut state.volatile.active_mol,
-            &mut state.volatile.orbit_center,
-            i_mol,
-            &mut mol.common,
-            MolType::NucleicAcid,
-            ui,
-            engine_updates,
-            redraw_na,
-            &mut recenter_orbit,
-            &mut close,
-        );
-    }
-
-    // todo: AAs here too?
-
-    if let Some((mol_type, i_mol)) = close {
-        close_mol(mol_type, i_mol, state, scene, engine_updates);
-    }
-
-    if recenter_orbit {
-        if let ControlScheme::Arc { center } = &mut scene.input_settings.control_scheme {
-            *center = orbit_center(state);
-        }
-    }
-}
-
 // todo: Unify this with non-peptide.
 pub(in crate::ui) fn display_mol_data_peptide(
     state: &mut State,
@@ -610,9 +424,9 @@ pub(in crate::ui) fn display_mol_data_peptide(
         if let Some(pep) = &state.peptide {
             mol_descrip(&MolGenericRef::Peptide(pep), ui);
 
-            if ui.button(RichText::new("Close").color(Color32::LIGHT_RED)).clicked() {
-                *close = true;
-            }
+            // if ui.button(RichText::new("Close").color(Color32::LIGHT_RED)).clicked() {
+            //     *close = true;
+            // }
 
             if pep.common.ident.len() <= 5 {
                 // todo: You likely need a better approach.
@@ -874,17 +688,15 @@ pub(in crate::ui) fn display_mol_data(
     engine_updates: &mut EngineUpdates,
 ) {
     ui.horizontal(|ui| {
-        mol_picker(state, scene, ui, redraw_pep, redraw_lig, redraw_lipid, redraw_na, engine_updates);
-
         let Some((active_mol_type, active_mol_i)) = state.volatile.active_mol else {
             return
         };
 
-        if ui.button(RichText::new("Close").color(Color32::LIGHT_RED))
-            .on_hover_text("(Hotkey: Delete) Close this molecule.")
-            .clicked() {
-            *close = true;
-        }
+        // if ui.button(RichText::new("Close").color(Color32::LIGHT_RED))
+        //     .on_hover_text("(Hotkey: Delete) Close this molecule.")
+        //     .clicked() {
+        //     *close = true;
+        // }
 
         ui.add_space(COL_SPACING / 2.);
 

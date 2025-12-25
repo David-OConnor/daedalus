@@ -459,7 +459,7 @@ fn bonds_avail(i_atom: usize, mol: &MoleculeCommon, el: Element) -> usize {
 
     // Special override for the non-integer case of Aromatic bonds (4 - 1.5 x 2 = 1)
     if ar_count == 2 {
-        bonds_avail -=3;
+        bonds_avail -= 3;
     }
 
     if bonds_avail < 0 {
@@ -488,7 +488,10 @@ pub fn populate_hydrogens_on_atom(
 
     let h_to_add = bonds_avail(i, mol, el);
 
-    println!("\n Atom {} H to add: {h_to_add}", mol.atoms[i].serial_number);
+    println!(
+        "\n Atom {} H to add: {h_to_add}",
+        mol.atoms[i].serial_number
+    );
 
     // let bonds_remaining = bonds_avail.saturating_sub(adj.len());
 

@@ -210,11 +210,17 @@ pub fn event_dev_handler(
                             state_.volatile.mol_manip.mode,
                             ManipMode::Move(_) | ManipMode::Rotate(_)
                         ) {
+                            // Exit manip mode.
                             state_.volatile.mol_manip.mode = ManipMode::None;
                             state_.volatile.mol_manip.pivot = None;
                             scene.input_settings.control_scheme =
                                 state_.volatile.control_scheme_prev;
+
+                            if state_.volatile.operating_mode == OperatingMode::MolEditor {
+                                sync_md(state_);
+                            }
                         } else {
+                            // Unselect everything.
                             state_.ui.selection = Selection::None;
                             state_.volatile.active_mol = None;
                         }

@@ -972,7 +972,7 @@ pub fn draw_mol(
                             manip_active = true;
                         }
                     }
-                }
+                },
                 ManipMode::None => (),
             }
 
@@ -1111,7 +1111,7 @@ pub fn draw_mol(
                     }
                 }
             },
-            ManipMode::Rotate((mol_type, i)) =>  match mode {
+            ManipMode::Rotate((mol_type, i)) => match mode {
                 OperatingMode::Primary => {
                     if mol_type == mol.mol_type() && i == mol_i {
                         color_0 = COLOR_MOL_ROTATE;
@@ -1128,7 +1128,7 @@ pub fn draw_mol(
                         manip_active = true;
                     }
                 }
-            }
+            },
             ManipMode::None => (),
         }
 

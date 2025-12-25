@@ -27,6 +27,7 @@ use na_seq::{
 
 use crate::{
     OperatingMode, Selection, State, StateUi, ViewSelLevel,
+    docking::Pose,
     drawing::{
         EntityClass, MESH_BALL_STICK_SPHERE, MESH_SPACEFILL_SPHERE, MoleculeView, atom_color,
         bond_entities, draw_mol, draw_peptide,
@@ -36,15 +37,13 @@ use crate::{
     mol_editor,
     mol_lig::MoleculeSmall,
     mol_manip::{ManipMode, MolManip},
-    molecule::{Atom, Bond, MolGenericRef, MolType},
+    molecule::{Atom, Bond, MolGenericRef, MolType, MoleculeCommon},
     render::{
         ATOM_SHININESS, BALL_STICK_RADIUS, BALL_STICK_RADIUS_H, set_flashlight, set_static_light,
     },
     ui::UI_HEIGHT_CHANGED,
     util::find_neighbor_posit,
 };
-use crate::docking::Pose;
-use crate::molecule::MoleculeCommon;
 
 pub const INIT_CAM_DIST: f32 = 20.;
 
@@ -73,6 +72,8 @@ pub struct MolEditorState {
     pub snap: Option<Snapshot>,
     pub last_dt_run: Instant,
     pub md_rebuild_required: bool,
+    /// Bond index.
+    pub rotatable_bonds: Vec<usize>,
 }
 
 impl Default for MolEditorState {
@@ -86,8 +87,9 @@ impl Default for MolEditorState {
             time_between_md_runs: 33.333,
             md_running: Default::default(),
             last_dt_run: Instant::now(),
-            snap: None,
-            md_rebuild_required: false,
+            snap: Default::default(),
+            md_rebuild_required: Default::default(),
+            rotatable_bonds: Default::default(),
         }
     }
 }
@@ -808,7 +810,6 @@ pub fn sync_md(state: &mut State) {
         state.mol_editor.rebuild_ff_related(&state.ff_param_set);
     }
 }
-
 
 /// Rotate part of the molecule around a bond. Rotates the *smaller* part of the molecule as divided
 /// by this bond: Each pivot rotation rotates the side of the flexible bond that

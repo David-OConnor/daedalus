@@ -13,9 +13,9 @@ use na_seq::Element;
 use crate::{
     OperatingMode, Selection, State, StateVolatile,
     inputs::{SENS_MOL_ROT_MOUSE, SENS_MOL_ROT_SCROLL},
+    mol_editor::rotate_around_bond,
     molecule::{MolType, MoleculeCommon},
 };
-use crate::mol_editor::rotate_around_bond;
 
 /// Blender-style mouse dragging of the molecule. For movement, creates a plane of the camera view,
 /// at the molecule's depth. The mouse cursor projects to this plane, moving the molecule
@@ -143,7 +143,6 @@ pub fn handle_mol_manip_in_plane(
 
             match state.volatile.operating_mode {
                 OperatingMode::Primary => {
-
                     // We handle rotation around the fwd/z axis using the scroll wheel.
                     // let fwd = scene.camera.orientation.rotate_vec(FWD_VEC);
                     let right = scene
@@ -153,8 +152,10 @@ pub fn handle_mol_manip_in_plane(
                         .to_normalized();
                     let up = scene.camera.orientation.rotate_vec(UP_VEC).to_normalized();
 
-                    let rot_x = Quaternion::from_axis_angle(right, -delta.1 as f32 * SENS_MOL_ROT_MOUSE);
-                    let rot_y = Quaternion::from_axis_angle(up, -delta.0 as f32 * SENS_MOL_ROT_MOUSE);
+                    let rot_x =
+                        Quaternion::from_axis_angle(right, -delta.1 as f32 * SENS_MOL_ROT_MOUSE);
+                    let rot_y =
+                        Quaternion::from_axis_angle(up, -delta.0 as f32 * SENS_MOL_ROT_MOUSE);
 
                     let rot = rot_y * rot_x; // Note: Can swap the order for a slightly different effect.
 
@@ -171,7 +172,9 @@ pub fn handle_mol_manip_in_plane(
             let ratio = 8;
             unsafe {
                 I += 1;
-                if I.is_multiple_of(ratio) || state.volatile.operating_mode == OperatingMode::MolEditor {
+                if I.is_multiple_of(ratio)
+                    || state.volatile.operating_mode == OperatingMode::MolEditor
+                {
                     match mol_type {
                         MolType::Ligand => *redraw_lig = true,
                         MolType::NucleicAcid => *redraw_na = true,
@@ -205,7 +208,7 @@ pub fn handle_mol_manip_in_out(
                             return;
                         }
                         &mut state.ligands[mol_i].common
-                    },
+                    }
                     MolType::NucleicAcid => &mut state.nucleic_acids[mol_i].common,
                     MolType::Lipid => &mut state.lipids[mol_i].common,
                     _ => unimplemented!(),
@@ -326,7 +329,7 @@ pub fn handle_mol_manip_in_out(
                     }
 
                     &mut state.ligands[mol_i].common
-                },
+                }
                 MolType::NucleicAcid => &mut state.nucleic_acids[mol_i].common,
                 MolType::Lipid => &mut state.lipids[mol_i].common,
                 _ => unimplemented!(),

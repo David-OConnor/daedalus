@@ -7,8 +7,9 @@ use std::{
 use bio_apis::{pubchem::find_cids_from_search, rcsb};
 use bio_files::{DensityMap, ResidueType, density_from_2fo_fc_rcsb_gemmi};
 use egui::{
-    Align, Color32, ComboBox, Context, Key, Layout, Popup, PopupAnchor, Pos2, RectAlign, RichText,
-    Slider, TextEdit, TextFormat, TextStyle, TopBottomPanel, Ui, text::LayoutJob,
+    Align, CentralPanel, Color32, ComboBox, Context, Key, Layout, Popup, PopupAnchor, Pos2,
+    RectAlign, RichText, Slider, TextEdit, TextFormat, TextStyle, TopBottomPanel, Ui,
+    text::LayoutJob,
 };
 use graphics::{ControlScheme, EngineUpdates, EntityUpdate, FWD_VEC, Mesh, Scene};
 use md::md_setup;
@@ -36,6 +37,7 @@ use crate::{
         orca::orca_input,
         rama_plot::plot_rama,
         recent_files::recent_files,
+        sidebar::sidebar,
         util::{
             handle_redraw, init_with_scene, load_popups, open_lig_from_input, update_file_dialogs,
         },
@@ -57,6 +59,7 @@ mod mol_type_tools;
 mod orca;
 mod rama_plot;
 mod recent_files;
+mod sidebar;
 pub mod util;
 mod view;
 
@@ -919,7 +922,19 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
     // For getting DT for certain buttons when held. Does not seem to be the same as the 3D render DT.
     let start = Instant::now();
 
+    sidebar(
+        state,
+        scene,
+        &mut redraw_peptide,
+        &mut redraw_lig,
+        &mut redraw_lipid,
+        &mut redraw_na,
+        &mut engine_updates,
+        ctx,
+    );
+
     TopBottomPanel::top("0").show(ctx, |ui| {
+    // CentralPanel::default().show(ctx, |ui| {
         ui.spacing_mut().slider_width = 120.;
 
         handle_input(
@@ -980,28 +995,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 state.ui.popup.show_settings = !state.ui.popup.show_settings;
             }
 
-            let color_open_tools = if state.peptide.is_none() && state.ligands.is_empty() {
-                COLOR_ACTION
-            } else {
-                COLOR_INACTIVE
-            };
-
-            if ui
-                .button(RichText::new("Open").color(color_open_tools))
-                .on_hover_text("Open a molecule, electron density, or other file from disk.")
-                .clicked()
-            {
-                state.volatile.dialogs.load.pick_file();
-            }
-
-            if ui
-                .button(RichText::new("Recent").color(color_open_tools))
-                .on_hover_text("Select a recently-opened file to open")
-                .clicked()
-            {
-                state.ui.popup.recent_files = !state.ui.popup.recent_files;
-            }
-
             let metadata_loaded = false; // avoids borrow error.
 
             {
@@ -1015,30 +1008,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
 
             let mut dm_loaded = None; // avoids a double-borrow error.
             if let Some(mol) = &mut state.peptide {
-                // let color = if state.to_save.last_peptide_opened.is_none() {
-                //     COLOR_ATTENTION
-                // } else {
-                //     Color32::GRAY
-                // };
-                // todo: Put a form of this back.
-                let color = Color32::GRAY;
-
-                if ui.button(RichText::new("Save").color(color)).clicked() {
-                    let filename = {
-                        let extension = "cif";
-
-                        let name = if mol.common.ident.is_empty() {
-                            "molecule".to_string()
-                        } else {
-                            mol.common.ident.clone()
-                        };
-                        format!("{name}.{extension}")
-                    };
-
-                    state.volatile.dialogs.save.config_mut().default_file_name =
-                        filename.to_string();
-                    state.volatile.dialogs.save.save_file();
-                }
 
                 // todo: Move these A/R. LIkely in a sub menu.
                 if let Some(files_avail) = &mol.rcsb_files_avail {
@@ -1164,34 +1133,19 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
                 state.load_density(dm);
             }
 
-            let mut mol_to_save = None; // avoids dbl-borrow.
-            if let Some(mol) = state.active_mol() {
-                // Highlight the button if we haven't saved this to file, e.g. if opened from online.
-                // let color = if state.to_save.last_ligand_opened.is_none() {
-                //     COLOR_ATTENTION
-                // } else {
-                //     Color32::GRAY
-                // };
-                // todo: Put a form of this back.
-                let color = Color32::GRAY;
-
-                if ui.button(RichText::new("Save mol").color(color))
-                    .on_hover_text("Save the active small molecule, nucleic acid, or lipid to a file.")
-                    .clicked() {
-                    mol_to_save = Some(mol.common().clone());
-                }
-            }
-            if let Some(mol) = mol_to_save {
-                if mol.save(&mut state.volatile.dialogs.save).is_err() {
-                    handle_err(&mut state.ui, "Problem saving this file".to_owned());
-                }
-            }
 
             if metadata_loaded {
                 state.update_save_prefs(false);
             }
 
             ui.add_space(COL_SPACING);
+
+            let color_open_tools = if state.peptide.is_none()
+                && state.ligands.is_empty() {
+                COLOR_ACTION
+            } else {
+                COLOR_INACTIVE
+            };
 
             let query_help = "Download and view a molecule from RCSB PDB, PubChem, DrugBank, or Amber Geostd";
             ui.label(RichText::new("Query DBs:").color(color_open_tools))

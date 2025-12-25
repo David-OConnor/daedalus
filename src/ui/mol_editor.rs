@@ -14,7 +14,7 @@ use crate::{
     drawing::MoleculeView,
     mol_editor,
     mol_editor::{
-        NEXT_ATOM_SN,
+        MolEditorState, NEXT_ATOM_SN,
         add_atoms::{add_atom, add_from_template, populate_hydrogens_on_atom, remove_hydrogens},
         exit_edit_mode, sync_md,
         templates::Template,
@@ -34,7 +34,6 @@ use crate::{
     },
     util::handle_err,
 };
-use crate::mol_editor::MolEditorState;
 // todo: Check DBs (with a button maybe?) to see if the molecule exists in a DB already, or if
 // todo a similar one does.
 
@@ -92,9 +91,15 @@ fn change_el_button(
             mol.common.atoms[i].element = el;
 
             remove_hydrogens(&mut mol.common, i);
-            populate_hydrogens_on_atom(&mut mol.common, i, entities, state_ui, engine_updates, manip_mode);
+            populate_hydrogens_on_atom(
+                &mut mol.common,
+                i,
+                entities,
+                state_ui,
+                engine_updates,
+                manip_mode,
+            );
         }
-
 
         mol_editor::redraw(entities, mol, state_ui, manip_mode);
         engine_updates.entities = EntityUpdate::All;
@@ -533,7 +538,6 @@ fn edit_tools(
 
             state.mol_editor.rebuild_ff_related(&state.ff_param_set);
         }
-
     }
 
     if !bond_mode {
