@@ -595,16 +595,6 @@ pub(crate) fn handle_selection_attempt(
     let Some(mut cursor) = state.ui.cursor_pos else {
         return;
     };
-    // Due to a quirk of some combination of our graphics engine and the egui
-    // integration lib in it, we need this vertical offset for the UI; otherwise,
-    // the higher up we click, the more the projected ray will be below the one
-    // indicated by the cursor. (Rays will only be accurate if clicked at the bottom of the screen).
-    // todo: It may be worth addressing upstream.
-    cursor.1 -= map_linear(
-        cursor.1,
-        (scene.window_size.1, state.volatile.ui_height),
-        (0., state.volatile.ui_height),
-    );
 
     let mut selected_ray = scene.screen_to_render(cursor);
 
@@ -810,14 +800,9 @@ pub fn handle_selection_attempt_mol_editor(
 ) {
     // todo: Allow a sel mode in the Primary mode that lets you pick either atoms or bonds, like this.
 
-    let Some(mut cursor) = state.ui.cursor_pos else {
+    let Some(cursor) = state.ui.cursor_pos else {
         return;
     };
-    cursor.1 -= map_linear(
-        cursor.1,
-        (scene.window_size.1, state.volatile.ui_height),
-        (0., state.volatile.ui_height),
-    );
 
     let mut selected_ray = scene.screen_to_render(cursor);
 

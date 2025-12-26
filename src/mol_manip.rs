@@ -25,6 +25,7 @@ pub fn handle_mol_manip_in_plane(
     state: &mut State,
     scene: &Scene,
     delta: (f64, f64),
+    redraw_peptide: &mut bool,
     redraw_lig: &mut bool,
     redraw_na: &mut bool,
     redraw_lipid: &mut bool,
@@ -37,21 +38,22 @@ pub fn handle_mol_manip_in_plane(
     // but I don't have a better plan yet.
     static mut I: u16 = 0;
 
-    let Some(mut cursor) = state.ui.cursor_pos else {
+    let Some(cursor) = state.ui.cursor_pos else {
         return;
     };
-
-    // Offset for the UI, as we use elsewhere.
-    cursor.1 -= map_linear(
-        cursor.1,
-        (scene.window_size.1, state.volatile.ui_height),
-        (0., state.volatile.ui_height),
-    );
 
     match state.volatile.mol_manip.mode {
         ManipMode::Move((mol_type, mol_i)) => {
             let mol = match state.volatile.operating_mode {
                 OperatingMode::Primary => match mol_type {
+                    MolType::Peptide => {
+                        if let Some(p) = &mut state.peptide {
+                            &mut p.common
+                        } else {
+                            println!("Error: No peptide in state for mol manip");
+                            return;
+                        }
+                    },
                     MolType::Ligand => &mut state.ligands[mol_i].common,
                     MolType::NucleicAcid => &mut state.nucleic_acids[mol_i].common,
                     MolType::Lipid => &mut state.lipids[mol_i].common,
@@ -120,6 +122,7 @@ pub fn handle_mol_manip_in_plane(
                         || state.volatile.operating_mode == OperatingMode::MolEditor
                     {
                         match mol_type {
+                            MolType::Peptide => *redraw_peptide = true,
                             MolType::Ligand => *redraw_lig = true,
                             MolType::NucleicAcid => *redraw_na = true,
                             MolType::Lipid => *redraw_lipid = true,
@@ -133,6 +136,14 @@ pub fn handle_mol_manip_in_plane(
             // todo: DRY with above
             let mol = match state.volatile.operating_mode {
                 OperatingMode::Primary => match mol_type {
+                    MolType::Peptide => {
+                        if let Some(p) = &mut state.peptide {
+                            &mut p.common
+                        } else {
+                            println!("Error: No peptide in state for mol manip");
+                            return;
+                        }
+                    },
                     MolType::Ligand => &mut state.ligands[mol_i].common,
                     MolType::NucleicAcid => &mut state.nucleic_acids[mol_i].common,
                     MolType::Lipid => &mut state.lipids[mol_i].common,
@@ -176,6 +187,7 @@ pub fn handle_mol_manip_in_plane(
                     || state.volatile.operating_mode == OperatingMode::MolEditor
                 {
                     match mol_type {
+                        MolType::Peptide => *redraw_peptide = true,
                         MolType::Ligand => *redraw_lig = true,
                         MolType::NucleicAcid => *redraw_na = true,
                         MolType::Lipid => *redraw_lipid = true,
@@ -193,6 +205,7 @@ pub fn handle_mol_manip_in_out(
     state: &mut State,
     scene: &mut Scene,
     delta: MouseScrollDelta,
+    redraw_peptide: &mut bool,
     redraw_lig: &mut bool,
     redraw_na: &mut bool,
     redraw_lipid: &mut bool,
@@ -202,6 +215,14 @@ pub fn handle_mol_manip_in_out(
         ManipMode::Move((mol_type, mol_i)) => {
             let mol = match state.volatile.operating_mode {
                 OperatingMode::Primary => match mol_type {
+                    MolType::Peptide => {
+                        if let Some(p) = &mut state.peptide {
+                            &mut p.common
+                        } else {
+                            println!("Error: No peptide in state for mol manip");
+                            return;
+                        }
+                    },
                     MolType::Ligand => {
                         if mol_i >= state.ligands.len() {
                             println!("Error: Index out of bounds on ligand for mol manip");
@@ -211,7 +232,7 @@ pub fn handle_mol_manip_in_out(
                     }
                     MolType::NucleicAcid => &mut state.nucleic_acids[mol_i].common,
                     MolType::Lipid => &mut state.lipids[mol_i].common,
-                    _ => unimplemented!(),
+                    MolType::Water => return,
                 },
                 OperatingMode::MolEditor => &mut state.mol_editor.mol.common,
             };
@@ -284,13 +305,7 @@ pub fn handle_mol_manip_in_out(
 
                 // todo: QC if you need/want this.
                 // recompute intersection on the shifted plane to maintain stable drag
-                if let Some(mut cursor) = state.ui.cursor_pos {
-                    cursor.1 -= map_linear(
-                        cursor.1,
-                        (scene.window_size.1, state.volatile.ui_height),
-                        (0., state.volatile.ui_height),
-                    );
-
+                if let Some(cursor) = state.ui.cursor_pos {
                     let (ray_origin, ray_point) = scene.screen_to_render(cursor);
                     let rd = (ray_point - ray_origin).to_normalized();
 
@@ -305,6 +320,7 @@ pub fn handle_mol_manip_in_out(
                 }
             }
             match mol_type {
+                MolType::Peptide => *redraw_peptide = true,
                 MolType::Ligand => *redraw_lig = true,
                 MolType::NucleicAcid => *redraw_na = true,
                 MolType::Lipid => *redraw_lipid = true,
@@ -322,6 +338,14 @@ pub fn handle_mol_manip_in_out(
 
             // todo: C+P with slight changes from the mouse-move variant.
             let mol = match mol_type {
+                MolType::Peptide => {
+                    if let Some(p) = &mut state.peptide {
+                        &mut p.common
+                    } else {
+                        println!("Error: No peptide in state for mol manip");
+                        return;
+                    }
+                },
                 MolType::Ligand => {
                     if mol_i >= state.ligands.len() {
                         println!("Error: Index out of bounds on ligand for mol manip");
@@ -341,6 +365,7 @@ pub fn handle_mol_manip_in_out(
             mol.rotate(rot.into(), None);
 
             match mol_type {
+                MolType::Peptide => *redraw_peptide = true,
                 MolType::Ligand => *redraw_lig = true,
                 MolType::NucleicAcid => *redraw_na = true,
                 MolType::Lipid => *redraw_lipid = true,
@@ -356,6 +381,7 @@ pub fn set_manip(
     vol: &mut StateVolatile,
     save_flag: &mut bool,
     scene: &mut Scene,
+    redraw_peptide: &mut bool,
     redraw_lig: &mut bool,
     redraw_na: &mut bool,
     redraw_lipid: &mut bool,
@@ -448,6 +474,7 @@ pub fn set_manip(
     }
 
     match mol_type_active {
+        MolType::Peptide => *redraw_peptide = true,
         MolType::Ligand => *redraw_lig = true,
         MolType::NucleicAcid => *redraw_na = true,
         MolType::Lipid => *redraw_lipid = true,

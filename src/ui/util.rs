@@ -334,10 +334,6 @@ pub fn open_lig_from_input(
 }
 
 pub fn init_with_scene(state: &mut State, scene: &mut Scene, ctx: &egui::Context) {
-    if state.volatile.ui_height < f32::EPSILON {
-        state.volatile.ui_height = ctx.used_size().y;
-    }
-
     if state.peptide.is_some() {
         set_static_light(
             scene,

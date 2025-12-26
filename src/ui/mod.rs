@@ -64,10 +64,6 @@ pub mod util;
 mod view;
 
 static INIT_COMPLETE: AtomicBool = AtomicBool::new(false);
-// This allows us to wait a frame before getting the UI height. This affects the geometry
-// between 3d adn 2d  space, e.g. for selecting atoms with the mouse.
-pub static UI_HEIGHT_CHANGED: AtomicBool = AtomicBool::new(false);
-pub static UI_HEIGHT_CHANGE_DELAY: AtomicBool = AtomicBool::new(false);
 
 pub(in crate::ui) const ROW_SPACING: f32 = 10.;
 pub(in crate::ui) const COL_SPACING: f32 = 30.;
@@ -202,8 +198,6 @@ fn chain_selector(state: &mut State, redraw: &mut bool, ui: &mut Ui) {
         if state.ui.chain_to_pick_res.is_some() {
             if ui.button("(None)").clicked() {
                 state.ui.chain_to_pick_res = None;
-                // state.volatile.ui_height = ui.ctx().used_size().y  * ui.ctx().pixels_per_point();
-                state.volatile.ui_height = ui.ctx().used_size().y;
             }
         }
     });
@@ -1409,17 +1403,6 @@ pub fn ui_handler(state: &mut State, ctx: &Context, scene: &mut Scene) -> Engine
     if state.volatile.inputs_commanded.inputs_present() {
         set_flashlight(scene);
         engine_updates.lighting = true;
-    }
-
-    // This double-change variable logic is due to some cases needing to wait
-    // an additional frame before the height takes effect.
-    if UI_HEIGHT_CHANGE_DELAY.swap(false, Ordering::AcqRel) {
-        // state.volatile.ui_height = ctx.used_size().y * ctx.pixels_per_point();
-        state.volatile.ui_height = ctx.used_size().y;
-    }
-
-    if UI_HEIGHT_CHANGED.swap(false, Ordering::AcqRel) {
-        UI_HEIGHT_CHANGE_DELAY.store(true, Ordering::Release);
     }
 
     // We perform init items here that rely on the scene, or UI context.

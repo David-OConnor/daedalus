@@ -38,7 +38,7 @@ pub fn md_setup(
         ui.horizontal_wrapped(|ui| {
             ui.label("MD:");
             if let Some(mol) = &mut state.peptide {
-                flag_btn(&mut mol.common.selected_for_md, &mol.common.ident, "Toggle if we use this molecule for MD.", ui);
+                // flag_btn(&mut mol.common.selected_for_md, &mol.common.ident, "Toggle if we use this molecule for MD.", ui);
 
                 let num_ligs = state.ligands.iter().filter(|l| l.common.selected_for_md).count();
                 if mol.common.selected_for_md && num_ligs > 0 {
@@ -61,15 +61,15 @@ pub fn md_setup(
                 }
             }
 
-            for mol in &mut state.ligands {
-                flag_btn(&mut mol.common.selected_for_md, &mol.common.ident, "Toggle if we use this molecule for MD.", ui);
-            }
+            // for mol in &mut state.ligands {
+            //     flag_btn(&mut mol.common.selected_for_md, &mol.common.ident, "Toggle if we use this molecule for MD.", ui);
+            // }
 
             for mol in &mut state.nucleic_acids {
                 flag_btn(&mut mol.common.selected_for_md, &mol.common.ident, "Toggle if we use this molecule for MD.", ui);
             }
 
-            ui.add_space(COL_SPACING / 2.);
+            // ui.add_space(COL_SPACING / 2.);
 
             if let Some(md) = &state.mol_dynamics &&
                 state.ui.current_snapshot < md.snapshots.len() &&

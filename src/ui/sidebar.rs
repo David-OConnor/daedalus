@@ -80,6 +80,21 @@ fn mol_picker_one(
             // engine_updates.entities.push_class(mol_type.entity_class() as u32);
         }
 
+        let color_md = if mol.selected_for_md {
+            COLOR_ACTIVE
+        } else {
+            COLOR_INACTIVE
+        };
+
+
+        if ui
+            .button(RichText::new("MD").color(color_md))
+            .on_hover_text("Select or deselect this molecule for molecular dynamics simulation.")
+            .clicked()
+        {
+            mol.selected_for_md = !mol.selected_for_md;
+        }
+
         if ui
             .button(RichText::new("❌").color(Color32::LIGHT_RED))
             .on_hover_text("(Hotkey: Delete) Close this molecule.")
@@ -210,12 +225,11 @@ pub(in crate::ui) fn sidebar(
     redraw_lipid: &mut bool,
     redraw_na: &mut bool,
     engine_updates: &mut EngineUpdates,
-    ctx: &Context,
+    ctx: &Context, 
 ) {
     let out = egui::SidePanel::left("sidebar")
-        // .resizable(true) // let user drag the width
-        // .default_width(200.0)
-        // .width_range(160.0..=420.0)
+        .resizable(true) // let user drag the width
+        .width_range(60.0..=420.0)
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.label("Mols");
@@ -279,13 +293,13 @@ pub(in crate::ui) fn sidebar(
                     // } else {
                     //     Color32::GRAY
                     // };
-                    // todo: Put a form of this back.
+
                     let color = Color32::GRAY;
 
                     if ui
                         .button(RichText::new("Save").color(color))
                         .on_hover_text(
-                            "Save the active small molecule, nucleic acid, or lipid to a file.",
+                            "Save the active molecule to a file.",
                         )
                         .clicked()
                     {

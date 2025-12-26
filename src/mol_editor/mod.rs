@@ -41,7 +41,6 @@ use crate::{
     render::{
         ATOM_SHININESS, BALL_STICK_RADIUS, BALL_STICK_RADIUS_H, set_flashlight, set_static_light,
     },
-    ui::UI_HEIGHT_CHANGED,
     util::find_neighbor_posit,
 };
 
@@ -434,7 +433,6 @@ impl MolEditorState {
 // todo: Into a GUI util?
 pub fn enter_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mut EngineUpdates) {
     state.volatile.operating_mode = OperatingMode::MolEditor;
-    UI_HEIGHT_CHANGED.store(true, Ordering::Release);
 
     // Rebuilt shortly.
     state.mol_editor.md_state = None;
@@ -513,7 +511,6 @@ pub fn enter_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mu
 // todo: Into a GUI util?
 pub fn exit_edit_mode(state: &mut State, scene: &mut Scene, engine_updates: &mut EngineUpdates) {
     state.volatile.operating_mode = OperatingMode::Primary;
-    UI_HEIGHT_CHANGED.store(true, Ordering::Release);
 
     state.mol_editor.md_state = None;
     state.mol_editor.md_running = false;

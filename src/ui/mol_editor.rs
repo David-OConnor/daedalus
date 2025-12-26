@@ -670,6 +670,7 @@ fn edit_tools(
                     redraw,
                     &mut false,
                     &mut false,
+                    &mut false,
                     &mut rebuild_md,
                     // Atom i is used instead of the primary mode's mol i, since we're moving a single atom.
                     ManipMode::Move((MolType::Ligand, selected_idxs[0])),
@@ -686,6 +687,7 @@ fn edit_tools(
                         &mut state.volatile,
                         &mut state.to_save.save_flag,
                         scene,
+                        &mut false,
                         redraw,
                         &mut false,
                         &mut false,

@@ -692,14 +692,6 @@ pub(in crate::ui) fn display_mol_data(
             return
         };
 
-        // if ui.button(RichText::new("Close").color(Color32::LIGHT_RED))
-        //     .on_hover_text("(Hotkey: Delete) Close this molecule.")
-        //     .clicked() {
-        //     *close = true;
-        // }
-
-        ui.add_space(COL_SPACING / 2.);
-
         if let Some(mol) = state.active_mol() {
             mol_descrip(&mol, ui);
         }
@@ -728,7 +720,7 @@ pub(in crate::ui) fn display_mol_data(
                 the mouse. Scroll to move it forward and back.")
                 .clicked() {
 
-                set_manip(&mut state.volatile,&mut state.to_save.save_flag, scene, redraw_lig, redraw_na, redraw_lipid,&mut false,
+                set_manip(&mut state.volatile,&mut state.to_save.save_flag, scene, redraw_pep, redraw_lig, redraw_na, redraw_lipid,&mut false,
                           ManipMode::Move((active_mol_type, active_mol_i)), &state.ui.selection,);
             }
 
@@ -736,7 +728,7 @@ pub(in crate::ui) fn display_mol_data(
                 .on_hover_text("(Hotkey: R. R or Esc to stop) Rotate the active molecule by clicking and dragging with the mouse. Scroll to roll.")
                 .clicked() {
 
-                set_manip(&mut state.volatile,&mut state.to_save.save_flag, scene, redraw_lig,redraw_na, redraw_lipid,&mut false,
+                set_manip(&mut state.volatile,&mut state.to_save.save_flag, scene, redraw_pep, redraw_lig,redraw_na, redraw_lipid,&mut false,
                           ManipMode::Rotate((active_mol_type, active_mol_i)), &state.ui.selection,);
             }
         }

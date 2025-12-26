@@ -11,7 +11,7 @@ use crate::{
     drawing_wrappers::{draw_all_ligs, draw_all_lipids, draw_all_nucleic_acids},
     molecule::MolType,
     ui::{
-        COL_SPACING, DENS_ISO_MAX, DENS_ISO_MIN, UI_HEIGHT_CHANGED, misc,
+        COL_SPACING, DENS_ISO_MAX, DENS_ISO_MIN, misc,
         misc::{section_box, toggle_btn, toggle_btn_inv},
     },
     util::clear_mol_entity_indices,
@@ -294,12 +294,7 @@ pub fn view_settings(
 }
 
 fn vis_helper(vis: &mut bool, name: &str, tooltip: &str, ui: &mut Ui) {
-    let prev = *vis;
     toggle_btn(vis, name, tooltip, ui, &mut false);
-
-    if *vis != prev {
-        UI_HEIGHT_CHANGED.store(true, Ordering::Release);
-    }
 }
 
 /// For toggling on and off UI sections.

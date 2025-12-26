@@ -247,8 +247,6 @@ pub struct MdStateLocal {
 /// Temporary, and generated state.
 struct StateVolatile {
     dialogs: FileDialogs,
-    /// We use this for offsetting our cursor selection.
-    ui_height: f32,
     // /// Center and size are used for setting the camera. Dependent on the molecule atom positions.
     // mol_center: Vec3,
     // mol_size: f32, // Dimension-agnostic
@@ -306,7 +304,6 @@ impl Default for StateVolatile {
     fn default() -> Self {
         Self {
             dialogs: Default::default(),
-            ui_height: Default::default(),
             inputs_commanded: Default::default(),
             smiles_pending_data_avail: Default::default(),
             mol_pending_data_avail: Default::default(),
@@ -759,7 +756,13 @@ impl State {
     pub fn active_mol(&self) -> Option<MolGenericRef<'_>> {
         match self.volatile.active_mol {
             Some((mol_type, i)) => match mol_type {
-                MolType::Peptide => None,
+                MolType::Peptide => {
+                    if self.peptide.is_some() {
+                        Some(MolGenericRef::Peptide(&self.peptide.as_ref().unwrap()))
+                    } else {
+                        None
+                    }
+                },
                 MolType::Ligand => {
                     if i < self.ligands.len() {
                         Some(MolGenericRef::Ligand(&self.ligands[i]))
